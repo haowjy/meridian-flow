@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";
-import { expectOutcome } from "./test-support/assertions.js";
+import { expectOutcome, outcomeText } from "./test-support/assertions.js";
 import { codec, harness, schema } from "./test-support/write-tool-harness.js";
 
 const DOC_ID = "chapter.md";
@@ -88,15 +88,32 @@ const cases: Array<{ name: string; blocks: PMNode[] }> = [
 ];
 
 describe("overwrite with a document's own export", () => {
-  it.each(cases)("leaves $name untouched", async ({ blocks }) => {
+  it.each(cases)("leaves $name untouched and records nothing", async ({ blocks }) => {
     const ctx = harnessWith(blocks);
-    const before = Y.encodeStateVector(ctx.doc);
+    const before = Y.encodeStateAsUpdate(ctx.doc);
     const markdown = exported(ctx.doc);
 
-    expectOutcome(await overwrite(ctx, markdown), "success");
+    const outcome = await overwrite(ctx, markdown);
 
-    expect(Y.encodeStateVector(ctx.doc)).toEqual(before);
+    expectOutcome(outcome, "success");
+    expect(outcome.result.write).toBeUndefined();
+    expect(outcomeText(outcome)).toContain("unchanged:");
+    expect(Y.encodeStateAsUpdate(ctx.doc)).toEqual(before);
+    expect((await ctx.journal.read(DOC_ID)).updates).toEqual([]);
     expect(exported(ctx.doc)).toBe(markdown);
+  });
+
+  it("records nothing when a find is replaced with itself", async () => {
+    const ctx = harnessWith(fromMarkdown("The sword sang."));
+
+    const outcome = await ctx.core.write(
+      { command: "replace", file: DOC_ID, find: "sword", content: "sword" },
+      {},
+    );
+
+    expectOutcome(outcome, "success");
+    expect(outcomeText(outcome)).toContain("unchanged:");
+    expect((await ctx.journal.read(DOC_ID)).updates).toEqual([]);
   });
 
   it("an edit beside a picture and a break keeps exactly one of each", async () => {

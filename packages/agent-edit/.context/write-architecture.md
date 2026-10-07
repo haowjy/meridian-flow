@@ -45,7 +45,9 @@ equal blocks get no edit; between them, blocks that may pair (same node type,
 same heading level) pair by shared edge text first and by position after, and
 each pair becomes a `block` edit that `updateYFragment` diffs in place,
 attributes included. Only unpaired blocks are inserted or deleted, so a new
-paragraph never takes over an edited one's element and comments. Writing a document's own export back is an empty update.
+paragraph never takes over an edited one's element and comments. A write that resolves to no edits (a document's own export written back, or a
+find replaced with itself) returns `unchanged` before a write handle is
+reserved, so it journals nothing and leaves nothing to undo.
 Flat `text` offsets exclude atoms (pictures, hard breaks), so `text` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 

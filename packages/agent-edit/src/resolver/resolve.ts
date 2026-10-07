@@ -362,13 +362,17 @@ function lowerPlainTextFindMatches(
   }
   const edits: ResolvedEdit[] = [];
   for (const [element, blockMatches] of byBlock) {
-    const replacements = blockMatches.map((match) => ({
-      span: {
-        start: command === "insert" ? match.matchEnd : match.matchStart,
-        end: match.matchEnd,
-      },
-      newText: params.content,
-    }));
+    const blockText = ctx.model.getText(element);
+    const replacements = blockMatches
+      .map((match) => ({
+        span: {
+          start: command === "insert" ? match.matchEnd : match.matchStart,
+          end: match.matchEnd,
+        },
+        newText: params.content,
+      }))
+      // Replacing a match with itself changes nothing, so it makes no edit.
+      .filter(({ span, newText }) => blockText.slice(span.start, span.end) !== newText);
     const first = replacements[0];
     if (!first) continue;
     if (replacements.length === 1) {
@@ -382,7 +386,6 @@ function lowerPlainTextFindMatches(
       });
       continue;
     }
-    const blockText = ctx.model.getText(element);
     edits.push({
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
