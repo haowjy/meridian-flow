@@ -605,7 +605,7 @@
   margin: 0;
 }
 
-.meridian-editor .ProseMirror .meridian-review-removal-block > * + * {
+.meridian-editor .ProseMirror .meridian-review-removal-block > p + p {
   margin-top: 0.9em;
 }
 

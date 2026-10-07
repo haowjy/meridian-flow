@@ -61,7 +61,7 @@ type PluginMeta =
   | { kind: "set-model"; model: InlineReviewModel | null }
   | { kind: "set-active-operation"; operationId: string | null }
   | { kind: "set-marks-visible"; visible: boolean }
-  | { kind: "toggle-removal"; identity: string };
+  | { kind: "removal-click"; operationId: string; toggle: string | null; keyboard: boolean };
 
 /** Spec flag on the writer's just-typed ranges; the next full rebuild replaces them. */
 const OPTIMISTIC_SPEC = "optimisticWriter";
@@ -169,13 +169,8 @@ function dispatchMeta(view: EditorView, meta: PluginMeta): void {
 /** What a removal widget does on click: it holds the view it was drawn in. */
 function removalHandlersFor(view: EditorView): RemovalHandlers {
   return {
-    focus: (operationId) => {
-      const current = draftInlineReviewPluginKey.getState(view.state)?.activeOperationId;
-      if (current !== operationId) {
-        dispatchMeta(view, { kind: "set-active-operation", operationId });
-      }
-    },
-    toggle: (identity) => dispatchMeta(view, { kind: "toggle-removal", identity }),
+    activate: (operationId, toggle, keyboard) =>
+      dispatchMeta(view, { kind: "removal-click", operationId, toggle, keyboard }),
   };
 }
 
@@ -183,13 +178,18 @@ function paint(
   model: InlineReviewModel | null,
   state: InlineReviewPluginState,
   newState: EditorState,
+  refocusRemoval: string | null = null,
 ) {
   if (!state.marksVisible) return DecorationSet.empty;
   const resolver = resolverFromState(newState);
   return resolver
     ? buildDecorations(
         model,
-        { activeOperationId: state.activeOperationId, expandedRemovals: state.expandedRemovals },
+        {
+          activeOperationId: state.activeOperationId,
+          expandedRemovals: state.expandedRemovals,
+          refocusRemoval,
+        },
         resolver,
         removalHandlersFor,
       )
@@ -269,6 +269,7 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         let { model, activeOperationId, marksVisible, expandedRemovals } = previous;
         let mustRebuild = false;
         let keepOptimistic = true;
+        let refocusRemoval: string | null = null;
 
         if (meta?.kind === "set-model") {
           model = meta.model;
@@ -281,10 +282,14 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         } else if (meta?.kind === "set-marks-visible") {
           marksVisible = meta.visible;
           mustRebuild = true;
-        } else if (meta?.kind === "toggle-removal") {
-          const next = new Set(expandedRemovals);
-          if (!next.delete(meta.identity)) next.add(meta.identity);
-          expandedRemovals = next;
+        } else if (meta?.kind === "removal-click") {
+          activeOperationId = meta.operationId;
+          if (meta.toggle !== null) {
+            const next = new Set(expandedRemovals);
+            if (!next.delete(meta.toggle)) next.add(meta.toggle);
+            expandedRemovals = next;
+            if (meta.keyboard) refocusRemoval = meta.toggle;
+          }
           mustRebuild = true;
         } else if (ySyncChangeOrigin && model) {
           // Remote edit or first binding pass — re-anchor from
@@ -301,7 +306,7 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
           decorations: previous.decorations,
         };
         if (mustRebuild) {
-          let rebuilt = paint(model, next, newState);
+          let rebuilt = paint(model, next, newState, refocusRemoval);
           if (keepOptimistic && marksVisible) {
             const typed = previous.decorations
               .map(tr.mapping, tr.doc)

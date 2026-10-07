@@ -4,7 +4,7 @@
 import type { Work } from "@meridian/contracts/works";
 import type { Editor } from "@tiptap/core";
 import { act, StrictMode, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
@@ -154,11 +154,27 @@ const registry = {
   getBranchRoom: sessionFor,
 };
 
-const controller = {
+const setInlineReviewShown = vi.fn();
+const controller: {
+  registerInlineReviewRuntime: () => void;
+  releaseInlineReviewRuntime: () => void;
+  inlineReviewModelAvailable: () => void;
+  setInlineReviewShown: typeof setInlineReviewShown;
+  inlineReview: {
+    kind: "inline";
+    documentId: string;
+    draftId: string;
+    previewIdentity?: string;
+  } | null;
+} = {
   registerInlineReviewRuntime: () => {},
   releaseInlineReviewRuntime: () => {},
   inlineReviewModelAvailable: () => {},
+  setInlineReviewShown,
+  inlineReview: null,
 };
+/** Whether the review's change marks have arrived; the controller reports it as `previewIdentity`. */
+let reviewMarksAvailable = true;
 
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: threadList.current, isError: false, isFetching: false }),
@@ -247,6 +263,14 @@ let applyProps: (next: Partial<EditorViewProps>) => void = () => {};
 function Harness({ initial }: { initial: EditorViewProps }) {
   const [props, setProps] = useState(initial);
   applyProps = (next) => setProps((previous) => ({ ...previous, ...next }));
+  controller.inlineReview = props.reviewDraftId
+    ? {
+        kind: "inline",
+        documentId: props.documentId,
+        draftId: props.reviewDraftId,
+        ...(reviewMarksAvailable ? { previewIdentity: "preview-1" } : {}),
+      }
+    : null;
   const session = props.reviewDraftId
     ? props.session
     : (props.session ?? sessionFor(props.documentId));
@@ -448,6 +472,65 @@ describe("editor lifetime", () => {
       expect(visibleText()).toEqual(["live words"]);
       observer.disconnect();
       expect(empty).toEqual([]);
+    });
+  });
+
+  describe("holding the live view until the review has its marks", () => {
+    const documentId = "hold-doc";
+    const roomName = "branch:hold-doc:gen:1";
+    const surfaces = () =>
+      [...document.querySelectorAll<HTMLElement>("[data-editor-surface]")]
+        .filter((wrapper) => !wrapper.classList.contains("hidden"))
+        .map((wrapper) => wrapper.dataset.editorSurface);
+
+    afterEach(() => {
+      reviewMarksAvailable = true;
+      setInlineReviewShown.mockClear();
+      vi.useRealTimers();
+    });
+
+    async function enterReview(): Promise<void> {
+      sessionHorizons.set(roomName, {
+        localPersistence: Promise.resolve(),
+        firstServerSync: Promise.resolve(),
+      });
+      await act(async () => {
+        applyProps({ reviewDraftId: "draft-hold", reviewRoomName: roomName });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    it("keeps live on screen, chrome unreported, after the editor exists but before its marks", async () => {
+      reviewMarksAvailable = false;
+      const initial = { documentId, projectId: "project-1", session: sessionFor(documentId) };
+      await withReactRoot(<Harness initial={initial} />, async () => {
+        await enterReview();
+        expect(surfaces()).toEqual(["live"]);
+        expect(setInlineReviewShown).not.toHaveBeenCalledWith(documentId, "draft-hold", true);
+
+        // The marks arrive: body and chrome flip together.
+        reviewMarksAvailable = true;
+        await act(async () => {
+          applyProps({});
+        });
+        expect(surfaces()).toEqual(["review"]);
+        expect(setInlineReviewShown).toHaveBeenLastCalledWith(documentId, "draft-hold", true);
+      });
+    });
+
+    it("shows the review anyway when its marks never arrive", async () => {
+      reviewMarksAvailable = false;
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const initial = { documentId, projectId: "project-1", session: sessionFor(documentId) };
+      await withReactRoot(<Harness initial={initial} />, async () => {
+        await enterReview();
+        expect(surfaces()).toEqual(["live"]);
+        await act(async () => {
+          vi.advanceTimersByTime(1600);
+        });
+        expect(surfaces()).toEqual(["review"]);
+      });
     });
   });
 

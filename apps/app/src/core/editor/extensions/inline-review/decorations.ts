@@ -65,6 +65,8 @@ const OPERATION_ATTR = "data-review-operations";
 export interface ReviewPaintState {
   activeOperationId: string | null;
   expandedRemovals: ReadonlySet<string>;
+  /** The removal whose fold the writer just used from the keyboard; its rebuilt widget takes focus. */
+  refocusRemoval: string | null;
 }
 
 /**
@@ -190,6 +192,7 @@ export function buildDecorations(
           createRemovalElement(view.dom.ownerDocument, plan, {
             focused,
             expanded,
+            refocusToggle: paint.refocusRemoval === plan.identity,
             handlers: handlersFor(view),
             hunkAttr: HUNK_ATTR,
             operationAttr: OPERATION_ATTR,
