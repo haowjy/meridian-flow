@@ -379,7 +379,6 @@ function lowerPlainTextFindMatches(
         block: element,
         span: first.span,
         newText: first.newText,
-        semanticLowering: "prosemirror",
       });
       continue;
     }

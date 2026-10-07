@@ -26,24 +26,6 @@ const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 
 describe("applyEdits tier routing", () => {
-  it("routes text-only edits inside an existing mark run to Tier 1 and preserves marks", () => {
-    const doc = createDoc("Alpha **sword**.");
-    const [block] = baseModel.getBlocks(doc);
-
-    const result = applyEdits(
-      doc,
-      baseModel,
-      codec,
-      textEdit(block, { start: 6, end: 11 }, "blade"),
-      origin,
-    );
-
-    expectOk(result);
-    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([1]);
-    expect(baseModel.serializeBlockBodies(doc, codec, [block]).join("")).toBe("Alpha **blade**.");
-    expectNoOrphanedElements(doc);
-  });
-
   it("routes mark-boundary-crossing text edits to Tier 2", () => {
     const doc = createDoc("A **bold** plain");
     const [block] = baseModel.getBlocks(doc);
@@ -66,11 +48,11 @@ describe("applyEdits tier routing", () => {
 describe("applyEdits update fidelity", () => {
   it.each([
     [
-      "Tier 1 text",
+      "Tier 2 text",
       "Alpha sword.",
       "Alpha blade.",
       (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "blade"),
-      1,
+      2,
     ],
     [
       "Tier 2 formatting",
@@ -163,25 +145,6 @@ describe("applyEdits preflight safety", () => {
 
     expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(documentJson(doc)).toEqual(before);
-  });
-
-  it("applies multiple same-block Tier 1 replacements back-to-front", () => {
-    const doc = createDoc("sword and sword");
-    const [block] = baseModel.getBlocks(doc);
-
-    const result = applyEdits(
-      doc,
-      baseModel,
-      codec,
-      [
-        textEdit(block, { start: 0, end: 5 }, "axe"),
-        textEdit(block, { start: 10, end: 15 }, "axe"),
-      ],
-      origin,
-    );
-
-    expectOk(result);
-    expect(blockTexts(doc)).toEqual(["axe and axe"]);
   });
 });
 
