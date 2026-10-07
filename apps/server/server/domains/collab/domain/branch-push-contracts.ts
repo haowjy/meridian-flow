@@ -303,7 +303,10 @@ export type BranchTurnReversal =
 export type BranchReviewService = {
   discardSelected(input: {
     branchId: string;
-    journalIds: readonly number[];
+    selectRows: (
+      branch: BranchSnapshot,
+      rows: BranchJournalRow[],
+    ) => Promise<{ journalIds: readonly number[] }>;
     reviewedByUserId?: UserId;
   }): Promise<
     | { status: "discarded"; branchId: string; journalIds: number[] }

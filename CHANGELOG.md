@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
+
 - Handling the last text change preserves independent draft formatting for document-level Apply or Discard.
 
 - Draft preview stays available when different chats edit adjacent sentences, and retained punctuation is no longer shown as deleted.

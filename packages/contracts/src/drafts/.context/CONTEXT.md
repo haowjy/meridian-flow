@@ -22,3 +22,8 @@ The review wire shape is intentionally JSON-natural and UI-oriented:
 The contracts do not expose durable storage identities or names. The Work-draft
 domain maps `draftId` to `document_branches` and owns
 `branch_write_journal`/`push_lineage` integration.
+
+Selective Discard must send `liveRevisionToken` and `draftRevisionToken` from the
+preview alongside `operationIds`. Missing/changed tokens return `stale`; refresh
+instead of reporting success or closing the review. Whole-document Discard omits
+these tokens and remains unfenced.

@@ -86,3 +86,98 @@ it.each([
     harness.destroyWarmState();
   }
 });
+
+it.each([
+  "created-parent",
+  "surviving-text",
+] as const)("refuses stale Discard when %s dependency arrives after the displayed preview", async (shape) => {
+  const harness = createHarness();
+  try {
+    await harness.seedWriterDocument("Alpha base.", "discard-arrival");
+    const f = harness.crossWorkProbeFixture();
+    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    async function stage(source: "agent" | "writer") {
+      const staged = await f.branchCoordinator.readBranch(
+        branch.branchId,
+        async (doc, snapshot) => {
+          const clone = createCollabYDoc({ gc: false });
+          Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+          return { clone, generation: snapshot.generation };
+        },
+      );
+      try {
+        const fragment = staged.clone.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+        if (shape === "created-parent" && source === "agent") {
+          const paragraph = new Y.XmlElement("paragraph");
+          const text = new Y.XmlText();
+          text.insert(0, "AI block.");
+          paragraph.insert(0, [text]);
+          fragment.insert(1, [paragraph]);
+        } else {
+          const paragraph = fragment.get(shape === "created-parent" ? 1 : 0) as Y.XmlElement;
+          const text = paragraph.get(0) as Y.XmlText;
+          text.insert(
+            source === "agent" ? text.length : 12 > text.length ? text.length : 12,
+            source === "agent" ? "ABC" : "X",
+          );
+        }
+        await f.branchCoordinator.commitSyncFromDoc({
+          branchId: branch.branchId,
+          sourceDoc: staged.clone,
+          expectedGeneration: staged.generation,
+          source,
+          actorUserId: source === "writer" ? USER_ID : null,
+          threadId: THREAD_ID,
+          turnId: source === "agent" ? TURN_ID : null,
+          wId: null,
+          updateMeta: null,
+        });
+      } finally {
+        staged.clone.destroy();
+      }
+    }
+    await stage("agent");
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await f.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    // Deterministic admission between the writer's displayed cut and command commit.
+    await stage("writer");
+    const arrived = await f.collab.draftReview.preview(command);
+    if (arrived.status !== "active") throw new Error("missing arrival preview");
+    const request = {
+      ...command,
+      operationIds: preview.operations.map((op) => op.operationId),
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
+    };
+    expect(await f.collab.draftReview.discardWorkDraft(request)).toEqual({
+      status: "stale",
+      draftId: branch.branchId,
+    });
+    const after = await f.collab.draftReview.preview(command);
+    expect(after).toMatchObject({
+      status: "active",
+      markdown: arrived.markdown,
+      draftRevisionToken: arrived.draftRevisionToken,
+    });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha base.\n");
+    const refreshed = {
+      ...command,
+      operationIds: arrived.operations.map((op) => op.operationId),
+      liveRevisionToken: arrived.liveRevisionToken,
+      draftRevisionToken: arrived.draftRevisionToken,
+    };
+    expect(await f.collab.draftReview.discardWorkDraft(refreshed)).toMatchObject({
+      status: "discarded",
+      draftClosed: true,
+    });
+  } finally {
+    harness.destroyWarmState();
+  }
+});

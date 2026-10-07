@@ -41,7 +41,7 @@ export type DraftApplyResult =
   | { status: "not_found"; draftId: string };
 
 export type DraftDiscardResult = {
-  status: "discarded";
+  status: "discarded" | "stale" | "gone" | "draft_only" | "incomplete_class";
   draftId: string;
   draftClosed?: boolean;
   draftDisposition?: "applied" | "discarded";

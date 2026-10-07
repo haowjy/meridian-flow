@@ -11,7 +11,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { CollabDrafts } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type {
   BranchJournalReadStore,
   BranchJournalRow,
@@ -287,6 +287,63 @@ export function createWorkDraftReviewService(input: {
     });
   }
 
+  function reviewSelection(
+    command: {
+      operationIds: string[];
+      liveRevisionToken?: string;
+      draftRevisionToken?: string;
+      documentId: DocumentId;
+    },
+    requireCompleteClass: boolean,
+  ) {
+    return async (snapshot: BranchSnapshot, rows: BranchJournalRow[]) => {
+      const liveCut = await input.readLiveReviewCut(command.documentId);
+      const liveDoc = createCollabYDoc({ gc: false });
+      const draftDoc = createCollabYDoc({ gc: false });
+      try {
+        Y.applyUpdate(liveDoc, liveCut.state);
+        Y.applyUpdate(draftDoc, snapshot.state);
+        const draftUpdates = reviewUpdates(rows);
+        const draftRevisionToken = draftReviewRevision(snapshot.generation, draftDoc, rows);
+        if (
+          command.liveRevisionToken !== liveCut.revision ||
+          command.draftRevisionToken !== draftRevisionToken
+        )
+          throw new DraftChangeRefusal("stale");
+        const preview = computeDraftReviewHunks({
+          liveDoc,
+          draftDoc,
+          model: input.model,
+          draftUpdates,
+        });
+        const requested = new Set(command.operationIds);
+        if (
+          !requested.size ||
+          [...requested].some((id) => !preview.operations.some((op) => op.operationId === id))
+        )
+          throw new DraftChangeRefusal("gone");
+        const classes = new Set(
+          preview.operations
+            .filter((op) => requested.has(op.operationId))
+            .map((op) => op.closureClassId),
+        );
+        const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
+
+        if (requireCompleteClass && selected.some((op) => !requested.has(op.operationId)))
+          throw new DraftChangeRefusal("incomplete_class");
+        return {
+          journalIds: [...new Set(selected.flatMap((op) => op.closureUpdateIds))],
+          expectedLiveRevision: liveCut.revision,
+          operationIds: selected.map((op) => op.operationId),
+          closureClassIds: [...classes],
+        };
+      } finally {
+        liveDoc.destroy();
+        draftDoc.destroy();
+      }
+    };
+  }
+
   async function applyWorkDraftChanges(
     command: DraftApplyChangesRequest & {
       projectId?: ProjectId;
@@ -308,49 +365,10 @@ export function createWorkDraftReviewService(input: {
         selectRows: async (snapshot, rows) => {
           if (await isDraftOnlyManifestDocument(command))
             throw new DraftChangeRefusal("draft_only");
-          const liveCut = await input.readLiveReviewCut(command.documentId);
-          const liveDoc = createCollabYDoc({ gc: false });
-          const draftDoc = createCollabYDoc({ gc: false });
-          try {
-            Y.applyUpdate(liveDoc, liveCut.state);
-            Y.applyUpdate(draftDoc, snapshot.state);
-            const draftUpdates = reviewUpdates(rows);
-            const draftRevisionToken = draftReviewRevision(snapshot.generation, draftDoc, rows);
-            if (
-              command.liveRevisionToken !== liveCut.revision ||
-              command.draftRevisionToken !== draftRevisionToken
-            )
-              throw new DraftChangeRefusal("stale");
-            const preview = computeDraftReviewHunks({
-              liveDoc,
-              draftDoc,
-              model: input.model,
-              draftUpdates,
-            });
-            const requested = new Set(command.operationIds);
-            if (
-              !requested.size ||
-              [...requested].some((id) => !preview.operations.some((op) => op.operationId === id))
-            )
-              throw new DraftChangeRefusal("gone");
-            const classes = new Set(
-              preview.operations
-                .filter((op) => requested.has(op.operationId))
-                .map((op) => op.closureClassId),
-            );
-            const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
-            if (selected.some((op) => !requested.has(op.operationId)))
-              throw new DraftChangeRefusal("incomplete_class");
-            appliedOperations = selected.map((op) => op.operationId);
-            appliedClasses = [...classes];
-            return {
-              journalIds: [...new Set(selected.flatMap((op) => op.closureUpdateIds))],
-              expectedLiveRevision: liveCut.revision,
-            };
-          } finally {
-            liveDoc.destroy();
-            draftDoc.destroy();
-          }
+          const selection = await reviewSelection(command, true)(snapshot, rows);
+          appliedOperations = selection.operationIds;
+          appliedClasses = selection.closureClassIds;
+          return selection;
         },
       });
       return {
@@ -375,33 +393,30 @@ export function createWorkDraftReviewService(input: {
     userId?: UserId;
     threadId?: string;
     operationIds?: string[];
+    liveRevisionToken?: string;
+    draftRevisionToken?: string;
   }) {
     const projectId = command.projectId;
     const branch = await resolveActiveWorkDraft(command);
     if (!branch) return { status: "discarded" as const, draftId: command.draftId };
 
     if (command.operationIds && command.operationIds.length > 0) {
-      const preview = await previewWorkDraftBranch(command);
-      const requestedClassIds = new Set(
-        preview.operations
-          .filter((operation) => command.operationIds?.includes(operation.operationId))
-          .map((operation) => operation.closureClassId),
-      );
-      const updateIds = new Set<number>();
-      for (const operation of preview.operations) {
-        if (!requestedClassIds.has(operation.closureClassId)) continue;
-        for (const id of operation.closureUpdateIds) updateIds.add(id);
+      try {
+        await input.branchReview.discardSelected({
+          branchId: branch.branchId,
+          selectRows: reviewSelection({ ...command, operationIds: command.operationIds }, false),
+          reviewedByUserId: command.userId,
+        });
+        return {
+          status: "discarded" as const,
+          draftId: command.draftId,
+          ...(await settleEmptyDraft(command)),
+        };
+      } catch (cause) {
+        if (cause instanceof DraftChangeRefusal)
+          return { status: cause.status, draftId: command.draftId };
+        throw cause;
       }
-      await input.branchReview.discardSelected({
-        branchId: branch.branchId,
-        journalIds: [...updateIds],
-        reviewedByUserId: command.userId,
-      });
-      return {
-        status: "discarded" as const,
-        draftId: command.draftId,
-        ...(await settleEmptyDraft(command)),
-      };
     } else {
       const draftOnly =
         projectId &&

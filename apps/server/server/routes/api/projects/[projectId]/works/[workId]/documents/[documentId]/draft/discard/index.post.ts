@@ -23,6 +23,8 @@ export default defineEventHandler(async (event) => {
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId,
     userId: user.userId,
+    liveRevisionToken: body.liveRevisionToken,
+    draftRevisionToken: body.draftRevisionToken,
     operationIds: Array.isArray(body.operationIds)
       ? body.operationIds.filter(
           (operationId): operationId is string => typeof operationId === "string",

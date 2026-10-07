@@ -90,18 +90,17 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
     }
   }
 
-  async function discardSelected(discardInput: {
-    branchId: string;
-    journalIds: readonly number[];
-    reviewedByUserId?: UserId;
-  }): Promise<
+  async function discardSelected(
+    discardInput: Parameters<BranchReviewService["discardSelected"]>[0],
+  ): Promise<
     | { status: "discarded"; branchId: string; journalIds: number[] }
     | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
   > {
-    const selected = new Set(discardInput.journalIds);
-    if (selected.size === 0) throw new Error("selective_discard_requires_rows");
     return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
       const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
+      const selection = await discardInput.selectRows(branch, reviewableRows);
+      const selected = new Set(selection.journalIds);
+      if (selected.size === 0) throw new Error("selective_discard_requires_rows");
       const rows = reviewableRows.filter((row) => selected.has(row.id));
       if (rows.length !== selected.size) {
         return {

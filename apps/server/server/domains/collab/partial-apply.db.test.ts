@@ -230,6 +230,8 @@ describe("per-change Apply (postgres)", () => {
       const closed = await fixture.collab.draftReview.discardWorkDraft({
         ...command,
         operationIds: remaining.operations.map((op) => op.operationId),
+        liveRevisionToken: remaining.liveRevisionToken,
+        draftRevisionToken: remaining.draftRevisionToken,
       });
       expect(closed).toMatchObject({ draftClosed: true, draftDisposition: "applied" });
     }
@@ -433,6 +435,8 @@ describe("per-change Apply (postgres)", () => {
       await fixture.collab.draftReview.discardWorkDraft({
         ...command,
         operationIds: request.operationIds,
+        liveRevisionToken: request.liveRevisionToken,
+        draftRevisionToken: request.draftRevisionToken,
       });
       await expect(
         fixture.collab.draftReview.applyWorkDraftChanges(request),
@@ -561,6 +565,8 @@ describe("per-change Apply (postgres)", () => {
     await fixture.collab.draftReview.discardWorkDraft({
       ...command,
       operationIds: [preview.operations[0].operationId],
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
     });
     const after = await fixture.collab.draftReview.preview(command);
     if (after.status !== "active") throw new Error("missing preview");
@@ -630,6 +636,8 @@ describe("per-change Apply (postgres)", () => {
     await fixture.collab.draftReview.discardWorkDraft({
       ...command,
       operationIds: [preview.operations[0].operationId],
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
     });
     const after = await fixture.collab.draftReview.preview(command);
     if (after.status !== "active") throw new Error("missing preview");
@@ -721,6 +729,8 @@ describe("per-change Apply (postgres)", () => {
       draftId: branch.branchId,
       userId: USER_ID,
       operationIds: [remaining.operationId],
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
     });
     let live = await harness.liveMarkdown(ALPHA_ID);
     expect(live).toContain("Applied");
