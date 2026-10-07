@@ -480,6 +480,8 @@ export function useDraftReviewController({
   /** Run one change command against the open review, and say what happened. */
   const runChangeCommand = useCallback(
     async (
+      mode: "apply" | "discard",
+      change: ChangeRef,
       command: (
         inline: DraftReviewSelection,
         previewTokens: { liveRevisionToken: string; draftRevisionToken: string } | null,
@@ -495,6 +497,24 @@ export function useDraftReviewController({
       );
       // Read before the command: it may be the one that takes the draft out of the list.
       const documentName = listedDocumentName(queryClient, projectId, workId, inline.draftId);
+      // Discarding the last change leaves live as it is, so the finished text is
+      // already on screen: settle at the click. Waiting for the answer would show
+      // the review room merging the server's reset (the discarded text doubled).
+      // Apply waits for its answer instead: live has no change in it until then.
+      const settlesAtClick =
+        mode === "discard" &&
+        cached?.status === "active" &&
+        reviewChanges(cached.operations, cached.hunks).every(
+          (candidate) => candidate.classId === change.classId,
+        );
+      if (settlesAtClick) {
+        dispatch({
+          type: "reviewCleared",
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          documentName,
+        });
+      }
       const outcome = await command(
         { documentId: inline.documentId, draftId: inline.draftId },
         cached?.status === "active"
@@ -505,6 +525,18 @@ export function useDraftReviewController({
           : null,
       );
       if (!activeRef.current) return outcome;
+      if (
+        settlesAtClick &&
+        outcome.kind !== "change-settled" &&
+        !(outcome.kind === "change-refused" && outcome.code === "gone")
+      ) {
+        // The Discard did not land: the change is back, and so is the review of it.
+        dispatch({
+          type: "reviewReopened",
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+        });
+      }
       if (
         outcome.kind === "change-settled" ||
         (outcome.kind === "change-refused" && outcome.code === "gone")
@@ -545,7 +577,7 @@ export function useDraftReviewController({
 
   const applyChange = useCallback(
     (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand((selection, tokens) =>
+      runChangeCommand("apply", change, (selection, tokens) =>
         // Without a preview there is nothing the writer saw to apply: treat it as an out-of-date change.
         tokens
           ? reviewSession.applyChange(selection, change, tokens)
@@ -556,7 +588,9 @@ export function useDraftReviewController({
 
   const discardChange = useCallback(
     (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand((selection) => reviewSession.discardChange(selection, change)),
+      runChangeCommand("discard", change, (selection) =>
+        reviewSession.discardChange(selection, change),
+      ),
     [reviewSession, runChangeCommand],
   );
 
