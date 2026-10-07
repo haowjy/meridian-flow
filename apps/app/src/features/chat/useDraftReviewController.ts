@@ -206,12 +206,26 @@ export function useDraftReviewController({
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
 
+  // A review's room request ends with the review. The cleanup belongs to the
+  // review that is ending and releases only that review's request: a launch that
+  // closed this review and opened another in the same flush has already started
+  // the next request, and the next review's room must not be cancelled with it.
+  const reviewedDocumentId = inlineReview?.documentId;
+  const reviewedDraftId = inlineReview?.draftId;
   useEffect(() => {
-    if (inlineReview) return;
-    activeReviewRequestRef.current = null;
-    setReviewRoomName(null);
-    setReviewRoomError(false);
-  }, [inlineReview]);
+    if (!reviewedDocumentId || !reviewedDraftId) return;
+    return () => {
+      const request = activeReviewRequestRef.current;
+      if (
+        request &&
+        (request.documentId !== reviewedDocumentId || request.draftId !== reviewedDraftId)
+      )
+        return;
+      activeReviewRequestRef.current = null;
+      setReviewRoomName(null);
+      setReviewRoomError(false);
+    };
+  }, [reviewedDocumentId, reviewedDraftId]);
 
   const loadInlineReviewRoom = useCallback(
     (documentId: string, draftId: string) => {

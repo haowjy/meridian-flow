@@ -11,6 +11,7 @@
  * it, struck through like suggestion mode. It is DOM only: the editor document
  * never contains it.
  */
+import type { ReviewOperation } from "@meridian/contracts/drafts";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type * as Y from "yjs";
@@ -20,22 +21,23 @@ import {
 } from "../../relative-position-runtime";
 
 import {
+  blockRemovalKind,
   changeOperationIds,
   hunkKind,
   type InlineReviewModel,
   type InlineReviewOperationKind,
   indexOperations,
-  isUnsplittableMerge,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
-  removalKind,
 } from "./model";
 import {
+  createBarSlotElement,
   createRemovalElement,
   planRemovals,
   type RemovalHandlers,
   type RemovalInput,
+  type RemovalSegment,
 } from "./removal-widget";
 
 /**
@@ -71,6 +73,8 @@ export interface ReviewPaintState {
   expandedRemovals: ReadonlySet<string>;
   /** The removal whose fold the writer just used from the keyboard; its rebuilt widget takes focus. */
   refocusRemoval: string | null;
+  /** Open a block for the focused change's bar after the paragraph the change ends in. */
+  barSlot: boolean;
 }
 
 /**
@@ -94,6 +98,8 @@ export function buildDecorations(
   const isPulsed = (ids: readonly string[]) => ids.some((id) => paint.pulsedOperationIds.has(id));
   const decorations: Decoration[] = [];
   const removals: RemovalInput[] = [];
+  /** Where the focused change ends: the bar's block goes after the paragraph holding this. */
+  let focusedEnd: number | null = null;
 
   for (const hunk of model.hunks) {
     const focused = isFocused(hunk.operationIds);
@@ -101,14 +107,18 @@ export function buildDecorations(
 
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
+    if (focused) {
+      const endPos = resolveAnchor(hunk.relEnd, resolver);
+      focusedEnd = Math.max(focusedEnd ?? startPos, startPos, endPos ?? startPos);
+    }
 
-    const removed = removedText(hunk);
-    if (removed) {
+    const removed = removedSegments(hunk, operationsById);
+    if (removed.length > 0) {
       removals.push({
         position: startPos,
         block: isBlockPosition(resolver.doc, startPos),
-        kind: removalKind(hunk, operationsById),
-        text: removed,
+        segments: removed,
+        tight: endsBeforePunctuation(resolver.doc, startPos),
         hunkId: hunk.hunkId,
         operationIds: hunk.operationIds,
       });
@@ -128,7 +138,7 @@ export function buildDecorations(
     // writer edit inside an AI insertion) paints in each owner's color.
     // Fall back to whole-hunk coloring when spans are missing or every span
     // anchor failed to decode.
-    if (isUnsplittableMerge(hunk, operationsById)) {
+    if (hunk.mergeArtifact === true) {
       // A merge artifact is neutral, not authored: paint the whole combined
       // range with the merged seam and skip the hued per-span split.
       decorations.push(
@@ -208,7 +218,7 @@ export function buildDecorations(
             operationAttr: OPERATION_ATTR,
           }),
         {
-          key: `removal:${plan.identity}:${plan.kind}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}`,
+          key: `removal:${plan.identity}:${plan.kind}${plan.tight ? ":tight" : ""}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.
@@ -218,12 +228,60 @@ export function buildDecorations(
     );
   }
 
+  if (paint.barSlot && focusedEnd !== null) {
+    decorations.push(
+      Decoration.widget(
+        slotPosition(resolver.doc, focusedEnd),
+        (view) => createBarSlotElement(view.dom.ownerDocument),
+        {
+          // One slot per focused change, so the bar's DOM survives refetches.
+          key: `bar-slot:${paint.activeOperationId}`,
+          side: 1,
+          stopEvent: () => true,
+          ignoreSelection: true,
+        },
+      ),
+    );
+  }
+
   return DecorationSet.create(resolver.doc, decorations);
 }
 
-function removedText(hunk: ResolvedReviewHunk): string | null {
-  if (hunk.kind === "text") return hunk.deletedText ?? null;
-  return hunk.deletedBlock?.display ?? null;
+/** After the paragraph a position is in, or the position itself when it is already between blocks. */
+function slotPosition(doc: PMNode, position: number): number {
+  const $position = doc.resolve(position);
+  return $position.parent.inlineContent ? $position.after() : position;
+}
+
+/**
+ * What a hunk took out of live, in its removers' colours. A text hunk says who
+ * removed each stretch (`deletedSpans`); a block hunk does not, so its owning
+ * operations decide. Without spans the text reads as the AI's.
+ */
+function removedSegments(
+  hunk: ResolvedReviewHunk,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+): RemovalSegment[] {
+  if (hunk.kind === "block") {
+    const text = hunk.deletedBlock?.display;
+    return text ? [{ text, kind: blockRemovalKind(hunk, operationsById) }] : [];
+  }
+  const text = hunk.deletedText;
+  if (!text) return [];
+  if (!hunk.deletedSpans?.length) return [{ text, kind: "agent" }];
+  return hunk.deletedSpans.map((span) => ({
+    text: text.slice(span.from, span.to),
+    kind: span.deletedBy,
+  }));
+}
+
+/** Closing punctuation never takes a space before it, so a removal ahead of it keeps none. */
+const CLOSING_PUNCTUATION = /^[,.;:!?)\]}…’”]/;
+
+/** The removal sits at the end of its line, or right before punctuation. */
+function endsBeforePunctuation(doc: PMNode, position: number): boolean {
+  const next = doc.textBetween(position, Math.min(position + 1, doc.content.size), "", "");
+  return next === "" || CLOSING_PUNCTUATION.test(next);
 }
 
 /** A position between blocks (or inside a container), where an inline widget would be invalid. */
@@ -242,7 +300,7 @@ function blockHunkDecorations(
   focused: boolean,
   pulsed: boolean,
   startPos: number,
-  operationsById: ReadonlyMap<string, import("@meridian/contracts/drafts").ReviewOperation>,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
   resolver: DecorationResolver,
 ): Decoration[] {
   const decorations: Decoration[] = [];

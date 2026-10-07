@@ -105,26 +105,16 @@ describe("reviewChanges", () => {
     expect(change.tone).toBe("removal");
   });
 
-  it("marks a change merged only when authorship cannot be read from its spans", () => {
+  it("marks a change merged when the server flags a merge artifact, and only then", () => {
     const ops = [
       op({ operationId: "a", closureClassId: "c" }),
       op({ operationId: "w", kind: "writer", closureClassId: "c" }),
     ];
-    // Writer typed inside the AI's text: ai, writer, ai at most. Readable, so not merged.
-    const readable = textHunk({
-      hunkId: "h",
-      operationIds: ["a", "w"],
-      mergeArtifact: true,
-      spans: [
-        { operationId: "a", anchorFrom: "", anchorTo: "" },
-        { operationId: "w", anchorFrom: "", anchorTo: "" },
-        { operationId: "a", anchorFrom: "", anchorTo: "" },
-      ],
-    } as Partial<ReviewHunk> & { hunkId: string });
-    expect(reviewChanges(ops, [readable])[0].merged).toBe(false);
-    // No spans at all: the server could not split it.
-    const blurred = textHunk({ hunkId: "h", operationIds: ["a", "w"], mergeArtifact: true });
-    const [merged] = reviewChanges(ops, [blurred]);
+    // A writer typing inside AI text is readable by author: the server does not flag it.
+    const plain = textHunk({ hunkId: "h", operationIds: ["a", "w"] });
+    expect(reviewChanges(ops, [plain])[0].merged).toBe(false);
+    const flagged = textHunk({ hunkId: "h", operationIds: ["a", "w"], mergeArtifact: true });
+    const [merged] = reviewChanges(ops, [flagged]);
     expect(merged.merged).toBe(true);
     expect(merged.tone).toBe("merged");
   });

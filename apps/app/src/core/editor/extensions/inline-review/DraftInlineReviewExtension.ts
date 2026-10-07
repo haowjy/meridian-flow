@@ -55,6 +55,8 @@ export interface InlineReviewPluginState {
   marksVisible: boolean;
   /** Identities of long removals the writer has unfolded. */
   expandedRemovals: ReadonlySet<string>;
+  /** The focused change's bar has no room in the margin and takes a block after the change. */
+  barSlot: boolean;
   /** Model-derived hunk decorations over the server draft projection. */
   decorations: DecorationSet;
 }
@@ -64,6 +66,7 @@ type PluginMeta =
   | { kind: "set-active-operation"; operationId: string | null }
   | { kind: "set-marks-visible"; visible: boolean }
   | { kind: "set-pulse"; operationIds: readonly string[] }
+  | { kind: "set-bar-slot"; open: boolean }
   | { kind: "removal-click"; operationId: string; toggle: string | null; keyboard: boolean };
 
 /** Spec flag on the writer's just-typed ranges; the next full rebuild replaces them. */
@@ -83,6 +86,8 @@ declare module "@tiptap/core" {
       setInlineReviewMarksVisible: (visible: boolean) => ReturnType;
       /** Mark these operations' changes as just arrived; pass [] to end the pulse. */
       setInlineReviewPulse: (operationIds: readonly string[]) => ReturnType;
+      /** Open a block after the focused change for its bar, when the margin has no room. */
+      setInlineReviewBarSlot: (open: boolean) => ReturnType;
       scrollInlineReviewOperationIntoView: (operationId: string) => ReturnType;
     };
   }
@@ -140,6 +145,15 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
         ({ tr, dispatch }) => {
           if (!dispatch) return true;
           tr.setMeta(draftInlineReviewPluginKey, { kind: "set-pulse", operationIds });
+          tr.setMeta("addToHistory", false);
+          dispatch(tr);
+          return true;
+        },
+      setInlineReviewBarSlot:
+        (open) =>
+        ({ tr, dispatch }) => {
+          if (!dispatch) return true;
+          tr.setMeta(draftInlineReviewPluginKey, { kind: "set-bar-slot", open });
           tr.setMeta("addToHistory", false);
           dispatch(tr);
           return true;
@@ -204,6 +218,7 @@ function paint(
           pulsedOperationIds: state.pulsedOperationIds,
           expandedRemovals: state.expandedRemovals,
           refocusRemoval,
+          barSlot: state.barSlot,
         },
         resolver,
         removalHandlersFor,
@@ -270,6 +285,7 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
           pulsedOperationIds: new Set(),
           marksVisible,
           expandedRemovals: new Set(),
+          barSlot: false,
           decorations: DecorationSet.empty,
         };
         return { ...initial, decorations: paint(initialModel, initial, state) };
@@ -282,8 +298,14 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         // can arrive before the binding has any mapping entries at all.
         const ySyncChangeOrigin = isRemoteDocumentRebuild(tr);
 
-        let { model, activeOperationId, marksVisible, expandedRemovals, pulsedOperationIds } =
-          previous;
+        let {
+          model,
+          activeOperationId,
+          marksVisible,
+          expandedRemovals,
+          pulsedOperationIds,
+          barSlot,
+        } = previous;
         let mustRebuild = false;
         let keepOptimistic = true;
         let refocusRemoval: string | null = null;
@@ -298,6 +320,10 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
           mustRebuild = true;
         } else if (meta?.kind === "set-pulse") {
           pulsedOperationIds = new Set(meta.operationIds);
+          mustRebuild = true;
+        } else if (meta?.kind === "set-bar-slot") {
+          if (meta.open === barSlot) return previous;
+          barSlot = meta.open;
           mustRebuild = true;
         } else if (meta?.kind === "set-marks-visible") {
           marksVisible = meta.visible;
@@ -324,6 +350,7 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
           pulsedOperationIds,
           marksVisible,
           expandedRemovals,
+          barSlot,
           decorations: previous.decorations,
         };
         if (mustRebuild) {

@@ -12,7 +12,6 @@
  * Pure data, no React.
  */
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
-import { indexOperations, isUnsplittableMerge } from "@/core/editor/extensions/inline-review";
 import { type ChangeAttribution, changeAttribution } from "./change-attribution";
 import {
   changeTextForOperations,
@@ -62,10 +61,9 @@ export function reviewChanges(
     for (const id of hunk.operationIds) if (!firstHunk.has(id)) firstHunk.set(id, index);
   });
   const writerJoined = operationsWithWriterEdits([...operations], [...hunks]);
-  const operationsById = indexOperations(operations);
 
   const changes = [...byClass].map(([classId, classOps]) =>
-    describeChange(classId, classOps, hunks, firstHunk, writerJoined, operationsById),
+    describeChange(classId, classOps, hunks, firstHunk, writerJoined),
   );
   const position = (change: ReviewChange) =>
     Math.min(...change.operationIds.map((id) => firstHunk.get(id) ?? Number.POSITIVE_INFINITY));
@@ -79,7 +77,6 @@ function describeChange(
   hunks: readonly ReviewHunk[],
   firstHunk: ReadonlyMap<string, number>,
   writerJoined: ReadonlySet<string>,
-  operationsById: ReadonlyMap<string, ReviewOperation>,
 ): ReviewChange {
   const operationIds = classOps.map((op) => op.operationId);
   const ids = new Set(operationIds);
@@ -87,9 +84,7 @@ function describeChange(
   const includesWriterEdits = classOps.some(
     (op) => op.kind === "writer" || writerJoined.has(op.operationId),
   );
-  const merged = classHunks.some(
-    (hunk) => hunk.kind === "text" && isUnsplittableMerge(hunk, operationsById),
-  );
+  const merged = classHunks.some((hunk) => hunk.mergeArtifact === true);
   const agentOps = classOps.filter((op) => op.kind === "agent");
   const anchorOperationId =
     [...classOps].sort(
