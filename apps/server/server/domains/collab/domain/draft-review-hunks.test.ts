@@ -144,6 +144,62 @@ describe("draft review hunk model", () => {
     expect(result.wordDelta).toEqual({ wordsAdded: 0, wordsRemoved: 6 });
   });
 
+  it("preserves the full diff union across mixed insertions and cumulative removals", () => {
+    const removed = ["Alpha removed.", "Beta removed.", "Gamma removed."];
+    const live = createDoc([...removed, "ABC remains."].join("\n\n"));
+    const draft = cloneDoc(live);
+    const updates = removed.map((_, index) => ({
+      id: 185 + index,
+      actorTurnId: `turn-${index}`,
+      updateData: captureUpdate(draft, () => {
+        const [first] = model.getBlocks(toDocHandle(draft));
+        model.deleteBlock(toDocHandle(draft), first);
+      }),
+    }));
+    const [tail] = model.getBlocks(toDocHandle(draft));
+    updates.push({
+      id: 188,
+      actorTurnId: "rewrite",
+      updateData: captureUpdate(draft, () =>
+        model.applyTextEdit(toDocHandle(draft), tail, { from: 0, to: 3 }, "XYZ"),
+      ),
+    });
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: updates,
+    });
+    const deletionUnion = result.hunks
+      .map((hunk) =>
+        hunk.kind === "text" ? (hunk.deletedText ?? "") : (hunk.deletedBlock?.display ?? ""),
+      )
+      .join("");
+    const insertionUnion = result.hunks
+      .flatMap((hunk) =>
+        hunk.kind === "text"
+          ? hunk.spans.map((span) => {
+              const position = Y.createAbsolutePositionFromRelativePosition(
+                Y.decodeRelativePosition(Buffer.from(span.anchorFrom, "base64")),
+                draft,
+              );
+              if (!position || !(position.type instanceof Y.XmlText))
+                throw new Error("expected attributed text span");
+              const range = spanTextRange(draft, span);
+              return position.type.toString().slice(range.from, range.to);
+            })
+          : [hunk.insertedBlock?.display ?? ""],
+      )
+      .join("");
+    // Independent fixture oracle for the entire difference, not merely visible operations.
+    expect(deletionUnion).toBe(`${removed.join("")}ABC`);
+    expect(insertionUnion).toBe("XYZ");
+    expect(result.hunks.every((hunk) => hunk.operationIds.length > 0)).toBe(true);
+    expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
+      new Set(["185", "186", "187", "188"]),
+    );
+  });
+
   it("keeps writer insertions inside AI prose author-separable", () => {
     const live = createDoc("Old sentence. Tail unchanged for alignment.");
     const draft = cloneDoc(live);
