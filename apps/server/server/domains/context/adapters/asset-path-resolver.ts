@@ -3,11 +3,16 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { parseContextUri } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { type AssetPathResolver, unresolvedAssetPathResolver } from "@meridian/markup";
+import type { AssetPathResolver } from "@meridian/markup";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
-import type { AssetPathProject, DocumentAssetPaths } from "../../collab/index.js";
+import {
+  type AssetPathProject,
+  createUnscopedAssetPathObserver,
+  type DocumentAssetPaths,
+} from "../../collab/index.js";
+import type { EventSink } from "../../observability/index.js";
 
 type ImageLocation = { id: string; path: string; deleted: boolean };
 
@@ -104,13 +109,21 @@ function resolverFor(locations: readonly ImageLocation[]): AssetPathResolver {
   };
 }
 
-export function createDrizzleDocumentAssetPaths(db: Database): DocumentAssetPaths {
+export function createDrizzleDocumentAssetPaths(
+  db: Database,
+  eventSink?: EventSink,
+): DocumentAssetPaths {
   const scope = new AsyncLocalStorage<AssetPathResolver>();
-  const current = () => scope.getStore() ?? unresolvedAssetPathResolver;
+  const reportUnscoped = createUnscopedAssetPathObserver(eventSink);
   return {
     resolver: {
-      pathForAsset: (assetDocumentId) => current().pathForAsset(assetDocumentId),
-      assetForPath: (path) => current().assetForPath(path),
+      pathForAsset(assetDocumentId) {
+        const resolver = scope.getStore();
+        if (resolver) return resolver.pathForAsset(assetDocumentId);
+        reportUnscoped(assetDocumentId);
+        return null;
+      },
+      assetForPath: (path) => scope.getStore()?.assetForPath(path) ?? null,
     },
     async within(project, operation) {
       return scope.run(resolverFor(await loadImageLocations(db, project)), operation);

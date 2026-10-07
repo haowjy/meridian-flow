@@ -427,6 +427,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const changeEvents: unknown[] = [];
   const settlementProjections: unknown[] = [];
   const realBranchPush = createBranchPushService({
+    assetPaths: NO_DOCUMENT_ASSET_PATHS,
     changeEventDelivery: {
       deliver(message, sweptChanges) {
         changeEvents.push(projectChangeEventForRecipient(message, sweptChanges, USER_ID as UserId));

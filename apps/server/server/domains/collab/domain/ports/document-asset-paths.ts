@@ -10,7 +10,8 @@ import { type AssetPathResolver, unresolvedAssetPathResolver } from "@meridian/m
  * The codec asks synchronously, so `within` loads the answers first and
  * `resolver` gives them for the rest of that operation. Outside every
  * operation the resolver knows no image: refs stay `asset:` refs and paths
- * stay literal, which is consistent but never what a writer or model sees.
+ * stay literal, which is consistent but never what a writer or model sees, so
+ * the production adapter reports a picture serialized there.
  */
 export interface DocumentAssetPaths {
   /** Handed to the codec once; answers from the innermost `within`. */

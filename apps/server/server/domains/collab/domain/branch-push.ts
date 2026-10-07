@@ -58,6 +58,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     liveCoordinator: input.liveCoordinator,
     model: input.model,
     codec: attributionCodec,
+    assetPaths: input.assetPaths,
     changeEventDelivery: input.changeEventDelivery,
     writerIngressBarrier: input.writerIngressBarrier,
     sweepProjectionDiagnostics: input.sweepProjectionDiagnostics,

@@ -1,18 +1,19 @@
 /**
- * The document operations that serialize or parse Markdown for a reader, each
- * run with its project's image paths loaded fresh (see
- * `ports/document-asset-paths.ts`).
+ * The document operations that serialize or parse Markdown, each run with its
+ * project's image paths loaded fresh (see `ports/document-asset-paths.ts`).
  *
- * Text crosses four doors: the Markdown engine (reads, the read API and
+ * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections, link rewrites), the model's
- * edit core, a reply's save, and the draft-aware hashline read. Codec calls elsewhere compare
- * a document with another version of itself, where the `asset:` spelling an
- * unscoped call gives is as good as a path.
+ * edit core, a reply's save, the draft-aware hashline read, and offline
+ * reconciliation. A push's settlement scopes itself in
+ * `branch-push-transition.ts`. A picture serialized outside every scope is
+ * reported (see `createUnscopedAssetPathObserver`).
  */
 
 import type { BranchPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
 import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
+import type { OfflineReconciliation } from "./offline-reconciliation.js";
 import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
 
 export function scopeMarkdownEngineAssetPaths(
@@ -95,6 +96,17 @@ export function scopeResponseFinalizerAssetPaths(
       assetPaths.within({ threadId: ctx.threadId }, () =>
         finalizer.finalizeResponseRollback(responseId, ctx),
       ),
+  };
+}
+
+/** Offline edits land in the change trail as text the writer reads back. */
+export function scopeOfflineReconciliationAssetPaths(
+  reconciliation: OfflineReconciliation,
+  assetPaths: DocumentAssetPaths,
+): OfflineReconciliation {
+  return {
+    reconcile: (input) =>
+      assetPaths.within({ documentId: input.documentId }, () => reconciliation.reconcile(input)),
   };
 }
 
