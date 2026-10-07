@@ -8,6 +8,7 @@ import { hunkSpans, operationSemanticFields } from "./draft-review-presentation"
 import {
   asPhysicalSourceUpdateIds,
   asSourceUpdateIds,
+  type DraftReviewDeletedSpanInternal,
   type DraftReviewHunkInternal,
   type DraftReviewOperationContribution,
   type DraftReviewOperationInternal,
@@ -35,6 +36,7 @@ type DraftUpdateAttributionIndex = {
     insertedRanges: readonly ClockRange[];
     deletedRanges: readonly ClockRange[];
   }): string[];
+  deletedSpansForRanges(deletedRanges: readonly ClockRange[]): DraftReviewDeletedSpanInternal[];
   hasInterleavedEdits(insertedRanges: readonly ClockRange[]): boolean;
   operationRangesForInsertedRanges(insertedRanges: readonly ClockRange[]): OperationClockRange[];
   operationContributionsForRanges(input: {
@@ -254,6 +256,38 @@ function indexDraftUpdates(input: {
         if (ids.size === beforeSize) addMatchingOperations(ids, deletedHistory, range);
       }
       return [...ids].sort();
+    },
+    deletedSpansForRanges(deletedRanges) {
+      const spans: DraftReviewDeletedSpanInternal[] = [];
+      let offset = 0;
+      for (const range of deletedRanges) {
+        const boundaries = new Set([range.clock, range.clock + range.length]);
+        for (const lookup of [deleted, deletedHistory]) {
+          for (const candidate of lookup.get(range.client) ?? []) {
+            if (candidate.start > range.clock && candidate.start < range.clock + range.length)
+              boundaries.add(candidate.start);
+            if (candidate.end > range.clock && candidate.end < range.clock + range.length)
+              boundaries.add(candidate.end);
+          }
+        }
+        const ordered = [...boundaries].sort((a, b) => a - b);
+        for (let index = 0; index < ordered.length - 1; index += 1) {
+          const part = {
+            client: range.client,
+            clock: ordered[index],
+            length: ordered[index + 1] - ordered[index],
+          };
+          const operationId =
+            matchingOperationIds(deleted, part)[0] ?? matchingOperationIds(deletedHistory, part)[0];
+          const operation = operationId ? byOperationId.get(operationId) : undefined;
+          if (!operation) throw new Error("Unattributed deleted text in draft review");
+          const previous = spans.at(-1);
+          if (previous?.deletedBy === operation.kind) previous.to += part.length;
+          else spans.push({ from: offset, to: offset + part.length, deletedBy: operation.kind });
+          offset += part.length;
+        }
+      }
+      return spans;
     },
     hasInterleavedEdits(insertedRanges) {
       // Surviving text anchored inside the other author's removed context is a
@@ -969,6 +1003,9 @@ function groupOperationsForHunks(
       ...hunk.review,
       operationIds,
       ...(attribution.hasInterleavedEdits(hunk.raw.insertedRanges) ? { mergeArtifact: true } : {}),
+      ...(hunk.raw.deletedText
+        ? { deletedSpans: attribution.deletedSpansForRanges(hunk.raw.deletedRanges) }
+        : {}),
       spans: hunkSpans(
         attribution.operationRangesForInsertedRanges(hunk.raw.insertedRanges),
         writerRemap,

@@ -12,6 +12,7 @@ export interface DraftReviewHunkSpanInternal {
 type DraftReviewHunkBaseInternal = {
   hunkId: string;
   operationIds: string[];
+  /** Both insertion boundaries lie in context removed by the other author. */
   mergeArtifact?: boolean;
   anchor: {
     relStart: string;
@@ -19,10 +20,17 @@ type DraftReviewHunkBaseInternal = {
   };
 };
 
+export type DraftReviewDeletedSpanInternal = {
+  from: number;
+  to: number;
+  deletedBy: "agent" | "writer";
+};
+
 export type DraftReviewTextHunkInternal = DraftReviewHunkBaseInternal & {
   kind: "text";
   spans: DraftReviewHunkSpanInternal[];
   deletedText?: string;
+  deletedSpans?: DraftReviewDeletedSpanInternal[];
 };
 
 export type DraftReviewBlockDisplayInternal = { type: string; display: string };
