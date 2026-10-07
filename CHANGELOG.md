@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Handling the last text change preserves independent draft formatting for document-level Apply or Discard.
+
 - Draft preview stays available when different chats edit adjacent sentences, and retained punctuation is no longer shown as deleted.
 
 - Applying a draft change no longer silently publishes earlier deletions. Changes carried by the same Yjs update are shown and handled together.
