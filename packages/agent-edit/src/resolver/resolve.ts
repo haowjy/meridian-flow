@@ -75,7 +75,18 @@ export function resolveWrite(
 ): ResolveWriteResult {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
-  const concreteCtx: ConcreteResolveContext = { ...ctx, doc: ctx.doc };
+  const doc = ctx.doc;
+  let projected: Block[] | undefined;
+  const concreteCtx: ConcreteResolveContext = {
+    ...ctx,
+    doc,
+    // The document can't change while a write resolves, so one projection
+    // serves every scope it replaces.
+    projectedBlocks: () => {
+      projected ??= ctx.model.projectBlocks(doc);
+      return projected;
+    },
+  };
   const normalized = normalizeParams(concreteCtx, params);
   const contentCheck = validateContent(concreteCtx, normalized);
   if (!contentCheck.ok) return contentCheck;
@@ -201,6 +212,8 @@ function resolveRemove(
 
 interface ConcreteResolveContext extends ResolveWriteContext {
   doc: DocHandle;
+  /** Every top-level block as a ProseMirror node, in document order. */
+  projectedBlocks(): readonly Block[];
 }
 
 function normalizeParams(
@@ -491,12 +504,12 @@ function replaceScope(
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
   const newBlocks = parsed.blocks;
-  const allBlocks = ctx.model.getBlocks(ctx.doc);
-  const projected = ctx.model.projectBlocks(ctx.doc);
-  const indexByBlock = new Map(allBlocks.map((block, index) => [block, index]));
-  const oldNodes = oldBlocks.map((block) => projected[indexByBlock.get(block) ?? -1]);
+  // A scope is always a contiguous run of top-level blocks.
+  const oldNodes = ctx
+    .projectedBlocks()
+    .slice(scope.startIndex, scope.startIndex + oldBlocks.length);
   let anchor: BlockRef | undefined =
-    scope.startIndex > 0 ? allBlocks[scope.startIndex - 1] : undefined;
+    scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
 
