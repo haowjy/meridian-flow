@@ -183,11 +183,11 @@ export async function handleDiscardWorkDraftRequest(
   );
 }
 
-function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
+function toWireReviewOperation<T extends { closureUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
   operation: T,
 ) {
   const {
-    discardUpdateIds: _discardUpdateIds,
+    closureUpdateIds: _closureUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,
     ...wire
   } = operation;

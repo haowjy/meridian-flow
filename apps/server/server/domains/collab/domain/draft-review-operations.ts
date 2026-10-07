@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
 
-import { assignDiscardClasses } from "./branch-review-closure.js";
+import { assignReviewClasses } from "./branch-review-closure.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
 import {
   asPhysicalSourceUpdateIds,
@@ -799,7 +799,7 @@ type WriterGroup = {
  * - sourceUpdateIds: logical rows displayed as the operation's authoring source.
  * - physical rows: source rows plus restorative/delete rows that currently carry
  *   or reverse that logical operation while replaying the draft journal.
- * - discardUpdateIds: physical rows that currently carry or reverse the
+ * - closureUpdateIds: physical rows that currently carry or reverse the
  *   logical operation.
  *
  * Invariant: a Discard class joins every operation that shares a physical row
@@ -825,6 +825,7 @@ export function computeDraftReviewOperations(input: {
   return groupOperationsForHunks(
     attributedHunks.filter((hunk) => hunk.operationIds.length > 0),
     attribution,
+    input.updates,
   );
 }
 
@@ -833,6 +834,7 @@ type AttributedOperationGraphHunk = OperationGraphHunk & { operationIds: string[
 function groupOperationsForHunks(
   attributedHunks: readonly AttributedOperationGraphHunk[],
   attribution: DraftUpdateAttributionIndex,
+  updates: readonly IndexedDraftUpdate[],
 ): DraftReviewOperationGraph {
   const writerGroups: WriterGroup[] = [];
   const writerOperationIdsByHunk = new Map<number, Set<string>>();
@@ -934,7 +936,7 @@ function groupOperationsForHunks(
         {
           operationId: operation.operationId,
           sourceUpdateIds: operation.sourceUpdateIds,
-          discardUpdateIds: operation.physicalSourceUpdateIds,
+          closureUpdateIds: operation.physicalSourceUpdateIds,
           ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),
           kind: "agent" as const,
           contribution: operationContribution(contributionByOperationId.get(operation.operationId)),
@@ -949,7 +951,7 @@ function groupOperationsForHunks(
       ({
         operationId: group.operationId ?? stableWriterOperationId(group.sourceUpdateIds),
         sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
-        discardUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
+        closureUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
         actorUserId: group.actorUserId,
         kind: "writer",
         contribution: operationContribution(group.contribution),
@@ -964,7 +966,7 @@ function groupOperationsForHunks(
   const operations = [...agentOperations, ...writerOperations].sort((a, b) =>
     operationSort(a.operationId, b.operationId),
   );
-  return { hunks, operations: assignDiscardClasses({ hunks, operations }) };
+  return { hunks, operations: assignReviewClasses({ hunks, operations, updates }) };
 }
 
 function stableWriterOperationId(sourceUpdateIds: ReadonlySet<SourceUpdateId>): string {

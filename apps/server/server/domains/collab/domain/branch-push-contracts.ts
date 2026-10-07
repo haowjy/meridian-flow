@@ -171,8 +171,9 @@ export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
   rows: BranchJournalRow[];
-  /** Content publishes whole-branch state; manifest publishes only the selected membership rows. */
+  /** Selective content and manifest candidates replay only their selected rows. */
   kind: "content" | "manifest";
+  materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
@@ -249,6 +250,12 @@ export type BranchPushService = {
     pushedByUserId?: UserId;
     signal?: AbortSignal;
     resetPolicy?: "auto";
+  }): Promise<PushToLiveResult>;
+  pushSelectedToLive(input: {
+    branchId: string;
+    journalIds: readonly number[];
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
