@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Clicking or double-clicking struck-through (removed) text in a draft now puts the caret where that text stood, so what you type lands there. The removed text itself still cannot be selected or edited.
 - When Apply draft is refused, the draft you were moved to now says which draft did not apply, with an Open button (phone and desktop), instead of the refusal showing only on a row in the closed draft menu. Apply all and Discard all no longer stop at the first draft that fails: they finish the rest, name every draft that did not apply, and take you to the first of them instead of landing on the live text as if everything were done.
 - Apply and Discard on a change (or a whole draft) while you are offline now say so right away on the change ("Couldn't apply. Check your connection and try again.") and send nothing, instead of removing the change, doing nothing, and applying it silently when the network came back. When an Apply's answer is lost, the message no longer promises it will update by itself: "Couldn't confirm whether this applied. Check what is left before you try again."
 - A draft open in two tabs stays in step: when one tab applies a change, the other tab's list and marks update within a second, instead of keeping the applied change until its next action was refused as out of date.
