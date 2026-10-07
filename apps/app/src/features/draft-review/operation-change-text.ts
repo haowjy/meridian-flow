@@ -63,8 +63,23 @@ function hasProse(text: string): boolean {
   return /[\p{L}\p{N}]/u.test(text);
 }
 
+/**
+ * Operations of one change overlap: the writer's edit inside an AI insert
+ * reports the text around it again, so the same words arrive from several
+ * operations. A part another part already contains adds nothing.
+ */
 function joinTrim(parts: string[]): string | null {
-  return trimToNull(parts.join("\n"));
+  const trimmed = parts.map((part) => part.trim()).filter(Boolean);
+  const distinct = trimmed.filter(
+    (part, index) =>
+      !trimmed.some(
+        (other, otherIndex) =>
+          otherIndex !== index &&
+          other.includes(part) &&
+          (other.length > part.length || otherIndex < index),
+      ),
+  );
+  return trimToNull(distinct.join("\n"));
 }
 
 function trimToNull(text: string | undefined): string | null {
