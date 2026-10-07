@@ -63,7 +63,6 @@ function branchFromDoc(branchId: string, documentId: DocumentId, doc: Y.Doc): Br
     upstreamBranchId: null,
     workId: WORK_ID,
     threadId: null,
-    pushPolicy: "manual",
     status: "active",
     generation: 1,
     state: Y.encodeStateAsUpdate(doc),
@@ -200,6 +199,10 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     throw new Error("review regression store does not support discard");
   }
 
+  async lockDraftWorks(): Promise<ReadonlySet<string>> {
+    return new Set();
+  }
+
   async commitTurnRedo(_input: PreparedDiscardCommit): Promise<void> {
     throw new Error("review regression store does not support redo");
   }
@@ -234,7 +237,7 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
 
 function unsupportedWorkPolicyStore(): WorkPushPolicyStore {
   return {
-    async updateWorkDraftPushPolicy() {
+    async setWorkWriteMode() {
       throw new Error("review regression store does not support work policy writes");
     },
   };

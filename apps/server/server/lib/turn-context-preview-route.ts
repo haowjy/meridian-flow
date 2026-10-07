@@ -65,6 +65,7 @@ export async function handleGetTurnContextPreview(
     turns: conversation.turns,
     blocks: conversation.blocks,
     agentRevisions: deps.agentRevisions,
+    threads: deps.repos.threads,
     toolRegistry: deps.toolRegistry,
     baseTools: deps.toolExecutor.getDefinitions?.(),
     promptBakes: deps.repos.promptBakes,

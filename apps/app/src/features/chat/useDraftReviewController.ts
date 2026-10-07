@@ -1,5 +1,6 @@
 /** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
+import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import {
@@ -67,9 +68,15 @@ export type DraftReviewController = {
   canApplyReviewedDraft: boolean;
   /**
    * The global disposition lock: any Apply/Discard in flight in the session.
-   * Every mutating control disables on it so dispositions can't overlap.
+   * Review disables on it so dispositions can't overlap.
    */
   isDisposing: boolean;
+  /**
+   * Every Apply and Discard control disables on this: a disposition is in
+   * flight, or the Work is archived and its drafts are frozen (D30). Review
+   * stays available on a frozen Work.
+   */
+  dispositionLocked: boolean;
   pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
@@ -91,13 +98,21 @@ export type DraftReviewController = {
   ) => Promise<DraftCommandOutcome[]>;
 };
 
-export function useDraftReviewController(
-  projectId: string,
-  workId: string,
-  threadId: string | null = null,
-  owningWorkLabel: string | null = null,
-  stateOwner?: DraftReviewStateOwner,
-): DraftReviewController {
+export function useDraftReviewController({
+  projectId,
+  work,
+  threadId = null,
+  stateOwner,
+}: {
+  projectId: string;
+  /** The Work whose drafts this surface reviews; null scopes nothing. */
+  work: Work | null;
+  threadId?: string | null;
+  stateOwner?: DraftReviewStateOwner;
+}): DraftReviewController {
+  const workId = work?.id ?? "";
+  const owningWorkLabel = work?.name ?? null;
+  const draftsFrozen = work !== null && isWorkArchived(work);
   const queryClient = useQueryClient();
   const accountId = usePostApplyAccountId();
   const recovery = useProjectDraftApplyRecovery();
@@ -151,6 +166,7 @@ export function useDraftReviewController(
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isApplying || isDiscarding;
   const isDisposing = disposition.busy;
+  const dispositionLocked = isDisposing || draftsFrozen;
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
   const pendingInlineDiscardIds = useCallback(
@@ -406,6 +422,7 @@ export function useDraftReviewController(
       isInlineDiscardPending,
       canApplyReviewedDraft,
       isDisposing,
+      dispositionLocked,
       pendingInlineDiscardIds,
       inlineReviewMessage,
       inlineDiscardError,
@@ -435,6 +452,7 @@ export function useDraftReviewController(
       isInlineDiscardPending,
       canApplyReviewedDraft,
       isDisposing,
+      dispositionLocked,
       pendingInlineDiscardIds,
       inlineReviewMessage,
       inlineDiscardError,

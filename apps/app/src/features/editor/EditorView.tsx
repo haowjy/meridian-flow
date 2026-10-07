@@ -13,6 +13,11 @@
  * Props split in two: those that form the `EditorMountIdentity` decide which
  * editor exists (they key the mount), and the rest are surface config applied
  * to whatever editor is already running.
+ *
+ * The room's access scope is surface config too: a room the server makes
+ * read-only (an archived Work's draft or scratch) stops taking edits in place,
+ * with no remount. Only a review room whose pending edits the server refused
+ * is rebuilt, from the server's state.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -161,7 +166,20 @@ export function EditorView(props: EditorViewProps) {
 
   useEffect(() => {
     if (!inReview || boundSession?.roomKey !== roomKey) return;
+    let rebuilding = false;
     return boundSession.subscribe((snapshot) => {
+      if (rebuilding) return;
+      if (boundSession.refusedLocalEdits()) {
+        // Only the refused characters are lost: the review stays open on a
+        // fresh session synced from the server.
+        rebuilding = true;
+        // Unbind before the retired session's Y.Doc is destroyed under the editor.
+        setBoundSession(null);
+        void registry
+          .rebuildBranchRoom(roomKey)
+          .then(setBoundSession, () => props.onReviewSessionUnavailable?.());
+        return;
+      }
       if (
         snapshot.status === "destroyed" ||
         snapshot.connectionState?.kind === "terminal" ||
@@ -171,7 +189,7 @@ export function EditorView(props: EditorViewProps) {
         props.onReviewSessionUnavailable?.();
       }
     });
-  }, [boundSession, props.onReviewSessionUnavailable, inReview, roomKey]);
+  }, [boundSession, props.onReviewSessionUnavailable, inReview, registry, roomKey]);
 
   const session = inReview
     ? boundSession?.roomKey === roomKey
@@ -183,10 +201,11 @@ export function EditorView(props: EditorViewProps) {
 
   // The one place an editor's lifetime is decided. Every input the session
   // lookup above reads is part of this key, so a session swap always arrives
-  // with a fresh mount and nothing else can force one.
+  // with a fresh mount and nothing else can force one. A rebuilt or reopened
+  // room keeps its name, so the session's own Y.Doc is part of the key.
   return (
     <SessionEditorView
-      key={editorMountKey(identity)}
+      key={`${editorMountKey(identity)}|${session.document.guid}`}
       {...props}
       identity={identity}
       session={session}
@@ -274,7 +293,7 @@ function ActiveSessionEditorView({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
   const agentNames = useAgentNames(projectId, { enabled: !inReview });
-  const effectiveEditable = editable && !snapshot.schemaFence;
+  const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
   effectiveEditableRef.current = effectiveEditable;
 
   // Links belong to their holder, never to the route's or a chat's Work.

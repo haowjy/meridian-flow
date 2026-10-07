@@ -80,9 +80,9 @@ function totalMatches(output: JsonValue | undefined): number {
   return total;
 }
 
-/** What `ls` returned: the folders and documents the model was shown. */
+/** What `ls` returned (`{ uri, entries }`): the folders and documents the model was shown. */
 export function normalizeListing(output: JsonValue | undefined): ToolResultRows {
-  return normalizeEntries(output, LISTING);
+  return normalizeEntries(isRecord(output) ? output.entries : undefined, LISTING);
 }
 
 function normalizeEntries<T>(output: JsonValue | undefined, spec: RowSpec<T>): CappedList<T> {
@@ -101,7 +101,7 @@ function capped<T>(entries: readonly JsonValue[], spec: RowSpec<T>): CappedList<
   return { rows, total: entries.length };
 }
 
-function isRecord(value: JsonValue): value is Record<string, JsonValue> {
+function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 

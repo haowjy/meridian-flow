@@ -5,6 +5,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
+  headingSectionFragments,
   isHeading,
   resolveScope,
   resolveSearchScope,
@@ -20,7 +21,7 @@ export interface DocumentRenderAddress {
 
 export type ReadBlockSelection =
   | { ok: true; blocks: Array<BlockRef> }
-  | { ok: false; code: "not_found" | "invalid_write"; message: string };
+  | { ok: false; code: "not_found" | "invalid_write"; message: string; documentBlocks?: number };
 
 export interface DocumentRenderer {
   selectReadBlocks(
@@ -29,19 +30,17 @@ export interface DocumentRenderer {
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
   renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[];
-  renderRead(
-    doc: DocHandle,
-    blocks: readonly BlockRef[],
-    filePath: string,
-    format: "full" | "outline",
-  ): RenderedRead;
+  renderRead(doc: DocHandle, blocks: readonly BlockRef[], format: "full" | "outline"): RenderedRead;
   parseForCommand(content: string): ParseForCommandResult;
 }
 
 export interface RenderedRead {
-  text: string;
+  /** The format actually rendered: an outline of a document with no headings is full. */
   format: "full" | "outline";
-  blocks: Array<{ hash: string; body: string }>;
+  /** An outline heading's `section` is the slug fragment that reads it, when one is safe. */
+  blocks: Array<{ hash: string; body: string; section?: string }>;
+  /** How many blocks the whole document has, so a narrowed read can say it is partial. */
+  documentBlocks: number;
 }
 
 export type ParseForCommandResult =
@@ -67,13 +66,6 @@ export function createDocumentRenderer(deps: {
     address: DocumentRenderAddress,
   ): ReadBlockSelection {
     const scopeContext = { doc, model };
-    if (address.fragment && (command.in !== undefined || command.around !== undefined)) {
-      return {
-        ok: false,
-        code: "invalid_write",
-        message: "Use either file #fragment, in, or around for read scope, not multiple.",
-      };
-    }
     if (address.fragment) {
       const result = resolveScope(scopeContext, `#${address.fragment}`);
       return scopeSelection(result);
@@ -102,21 +94,24 @@ export function createDocumentRenderer(deps: {
   function renderRead(
     doc: DocHandle,
     blocks: readonly BlockRef[],
-    filePath: string,
     format: "full" | "outline",
   ): RenderedRead {
     const headingBlocks =
       format === "outline" ? blocks.filter((block) => isHeading(model, block)) : [];
-    const renderedBlocks = headingBlocks.length > 0 ? headingBlocks : blocks;
-    const serialized = model.serializeBlockLines(doc, codec, renderedBlocks);
-    const items = serialized.map(modelBlockItem);
+    const outline = headingBlocks.length > 0;
+    const rendered = outline ? headingBlocks : blocks;
+    const items = model.serializeBlockLines(doc, codec, rendered).map(modelBlockItem);
+    if (outline) {
+      const fragments = headingSectionFragments({ doc, model });
+      items.forEach((item, index) => {
+        const section = fragments.get(rendered[index] as BlockRef);
+        if (section !== undefined) item.section = section;
+      });
+    }
     return {
-      text:
-        format === "outline" && headingBlocks.length > 0
-          ? outlineFromSerialized(serialized, items, filePath)
-          : serialized.join("\n"),
-      format,
+      format: outline ? "outline" : "full",
       blocks: items,
+      documentBlocks: model.getBlocks(doc).length,
     };
   }
 
@@ -127,16 +122,4 @@ export function createDocumentRenderer(deps: {
       return { ok: false, message: cause instanceof Error ? cause.message : String(cause) };
     }
   }
-}
-
-function outlineFromSerialized(
-  serialized: readonly string[],
-  items: readonly { hash: string }[],
-  filePath: string,
-): string {
-  return serialized
-    .flatMap((line, index) => {
-      return [line, `write(command="read", path="${filePath}#${items[index]?.hash ?? line}")`];
-    })
-    .join("\n");
 }

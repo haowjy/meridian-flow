@@ -204,21 +204,13 @@ export function useThreadDurableProjections({
       onEvent: ({ seq, event }) => {
         if (accountSignal?.aborted) return;
         const receipt = decodeWorkReceipt(event);
-        const receiptChanged =
-          receipt?.category === "binding"
-            ? JSON.stringify(receipt.before) !== JSON.stringify(receipt.after)
-            : receipt?.changed;
-        if (projectId && receipt && receiptChanged) {
-          if (receipt.category === "binding") {
-            convergeWorkProjection(queryClient, { kind: "binding", projectId });
-          } else {
-            convergeWorkProjection(queryClient, {
-              kind: "entity",
-              projectId,
-              operation: receipt.operation,
-            });
-            void repairWorksSnapshot(queryClient, projectId);
-          }
+        if (projectId && receipt?.changed) {
+          convergeWorkProjection(queryClient, {
+            kind: "entity",
+            projectId,
+            operation: receipt.operation,
+          });
+          void repairWorksSnapshot(queryClient, projectId);
         }
         const projection = decodeWorkProjection(threadId, seq, event);
         if (projection) {

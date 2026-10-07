@@ -1,12 +1,18 @@
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { DocumentModel } from "../ports/model.js";
 import { locateBlockByHash } from "./hash-locator.js";
+import {
+  headingSlugs,
+  normalizeRequestedSlug,
+  sectionEndIndex,
+  sectionNotFoundMessage,
+} from "./heading-sections.js";
 
 export const AROUND_BLOCK_RADIUS = 3;
 
 const HEX_HASH_RE = /^[0-9a-f]{4,}$/i;
 
-export interface ScopeContext {
+interface ScopeContext {
   doc: DocHandle;
   model: DocumentModel;
 }
@@ -27,7 +33,13 @@ export interface BlockScope {
 export type ScopeResult = { ok: true; scope: BlockScope } | ScopeFailure;
 
 export type ScopeFailure =
-  | { ok: false; code: "not_found" | "invalid_write"; message: string }
+  | {
+      ok: false;
+      code: "not_found" | "invalid_write";
+      message: string;
+      /** Set when a block number ran past the end, so the reply gives the size, not a re-read. */
+      documentBlocks?: number;
+    }
   | { ok: false; code: "ambiguous"; message: string; matches: BlockRef[] };
 
 export function resolveSearchScope(
@@ -36,9 +48,6 @@ export function resolveSearchScope(
   around?: string,
   options: ScopeResolveOptions = {},
 ): ScopeResult {
-  if (input !== undefined && around !== undefined) {
-    return invalid("`in` and `around` are mutually exclusive scope parameters");
-  }
   if (around !== undefined) return resolveAround(ctx, around);
   if (input !== undefined) return resolveScope(ctx, input, options);
   const blocks = ctx.model.getBlocks(ctx.doc);
@@ -87,7 +96,9 @@ export function resolveFragment(
   }
   const bySlug = resolveSlug(ctx, fragment);
   if (bySlug.ok) return bySlug;
-  return resolveHashAsBlockOrSection(ctx, fragment);
+  const byHash = resolveHashAsBlockOrSection(ctx, fragment);
+  // A slug-shaped fragment that matches nothing was meant as a slug.
+  return byHash.ok || byHash.code !== "not_found" ? byHash : bySlug;
 }
 
 export function isHeading(model: DocumentModel, block: BlockRef): boolean {
@@ -96,18 +107,6 @@ export function isHeading(model: DocumentModel, block: BlockRef): boolean {
 
 export function headingLevel(model: DocumentModel, block: BlockRef): number {
   return model.getHeadingLevel(block) ?? 1;
-}
-
-export function slugForHeadingText(text: string): string {
-  return (
-    text
-      .normalize("NFKD")
-      .toLowerCase()
-      .trim()
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
-      .replace(/^-+|-+$/g, "") || "section"
-  );
 }
 
 function resolveAround(ctx: ScopeContext, around: string): ScopeResult {
@@ -187,6 +186,17 @@ function tupleEndpointIndex(ctx: ScopeContext, value: unknown): BlockIndexResult
     return { ok: true, index: value - 1 };
   }
   if (typeof value === "string") return blockIndexForHash(ctx, value);
+  if (typeof value === "number" && Number.isInteger(value) && value > blocks.length) {
+    return {
+      ok: false,
+      error: {
+        ok: false,
+        code: "not_found",
+        message: `Block ${value} is past the end`,
+        documentBlocks: blocks.length,
+      },
+    };
+  }
   return { ok: false, error: notFound("Tuple range endpoint not found") };
 }
 
@@ -199,41 +209,48 @@ function blockIndexForHash(ctx: ScopeContext, hash: string): BlockIndexResult {
 
 function resolveSlug(ctx: ScopeContext, slug: string): ScopeResult {
   const headings = headingSlugEntries(ctx);
-  const found = headings.find((entry) => entry.slug === slug);
-  if (!found) return notFound(`Section "#${slug}" was not found`);
+  const wanted = normalizeRequestedSlug(slug);
+  const found = headings.find((entry) => entry.slug === wanted);
+  if (!found) return notFound(sectionNotFoundMessage(slug));
   return sectionFromHeading(ctx, found.index);
 }
 
-function headingSlugEntries(ctx: ScopeContext): Array<{ slug: string; index: number }> {
-  const counts = new Map<string, number>();
-  const out: Array<{ slug: string; index: number }> = [];
+function headingSlugEntries(
+  ctx: ScopeContext,
+): Array<{ slug: string; index: number; block: BlockRef }> {
+  const headings: Array<{ index: number; block: BlockRef }> = [];
   ctx.model.getBlocks(ctx.doc).forEach((block, index) => {
-    if (!isHeading(ctx.model, block)) return;
-    const base = slugForHeadingText(ctx.model.getText(block));
-    const seen = counts.get(base) ?? 0;
-    counts.set(base, seen + 1);
-    out.push({ slug: seen === 0 ? base : `${base}-${seen}`, index });
+    if (isHeading(ctx.model, block)) headings.push({ index, block });
   });
-  return out;
+  const slugs = headingSlugs(headings.map(({ block }) => ctx.model.getText(block)));
+  return headings.map((heading, position) => ({ ...heading, slug: slugs[position] as string }));
+}
+
+/**
+ * The `#fragment` that reads each heading's section: its slug, or its hash when
+ * the slug is hex-shaped, since `resolveFragment` tries such fragments as hashes first.
+ */
+export function headingSectionFragments(ctx: ScopeContext): Map<BlockRef, string | undefined> {
+  return new Map(
+    headingSlugEntries(ctx).map(({ slug, block }) => [
+      block,
+      HEX_HASH_RE.test(slug) ? undefined : slug,
+    ]),
+  );
 }
 
 function sectionFromHeading(ctx: ScopeContext, headingIndex: number): ScopeResult {
   const blocks = ctx.model.getBlocks(ctx.doc);
   const heading = blocks[headingIndex];
-  const level = headingLevel(ctx.model, heading);
-  let endIndex = blocks.length - 1;
-  for (let index = headingIndex + 1; index < blocks.length; index += 1) {
-    if (isHeading(ctx.model, blocks[index]) && headingLevel(ctx.model, blocks[index]) <= level) {
-      endIndex = index - 1;
-      break;
-    }
-  }
+  const endIndex = sectionEndIndex(blocks.length, headingIndex, (index) =>
+    ctx.model.getHeadingLevel(blocks[index] as BlockRef),
+  );
   return {
     ok: true,
     scope: {
       ...scopeFromIndexes("section", blocks, headingIndex, endIndex),
       heading,
-      headingLevel: level,
+      headingLevel: headingLevel(ctx.model, heading),
     },
   };
 }

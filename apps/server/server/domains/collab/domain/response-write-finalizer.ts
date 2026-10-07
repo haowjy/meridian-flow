@@ -1,8 +1,12 @@
-/** Response commit/rollback finalization and post-durability awareness notices. */
-import type { ResponseCommitSuccessResult, ReversalStore } from "@meridian/agent-edit/integration";
+/** Reply save and rollback across every destination, plus post-durability notices. */
+import type { ReversalStore } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ResponseWriteCommitFinalizeResult, ResponseWriteFinalizer } from "../contracts.js";
-import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
+import type {
+  LiveAgentEditCore,
+  ResponseSaveResult,
+  ThreadPeerAgentEditCore,
+} from "./agent-edit-cores.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchJournalReadStore, BranchReviewService } from "./branch-push-contracts.js";
 import type { DocumentProjectionRefreshService } from "./document-projection-refresher.js";
@@ -73,26 +77,25 @@ export function createResponseWriteFinalizer(input: {
   branches: ResponseBranchFinalization;
   projections: DocumentProjectionRefreshService;
   notices: PostDurabilityNoticeService;
+  /** Queues a callback for after the ambient transaction commits; false when there is none. */
+  deferUntilCommit?(callback: () => Promise<void>): boolean;
 }): ResponseWriteFinalizer {
-  const mapResult = (result: ResponseCommitSuccessResult): ResponseWriteCommitFinalizeResult => ({
+  const mapResult = (result: ResponseSaveResult): ResponseWriteCommitFinalizeResult => ({
     status: "committed",
     documents: result.documents,
     stagedCreates: result.stagedCreates,
+    refused: result.refused,
     ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
   });
 
   return {
+    /** One save step for every reply, live and drafted documents together (D42). */
     async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
-      const direct = ctx.execution?.draftOwner === null;
-      const result = direct
-        ? await input.liveAgentEdit.commitResponse(responseId)
-        : await input.agentEdit.commitResponse(responseId, {
-            beforeTransactionCommit: async (commitResult) => {
-              await beforeTransactionCommit?.(mapResult(commitResult));
-            },
-          });
-      // Live journals commit inside the core; only branch cores own a host transaction.
-      if (direct) await beforeTransactionCommit?.(mapResult(result));
+      const result = await input.agentEdit.commitResponse(responseId, {
+        beforeTransactionCommit: async (saved) => {
+          await beforeTransactionCommit?.(mapResult(saved));
+        },
+      });
       if (result.awarenessDegraded) {
         const documentIds = result.documents.map((document) => document.documentId);
         await input.notices.recordAwarenessDegraded({
@@ -101,6 +104,7 @@ export function createResponseWriteFinalizer(input: {
           documentIds,
         });
       }
+      const drafted = new Set<string>(result.draftedDocumentIds);
       for (const document of result.documents) {
         const { lateSweep } = document;
         if (lateSweep) {
@@ -111,27 +115,33 @@ export function createResponseWriteFinalizer(input: {
             lateSweep,
           });
         }
-        if (!direct) {
+        if (drafted.has(document.documentId)) {
           await input.branches.checkpointThreadPeer(
             document.documentId as DocumentId,
             ctx.threadId,
           );
         }
-        await input.projections.refresh(
-          { documentId: document.documentId as DocumentId, threadId: ctx.threadId },
-          "collab.response_finalize",
-        );
       }
+      // The refresh reads the live document, which loads journal rows into
+      // open rooms. Inside the save's transaction that would show open
+      // editors a reply a later rollback never saves, so it waits for commit.
+      const refresh = async () => {
+        for (const document of result.documents) {
+          await input.projections.refresh(
+            { documentId: document.documentId as DocumentId, threadId: ctx.threadId },
+            "collab.response_finalize",
+          );
+        }
+      };
+      if (!input.deferUntilCommit?.(refresh)) await refresh();
       return mapResult(result);
     },
 
     async finalizeResponseRollback(responseId, ctx) {
-      const direct = ctx.execution?.draftOwner === null;
-      const markRollbackPending = direct
-        ? async () => {}
-        : await input.branches.prepareFailedResponseRollback(ctx);
-      const core = direct ? input.liveAgentEdit : input.agentEdit;
-      const result = await core.rollbackResponse(responseId);
+      // Only Work-draft branches carry rollback-pending state; live documents
+      // are reversed by the cross-scope turn reversal below.
+      const markRollbackPending = await input.branches.prepareFailedResponseRollback(ctx);
+      const result = await input.agentEdit.rollbackResponse(responseId);
       await markRollbackPending();
       await reverseTurn(
         {

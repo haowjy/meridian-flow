@@ -21,6 +21,16 @@ describe("matchDocument", () => {
     });
   });
 
+  it("matches the writer's text and the escaped form inside serialized markdown", () => {
+    const blocks = ["aa11|Fireball LIVE\\_ONLY.", "bb22|&#x20;Leading \\[Skill] live\\_only."];
+
+    expect(matchDocument(blocks, "LIVE_ONLY", HASHLINES)?.matchCount).toBe(2);
+    expect(matchDocument(blocks, "LIVE\\_ONLY", HASHLINES)?.matchCount).toBe(2);
+    expect(matchDocument(blocks, " Leading [Skill]", HASHLINES)?.matches).toEqual([
+      { excerpt: "&#x20;Leading \\[Skill] live\\_only.", blockHash: "bb22" },
+    ]);
+  });
+
   it("caps the passages it shows and keeps counting past the cap", () => {
     const blocks = Array.from({ length: 6 }, (_, index) => `aa0${index}|Elara ${index}.`);
 

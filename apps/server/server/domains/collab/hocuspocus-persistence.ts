@@ -353,12 +353,14 @@ export function createHocuspocusPersistenceService(
       if (
         branch?.status !== "active" ||
         branch.kind !== "work_draft" ||
+        !branch.workId ||
         branch.generation !== generation
       )
         return null;
       return {
         branchId: branch.branchId,
         documentId: branch.documentId,
+        workId: branch.workId,
         generation: branch.generation,
         schemaVersion: branch.schemaVersion,
         status: branch.status,

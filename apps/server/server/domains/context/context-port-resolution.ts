@@ -2,8 +2,10 @@
  * ContextPort resolution helpers: centralize the non-deleted Work lookup that turns
  * thread or project-browse context into the correct unified ContextPort.
  */
+import type { DocumentVersion } from "@meridian/agent-edit";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
+import type { WorkRef } from "../file-policy/index.js";
 import type { ProjectWorkAuthorityResolver, WorkRepository } from "../projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
 import type { ContextPort } from "./ports/context-port.js";
@@ -14,12 +16,14 @@ export interface ThreadContextResolution {
   primaryWorkId: string | null;
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   primaryWorkAuthority: ResolvedWorkAuthority | null;
+  /** The thread's Work when it drafts AI writes; null in auto-apply. */
+  primaryDraftWork: WorkRef | null;
 }
 
 export interface ThreadContextResolutionDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
@@ -46,18 +50,29 @@ export async function resolveThreadContext(
       )
       .map((authority) => [authority.workSlug, authority]),
   );
+  // By id: the project listing leaves out No Work, which can be in draft mode too.
+  const primaryWork = primaryMembership
+    ? await deps.works.findById(primaryMembership.workId)
+    : null;
   return {
     thread,
     primaryWorkId: primaryMembership?.workId ?? null,
     workAuthorities,
     primaryWorkAuthority,
+    primaryDraftWork:
+      primaryWork?.aiWriteMode === "draft" ? { id: primaryWork.id, slug: primaryWork.slug } : null,
   };
 }
 
 export function contextPortForThread(
   contextPorts: UnifiedContextPortFactory,
   resolution: ThreadContextResolution,
-  options: { responseId?: string | null } = {},
+  options: {
+    responseId?: string | null;
+    version?: DocumentVersion;
+    /** Write live whatever the Work's mode, as a binary copy does (D24). */
+    liveWrites?: boolean;
+  } = {},
 ): ContextPort {
   if (!resolution.primaryWorkAuthority) {
     throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
@@ -67,14 +82,18 @@ export function contextPortForThread(
     resolution.thread.projectId,
     resolution.thread.userId,
     resolution.workAuthorities,
-    resolution.thread.id,
-    options.responseId,
+    {
+      threadId: resolution.thread.id,
+      responseId: options.responseId,
+      draftWork: options.liveWrites ? null : resolution.primaryDraftWork,
+      ...(options.version ? { version: options.version } : {}),
+    },
   );
 }
 
 export interface ProjectBrowseContextPortDeps {
   contextPorts: UnifiedContextPortFactory;
-  works: Pick<WorkRepository, "listByProject">;
+  works: Pick<WorkRepository, "listByProject" | "findById">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 

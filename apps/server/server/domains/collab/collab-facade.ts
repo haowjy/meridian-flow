@@ -5,6 +5,7 @@ import type {
   BranchPushAccess,
   CollabDomain,
   CollabDrafts,
+  CollabLifecycle,
   CollabTransport,
   DocumentAttribution,
   DocumentCheckpoints,
@@ -19,6 +20,7 @@ import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-h
 
 export type CollabFacadeServices = {
   transport: CollabTransport;
+  lifecycle: CollabLifecycle;
   authorityHeads: DocumentAuthorityHeads;
   agentEdit: AgentEditAccess;
   reversal: TurnReversalAccess;
@@ -37,6 +39,7 @@ export type CollabFacadeServices = {
 export function createCollabFacade(services: CollabFacadeServices): CollabDomain {
   return {
     ...services.transport,
+    ...services.lifecycle,
     ...services.authorityHeads,
     ...services.agentEdit,
     ...services.reversal,

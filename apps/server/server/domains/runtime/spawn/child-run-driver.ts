@@ -28,7 +28,7 @@ export type PreparedChild = {
   child: Thread;
   handle: string;
   resolvedSlug: string;
-  description?: string;
+  name?: string;
   seedBlocks?: BlockUpsertedRow[];
   from?: { threadId: ThreadId; ref: string; title: string | null };
   signal?: AbortSignal;
@@ -105,7 +105,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       executionReport: {
         correlation: input.reportCorrelation,
         agentSlug: prepared.resolvedSlug,
-        description: prepared.description ?? null,
+        name: prepared.name ?? null,
       },
     });
     try {

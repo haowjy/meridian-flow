@@ -6,17 +6,11 @@ import { liveToolActivityLabel } from "../command-descriptor";
 
 export type SubagentVisualStatus = "running" | "done" | "stopped" | "unknown";
 
-/** The agent's name leads every subagent surface; the task description follows it. */
+/** The agent's name leads every subagent surface; the run's task name follows it. */
 type SubagentIdentity = { agentName?: string | null; title?: string | null };
 
 export function resolveSubagentName(node: SubagentIdentity | null | undefined): string {
   return subagentMarkName(node?.agentName);
-}
-
-/** The run's description (thread title), when it adds something beside the agent name. */
-export function subagentDescription(node: SubagentIdentity | null | undefined): string | null {
-  const title = node?.title?.trim();
-  return title && title !== resolveSubagentName(node) ? title : null;
 }
 
 /** Marks identify the agent, while the adjacent display name may be a task title. */

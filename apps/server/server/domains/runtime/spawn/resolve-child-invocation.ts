@@ -18,7 +18,12 @@ import {
   type CompiledAgentDefinition,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
-import { validateInvocationAuthority } from "../loop/permissions/invocation-authority.js";
+import { toolsBeyondParent } from "../loop/permissions/tool-policy.js";
+import {
+  type InvalidArgumentIssue,
+  type InvalidArgumentsResult,
+  invalidArgumentsResult,
+} from "../tools/invalid-arguments.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 
 export interface ResolveChildInvocationDeps {
@@ -50,7 +55,9 @@ export type ResolveChildInvocationOutcome =
       defaultTitle: string;
       invocationOverlay: InvocationOverlay | null;
     }
-  | { ok: false; error: MeridianError };
+  | { ok: false; error: MeridianError }
+  /** An override the caller may not make: the spawn tool's `invalid_arguments` refusal. */
+  | { ok: false; invalidArguments: InvalidArgumentsResult };
 
 export async function resolveChildInvocation(
   input: ResolveChildInvocationInput,
@@ -103,6 +110,13 @@ export async function resolveChildInvocation(
   }
 
   if (input.overrides !== undefined) {
+    const raise = permissionRaiseIssue({
+      requested: input.overrides.permission,
+      parent: parentAgent.configuration,
+      child: configuration,
+      childName: resolvedSlug,
+    });
+    if (raise) return { ok: false, invalidArguments: invalidArgumentsResult([raise]) };
     let patched: ResolvedAgentConfiguration;
     try {
       patched = await applyInvocationPatch({
@@ -121,18 +135,15 @@ export async function resolveChildInvocation(
       }
       throw error;
     }
-    const reasons = validateInvocationAuthority({
-      baseline: configuration,
-      patched,
-      caller: parentAgent.configuration,
-    });
-    if (reasons.length) {
-      return {
-        ok: false,
-        error: meridianErrorFromSystem("spawn_invocation_authority_denied", reasons.join(" ")),
-      };
-    }
     configuration = patched;
+  }
+
+  const extra = toolsBeyondParent(parentAgent.configuration, configuration);
+  if (extra.length) {
+    return {
+      ok: false,
+      invalidArguments: invalidArgumentsResult([toolsBeyondParentIssue(resolvedSlug, extra)]),
+    };
   }
 
   if (revision) {
@@ -170,5 +181,48 @@ export async function resolveChildInvocation(
     resolvedSlug,
     defaultTitle,
     invocationOverlay,
+  };
+}
+
+/**
+ * `overrides.permission` only lowers (file-access §8 D8): asking for `edit`
+ * under a `read` parent or a `read` profile is an argument error, never a
+ * silent drop.
+ */
+function permissionRaiseIssue(input: {
+  requested: ResolvedAgentConfiguration["permission"] | undefined;
+  parent: ResolvedAgentConfiguration;
+  child: ResolvedAgentConfiguration;
+  childName: string;
+}): InvalidArgumentIssue | null {
+  if (input.requested !== "edit") return null;
+  if (input.parent.permission === "read") {
+    return {
+      path: "overrides.permission",
+      message: 'can only lower permission, and yours is "read"',
+    };
+  }
+  // A generic child copies the parent's configuration, so only a named profile reaches here.
+  if (input.child.permission === "read") {
+    return {
+      path: "overrides.permission",
+      message: `can only lower permission, and ${input.childName}'s is "read"`,
+    };
+  }
+  return null;
+}
+
+/**
+ * A child never gets a tool its parent lacks (D13). Naming them in
+ * `overrides.disallowed_tools` is the fix, so the refusal says so instead of
+ * dropping them silently.
+ */
+function toolsBeyondParentIssue(childName: string, tools: string[]): InvalidArgumentIssue {
+  const quoted = tools.map((tool) => JSON.stringify(tool));
+  const named =
+    quoted.length === 1 ? quoted[0] : `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
+  return {
+    path: "overrides.disallowed_tools",
+    message: `${childName} has ${named} and you don't; add ${quoted.length === 1 ? "it" : "them"} here`,
   };
 }

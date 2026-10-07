@@ -71,17 +71,6 @@ export type ProjectBootstrapRepository = {
   ensureDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult>;
 };
 
-export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepository {
-  return {
-    async ensureDefaultBootstrapReady() {
-      return false;
-    },
-    async ensureDefaultBootstrap() {
-      throw new Error("in-memory project repository is not implemented");
-    },
-  };
-}
-
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
@@ -362,4 +351,4 @@ export {
   type WorkTransition,
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
-export type { WorkContextNotices } from "./work-context-notices.js";
+export type { WorkChangeOrigin, WorkContextNotices } from "./work-context-notices.js";

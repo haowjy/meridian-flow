@@ -3,6 +3,7 @@ import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime"
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import type { DraftReviewApi } from "./contracts.js";
 import {
   ALPHA_ID,
@@ -20,6 +21,8 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
+const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
+
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
   throw new Error("DB suites require RUN_DB_TESTS=1 and DATABASE_URL");
@@ -34,6 +37,9 @@ async function currentDraftId(
   if (!draft) throw new Error("missing reviewable draft");
   return draft.draftId;
 }
+
+// A live write records its authoring response, so this reply is a real response row.
+const MIXED_RETRY_RESPONSE = "00000000-0000-4000-8000-000000000831";
 
 describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
@@ -64,7 +70,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ transition: "closed" }),
     ); // 8. lifecycle not closed (retained buffers prove buffered ownership)
     expect(harness.afterCommitEffects()).toEqual({
-      autoPushSchedules: [],
       branchBroadcasts: [],
       watermarkCommits: [],
     }); // 9. callbacks not dispatched
@@ -83,6 +88,32 @@ describe("change trail (postgres)", () => {
       ]),
     });
     await harness.expectSuccessfulCommit("retry-response");
+  });
+
+  // D42: a mixed save that fails after beta's live append leaves nothing, live or drafted.
+  it("rolls back a live and a drafted document when the save fails after the live append", async () => {
+    const harness = createHarness();
+    await harness.seedAndStage(MIXED_RETRY_RESPONSE, { liveBeta: true });
+    const before = await harness.captureState();
+    const liveBeta = await harness.liveMarkdown(BETA_ID);
+
+    // Beta's live append runs first; alpha's branch journal insert then fails.
+    harness.failJournalInsertAt = 1;
+    await expect(harness.commit(MIXED_RETRY_RESPONSE)).rejects.toThrow(
+      "injected branch journal failure",
+    );
+
+    expect(await harness.liveMarkdown(BETA_ID)).toBe(liveBeta);
+    expect(await harness.liveAgentUpdateCount(BETA_ID)).toBe(0);
+    expect(await harness.responseJournalRows()).toEqual([]);
+    expect(await harness.workDraftMarkdown()).toEqual(before.workDraftMarkdown);
+    expect(harness.liveRoomBroadcasts()).toEqual([]);
+
+    harness.failJournalInsertAt = null;
+    await expect(harness.commit(MIXED_RETRY_RESPONSE)).resolves.toMatchObject({
+      status: "committed",
+    });
+    expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
   });
 
   it("retains mixed provenance across repeated compaction and generation replacement", async () => {
@@ -138,7 +169,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ transition: "closed" }),
     );
     expect(harness.afterCommitEffects()).toEqual({
-      autoPushSchedules: [],
       branchBroadcasts: [],
       watermarkCommits: [],
     });
@@ -147,7 +177,7 @@ describe("change trail (postgres)", () => {
   it("reports a writer sweep journaled after the observation cut", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000821";
-    await harness.seedProbeTimelineSweep(responseId);
+    const branchId = await harness.seedProbeTimelineSweep(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",
@@ -159,9 +189,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.waitForAutoPushes();
-    expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
-    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.push(branchId);
 
     const trail = await harness.trailRowMembership();
     expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
@@ -180,7 +208,7 @@ describe("change trail (postgres)", () => {
   it("S10 reports a pulled writer edit that landed after the response read", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000822";
-    await harness.seedProbeTimelineAfterRead(responseId);
+    const branchId = await harness.seedProbeTimelineAfterRead(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",
@@ -190,8 +218,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.waitForAutoPushes();
-    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.push(branchId);
     await harness.pollTrails();
     await harness.pollTrails();
 
@@ -438,6 +465,7 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
@@ -521,6 +549,7 @@ describe("change trail (postgres)", () => {
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,

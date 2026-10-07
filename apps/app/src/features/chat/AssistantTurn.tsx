@@ -1,6 +1,5 @@
 /** AssistantTurn — single render path for assistant turns. */
 
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
   type Block,
@@ -120,23 +119,6 @@ function AssistantTurnComponent({
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
   const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(items), [items]);
   const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
-  // Progressive-disclosure label: "Thinking part N" for a turn with several
-  // process folds (one per artifact/interrupt-delimited stretch).
-  // Ordinals count only visible folds: a process item whose runs have nothing
-  // to show renders nothing, so it must not advance "Thinking part N" or the
-  // total.
-  const rows = useMemo(() => {
-    const isVisibleFold = (item: RenderItem) =>
-      item.kind === "process" && foldHasVisibleContent(item.runs);
-    const processCount = items.filter(isVisibleFold).length;
-    const result: { item: RenderItem; processOrdinal: number; processCount: number }[] = [];
-    let processOrdinal = 0;
-    for (const item of items) {
-      if (isVisibleFold(item)) processOrdinal += 1;
-      result.push({ item, processOrdinal, processCount });
-    }
-    return result;
-  }, [items]);
   const errorKind =
     turn.status === "error"
       ? replyErrorKind({
@@ -173,12 +155,10 @@ function AssistantTurnComponent({
       data-turn-status={turn.status}
     >
       <div className="flex flex-col gap-[var(--chat-space-block)]">
-        {rows.map(({ item, processOrdinal, processCount }) => (
+        {items.map((item) => (
           <TurnItemView
             key={itemRenderKey(item)}
             item={item}
-            processOrdinal={processOrdinal}
-            processCount={processCount}
             threadId={resolvedThreadId}
             turnStatus={turn.status}
             onRespondToInterrupt={onRespondToInterrupt}
@@ -272,8 +252,6 @@ function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft
 
 const TurnItemView = memo(function TurnItemView({
   item,
-  processOrdinal,
-  processCount,
   threadId,
   turnStatus,
   onRespondToInterrupt,
@@ -281,8 +259,6 @@ const TurnItemView = memo(function TurnItemView({
   directResult,
 }: {
   item: RenderItem;
-  processOrdinal: number;
-  processCount: number;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
@@ -299,10 +275,7 @@ const TurnItemView = memo(function TurnItemView({
     if (!foldHasVisibleContent(item.runs)) return null;
     return (
       <div data-turn-item-kind="process">
-        <ProcessDisclosure
-          label={digest ?? thinkingLabel()}
-          ariaLabel={thinkingAriaLabel(processOrdinal - 1, processCount)}
-        >
+        <ProcessDisclosure label={digest ?? thinkingLabel()}>
           {item.runs.map((run) => (
             <FoldRun
               key={runRenderKey(run)}
@@ -348,10 +321,6 @@ const TurnItemView = memo(function TurnItemView({
 
 function thinkingLabel() {
   return <Trans>Thinking</Trans>;
-}
-
-function thinkingAriaLabel(processIndex: number, processCount: number): string | undefined {
-  return processCount <= 1 ? t`Thinking` : t`Thinking part ${processIndex + 1}`;
 }
 
 /** A process item earns its disclosure only when it holds something the writer can read. */

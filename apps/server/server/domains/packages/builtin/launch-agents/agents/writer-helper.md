@@ -2,7 +2,10 @@
 name: Writer-helper
 description: Background helper that produces fast draft variants or prose passes for Muse.
 mode: subagent
-skills: []
+skills:
+  available:
+    - creative-writing-modes
+    - writing-principles
 subagents: []
 effort: low
 ---

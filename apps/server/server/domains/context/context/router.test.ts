@@ -153,15 +153,14 @@ describe("context router Work slug resolution", () => {
     });
   });
 
-  it("reports an unknown or cross-project slug with the valid project slugs", async () => {
+  it("reports an unknown or cross-project slug and points to work list", async () => {
     await expect(port().read("scratch://@other-project-work/notes.md")).resolves.toEqual({
       ok: false,
       error: {
         code: "invalid_uri",
         uri: "scratch://@other-project-work/notes.md",
-        reason: "Unknown Work @other-project-work. Valid Work slugs: @drafting, @revision-pass",
+        reason: 'Unknown Work @other-project-work. List Works with work({"command":"list"}).',
         workSlug: "other-project-work",
-        validWorkSlugs: ["drafting", "revision-pass"],
       },
     });
   });

@@ -16,6 +16,7 @@ import type {
 } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
+import { type LineageRange, subtractLineageRanges } from "../lineage/range-set.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
@@ -27,7 +28,7 @@ import type {
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import type { InteractionContext, MutationActor, WriteCommand } from "./types.js";
+import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
@@ -56,7 +57,7 @@ export interface JournaledUpdate {
 
 export interface LiveUpdateCommitInput {
   docId: string;
-  commandName: WriteCommand["command"];
+  commandName: DocumentCommandName;
   updates: readonly JournaledUpdate[];
   liveOrigin: ConcurrentUpdateOrigin;
   interactionContext?: InteractionContext;
@@ -76,6 +77,12 @@ export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnaps
   preOwnSnapshot: Uint8Array;
 }
 
+/** One of the actor's own updates and the state it was made against. */
+export interface OwnWriteStep {
+  preOwnSnapshot: Uint8Array;
+  update: Uint8Array;
+}
+
 export interface CommitPreflightInput {
   docId: string;
   runtime: MutationCommitRuntime;
@@ -85,6 +92,11 @@ export interface CommitPreflightInput {
   preOwnSnapshot?: Uint8Array;
   ownTurnId?: string;
   actor: MutationActor;
+  /**
+   * The writes being committed, each against what the actor saw. What they
+   * remove was asked for, so the save never reports it as swept writer text.
+   */
+  ownWrites?: readonly OwnWriteStep[];
 }
 
 export interface CapturedConcurrentDetection {
@@ -249,12 +261,17 @@ export function createMutationCommit(deps: {
         coordinator,
         input.docId,
         input.commandName,
-        input.docId,
         async (liveDoc) => {
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
             ownTurnId: input.turnId,
             update: mergeUpdates(input.updates.map((entry) => entry.update)),
+            ownWrites: [
+              {
+                preOwnSnapshot: input.preOwnSnapshot,
+                update: mergeUpdates(input.updates.map((entry) => entry.update)),
+              },
+            ],
             journalEntries: journalEntries(input),
             onJournalAccepted: (accepted) => {
               journalCommitKind = accepted;
@@ -484,6 +501,9 @@ export function createMutationCommit(deps: {
         before: toDocHandle(before),
         afterCandidate: toDocHandle(afterCandidate),
         attributedLineage: concurrent.detection.lineageOrigins,
+        ...(input.ownWrites
+          ? { ownWrites: ownWriteLineage(input.ownWrites, concurrent.detection) }
+          : {}),
       },
     );
     const affectedBlockHashes = affected.map((block) => block.hash).sort();
@@ -497,6 +517,42 @@ export function createMutationCommit(deps: {
       sweptContent: true,
       beforeContentRef: input.interactionContext?.afterJournalId ?? null,
     };
+  }
+
+  /**
+   * Visible lineage the own writes were made against, and what each one hid.
+   * A writer edit that landed after the actor's last read may already be in a
+   * write's runtime, pulled in silently; the actor never saw it, so it is not
+   * counted as seen.
+   */
+  function ownWriteLineage(
+    steps: readonly OwnWriteStep[],
+    detection: ConcurrentDetectionResult,
+  ): {
+    seen: LineageRange[];
+    removed: LineageRange[];
+  } {
+    const seen: LineageRange[] = [];
+    const removed: LineageRange[] = [];
+    for (const step of steps) {
+      const doc = docFromSnapshot(step.preOwnSnapshot);
+      try {
+        const before = visibleLineage(doc);
+        Y.applyUpdate(doc, step.update, { type: "system" });
+        seen.push(...before);
+        removed.push(...subtractLineageRanges(before, visibleLineage(doc)));
+      } finally {
+        doc.destroy();
+      }
+    }
+    const unread = detection.lineageOrigins.filter((lineage) => lineage.origin === "human");
+    return { seen: subtractLineageRanges(seen, unread), removed };
+  }
+
+  function visibleLineage(doc: Y.Doc): LineageRange[] {
+    return model
+      .getBlocks(toDocHandle(doc))
+      .flatMap((block) => [...model.getVisibleContentLineage(block)]);
   }
 }
 

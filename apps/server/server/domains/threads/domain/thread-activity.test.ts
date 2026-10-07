@@ -59,6 +59,7 @@ describe("projectThreadActivity", () => {
         {
           childThreadId: "child-1" as ThreadId,
           deliveryMode: "direct",
+          callerThreadId: null,
           admittedAt: "2026-09-26T10:00:00.000Z",
           terminalAt: null,
         },
@@ -110,6 +111,7 @@ describe("projectThreadActivity", () => {
           {
             childThreadId: "child-1" as ThreadId,
             deliveryMode: "none",
+            callerThreadId: null,
             admittedAt: "2026-09-26T10:00:00.000Z",
             terminalAt: null,
           },

@@ -417,3 +417,13 @@ describe("unknownToEventPayload", () => {
     });
   });
 });
+
+describe("sanitizeEventRecord document commands", () => {
+  it("keeps a known command", () => {
+    expect(sanitize({ command: "copy" })).toEqual({ command: "copy" });
+  });
+
+  it("redacts a command it doesn't know", () => {
+    expect(sanitize({ command: "entire manuscript" })).toEqual({ command: "[redacted]" });
+  });
+});

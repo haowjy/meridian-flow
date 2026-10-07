@@ -5,6 +5,7 @@ import { createCoreToolRegistrations } from "../../tools/core-tools.js";
 import { collectRecordedDocuments, planModelElisions } from "./elide.js";
 
 const registrations = createCoreToolRegistrations({
+  read: async () => null,
   write: async () => null,
   work: async () => null,
   ls: async () => null,
@@ -85,7 +86,7 @@ function pair(command: string, extra: JsonObject = {}, toolName = "write") {
 }
 
 describe("document text elisions", () => {
-  for (const command of ["read", "diff", "create", "insert", "replace", "delete", "undo", "redo"]) {
+  for (const command of ["read", "create", "insert", "replace", "remove", "undo", "redo"]) {
     it(`elides stale ${command} without changing pairing or reasoning`, () => {
       const blocks = pair(command);
       const before = JSON.stringify(blocks);
@@ -105,7 +106,7 @@ describe("document text elisions", () => {
     });
   }
   it("preserves fresh reads, duplicate reads and fresh writes", () => {
-    for (const command of ["read", "create", "replace", "delete", "undo", "redo"])
+    for (const command of ["read", "create", "replace", "remove", "undo", "redo"])
       expect(
         plan(pair(command), new Map([["00000000-0000-4000-8000-000000000001", "old"]])),
       ).toEqual([]);
@@ -117,11 +118,6 @@ describe("document text elisions", () => {
     expect(plan([...pair("read"), ...duplicate], new Map([[evidence.documentId, "old"]]))).toEqual(
       [],
     );
-  });
-  it("diff is always stale even if a recorded token happens to match", () => {
-    expect(
-      plan(pair("diff"), new Map([["00000000-0000-4000-8000-000000000001", "old"]])),
-    ).toHaveLength(1);
   });
   it.each([null, undefined, "different"])("fails closed for current %s", (token) => {
     expect(
@@ -144,7 +140,6 @@ describe("document text elisions", () => {
     for (const tool of [
       "ls",
       "work",
-      "skill",
       "thread_report",
       "spawn",
       "thread_message",
@@ -160,11 +155,12 @@ describe("document text elisions", () => {
       ]),
     ).toEqual([]);
   });
-  it("search elides changed excerpts only, preserving anchors and match counts", () => {
+  it("search elides changed passages only, preserving files and match counts", () => {
     const blocks = pair(
       "search",
       {
-        output: [
+        output: "b41|OLD DOCUMENT",
+        result: [
           {
             uri: evidence.uri,
             matches: [{ excerpt: "OLD DOCUMENT", blockHash: "b41" }],
@@ -192,12 +188,17 @@ describe("document text elisions", () => {
     expect(elisions[0]?.content).toMatchObject({
       toolCallId: "call-id",
       toolName: "search",
+      // The typed hits re-render; only the changed file loses its passages (D65).
       output: [
-        { uri: evidence.uri, matches: [{ blockHash: "b41" }], matchCount: 4 },
-        { uri: "kb://fresh", matches: [{ excerpt: "FRESH" }], matchCount: 1 },
-      ],
+        "manuscript://chapter.md (4 matches)",
+        "[Cleared at compaction: changed since this search; read it for current text]",
+        "",
+        "kb://fresh",
+        "FRESH",
+      ].join("\n"),
     });
-    expect(JSON.stringify(elisions)).not.toContain("OLD DOCUMENT");
+    // The model reads `output`; the typed `result` stays for the app.
+    expect(String((elisions[0]?.content as JsonObject).output)).not.toContain("OLD DOCUMENT");
   });
   it("elides each pinned reference read without altering writer wording or mentions", () => {
     const reference = {
@@ -273,7 +274,7 @@ it("freezes search content without borrowing unchanged nested output objects", (
   expect(JSON.stringify(elisions)).not.toContain("999");
 });
 
-it.each(["delete", "undo", "redo"])("does not freeze an unchanged %s input", (command) => {
+it.each(["remove", "undo", "redo"])("does not freeze an unchanged %s input", (command) => {
   const blocks = pair(command);
   (blocks[0].content as JsonObject).input = { command, path: evidence.uri, in: "b41" };
   const elisions = plan(blocks);

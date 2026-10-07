@@ -127,7 +127,7 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
             <button
               type="button"
               onClick={() => controller.discard(documentId, draftId)}
-              disabled={busy}
+              disabled={controller.dispositionLocked}
               className="text-button"
             >
               <Trans>Discard all</Trans>
@@ -135,7 +135,7 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
             <button
               type="button"
               onClick={() => controller.apply(documentId, draftId)}
-              disabled={busy || !controller.canApplyReviewedDraft}
+              disabled={controller.dispositionLocked || !controller.canApplyReviewedDraft}
               className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
             >
               {controller.isApplying ? (

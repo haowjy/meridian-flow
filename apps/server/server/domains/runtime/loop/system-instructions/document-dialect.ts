@@ -3,7 +3,7 @@
 export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   "# Meridian Markdown",
   "",
-  "Documents are Markdown with a few Meridian forms. You will see them when you read a document; write them the same way.",
+  "Documents are Markdown with a few Meridian forms. You will see them when you read a document; write them the same way, in documents only. Your replies to the user are plain Markdown.",
   "- `[Arrival](chapter-213.md)` links another document: a path relative to this one within its area, or a full context URI (`kb://characters/lin-feng.md`) across areas; wrap a destination with spaces in `<…>`, as in `[Gate](<The Second Gate.md>)`. `[[Chapter 213]]` is plain text.",
   "- Tables are HTML `<table>`, with block content in each cell (`<td><p>…</p></td>`). Pipe tables are accepted and converted.",
   '- `<Layout align="center">` or `align="right"`, closed by `</Layout>`, aligns one paragraph, heading or table. On a table, `widths="120,,80"` sets column widths in pixels; an empty slot stays automatic.',
