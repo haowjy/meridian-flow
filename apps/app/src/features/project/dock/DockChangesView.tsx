@@ -1,56 +1,85 @@
-/** Renders the Changes view in the project dock. */
+/**
+ * Renders the Changes view in the project dock: the change list of the review
+ * that is open in the Editor, then the Work's other drafts to open.
+ *
+ * The review belongs to the Editor's scope, so the list reads that scope's
+ * controller (`useEditorDraftReview`), never the Chat's ambient one: the dock
+ * sits in the Chat's boundary, and the Chat's controller never has a review
+ * open.
+ */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { FileCheck2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { clearedDraftName, useClearedDrafts } from "@/client/query/change-command-record";
 import {
   clearDraftCommandFailure,
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
-import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { NewBadge } from "@/components/app/NewBadge";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useDraftReview, useEditorDraftReview } from "@/features/chat/DraftReviewProvider";
+import { type DockRow, dockRowName, dockRows, draftAfter } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
-import type {
-  DraftReviewController,
-  InlineReviewMessageCode,
-} from "@/features/chat/useDraftReviewController";
+import { ReviewChangeRow } from "@/features/draft-review/ReviewChangeRow";
+import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
+import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { cn } from "@/lib/utils";
-import { partitionClosureClasses } from "./closure-classes";
-import { ReviewOperationCard } from "./ReviewOperationCard";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 export function DockChangesView({ className }: { className?: string }) {
   const { groups, controller } = useDraftReview();
+  const { controller: editor, groups: editorGroups } = useEditorDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
   const commandRecords = useDraftCommandRecords();
 
-  const rows = useMemo(() => dockRows(groups), [groups]);
-  const hasChanges = rows.length > 0;
-
-  const inlineReview = controller.inlineReview;
-  const preview = useDraftPreview(
-    controller.projectId,
-    controller.workId,
-    inlineReview?.documentId ?? null,
-    inlineReview?.draftId ?? null,
-    { enabled: Boolean(inlineReview) },
+  const editorRows = useMemo(() => dockRows(editorGroups), [editorGroups]);
+  // The chat can be in another Work than the Editor; its drafts are listed too,
+  // each opening in its own Work.
+  const chatRows = useMemo(
+    () => (editor.workId === controller.workId ? [] : dockRows(groups)),
+    [controller.workId, editor.workId, groups],
   );
-  const activePreview =
-    preview.preview?.status === "active" && preview.preview.inlineModelPresent
-      ? preview.preview
-      : null;
+  const reviewed = editor.inlineReview;
+  const reviewedRow = editorRows.find((row) => row.documentId === reviewed?.documentId) ?? null;
+  // A draft handled to its last change leaves the list but its review stays open.
+  const cleared = useClearedDrafts();
+  const clearedName = reviewed
+    ? clearedDraftName(cleared, {
+        projectId: editor.projectId,
+        workId: editor.workId,
+        documentId: reviewed.documentId,
+        draftId: reviewed.draftId,
+      })
+    : null;
+  // The reviewed document is listed by its changes, not as a row to open again.
+  const otherRows = [
+    ...editorRows
+      .filter((row) => row.documentId !== reviewed?.documentId)
+      .map((row) => ({ row, workId: editor.workId })),
+    ...chatRows.map((row) => ({ row, workId: controller.workId })),
+  ];
 
-  return (
-    <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
-      {!hasChanges ? (
-        // Empty-state form (slice-7 study): centered glyph + title + one-line
-        // caption — no card, no border, no button. Calm, not a dead end.
+  const openDraft = (row: DockRow, workId: string) =>
+    row.contextPath &&
+    openAiDraft({
+      workId,
+      documentId: row.documentId,
+      draftId: row.draft.draftId,
+      contextPath: row.contextPath,
+      documentName: row.documentName ?? undefined,
+      isNewDocument: row.isNewDocument,
+    });
+
+  if (!reviewed && otherRows.length === 0) {
+    return (
+      <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
+        {/* Empty-state form (slice-7 study): centered glyph + title + one-line
+            caption — no card, no border, no button. Calm, not a dead end. */}
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
           <FileCheck2 aria-hidden className="mb-1 size-5 text-muted-foreground/70" />
           <p className="text-sm font-medium text-foreground">
@@ -60,85 +89,160 @@ export function DockChangesView({ className }: { className?: string }) {
             <Trans>AI edits wait here for your review.</Trans>
           </p>
         </div>
-      ) : (
-        rows.map((row) => (
-          <ChangesDocumentGroup
-            key={row.documentId}
-            row={row}
-            controller={controller}
-            error={draftCommandFailure(commandRecords, {
-              projectId: controller.projectId,
-              workId: controller.workId,
-              documentId: row.documentId,
-              draftId: row.draft.draftId,
-            })}
-            active={row.documentId === inlineReview?.documentId}
-            preview={row.documentId === inlineReview?.documentId ? activePreview : null}
-            onReview={() =>
-              row.contextPath &&
-              openAiDraft({
-                workId: controller.workId,
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("flex min-h-0 flex-col gap-2 overflow-y-auto px-2 py-2", className)}>
+      {reviewed ? (
+        <ChangeList
+          controller={editor}
+          name={reviewedRow ? documentName(reviewedRow) : (clearedName ?? t`This draft`)}
+          next={draftAfter(editorRows, reviewed.documentId)}
+          onOpenNext={(row) => openDraft(row, editor.workId)}
+        />
+      ) : null}
+      {otherRows.length > 0 ? (
+        <div className="flex flex-col">
+          {otherRows.map(({ row, workId }) => (
+            <DraftDocumentRow
+              key={`${workId}:${row.documentId}`}
+              row={row}
+              error={draftCommandFailure(commandRecords, {
+                projectId: controller.projectId,
+                workId,
                 documentId: row.documentId,
                 draftId: row.draft.draftId,
-                contextPath: row.contextPath,
-                documentName: row.documentName ?? undefined,
-                isNewDocument: row.isNewDocument,
-              })
-            }
-          />
-        ))
+              })}
+              onDismissError={() =>
+                clearDraftCommandFailure({
+                  projectId: controller.projectId,
+                  workId,
+                  documentId: row.documentId,
+                  draftId: row.draft.draftId,
+                })
+              }
+              onReview={() => openDraft(row, workId)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const documentName = (row: DockRow) => dockRowName(row, t`Untitled document`);
+
+function ChangeList({
+  controller,
+  name,
+  next,
+  onOpenNext,
+}: {
+  controller: ReturnType<typeof useEditorDraftReview>["controller"];
+  name: string;
+  next: DockRow | null;
+  onOpenNext: (row: DockRow) => void;
+}) {
+  const view = useReviewChanges(controller);
+  const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
+  const arrived = useArrivedChanges(
+    changes,
+    view.status === "ready",
+    view.documentId && view.draftId ? `${view.documentId}:${view.draftId}` : null,
+  );
+  const count = view.items.length;
+
+  return (
+    <section aria-label={t`Changes in ${name}`} className="flex flex-col gap-1">
+      <h3 className="flex items-baseline gap-2 px-2 pt-1 text-caption font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {view.status === "ready" && !view.cleared ? (
+          <span className="shrink-0 text-meta font-normal text-muted-foreground tabular-nums">
+            {count === 1 ? t`1 change` : t`${count} changes`}
+          </span>
+        ) : null}
+      </h3>
+      {view.status === "loading" ? (
+        <div className="flex flex-col gap-1.5 px-2 py-1" aria-busy>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-4/5" />
+        </div>
+      ) : view.cleared || (view.status === "ready" && count === 0) ? (
+        <ReviewDone next={next} onOpenNext={onOpenNext} onBack={controller.exitInlineReview} />
+      ) : (
+        <ul className="flex flex-col gap-0.5">
+          {view.items.map(({ change, failure }) => (
+            <ReviewChangeRow
+              key={change.classId}
+              change={change}
+              focused={view.focused?.classId === change.classId}
+              arrived={arrived.has(change.classId)}
+              disabled={view.locked}
+              canApply={view.canApply}
+              failure={failure}
+              onFocus={() => view.focus(change, { scroll: true })}
+              onApply={() => void view.apply(change)}
+              onDiscard={() => void view.discard(change)}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function ReviewDone({
+  next,
+  onOpenNext,
+  onBack,
+}: {
+  next: DockRow | null;
+  onOpenNext: (row: DockRow) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-2 px-2 py-2">
+      <p className="text-caption text-muted-foreground">
+        <Trans>No changes left</Trans>
+      </p>
+      {next ? (
+        <Button size="xs" onClick={() => onOpenNext(next)}>
+          <Trans>Next draft</Trans>
+        </Button>
+      ) : (
+        <Button size="xs" variant="outline" onClick={onBack}>
+          <Trans>Back to live</Trans>
+        </Button>
       )}
     </div>
   );
 }
 
-type ActivePreview = {
-  operations: ReviewOperation[];
-  hunks: ReviewHunk[];
-  liveRevisionToken: string;
-  draftRevisionToken: string;
-  // server preview flag for a draft-created document (spec §5.5).
-  isNewDocument?: boolean;
-};
-
-function ChangesDocumentGroup({
+function DraftDocumentRow({
   row,
-  controller,
   error,
-  active,
-  preview,
+  onDismissError,
   onReview,
 }: {
   row: DockRow;
-  controller: DraftReviewController;
   /** A held failure on this row's draft, such as a Review that could not open. */
-  error: InlineReviewMessageCode | null;
-  active: boolean;
-  preview: ActivePreview | null;
+  error: Parameters<typeof ReviewMessageText>[0]["code"] | null;
+  onDismissError: () => void;
   onReview: () => void;
 }) {
-  // New docs are URI-addressed: fall back to the path basename when the AI
-  // created the document unnamed, then to a defensive "Untitled document"
-  // (spec §5.5, product call 2026-07-05).
-  const name =
-    row.documentName ??
-    (row.isNewDocument
-      ? (documentBasename(row.contextPath) ?? t`Untitled document`)
-      : row.documentId);
   const stats = draftStats(row.draft);
   return (
     <div className="flex flex-col">
       <button
         type="button"
         onClick={onReview}
-        className={cn(
-          "group focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-          active ? "bg-sidebar-accent/50" : "hover:bg-sidebar-accent/40",
-        )}
+        className="group focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent/40"
       >
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">{documentName(row)}</span>
         {/* The one signal that differentiates a new-document row from an edited
-            one — a quiet neutral badge between the name and the stats. Its
+            one: a quiet neutral badge between the name and the stats. Its
             additions-only stats (`+N`, no `−0`) reinforce it (spec §5.5). */}
         {row.isNewDocument ? <NewBadge /> : null}
         {stats ? (
@@ -146,101 +250,13 @@ function ChangesDocumentGroup({
             <DraftStatsLabel stats={stats} wordsSuffix={false} />
           </span>
         ) : null}
-        {/* The doc under review has no Review left to offer — the verb only
-            appears on rows where it still does something. */}
-        {!active ? (
-          <span className="shrink-0 text-caption font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-            <Trans>Review</Trans>
-          </span>
-        ) : null}
+        <span className="shrink-0 text-caption font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+          <Trans>Review</Trans>
+        </span>
       </button>
       {error ? (
-        <InlineErrorRow
-          message={<ReviewMessageText code={error} />}
-          onDismiss={() =>
-            clearDraftCommandFailure({
-              projectId: controller.projectId,
-              workId: controller.workId,
-              documentId: row.documentId,
-              draftId: row.draft.draftId,
-            })
-          }
-        />
-      ) : null}
-      {preview && preview.operations.length > 0 ? (
-        <ReviewOperationCards
-          preview={preview}
-          controller={controller}
-          draftId={row.draft.draftId}
-          isNewDocument={row.isNewDocument || preview.isNewDocument === true}
-        />
+        <InlineErrorRow message={<ReviewMessageText code={error} />} onDismiss={onDismissError} />
       ) : null}
     </div>
   );
-}
-
-function ReviewOperationCards({
-  preview,
-  controller,
-  draftId,
-  isNewDocument,
-}: {
-  preview: ActivePreview;
-  controller: DraftReviewController;
-  draftId: string;
-  isNewDocument: boolean;
-}) {
-  const [activeClassId, setActiveClassId] = useState<string | null>(null);
-  const proposals = useMemo(
-    () => partitionClosureClasses(preview.operations, preview.hunks),
-    [preview],
-  );
-  // One review session runs one Apply/Discard message at a time, so a single
-  // quiet line under the cards is enough — no per-card message plumbing.
-  const message = currentReviewMessage(controller);
-  return (
-    <div className="flex flex-col gap-1.5 pb-1.5 pl-2">
-      {proposals.map((proposal) => (
-        <ReviewOperationCard
-          key={proposal.classId}
-          proposal={proposal}
-          controller={controller}
-          draftId={draftId}
-          isNewDocument={isNewDocument}
-          active={activeClassId === proposal.classId}
-          onFocus={() => {
-            setActiveClassId(proposal.classId);
-            // The representative operation is the class's editor-navigation anchor.
-            controller.focusReviewOperation(proposal.primaryOperation.operationId);
-          }}
-        />
-      ))}
-      {message ? (
-        <p
-          className={cn(
-            "flex items-center gap-2 px-1 text-caption",
-            message.tone === "error" ? "text-destructive" : "text-muted-foreground",
-          )}
-          role={message.tone === "error" ? "alert" : undefined}
-        >
-          <ReviewMessageText code={message.code} />
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function currentReviewMessage(
-  controller: DraftReviewController,
-): { code: InlineReviewMessageCode; tone: "info" | "error" } | null {
-  if (controller.inlineReviewMessage) {
-    return {
-      code: controller.inlineReviewMessage.code,
-      tone: controller.inlineReviewMessage.tone ?? "info",
-    };
-  }
-  if (controller.inlineDiscardError) {
-    return { code: controller.inlineDiscardError, tone: "error" };
-  }
-  return null;
 }

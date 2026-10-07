@@ -49,6 +49,8 @@ const OPERATION_ATTR = "data-review-operations";
 export interface InlineReviewPluginState {
   model: InlineReviewModel | null;
   activeOperationId: string | null;
+  /** Operations of changes that just arrived; their marks pulse once. */
+  pulsedOperationIds: ReadonlySet<string>;
   /** False hides every mark and removal; the model and selection are kept. */
   marksVisible: boolean;
   /** Identities of long removals the writer has unfolded. */
@@ -61,6 +63,7 @@ type PluginMeta =
   | { kind: "set-model"; model: InlineReviewModel | null }
   | { kind: "set-active-operation"; operationId: string | null }
   | { kind: "set-marks-visible"; visible: boolean }
+  | { kind: "set-pulse"; operationIds: readonly string[] }
   | { kind: "removal-click"; operationId: string; toggle: string | null; keyboard: boolean };
 
 /** Spec flag on the writer's just-typed ranges; the next full rebuild replaces them. */
@@ -78,6 +81,8 @@ declare module "@tiptap/core" {
       setInlineReviewModel: (model: InlineReviewModel | null) => ReturnType;
       setInlineReviewActiveOperation: (operationId: string | null) => ReturnType;
       setInlineReviewMarksVisible: (visible: boolean) => ReturnType;
+      /** Mark these operations' changes as just arrived; pass [] to end the pulse. */
+      setInlineReviewPulse: (operationIds: readonly string[]) => ReturnType;
       scrollInlineReviewOperationIntoView: (operationId: string) => ReturnType;
     };
   }
@@ -126,6 +131,15 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
         ({ tr, dispatch }) => {
           if (!dispatch) return true;
           tr.setMeta(draftInlineReviewPluginKey, { kind: "set-marks-visible", visible });
+          tr.setMeta("addToHistory", false);
+          dispatch(tr);
+          return true;
+        },
+      setInlineReviewPulse:
+        (operationIds) =>
+        ({ tr, dispatch }) => {
+          if (!dispatch) return true;
+          tr.setMeta(draftInlineReviewPluginKey, { kind: "set-pulse", operationIds });
           tr.setMeta("addToHistory", false);
           dispatch(tr);
           return true;
@@ -187,6 +201,7 @@ function paint(
         model,
         {
           activeOperationId: state.activeOperationId,
+          pulsedOperationIds: state.pulsedOperationIds,
           expandedRemovals: state.expandedRemovals,
           refocusRemoval,
         },
@@ -252,6 +267,7 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         const initial: InlineReviewPluginState = {
           model: initialModel,
           activeOperationId: null,
+          pulsedOperationIds: new Set(),
           marksVisible,
           expandedRemovals: new Set(),
           decorations: DecorationSet.empty,
@@ -266,7 +282,8 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         // can arrive before the binding has any mapping entries at all.
         const ySyncChangeOrigin = isRemoteDocumentRebuild(tr);
 
-        let { model, activeOperationId, marksVisible, expandedRemovals } = previous;
+        let { model, activeOperationId, marksVisible, expandedRemovals, pulsedOperationIds } =
+          previous;
         let mustRebuild = false;
         let keepOptimistic = true;
         let refocusRemoval: string | null = null;
@@ -278,6 +295,9 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
           keepOptimistic = false;
         } else if (meta?.kind === "set-active-operation") {
           activeOperationId = meta.operationId;
+          mustRebuild = true;
+        } else if (meta?.kind === "set-pulse") {
+          pulsedOperationIds = new Set(meta.operationIds);
           mustRebuild = true;
         } else if (meta?.kind === "set-marks-visible") {
           marksVisible = meta.visible;
@@ -301,6 +321,7 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         const next: InlineReviewPluginState = {
           model,
           activeOperationId,
+          pulsedOperationIds,
           marksVisible,
           expandedRemovals,
           decorations: previous.decorations,

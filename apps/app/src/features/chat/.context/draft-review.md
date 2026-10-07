@@ -5,10 +5,11 @@ and draft-only-tab contracts.
 
 ## Architecture
 
-Inline review is the only manuscript preview surface. Apply is a document-level
-command that publishes the whole current draft; Discard may still
-target one operation or the whole branch. (The redesign adds per-change Apply;
-that is the header and server lanes' work, not recorded here yet.)
+Inline review is the only manuscript preview surface. Whole-draft Apply
+publishes the whole current draft. Per-change Apply and Discard act on one
+change, a server closure class, sent with every operation of the class; the
+change leaves every surface at once and a refusal brings it back with its reason
+(see "Per-change commands" below). There is no per-change Undo.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, and inline
 messages. The synchronous disposition lock and the shared draft
@@ -23,13 +24,46 @@ editor surfaces receive only the Editor value. A boundary never creates a
 controller, and the two scope owners are never nested.
 
 Every disposition is serialized by the session's synchronous lock
-(`controller.isDisposing`): while document-level Apply or per-card/whole-branch
-Discard is in flight, all mutating controls disable and a second command is
-ignored rather than clearing the in-flight state. Per-card Discard routes to
-the server discard mutation with
+(`controller.isDisposing`): while a whole-draft Apply or Discard, or a
+per-change Apply or Discard, is in flight, all mutating controls disable and a
+second command is ignored rather than clearing the in-flight state. A
+per-change Discard routes to the server discard mutation with the change's
 `operationIds`; the server performs reversal-peer sync. The mutation awaits the
 draft-list and preview refreshes before the session releases its lock, so no
 second preview-settlement timer or local pending copy is needed.
+
+### Per-change commands
+
+`DraftReviewSession.applyChange` and `discardChange` run one change. Each claims
+a **change command record** (`client/query/change-command-record`, keyed by the
+draft and the change's class id, matched by shared operations):
+
+- `pending`: the change is already gone from the preview every surface reads
+  (`useDraftPreview` hides it), so its marks and rows leave at once.
+- `confirmed`: the server confirmed. The cached preview loses the change
+  (`settleConfirmedChange`) and a preview read that started earlier cannot bring
+  it back (`readPreviewAfterChangeCommands`).
+- `failed`: the change comes back, with `offline` ("Couldn't apply. Check your
+  connection and try again."), `stale` ("This change was updated. Check it and
+  apply again.") or `draft-only`, shown on its bar and row. `gone` is not held:
+  the change leaves with a toast. Apply's `incomplete_class` is treated as
+  `stale`.
+
+Apply sends the live and draft revision tokens of the cached preview the writer
+saw (opaque strings), so a change updated under them is refused, never applied.
+The toast ("Applied", "Discarded", "That change is no longer in the draft.") is
+controller state (`toast`), rendered by `ReviewToast`. The last change handled
+sets `inlineReview.cleared`: the review stays open with "No changes left" and
+Next draft, the provider does not exit it when the draft leaves the server's
+list, and the draft is marked cleared (`markDraftCleared`, until the AI writes
+again) so no surface offers it as pending while the server still lists it
+emptied.
+
+Focus is controller state too (`inlineReview.focusedClassId`,
+`focusReviewChange`). `useInlineReviewFocus` (in `EditorView`) syncs it, Show
+changes (`marksVisible`) and the pulse on arrivals with the editor, and reports
+a click on a mark back. The stepper, the bar and the dock list read it from
+`useReviewChanges`.
 
 An archived Work's drafts are frozen (D30): the server refuses Apply and
 Discard. The controller's `dispositionLocked` (frozen drafts, from the
@@ -38,11 +72,12 @@ beside the existing archived notice; Review stays available. A new disposition
 control reads the same flag.
 
 Bulk Apply/Discard is one controller command over a captured target list; the
-dock does not infer command completion from busy/idle render edges. Apply
-addresses the current branch rather than preview operation ids or a revision
-token. The server settles the complete branch state at command time, including
-writer rows created after the last preview. The client therefore treats preview
-operations and revisions as evidence, not command scope. Apply/Discard failures
+dock does not infer command completion from busy/idle render edges. Whole-draft
+Apply addresses the current branch rather than preview operation ids or a
+revision token. The server settles the complete branch state at command time,
+including writer rows created after the last preview. For whole-draft Apply the
+client therefore treats preview operations and revisions as evidence, not
+command scope; per-change Apply is the one command that sends them. Apply/Discard failures
 are session outcomes rendered by the review header rather than ignored
 promises. A batch stops at its first failure or unknown outcome; transport
 failures surface through the dock's typed error state.
@@ -55,8 +90,9 @@ and
 On Apply or whole-draft Discard, the controller clears the review surface so
 the editor rebinds from the review branch room to the live manuscript room. The server
 owns one active Work-draft branch per `(documentId, workId)`, so there is no
-same-document neighbor to select after disposition. Apply has one terminal
-`applied` result; partial-Apply and stale-preview response states do not exist.
+same-document neighbor to select after disposition. Whole-draft Apply has one terminal
+`applied` result; partial-Apply and stale-preview response states exist only for
+per-change Apply (`applied`, `stale`, `gone`, `draft_only`, `incomplete_class`).
 
 `EditorView` keeps a document's live editor mounted, hidden, underneath its
 review editor. Entering review keeps the live text on screen, read-only from
@@ -101,27 +137,28 @@ selection, so a phone Chat-to-Editor transition cannot destroy the intent or
 either scope controller. The phone document host publishes its resolved editable
 document to that Editor value and binds the selected review room back into its
 read-only `EditorView`, just as the desktop host binds its active editor. The editor's review chrome is
-`features/editor/DraftReviewHeader` (above the identity bar, review-only): LEFT
-"Back to live" exit and RIGHT whole-draft "Apply all" / "Discard all", all
-delegating to the controller. The server owns one active Work-draft branch per
+`features/editor/DraftReviewHeader` (above the identity bar, review-only), one
+row: `Manuscript /`, the draft switcher (the Work's drafts with change counts,
+Show live version or Close review, Apply all and Discard all), the stepper,
+Show changes, Discard draft and Apply draft, all delegating to the controller.
+Apply draft and Discard draft open the next draft in the switcher at once (or
+leave the review for live when none is left). The server owns one active Work-draft branch per
 `(documentId, workId)` and aggregates every contributing thread into that
-branch, so review has one active row per document. The dock's `DockChangesView`
-expands the reviewed document to Discard-class cards read from the live preview.
-Each card carries one hover-revealed Discard verb, the only mutating target on
-the card, driving `controller.discardOperation`. Whole-branch Apply remains in
-the review header so the UI cannot imply operation-scoped Apply. Discard
-takes its selection from review state, so a card disposes correctly with no
-manuscript mounted. Only the card-body click needs the editor: it calls
-`controller.focusReviewOperation(operationId)`, which reads the review editor off
-the inline-review runtime to highlight + scroll the manuscript span, and is
-inert on screens with no editor.
+branch, so review has one active row per document. The dock's `DockChangesView` lists the reviewed document's changes, one line
+each (`features/draft-review`), read from the live preview through the **Editor
+scope's** controller (`useEditorDraftReview`); the dock sits in the Chat's
+boundary, whose controller never has a review open. A row's Apply and Discard
+take their selection from review state, so they work with no manuscript
+mounted. Only focusing needs the editor: `controller.focusReviewChange` reads
+the review editor off the inline-review runtime to emphasize and scroll to the
+change, and is inert on screens with no editor.
 
 The review editor is editable. A draft branch is a Yjs room and the writer is
 one more peer in it, so ordinary TipTap input is admitted and lands in the draft
 branch — never in live — alongside agent writes. Dispositions are separate:
-Apply/Discard are server commands, so draft review has no per-card Undo command.
-After Apply, recovery belongs to turn-receipt Undo/Redo rather than peer-mark
-actions, browser Ctrl+Z, or a client mutation origin.
+Apply/Discard are server commands, so draft review has no per-change Undo
+command. After Apply, recovery belongs to turn-receipt Undo/Redo rather than
+peer-mark actions, browser Ctrl+Z, or a client mutation origin.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
 the TipTap inline-review extension and reports model availability identities. It
@@ -170,9 +207,13 @@ This subscription is a freshness seam only. The TipTap/Yjs session remains the
 single document-sync path; the provider never interprets update contents or builds
 a second draft model.
 
-Preview refresh remains presentation freshness. Apply does not send a
-`draftRevisionToken` or operation set; the server branch is the command
-authority.
+Preview refresh remains presentation freshness for whole-draft Apply, which
+sends no revision token or operation set; the server branch is its command
+authority. Per-change Apply sends the tokens it was shown, and refreshes before
+the next command so the tokens are current. New AI writes during review reach
+the list and the marks through this same refetch: the count rises, the new row
+and marks pulse once (not under reduced motion), and nothing the writer applied
+or discarded comes back from a stale read.
 
 ## The pending signal and draft-only tab lifecycle
 

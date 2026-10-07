@@ -111,6 +111,8 @@ export interface RemovalHandlers {
 
 export interface RemovalRenderOptions {
   focused: boolean;
+  /** The change arrived while the writer was reviewing; it pulses once. */
+  pulsed: boolean;
   expanded: boolean;
   /** Put keyboard focus on the fold once this widget is in the document. */
   refocusToggle: boolean;
@@ -133,6 +135,7 @@ export function createRemovalElement(
     plan.block ? REMOVAL_BLOCK_CLASS : "",
     plan.kind === "writer" ? REMOVAL_WRITER_CLASS : "",
     options.focused ? "meridian-review-emphasized" : "",
+    options.pulsed ? "meridian-review-arrived" : "",
   ]
     .filter(Boolean)
     .join(" ");

@@ -589,8 +589,14 @@
   text-decoration: line-through;
   text-decoration-thickness: 1.5px;
   text-decoration-color: color-mix(in oklab, currentColor 70%, transparent);
-  /* Hair of air so the strike never fuses with the insertion beside it. */
   padding-inline-end: 0.15em;
+}
+
+/* A struck removal beside the text that replaced it must read as two things,
+   not "his" fused into "one": a word-space of air outside the tint. Inline
+   removals only; a block removal is its own paragraph. */
+.meridian-editor .ProseMirror span.meridian-review-removal:not(.meridian-review-removal-block) {
+  margin-inline-end: 0.3em;
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-writer {
@@ -879,4 +885,33 @@
   .ProseMirror
   .meridian-peer-mark--tick[data-peer-mark-swept="true"][data-peer-mark-emphasized="true"] {
   box-shadow: 0 0 0 3px var(--color-review-warning-border);
+}
+
+/* A change that arrived while the writer was reviewing pulses once: its marks
+   (and its row in the dock) light up and settle. Reduced motion: no pulse. */
+@keyframes meridian-review-arrive {
+  from {
+    background-color: var(--color-review-added-ring);
+  }
+}
+
+.meridian-editor .ProseMirror .meridian-review-arrived {
+  animation: meridian-review-arrive 1.3s ease-out 1;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal.meridian-review-arrived
+  .meridian-review-removal-text {
+  animation: meridian-review-arrive 1.3s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meridian-editor .ProseMirror .meridian-review-arrived,
+  .meridian-editor
+    .ProseMirror
+    .meridian-review-removal.meridian-review-arrived
+    .meridian-review-removal-text {
+    animation: none;
+  }
 }

@@ -16,7 +16,5 @@ export function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
       return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
     case "review-failed":
       return <Trans>Couldn't open this draft. Try again.</Trans>;
-    case "discard-failed":
-      return <Trans>Couldn't discard. Try again.</Trans>;
   }
 }
