@@ -19,6 +19,8 @@
 - Opening a new document's draft from an open review (the draft switcher, Apply draft or Next draft) shows its review instead of an empty editor.
 - The draft review header starts with the draft switcher; the path is already on the bar below it.
 - Draft review strikes each stretch of a removal in its remover's colour (red for the AI, gold for you, even inside one removal), and paints a change as a merge only when the server says the two edits are interleaved.
+- Draft review works on the phone. A compact header under the top bar holds the draft switcher, a stepper through the changes and a change count; tap a change to select it and its bar (the chat that wrote it, Discard, Apply) sits at the bottom of the page, above the keyboard when it is up. The count opens the change list as a sheet over the dimmed manuscript; tap a row to go to that change. Apply draft, Discard draft, Apply all and Discard all are in the switcher's menu. Every control is a 44px target.
+- A struck-through removal in a draft no longer runs into the text that replaced it.
 - Draft review shows removed text struck through in the manuscript like suggestion mode (red for the AI, gold for you; long removals fold), your typing in a draft is gold at once, and entering review keeps the live view and its header until the draft is ready, then switches in one frame.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
