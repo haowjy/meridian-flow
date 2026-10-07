@@ -58,7 +58,17 @@ export function scopeAgentEditAssetPaths(
     projectId: context.grant.facts.projectId,
   });
   return asThreadPeerAgentEditCore({
-    ...core,
+    // Passed through: no Markdown of their own, or it comes from the scoped engine.
+    recover: core.recover,
+    // Saved and rolled back within the reply's thread, by the finalizer below.
+    rollbackResponse: core.rollbackResponse,
+    commitResponse: core.commitResponse,
+    hasResponseDocument: core.hasResponseDocument,
+    withResponseDocument: core.withResponseDocument,
+    responseDocuments: core.responseDocuments,
+    responseDestination: core.responseDestination,
+    getAvailability: core.getAvailability,
+    invalidateThread: core.invalidateThread,
     read: (command, context) =>
       assetPaths.within(byGrant(context), () => core.read(command, context)),
     write: (command, context) =>
@@ -93,7 +103,15 @@ export function scopeBranchPeerAssetPaths(
   assetPaths: DocumentAssetPaths,
 ): BranchPeerShadowAccess {
   return {
-    ...access,
+    // Passed through: no Markdown of their own, or it comes from the scoped engine.
+    readEffectiveRevision: access.readEffectiveRevision,
+    pullThreadPeer: access.pullThreadPeer,
+    flushBranchLivePull: access.flushBranchLivePull,
+    readEffectiveMarkdown: access.readEffectiveMarkdown,
+    resolveManifestMembership: access.resolveManifestMembership,
+    reconcileProjectManifest: access.reconcileProjectManifest,
+    recordManifestDocumentCreated: access.recordManifestDocumentCreated,
+    recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
     readEffectiveHashlines: (command) =>
       assetPaths.within({ documentId: command.documentId }, () =>
         access.readEffectiveHashlines(command),
