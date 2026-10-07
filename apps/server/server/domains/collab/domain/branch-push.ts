@@ -257,7 +257,12 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
               assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId),
             ),
           );
-          return run(branches, lease);
+          // Preparing the push snapshots every block, pictures included, in
+          // the content branch's project; a companion manifest branch shares it.
+          return input.assetPaths.within(
+            { documentId: (branches[0] as BranchSnapshot).documentId },
+            () => run(branches, lease),
+          );
         });
       } catch (cause) {
         if (cause instanceof BranchPushCommitConflictError) {
