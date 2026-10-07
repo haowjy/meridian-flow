@@ -151,7 +151,9 @@ export function createDrizzleDocumentAssetPaths(
       // A nested call for the same project reads the enclosing operation's paths.
       if (outer?.members.has(key)) return operation();
       const projectId = await resolveProjectId(db, project);
-      if (outer && projectId !== null && outer.projectId === projectId) {
+      // One whose project can't be found has no paths of its own to load.
+      if (outer && projectId === null) return operation();
+      if (outer && outer.projectId === projectId) {
         outer.members.add(key);
         return operation();
       }
