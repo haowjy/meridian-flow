@@ -9,6 +9,7 @@ import { ArrowUpRight } from "lucide-react";
 
 import type { ChangeCommandMode, ChangeFailureCode } from "@/client/query/change-command-record";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
+import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import type { ChangeAttribution } from "./change-attribution";
 import type { ReviewChange, ReviewChangeTone } from "./review-changes";
@@ -69,7 +70,8 @@ export function ChangeAuthor({
       </span>
     );
   }
-  const title = attribution.title?.trim() || t`AI`;
+  // The chat's name as the chat list shows it, so the link names what it opens.
+  const title = displayThreadTitle(attribution.title);
   return (
     <button
       type="button"

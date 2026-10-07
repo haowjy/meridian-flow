@@ -9,7 +9,6 @@
  */
 import { useMemo, useState } from "react";
 
-import { clearedDraftName, useClearedDrafts } from "@/client/query/change-command-record";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, draftAfter } from "@/features/chat/docked-drafts";
 import type { InlineReviewMessageCode } from "@/features/chat/draft-review-session";
@@ -66,13 +65,6 @@ export function useReviewHeader({
     return merged;
   }, [counts, documentId, view.items.length, view.status]);
 
-  const cleared = useClearedDrafts();
-  const clearedName = clearedDraftName(cleared, {
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId,
-    draftId,
-  });
   const next = draftAfter(rows, documentId);
   const locked = controller.dispositionLocked;
   const finished = view.cleared || (view.status === "ready" && view.items.length === 0);
@@ -104,7 +96,7 @@ export function useReviewHeader({
     switcher: {
       rows,
       currentDocumentId: documentId,
-      currentName: clearedName,
+      currentName: controller.inlineReview?.cleared?.documentName ?? null,
       counts: allCounts,
       onOpenChange: setSwitcherOpen,
       draftOnly: Boolean(onCloseDraftOnly),

@@ -152,13 +152,9 @@ export function useDraftReviewScopeValue({
   const groupForDocument = useCallback(
     (documentId: string | null | undefined) => {
       if (!documentId) return null;
-      return (
-        groups.find((group) => group.documentId === documentId) ??
-        drafts.clearedGroups?.find((group) => group.documentId === documentId) ??
-        null
-      );
+      return groups.find((group) => group.documentId === documentId) ?? null;
     },
-    [groups, drafts.clearedGroups],
+    [groups],
   );
 
   const reviewRoomNameForDraft = useCallback(

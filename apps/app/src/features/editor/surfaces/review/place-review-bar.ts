@@ -16,6 +16,11 @@ export const BAR_GAP_PX = 10;
 export const BAR_EDGE_PX = 8;
 /** The bar wraps to two short rows; below this it would have to break its words. */
 export const BAR_MIN_WIDTH_PX = 132;
+/**
+ * "Discard with your edits" and Apply on one row need this much; narrower and
+ * Apply is pushed past the pane's edge.
+ */
+export const BAR_MIN_WIDTH_WITH_EDITS_PX = 200;
 /** Wider margins give the bar no more than its one-row width. */
 export const BAR_MAX_WIDTH_PX = 260;
 
@@ -30,10 +35,13 @@ export function placeReviewBar(input: {
   columnRight: number;
   /** Width of the scroll pane the manuscript is drawn in. */
   paneWidth: number;
+  /** The change carries the writer's edits: its Discard button reads "Discard with your edits". */
+  includesWriterEdits?: boolean;
 }): ReviewBarPlacement {
   const left = input.columnRight + BAR_GAP_PX;
   const room = input.paneWidth - BAR_EDGE_PX - left;
-  if (room < BAR_MIN_WIDTH_PX) return { kind: "below" };
+  const needed = input.includesWriterEdits ? BAR_MIN_WIDTH_WITH_EDITS_PX : BAR_MIN_WIDTH_PX;
+  if (room < needed) return { kind: "below" };
   return {
     kind: "margin",
     top: Math.max(0, input.anchor.top),

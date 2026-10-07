@@ -8,7 +8,7 @@
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { reviewChanges } from "./review-changes";
+import { changeExcerpt, reviewChanges } from "./review-changes";
 
 function op(overrides: Partial<ReviewOperation> & { operationId: string }): ReviewOperation {
   return {
@@ -131,7 +131,29 @@ describe("reviewChanges", () => {
       [],
     );
     expect(linked.attribution).toEqual({ kind: "chat", threadId: "t-new", title: "Line edit" });
+    const [blank] = reviewChanges([withThread("5", "t-blank", "  ")], []);
+    expect(blank.attribution).toEqual({ kind: "chat", threadId: "t-blank", title: null });
     const [unknown] = reviewChanges([op({ operationId: "3" })], []);
     expect(unknown.attribution).toEqual({ kind: "ai" });
+  });
+
+  it("describes a change with the writer's edits inside it once, not once per operation", () => {
+    const agent = op({
+      operationId: "61",
+      closureClassId: "c",
+      classification: "rewrite",
+      beforeExcerpt: "his",
+      afterExcerpt: "one withered frail",
+    });
+    const writer = op({
+      operationId: "writer:66",
+      kind: "writer",
+      closureClassId: "c",
+      classification: "rewrite",
+      beforeExcerpt: "his",
+      afterExcerpt: "one withered frail",
+    });
+    const [change] = reviewChanges([agent, writer], []);
+    expect(changeExcerpt(change)).toEqual({ added: "one withered frail", removed: "his" });
   });
 });

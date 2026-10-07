@@ -351,11 +351,12 @@ export type InlineDraftReview = {
   /** The change (server closure class) the writer is looking at, if any. */
   focusedClassId?: string | null;
   /**
-   * The writer handled the last change. The draft now matches live and may
-   * already have left the server's list; the review stays open, saying so,
-   * until the writer moves on.
+   * The writer handled the last change. The draft now matches live and the
+   * server has closed it (it leaves the Work's list); the review stays open,
+   * saying so, until the writer moves on. Its own state, not list membership,
+   * holds it, so it also carries the document's name for the chrome.
    */
-  cleared?: boolean;
+  cleared?: { documentName: string | null };
   /**
    * The review body has painted and the review chrome (header, chip swap)
    * may show with it. Until then the plain live view is held, header
@@ -387,7 +388,13 @@ export type DraftReviewAction =
   | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
   | { type: "applySucceeded"; documentId: string; draftId: string }
   | { type: "changeFocused"; documentId: string; draftId: string; classId: string | null }
-  | { type: "reviewCleared"; documentId: string; draftId: string }
+  | {
+      type: "reviewCleared";
+      documentId: string;
+      draftId: string;
+      documentName: string | null;
+    }
+  | { type: "reviewReopened"; documentId: string; draftId: string }
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
@@ -444,7 +451,17 @@ export function draftReviewReducer(
       }
       return state.surface.cleared
         ? state
-        : { ...state, surface: { ...state.surface, cleared: true } };
+        : {
+            ...state,
+            surface: { ...state.surface, cleared: { documentName: action.documentName } },
+          };
+    case "reviewReopened": {
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
+        return state;
+      }
+      const { cleared: _cleared, ...reopened } = state.surface;
+      return state.surface.cleared ? { ...state, surface: reopened } : state;
+    }
     case "marksVisible":
       return state.marksVisible === action.visible
         ? state

@@ -5,6 +5,10 @@
 - Draft preview stays available when different chats edit adjacent sentences, and retained punctuation is no longer shown as deleted.
 
 - Applying a draft change no longer silently publishes earlier deletions. Changes carried by the same Yjs update are shown and handled together.
+- After you apply or discard the last change of a draft, the review stays on the finished text with "No changes left" and a Next draft button (Back to live when no draft is left), on desktop and phone, and a reload shows the live document. The text on screen is the live document, editable again, with no blank frame.
+- A change's excerpt in the list no longer repeats its text when your own edits are inside it.
+- The chat link on a change reads "New chat" for an untitled chat, as the chat list does.
+- The bar for a change with your edits inside it moves under the change when the margin is too narrow to show Apply.
 
 - Applying or discarding the last draft change closes the review on the server, including after reload.
 

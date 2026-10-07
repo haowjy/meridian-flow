@@ -171,6 +171,27 @@ describe("ReviewChangeRow", () => {
     );
   });
 
+  it("calls an untitled chat what the chat list calls it, and still opens it", async () => {
+    const props = rowProps({
+      change: change({ attribution: { kind: "chat", threadId: "t-3", title: null } }),
+    });
+    const openThread = vi.fn();
+    await render(
+      <ul>
+        <ReviewChangeRow {...props} />
+      </ul>,
+      async () => {
+        const link = Array.from(document.querySelectorAll("button")).find((b) =>
+          b.textContent?.includes("New chat"),
+        );
+        expect(link).toBeDefined();
+        await act(async () => link?.click());
+        expect(openThread).toHaveBeenCalledWith("t-3");
+      },
+      openThread,
+    );
+  });
+
   it("shows why a command did not land, on the row", async () => {
     await render(
       <ul>
@@ -272,6 +293,25 @@ describe("ReviewChangeBar", () => {
       expect(props.onApply).toHaveBeenCalledOnce();
       expect(props.onDiscard).toHaveBeenCalledOnce();
     });
+  });
+
+  it("calls an untitled chat what the chat list calls it", async () => {
+    const openThread = vi.fn();
+    await render(
+      <ReviewChangeBar
+        {...barProps({
+          change: change({ attribution: { kind: "chat", threadId: "t-3", title: null } }),
+        })}
+      />,
+      async () => {
+        const link = Array.from(document.querySelectorAll("button")).find((b) =>
+          b.textContent?.includes("New chat"),
+        );
+        await act(async () => link?.click());
+        expect(openThread).toHaveBeenCalledWith("t-3");
+      },
+      openThread,
+    );
   });
 
   it("names a mixed change: Includes your edits, and Discard with your edits", async () => {

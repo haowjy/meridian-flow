@@ -2,7 +2,7 @@
 
 import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import {
   type Dispatch,
@@ -15,7 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
-import { type ChangeRef, markDraftCleared } from "@/client/query/change-command-record";
+import type { ChangeRef } from "@/client/query/change-command-record";
 import {
   clearDraftCommandFailure,
   draftCommandPendingIn,
@@ -288,6 +288,27 @@ export function useDraftReviewController({
     }
   }
 
+  /**
+   * The server closed the draft with the change it just handled: the review
+   * holds on "No changes left" now. This runs on the command's answer, before
+   * the draft list and preview re-reads that follow it, because the list drops
+   * the closed draft and every "the draft left the list" exit would otherwise
+   * win the race.
+   */
+  const settleClosedDraft = (
+    documentId: string,
+    draftId: string,
+    response: { draftClosed?: boolean },
+  ) => {
+    if (!response.draftClosed || !activeRef.current) return;
+    dispatch({
+      type: "reviewCleared",
+      documentId,
+      draftId,
+      documentName: listedDocumentName(queryClient, projectId, workId, draftId),
+    });
+  };
+
   commandPortsRef.current = {
     scope: { projectId, workId },
     apply: async ({ documentId, draftId }) => {
@@ -313,6 +334,10 @@ export function useDraftReviewController({
         documentId,
         draftId,
         ...input,
+        // Only a per-change Discard can end a review by closing its draft.
+        onAnswered: input
+          ? (response) => settleClosedDraft(documentId, draftId, response)
+          : undefined,
       });
     },
     applyChanges: ({ documentId, draftId }, request) =>
@@ -323,6 +348,9 @@ export function useDraftReviewController({
         documentId,
         draftId,
         request,
+        onAnswered: (response) => {
+          if (response.status === "applied") settleClosedDraft(documentId, draftId, response);
+        },
       }),
     changeConfirmed: ({ documentId, draftId }, change, mode) =>
       settleConfirmedChange(
@@ -452,6 +480,8 @@ export function useDraftReviewController({
   /** Run one change command against the open review, and say what happened. */
   const runChangeCommand = useCallback(
     async (
+      mode: "apply" | "discard",
+      change: ChangeRef,
       command: (
         inline: DraftReviewSelection,
         previewTokens: { liveRevisionToken: string; draftRevisionToken: string } | null,
@@ -465,6 +495,26 @@ export function useDraftReviewController({
       const cached = queryClient.getQueryData<DraftPreviewResponse>(
         projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
       );
+      // Read before the command: it may be the one that takes the draft out of the list.
+      const documentName = listedDocumentName(queryClient, projectId, workId, inline.draftId);
+      // Discarding the last change leaves live as it is, so the finished text is
+      // already on screen: settle at the click. Waiting for the answer would show
+      // the review room merging the server's reset (the discarded text doubled).
+      // Apply waits for its answer instead: live has no change in it until then.
+      const settlesAtClick =
+        mode === "discard" &&
+        cached?.status === "active" &&
+        reviewChanges(cached.operations, cached.hunks).every(
+          (candidate) => candidate.classId === change.classId,
+        );
+      if (settlesAtClick) {
+        dispatch({
+          type: "reviewCleared",
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          documentName,
+        });
+      }
       const outcome = await command(
         { documentId: inline.documentId, draftId: inline.draftId },
         cached?.status === "active"
@@ -476,12 +526,26 @@ export function useDraftReviewController({
       );
       if (!activeRef.current) return outcome;
       if (
+        settlesAtClick &&
+        outcome.kind !== "change-settled" &&
+        !(outcome.kind === "change-refused" && outcome.code === "gone")
+      ) {
+        // The Discard did not land: the change is back, and so is the review of it.
+        dispatch({
+          type: "reviewReopened",
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+        });
+      }
+      if (
         outcome.kind === "change-settled" ||
         (outcome.kind === "change-refused" && outcome.code === "gone")
       ) {
         // The cache already lost the change (`settleConfirmedChange`): if that
         // was the last one, the review stays open to say so rather than
-        // closing under the writer when the draft leaves the server's list.
+        // closing under the writer. The server's `draftClosed` answer settles
+        // it earlier (`settleClosedDraft`); this covers a change that was
+        // already gone, whose answer carries no such flag.
         const after = queryClient.getQueryData<DraftPreviewResponse>(
           projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
         );
@@ -493,18 +557,8 @@ export function useDraftReviewController({
             type: "reviewCleared",
             documentId: inline.documentId,
             draftId: inline.draftId,
+            documentName,
           });
-          // The server keeps the emptied draft in its list; the writer is not offered it again.
-          const listed = queryClient
-            .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
-            ?.find((item) => item.draftId === inline.draftId);
-          markDraftCleared(
-            { projectId, workId, documentId: inline.documentId, draftId: inline.draftId },
-            {
-              lastActorTurnId: listed?.lastActorTurnId ?? null,
-              documentName: listed?.documentName ?? null,
-            },
-          );
         }
       }
       if (outcome.kind === "change-settled") {
@@ -523,7 +577,7 @@ export function useDraftReviewController({
 
   const applyChange = useCallback(
     (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand((selection, tokens) =>
+      runChangeCommand("apply", change, (selection, tokens) =>
         // Without a preview there is nothing the writer saw to apply: treat it as an out-of-date change.
         tokens
           ? reviewSession.applyChange(selection, change, tokens)
@@ -534,7 +588,9 @@ export function useDraftReviewController({
 
   const discardChange = useCallback(
     (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand((selection) => reviewSession.discardChange(selection, change)),
+      runChangeCommand("discard", change, (selection) =>
+        reviewSession.discardChange(selection, change),
+      ),
     [reviewSession, runChangeCommand],
   );
 
@@ -630,4 +686,17 @@ export function useDraftReviewController({
       disposeDrafts,
     ],
   );
+}
+
+/** The listed draft's document name, kept by a review that outlives the draft's place in the list. */
+function listedDocumentName(
+  queryClient: QueryClient,
+  projectId: string,
+  workId: string,
+  draftId: string,
+): string | null {
+  const listed = queryClient
+    .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
+    ?.find((item) => item.draftId === draftId);
+  return listed?.documentName ?? null;
 }

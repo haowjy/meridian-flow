@@ -4,6 +4,8 @@
 
 import type {
   DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
+  DraftDiscardResponse,
   DraftPreviewResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
@@ -43,6 +45,13 @@ export class DraftApplyOutcomeUnknownError extends Error {
 
 export type DraftReviewMutationInput = DraftReviewMutationBase & {
   operationIds?: string[];
+  /**
+   * Called with the server's answer the moment it arrives, before the list and
+   * preview re-reads that follow. A surface that must act on the answer before
+   * those caches move (the review settling because the server closed the draft)
+   * cannot wait for the mutation to resolve: that waits for the re-reads.
+   */
+  onAnswered?: (response: DraftDiscardResponse) => void;
 };
 
 function invalidateDraftReviewQueries(
@@ -117,17 +126,21 @@ export function useDiscardDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       projectId,
       workId,
       documentId,
       draftId,
       operationIds,
-    }: DraftReviewMutationInput) =>
-      discardDraft(projectId, workId, documentId, {
+      onAnswered,
+    }: DraftReviewMutationInput) => {
+      const response = await discardDraft(projectId, workId, documentId, {
         draftId,
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
-      }),
+      });
+      onAnswered?.(response);
+      return response;
+    },
     onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
     onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
@@ -135,6 +148,8 @@ export function useDiscardDraft() {
 
 export type DraftChangesApplyInput = DraftReviewMutationBase & {
   request: Omit<DraftApplyChangesRequest, "draftId">;
+  /** See `DraftReviewMutationInput.onAnswered`. */
+  onAnswered?: (response: DraftApplyChangesResponse) => void;
 };
 
 /**
@@ -148,8 +163,21 @@ export function useApplyDraftChanges() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ projectId, workId, documentId, draftId, request }: DraftChangesApplyInput) =>
-      applyDraftChanges(projectId, workId, documentId, { draftId, ...request }),
+    mutationFn: async ({
+      projectId,
+      workId,
+      documentId,
+      draftId,
+      request,
+      onAnswered,
+    }: DraftChangesApplyInput) => {
+      const response = await applyDraftChanges(projectId, workId, documentId, {
+        draftId,
+        ...request,
+      });
+      onAnswered?.(response);
+      return response;
+    },
     onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
     onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });

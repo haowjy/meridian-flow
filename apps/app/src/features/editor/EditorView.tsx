@@ -171,6 +171,18 @@ export function EditorView(props: EditorViewProps) {
   const reviewIdentity = inReview ? editorMountKey(identity) : null;
   const { controller } = useDraftReview();
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
+  const liveSession = props.session ?? null;
+  // The writer handled the last change: the server closed the draft, so the
+  // draft's text is the live text and its room is a dead generation. The
+  // finished text is the live editor, revealed in place of the review's (the
+  // review chrome stays, saying so) and editable again; the review editor and
+  // its room go with the review's marks.
+  const settled =
+    inReview &&
+    liveSession !== null &&
+    controller.inlineReview?.cleared !== undefined &&
+    controller.inlineReview.documentId === props.documentId &&
+    controller.inlineReview.draftId === reviewDraftId;
   const marksReady =
     reviewDraftId !== null &&
     controller.inlineReview?.documentId === props.documentId &&
@@ -191,7 +203,7 @@ export function EditorView(props: EditorViewProps) {
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
 
   useEffect(() => {
-    if (!inReview) {
+    if (!inReview || settled) {
       setBoundSession(null);
       setPaintedReviewKey(null);
       setReplaced(null);
@@ -213,7 +225,7 @@ export function EditorView(props: EditorViewProps) {
       setReplaced(null);
       registry.releaseBranchRooms(ownerId);
     };
-  }, [inReview, registry, roomKey]);
+  }, [inReview, settled, registry, roomKey]);
 
   useEffect(() => {
     if (!inReview || boundSession?.roomKey !== roomKey) return;
@@ -256,8 +268,8 @@ export function EditorView(props: EditorViewProps) {
     });
   }, [boundSession, props.onReviewSessionUnavailable, inReview, registry, roomKey, reviewIdentity]);
 
-  const liveSession = props.session ?? null;
-  const reviewSession = inReview && boundSession?.roomKey === roomKey ? boundSession : null;
+  const reviewSession =
+    inReview && !settled && boundSession?.roomKey === roomKey ? boundSession : null;
   const reviewKey =
     inReview && reviewSession ? `${editorMountKey(identity)}|${reviewSession.document.guid}` : null;
   const reviewPainted = reviewSession !== null && paintedReviewKey === reviewKey;
@@ -284,7 +296,7 @@ export function EditorView(props: EditorViewProps) {
   // Review chrome (the header, the chip swap) shows with the review body and
   // never before it. A layout effect, so the controller's update lands before
   // paint, in the same frame as the body swap above.
-  const chromeShown = inReview && (reviewShown || replacing);
+  const chromeShown = inReview && (reviewShown || replacing || settled);
   const { setInlineReviewShown } = controller;
   useLayoutEffect(() => {
     if (!reviewDraftId) return;
@@ -309,11 +321,11 @@ export function EditorView(props: EditorViewProps) {
           <SessionEditorView
             key={`${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`}
             {...props}
-            editable={reviewRequested ? false : props.editable}
+            editable={reviewRequested && !settled ? false : props.editable}
             identity={mountIdentity(props, "live")}
             session={liveSession}
             liveSession={liveSession}
-            held={reviewRequested}
+            held={reviewRequested && !settled}
           />
         </div>
       ) : null}

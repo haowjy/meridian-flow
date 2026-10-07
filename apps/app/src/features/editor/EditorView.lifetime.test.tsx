@@ -165,6 +165,7 @@ const controller: {
     documentId: string;
     draftId: string;
     previewIdentity?: string;
+    cleared?: { documentName: string | null };
   } | null;
 } = {
   registerInlineReviewRuntime: () => {},
@@ -175,6 +176,8 @@ const controller: {
 };
 /** Whether the review's change marks have arrived; the controller reports it as `previewIdentity`. */
 let reviewMarksAvailable = true;
+/** The writer handled the last change: the controller marks the review finished. */
+let reviewFinished = false;
 
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: threadList.current, isError: false, isFetching: false }),
@@ -270,6 +273,7 @@ function Harness({ initial }: { initial: EditorViewProps }) {
         documentId: props.documentId,
         draftId: props.reviewDraftId,
         ...(reviewMarksAvailable ? { previewIdentity: "preview-1" } : {}),
+        ...(reviewFinished ? { cleared: { documentName: "Doc" } } : {}),
       }
     : null;
   const session = props.reviewDraftId
@@ -486,6 +490,7 @@ describe("editor lifetime", () => {
 
     afterEach(() => {
       reviewMarksAvailable = true;
+      reviewFinished = false;
       setInlineReviewShown.mockClear();
       vi.useRealTimers();
     });
@@ -517,6 +522,29 @@ describe("editor lifetime", () => {
         });
         expect(surfaces()).toEqual(["review"]);
         expect(setInlineReviewShown).toHaveBeenLastCalledWith(documentId, "draft-hold", true);
+      });
+    });
+
+    it("reveals the warm live editor, editable, when the review is finished, with its chrome still up", async () => {
+      const initial = { documentId, projectId: "project-1", session: sessionFor(documentId) };
+      await withReactRoot(<Harness initial={initial} />, async () => {
+        const liveDom = mountedEditor().view.dom;
+        await enterReview();
+        expect(surfaces()).toEqual(["review"]);
+        expect(liveDom.getAttribute("contenteditable")).toBe("false");
+        setInlineReviewShown.mockClear();
+
+        // The last change was handled: the draft is live's text now.
+        reviewFinished = true;
+        await act(async () => {
+          applyProps({});
+        });
+        expect(surfaces()).toEqual(["live"]);
+        // The same editor, not a rebuilt one, and the writer can type in it again.
+        expect(mountedEditor().view.dom).toBe(liveDom);
+        expect(liveDom.getAttribute("contenteditable")).toBe("true");
+        // The review's chrome (header, "No changes left") never drops out.
+        expect(setInlineReviewShown).not.toHaveBeenCalledWith(documentId, "draft-hold", false);
       });
     });
 
