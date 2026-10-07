@@ -80,9 +80,16 @@ Two self-contained surfaces, both resolving their own state from
   document's review has painted (`inlineReview.shown`).
 - `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
   ABOVE the identity bar (order: tab strip → review strip → identity bar →
-  prose), only once `inlineReview.shown`. Matches the DraftDock strip's
-  geometry and tone (`min-h-7`, `bg-dock-surface`, `text-caption`);
-  destructive verb left, jade primary pill far right — the same order as the dock.
+  prose), only once `inlineReview.shown`. One row: `Manuscript /`, the draft
+  switcher, the stepper, Show changes, Discard draft, Apply draft; a second line
+  appears only for a failed whole-draft command or when the last change is
+  handled ("No changes left" with Next draft). Its parts live in
+  `features/draft-review`.
+- The focused change's bar is the `review-change-bar` chrome surface
+  (`surfaces/review`), portalled into the manuscript's scroll pane beside the
+  change. `useInlineReviewFocus` keeps the marks and the controller saying the
+  same thing (Show changes, the focused change, a click on a mark, the pulse on
+  arrivals).
 
 The chip and header are mutually exclusive by the chip's own inline-review
 check, not by a shared slot. Both read the same `shown` flag, so the swap

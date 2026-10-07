@@ -1037,3 +1037,21 @@
     animation: none;
   }
 }
+
+/* A change that arrived while the writer was reviewing: its row in the dock's
+   Changes list lights up once and settles. Its marks pulse in editor.css. */
+@keyframes review-row-arrive {
+  from {
+    background-color: var(--color-review-added-ring);
+  }
+}
+
+.meridian-review-row-arrived {
+  animation: review-row-arrive 1.3s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meridian-review-row-arrived {
+    animation: none;
+  }
+}

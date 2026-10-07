@@ -16,8 +16,11 @@ import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import type { DockRow } from "@/features/chat/docked-drafts";
+import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
@@ -113,6 +116,19 @@ export function ContextViewer({
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.
   const { controller } = useDraftReview();
+  const { openAiDraft } = useAiDraftLauncher();
+  // The header's draft switcher opens another draft of this Work through the
+  // same launcher every Review entry uses.
+  const openDraft = (row: DockRow) =>
+    row.contextPath &&
+    openAiDraft({
+      workId: controller.workId,
+      documentId: row.documentId,
+      draftId: row.draft.draftId,
+      contextPath: row.contextPath,
+      documentName: row.documentName ?? undefined,
+      isNewDocument: row.isNewDocument,
+    });
   const activeReviewDraftId =
     activeTab && controller.inlineReview?.documentId === activeTab.documentId
       ? controller.inlineReview.draftId
@@ -160,6 +176,7 @@ export function ContextViewer({
           <DraftReviewHeader
             documentId={activeTab.documentId}
             draftId={activeReviewDraftId}
+            onOpenDraft={openDraft}
             onCloseDraftOnly={
               activeTab.kind !== "new" && activeTab.draftOnly
                 ? () => onCloseTab(activeTab.documentId)
@@ -232,6 +249,9 @@ export function ContextViewer({
           />
         ) : null}
         {paneState.kind === "route-error" ? <RouteErrorState /> : null}
+        {controller.inlineReview?.shown ? (
+          <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
+        ) : null}
       </div>
     </div>
   );

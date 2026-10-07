@@ -1,0 +1,145 @@
+/**
+ * The change command record: what a preview read may bring back after the
+ * writer applied or discarded a change, and what a held failure follows.
+ */
+import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import {
+  beginChangeCommand,
+  changeCommandState,
+  clearChangeFailure,
+  clearedDraftName,
+  confirmChangeCommand,
+  currentChangeCommandRecords,
+  currentClearedDrafts,
+  failChangeCommand,
+  isDraftCleared,
+  markDraftCleared,
+  previewWithoutOperations,
+  readPreviewAfterChangeCommands,
+  resetChangeCommandRecords,
+} from "./change-command-record";
+
+const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
+const one = { classId: "c1", operationIds: ["1"] };
+const two = { classId: "c2", operationIds: ["2", "3"] };
+
+function preview(): DraftPreviewResponse {
+  const op = (operationId: string, closureClassId: string) => ({
+    operationId,
+    closureClassId,
+    kind: "agent" as const,
+    contribution: "added" as const,
+    classification: "addition" as const,
+    hunkCount: 1,
+  });
+  return {
+    status: "active",
+    draftId: "x",
+    reviewRoomName: "room",
+    live: "",
+    preview: "",
+    liveRevisionToken: "l",
+    draftRevisionToken: "t",
+    inlineModelPresent: true,
+    operations: [op("1", "c1"), op("2", "c2"), op("3", "c2")],
+    hunks: [
+      {
+        kind: "text",
+        hunkId: "h1",
+        operationIds: ["1"],
+        anchor: { relStart: "", relEnd: "" },
+        spans: [],
+      },
+      {
+        kind: "text",
+        hunkId: "h2",
+        operationIds: ["2", "3"],
+        anchor: { relStart: "", relEnd: "" },
+        spans: [
+          { operationId: "2", anchorFrom: "", anchorTo: "" },
+          { operationId: "3", anchorFrom: "", anchorTo: "" },
+        ],
+      },
+    ],
+  };
+}
+
+const operationIds = (p: DraftPreviewResponse) =>
+  p.status === "active" ? p.operations.map((o) => o.operationId) : [];
+
+describe("change command record", () => {
+  beforeEach(() => resetChangeCommandRecords());
+
+  it("claims a change once", () => {
+    expect(beginChangeCommand(draft, one, "apply")).toBe(true);
+    expect(beginChangeCommand(draft, one, "discard")).toBe(false);
+    expect(beginChangeCommand(draft, two, "apply")).toBe(true);
+  });
+
+  it("a read that started before a confirmation cannot bring the change back", async () => {
+    let finish!: (value: DraftPreviewResponse) => void;
+    const read = readPreviewAfterChangeCommands(
+      draft,
+      () => new Promise<DraftPreviewResponse>((resolve) => (finish = resolve)),
+    );
+    beginChangeCommand(draft, one, "apply");
+    confirmChangeCommand(draft, one, "apply");
+    finish(preview());
+    expect(operationIds(await read)).toEqual(["2", "3"]);
+    // The read settled, so nothing is left to fence.
+    expect(Object.keys(currentChangeCommandRecords())).toHaveLength(0);
+  });
+
+  it("a read that started after the confirmation is authoritative", async () => {
+    confirmChangeCommand(draft, one, "apply");
+    const after = await readPreviewAfterChangeCommands(draft, async () => preview());
+    expect(operationIds(after)).toEqual(["1", "2", "3"]);
+  });
+
+  it("a failure is dropped once a read no longer lists any of the change's operations", async () => {
+    failChangeCommand(draft, one, "apply", "offline");
+    expect(changeCommandState(currentChangeCommandRecords(), draft, one)?.phase).toBe("failed");
+    const without = previewWithoutOperations(preview(), new Set(["1"]));
+    await readPreviewAfterChangeCommands(draft, async () => without);
+    expect(changeCommandState(currentChangeCommandRecords(), draft, one)).toBeNull();
+  });
+
+  it("a failure survives a read that still lists the change, and clears on the next action", async () => {
+    failChangeCommand(draft, one, "apply", "stale");
+    await readPreviewAfterChangeCommands(draft, async () => preview());
+    expect(changeCommandState(currentChangeCommandRecords(), draft, one)).toMatchObject({
+      code: "stale",
+    });
+    clearChangeFailure(draft, one);
+    expect(changeCommandState(currentChangeCommandRecords(), draft, one)).toBeNull();
+  });
+
+  it("hides a change's operations and the hunks only they own, nothing else", () => {
+    const hidden = previewWithoutOperations(preview(), new Set(["2", "3"]));
+    if (hidden.status !== "active") throw new Error("active");
+    expect(hidden.operations.map((o) => o.operationId)).toEqual(["1"]);
+    expect(hidden.hunks.map((h) => h.hunkId)).toEqual(["h1"]);
+  });
+
+  it("keeps the same preview object when nothing is hidden", () => {
+    const original = preview();
+    expect(previewWithoutOperations(original, new Set())).toBe(original);
+  });
+
+  it("belongs to its draft: another draft's changes are untouched", () => {
+    beginChangeCommand(draft, one, "apply");
+    const other = { ...draft, draftId: "y" };
+    expect(changeCommandState(currentChangeCommandRecords(), other, one)).toBeNull();
+  });
+
+  it("a draft handled to its last change stays out of the pending list until the AI writes again", () => {
+    markDraftCleared(draft, { lastActorTurnId: "turn-7", documentName: "Chapter 12" });
+    const cleared = currentClearedDrafts();
+    expect(isDraftCleared(cleared, draft, "turn-7")).toBe(true);
+    expect(isDraftCleared(cleared, draft, "turn-8")).toBe(false);
+    expect(isDraftCleared(cleared, { ...draft, draftId: "other" }, "turn-7")).toBe(false);
+    expect(clearedDraftName(cleared, draft)).toBe("Chapter 12");
+  });
+});

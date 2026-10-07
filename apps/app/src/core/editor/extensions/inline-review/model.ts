@@ -204,7 +204,7 @@ export function hunkKind(
  * at most), or a span's operation is unknown.
  */
 export function isUnsplittableMerge(
-  hunk: ResolvedTextReviewHunk,
+  hunk: { mergeArtifact?: boolean; spans: readonly { operationId: string }[] },
   operationsById: ReadonlyMap<string, ReviewOperation>,
 ): boolean {
   if (!hunk.mergeArtifact) return false;

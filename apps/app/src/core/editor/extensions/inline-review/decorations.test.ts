@@ -527,6 +527,18 @@ describe("focus and visibility", () => {
     expect(marked(editor, "meridian-review-emphasized")).toEqual([]);
   });
 
+  it("pulses the marks of a change that just arrived, marks and removal alike, and stops when told", () => {
+    const { editor } = createReviewEditor(["alpha beta gamma."]);
+    setModel(editor, focusModel(editor));
+    expect(marked(editor, "meridian-review-arrived")).toEqual([]);
+
+    editor.commands.setInlineReviewPulse(["a2"]);
+    expect(marked(editor, "meridian-review-arrived").sort()).toEqual(["gamma", "old"]);
+
+    editor.commands.setInlineReviewPulse([]);
+    expect(marked(editor, "meridian-review-arrived")).toEqual([]);
+  });
+
   it("hides every mark and removal without losing the model, then restores them", () => {
     const { editor } = createReviewEditor(["alpha beta gamma."]);
     setModel(editor, focusModel(editor));

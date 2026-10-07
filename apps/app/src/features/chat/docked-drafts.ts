@@ -41,6 +41,19 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined): DockRow
 }
 
 /**
+ * The draft the review moves to when the writer is done with this one: the next
+ * document in the dock's order, wrapping to the first, and none when this is
+ * the only one left (the review then returns to live).
+ */
+export function draftAfter(rows: readonly DockRow[], documentId: string): DockRow | null {
+  const others = rows.filter((row) => row.documentId !== documentId);
+  if (others.length === 0) return null;
+  const at = rows.findIndex((row) => row.documentId === documentId);
+  const after = at < 0 ? [] : rows.slice(at + 1).filter((row) => row.documentId !== documentId);
+  return after[0] ?? others[0];
+}
+
+/**
  * Whether the work-scoped Changes view has active work to show.
  */
 export function hasDockChanges(groups: ThreadDraftGroup[] | null | undefined): boolean {
@@ -62,4 +75,15 @@ export function documentBasename(contextPath: string | null | undefined): string
   const trimmed = contextPath.replace(/\/+$/, "");
   const base = trimmed.slice(trimmed.lastIndexOf("/") + 1);
   return base.length > 0 ? base : null;
+}
+
+/**
+ * What a draft's document is called: its name, else (for a new document the AI
+ * created unnamed) the basename of its path, then a defensive label.
+ */
+export function dockRowName(row: DockRow, untitled: string): string {
+  return (
+    row.documentName ??
+    (row.isNewDocument ? (documentBasename(row.contextPath) ?? untitled) : row.documentId)
+  );
 }

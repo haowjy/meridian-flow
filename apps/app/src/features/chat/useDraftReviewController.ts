@@ -1,5 +1,6 @@
 /** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
+import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
@@ -14,6 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
+import { type ChangeRef, markDraftCleared } from "@/client/query/change-command-record";
 import {
   clearDraftCommandFailure,
   draftCommandPendingIn,
@@ -22,10 +24,13 @@ import {
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   DraftApplyOutcomeUnknownError,
+  settleConfirmedChange,
   useApplyDraft,
+  useApplyDraftChanges,
   useDiscardDraft,
 } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs } from "@/client/stores";
+import { reviewChanges } from "@/features/draft-review/review-changes";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
@@ -44,9 +49,13 @@ import {
   type InlineReviewMessage,
   type InlineReviewMessageCode,
   inlineReviewFromState,
+  type ReviewToast,
 } from "./draft-review-session";
 
-export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode };
+export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode, ReviewToast };
+
+/** What the controller needs to know of a change: its identity and where to focus it. */
+export type ReviewChangeTarget = ChangeRef & { anchorOperationId: string };
 
 export type DraftReviewStateOwner = Readonly<{
   state: typeof EMPTY_DRAFT_REVIEW_STATE;
@@ -76,7 +85,6 @@ export type DraftReviewController = {
   isApplying: boolean;
   isDiscarding: boolean;
   isPending: boolean;
-  isInlineDiscardPending: boolean;
   canApplyReviewedDraft: boolean;
   /**
    * The global disposition lock: any Apply/Discard in flight in the session.
@@ -89,9 +97,21 @@ export type DraftReviewController = {
    * stays available on a frozen Work.
    */
   dispositionLocked: boolean;
-  pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
   inlineReviewMessage: InlineReviewMessage | null;
-  inlineDiscardError: InlineReviewMessageCode | null;
+  /** The header's "Show changes". The editor paints from it (`useInlineReviewFocus`). */
+  marksVisible: boolean;
+  setMarksVisible: (visible: boolean) => void;
+  /** The change the writer is looking at in the open review, or null. */
+  focusedClassId: string | null;
+  /** The editor reports the change a click in the manuscript landed on. */
+  reportFocusedClass: (documentId: string, draftId: string, classId: string | null) => void;
+  /** Focus one change: in the manuscript and in every list. `scroll` brings it into view. */
+  focusReviewChange: (change: ReviewChangeTarget, options?: { scroll?: boolean }) => void;
+  /** Apply or Discard one change of the open review. It leaves every surface at once. */
+  applyChange: (change: ChangeRef) => Promise<DraftCommandOutcome>;
+  discardChange: (change: ChangeRef) => Promise<DraftCommandOutcome>;
+  toast: ReviewToast | null;
+  dismissToast: (id: number) => void;
   dockDispositionError: DraftBatchErrorCode | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
@@ -102,8 +122,6 @@ export type DraftReviewController = {
   /** Claim/release the single review-runtime slot. */
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
-  focusReviewOperation: (operationId: string) => void;
-  discardOperation: (operationId: string) => Promise<DraftCommandOutcome>;
   apply: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
   discard: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
   disposeDrafts: (
@@ -131,6 +149,7 @@ export function useDraftReviewController({
   const openContextRoute = useOpenContextRoute();
   const isCurrentContextRoute = useIsCurrentContextRoute();
   const applyMutation = useApplyDraft();
+  const applyChangesMutation = useApplyDraftChanges();
   const discardMutation = useDiscardDraft();
   const localStateOwner = useDraftReviewStateOwner();
   const { state, dispatch } = stateOwner ?? localStateOwner;
@@ -173,13 +192,11 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
   const inlineReviewMessage = state.inlineReviewMessage;
-  const inlineDiscardError = state.inlineDiscardError;
   const dockDispositionError = state.dockDispositionError;
 
   const activeDisposition = disposition.busy ? disposition.target : null;
   const isApplying = activeDisposition?.kind === "apply-draft";
   const isDiscarding = activeDisposition?.kind === "discard-draft";
-  const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isApplying || isDiscarding;
   // A command in flight on any draft of this Work, from any surface, disables this one.
   const commandRecords = useDraftCommandRecords();
@@ -188,13 +205,6 @@ export function useDraftReviewController({
   const dispositionLocked = isDisposing || draftsFrozen;
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
-  const pendingInlineDiscardIds = useCallback(
-    (draftId: string | null | undefined): ReadonlySet<string> =>
-      activeDisposition?.kind === "discard-operation" && activeDisposition.draftId === draftId
-        ? new Set([activeDisposition.operationId])
-        : EMPTY_OPERATION_IDS,
-    [activeDisposition],
-  );
 
   useEffect(() => {
     if (inlineReview) return;
@@ -291,9 +301,22 @@ export function useDraftReviewController({
         ...input,
       });
     },
-    operationDiscardStarted: () => {
-      dispatch({ type: "discardStarted" });
-    },
+    applyChanges: ({ documentId, draftId }, request) =>
+      applyChangesMutation.mutateAsync({
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        draftId,
+        request,
+      }),
+    changeConfirmed: ({ documentId, draftId }, change, mode) =>
+      settleConfirmedChange(
+        queryClient,
+        { projectId, workId, threadId, documentId, draftId },
+        change,
+        mode,
+      ),
     batchStarted: () => {
       dispatch({ type: "batchStarted" });
     },
@@ -378,31 +401,127 @@ export function useDraftReviewController({
     }
   }, []);
 
-  const focusReviewOperation = useCallback((operationId: string) => {
-    const editor = inlineRuntimeRef.current?.editor;
-    if (!editor || editor.isDestroyed) return;
-    editor.commands.setInlineReviewActiveOperation(operationId);
-    editor.commands.scrollInlineReviewOperationIntoView(operationId);
+  const focusReviewChange = useCallback(
+    (change: ReviewChangeTarget, options?: { scroll?: boolean }) => {
+      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+      if (!inline) return;
+      dispatch({
+        type: "changeFocused",
+        documentId: inline.documentId,
+        draftId: inline.draftId,
+        classId: change.classId,
+      });
+      const editor = inlineRuntimeRef.current?.editor;
+      if (!editor || editor.isDestroyed) return;
+      editor.commands.setInlineReviewActiveOperation(change.anchorOperationId);
+      if (options?.scroll)
+        editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId);
+    },
+    [],
+  );
+
+  const reportFocusedClass = useCallback(
+    (documentId: string, draftId: string, classId: string | null) => {
+      dispatch({ type: "changeFocused", documentId, draftId, classId });
+    },
+    [],
+  );
+
+  const setMarksVisible = useCallback((visible: boolean) => {
+    dispatch({ type: "marksVisible", visible });
   }, []);
 
-  const discardOperation = useCallback(
-    async (operationId: string): Promise<DraftCommandOutcome> => {
-      // The review selection comes from state, not from the editor runtime:
-      // the disposition is server-backed, so a Changes card must work on
-      // screens where the manuscript is not mounted.
+  const dismissToast = useCallback((id: number) => {
+    dispatch({ type: "toastDismissed", id });
+  }, []);
+
+  /** Run one change command against the open review, and say what happened. */
+  const runChangeCommand = useCallback(
+    async (
+      command: (
+        inline: DraftReviewSelection,
+        previewTokens: { liveRevisionToken: string; draftRevisionToken: string } | null,
+      ) => Promise<DraftCommandOutcome>,
+    ): Promise<DraftCommandOutcome> => {
+      // The selection comes from state, not from the editor runtime: the
+      // command is server-backed, so a list row works with no manuscript mounted.
       const current = stateRef.current;
       const inline = current.surface.kind === "inline" ? current.surface : null;
-      if (!inline) return { kind: "failed", code: "discard-failed" };
-      const outcome = await reviewSession.discardOperation(inline, operationId);
-      if (outcome.kind === "failed") {
+      if (!inline) return { kind: "blocked" };
+      const cached = queryClient.getQueryData<DraftPreviewResponse>(
+        projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
+      );
+      const outcome = await command(
+        { documentId: inline.documentId, draftId: inline.draftId },
+        cached?.status === "active"
+          ? {
+              liveRevisionToken: cached.liveRevisionToken,
+              draftRevisionToken: cached.draftRevisionToken,
+            }
+          : null,
+      );
+      if (!activeRef.current) return outcome;
+      if (
+        outcome.kind === "change-settled" ||
+        (outcome.kind === "change-refused" && outcome.code === "gone")
+      ) {
+        // The cache already lost the change (`settleConfirmedChange`): if that
+        // was the last one, the review stays open to say so rather than
+        // closing under the writer when the draft leaves the server's list.
+        const after = queryClient.getQueryData<DraftPreviewResponse>(
+          projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
+        );
+        if (
+          after?.status === "active" &&
+          reviewChanges(after.operations, after.hunks).length === 0
+        ) {
+          dispatch({
+            type: "reviewCleared",
+            documentId: inline.documentId,
+            draftId: inline.draftId,
+          });
+          // The server keeps the emptied draft in its list; the writer is not offered it again.
+          const listed = queryClient
+            .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
+            ?.find((item) => item.draftId === inline.draftId);
+          markDraftCleared(
+            { projectId, workId, documentId: inline.documentId, draftId: inline.draftId },
+            {
+              lastActorTurnId: listed?.lastActorTurnId ?? null,
+              documentName: listed?.documentName ?? null,
+            },
+          );
+        }
+      }
+      if (outcome.kind === "change-settled") {
         dispatch({
-          type: "discardFailed",
-          code: outcome.code,
+          type: "toast",
+          code: outcome.mode === "apply" ? "applied" : "discarded",
+          tone: "info",
         });
+      } else if (outcome.kind === "change-refused" && outcome.code === "gone") {
+        dispatch({ type: "toast", code: "change-gone", tone: "error" });
       }
       return outcome;
     },
-    [reviewSession],
+    [projectId, queryClient, workId],
+  );
+
+  const applyChange = useCallback(
+    (change: ChangeRef): Promise<DraftCommandOutcome> =>
+      runChangeCommand((selection, tokens) =>
+        // Without a preview there is nothing the writer saw to apply: treat it as an out-of-date change.
+        tokens
+          ? reviewSession.applyChange(selection, change, tokens)
+          : Promise.resolve({ kind: "change-refused", mode: "apply", code: "stale" }),
+      ),
+    [reviewSession, runChangeCommand],
+  );
+
+  const discardChange = useCallback(
+    (change: ChangeRef): Promise<DraftCommandOutcome> =>
+      runChangeCommand((selection) => reviewSession.discardChange(selection, change)),
+    [reviewSession, runChangeCommand],
   );
 
   const apply = useCallback(
@@ -436,13 +555,19 @@ export function useDraftReviewController({
       isApplying,
       isDiscarding,
       isPending,
-      isInlineDiscardPending,
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
-      pendingInlineDiscardIds,
       inlineReviewMessage,
-      inlineDiscardError,
+      marksVisible: state.marksVisible,
+      setMarksVisible,
+      focusedClassId: inlineReview?.focusedClassId ?? null,
+      reportFocusedClass,
+      focusReviewChange,
+      applyChange,
+      discardChange,
+      toast: state.toast,
+      dismissToast,
       dockDispositionError,
       enterInlineReview,
       exitInlineReview,
@@ -451,8 +576,6 @@ export function useDraftReviewController({
       setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
-      focusReviewOperation,
-      discardOperation,
       apply,
       discard,
       disposeDrafts,
@@ -467,13 +590,19 @@ export function useDraftReviewController({
       isApplying,
       isDiscarding,
       isPending,
-      isInlineDiscardPending,
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
-      pendingInlineDiscardIds,
       inlineReviewMessage,
-      inlineDiscardError,
+      state.marksVisible,
+      setMarksVisible,
+      inlineReview?.focusedClassId,
+      reportFocusedClass,
+      focusReviewChange,
+      applyChange,
+      discardChange,
+      state.toast,
+      dismissToast,
       dockDispositionError,
       enterInlineReview,
       exitInlineReview,
@@ -482,13 +611,9 @@ export function useDraftReviewController({
       setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
-      focusReviewOperation,
-      discardOperation,
       apply,
       discard,
       disposeDrafts,
     ],
   );
 }
-
-const EMPTY_OPERATION_IDS = new Set<string>();

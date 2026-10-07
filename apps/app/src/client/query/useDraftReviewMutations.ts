@@ -2,11 +2,21 @@
  * useDraftReviewMutations — Apply/Discard actions for Work drafts.
  */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type {
+  DraftApplyChangesRequest,
+  DraftPreviewResponse,
+  ThreadDraftListItem,
+} from "@meridian/contracts/drafts";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { applyDraft, discardDraft } from "@/client/api/drafts-api";
+import { applyDraft, applyDraftChanges, discardDraft } from "@/client/api/drafts-api";
 import { httpErrorStatus } from "@/client/api/http-client";
+import {
+  type ChangeCommandMode,
+  type ChangeRef,
+  confirmChangeCommand,
+  previewWithoutOperations,
+} from "./change-command-record";
 import { confirmDraftCommand } from "./draft-command-record";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
@@ -121,4 +131,49 @@ export function useDiscardDraft() {
     onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
     onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
+}
+
+export type DraftChangesApplyInput = DraftReviewMutationBase & {
+  request: Omit<DraftApplyChangesRequest, "draftId">;
+};
+
+/**
+ * Apply complete changes (server closure classes) of one draft. The server's
+ * answer is data, not an error: a refusal (`stale`, `gone`, ...) resolves, and
+ * the caller decides what it means. Either way the draft's list and preview
+ * are re-read before the mutation settles, so the surfaces that act next read
+ * current tokens.
+ */
+export function useApplyDraftChanges() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, workId, documentId, draftId, request }: DraftChangesApplyInput) =>
+      applyDraftChanges(projectId, workId, documentId, { draftId, ...request }),
+    onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
+    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
+  });
+}
+
+/**
+ * The server confirmed one change (applied, or discarded): it leaves the cached
+ * preview now, and preview reads already in flight can no longer bring it back.
+ */
+export function settleConfirmedChange(
+  queryClient: QueryClient,
+  draft: DraftReviewMutationBase,
+  change: ChangeRef,
+  mode: ChangeCommandMode,
+): void {
+  const hidden = new Set(change.operationIds);
+  queryClient.setQueryData<DraftPreviewResponse>(
+    projectQueryKeys.workDraftPreview(
+      draft.projectId,
+      draft.workId,
+      draft.documentId,
+      draft.draftId,
+    ),
+    (preview) => (preview ? previewWithoutOperations(preview, hidden) : preview),
+  );
+  confirmChangeCommand(draft, change, mode);
 }
