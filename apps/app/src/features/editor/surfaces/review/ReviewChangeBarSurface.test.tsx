@@ -28,6 +28,9 @@ import {
 } from "@/test-support/inline-review-editor";
 import { ReviewChangeBarSurface } from "./ReviewChangeBarSurface";
 
+// The desktop shell: the phone pins its own bar to the bottom of the screen.
+vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => false }));
+
 const change: ReviewChange = {
   classId: "c1",
   operations: [],

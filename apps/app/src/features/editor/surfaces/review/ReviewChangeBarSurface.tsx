@@ -19,6 +19,7 @@ import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensi
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { escapeCssIdent } from "@/lib/css-selector";
 import type { EditorChromeSurfaceProps } from "../../chrome";
 import { manuscriptOverlay } from "../../chrome/manuscript-overlay";
@@ -38,8 +39,11 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const rect = useAnchorRect(editor, anchor);
   const column = useManuscriptColumn(editor, reviewing);
   const overlay = manuscriptOverlay(editor);
+  // A phone's bar is pinned to the bottom of the screen (`MobileChangeBar`).
+  const phone = usePhoneShell();
 
-  const showing = reviewing && controller.marksVisible && Boolean(focusedItem) && Boolean(rect);
+  const showing =
+    !phone && reviewing && controller.marksVisible && Boolean(focusedItem) && Boolean(rect);
   const placement = showing && rect && column ? placeReviewBar({ anchor: rect, ...column }) : null;
   const wantsSlot = placement?.kind === "below";
   const slot = useBarSlot(editor, wantsSlot);

@@ -22,9 +22,16 @@ is one server closure class.
   reason, shown on its bar and row. A read that started before a confirmation
   cannot bring a change back. One command in flight disables every command
   (`controller.dispositionLocked`), so each is sent once.
+- **`useReviewHeader`** is the header's model without its layout: the Work's
+  drafts and their counts, the whole-draft commands that move on to the next
+  draft, the refusal line and "No changes left". The desktop header
+  (`features/editor/DraftReviewHeader`) and the phone's
+  (`features/project/mobile/MobileReviewHeader`) are two layouts over it.
 - **Presentational components take no controller.** `ReviewChangeRow`,
   `ReviewChangeBar`, `ReviewStepper`, `DraftSwitcher` and `ReviewToast` are
   handed props and callbacks, so the phone's change sheet and bar reuse them.
+  `touch` is their phone form (44px targets); `DraftSwitcher` takes
+  `draftCommands` and `marks` to carry what the phone header has no room for.
 
 ## Key rules
 

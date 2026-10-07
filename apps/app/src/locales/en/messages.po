@@ -573,6 +573,7 @@ msgstr "Apply all {total} drafts"
 msgid "Apply all 1 draft"
 msgstr "Apply all 1 draft"
 
+#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply draft"
 msgstr "Apply draft"
@@ -629,7 +630,7 @@ msgstr "Back to {title}"
 msgid "Back to chat"
 msgstr "Back to chat"
 
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Back to live"
@@ -762,6 +763,7 @@ msgid "Changed 1 Work"
 msgstr "Changed 1 Work"
 
 #: src/features/project/dock/DockHeader.tsx
+#: src/features/project/mobile/MobileChangeSheet.tsx
 msgid "Changes"
 msgstr "Changes"
 
@@ -913,13 +915,17 @@ msgid "Close chat"
 msgstr "Close chat"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "Close review"
 msgstr "Close review"
 
 #: src/features/account/PhoneSettings.tsx
 msgid "Close settings"
 msgstr "Close settings"
+
+#: src/features/project/mobile/MobileChangeSheet.tsx
+msgid "Close the list"
+msgstr "Close the list"
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Closed"
@@ -1624,6 +1630,7 @@ msgid "Diagram"
 msgstr "Diagram"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -1650,6 +1657,7 @@ msgstr "Discard all changes?"
 msgid "Discard changes"
 msgstr "Discard changes"
 
+#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Discard draft"
 msgstr "Discard draft"
@@ -1720,6 +1728,7 @@ msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 
 #: src/features/editor/DraftReviewHeader.tsx
+#: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
 msgstr "Draft review"
 
@@ -2065,6 +2074,10 @@ msgstr "Heading 2"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
 msgstr "Heading 3"
+
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Hide changes"
+msgstr "Hide changes"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
@@ -2581,7 +2594,7 @@ msgstr "New Work"
 msgid "Next change"
 msgstr "Next change"
 
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Next draft"
 msgstr "Next draft"
@@ -2604,7 +2617,7 @@ msgstr "No archived Work."
 msgid "No billing activity yet."
 msgstr "No billing activity yet."
 
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No changes left"
 msgstr "No changes left"
@@ -3473,6 +3486,7 @@ msgstr "Settings sections"
 msgid "Shared an attachment"
 msgstr "Shared an attachment"
 
+#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Show changes"
 msgstr "Show changes"
@@ -3493,6 +3507,14 @@ msgstr "Show live version"
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
 msgstr "Show more"
+
+#: src/features/project/mobile/MobileReviewHeader.tsx
+msgid "Show the {count} changes"
+msgstr "Show the {count} changes"
+
+#: src/features/project/mobile/MobileReviewHeader.tsx
+msgid "Show the 1 change"
+msgstr "Show the 1 change"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Show the whole brief"
@@ -3734,6 +3756,10 @@ msgstr "Table placement"
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "Talk it out"
+
+#: src/features/project/mobile/MobileChangeSheet.tsx
+msgid "Tap a change to go to it in the manuscript."
+msgstr "Tap a change to go to it in the manuscript."
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
