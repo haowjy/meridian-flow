@@ -32,6 +32,7 @@ import {
   type UIEventHandler,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -114,6 +115,14 @@ export type EditorViewProps = {
 let editorSessionOwnerSequence = 0;
 
 /**
+ * How long a painted review editor waits for its change marks before showing
+ * anyway. The preview is normally already cached from opening the room, so this
+ * only bounds a preview that never arrives; the writer is never stranded on
+ * read-only live text.
+ */
+const REVIEW_MARKS_WAIT_MS = 1500;
+
+/**
  * Which editor this props set asks for. Inline review needs both a draft id and
  * the generation-fenced room it lives in; a draft id alone is a host that has
  * not resolved the room yet, and review decorations must never be projected
@@ -159,6 +168,14 @@ export function EditorView(props: EditorViewProps) {
   // live prose nor an empty shell shows under a review the writer is still in. It belongs to
   // the one review identity (document, room, draft) it was copied from and renders for no other.
   const reviewIdentity = inReview ? editorMountKey(identity) : null;
+  const { controller } = useDraftReview();
+  const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
+  const marksReady =
+    reviewDraftId !== null &&
+    controller.inlineReview?.documentId === props.documentId &&
+    controller.inlineReview.draftId === reviewDraftId &&
+    controller.inlineReview.previewIdentity !== undefined;
+  const [marksWaitOverFor, setMarksWaitOverFor] = useState<string | null>(null);
   const [replaced, setReplaced] = useState<{
     identity: string;
     markup: FrozenReviewMarkup;
@@ -242,7 +259,10 @@ export function EditorView(props: EditorViewProps) {
   const reviewSession = inReview && boundSession?.roomKey === roomKey ? boundSession : null;
   const reviewKey =
     inReview && reviewSession ? `${editorMountKey(identity)}|${reviewSession.document.guid}` : null;
-  const reviewVisible = reviewSession !== null && paintedReviewKey === reviewKey;
+  const reviewPainted = reviewSession !== null && paintedReviewKey === reviewKey;
+  // The editor existing is not enough: the review shows with its marks, in one
+  // frame, so the writer never sees the draft text unmarked.
+  const reviewVisible = reviewPainted && (marksReady || marksWaitOverFor === reviewKey);
   reviewPaintedRef.current = reviewVisible;
   // Until the replacement paints, the copy stands in for the review it replaces.
   const replacing = inReview && !reviewVisible && replacedReview !== null;
@@ -253,6 +273,22 @@ export function EditorView(props: EditorViewProps) {
   useEffect(() => {
     if (reviewVisible) setReplaced(null);
   }, [reviewVisible]);
+
+  useEffect(() => {
+    if (!reviewPainted || marksReady || !reviewKey) return;
+    const timer = window.setTimeout(() => setMarksWaitOverFor(reviewKey), REVIEW_MARKS_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [reviewPainted, marksReady, reviewKey]);
+
+  // Review chrome (the header, the chip swap) shows with the review body and
+  // never before it. A layout effect, so the controller's update lands before
+  // paint, in the same frame as the body swap above.
+  const chromeShown = inReview && (reviewShown || replacing);
+  const { setInlineReviewShown } = controller;
+  useLayoutEffect(() => {
+    if (!reviewDraftId) return;
+    setInlineReviewShown(props.documentId, reviewDraftId, chromeShown);
+  }, [setInlineReviewShown, props.documentId, reviewDraftId, chromeShown]);
 
   if (!liveSession && !reviewSession && !replacing) return <PendingEditorShell {...props} />;
 
@@ -265,7 +301,10 @@ export function EditorView(props: EditorViewProps) {
   return (
     <>
       {liveSession ? (
-        <div className={reviewVisible || replacing ? "hidden" : "contents"}>
+        <div
+          data-editor-surface="live"
+          className={reviewVisible || replacing ? "hidden" : "contents"}
+        >
           <SessionEditorView
             key={`${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`}
             {...props}
@@ -279,7 +318,11 @@ export function EditorView(props: EditorViewProps) {
       ) : null}
       {replacing && replacedReview ? <FrozenReview markup={replacedReview} /> : null}
       {reviewSession && reviewKey ? (
-        <div ref={reviewHostRef} className={reviewShown ? "contents" : "hidden"}>
+        <div
+          ref={reviewHostRef}
+          data-editor-surface="review"
+          className={reviewShown ? "contents" : "hidden"}
+        >
           <SessionEditorView
             key={reviewKey}
             {...props}

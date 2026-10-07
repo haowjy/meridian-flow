@@ -154,8 +154,9 @@ export function ContextViewer({
             rather than in the layout. */}
         <PassageNotice documentId={activeTabId} />
         {/* Review banner — above the identity bar so it's the first chrome
-            the writer sees when entering review mode. */}
-        {activeTab && activeReviewDraftId ? (
+            the writer sees when entering review mode. It appears with the
+            painted review body, never over the live text held until then. */}
+        {activeTab && activeReviewDraftId && controller.inlineReview?.shown ? (
           <DraftReviewHeader
             documentId={activeTab.documentId}
             draftId={activeReviewDraftId}

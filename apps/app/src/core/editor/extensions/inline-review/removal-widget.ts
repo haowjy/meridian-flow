@@ -101,14 +101,19 @@ export function removalLabel(plan: RemovalPlan): string {
 }
 
 export interface RemovalHandlers {
-  /** Adopt this removal's change as the focused one. */
-  focus: (operationId: string) => void;
-  toggle: (identity: string) => void;
+  /**
+   * A click on a removal: its change becomes the focused one, and a click on the
+   * fold toggles that removal open or closed. `keyboard` is true when the fold
+   * was activated from the keyboard, so focus can follow it to the rebuilt widget.
+   */
+  activate: (operationId: string, toggleIdentity: string | null, keyboard: boolean) => void;
 }
 
 export interface RemovalRenderOptions {
   focused: boolean;
   expanded: boolean;
+  /** Put keyboard focus on the fold once this widget is in the document. */
+  refocusToggle: boolean;
   handlers: RemovalHandlers;
   hunkAttr: string;
   operationAttr: string;
@@ -122,7 +127,7 @@ export function createRemovalElement(
 ): HTMLElement {
   const collapsible = isCollapsible(plan);
   const folded = collapsible && !options.expanded;
-  const root = doc.createElement(plan.block ? "div" : "span");
+  const root: HTMLElement = doc.createElement(plan.block ? "div" : "span");
   root.className = [
     REMOVAL_CLASS,
     plan.block ? REMOVAL_BLOCK_CLASS : "",
@@ -141,11 +146,8 @@ export function createRemovalElement(
     toggle.className = REMOVAL_TOGGLE_CLASS;
     toggle.setAttribute("aria-expanded", folded ? "false" : "true");
     toggle.textContent = folded ? removalLabel(plan) : "Hide removed text";
-    toggle.addEventListener("click", (event) => {
-      event.preventDefault();
-      options.handlers.toggle(plan.identity);
-    });
     root.append(toggle);
+    if (options.refocusToggle) queueMicrotask(() => toggle.focus());
   }
   if (!folded) {
     for (const text of plan.paragraphs) {
@@ -161,12 +163,16 @@ export function createRemovalElement(
       }
     }
   }
-  // Keep the editor's caret and focus where the writer left them; the click
-  // only chooses which change is selected.
-  root.addEventListener("mousedown", (event) => {
-    event.preventDefault();
+  // Keep the editor's caret and focus where the writer left them. The change is
+  // chosen on click, not on press: choosing rebuilds this widget, and a rebuild
+  // between press and release would swallow the click.
+  root.addEventListener("mousedown", (event) => event.preventDefault());
+  root.addEventListener("click", (event) => {
     const [operationId] = plan.operationIds;
-    if (operationId) options.handlers.focus(operationId);
+    if (!operationId) return;
+    const onToggle =
+      event.target instanceof Element && event.target.closest(`.${REMOVAL_TOGGLE_CLASS}`);
+    options.handlers.activate(operationId, onToggle ? plan.identity : null, event.detail === 0);
   });
   return root;
 }

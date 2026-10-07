@@ -423,6 +423,51 @@ describe("removals", () => {
   });
 });
 
+describe("clicking a removal", () => {
+  function foldedModel(editor: Editor): InlineReviewModel {
+    const between = posOf(editor, "Keep two") - 1;
+    return model(
+      [operation("a1", "agent")],
+      [
+        textHunk(
+          editor,
+          "h1",
+          ["a1"],
+          { from: between, to: between },
+          {
+            deletedText: "z".repeat(REMOVAL_COLLAPSE_CHARS + 20),
+          },
+        ),
+      ],
+    );
+  }
+
+  it("selects its change and opens the fold on one mouse click", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    setModel(editor, foldedModel(editor));
+    const toggle = removals(editor)[0]?.querySelector("button");
+    // A real click is press, then release: the press must not rebuild the
+    // widget out from under the release.
+    toggle?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    expect(removals(editor)[0]?.querySelector("button")).toBe(toggle);
+    toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+
+    expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
+    expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(true);
+  });
+
+  it("keeps keyboard focus on the fold after Enter rebuilds it", async () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    document.body.append(editor.view.dom.parentElement as HTMLElement);
+    setModel(editor, foldedModel(editor));
+    // `click()` with no pointer is what Enter on a focused button sends.
+    removals(editor)[0]?.querySelector("button")?.click();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(removals(editor)[0]?.querySelector("button"));
+    expect(document.activeElement?.getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
 describe("focus and visibility", () => {
   function focusModel(editor: Editor): InlineReviewModel {
     const first = posOf(editor, "alpha");
