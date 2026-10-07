@@ -1,5 +1,6 @@
 /** Rollback isolation by default; catalog-derived DELETE for committed, multi-connection suites. */
 import { createDb, type Database } from "@meridian/database";
+import * as schema from "@meridian/database/schema";
 import { promptBakes, threads } from "@meridian/database/schema";
 import { sql, TransactionRollbackError } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -126,7 +127,7 @@ async function assertThrowawayDatabase(db: Database): Promise<void> {
  * exhaustive ordering: the live Postgres FK graph recursively adds every
  * dependent table and determines the child-first delete order.
  */
-export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promise<void> {
+export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]): Promise<void> {
   if (!(await processDetachedWork.drain(25_000)))
     throw new Error(
       `Cannot reset fixtures before detached runtime work settles: ${processDetachedWork.pendingTasks.join(", ")}`,
@@ -210,6 +211,41 @@ export async function deleteDrizzleRows(db: Database, tables: unknown[]): Promis
     }
   });
 }
+
+/**
+ * Anchors for committed suites that write documents, branches, change trails
+ * and threads. `deleteDrizzleRows` adds their dependents.
+ */
+export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
+  schema.branchPushOutboxUpdates,
+  schema.branchPushSettlementOutbox,
+  schema.turnTrailWork,
+  schema.changeTrailDeliveryOutbox,
+  schema.changeTrailDocumentDetails,
+  schema.changeTrailDocumentOccurrences,
+  schema.changeTrailShells,
+  schema.pendingNotices,
+  schema.documentYjsReversalOps,
+  schema.documentYjsReversals,
+  schema.agentEditWidCounters,
+  schema.agentEditMutations,
+  schema.branchWriteJournal,
+  schema.pushLineage,
+  schema.documentBranches,
+  schema.documentYjsCheckpoints,
+  schema.documentYjsHeads,
+  schema.documentYjsUpdates,
+  schema.modelResponses,
+  schema.threadWorks,
+  schema.turns,
+  schema.threads,
+  schema.folders,
+  schema.documents,
+  schema.contextSources,
+  schema.works,
+  schema.projects,
+  schema.users,
+];
 
 export interface RollbackTestDatabase {
   readonly current: Database;

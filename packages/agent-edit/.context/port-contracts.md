@@ -2,13 +2,6 @@
 
 ## Port interfaces
 
-### TurnDiffQuery (`src/ports/turn-diff-query.ts`)
-
-Read-only host seam for the current turn's folded, shell-state-aware change
-trail. Agent-edit renders prose windows and never reads collab tables or CRDT
-identities; shared-shell effects are flagged without attributing them to the
-turn.
-
 ### UpdateJournal / ReversalStore (`src/ports/update-journal.ts`)
 The persistence seam is split by concern:
 
@@ -64,7 +57,7 @@ atomically. Reversal rows also carry `redoUpdateSeq` while `status: "redone"`;
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
 Access to the coordinator-owned canonical Y.Doc, which may be a host branch
-rather than published live. `withDocument(docId, fn)` serializes callers through
+rather than live. `withDocument(docId, fn)` serializes callers through
 this port for the same docId. It does not by itself exclude mutations arriving
 through another transport; the host owns that concurrency fence.
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects

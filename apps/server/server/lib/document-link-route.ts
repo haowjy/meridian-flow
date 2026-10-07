@@ -1,9 +1,10 @@
 /** Route core and input validation for project document-link resolution. */
 
 import type { ResolveDocumentLinkRequest } from "@meridian/contracts/protocol";
-import type { UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { DocumentLinkResolver, DocumentLinkTarget } from "../domains/context/index.js";
+import type { FileAccess } from "../domains/file-policy/index.js";
 import { requireProjectOwner } from "../domains/projects/index.js";
 import type { ProjectRepository } from "../domains/projects/ports/project-repository.js";
 import { parseRequestId } from "../shared/uuid.js";
@@ -13,6 +14,7 @@ const MAX_LINK_TARGET_LENGTH = 2_048;
 export interface DocumentLinkRouteDeps {
   projectRepo: ProjectRepository;
   documentLinks: DocumentLinkResolver;
+  fileAccess: Pick<FileAccess, "listAccess">;
 }
 
 export async function handleDocumentLinkResolveRequest(
@@ -26,15 +28,20 @@ export async function handleDocumentLinkResolveRequest(
   },
 ) {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  return {
-    document: await deps.documentLinks.resolve({
-      projectId: input.projectId,
-      userId: input.userId,
-      workId: input.workId,
-      target: input.target,
-      holder: input.holder,
-    }),
-  };
+  const document = await deps.documentLinks.resolve({
+    projectId: input.projectId,
+    userId: input.userId,
+    workId: input.workId,
+    target: input.target,
+    holder: input.holder,
+  });
+  if (!document) return { document };
+  // A link resolves only to a file the writer can read (file-access §4). This
+  // also covers answers found through the holder's pending redirects.
+  const access = await deps.fileAccess.listAccess({ accountId: input.userId }, [
+    document.documentId as DocumentId,
+  ]);
+  return { document: access.has(document.documentId as DocumentId) ? document : null };
 }
 
 export function parseDocumentLinkResolveBody(body: unknown): ResolveDocumentLinkRequest {

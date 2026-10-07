@@ -1,6 +1,7 @@
 /** Shared execution-support checks for immutable Agent selection and turn preparation. */
 import type { CompiledAgentDefinition } from "../packages/index.js";
 import type { Gateway } from "./gateway/index.js";
+import { TOOL_CATALOG } from "./loop/permissions/tool-policy.js";
 
 const supported = new Set([
   "name",
@@ -10,6 +11,7 @@ const supported = new Set([
   "autocompact_pct",
   "effort",
   "mode",
+  "permission",
   "model-invocable",
   "user-invocable",
   "skills",
@@ -17,6 +19,7 @@ const supported = new Set([
   "tools",
   "disallowed-tools",
 ]);
+const catalog = new Set<string>(TOOL_CATALOG);
 export function agentExecutionUnavailableReasons(
   definition: CompiledAgentDefinition,
   gateway: Pick<Gateway, "listModels">,
@@ -44,6 +47,9 @@ export function agentDefinitionUnsupportedReasons(definition: CompiledAgentDefin
   for (const key of Object.keys(meta)) {
     if (!supported.has(key)) reasons.push(`Unsupported Agent field: ${key}`);
   }
-  if (meta.skills?.load?.length) reasons.push("Bound skill load is not available yet.");
+  // An unknown name in disallowed-tools denies nothing that exists, so it is ignored.
+  for (const name of meta.tools ?? []) {
+    if (!catalog.has(name)) reasons.push(`Unknown tool in tools: ${name}`);
+  }
   return reasons;
 }

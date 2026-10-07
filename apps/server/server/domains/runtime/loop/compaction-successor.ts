@@ -127,6 +127,7 @@ export async function prepareCompactionSuccessor(args: {
       turns: allTurns,
       blocks: allBlocks,
       agentRevisions: deps.agentRevisions,
+      threads: deps.repos.threads,
       toolRegistry: deps.toolRegistry,
       baseTools: input.tools ?? deps.toolExecutor.getDefinitions?.(),
       promptBakes: deps.repos.promptBakes,

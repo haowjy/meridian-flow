@@ -1,0 +1,6 @@
+ALTER TABLE "thread_execution_reports" RENAME COLUMN "description" TO "name"; /* -- migration-lint: skip RENAME_COLUMN (no deployed data; every read renamed in the same change) */--> statement-breakpoint
+ALTER TABLE "thread_execution_reports" DROP CONSTRAINT "thread_execution_reports_origin_valid";--> statement-breakpoint
+ALTER TABLE "thread_execution_reports" DROP CONSTRAINT "thread_execution_reports_origin_delivery_valid";--> statement-breakpoint
+UPDATE "thread_execution_reports" SET "origin" = 'message' WHERE "origin" = 'foreground_message';--> statement-breakpoint
+ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_origin_valid" CHECK ("thread_execution_reports"."origin" IN ('spawn','message','thread_run'));--> statement-breakpoint
+ALTER TABLE "thread_execution_reports" ADD CONSTRAINT "thread_execution_reports_origin_delivery_valid" CHECK (("thread_execution_reports"."origin" IN ('spawn','message') AND "thread_execution_reports"."delivery_mode" IN ('background_notification','direct')) OR ("thread_execution_reports"."origin" = 'thread_run' AND "thread_execution_reports"."delivery_mode" = 'none'));

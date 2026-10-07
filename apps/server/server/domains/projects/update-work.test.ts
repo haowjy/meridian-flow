@@ -2,6 +2,7 @@
 import type { WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
+import { createWork } from "./create-work.js";
 import { WorkLifecycleUnavailableError } from "./domain/work-lifecycle.js";
 import {
   normalizeWorkUpdateInput,
@@ -22,6 +23,14 @@ describe("updateWork", () => {
     {
       raw: { goal: " \n\t " },
       normalized: { goal: null },
+    },
+    {
+      raw: { goal: null, status: null },
+      normalized: { goal: null, status: null },
+    },
+    {
+      raw: { status: "   " },
+      normalized: { status: null },
     },
     {
       raw: { status: "  Needs\n outline  " },
@@ -46,6 +55,22 @@ describe("updateWork", () => {
       return;
     }
     expect(normalizeWorkUpdateInput({ name })).toEqual({ name: normalized });
+  });
+
+  it("creates with the same normalization: trimmed name, blank or omitted goal as none", async () => {
+    const works = createInMemoryWorkRepository();
+    await expect(
+      createWork({ works }, { projectId: PROJECT_ID, name: "  Arc  ", goal: "  Reach it  " }),
+    ).resolves.toMatchObject({ name: "Arc", goal: "Reach it" });
+    await expect(
+      createWork({ works }, { projectId: PROJECT_ID, name: "Second", goal: "   " }),
+    ).resolves.toMatchObject({ name: "Second", goal: null });
+    await expect(
+      createWork({ works }, { projectId: PROJECT_ID, name: "Third" }),
+    ).resolves.toMatchObject({ goal: null });
+    await expect(createWork({ works }, { projectId: PROJECT_ID, name: "   " })).rejects.toThrow(
+      WorkNameRequiredError,
+    );
   });
 
   it("emits one Work refresh for a compound metadata and status command", async () => {

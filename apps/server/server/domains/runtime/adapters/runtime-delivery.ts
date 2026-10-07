@@ -538,7 +538,8 @@ export function createDeliveryAdapter(
           {
             afterEvents: async () => {
               await leaseStore.bindTurn(lease, next.id, drain.ackIds, currentTurnKind(next));
-              if (adoption.selection.outstanding.length > 0) await input.admit?.(next);
+              if (adoption.selection.outstanding.length > 0)
+                await input.admit?.(next, adoption.selection.outstanding);
             },
           },
         );
@@ -656,10 +657,12 @@ export function createDeliveryAdapter(
       hasCompletedReply: hasCompletedReplyInLineage,
     }),
     threadChanged,
-    async workChanged(workId) {
+    async workChanged(workId, origin) {
       const mutationId = crypto.randomUUID();
-      for (const threadId of await inbox.workNoticeTargets(workId))
+      for (const threadId of await inbox.workNoticeTargets(workId)) {
+        if (threadId === origin?.originThreadId) continue;
         await threadChanged(threadId, mutationId);
+      }
     },
     materializeIdle,
     async sweepWorkNotices() {

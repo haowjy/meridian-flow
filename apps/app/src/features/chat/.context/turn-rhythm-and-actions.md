@@ -80,5 +80,5 @@ disclosure chevrons, and the subagent chat icon sit directly after the row's
 text, so the writer can see which row a control belongs to. This holds for
 activity rows in the process fold and for subagent lines. A card is the one
 exception: its border already binds the controls to the row, so a subagent
-launch card spans its width, truncates the description, and ends in the time,
+launch card spans its width, truncates the run name, and ends in the time,
 chevron, and chat icon.

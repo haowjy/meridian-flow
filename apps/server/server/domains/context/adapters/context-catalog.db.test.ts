@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleWorkRepository } from "../../projects/adapters/work-repository/drizzle.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
@@ -383,6 +384,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const availability = createDrizzleProjectContextAvailability(db);
       const repository = createDrizzleWorkRepository({
         db,
+        fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
       });
       const workId = "00000000-0000-4000-8000-000000000807" as never;
@@ -411,6 +413,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const failingRepository = createDrizzleWorkRepository({
         db,
+        fileAccessChanges: createLocalFileAccessChanges(),
         projectionMutation: createWorkProjectionMutation({
           db,
           availability,

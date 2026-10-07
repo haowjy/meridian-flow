@@ -15,7 +15,7 @@ describe("No Work context authority", () => {
     });
     await expect(port.list("scratch://@/notes")).resolves.toMatchObject({
       ok: true,
-      value: [{ uri: "scratch://@/notes/plan.md" }],
+      value: { uri: "scratch://@/notes", entries: [{ uri: "scratch://@/notes/plan.md" }] },
     });
   });
 

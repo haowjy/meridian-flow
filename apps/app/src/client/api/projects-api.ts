@@ -218,13 +218,12 @@ export async function updateProjectWorkingSet(
 export async function updateWorkWriteMode(
   projectId: string,
   workId: string,
-  input: Work["aiWriteMode"] | UpdateWorkWriteModeRequest,
+  input: UpdateWorkWriteModeRequest,
   init?: RequestInitOptions,
 ): Promise<UpdateWorkWriteModeResponse> {
-  const body = typeof input === "string" ? { aiWriteMode: input } : input;
   return patchJson<UpdateWorkWriteModeResponse>(
     urlFor(apiProjectWorkWriteModePath(projectId, workId), init),
-    body,
+    input,
     { headers: init?.headers },
   );
 }

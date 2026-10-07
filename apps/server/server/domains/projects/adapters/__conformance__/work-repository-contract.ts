@@ -12,7 +12,19 @@ export async function expectWorkRepositoryLifecycleContract(
   harness: WorkRepositoryConformanceHarness,
 ): Promise<void> {
   harness.setNow(new Date("2026-01-01T00:00:00.000Z"));
-  const work = await harness.repo.create({ projectId: harness.projectId, name: "Lifecycle" });
+  // Callers normalize metadata with the shared Work rule; the adapter stores it as given.
+  const work = await harness.repo.create({
+    projectId: harness.projectId,
+    name: "Lifecycle",
+    goal: null,
+  });
+  expect(work).toMatchObject({ name: "Lifecycle", goal: null });
+  await expect(harness.repo.update(work.id, { goal: "Reach the mirror" })).resolves.toMatchObject({
+    goal: "Reach the mirror",
+  });
+  await expect(harness.repo.update(work.id, { goal: null })).resolves.toMatchObject({
+    goal: null,
+  });
 
   const deletion = await harness.repo.softDelete(work.id);
   expect(deletion.after?.deletedAt).toBe("2026-01-01T00:00:00.000Z");

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectContextAvailabilityPort, UploadIdentityPort } from "../../context/index.js";
+import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
@@ -57,6 +58,7 @@ function assetPort(input: {
     },
   } as unknown as ObjectStorePort;
   return createContextImageAssetPort({
+    fileAccess: createAllowAllFileAccess(),
     availability,
     identities,
     objects,

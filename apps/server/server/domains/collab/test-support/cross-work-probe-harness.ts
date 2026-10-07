@@ -5,6 +5,7 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { testFileGrant } from "../../../test-support/file-grants.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
   ALPHA_ID,
@@ -12,6 +13,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_ID,
 } from "./change-trail-postgres-harness.js";
 
 type CrossWorkProbeFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
@@ -122,23 +124,21 @@ export async function runCrossWorkProbe(
     });
   });
   const contextA = {
+    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseId: undefined,
   };
   const contextB = {
+    grant: testFileGrant({ kind: "draft", workId: WORK_B_ID, workSlug: "work-b" }),
     sessionId: THREAD_B_ID,
     threadId: THREAD_B_ID,
     turnId: TURN_B_ID,
     responseId: undefined,
   };
-  await collab
-    .agentEdit()
-    .write({ command: "read", file: "alpha.md", documentId: ALPHA_ID }, contextA);
-  await collab
-    .agentEdit()
-    .write({ command: "read", file: "alpha.md", documentId: ALPHA_ID }, contextB);
+  await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextA);
+  await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextB);
 
   const branchA = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
   const branchB = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_B_ID);

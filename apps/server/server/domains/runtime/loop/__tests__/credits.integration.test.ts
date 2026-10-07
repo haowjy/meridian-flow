@@ -1,6 +1,7 @@
 /** Runtime credit-gate integration tests for ledger exhaustion and interrupt meter-pause semantics. */
 
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
 import {
   createToolExecutor,
@@ -108,6 +109,7 @@ describe("runtime credits", () => {
         description: "parks",
         inputSchema: { type: "object", properties: {} },
       },
+      input: z.object({}),
       capability: "interrupt",
       execution: {
         type: "server",

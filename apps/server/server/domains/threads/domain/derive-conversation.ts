@@ -240,6 +240,10 @@ export async function forkThreadAgent(
       };
     }
     const target = await bindDerivedPrimary(deps, result.thread, sourceWorkId, binding);
+    // The fork copies the turns that invoked these skills, `skills://` headers included (D64).
+    for (const [slug, reference] of Object.entries(binding.invokedSkills)) {
+      await deps.agentRevisions.recordInvokedSkill(target.id, slug, reference);
+    }
     const inheritedBlockIds = new Set(cutoff.blocks.map((block) => block.id));
     const turnOrder = new Map(cutoff.turns.map((turn, index) => [turn.id, index]));
     const decisionsAtCutoff: ThreadImageInclusion[] = [];
@@ -297,6 +301,7 @@ async function resolveDerivedBinding(
     revision: selected.revision,
     configuration: selected.configuration,
     invocationOverlay: null,
+    invokedSkills: {},
   };
 }
 

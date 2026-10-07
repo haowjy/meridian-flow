@@ -59,7 +59,7 @@ export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
 export type SavedOutcome = "succeeded" | "failed" | "cancelled";
 export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
-export type ExecutionReportOrigin = "spawn" | "foreground_message" | "thread_run";
+type ExecutionReportOrigin = "spawn" | "message" | "thread_run";
 export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
 
 /** Durable user-facing identity carried by a child-completion turn. */
@@ -110,7 +110,8 @@ export type SavedExecutionReport = {
   toolCallId: string | null;
   cardBlockId: TurnBlockId | null;
   agentSlug: string | null;
-  description: string | null;
+  /** The spawn's task label (`spawn.name`). */
+  name: string | null;
   capture: ReturnResultCapture | null;
   captureToolCallId: string | null;
   reason: string | null;
@@ -141,19 +142,26 @@ export type ThreadReportResult =
     }
   | { childThreadId: ThreadId; ref: string; status: "not_ready" | "unavailable" };
 
+/**
+ * The model's `thread_report` result: the child's latest finished report. It
+ * has no run number (D6, D17); `running` marks a newer run still in progress,
+ * and `message` carries the line the model reads about it.
+ */
 export type ModelThreadReportResult =
   | Extract<ThreadReportResult, { ok: false }>
   | {
       ref: string;
-      run: number;
       outcome: SavedOutcome;
       summary: string;
       payload?: JsonValue;
       artifacts?: ArtifactRef[];
       reason?: string;
+      partial?: true;
       source?: ExecutionReportSource;
+      running?: true;
+      message?: string;
     }
-  | { ref: string; status: "not_ready" | "unavailable" };
+  | { ref: string; status: "not_ready" | "unavailable"; message?: string };
 
 const threadReportResultSchema = z.union([
   z.object({ ok: z.literal(false), error: meridianErrorSchema }),
@@ -177,17 +185,20 @@ const threadReportResultSchema = z.union([
   }),
   z.object({
     ref: z.string(),
-    run: z.number().int().positive(),
     outcome: z.enum(["succeeded", "failed", "cancelled"]),
     summary: z.string(),
     payload: jsonValueSchema.optional(),
     artifacts: z.array(artifactRefSchema).optional(),
     reason: z.string().optional(),
+    partial: z.literal(true).optional(),
     source: z.enum(["return_result", "final_assistant", "empty"]).optional(),
+    running: z.literal(true).optional(),
+    message: z.string().optional(),
   }),
   z.object({
     ref: z.string(),
     status: z.enum(["not_ready", "unavailable"]),
+    message: z.string().optional(),
   }),
 ]);
 
@@ -217,7 +228,7 @@ export function toReportContentValue(
     summary: report.summary,
     ...(report.payload === undefined ? {} : { payload: report.payload }),
     artifacts: report.artifacts ?? [],
-    partial: "partial" in report ? report.partial : report.outcome !== "succeeded",
+    partial: report.partial ?? report.outcome !== "succeeded",
     outcome: report.outcome,
     reason: "reason" in report ? (report.reason ?? null) : null,
   };
@@ -236,10 +247,11 @@ export type AgentReport = {
   handle: string;
   /** Internal UUID for UI navigation; never sent to the model. */
   threadId: string;
+  /** Where the report came from: `return_result`, the final reply, or nothing. */
+  source: ExecutionReportSource;
   summary: string;
   payload?: JsonValue;
   artifacts?: ArtifactRef[];
-  costMillicredits: number;
 };
 
 export type SpawnResult =
@@ -249,9 +261,15 @@ export type SpawnResult =
       handle: string;
       threadId: string;
       agentSlug: string;
-      description?: string;
+      name?: string;
       /** Present for a spawned execution; absent for queue-only thread_message. */
       execution?: TurnId;
+      /**
+       * Queue-only thread_message: true when the caller re-tasked its own child,
+       * so the caller gets the completion notice when that run finishes. A
+       * queued message gets no helper card either way.
+       */
+      notifiesCaller?: boolean;
     }
   | {
       status: "error";

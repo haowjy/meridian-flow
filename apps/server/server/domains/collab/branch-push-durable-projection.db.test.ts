@@ -24,7 +24,7 @@ describe("branch-push durable projection (postgres)", () => {
   it("replays the canonical whole branch when an active edit depends on a discarded row", async () => {
     const warm = createHarness();
     const branchId = await warm.seedDiscardedDependencyPush();
-    await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     await expect(warm.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
     warm.destroyWarmState();
 
@@ -52,7 +52,7 @@ describe("branch-push durable projection (postgres)", () => {
       },
     });
     const branchId = await harness.seedDestructivePush("oracle-joined-recovery-version");
-    await expect(harness.autoPush(branchId)).rejects.toThrow(
+    await expect(harness.push(branchId)).rejects.toThrow(
       "injected fault after joined revision settlement",
     );
     const [before] = await db.select().from(schema.changeTrailShells);
@@ -118,7 +118,7 @@ describe("branch-push durable projection (postgres)", () => {
     });
     const branchId = await harness.seedDestructivePush("oracle-folded-away-restoration");
 
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
 
     expect(pushId).not.toBeNull();
     const restored = await db.select().from(schema.changeTrailDocumentDetails);
@@ -143,7 +143,7 @@ describe("branch-push durable projection (postgres)", () => {
       },
     });
     const branchId = await owner.seedDestructivePush("missing-manifest");
-    await expect(owner.autoPush(branchId)).rejects.toThrow("death after manifest loss");
+    await expect(owner.push(branchId)).rejects.toThrow("death after manifest loss");
     owner.destroyWarmState();
     await expirePendingClaims();
     const cold = createHarness();
@@ -166,7 +166,7 @@ describe("branch-push durable projection (postgres)", () => {
       recentWriterUserId,
     });
 
-    await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     expectSweepClassification(harness, swept);
     harness.destroyWarmState();
   });

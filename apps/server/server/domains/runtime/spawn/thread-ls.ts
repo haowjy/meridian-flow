@@ -9,10 +9,11 @@ export const ThreadLsInputSchema = z
   .object({
     ref: z
       .string()
-      .describe("Conversation ref such as c3 or p12; omit for this conversation.")
+      .min(1)
+      .describe('Conversation ref such as c3 or p12, or "current"; omit for this conversation.')
       .optional(),
     depth: z.number().int().min(1).max(3).describe("Levels of children.").default(1),
-    cursor: z.string().optional(),
+    cursor: z.string().min(1).optional(),
   })
   .strict();
 export type ThreadLsInput = z.input<typeof ThreadLsInputSchema>;
@@ -36,6 +37,12 @@ export function formatLastAsked(text: string): string {
   const boundary = candidate.lastIndexOf(" ");
   const shortened = (boundary > 0 ? candidate.slice(0, boundary) : candidate).trimEnd();
   return JSON.stringify(`${shortened}…`);
+}
+
+/** `thread_ls`'s typed result: the resolved conversation and its listing text. */
+export interface ThreadLsResult {
+  ref: string;
+  listing: string;
 }
 
 export async function listReadableThreads({
@@ -114,7 +121,9 @@ export async function listReadableThreads({
           const cursor = Buffer.from(
             JSON.stringify({ v: 1, t: target.id, createdAt: last.createdAt, id: last.id }),
           ).toString("base64url");
-          lines.push(`…older: thread_ls(${JSON.stringify({ ref: target.ref, cursor })})`);
+          lines.push(
+            `…older: thread_ls(${JSON.stringify({ ref: target.ref, depth: input.depth ?? 1, cursor })})`,
+          );
         } else {
           for (const parent of parents) {
             const sample =
@@ -181,6 +190,6 @@ export async function listReadableThreads({
     ];
     if (![...path, ...nodes.map(({ thread }) => thread)].some(({ id }) => id === caller.id))
       outputLines[0] += ` (you are ${caller.ref})`;
-    return outputLines.join("\n");
+    return { ref: target.ref as string, listing: outputLines.join("\n") } satisfies ThreadLsResult;
   });
 }

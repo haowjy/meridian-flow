@@ -9,10 +9,10 @@ export function savedReportToSpawnResult(report: SavedExecutionReport): SpawnRes
   const content: AgentReport = {
     handle: report.handle,
     threadId: report.childThreadId,
+    source: report.source,
     summary: report.summary,
     ...(report.payload !== undefined ? { payload: report.payload } : {}),
     ...(report.artifacts !== null ? { artifacts: report.artifacts } : {}),
-    costMillicredits: report.costMillicredits ?? 0,
   };
   if (report.outcome === "succeeded") {
     return {

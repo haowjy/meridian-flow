@@ -13,27 +13,16 @@ describe("Agent definition compiler", () => {
   it("diagnoses reserved metadata keys rather than losing source content", () => {
     for (const meta of [
       JSON.parse('{"extension":{"__proto__":{"role":"admin"}}}'),
-      JSON.parse('{"tools":{"__proto__":"deny"}}'),
-      { tools: { __PROTO__: "deny" } },
+      { tools: ["__proto__"] },
+      { tools: ["__PROTO__"] },
     ]) {
       expect(compileAgentDefinition({ body: "", meta }).ok).toBe(false);
     }
   });
 
-  it("retains a replacement grant when the same overlay clears baseline denials", () => {
-    expect(
-      compile(
-        { tools: { edit: "deny" } },
-        {
-          tools: { allowed: ["edit"], disallowed: [] },
-        },
-      ).definition.metadata,
-    ).toEqual({ tools: ["edit"], "disallowed-tools": [] });
-  });
-
   it("canonicalizes Mars tool and effort aliases before hashing", () => {
-    expect(compile({ tools: { agent: "deny", task: "deny" } }).digest).toBe(
-      compile({ tools: { agent: "deny" } }).digest,
+    expect(compile({ "disallowed-tools": ["agent", "task"] }).digest).toBe(
+      compile({ "disallowed-tools": ["agent"] }).digest,
     );
     expect(compile({ tools: ["Task"], effort: "max" }).digest).toBe(
       compile({ tools: ["agent"], effort: "xhigh" }).digest,
@@ -42,15 +31,6 @@ describe("Agent definition compiler", () => {
     expect(compile({ tools: ["mcp(GitHub/CreateIssue)"] }).definition.metadata.tools).toEqual([
       "mcp(GitHub/CreateIssue)",
     ]);
-  });
-
-  it("rejects map-key collisions instead of changing policy with key order", () => {
-    for (const tools of [
-      { edit: "allow", " edit ": "deny" },
-      { " edit ": "deny", edit: "allow" },
-    ]) {
-      expect(compileAgentDefinition({ body: "", meta: { tools } }).ok).toBe(false);
-    }
   });
 
   it("rejects content that JSON hashing would erase or conflate", () => {
@@ -68,6 +48,17 @@ describe("Agent definition compiler", () => {
     expect(compile(normalizeAgentMeta({ effort: "xhigh" })).definition.metadata.effort).toBe(
       "xhigh",
     );
+  });
+  it("compiles permission as read or edit, leaves it unset by default and names the allowed values", () => {
+    expect(compile({ permission: "read" }).definition.metadata.permission).toBe("read");
+    // Resolution, not the compiler, applies the `edit` default (agent-configuration).
+    expect(compile({}).definition.metadata).not.toHaveProperty("permission");
+    expect(compileAgentDefinition({ body: "", meta: { permission: "write" } })).toEqual({
+      ok: false,
+      diagnostics: [
+        { field: "meta.permission", message: 'Expected "read" or "edit", got "write"' },
+      ],
+    });
   });
   it("normalizes skill lists and aliases without introducing defaults", () => {
     expect(compile({}).definition.metadata).toEqual({});
@@ -100,17 +91,14 @@ describe("Agent definition compiler", () => {
 
   it("applies Mars overlay replacement to the effective allowed and denied channels", () => {
     const result = compile(
-      { model: "a", tools: { edit: "deny" }, "disallowed-tools": ["spawn"] },
+      { model: "a", tools: ["read"], "disallowed-tools": ["spawn"] },
       { model: "b", tools: { allowed: ["search"], disallowed: [] } },
     );
     expect(result.definition.metadata).toEqual({
       model: "b",
-      tools: ["grep"],
+      tools: ["search"],
       "disallowed-tools": [],
     });
-    expect(
-      compile({ tools: ["edit"] }, { tools: { allowed: [] } }).definition.metadata.tools,
-    ).toEqual([]);
   });
 
   it.each([
@@ -131,96 +119,23 @@ describe("Agent definition compiler", () => {
     if (!result.ok) expect(result.diagnostics.length).toBeGreaterThan(0);
   });
 
-  it('rejects "write" as an authoring permission name, in any case or payload scope', () => {
-    for (const meta of [
-      { tools: { write: "deny" } },
-      { tools: ["write"] },
-      { "disallowed-tools": ["write"] },
-      { tools: { Write: "deny" } },
-      { tools: { WRITE: "deny" } },
-      { tools: { " write ": "deny" } },
-      { tools: ["Write"] },
-      { tools: ["WRITE"] },
-      { tools: [" write "] },
-      { tools: { "write(x)": "deny" } },
-      { tools: ["write(x)"] },
-      { "disallowed-tools": ["write(x)"] },
-    ]) {
+  it("accepts read and write, rejects edit in tools and the tool map, and ignores a denied edit", () => {
+    expect(
+      compile({ tools: ["read", "write"], "disallowed-tools": ["Write", "apply_patch"] }).definition
+        .metadata,
+    ).toEqual({ tools: ["read", "write"], "disallowed-tools": ["write", "edit"] });
+    const diagnostics = (meta: Record<string, unknown>) => {
       const result = compileAgentDefinition({ body: "", meta });
-      expect(result.ok).toBe(false);
-      if (result.ok) continue;
-      expect(
-        result.diagnostics.some((diagnostic) => diagnostic.message.includes('use "edit"')),
-      ).toBe(true);
+      return result.ok ? [] : result.diagnostics.map(({ message }) => message);
+    };
+    for (const meta of [{ tools: ["edit"] }, { tools: ["Edit(x)"] }, { tools: ["file_write"] }]) {
+      expect(diagnostics(meta), JSON.stringify(meta)).toEqual([
+        '"edit" is not a tool. Use "permission: read" or "permission: edit" for what the agent may change, and the "write" tool for documents.',
+      ]);
     }
-  });
-
-  it("rejects retired read capability spellings and keeps edit aliases", () => {
-    expect(compile({ tools: ["file_write", "apply_patch"] }).definition.metadata.tools).toEqual([
-      "edit",
+    expect(diagnostics({ tools: { edit: "deny", ask_user: "allow" } })).toEqual([
+      "Expected a list of tool names, e.g. [read, write]; deny tools with disallowed-tools.",
     ]);
-    expect(compile({ tools: ["edit"] }).ok).toBe(true);
-    for (const entry of ["read", "cat", "view", "file_read", "Read(scoped)"]) {
-      const result = compileAgentDefinition({ body: "", meta: { tools: [entry] } });
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(
-          result.diagnostics.some((diagnostic) =>
-            diagnostic.message.includes("Reading is always available"),
-          ),
-        ).toBe(true);
-      }
-    }
-    for (const meta of [
-      { tools: { read: "deny", edit: "allow" } },
-      { tools: { edit: "allow" }, "disallowed-tools": ["read"] },
-      { tools: ["edit"], "disallowed-tools": ["read"] },
-      { tools: [], "disallowed-tools": ["read"] },
-      { tools: { cat: "deny" } },
-      { "disallowed-tools": ["view(scope)"] },
-    ]) {
-      const result = compileAgentDefinition({ body: "", meta });
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(
-          result.diagnostics.some((diagnostic) =>
-            diagnostic.message.includes("Reading is always available"),
-          ),
-        ).toBe(true);
-      }
-    }
-  });
-
-  it("rejects case-folded and normalized retired read names across frontmatter shapes", () => {
-    const cases = [
-      { tools: ["FileRead"] },
-      { tools: ["fileRead(manuscript://*)"] },
-      { tools: { FileRead: "deny" } },
-      { tools: { rEad: "deny" } },
-      { tools: { cAt: "deny" } },
-      { "disallowed-tools": ["FileRead"] },
-      { "disallowed-tools": ["fileRead(manuscript://*)"] },
-      { "disallowed-tools": ["rEad"] },
-      { "disallowed-tools": ["cAt"] },
-    ];
-
-    for (const meta of cases) {
-      const result = compileAgentDefinition({ body: "", meta });
-      expect(result.ok, JSON.stringify(meta)).toBe(false);
-      if (!result.ok) {
-        expect(
-          result.diagnostics.some((diagnostic) =>
-            diagnostic.message.includes("Reading is always available"),
-          ),
-          JSON.stringify(meta),
-        ).toBe(true);
-      }
-    }
-
-    expect(compile({ tools: ["file_write", "apply_patch"] }).definition.metadata.tools).toEqual([
-      "edit",
-    ]);
-    expect(compile({ tools: { edit: "allow" } }).ok).toBe(true);
   });
 
   it("validates both layers instead of falling back on invalid overrides", () => {

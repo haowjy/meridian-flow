@@ -183,7 +183,10 @@ async function setup(
     ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
     ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
     ...(options.notices ? { notices: options.notices } : {}),
-    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [thread.id]),
+    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [
+      thread.id,
+      ...(thread.parentThreadId ? [thread.parentThreadId] : []),
+    ]),
   });
   const thread = options.child
     ? await (async () => {
@@ -283,10 +286,8 @@ describe("inbox drain", () => {
     );
     expect(toolResult?.content).toMatchObject({
       isError: true,
-      output: {
-        code: "tool_error",
-        message: expect.stringContaining("artifacts[0]"),
-      },
+      output: expect.stringContaining("- artifacts[0]: Expected a Meridian document URI"),
+      result: { error: "invalid_arguments" },
     });
     expect(JSON.stringify(toolResult?.content)).toContain(artifact);
   });
@@ -378,6 +379,36 @@ describe("inbox drain", () => {
     });
     expect(queued.executionTurnId).not.toBe(writer.executionTurnId);
     await execute(queued);
+  });
+
+  it("admits a parent's background re-task as a run that notifies the parent", async () => {
+    const { thread, inbox, orchestrator, repos } = await setup({ child: true });
+    const parentId = thread.parentThreadId as ThreadId;
+    const parentTurn = { id: thread.originTurnId as TurnId };
+    await inbox.enqueue({
+      ...message("re-task", thread.id),
+      provenance: {
+        kind: "agent",
+        threadId: parentId,
+        notify: { turnId: parentTurn.id, toolCallId: "call-retask" },
+      },
+    });
+    const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    expect(
+      await repos.executionReports.findByExecution(thread.id, run.executionTurnId),
+    ).toMatchObject({
+      origin: "message",
+      deliveryMode: "background_notification",
+      callerThreadId: parentId,
+      callerTurnId: parentTurn.id,
+      toolCallId: "call-retask",
+      cardBlockId: null,
+      publication: "none",
+    });
+    await execute(run);
+    expect(
+      (await repos.executionReports.findByExecution(thread.id, run.executionTurnId))?.publication,
+    ).toBe("pending");
   });
 
   it("persists a pending notice with a direct writer message", async () => {

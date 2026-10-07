@@ -2,7 +2,11 @@
 name: Spark
 description: Budget creative partner with the same creative posture as Muse but lower orchestration cost.
 mode: primary
-skills: []
+skills:
+  available:
+    - creative-writing-modes
+    - writing-principles
+    - story-review
 subagents: []
 effort: medium
 ---

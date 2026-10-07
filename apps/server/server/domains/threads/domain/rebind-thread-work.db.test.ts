@@ -1,6 +1,7 @@
 /** PostgreSQL coverage for No Work and concurrent thread Work rebinds. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../../runtime/loop/__tests__/test-drizzle-delivery.js";
 import {
   resetThreadWorkRaceFixture,
@@ -24,6 +25,7 @@ else
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
       db,
+      fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
     const ids = THREAD_WORK_RACE;
@@ -221,4 +223,5 @@ const bindingConfiguration = {
   model: "mock-model",
   skills: { load: [], available: [] },
   namedTargets: [],
+  permission: "edit" as const,
 };

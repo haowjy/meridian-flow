@@ -2,12 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   invocationCardProps,
-  spawnOutputForTranscript,
   unadmittedInvocationFailure,
   unadmittedInvocationFailureProps,
 } from "./spawn-output.js";
 
-describe("spawnOutputForTranscript", () => {
+describe("invocation card props", () => {
   const correlation = {
     parentTurnId: "turn-1",
     toolCallId: "call-1",
@@ -18,7 +17,7 @@ describe("spawnOutputForTranscript", () => {
     const running = invocationCardProps({
       agent: "critic",
       agentName: "Critic (harsh)",
-      description: "Continuity",
+      name: "Continuity",
       correlation,
       childThreadId: "child-1",
       execution: null,
@@ -62,7 +61,7 @@ describe("spawnOutputForTranscript", () => {
     const running = invocationCardProps({
       agent: "subagent",
       agentName: "Subagent",
-      description: "Check continuity",
+      name: "Check continuity",
       correlation,
       childThreadId: "child-9",
       execution: null,
@@ -88,51 +87,5 @@ describe("spawnOutputForTranscript", () => {
         reason: "Unavailable.",
       }),
     ).toMatchObject({ agentSlug: "continuity-checker", agentName: "continuity-checker" });
-  });
-
-  it("removes internal execution and thread ids from model-facing spawn output", () => {
-    const error = { status: "error", error: { code: "spawn_depth_exceeded" } };
-    const background = {
-      status: "background",
-      handle: "p2",
-      threadId: "child-2",
-      execution: "private-execution-id",
-      agentSlug: "general",
-    };
-    const completed = {
-      status: "completed",
-      execution: "private-execution-id",
-      report: { handle: "p2", threadId: "child-2", summary: "Done", costMillicredits: 5 },
-    };
-
-    expect(spawnOutputForTranscript(error)).toEqual(error);
-    expect(spawnOutputForTranscript({ ...error, execution: "private-execution-id" })).toEqual(
-      error,
-    );
-    expect(spawnOutputForTranscript(background)).toEqual({
-      status: "background",
-      handle: "p2",
-      agentSlug: "general",
-    });
-    expect(spawnOutputForTranscript(completed)).toEqual({
-      status: "completed",
-      report: { handle: "p2", summary: "Done" },
-    });
-  });
-
-  it("tells the model a queued thread_message has no pushed reply", () => {
-    const background = {
-      status: "background",
-      handle: "c1",
-      threadId: "primary-1",
-      agentSlug: "primary",
-    };
-
-    expect(spawnOutputForTranscript(background, { queuedNoReply: true })).toEqual({
-      status: "background",
-      handle: "c1",
-      agentSlug: "primary",
-      note: "Message queued. No reply is pushed back; the target's response is readable in its transcript.",
-    });
   });
 });

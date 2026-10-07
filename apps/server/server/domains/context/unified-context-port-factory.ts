@@ -19,6 +19,7 @@ import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentDerivationService } from "../collab/domain/ports/document-derivations.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
+import { isDrafted, sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
@@ -35,6 +36,7 @@ import {
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
   findNoWorkId,
+  storedInPersonalProject,
 } from "./context-source-provisioning.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
@@ -44,6 +46,7 @@ import type {
   ContextPort,
   ContextScheme,
   ProjectContextFsScheme,
+  ThreadContextView,
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import {
@@ -70,8 +73,7 @@ export interface UnifiedContextPortFactory {
     projectId: string,
     userId: string,
     workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
-    threadId?: string | null,
-    responseId?: string | null,
+    thread?: ThreadContextView,
   ): ContextPort;
 }
 
@@ -117,41 +119,65 @@ export interface ManifestMembershipPort {
   ): Promise<void>;
 }
 
-function contextFsAdapter(deps: {
-  store: ContextDocumentStore;
-  mutationStore: import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
+/** What every adapter of one port shares: storage, collab, and the reading thread. */
+interface AdapterAssembly {
+  storeResolvers: ContextStoreResolvers;
   documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
-  scheme: ContextScheme;
-  manifestView?: ManifestView;
-}): ContextSchemeAdapter {
-  return new ContextFS(deps);
+  thread?: ThreadContextView;
+}
+
+function contextFsAdapter(
+  assembly: AdapterAssembly,
+  deps: Pick<
+    ContextFSDeps,
+    "store" | "mutationStore" | "commandTransaction" | "scheme" | "manifestView"
+  >,
+): ContextSchemeAdapter {
+  return new ContextFS({
+    ...deps,
+    documentSync: assembly.documentSync,
+    documentCreation: assembly.documentCreation,
+    ...(assembly.thread ? { threadView: assembly.thread } : {}),
+  });
+}
+
+/**
+ * Drafted sources list through this project's manifest, so a draft-only
+ * create appears and a draft-deleted one doesn't (D14). User files live in
+ * the personal project's manifest, so they list their live rows.
+ */
+function listsThroughProjectManifest(scheme: ProjectContextFsScheme): boolean {
+  return isDrafted(scheme) && !storedInPersonalProject(scheme);
 }
 
 function buildProjectContextFsAdapters(
+  assembly: AdapterAssembly,
   projectId: string,
   userId: string,
-  storeResolvers: ContextStoreResolvers,
-  documentSync: ContextFSDeps["documentSync"],
-  manifestView?: ManifestView,
-  documentCreation?: DocumentCreationAggregate,
-  commandTransaction?: ContextCommandTransaction,
+  manifestView: ManifestView,
 ): Map<ContextScheme, ContextSchemeAdapter> {
+  const { storeResolvers, commandTransaction, thread } = assembly;
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
+    // Only an AI thread whose writes to this source are drafted has a draft
+    // of the manifest. A port with no thread is a person's, and people always
+    // write live (D20). Either way the membership is live and never branches.
+    const schemeView =
+      !thread || sourceDestination(scheme, thread.draftWork).kind === "live"
+        ? { projectId }
+        : manifestView;
     adapters.set(
       scheme,
-      contextFsAdapter({
-        store: storeResolvers.resolveProjectStore(projectId, userId, scheme, manifestView),
-        mutationStore: storeResolvers.resolveMutationStore(manifestView),
-        documentSync,
-        documentCreation,
+      contextFsAdapter(assembly, {
+        store: storeResolvers.resolveProjectStore(projectId, userId, scheme, schemeView),
+        mutationStore: storeResolvers.resolveMutationStore(schemeView),
         commandTransaction: commandTransaction && {
           run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
         },
         scheme,
-        ...(scheme === "manuscript" && manifestView ? { manifestView } : {}),
+        ...(listsThroughProjectManifest(scheme) ? { manifestView: schemeView } : {}),
       }),
     );
   }
@@ -159,27 +185,22 @@ function buildProjectContextFsAdapters(
 }
 
 function buildWorkScopedContextFsAdapters(
+  assembly: AdapterAssembly,
   workId: string,
   projectId: string,
-  storeResolvers: ContextStoreResolvers,
-  documentSync: ContextFSDeps["documentSync"],
-  documentCreation?: DocumentCreationAggregate,
-  commandTransaction?: ContextCommandTransaction,
 ): Map<ContextScheme, ContextSchemeAdapter> {
+  const { storeResolvers, commandTransaction } = assembly;
   // Scratch/uploads are canonical live documents even though their storage is
   // Work-scoped. The live-room gate reads the project manifest, so membership
   // must be registered in that view rather than a work-draft view.
-  const manifestView = { projectId };
-  const mutationStore = storeResolvers.resolveMutationStore(manifestView);
+  const mutationStore = storeResolvers.resolveMutationStore({ projectId });
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {
     adapters.set(
       scheme,
-      contextFsAdapter({
+      contextFsAdapter(assembly, {
         store: storeResolvers.resolveWorkStore(workId, scheme, projectId),
         mutationStore,
-        documentSync,
-        documentCreation,
         commandTransaction: commandTransaction && {
           run: (operation) => commandTransaction.run(operation, [{ scheme, workId: workId }]),
         },
@@ -191,23 +212,18 @@ function buildWorkScopedContextFsAdapters(
 }
 
 function buildNoWorkContextFsAdapters(
+  assembly: AdapterAssembly,
   projectId: string,
-  storeResolvers: ContextStoreResolvers,
-  documentSync: ContextFSDeps["documentSync"],
-  documentCreation?: DocumentCreationAggregate,
-  commandTransaction?: ContextCommandTransaction,
 ): Map<ContextScheme, ContextSchemeAdapter> {
-  const manifestView = { projectId };
-  const mutationStore = storeResolvers.resolveMutationStore(manifestView);
+  const { storeResolvers, commandTransaction } = assembly;
+  const mutationStore = storeResolvers.resolveMutationStore({ projectId });
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {
     adapters.set(
       scheme,
-      contextFsAdapter({
+      contextFsAdapter(assembly, {
         store: storeResolvers.resolveNoWorkStore(projectId, scheme),
         mutationStore,
-        documentSync,
-        documentCreation,
         commandTransaction: commandTransaction && {
           run: async (operation) => {
             const workId = await storeResolvers.resolveNoWorkId(projectId);
@@ -234,8 +250,7 @@ type ContextPortBuildScope =
       projectId: string;
       userId: string;
       workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
-      threadId?: string | null;
-      responseId?: string | null;
+      thread?: ThreadContextView;
     };
 
 function buildUnifiedContextPort(input: {
@@ -249,46 +264,34 @@ function buildUnifiedContextPort(input: {
     typeof import("./context/context-tree-mover.js").ContextTreeMover
   >[2];
 }): ContextPort {
-  const { scope, storeResolvers, documentSync } = input;
+  const { scope, storeResolvers } = input;
+  const assembly: AdapterAssembly = {
+    storeResolvers,
+    documentSync: input.documentSync,
+    documentCreation: input.documentCreation,
+    commandTransaction: input.commandTransaction,
+    ...(scope.kind === "work" && scope.thread ? { thread: scope.thread } : {}),
+  };
   const adapters = buildProjectContextFsAdapters(
+    assembly,
     scope.projectId,
     scope.userId,
-    storeResolvers,
-    documentSync,
     scope.kind === "work"
       ? {
           projectId: scope.projectId,
           workId: scope.authority.workId,
-          threadId: scope.threadId,
-          responseId: scope.responseId,
+          threadId: scope.thread?.threadId,
+          responseId: scope.thread?.responseId,
         }
       : { projectId: scope.projectId },
-    input.documentCreation,
-    input.commandTransaction,
   );
 
-  const noWorkAdapters = buildNoWorkContextFsAdapters(
-    scope.projectId,
-    storeResolvers,
-    documentSync,
-    input.documentCreation,
-    input.commandTransaction,
-  );
   const workAuthorities = scope.workAuthorities;
-  if (scope.kind === "work") {
-    for (const [scheme, adapter] of buildWorkScopedContextFsAdapters(
-      scope.authority.workId,
-      scope.projectId,
-      storeResolvers,
-      documentSync,
-      input.documentCreation,
-      input.commandTransaction,
-    )) {
-      adapters.set(scheme, adapter);
-    }
-  } else {
-    for (const [scheme, adapter] of noWorkAdapters) adapters.set(scheme, adapter);
-  }
+  const primaryAdapters =
+    scope.kind === "work"
+      ? buildWorkScopedContextFsAdapters(assembly, scope.authority.workId, scope.projectId)
+      : buildNoWorkContextFsAdapters(assembly, scope.projectId);
+  for (const [scheme, adapter] of primaryAdapters) adapters.set(scheme, adapter);
 
   return createContextPortRouter({
     adapters,
@@ -301,28 +304,14 @@ function buildUnifiedContextPort(input: {
     workAuthorities,
     primaryWorkAuthority: scope.kind === "work" ? scope.authority : undefined,
     resolveWorkAdapters: (targetAuthority) =>
-      buildWorkScopedContextFsAdapters(
-        targetAuthority.workId,
-        scope.projectId,
-        storeResolvers,
-        documentSync,
-        input.documentCreation,
-        input.commandTransaction,
-      ),
+      buildWorkScopedContextFsAdapters(assembly, targetAuthority.workId, scope.projectId),
     resolveNoWork: async () => {
       const workId =
         scope.kind === "work" && scope.authority.workSlug === null
           ? scope.authority.workId
           : await storeResolvers.resolveNoWorkId(scope.projectId);
       return {
-        adapters: buildWorkScopedContextFsAdapters(
-          workId,
-          scope.projectId,
-          storeResolvers,
-          documentSync,
-          input.documentCreation,
-          input.commandTransaction,
-        ),
+        adapters: buildWorkScopedContextFsAdapters(assembly, workId, scope.projectId),
         workId,
       };
     },
@@ -444,17 +433,9 @@ export function createInMemoryUnifiedContextPortFactory(
         documentSync,
       });
     },
-    forWork(authority, projectId, userId, workAuthorities, threadId, responseId) {
+    forWork(authority, projectId, userId, workAuthorities, thread) {
       return buildUnifiedContextPort({
-        scope: {
-          kind: "work",
-          authority,
-          projectId,
-          userId,
-          workAuthorities,
-          threadId,
-          responseId,
-        },
+        scope: { kind: "work", authority, projectId, userId, workAuthorities, thread },
         storeResolvers,
         documentSync,
       });
@@ -521,21 +502,13 @@ export function createProductionUnifiedContextPortFactory(options: {
         },
       });
     },
-    forWork(authority, projectId, userId, workAuthorities, threadId, responseId) {
+    forWork(authority, projectId, userId, workAuthorities, thread) {
       return buildUnifiedContextPort({
-        scope: {
-          kind: "work",
-          authority,
-          projectId,
-          userId,
-          workAuthorities,
-          threadId,
-          responseId,
-        },
+        scope: { kind: "work", authority, projectId, userId, workAuthorities, thread },
         storeResolvers,
         documentSync: options.documentSync,
         documentCreation: options.documentSync,
-        moveLinks: moveLinks(projectId, userId, responseId),
+        moveLinks: moveLinks(projectId, userId, thread?.responseId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
