@@ -16,14 +16,7 @@ import {
   type TextFindMatch,
 } from "./find.js";
 import { locateBlockByHash } from "./hash-locator.js";
-import {
-  type BlockScope,
-  headingLevel,
-  isHeading,
-  resolveScope,
-  resolveSearchScope,
-  type ScopeFailure,
-} from "./scope.js";
+import { type BlockScope, resolveScope, resolveSearchScope, type ScopeFailure } from "./scope.js";
 
 export type WriteCommandName = "insert" | "replace" | "remove";
 
@@ -535,45 +528,40 @@ function replaceScope(
     pendingDelete = [];
   };
 
-  for (const step of alignBlocks(oldNodes, newBlocks)) {
-    if (step.kind === "remove") {
-      pendingDelete.push(oldBlocks[step.old]);
-      continue;
+  for (const step of alignBlocks(oldNodes, newBlocks, canRewriteInPlace)) {
+    switch (step.kind) {
+      case "remove":
+        pendingDelete.push(oldBlocks[step.old]);
+        break;
+      case "add":
+        pendingInsert.push(newBlocks[step.next]);
+        break;
+      case "change":
+        flushStructural();
+        edits.push({
+          documentId: params.documentAddress.documentId,
+          file: params.documentAddress.filePath,
+          kind: "block",
+          block: oldBlocks[step.old],
+          replacement: newBlocks[step.next],
+        });
+        anchor = oldBlocks[step.old];
+        break;
+      case "keep":
+        flushStructural();
+        anchor = oldBlocks[step.old];
+        break;
     }
-    if (step.kind === "add") {
-      pendingInsert.push(newBlocks[step.next]);
-      continue;
-    }
-    const oldBlock = oldBlocks[step.old];
-    const newBlock = newBlocks[step.next];
-    if (step.kind === "change" && !reusableAttrs(ctx, oldBlock, newBlock)) {
-      pendingDelete.push(oldBlock);
-      pendingInsert.push(newBlock);
-      continue;
-    }
-    flushStructural();
-    if (step.kind === "change") {
-      edits.push({
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "block",
-        block: oldBlock,
-        replacement: newBlock,
-      });
-    }
-    anchor = oldBlock;
   }
   flushStructural();
 
   return { ok: true, edits };
 }
 
-function reusableAttrs(ctx: ConcreteResolveContext, oldBlock: BlockRef, newBlock: Block): boolean {
-  if (ctx.model.getBlockType(oldBlock) !== newBlock.type.name) return false;
-  if (isHeading(ctx.model, oldBlock)) {
-    return headingLevel(ctx.model, oldBlock) === Number(newBlock.attrs.level ?? 1);
-  }
-  return true;
+/** A block keeps its element only as the same node type and heading level. */
+function canRewriteInPlace(old: Block, next: Block): boolean {
+  if (old.type !== next.type) return false;
+  return old.type.name !== "heading" || old.attrs.level === next.attrs.level;
 }
 
 function serializeReplacementBlocks(
