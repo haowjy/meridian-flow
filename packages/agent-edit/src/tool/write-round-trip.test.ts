@@ -138,4 +138,20 @@ describe("overwrite with a document's own export", () => {
     expect(resolved?.type).toBe(firstText);
     expect(resolved?.index).toBe(8);
   });
+
+  it.each([
+    {
+      name: "a paragraph's alignment",
+      before: "Opening.\n\nThe sword remembers.",
+      after: 'Opening.\n\n<Layout align="center">\n  The sword remembers.\n</Layout>',
+    },
+    { name: "an ordered list's start", before: "1. one\n2. two", after: "3. one\n4. two" },
+  ])("applies a change to $name alone", async ({ before, after }) => {
+    const ctx = harnessWith(fromMarkdown(before));
+    const expected = codec.serialize(fromMarkdown(after));
+
+    expectOutcome(await overwrite(ctx, expected), "success");
+
+    expect(exported(ctx.doc)).toBe(expected);
+  });
 });
