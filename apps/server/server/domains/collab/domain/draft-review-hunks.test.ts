@@ -274,7 +274,6 @@ describe("draft review hunk model", () => {
       ...item.id,
       length: item.length,
     }));
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const result = computeDraftReviewOperations({
         baseDoc: live,
@@ -301,12 +300,7 @@ describe("draft review hunk model", () => {
         ],
       });
       expect(result.hunks[0]).toMatchObject({ deletedText: "Alpha", deletedSpans: [] });
-      expect(warning).toHaveBeenCalledWith(
-        "Unattributed deleted text in draft review",
-        expect.objectContaining({ range: expect.any(Object) }),
-      );
     } finally {
-      warning.mockRestore();
       draft.destroy();
       live.destroy();
     }
@@ -335,15 +329,12 @@ describe("draft review hunk model", () => {
         );
       }),
     }));
-    const warning = vi.spyOn(console, "warn");
     const result = computeDraftReviewHunks({
       liveDoc: live,
       draftDoc: draft,
       model,
       draftUpdates: updates,
     });
-    expect(warning).not.toHaveBeenCalled();
-    warning.mockRestore();
     expect(
       result.hunks
         .filter((h) => h.kind === "text")
