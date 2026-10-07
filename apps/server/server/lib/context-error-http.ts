@@ -52,6 +52,6 @@ export function throwContextWorkUnavailableHttpError(
       reason,
       reason === "work_archived" ? "This Work is archived and read-only." : "Work not found.",
     ),
-    reason === "work_archived" ? 409 : 404,
+    reason === "work_archived" ? 403 : 404,
   );
 }

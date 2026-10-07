@@ -107,7 +107,7 @@ it("keeps prose typed after filing when first placement is refused, listed in Un
     await pending;
     throw new MeridianApiError(
       { code: "work_archived", message: "Work archived", source: "system", retryable: false },
-      409,
+      403,
     );
   });
   api.deleteContextEntry.mockClear();

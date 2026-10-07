@@ -36,7 +36,7 @@ it("records Work refusals and replays the same final HTTP code even after recove
       if (result.ok) throw new Error("Expected refusal");
       expect(() => contextErrorToHttp(result.error)).toThrowError(
         expect.objectContaining({
-          statusCode: reason === "work_archived" ? 409 : 404,
+          statusCode: reason === "work_archived" ? 403 : 404,
           data: {
             [HTTP_INTERRUPT_ENVELOPE_KEY]: expect.objectContaining({
               error: expect.objectContaining({ code: reason, retryable: false }),
