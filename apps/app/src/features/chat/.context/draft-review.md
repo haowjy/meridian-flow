@@ -51,11 +51,14 @@ the change's class id, matched by shared operations) for what outlives the claim
   it back (`readPreviewAfterChangeCommands`).
 - `failed`: the change comes back, with `offline` (the browser is offline and nothing was sent, or the server refused it:
   "Couldn't apply. Check your connection and try again."), `unknown` (an Apply
-  that got no answer: "Couldn't confirm whether this applied. Check what is
-  left before you try again.", never inferred from later list membership),
+  or Discard that got no answer: "Couldn't confirm whether this applied." / "...was
+  discarded. Check what is left before you try again.", never inferred from later
+  list membership; the next preview that no longer lists the change drops it),
   `stale` ("This change was updated. Check it and apply again." / "...discard
-  again.") or `draft-only`, shown on its bar and row. A per-change Discard has
-  no `unknown`: any failure, a lost answer included, is held as `offline`.
+  again.") or `draft-only`, shown on its bar and row. Both commands share one flow
+  (`DraftReviewSession.changeCommand`) and one lost-answer rule
+  (`DraftCommandOutcomeUnknownError`). A whole-draft Discard is unfenced and has
+  no `unknown`: a lost answer is `discard-offline`.
   `gone` is not held: the change leaves with a toast. `incomplete_class` is
   treated as `stale`, for Apply and Discard alike.
 

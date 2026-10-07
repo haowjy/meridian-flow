@@ -8,6 +8,7 @@
 import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import {
   applied,
@@ -135,6 +136,47 @@ describe("a command sent while the browser is offline", () => {
 
       await reconnect();
       expect(mocks.discardDraft).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("a command whose answer was lost", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetDraftCommandRecords();
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+    mocks.getDraftPreview.mockResolvedValue(preview);
+  });
+
+  // A request that got no HTTP answer carries no status: the browser is online
+  // (it sent the request) but cannot say whether the server acted on it.
+  const lost = () => new TypeError("Failed to fetch");
+
+  it.each([
+    ["Apply", "apply", () => mocks.applyDraftChanges, "applyChange"],
+    ["Discard", "discard", () => mocks.discardDraft, "discardChange"],
+  ] as const)("holds a lost %s of one change as unknown, never as a refusal", async (_name, mode, api, command) => {
+    api().mockRejectedValue(lost());
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      let outcome: unknown;
+      await act(async () => {
+        outcome = await probe().editor.controller[command](change("2"));
+      });
+      expect(outcome).toEqual({ kind: "change-refused", mode, code: "unknown" });
+      expect(classIds(probe())).toEqual(["class-1", "class-2"]);
+      expect(failureOf(probe(), "class-2")).toMatchObject({ code: "unknown", mode });
+    });
+  });
+
+  it("holds a refused Discard of one change as a refusal, apart from a lost answer", async () => {
+    mocks.discardDraft.mockRejectedValue(new HttpResponseError("injected", 500, null));
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await act(async () => {
+        await probe().editor.controller.discardChange(change("2"));
+      });
+      expect(failureOf(probe(), "class-2")).toMatchObject({ code: "offline", mode: "discard" });
     });
   });
 });

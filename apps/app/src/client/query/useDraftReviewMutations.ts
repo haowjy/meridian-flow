@@ -40,12 +40,22 @@ type DraftReviewMutationBase = {
 export type DraftApplyMutationInput = DraftReviewMutationBase;
 
 /**
- * The Apply request got no HTTP answer, so the server may or may not have
- * applied the draft. Distinct from a rejection, which has a status.
+ * A command's request got no HTTP answer, so the server may or may not have
+ * acted on it. Distinct from a rejection, which has a status.
  */
-export class DraftApplyOutcomeUnknownError extends Error {
+export class DraftCommandOutcomeUnknownError extends Error {
   constructor() {
-    super("Draft Apply outcome is unknown");
+    super("Draft command outcome is unknown");
+  }
+}
+
+/** Run a request whose lost answer is unknown, not a refusal: only an HTTP answer is a rejection. */
+async function sendKnowingOutcome<T>(send: () => Promise<T>): Promise<T> {
+  try {
+    return await send();
+  } catch (error) {
+    if (httpErrorStatus(error) !== undefined) throw error;
+    throw new DraftCommandOutcomeUnknownError();
   }
 }
 
@@ -127,13 +137,14 @@ export function useApplyDraft() {
       const draftsKey = projectQueryKeys.workDrafts(variables.projectId, variables.workId);
       void queryClient.cancelQueries({ queryKey: draftsKey });
       try {
-        await applyDraft(variables.projectId, variables.workId, variables.documentId, {
-          draftId: variables.draftId,
-        });
+        await sendKnowingOutcome(() =>
+          applyDraft(variables.projectId, variables.workId, variables.documentId, {
+            draftId: variables.draftId,
+          }),
+        );
       } catch (error) {
         void invalidateDraftReviewQueries(queryClient, variables).catch(() => undefined);
-        if (httpErrorStatus(error) !== undefined) throw error;
-        throw new DraftApplyOutcomeUnknownError();
+        throw error;
       }
       confirmDraftCommand(variables);
       queryClient.setQueryData<ThreadDraftListItem[]>(draftsKey, (drafts) =>
@@ -163,10 +174,14 @@ export function useDiscardDraft() {
       onAnswered,
     }: DraftReviewMutationInput) => {
       assertOnline();
-      const response = await discardDraft(projectId, workId, documentId, {
-        draftId,
-        ...(request?.operationIds?.length ? request : {}),
-      });
+      const send = () =>
+        discardDraft(projectId, workId, documentId, {
+          draftId,
+          ...(request?.operationIds?.length ? request : {}),
+        });
+      // A change's Discard that got no answer may have landed, as an Apply's may.
+      // A whole-draft Discard is unfenced and reads as not sent.
+      const response = await (request?.operationIds?.length ? sendKnowingOutcome(send) : send());
       onAnswered?.(response);
       return response;
     },
@@ -203,17 +218,9 @@ export function useApplyDraftChanges() {
       onAnswered,
     }: DraftChangesApplyInput) => {
       assertOnline();
-      let response: DraftApplyChangesResponse;
-      try {
-        response = await applyDraftChanges(projectId, workId, documentId, {
-          draftId,
-          ...request,
-        });
-      } catch (error) {
-        // No answer is not a refusal: the change may have landed.
-        if (httpErrorStatus(error) !== undefined) throw error;
-        throw new DraftApplyOutcomeUnknownError();
-      }
+      const response = await sendKnowingOutcome(() =>
+        applyDraftChanges(projectId, workId, documentId, { draftId, ...request }),
+      );
       onAnswered?.(response);
       return response;
     },

@@ -10,7 +10,7 @@ import {
   resetDraftCommandRecords,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
-import { DraftApplyOutcomeUnknownError } from "@/client/query/useDraftReviewMutations";
+import { DraftCommandOutcomeUnknownError } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
@@ -368,7 +368,7 @@ describe("draft dispositions", () => {
       </Providers>,
       async () => {
         await act(async () => controller?.enterInlineReview("document-a", "draft-a"));
-        applyMutate.mockRejectedValueOnce(new DraftApplyOutcomeUnknownError());
+        applyMutate.mockRejectedValueOnce(new DraftCommandOutcomeUnknownError());
         let outcome: unknown;
         await act(async () => {
           outcome = await controller?.apply("document-a", "draft-a");

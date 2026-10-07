@@ -126,11 +126,11 @@ is one server closure class.
   default would pause the mutation and fire it on reconnect with the change
   gone from the screen meanwhile. Nothing fires when the network returns; the
   writer acts again.
-- Unknown outcomes are held, not guessed. A per-change Apply that got no answer
-  is held on its change as `unknown` ("Couldn't confirm whether this applied.
-  Check what is left before you try again."), the whole-draft Apply's wording,
-  apart from a refusal (`offline`). A per-change Discard has no unknown outcome
-  yet: a lost answer is held as `offline`. The copy promises no automatic update: only
+- Unknown outcomes are held, not guessed. A per-change Apply or Discard that got
+  no answer is held on its change as `unknown` ("Couldn't confirm whether this
+  applied." / "...was discarded. Check what is left before you try again."),
+  apart from a refusal (`offline`); both run through one flow in the session. A
+  whole-draft Discard has no unknown outcome: a lost answer is `discard-offline`. The copy promises no automatic update: only
   a read after the failure can resolve the change, and one can find it still there. A rejected
   whole-draft Apply is held on that draft's record (`apply-failed`) and shown
   wherever the draft is listed (switcher row, composer strip, Work files, Changes
