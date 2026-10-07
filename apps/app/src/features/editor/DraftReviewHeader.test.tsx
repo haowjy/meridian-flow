@@ -130,10 +130,11 @@ beforeEach(() => {
 });
 
 describe("DraftReviewHeader", () => {
-  it("is one row: breadcrumb, switcher, stepper, Show changes, Discard draft, Apply draft", async () => {
+  it("is one row: switcher, stepper, Show changes, Discard draft, Apply draft", async () => {
     await render({}, async () => {
       const text = document.body.textContent ?? "";
-      expect(text).toContain("Manuscript /");
+      // The identity bar below already names the path; the header opens with the switcher.
+      expect(text).not.toContain("Manuscript");
       expect(text).toContain("Chapter 12");
       expect(text).toContain("2 of 6");
       expect(text).toContain("Show changes");

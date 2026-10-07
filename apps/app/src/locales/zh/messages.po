@@ -2387,8 +2387,8 @@ msgid "Manuscript"
 msgstr ""
 
 #: src/features/editor/DraftReviewHeader.tsx
-msgid "Manuscript /"
-msgstr ""
+#~ msgid "Manuscript /"
+#~ msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
