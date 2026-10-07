@@ -18,6 +18,7 @@ import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
+import { NO_DOCUMENT_ASSET_PATHS } from "../domain/ports/document-asset-paths.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -496,6 +497,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
   const runtime = createAgentEditRuntime({
+    assetPaths: NO_DOCUMENT_ASSET_PATHS,
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({

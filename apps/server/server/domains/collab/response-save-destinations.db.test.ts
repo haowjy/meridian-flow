@@ -11,6 +11,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -116,6 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const collabs: Array<{ dispose(): void }> = [];
     const createTestCollab = (options: { livePullDebounceMs?: number } = {}) => {
       const collab = createCollabDomain({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),

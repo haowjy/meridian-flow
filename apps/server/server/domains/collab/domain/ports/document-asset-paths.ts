@@ -1,6 +1,6 @@
 /** Per-operation image path lookup for the synchronous markup codec. */
 
-import type { AssetPathResolver } from "@meridian/markup";
+import { type AssetPathResolver, unresolvedAssetPathResolver } from "@meridian/markup";
 
 /**
  * Where an image sits is a fact of the document tree, so it is read from there
@@ -21,3 +21,9 @@ export interface DocumentAssetPaths {
 
 /** The project, named directly or by a document in it. */
 export type AssetPathProject = { projectId: string } | { documentId: string };
+
+/** For compositions with no project tree (in-memory, tests): no image is known. */
+export const NO_DOCUMENT_ASSET_PATHS: DocumentAssetPaths = {
+  resolver: unresolvedAssetPathResolver,
+  within: (_project, operation) => operation(),
+};

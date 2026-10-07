@@ -7,6 +7,7 @@ import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -58,6 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const collabs: Array<{ dispose(): void }> = [];
     const createTestCollab = () => {
       const collab = createCollabDomain({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
