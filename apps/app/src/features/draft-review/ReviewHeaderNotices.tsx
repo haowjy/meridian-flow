@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 export function ReviewHeaderNotices({
   commandError,
   finished,
+  unlisted = false,
   completing = null,
   next,
   draftOnly,
@@ -26,6 +27,8 @@ export function ReviewHeaderNotices({
 }: {
   commandError: DraftCommandFailureCode | null;
   finished: boolean;
+  /** The draft is open and lists no change: what remains is handled by Apply draft or Discard draft. */
+  unlisted?: boolean;
   /** The last change's command is in flight: nothing is finished yet. */
   completing?: "apply" | "discard" | null;
   next: DockRow | null;
@@ -54,6 +57,17 @@ export function ReviewHeaderNotices({
           <Loader2 className="size-3 animate-spin" aria-hidden />
           <p>{completing === "apply" ? <Trans>Applying</Trans> : <Trans>Discarding</Trans>}</p>
         </div>
+      ) : null}
+      {unlisted ? (
+        <p
+          className={cn(
+            "border-border border-t px-4 text-muted-foreground",
+            touch ? "py-2.5" : "py-1.5",
+          )}
+          role="status"
+        >
+          <Trans>Formatting changes remain</Trans>
+        </p>
       ) : null}
       {finished ? (
         <div

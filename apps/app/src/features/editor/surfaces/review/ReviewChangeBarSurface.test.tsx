@@ -36,6 +36,8 @@ const change: ReviewChange = {
   operations: [],
   operationIds: ["a1"],
   anchorOperationId: "a1",
+  markKeys: ["a1"],
+  actionable: true,
   tone: "ai",
   includesWriterEdits: false,
   merged: false,

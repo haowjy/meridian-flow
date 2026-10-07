@@ -377,6 +377,10 @@ msgstr ""
 msgid "A new document is applied as a whole. Use Apply draft."
 msgstr ""
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "A new document is discarded as a whole. Use Discard draft."
+msgstr ""
+
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
@@ -576,6 +580,10 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply draft"
+msgstr ""
+
+#: src/features/draft-review/ReviewChangeBar.tsx
+msgid "Apply draft or Discard draft handles this."
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -1994,6 +2002,14 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
+msgstr ""
+
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+msgid "Formatting changes remain"
+msgstr ""
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -3992,6 +4008,10 @@ msgstr ""
 msgid "This change was updated. Check it and apply again."
 msgstr ""
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "This change was updated. Check it and discard again."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This chapter is no longer available, so its change details can't be shown."
 msgstr ""
@@ -4291,6 +4311,10 @@ msgstr ""
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.unarchived"
+msgstr ""
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Unattributed"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx

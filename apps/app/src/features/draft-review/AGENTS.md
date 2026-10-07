@@ -44,9 +44,27 @@ is one server closure class.
 ## Key rules
 
 - Apply and Discard send **every operation of the change**, never one
-  representative. Apply also sends the live and draft revision tokens of the
-  preview the writer saw; a `stale` answer refetches and keeps focus on the
-  updated change (matched by shared operations, since the class id can change).
+  representative. Both also send the live and draft revision tokens of the
+  preview the writer saw; a `stale` answer (Apply or Discard) refetches, brings
+  the change back with "This change was updated. Check it and apply (or
+  discard) again.", and keeps focus on the updated change (matched by shared
+  operations, since the class id can change). A refusal is never a closed or
+  discarded draft: only a `discarded` or `applied` answer can carry `draftClosed`
+  to the review. Whole-draft Discard stays unfenced.
+- **What the server could not attribute is still a change.** An unclassified
+  hunk with no operation (`unclassified: true`, `operationIds: []`) is listed
+  (`reviewChanges`) as its own change, in document order, with no author
+  ("Unattributed", `attribution.kind === "unattributed"`, neutral tone) and
+  **no per-change Apply or Discard**: its class id is the editor's stand-in key
+  (`unattributedHunkKey`), which never reaches the server and no command takes
+  (`ReviewChange.operationIds` is empty and the controller refuses a command with
+  nothing to send). Every member of a class the server flags
+  `canApplyOrDiscard: false` is likewise `actionable: false`: its row and bar
+  keep the class's author but omit the buttons, and the bar says "Apply draft or
+  Discard draft handles this." The editor paints such a hunk neutral (the merged
+  seam for an insertion, the full `deletedText` struck in no author's colour for
+  a removal). `markKeys` are the keys the manuscript paints a change by.
+  `previewWithoutOperations` never hides a hunk no operation owns.
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.
@@ -61,7 +79,10 @@ is one server closure class.
   `pending` (with the mode and the document's name): the command is in flight,
   its outcome unknown. The change is already gone from the list (optimistic),
   but header and dock say "Applying" or "Discarding", not "No changes left", and
-  offer no way on. `closed`: the server's `draftClosed: true` answer. The review
+  offer no way on. `closed`: the server's `draftClosed: true` answer. "Last
+  change" is predicted from what **remains**: unclassified hunks and
+  non-actionable classes count (`reviewChanges` lists them), so a last classified
+  change beside an unclassified hunk predicts nothing. The review
   holds on "No changes left" with a Next draft button (or Back to live when no
   draft is left) and never jumps on its own. A success with `draftClosed: false`
   (another change arrived) withdraws `pending` and the review carries on. The
@@ -69,8 +90,12 @@ is one server closure class.
   state, set from the answer before the list and preview re-reads; neither the
   provider nor the address owner exits a closed review because its draft left
   the list. The client keeps no list of "cleared" drafts. `useReviewChanges`
-  derives `completing` and `finished` once (header and dock both read them);
-  an empty optimistic list with a command still hiding a change is not finished.
+  derives `completing`, `finished` and `unlisted` once (header and dock all read
+  them). `finished` is `completion.phase === "closed"` and nothing else: an empty
+  list never means finished. `unlisted` is a draft that is still open whose read
+  lists no change and no command hides one (formatting the server does not
+  represent): the header and dock say "Formatting changes remain", with Apply
+  draft and Discard draft available and no Next draft.
 - The editor follows it. A last Discard shows the warm live editor at the click
   (live already is the finished text, and the review room's reset would show
   doubled text), but inert until `closed`, and the review comes back if the draft

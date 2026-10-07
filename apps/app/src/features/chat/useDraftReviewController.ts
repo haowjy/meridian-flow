@@ -322,20 +322,22 @@ export function useDraftReviewController({
       void settleConfirmedApply(tab);
       return "applied";
     },
-    discard: async ({ documentId, draftId }, input) => {
-      await discardMutation.mutateAsync({
+    discard: async ({ documentId, draftId }) => {
+      await discardMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
+    },
+    discardChanges: ({ documentId, draftId }, request) =>
+      discardMutation.mutateAsync({
         projectId,
         workId,
         threadId,
         documentId,
         draftId,
-        ...input,
-        // Only a per-change Discard can end a review by closing its draft.
-        onAnswered: input
-          ? (response) => settleAnsweredCommand(documentId, draftId, response)
-          : undefined,
-      });
-    },
+        request,
+        // Only an answered Discard can close the draft; a refusal says nothing about it.
+        onAnswered: (response) => {
+          if (response.status === "discarded") settleAnsweredCommand(documentId, draftId, response);
+        },
+      }),
     applyChanges: async ({ documentId, draftId }, request) => {
       try {
         return await applyChangesMutation.mutateAsync({
@@ -490,7 +492,8 @@ export function useDraftReviewController({
       // command is server-backed, so a list row works with no manuscript mounted.
       const current = stateRef.current;
       const inline = current.surface.kind === "inline" ? current.surface : null;
-      if (!inline) return { kind: "blocked" };
+      // A change with no operation of its own (an unclassified hunk) has nothing to send.
+      if (!inline || change.operationIds.length === 0) return { kind: "blocked" };
       const cached = queryClient.getQueryData<DraftPreviewResponse>(
         projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
       );
@@ -564,8 +567,11 @@ export function useDraftReviewController({
 
   const discardChange = useCallback(
     (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand("discard", change, (selection) =>
-        reviewSession.discardChange(selection, change),
+      runChangeCommand("discard", change, (selection, tokens) =>
+        // As with Apply: without a preview there is nothing the writer saw to discard.
+        tokens
+          ? reviewSession.discardChange(selection, change, tokens)
+          : Promise.resolve({ kind: "change-refused", mode: "discard", code: "stale" }),
       ),
     [reviewSession, runChangeCommand],
   );

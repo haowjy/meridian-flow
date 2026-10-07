@@ -30,7 +30,8 @@ is in flight, all mutating controls disable (`controller.isDisposing` reads the
 Work's records, so the Editor's and the Chat's scopes see each other's commands)
 and a second command is refused rather than clearing the in-flight state. A
 per-change Discard routes to the server discard mutation with the change's
-`operationIds`; the server performs reversal-peer sync. The mutation awaits the
+`operationIds` and the preview's revision tokens; the server performs
+reversal-peer sync. Whole-draft Discard sends neither. The mutation awaits the
 draft-list and preview refreshes before the session releases its lock, so no
 second preview-settlement timer or local pending copy is needed.
 
@@ -52,12 +53,14 @@ the change's class id, matched by shared operations) for what outlives the claim
   "Couldn't apply. Check your connection and try again."), `unknown` (an Apply
   that got no answer: "Couldn't confirm whether this applied", never inferred
   from later list membership), `stale` ("This change was updated. Check it and
-  apply again.") or `draft-only`, shown on its bar and row. `gone` is not held:
-  the change leaves with a toast. Apply's `incomplete_class` is treated as
-  `stale`.
+  apply again." / "...discard again.") or `draft-only`, shown on its bar and row.
+  `gone` is not held: the change leaves with a toast. `incomplete_class` is
+  treated as `stale`, for Apply and Discard alike.
 
-Apply sends the live and draft revision tokens of the cached preview the writer
-saw (opaque strings), so a change updated under them is refused, never applied.
+Apply and Discard send the live and draft revision tokens of the cached preview
+the writer saw (opaque strings), so a change updated under them is refused,
+never applied or discarded. Only an answered `discarded` / `applied` reaches
+`settleAnsweredCommand`; a `stale` Discard says nothing about the draft.
 The toast ("Applied", "Discarded", "That change is no longer in the draft.") is
 controller state (`toast`), rendered by `ReviewToast`. The server closes a draft
 in the command that handles its last change (the response carries `draftClosed`
@@ -66,7 +69,9 @@ settles the review from that answer, ahead of the list and preview re-reads
 (`onAnswered` on the mutation), through `inlineReview.completion`:
 `pending` from the click when the command handles the last change (a last
 Discard also holds the finished text inert), `closed` on `draftClosed: true`,
-withdrawn on `draftClosed: false` or a command that did not land. "No changes
+withdrawn on `draftClosed: false` or a command that did not land. The last
+change is the one every other remaining change (unclassified hunks and
+non-actionable classes included) leaves nothing beside. "No changes
 left" with Next draft (Back to live when no draft is left) is `closed` only; a
 `pending` completion says "Applying" or "Discarding". Neither the provider's
 "draft left the list" exit nor the address owner ends a review that has a
@@ -109,7 +114,8 @@ the editor rebinds from the review branch room to the live manuscript room. The 
 owns one active Work-draft branch per `(documentId, workId)`, so there is no
 same-document neighbor to select after disposition. Whole-draft Apply has one terminal
 `applied` result; partial-Apply and stale-preview response states exist only for
-per-change Apply (`applied`, `stale`, `gone`, `draft_only`, `incomplete_class`).
+per-change Apply and Discard (`applied`/`discarded`, `stale`, `gone`,
+`draft_only`, `incomplete_class`).
 
 `EditorView` keeps a document's live editor mounted, hidden, underneath its
 review editor. Entering review keeps the live text on screen, read-only from

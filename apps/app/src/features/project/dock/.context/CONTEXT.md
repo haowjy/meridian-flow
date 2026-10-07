@@ -219,4 +219,7 @@ regions into one unit happens upstream. `reviewChanges` groups directly by the
 required `closureClassId` and never repairs or reconstructs class membership.
 One server closure class = one change = one Apply and one Discard, sent with
 every operation of the class. Whole-draft Apply and Discard stay in the review
-header.
+header. The exceptions are changes with no per-change commands: an unclassified
+hunk with no operation (listed as "Unattributed") and a class the server flags
+`canApplyOrDiscard: false`. Their rows carry no Apply or Discard, and Apply draft
+or Discard draft handles them.

@@ -5,6 +5,7 @@
 import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
+  DraftDiscardRequest,
   DraftDiscardResponse,
   DraftPreviewResponse,
   ThreadDraftListItem,
@@ -44,7 +45,8 @@ export class DraftApplyOutcomeUnknownError extends Error {
 }
 
 export type DraftReviewMutationInput = DraftReviewMutationBase & {
-  operationIds?: string[];
+  /** A selective Discard: the changes' operation ids and the revision tokens of the preview the writer saw. */
+  request?: Omit<DraftDiscardRequest, "draftId">;
   /**
    * Called with the server's answer the moment it arrives, before the list and
    * preview re-reads that follow. A surface that must act on the answer before
@@ -131,12 +133,12 @@ export function useDiscardDraft() {
       workId,
       documentId,
       draftId,
-      operationIds,
+      request,
       onAnswered,
     }: DraftReviewMutationInput) => {
       const response = await discardDraft(projectId, workId, documentId, {
         draftId,
-        ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
+        ...(request?.operationIds?.length ? request : {}),
       });
       onAnswered?.(response);
       return response;

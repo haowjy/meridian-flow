@@ -19,6 +19,7 @@ const DOT_TONE: Record<ReviewChangeTone, string> = {
   writer: "bg-gold",
   removal: "bg-destructive",
   merged: "bg-muted-foreground",
+  unattributed: "bg-muted-foreground/60",
 };
 
 /** A dot in the change's colour. Half green, half gold when the writer's edits are inside an AI change. */
@@ -63,6 +64,13 @@ export function ChangeAuthor({
       </span>
     );
   }
+  if (attribution.kind === "unattributed") {
+    return (
+      <span className={cn("shrink-0 text-caption text-muted-foreground", className)}>
+        <Trans>Unattributed</Trans>
+      </span>
+    );
+  }
   if (attribution.kind === "ai" || !openThread) {
     return (
       <span className={cn("shrink-0 text-caption text-muted-foreground", className)}>
@@ -101,11 +109,19 @@ export function ChangeFailureText({
 }) {
   switch (code) {
     case "stale":
-      return <Trans>This change was updated. Check it and apply again.</Trans>;
+      return mode === "apply" ? (
+        <Trans>This change was updated. Check it and apply again.</Trans>
+      ) : (
+        <Trans>This change was updated. Check it and discard again.</Trans>
+      );
     case "gone":
       return <Trans>That change is no longer in the draft.</Trans>;
     case "draft-only":
-      return <Trans>A new document is applied as a whole. Use Apply draft.</Trans>;
+      return mode === "apply" ? (
+        <Trans>A new document is applied as a whole. Use Apply draft.</Trans>
+      ) : (
+        <Trans>A new document is discarded as a whole. Use Discard draft.</Trans>
+      );
     case "unknown":
       return (
         <Trans>

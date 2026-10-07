@@ -187,7 +187,10 @@ function retireConfirmations(): void {
 
 type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 
-/** The preview without the operations (and the hunks only they own) in `hidden`. */
+/**
+ * The preview without the operations (and the hunks only they own) in `hidden`.
+ * A hunk no operation owns (unclassified) is nobody's to hide: it stays.
+ */
 export function previewWithoutOperations(
   preview: DraftPreviewResponse,
   hidden: ReadonlySet<string>,
@@ -196,7 +199,7 @@ export function previewWithoutOperations(
   const operations = preview.operations.filter((op) => !hidden.has(op.operationId));
   const hunks = preview.hunks.flatMap((hunk) => {
     const operationIds = hunk.operationIds.filter((id) => !hidden.has(id));
-    if (operationIds.length === 0) return [];
+    if (hunk.operationIds.length > 0 && operationIds.length === 0) return [];
     if (operationIds.length === hunk.operationIds.length) return [hunk];
     return [
       hunk.kind === "text"
