@@ -116,6 +116,34 @@ describe("draft review hunk model", () => {
     ]);
   });
 
+  it("covers the full difference after consecutive cumulative paragraph deletions", () => {
+    const paragraphs = ["Alpha removed.", "Beta removed.", "Gamma removed."];
+    const live = createDoc([...paragraphs, "Tail remains."].join("\n\n"));
+    const draft = cloneDoc(live);
+    const updates = paragraphs.map((_, index) => ({
+      id: 175 + index,
+      actorTurnId: `turn-${index}`,
+      updateData: captureUpdate(draft, () => {
+        const [first] = model.getBlocks(toDocHandle(draft));
+        model.deleteBlock(toDocHandle(draft), first);
+      }),
+    }));
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: updates,
+    });
+    // The union must account for every removed region, not just the first delete set.
+    expect(
+      result.hunks.map((hunk) =>
+        hunk.kind === "text" ? hunk.deletedText : hunk.deletedBlock?.display,
+      ),
+    ).toEqual(paragraphs);
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["175"], ["176"], ["177"]]);
+    expect(result.wordDelta).toEqual({ wordsAdded: 0, wordsRemoved: 6 });
+  });
+
   it("clusters writer rows in the same block into one writer operation", () => {
     const live = createDoc("Alpha. Tail text for a writer edit cluster.");
     const draft = cloneDoc(live);

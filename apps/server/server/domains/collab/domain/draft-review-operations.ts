@@ -107,7 +107,9 @@ function indexDraftUpdates(input: {
       addPhysicalUpdateId(physicalUpdateIdsByOperationId, operationId, update.id);
 
       const decoded = Y.decodeUpdate(update.updateData);
-      const beforeRanges = deleteSetRanges(decoded.ds);
+      const beforeRanges = deleteSetRanges(decoded.ds).flatMap((range) =>
+        splitRangeAtStructBoundaries(replayDoc, range),
+      );
       const beforeVisibility = beforeRanges.map((range) => ({
         range,
         visible: isRangeEffectivelyVisible(replayDoc, range),
@@ -514,6 +516,21 @@ function deleteSetRanges(deleteSet: {
  * current row, hidden -> visible clears the older row, and hidden -> hidden is a
  * cumulative delete-set echo.
  */
+function splitRangeAtStructBoundaries(doc: Y.Doc, range: ClockRange): ClockRange[] {
+  const ranges: ClockRange[] = [];
+  const end = range.clock + range.length;
+  let clock = range.clock;
+  // State-vector updates echo cumulative deletes. A single delete-set range can
+  // contain old tombstones and newly removed structs; visibility is per struct.
+  while (clock < end) {
+    const item = findItem(doc, range.client, clock);
+    const next = item ? Math.min(end, item.id.clock + item.length) : end;
+    ranges.push({ client: range.client, clock, length: next - clock });
+    clock = next;
+  }
+  return ranges;
+}
+
 function isRangeEffectivelyVisible(doc: Y.Doc, range: ClockRange): boolean {
   if (range.length <= 0) return false;
   let clock = range.clock;
