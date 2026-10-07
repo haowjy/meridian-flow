@@ -5,13 +5,18 @@
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections, link rewrites), the model's
  * edit core, a reply's save, the draft-aware hashline read, and offline
- * reconciliation. A push's settlement scopes itself in
- * `branch-push-transition.ts`. A picture serialized outside every scope is
- * reported (see `createUnscopedAssetPathObserver`).
+ * reconciliation, and a live turn's reversal. A push scopes itself in
+ * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. A
+ * picture serialized outside every scope is reported (see
+ * `createUnscopedAssetPathObserver`).
  */
 
 import type { BranchPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
-import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
+import {
+  asThreadPeerAgentEditCore,
+  type LiveAgentEditCore,
+  type ThreadPeerAgentEditCore,
+} from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { OfflineReconciliation } from "./offline-reconciliation.js";
 import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
@@ -80,6 +85,16 @@ export function scopeAgentEditAssetPaths(
       assetPaths.within({ documentId: docId }, () => core.redo(docId, threadId)),
     reverse: (input) => assetPaths.within({ documentId: input.docId }, () => core.reverse(input)),
   });
+}
+
+/** A live turn's undo and redo snapshot every block of the document they reverse. */
+export function scopeLiveReversalAssetPaths(
+  core: LiveAgentEditCore,
+  assetPaths: DocumentAssetPaths,
+): Pick<LiveAgentEditCore, "reverse"> {
+  return {
+    reverse: (input) => assetPaths.within({ documentId: input.docId }, () => core.reverse(input)),
+  };
 }
 
 /** A reply's save renders the receipts the model reads next, in its thread's project. */

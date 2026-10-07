@@ -76,6 +76,7 @@ import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runti
 import {
   scopeAgentEditAssetPaths,
   scopeBranchPeerAssetPaths,
+  scopeLiveReversalAssetPaths,
   scopeOfflineReconciliationAssetPaths,
   scopeResponseFinalizerAssetPaths,
 } from "./domain/asset-path-scope.js";
@@ -472,7 +473,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     live: {
       reversalStore: persistence.journal,
-      agentEdit: runtime.liveUtilityCore,
+      agentEdit: scopeLiveReversalAssetPaths(runtime.liveUtilityCore, deps.assetPaths),
       resolveDocumentUri: documentUriResolver,
       checkDependentLaterLiveRows: liveDependencies.checkDependentLaterLiveRows,
       refreshDocumentProjection: projectionRefresher.refresh,

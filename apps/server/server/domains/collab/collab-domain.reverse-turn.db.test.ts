@@ -458,6 +458,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(trail).not.toContain("asset:");
     });
 
+    it("undoes and redoes a live turn on a chapter with an image", async () => {
+      const collab = createTestCollab();
+      collab.bindHocuspocus(hocuspocus as never);
+      await seedChapterWithMap(collab);
+      await applyDraft(collab, DOC_ID);
+
+      for (const direction of ["undo", "redo"] as const) {
+        const outcome = await collab.reverseTurn({
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+          direction,
+          actor: { type: "user", userId: USER_ID },
+        });
+        expect(outcome.status, JSON.stringify(outcome)).toBe("reversed");
+        expect(JSON.stringify(outcome)).not.toContain("asset:");
+      }
+      await expectMarkdown(collab, DOC_ID, "![Pass](assets/map.png) The pass.");
+    });
+
     it("undoes and redoes overlapping replace and delete writes as one turn", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
