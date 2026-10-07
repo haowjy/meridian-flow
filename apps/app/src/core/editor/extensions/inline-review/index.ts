@@ -19,3 +19,4 @@ export {
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
 } from "./model";
+export { BAR_SLOT_ATTR } from "./removal-widget";

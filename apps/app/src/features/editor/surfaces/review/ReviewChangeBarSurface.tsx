@@ -2,27 +2,29 @@
  * The review's entry in the chrome host: a compact bar beside the change the
  * writer is looking at, with the chat that wrote it, Discard and Apply.
  *
+ * The bar never covers manuscript text (`place-review-bar`). With room in the
+ * right margin it is portalled into the manuscript's scroll pane beside the
+ * change's first line, so a scroll carries it with the text. Without room it
+ * moves into a block the editor opens after the paragraph the change ends in
+ * (`setInlineReviewBarSlot`), which pushes the text below it down.
+ *
  * The change is a decoration, and the plugin rebuilds every decoration on each
- * refetch and remote write, so the element is looked up again after each
- * transaction rather than held. The bar is portalled into the manuscript's
- * scroll pane and placed in its coordinates (`manuscript-overlay`), so a scroll
- * carries it with the text and the pane clips it at its edge.
+ * refetch and remote write, so its element (and the slot) is looked up again
+ * after each transaction rather than held.
  */
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
+import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { escapeCssIdent } from "@/lib/css-selector";
 import type { EditorChromeSurfaceProps } from "../../chrome";
-import { manuscriptOverlay, overlayViewport } from "../../chrome/manuscript-overlay";
+import { manuscriptOverlay } from "../../chrome/manuscript-overlay";
 import { useAnchorRect } from "../../chrome/useAnchorRect";
-
-/** Room the bar needs above a change before it flips below the line instead. */
-const FLIP_ABOVE_PX = 44;
-const GAP_PX = 8;
+import { placeReviewBar } from "./place-review-bar";
+import { useManuscriptColumn } from "./useManuscriptColumn";
 
 export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const { controller } = useDraftReview();
@@ -34,37 +36,67 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
     reviewing ? (focusedItem?.change.anchorOperationId ?? null) : null,
   );
   const rect = useAnchorRect(editor, anchor);
+  const column = useManuscriptColumn(editor, reviewing);
   const overlay = manuscriptOverlay(editor);
 
-  if (!reviewing || !controller.marksVisible || !focusedItem || !rect || !overlay) return null;
+  const showing = reviewing && controller.marksVisible && Boolean(focusedItem) && Boolean(rect);
+  const placement = showing && rect && column ? placeReviewBar({ anchor: rect, ...column }) : null;
+  const wantsSlot = placement?.kind === "below";
+  const slot = useBarSlot(editor, wantsSlot);
 
-  const viewport = overlayViewport(overlay);
-  const above = rect.top - viewport.top >= FLIP_ABOVE_PX;
-  // Anchor to whichever edge keeps the bar inside the page: it grows away from it.
-  const toEnd = rect.left > overlay.clientWidth * 0.55;
+  if (!focusedItem || !placement) return null;
+
+  const bar = (
+    <ReviewChangeBar
+      change={focusedItem.change}
+      disabled={view.locked}
+      canApply={view.canApply}
+      failure={focusedItem.failure}
+      onApply={() => void view.apply(focusedItem.change)}
+      onDiscard={() => void view.discard(focusedItem.change)}
+    />
+  );
+
+  if (placement.kind === "below") return slot ? createPortal(bar, slot) : null;
+  if (!overlay) return null;
   return createPortal(
     <div
       className="absolute z-30"
-      style={{
-        top: above ? rect.top - GAP_PX : rect.bottom + GAP_PX,
-        transform: above ? "translateY(-100%)" : undefined,
-        ...(toEnd
-          ? { right: Math.max(GAP_PX, overlay.clientWidth - rect.right) }
-          : { left: Math.max(GAP_PX, rect.left) }),
-        maxWidth: `calc(100% - ${2 * GAP_PX}px)`,
-      }}
+      style={{ top: placement.top, left: placement.left, width: placement.maxWidth }}
     >
-      <ReviewChangeBar
-        change={focusedItem.change}
-        disabled={view.locked}
-        canApply={view.canApply}
-        failure={focusedItem.failure}
-        onApply={() => void view.apply(focusedItem.change)}
-        onDiscard={() => void view.discard(focusedItem.change)}
-      />
+      {bar}
     </div>,
     overlay,
   );
+}
+
+/**
+ * Open the editor's bar block while `wanted`, and return its element. The block
+ * is a decoration, so it is looked up again after each transaction.
+ */
+function useBarSlot(editor: Editor, wanted: boolean): HTMLElement | null {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (!wanted || editor.isDestroyed) {
+      setSlot(null);
+      return;
+    }
+    const find = () => {
+      const found = editor.isDestroyed ? null : editor.view.dom.querySelector(`[${BAR_SLOT_ATTR}]`);
+      setSlot(found instanceof HTMLElement ? found : null);
+    };
+    editor.commands.setInlineReviewBarSlot(true);
+    find();
+    // The transaction event fires once the view has the new DOM.
+    editor.on("transaction", find);
+    return () => {
+      editor.off("transaction", find);
+      if (!editor.isDestroyed) editor.commands.setInlineReviewBarSlot(false);
+    };
+  }, [editor, wanted]);
+
+  return slot;
 }
 
 /**

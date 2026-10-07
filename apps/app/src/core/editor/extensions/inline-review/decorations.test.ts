@@ -5,20 +5,24 @@
  * collaborative TipTap editor so anchors resolve exactly as they do in review.
  */
 
-import type { ReviewDeletedSpan, ReviewOperation } from "@meridian/contracts/drafts";
-import { Editor } from "@tiptap/core";
+import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
+import type { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Awareness } from "y-protocols/awareness";
-import * as Y from "yjs";
 
-import { relativePositionForEditorIndex } from "../../../../test-support/editor-relative-position";
-import { createEditorConfig } from "../../config";
-import { createLocalPresence } from "../../local-presence";
+import {
+  createReviewEditor,
+  destroyReviewEditors,
+  model,
+  operation,
+  posOf,
+  rel,
+  setModel,
+  span,
+  textHunk,
+} from "../../../../test-support/inline-review-editor";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
-import type { InlineReviewModel, ResolvedReviewHunk, ResolvedReviewSpan } from "./model";
+import type { InlineReviewModel } from "./model";
 import { REMOVAL_COLLAPSE_CHARS } from "./removal-widget";
-
-const editors: Editor[] = [];
 
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -28,104 +32,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const editor of editors.splice(0)) if (!editor.isDestroyed) editor.destroy();
+  destroyReviewEditors();
   vi.unstubAllGlobals();
 });
-
-function createReviewEditor(paragraphs: string[]): { editor: Editor; doc: Y.Doc } {
-  const doc = new Y.Doc({ gc: false });
-  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  doc.transact(() => {
-    for (const text of paragraphs) {
-      const paragraph = new Y.XmlElement("paragraph");
-      const run = new Y.XmlText();
-      paragraph.insert(0, [run]);
-      run.insert(0, text);
-      fragment.insert(fragment.length, [paragraph]);
-    }
-  }, "seed");
-  const editor = new Editor({
-    element: document.createElement("div"),
-    ...createEditorConfig({
-      document: doc,
-      presence: createLocalPresence(new Awareness(doc)),
-      showCollaborationDecorations: false,
-      enableDraftInlineReview: true,
-    }),
-  });
-  editors.push(editor);
-  return { editor, doc };
-}
-
-/** Absolute editor position of the first character of `needle`. */
-function posOf(editor: Editor, needle: string): number {
-  let found = -1;
-  editor.state.doc.descendants((node, pos) => {
-    if (found >= 0 || !node.isText) return;
-    const at = node.text?.indexOf(needle) ?? -1;
-    if (at >= 0) found = pos + at;
-  });
-  if (found < 0) throw new Error(`"${needle}" not in document`);
-  return found;
-}
-
-function rel(editor: Editor, position: number): Y.RelativePosition {
-  const anchor = relativePositionForEditorIndex(editor, position);
-  if (!anchor) throw new Error("editor has no Yjs binding");
-  return anchor;
-}
-
-function operation(
-  operationId: string,
-  kind: "agent" | "writer",
-  closureClassId = `closure:${operationId}`,
-): ReviewOperation {
-  return {
-    operationId,
-    closureClassId,
-    kind,
-    contribution: "added",
-    classification: "rewrite",
-    hunkCount: 1,
-  };
-}
-
-function span(editor: Editor, operationId: string, from: number, to: number): ResolvedReviewSpan {
-  return { operationId, from: rel(editor, from), to: rel(editor, to) };
-}
-
-function textHunk(
-  editor: Editor,
-  hunkId: string,
-  operationIds: string[],
-  range: { from: number; to: number },
-  extra: {
-    spans?: ResolvedReviewSpan[];
-    deletedText?: string;
-    deletedSpans?: ReviewDeletedSpan[];
-    mergeArtifact?: boolean;
-  } = {},
-): ResolvedReviewHunk {
-  return {
-    kind: "text",
-    hunkId,
-    operationIds,
-    relStart: rel(editor, range.from),
-    relEnd: rel(editor, range.to),
-    spans: extra.spans ?? [],
-    ...(extra.deletedText ? { deletedText: extra.deletedText } : {}),
-    ...(extra.deletedSpans ? { deletedSpans: extra.deletedSpans } : {}),
-    ...(extra.mergeArtifact ? { mergeArtifact: true } : {}),
-  };
-}
-
-function model(operations: ReviewOperation[], hunks: ResolvedReviewHunk[]): InlineReviewModel {
-  return { draftRevisionToken: "1", operations, hunks };
-}
-
-function setModel(editor: Editor, next: InlineReviewModel): void {
-  editor.commands.setInlineReviewModel(next);
-}
 
 function marked(editor: Editor, className: string): string[] {
   return [...editor.view.dom.querySelectorAll(`.${className}`)].map((el) => el.textContent ?? "");
@@ -680,5 +589,77 @@ describe("focus and visibility", () => {
     editor.commands.setInlineReviewMarksVisible(false);
     editor.chain().setTextSelection(posOf(editor, "gamma")).insertContent("zz").run();
     expect(marked(editor, "meridian-review-writer")).toEqual([]);
+  });
+});
+
+describe("the bar's block", () => {
+  function twoParagraphs(): { editor: Editor } & { first: number; second: number } {
+    const { editor } = createReviewEditor([
+      "Elder Mo raised one withered hand.",
+      "Next paragraph.",
+    ]);
+    const first = posOf(editor, "one withered");
+    const second = posOf(editor, "Next");
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent"), operation("a2", "agent")],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["a1"],
+            { from: first, to: first + 12 },
+            { spans: [span(editor, "a1", first, first + 12)] },
+          ),
+          textHunk(
+            editor,
+            "h2",
+            ["a2"],
+            { from: second, to: second + 4 },
+            { spans: [span(editor, "a2", second, second + 4)] },
+          ),
+        ],
+      ),
+    );
+    return { editor, first, second };
+  }
+
+  const slots = (editor: Editor) => [
+    ...editor.view.dom.querySelectorAll<HTMLElement>("[data-review-bar-slot]"),
+  ];
+
+  it("is absent until a change is focused and the bar asks for room", () => {
+    const { editor } = twoParagraphs();
+    expect(slots(editor)).toHaveLength(0);
+    editor.commands.setInlineReviewBarSlot(true);
+    expect(slots(editor)).toHaveLength(0);
+    editor.commands.setInlineReviewActiveOperation("a1");
+    expect(slots(editor)).toHaveLength(1);
+    editor.commands.setInlineReviewBarSlot(false);
+    expect(slots(editor)).toHaveLength(0);
+  });
+
+  it("sits in the flow right after the paragraph the change ends in, outside the document", () => {
+    const { editor } = twoParagraphs();
+    editor.commands.setInlineReviewActiveOperation("a1");
+    editor.commands.setInlineReviewBarSlot(true);
+    const [slot] = slots(editor);
+    const paragraphs = [...editor.view.dom.querySelectorAll("p")];
+    // Between the two paragraphs: the next paragraph moves down for it, nothing is covered.
+    expect(slot?.previousElementSibling).toBe(paragraphs[0]);
+    expect(slot?.nextElementSibling).toBe(paragraphs[1]);
+    expect(slot?.getAttribute("contenteditable")).toBe("false");
+    expect(editor.getText()).toBe("Elder Mo raised one withered hand.\n\nNext paragraph.");
+  });
+
+  it("follows the focused change", () => {
+    const { editor } = twoParagraphs();
+    editor.commands.setInlineReviewBarSlot(true);
+    editor.commands.setInlineReviewActiveOperation("a2");
+    const [slot] = slots(editor);
+    const paragraphs = [...editor.view.dom.querySelectorAll("p")];
+    expect(slot?.previousElementSibling).toBe(paragraphs[1]);
+    expect(slots(editor)).toHaveLength(1);
   });
 });
