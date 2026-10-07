@@ -34,6 +34,17 @@ describe("resolveWrite", () => {
     expect(edits[0].kind === "text" ? edits[0].block : null).toBe(blocks[1]);
   });
 
+  it("records a whole-scope replace as fresh only when it rewrote every block", () => {
+    const doc = createDoc("Alpha.\n\nBeta.");
+    const intent = (content: string) => {
+      const result = resolve(doc, { command: "replace", content, in: [1, 2] });
+      return result.ok ? result.ir.intent.kind : result.error.code;
+    };
+
+    expect(intent("Gamma.\n\nDelta.")).toBe("fullScopeFreshReplacement");
+    expect(intent("Alpha.\n\nDelta.")).toBe("mappedEdits");
+  });
+
   it("lowers insertion anchors to the after-block contract", () => {
     const doc = createDoc("Alpha\n\nBeta");
     const [alpha, beta] = model.getBlocks(doc);
