@@ -46,7 +46,9 @@ editor UI or transport-shell policy.
 - Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
   composition root injects `DocumentAssetPaths`. Image paths are read from the
   document tree per operation (`domain/asset-path-scope.ts`), never cached; a
-  new door that hands Markdown to a reader joins that scope. A second
+  new door that hands Markdown to a reader joins that scope. A picture
+  serialized outside every scope throws under test and logs
+  `serialize.asset_path_unscoped` in production. A second
   `mdxCodec(...)` silently loses it.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
