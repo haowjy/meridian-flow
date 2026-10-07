@@ -7,7 +7,8 @@ and draft-only-tab contracts.
 
 Inline review is the only manuscript preview surface. Apply is a document-level
 command that publishes the whole current draft; Discard may still
-target one operation or the whole branch.
+target one operation or the whole branch. (The redesign adds per-change Apply;
+that is the header and server lanes' work, not recorded here yet.)
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, and inline
 messages. The synchronous disposition lock and the shared draft
@@ -67,11 +68,15 @@ its shell (or schema notice) is visible from the first render. The review editor
 is keyed by its own branch room, never by the live binding, so a rename (which
 re-mints the live binding) does not remount the painted review.
 
-Entering review on an existing document shows the read-only live text under the
-review header for about 110 ms, until the draft paints. That is the current
-trade (the alternative was a blank body). Whether to hold the whole live view,
-header included, until the draft paints is an open product question; see
-`features/editor/.context/TODO.md`.
+Entering review holds the plain live view, header included, until the review
+editor exists and its change marks have arrived, then switches body and chrome
+in one frame. `EditorView` reports `shown` on the inline surface
+(`controller.setInlineReviewShown`, from a layout effect); the header and the
+identity-bar chip read it. The live text is read-only from the click. If the
+marks never arrive the review shows anyway after 1.5 s. Measured: zero frames of
+review header over live text and zero blank frames on enter, Back to live, Apply
+and Discard
+(`work/draft-review-repair/evidence/redesign-render/`).
 
 When the server refuses a review room's pending edits (4409), the room is
 rebuilt in place and the review stays open. While the rebuild runs, `EditorView`
@@ -119,13 +124,16 @@ After Apply, recovery belongs to turn-receipt Undo/Redo rather than peer-mark
 actions, browser Ctrl+Z, or a client mutation origin.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
-the TipTap inline-review extension and reports model availability identities.
-The extension styles only text and blocks present in the server draft
-projection; removed live content stays in the dock's compare cards so old and
-proposed prose can never compose into one manuscript line. Pure deletions use
-empty positional anchors with a visible seam whose focused-operation state is
-emphasized, so their cards can scroll the manuscript without adding text. An active preview
-without a model is an invariant violation, logged loudly and ignored safely.
+the TipTap inline-review extension and reports model availability identities. It
+pushes every refetched preview (compared by reference), not by revision tokens:
+`draftRevisionToken` is the branch generation and does not move on edits.
+The extension renders the net diff in the manuscript like suggestion mode:
+insertions as decorations over the draft text, removed live text as a read-only
+inline widget (struck, outside the document; AI crimson, writer gold; long ones
+fold and open on click), and the focused change (all operations sharing a
+closure class) emphasized. Typing paints gold at once; the next model replaces
+it. `setInlineReviewMarksVisible` hides all marks without remounting. An active
+preview without a model is an invariant violation, logged loudly and ignored safely.
 
 The server reviewable list emits only current-generation drafts with reviewable
 content. `pendingReviewDrafts` is the shared client presentation seam that
