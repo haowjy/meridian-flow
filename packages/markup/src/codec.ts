@@ -10,6 +10,7 @@ import { type PluggableList, type Processor, unified } from "unified";
 import type { MdastRoot } from "./ast.js";
 import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
+import { attentionHandlers } from "./markdown/attention.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
   AssetPathResolver,
@@ -94,7 +95,7 @@ function buildMarkupCodec(
 
   const parseProcessor = unified().use(remarkParse).use(positionedGfm).use(remarkPlugins);
   const stringifyProcessor = unified()
-    .use(remarkStringify, MARKDOWN_STRINGIFY_OPTIONS)
+    .use(remarkStringify, { ...MARKDOWN_STRINGIFY_OPTIONS, handlers: attentionHandlers })
     .use(remarkGfm)
     .use(remarkPlugins);
 
