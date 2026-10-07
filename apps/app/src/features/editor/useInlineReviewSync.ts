@@ -62,9 +62,13 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     enabled: enabled && Boolean(projectId && workId && documentId && draftId),
   });
 
-  // Track the last model payload we pushed so we don't re-dispatch the same
-  // command when React re-renders around unrelated state.
-  const lastPushedIdentityRef = useRef<string | null>(null);
+  // The last preview payload pushed into the plugin, so React re-renders around
+  // unrelated state don't re-dispatch it. Compared by reference, not by the
+  // revision tokens: `draftRevisionToken` is the branch generation, which does
+  // not move when the writer or the AI edits the draft, so a token identity
+  // would drop every refetch after the first. Query structural sharing keeps
+  // the reference when a refetch changed nothing.
+  const lastPushedPreviewRef = useRef<unknown>(null);
   const lastFatalIdentityRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -74,9 +78,9 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     if (!("setInlineReviewModel" in editor.commands)) return;
 
     if (preview?.status !== "active") {
-      if (lastPushedIdentityRef.current != null) {
+      if (lastPushedPreviewRef.current != null) {
         editor.commands.setInlineReviewModel(null);
-        lastPushedIdentityRef.current = null;
+        lastPushedPreviewRef.current = null;
       }
       return;
     }
@@ -90,9 +94,9 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
         documentId,
         draftId: reviewId,
       });
-      if (lastPushedIdentityRef.current != null) {
+      if (lastPushedPreviewRef.current != null) {
         editor.commands.setInlineReviewModel(null);
-        lastPushedIdentityRef.current = null;
+        lastPushedPreviewRef.current = null;
       }
       if (lastFatalIdentityRef.current !== fatalIdentity) {
         lastFatalIdentityRef.current = fatalIdentity;
@@ -107,7 +111,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     if (!documentId) return;
 
     const previewIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
-    if (lastPushedIdentityRef.current === previewIdentity) return;
+    if (lastPushedPreviewRef.current === preview) return;
 
     const model = buildInlineReviewModel({
       liveRevisionToken: preview.liveRevisionToken,
@@ -116,7 +120,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       hunks,
     });
     editor.commands.setInlineReviewModel(model);
-    lastPushedIdentityRef.current = previewIdentity;
+    lastPushedPreviewRef.current = preview;
     lastFatalIdentityRef.current = null;
     onInlineModelAvailable?.(previewIdentity, documentId, reviewId);
   }, [editor, enabled, preview, documentId, onInlineModelAvailable, onReviewSessionUnavailable]);
