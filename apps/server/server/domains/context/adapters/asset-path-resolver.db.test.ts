@@ -153,5 +153,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(await read(collab)).toBe("![Map](assets/map.png)\n");
     });
+
+    it("loads fresh for work that inherited a scope after it settled", async () => {
+      const assetPaths = createDrizzleDocumentAssetPaths(db);
+      let fire!: () => void;
+      const timer = new Promise<void>((resolve) => {
+        fire = resolve;
+      });
+      let later!: Promise<string | null>;
+      await assetPaths.within({ documentId: CHAPTER_ID }, async () => {
+        // Scheduled inside the operation, so it carries the operation's context.
+        later = timer.then(() =>
+          assetPaths.within({ documentId: CHAPTER_ID }, async () =>
+            assetPaths.resolver.pathForAsset(MAP_ID),
+          ),
+        );
+      });
+      await db.update(documents).set({ folderId: ART_ID }).where(eq(documents.id, MAP_ID));
+      fire();
+
+      expect(await later).toBe("art/map.png");
+    });
   });
 }
