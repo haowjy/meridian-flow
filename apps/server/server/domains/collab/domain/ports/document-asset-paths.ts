@@ -16,7 +16,10 @@ import { type AssetPathResolver, unresolvedAssetPathResolver } from "@meridian/m
 export interface DocumentAssetPaths {
   /** Handed to the codec once; answers from the innermost `within`. */
   readonly resolver: AssetPathResolver;
-  /** Run `operation` with the image paths of one project loaded fresh. */
+  /**
+   * Run `operation` with the image paths of one project loaded fresh. Nested
+   * inside a scope for the same project, it reuses that scope's paths.
+   */
   within<T>(project: AssetPathProject, operation: () => Promise<T>): Promise<T>;
 }
 
