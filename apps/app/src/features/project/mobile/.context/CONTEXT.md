@@ -63,7 +63,8 @@ Settings and Results are auxiliary routed surfaces (`?settings=` and
 
 ### Document sessions: mobile is a registry owner
 
-Mobile documents are read-only for users but live for AI edits. Editable context
+Mobile documents are read-only for users but live for AI edits (a review's draft
+body too). Editable context
 documents still mount `EditorView` with the TipTap/Yjs binding active:
 
 ```tsx
@@ -84,6 +85,42 @@ phone review does not own a parallel controller or state machine.
 
 This ownership is mandatory. Mounting `EditorView` directly without `retain()`
 creates Yjs sessions that the registry cannot know are closed.
+
+### Draft review on the phone
+
+`MobileDocumentReview` wraps the editor of both document hosts (a live document
+and a pending new document) and adds the review's chrome while that document is
+under inline review. The editor keeps one place in its tree whether or not a
+review is open, so entering and leaving never remounts it. Nothing here owns
+review state: the header runs `useReviewHeader`, the bar and sheet run
+`useReviewChanges`, both over the Editor scope's controller, the same hooks the
+desktop header and dock use. Optimistic Apply and Discard, refusals held on the
+change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
+left" with Next draft are therefore the desktop's behaviour, not a copy of it.
+
+- **Header** (`MobileReviewHeader`): the draft switcher, the stepper and the
+  change count, in a 48px row under the top bar. Apply draft, Discard draft, Show
+  live version (Close review for a new document), the marks switch and Apply all /
+  Discard all live in the switcher's menu, so the row stays short. A refused
+  whole-draft command and "No changes left" take a line under it.
+- **Bar** (`MobileChangeBar`): a tap on a change selects it (the editor's
+  mousedown seam, the same as a click) and its bar sits at the bottom of the
+  manuscript column, in the page's flow so nothing is hidden behind it. It clears
+  `env(safe-area-inset-bottom)` or the on-screen keyboard
+  (`--mobile-keyboard-height`, from `MobileKeyboardAware`, which the review column
+  uses). The desktop's margin bar steps aside on the phone shell.
+- **Sheet** (`MobileChangeSheet`): the count opens the change list as a bottom
+  sheet over the dimmed manuscript, with the desktop dock's rows in their `touch`
+  form. A row tap closes the sheet and focuses the change; Apply and Discard act
+  and leave it open. The toast rides the sheet's top edge, since the scrim covers
+  the manuscript's own.
+- Every control is a 44px target (`touch` on `ReviewChangeRow`, `ReviewChangeBar`,
+  `ReviewStepper` and `DraftSwitcher`).
+- The review body is read-only on the phone, like the live document. A tap must
+  select a change, not raise the keyboard over its bar, and the phone has none of
+  the editing chrome (the desktop's block grip shows once a caret is placed).
+  Making the draft editable is one prop (`editable` on `EditorView`) plus those two
+  pieces of work.
 
 ## Architecture
 
@@ -260,8 +297,9 @@ These are deliberate browser decisions, not incidental styling:
   focus on the first nav item, then focuses the sheet container. This avoids an
   unwanted programmatic focus ring on iOS while keeping the focus trap engaged.
 - **Keyboard clearance uses `visualViewport`.** `MobileKeyboardAware` exposes
-  `--mobile-keyboard-height` for the chat composer because standalone/PWA modes
-  have not always honored `interactive-widget=resizes-content` consistently.
+  `--mobile-keyboard-height` for the chat composer and the review's change bar
+  because standalone/PWA modes have not always honored
+  `interactive-widget=resizes-content` consistently.
 
 ## Patterns
 

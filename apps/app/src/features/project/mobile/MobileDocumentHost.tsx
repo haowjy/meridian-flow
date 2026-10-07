@@ -346,6 +346,9 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
           documentId={activeTab.documentId}
           session={liveSession}
           schemaType={activeTab.schemaType}
+          // Read-only under review as well: a tap must select a change, not raise the
+          // keyboard over its bar, and the phone has no editing chrome (the desktop's
+          // block grip would show). The desktop edits the draft while it reviews.
           editable={false}
           showToolbar={false}
           ariaLabel={t`Read-only live document`}
