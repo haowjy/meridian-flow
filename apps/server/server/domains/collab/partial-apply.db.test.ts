@@ -34,6 +34,82 @@ function createReviewHarness(options?: Parameters<typeof createHarness>[0]) {
 }
 
 describe("per-change Apply (postgres)", () => {
+  it("includes cumulative earlier deletions in the class before applying a later insertion", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument(
+      "Elder Mo raised his hand.\n\nSu Yin said nothing. It was a very tense moment for everyone present.\n\nThe courtyard fell silent.",
+      "cumulative-delete-class",
+    );
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const staged = await fixture.branchCoordinator.readBranch(
+      branch.branchId,
+      async (doc, snapshot) => {
+        const clone = createCollabYDoc({ gc: false });
+        Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+        return { clone, generation: snapshot.generation };
+      },
+    );
+    try {
+      for (const [blockIndex, find, replacement] of [
+        [0, "his", ""],
+        [1, " It was a very tense moment for everyone present.", ""],
+        [2, "fell silent.", "fell silent. Lin Feng felt the qi coil."],
+      ] as const) {
+        const block = fixture.model.getBlocks(toDocHandle(staged.clone))[blockIndex];
+        const from = fixture.model.getText(block).indexOf(find);
+        fixture.model.applyTextEdit(
+          toDocHandle(staged.clone),
+          block,
+          { from, to: from + find.length },
+          replacement,
+        );
+        await fixture.branchCoordinator.commitSyncFromDoc({
+          branchId: branch.branchId,
+          sourceDoc: staged.clone,
+          expectedGeneration: staged.generation,
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        });
+      }
+    } finally {
+      staged.clone.destroy();
+    }
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    expect(preview.operations).toHaveLength(3);
+    expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(1);
+    const later = preview.operations.at(-1);
+    if (!later) throw new Error("missing later operation");
+    const refused = await fixture.collab.draftReview.applyWorkDraftChanges({
+      ...command,
+      operationIds: [later.operationId],
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    expect(refused).toMatchObject({ status: "incomplete_class" });
+    const result = await fixture.collab.draftReview.applyWorkDraftChanges({
+      ...command,
+      operationIds: preview.operations.map((op) => op.operationId),
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    expect(result).toMatchObject({ status: "applied", draftClosed: true });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(preview.markdown);
+    expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toEqual([]);
+  });
+
   it("attributes agent operations to the chat's current title, not writer operations", async () => {
     const harness = createReviewHarness();
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "chat-attribution");

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Applying a draft change no longer silently publishes earlier deletions. Changes carried by the same Yjs update are shown and handled together.
+
 - Applying or discarding the last draft change closes the review on the server, including after reload.
 
 - Draft changes link to the chat that wrote them, using its current title.

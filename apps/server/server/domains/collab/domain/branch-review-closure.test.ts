@@ -36,6 +36,34 @@ function hunk(id: string, operationIds: string[]): DraftReviewHunkInternal {
 }
 
 describe("assignReviewClasses", () => {
+  it("does not join independent delta edits through tombstones already present on live", () => {
+    const base = textDoc("Old base text. Alpha. Beta.");
+    base.getText("chapter").delete(0, 14);
+    const baseDeletedRanges = Y.decodeUpdate(Y.encodeStateAsUpdate(base)).ds.clients;
+    const updates = ["Alpha", "Beta"].map((find, index) => {
+      const peer = new Y.Doc({ gc: false });
+      Y.applyUpdate(peer, Y.encodeStateAsUpdate(base));
+      const before = Y.encodeStateVector(peer);
+      peer.getText("chapter").insert(peer.getText("chapter").toString().indexOf(find), "New ");
+      const updateData = Y.encodeStateAsUpdate(peer, before);
+      peer.destroy();
+      return { id: index + 1, updateData };
+    });
+    const operations = assignReviewClasses({
+      operations: [op("1", [1]), op("2", [2])],
+      hunks: [hunk("h1", ["1"]), hunk("h2", ["2"])],
+      updates,
+      baseDeletedRanges: [...baseDeletedRanges].flatMap(([client, ranges]) =>
+        ranges.map((range) => ({ client, clock: range.clock, length: range.len })),
+      ),
+    });
+    expect(operations.map((operation) => operation.closureClassId)).toEqual([
+      "closure:1",
+      "closure:2",
+    ]);
+    base.destroy();
+  });
+
   it("joins operations whose review closures share a physical row", () => {
     const operations = assignReviewClasses({
       operations: [op("a", [1], [1, 2]), op("b", [2], [2])],

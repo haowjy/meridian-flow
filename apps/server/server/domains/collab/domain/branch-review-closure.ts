@@ -7,7 +7,9 @@ import {
   type PhysicalSourceUpdateIds,
 } from "./draft-review-types.js";
 import {
+  type ClockRange,
   decodeUpdateForDependencies,
+  deleteRanges,
   dependencies,
   rangesOverlap,
   suppliedRanges,
@@ -24,6 +26,7 @@ export function assignReviewClasses(input: {
   operations: readonly Omit<DraftReviewOperationInternal, "closureClassId">[];
   hunks: readonly DraftReviewHunkInternal[];
   updates?: readonly DependencyUpdate[];
+  baseDeletedRanges?: readonly ClockRange[];
 }): DraftReviewOperationInternal[] {
   const unionFind = new UnionFind();
   for (const operation of input.operations) unionFind.add(operation.operationId);
@@ -46,6 +49,7 @@ export function assignReviewClasses(input: {
     unionFind,
     input.operations,
     input.updates ?? [],
+    input.baseDeletedRanges ?? [],
   );
 
   const operationsByRoot = new Map<string, typeof input.operations>();
@@ -95,6 +99,7 @@ function unionYjsDependencies(
   unionFind: UnionFind,
   operations: readonly Omit<DraftReviewOperationInternal, "closureClassId">[],
   updates: readonly DependencyUpdate[],
+  baseDeletedRanges: readonly ClockRange[],
 ): Map<string, Set<number>> {
   const ownersByUpdateId = new Map<number, string[]>();
   for (const operation of operations) {
@@ -105,10 +110,14 @@ function unionYjsDependencies(
     }
   }
 
-  const decoded = updates.map((update) => ({
-    update,
-    decoded: decodeUpdateForDependencies(update.updateData),
-  }));
+  const decoded = updates.map((update) => {
+    const decoded = decodeUpdateForDependencies(update.updateData);
+    return {
+      update,
+      decoded,
+      branchDeletes: subtractRanges(deleteRanges(decoded), baseDeletedRanges),
+    };
+  });
   const rowUnionFind = new UnionFind();
   for (const { update } of decoded) rowUnionFind.add(String(update.id));
   for (const dependent of decoded) {
@@ -128,7 +137,15 @@ function unionYjsDependencies(
             candidate.clock + candidate.length <= range.clock,
         ),
       );
-      if (!explicitDependency && !clockDependency) continue;
+      // State-vector updates carry cumulative delete sets, including deletions
+      // of live-base structs (which no branch row supplied). Replaying such a
+      // row also publishes those earlier deletions, so their owners must be in
+      // the same visible class. Base tombstones already exist on live and do
+      // not create a branch dependency.
+      const deleteDependency = dependent.branchDeletes.some((range) =>
+        supplier.branchDeletes.some((candidate) => rangesOverlap(range, candidate)),
+      );
+      if (!explicitDependency && !clockDependency && !deleteDependency) continue;
       rowUnionFind.unionAll([String(dependent.update.id), String(supplier.update.id)]);
     }
   }
@@ -151,6 +168,27 @@ function unionYjsDependencies(
     }
   }
   return dependencyUpdateIdsByOperationId;
+}
+
+function subtractRanges(
+  ranges: readonly ClockRange[],
+  excluded: readonly ClockRange[],
+): ClockRange[] {
+  return ranges.flatMap((range) => {
+    let remaining = [range];
+    for (const cut of excluded) {
+      remaining = remaining.flatMap((part) => {
+        if (!rangesOverlap(part, cut)) return [part];
+        const end = part.clock + part.length;
+        const cutEnd = cut.clock + cut.length;
+        return [
+          ...(part.clock < cut.clock ? [{ ...part, length: cut.clock - part.clock }] : []),
+          ...(cutEnd < end ? [{ ...part, clock: cutEnd, length: end - cutEnd }] : []),
+        ];
+      });
+    }
+    return remaining;
+  });
 }
 
 class UnionFind {
