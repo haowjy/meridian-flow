@@ -23,10 +23,12 @@ stable Chat surface and Chat context dock share the same Chat value; viewer and
 editor surfaces receive only the Editor value. A boundary never creates a
 controller, and the two scope owners are never nested.
 
-Every disposition is serialized by the session's synchronous lock
-(`controller.isDisposing`): while a whole-draft Apply or Discard, or a
-per-change Apply or Discard, is in flight, all mutating controls disable and a
-second command is ignored rather than clearing the in-flight state. A
+Every disposition is serialized by the session's synchronous lock and, for the
+draft itself, by its one command record (`client/query/draft-command-record`,
+below): while a whole-draft Apply or Discard, or a per-change Apply or Discard,
+is in flight, all mutating controls disable (`controller.isDisposing` reads the
+Work's records, so the Editor's and the Chat's scopes see each other's commands)
+and a second command is refused rather than clearing the in-flight state. A
 per-change Discard routes to the server discard mutation with the change's
 `operationIds`; the server performs reversal-peer sync. The mutation awaits the
 draft-list and preview refreshes before the session releases its lock, so no
@@ -35,16 +37,21 @@ second preview-settlement timer or local pending copy is needed.
 ### Per-change commands
 
 `DraftReviewSession.applyChange` and `discardChange` run one change. Each claims
-a **change command record** (`client/query/change-command-record`, keyed by the
-draft and the change's class id, matched by shared operations):
+the draft's **command claim** (`beginDraftCommand` with the change and its
+operation set: one command per draft, whichever session sends it) and a **change
+command record** (`client/query/change-command-record`, keyed by the draft and
+the change's class id, matched by shared operations) for what outlives the claim:
 
-- `pending`: the change is already gone from the preview every surface reads
-  (`useDraftPreview` hides it), so its marks and rows leave at once.
+- `pending`: the draft's own claim. The change is already gone from the preview
+  every surface reads (`useDraftPreview` hides it), so its marks and rows leave
+  at once. The change record stores no pending state of its own.
 - `confirmed`: the server confirmed. The cached preview loses the change
   (`settleConfirmedChange`) and a preview read that started earlier cannot bring
   it back (`readPreviewAfterChangeCommands`).
-- `failed`: the change comes back, with `offline` ("Couldn't apply. Check your
-  connection and try again."), `stale` ("This change was updated. Check it and
+- `failed`: the change comes back, with `offline` (the server refused it:
+  "Couldn't apply. Check your connection and try again."), `unknown` (an Apply
+  that got no answer: "Couldn't confirm whether this applied", never inferred
+  from later list membership), `stale` ("This change was updated. Check it and
   apply again.") or `draft-only`, shown on its bar and row. `gone` is not held:
   the change leaves with a toast. Apply's `incomplete_class` is treated as
   `stale`.
@@ -56,13 +63,17 @@ controller state (`toast`), rendered by `ReviewToast`. The server closes a draft
 in the command that handles its last change (the response carries `draftClosed`
 and `draftDisposition`), so the draft leaves the Work's list. The controller
 settles the review from that answer, ahead of the list and preview re-reads
-(`onAnswered` on the mutation): `inlineReview.cleared` holds the review open on
-"No changes left" with Next draft (Back to live when no draft is left), and
-neither the provider's "draft left the list" exit nor the address owner ends a
-cleared review. A last per-change Discard settles at the click and reopens if it
-does not land. `EditorView` shows the warm live editor, editable, in place of the
-review editor (the draft equals live; the review room is a closed generation and
-its reset would otherwise show doubled text), with the review chrome up. After a
+(`onAnswered` on the mutation), through `inlineReview.completion`:
+`pending` from the click when the command handles the last change (a last
+Discard also holds the finished text inert), `closed` on `draftClosed: true`,
+withdrawn on `draftClosed: false` or a command that did not land. "No changes
+left" with Next draft (Back to live when no draft is left) is `closed` only; a
+`pending` completion says "Applying" or "Discarding". Neither the provider's
+"draft left the list" exit nor the address owner ends a review that has a
+completion. `EditorView` shows the warm live editor in place of the review editor
+for a last Discard at the click (inert) and, editable, once `closed` (the draft
+equals live; the review room is a closed generation and its reset would otherwise
+show doubled text); a last Apply keeps the review editor until `closed`. After a
 reload the draft is not listed and the address falls back to live.
 
 Focus is controller state too (`inlineReview.focusedClassId`,
@@ -110,7 +121,10 @@ its shell (or schema notice) is visible from the first render. The controller's
 room request belongs to the review that started it: closing review A as launch B
 opens (same effect flush: the address owner exits A, the claimant enters B) must
 not cancel B's request, or B waits forever for a room (the draft-only editor
-that stayed empty under a "Review draft" chip). The review editor
+that stayed empty under a "Review draft" chip). The request is the one fenced
+preview query (`draftPreviewQueryOptions`, read fresh), not a second raw fetch:
+it joins any read in flight, a change handled while it was in flight cannot come
+back through it, and a review that moved on commits no room. The review editor
 is keyed by its own branch room, never by the live binding, so a rename (which
 re-mints the live binding) does not remount the painted review.
 
@@ -291,7 +305,8 @@ admission may enrich only the overlay with resolved live-resource metadata.
   scope, so every surface (composer strip, editor header, Work Files) reads the
   same state. It is bounded: `bindDraftCommandAccount` empties it when the
   account changes, and the entries below retire as described.
-  - `pending`: an Apply or Discard is dispatched. `controller.isDisposing` is the
+  - `pending`: an Apply or Discard is dispatched, whole-draft or one change with
+    its operation set. `controller.isDisposing` is the
     scope's synchronous lock or a pending record in the controller's own Work, so
     every surface of that Work disables while other Works and projects stay
     enabled, and a second command for the same draft returns `blocked` instead of
@@ -304,8 +319,8 @@ admission may enrich only the overlay with resolved live-resource metadata.
     starts later is authoritative, since the server reuses a draft id for a
     branch's next generation. The record is dropped once no earlier read is still
     in flight. The list then refreshes in the background.
-  - `failed`: a refused Discard (`discard-offline`), a lost Apply response
-    (`apply-unknown`), or a Review launch that could not open
+  - `failed`: a rejected Apply (`apply-failed`), a refused Discard
+    (`discard-offline`), a lost Apply response (`apply-unknown`), or a Review launch that could not open
     (`review-failed`, recorded by the editor handoff and never over a pending
     command), shown on the draft by the header, the composer strip, the Work
     Files row, the Changes view, and the identity-bar chip (which turns into a

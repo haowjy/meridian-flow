@@ -119,7 +119,12 @@ export function DraftSwitcher({
               onSelect={() => {
                 if (!isCurrent) onOpenDraft(row);
               }}
-              className="grid grid-cols-[1rem_minmax(0,1fr)_auto] gap-x-2 gap-y-0.5"
+              className={cn(
+                "grid grid-cols-[1rem_minmax(0,1fr)_auto] gap-x-2 gap-y-0.5",
+                // A row that carries a message grows to hold it.
+                failure &&
+                  "h-auto min-h-8 py-1.5 [@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-11",
+              )}
             >
               <span className="text-primary">
                 {isCurrent ? <Check aria-hidden className="size-3.5" /> : null}
