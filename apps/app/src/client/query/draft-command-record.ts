@@ -3,11 +3,15 @@
  * every surface (composer strip, editor header, Work Files) and every review
  * scope. A surface is disabled only by commands inside its own Work.
  *
- * - `pending`: an Apply or Discard is dispatched. Every surface of that Work
- *   disables, and a second dispatch for the same draft is refused instead of
- *   sent twice.
- * - `failed`: a Discard was refused, an Apply response was lost
- *   (`apply-unknown`), or opening Review failed (`review-failed`). The draft is still listed, so its row shows the message.
+ * - `pending`: an Apply or Discard is dispatched, whole-draft or one change
+ *   (with its operation set). Every surface of that Work disables, and a second
+ *   dispatch for the same draft, from any session, is refused instead of sent.
+ *   This is the one command authority per draft; `change-command-record` only
+ *   reads it.
+ * - `failed`: a whole-draft Apply was rejected (`apply-failed`), a Discard was
+ *   refused, an Apply response was lost (`apply-unknown`), or opening Review
+ *   failed (`review-failed`). The draft is still listed, so its row shows the
+ *   message wherever the draft is listed, even after the review moved on.
  *   It clears on the next action on the draft (Discard retry, Apply, opening
  *   Review), and when a later draft-list read no longer lists the draft. That
  *   absence is not evidence of Apply (a remote Discard looks the same), so the
@@ -23,20 +27,31 @@
  * the signed-in account changes.
  */
 import { create } from "zustand";
-import { resetChangeCommandRecords } from "./change-command-record";
 
 type DraftScope = { projectId: string; workId: string };
 type DraftRef = DraftScope & { documentId: string; draftId: string };
 type ListedDraft = { documentId: string; draftId: string };
 
-export type DraftCommandFailureCode = "apply-unknown" | "discard-offline" | "review-failed";
+export type DraftCommandFailureCode =
+  | "apply-failed"
+  | "apply-unknown"
+  | "discard-offline"
+  | "review-failed";
+
+export type ChangeCommandMode = "apply" | "discard";
+
+/** One change under review: a server closure class and every operation it holds. */
+export type ChangeRef = { classId: string; operationIds: readonly string[] };
+
+/** A per-change command in flight, with the operation set it sends. */
+export type PendingChangeCommand = ChangeRef & { mode: ChangeCommandMode };
 
 type DraftCommandRecord =
-  | { phase: "pending" }
+  | { phase: "pending"; change?: PendingChangeCommand }
   | { phase: "failed"; code: DraftCommandFailureCode; at: number }
   | { phase: "confirmed"; at: number };
 
-type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
+export type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
 
 const useDraftCommandStore = create<{ records: DraftCommandRecords; clock: number }>(() => ({
   records: {},
@@ -73,10 +88,14 @@ function recordFor(draft: DraftRef): DraftCommandRecord | undefined {
   return useDraftCommandStore.getState().records[draftCommandKey(draft)];
 }
 
-/** Claim the draft for one command; false when one is already in flight on it. */
-export function beginDraftCommand(draft: DraftRef): boolean {
+/**
+ * Claim the draft for one command: a whole-draft Apply or Discard, or, with
+ * `change`, a per-change one. One command at a time per draft, whichever
+ * surface or session sends it; false when one is already in flight.
+ */
+export function beginDraftCommand(draft: DraftRef, change?: PendingChangeCommand): boolean {
   if (recordFor(draft)?.phase === "pending") return false;
-  setRecord(draft, () => ({ phase: "pending" }));
+  setRecord(draft, () => ({ phase: "pending", ...(change ? { change } : {}) }));
   return true;
 }
 
@@ -171,6 +190,15 @@ export function draftCommandFailure(
   return record?.phase === "failed" ? record.code : null;
 }
 
+/** The per-change command in flight on this draft, if the claim is one. */
+export function pendingChangeCommand(
+  records: DraftCommandRecords,
+  draft: DraftRef,
+): PendingChangeCommand | null {
+  const record = records[draftCommandKey(draft)];
+  return record?.phase === "pending" ? (record.change ?? null) : null;
+}
+
 /** A command is in flight on any draft of this project's Work. */
 export function draftCommandPendingIn(records: DraftCommandRecords, scope: DraftScope): boolean {
   const prefix = scopePrefix(scope);
@@ -186,7 +214,19 @@ export function bindDraftCommandAccount(accountId: string): void {
   resetDraftCommandRecords();
 }
 
+const resetListeners = new Set<() => void>();
+
+/** Stores that hold state beside this one (`change-command-record`) empty with it. */
+export function onDraftCommandRecordsReset(listener: () => void): void {
+  resetListeners.add(listener);
+}
+
 export function resetDraftCommandRecords(): void {
   useDraftCommandStore.setState({ records: {} });
-  resetChangeCommandRecords();
+  for (const listener of resetListeners) listener();
+}
+
+/** The records right now, for code that is not a render (commands, tests). */
+export function currentDraftCommandRecords(): DraftCommandRecords {
+  return useDraftCommandStore.getState().records;
 }

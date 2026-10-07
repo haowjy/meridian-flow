@@ -22,14 +22,17 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { draftCommandFailure, useDraftCommandRecords } from "@/client/query/draft-command-record";
+import {
+  type DraftCommandFailureCode,
+  draftCommandFailure,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
 import { type DockRow, dockRows } from "./docked-drafts";
-import type { InlineReviewMessageCode } from "./draft-review-session";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
 import { ReviewMessageText } from "./ReviewMessageText";
 
@@ -287,7 +290,7 @@ function DockRowLine({
   onReview,
 }: {
   row: DockRow;
-  error: InlineReviewMessageCode | null;
+  error: DraftCommandFailureCode | null;
   busy: boolean;
   onOpen: () => void;
   onReview: () => void;
@@ -323,7 +326,7 @@ function DockRowLine({
 }
 
 /** A refused command, in the strip's error voice. */
-function DockErrorLine({ code, row = false }: { code: InlineReviewMessageCode; row?: boolean }) {
+function DockErrorLine({ code, row = false }: { code: DraftCommandFailureCode; row?: boolean }) {
   return (
     <p
       className={cn(

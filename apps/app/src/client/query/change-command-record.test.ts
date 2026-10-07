@@ -12,10 +12,11 @@ import {
   confirmChangeCommand,
   currentChangeCommandRecords,
   failChangeCommand,
+  hiddenOperationIds,
   previewWithoutOperations,
   readPreviewAfterChangeCommands,
-  resetChangeCommandRecords,
 } from "./change-command-record";
+import { beginDraftCommand, resetDraftCommandRecords } from "./draft-command-record";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
 const one = { classId: "c1", operationIds: ["1"] };
@@ -66,12 +67,25 @@ const operationIds = (p: DraftPreviewResponse) =>
   p.status === "active" ? p.operations.map((o) => o.operationId) : [];
 
 describe("change command record", () => {
-  beforeEach(() => resetChangeCommandRecords());
+  beforeEach(() => resetDraftCommandRecords());
 
-  it("claims a change once", () => {
+  it("claims the draft once: no second change, and no whole-draft command, beside it", () => {
     expect(beginChangeCommand(draft, one, "apply")).toBe(true);
     expect(beginChangeCommand(draft, one, "discard")).toBe(false);
-    expect(beginChangeCommand(draft, two, "apply")).toBe(true);
+    expect(beginChangeCommand(draft, two, "apply")).toBe(false);
+    expect(beginDraftCommand(draft)).toBe(false);
+    expect(beginChangeCommand({ ...draft, draftId: "y" }, two, "apply")).toBe(true);
+  });
+
+  it("a claim hides its operations and is the change's pending state", () => {
+    beginChangeCommand(draft, two, "discard");
+    const records = currentChangeCommandRecords();
+    expect([...hiddenOperationIds(records, draft)]).toEqual(["2", "3"]);
+    expect(changeCommandState(records, draft, two)).toEqual({ phase: "pending", mode: "discard" });
+    // Found by a shared operation too, as the server may regroup the class.
+    expect(
+      changeCommandState(records, draft, { classId: "c9", operationIds: ["3"] }),
+    ).toMatchObject({ phase: "pending" });
   });
 
   it("a read that started before a confirmation cannot bring the change back", async () => {
@@ -85,7 +99,7 @@ describe("change command record", () => {
     finish(preview());
     expect(operationIds(await read)).toEqual(["2", "3"]);
     // The read settled, so nothing is left to fence.
-    expect(Object.keys(currentChangeCommandRecords())).toHaveLength(0);
+    expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(0);
   });
 
   it("a read that started after the confirmation is authoritative", async () => {

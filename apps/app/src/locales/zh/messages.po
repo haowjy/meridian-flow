@@ -578,6 +578,11 @@ msgstr ""
 msgid "Apply draft"
 msgstr ""
 
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Applying"
+msgstr ""
+
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
 msgstr ""
@@ -1158,6 +1163,7 @@ msgid "Couldn’t confirm this preference saved."
 msgstr ""
 
 #: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewChangeParts.tsx
 msgid "Couldn't confirm whether this applied. It will update when you're back online."
 msgstr ""
 
@@ -1668,6 +1674,11 @@ msgstr ""
 
 #: src/features/draft-review/ReviewToast.tsx
 msgid "Discarded"
+msgstr ""
+
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Discarding"
 msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx

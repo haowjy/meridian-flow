@@ -5,10 +5,10 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftDock, type DraftDockModel } from "./DraftDock";
 import type { DockRow } from "./docked-drafts";
-import type { InlineReviewMessageCode } from "./draft-review-session";
 
 function row(documentId: string): DockRow {
   return {
@@ -20,7 +20,7 @@ function row(documentId: string): DockRow {
   };
 }
 
-function dockWith(rows: DockRow[], refused: Record<string, InlineReviewMessageCode>) {
+function dockWith(rows: DockRow[], refused: Record<string, DraftCommandFailureCode>) {
   return {
     generating: false,
     rows,
@@ -68,6 +68,14 @@ describe("DraftDock refused Discard", () => {
       expect(rowError?.textContent).toBe("Couldn't discard. Check your connection and try again.");
       expect(rowError?.previousElementSibling?.textContent).toContain("b.md");
       expect(host.querySelectorAll("[data-draft-dock-row-error]")).toHaveLength(1);
+    });
+  });
+
+  it("shows a rejected Apply on its draft's row, whichever draft the review moved on to", async () => {
+    await renderDock(dockWith([row("a"), row("b")], { a: "apply-failed" }), (host) => {
+      const rowError = host.querySelector("[data-draft-dock-row-error]");
+      expect(rowError?.textContent).toBe("Couldn't apply. Check your connection and try again.");
+      expect(rowError?.previousElementSibling?.textContent).toContain("a.md");
     });
   });
 

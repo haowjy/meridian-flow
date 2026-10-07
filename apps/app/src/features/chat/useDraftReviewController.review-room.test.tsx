@@ -21,6 +21,8 @@ vi.mock("@/client/api/drafts-api", () => ({
     status: "active",
     draftId,
     reviewRoomName: `room-${documentId}`,
+    operations: [],
+    hunks: [],
   })),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
