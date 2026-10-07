@@ -140,6 +140,8 @@ export function parseBlockChildren(children: readonly MdastBlock[], ctx: ParseCo
 
 export function parseBlockAst(ast: unknown, ctx: ParseContext): PMNode | null {
   const runtime = getRuntime(ctx);
+  const breaks = hardBreakParagraph(ast, ctx);
+  if (breaks) return breaks;
   for (const codec of runtime.blocks) {
     const parsed = codec.parse(ast, ctx);
     if (parsed) return asBlockNode(parsed, ctx);
@@ -160,6 +162,20 @@ function asBlockNode(node: PMNode, ctx: ParseContext): PMNode {
   return node.isInline ? ctx.schema.node("paragraph", null, [node]) : node;
 }
 
+/**
+ * A paragraph holding only hard breaks is written as a lone `<br/>` line, which
+ * both dialects read as a block of its own rather than as a paragraph.
+ */
+function hardBreakParagraph(ast: unknown, ctx: ParseContext): PMNode | null {
+  const breaks = hardBreakTagCount(ast);
+  if (breaks === 0) return null;
+  return ctx.schema.node(
+    "paragraph",
+    null,
+    Array.from({ length: breaks }, () => ctx.schema.node("hard_break")),
+  );
+}
+
 /** Parse only through an explicitly registered codec, without raw-text recovery. */
 export function parseRecognizedBlockAst(
   ast: unknown,
@@ -167,6 +183,8 @@ export function parseRecognizedBlockAst(
   excludedCodecNames: ReadonlySet<string> = new Set(),
 ): PMNode | null {
   const runtime = getRuntime(ctx);
+  const breaks = hardBreakParagraph(ast, ctx);
+  if (breaks) return breaks;
   for (const codec of runtime.blocks) {
     if (excludedCodecNames.has(codec.name)) continue;
     const parsed = codec.parse(ast, ctx);
@@ -207,7 +225,28 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }
   });
+  // A hard break ending the text has no Markdown spelling (`\` there is a
+  // literal backslash), so it escalates to the tag, as a sized picture does.
+  for (let index = tokens.length - 1; tokens[index]?.type === "break"; index--) {
+    tokens[index] = { type: "html", value: HARD_BREAK_TAG, marks: [] };
+  }
   return inlineTokensToMdast(tokens, ctx);
+}
+
+const HARD_BREAK_TAG = "<br/>";
+
+/** How many hard breaks a raw `<br>` run stands for, as `html` or as parsed JSX. */
+function hardBreakTagCount(ast: unknown): number {
+  const record = asRecord(ast);
+  if (record?.type === "html" && typeof record.value === "string") {
+    const tags = record.value.trim().match(/^(?:<br\s*\/?>)+$/i)?.[0];
+    return tags ? (tags.match(/<br/gi)?.length ?? 0) : 0;
+  }
+  const isJsx = record?.type === "mdxJsxTextElement" || record?.type === "mdxJsxFlowElement";
+  const empty = (value: unknown) => !Array.isArray(value) || value.length === 0;
+  return isJsx && record.name === "br" && empty(record.attributes) && empty(record.children)
+    ? 1
+    : 0;
 }
 
 export function parseInlineChildren(
@@ -232,6 +271,11 @@ export function parseInlineChildren(
         break;
       }
       default: {
+        const breaks = hardBreakTagCount(child);
+        if (breaks > 0) {
+          for (let count = 0; count < breaks; count++) out.push(ctx.schema.node("hard_break"));
+          break;
+        }
         // A raw `<img>` tag: pure Markdown hands it over as `html`, MDX as a
         // parsed JSX element, and the image codec reads both.
         const image = parseInlineImage(child, ctx);
