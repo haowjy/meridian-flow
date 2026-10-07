@@ -225,10 +225,12 @@ export function createRemovalElement(
     if (!operationId) return;
     const onToggle =
       event.target instanceof Element && event.target.closest(`.${REMOVAL_TOGGLE_CLASS}`);
+    // A pointer click on the struck text (not the fold, not Enter on it). The side
+    // is read before activating: activating rebuilds this widget, and a detached
+    // one has no box to measure.
+    const side = !onToggle && event.detail > 0 ? clickedSide(root, event, plan.block) : null;
     options.handlers.activate(operationId, onToggle ? plan.identity : null, event.detail === 0);
-    // A pointer click on the struck text (not the fold, not Enter on it).
-    if (!onToggle && event.detail > 0)
-      options.handlers.placeCaret(plan.identity, clickedSide(root, event, plan.block));
+    if (side !== null) options.handlers.placeCaret(plan.identity, side);
   });
   return root;
 }
