@@ -68,18 +68,28 @@ is one server closure class.
   a removal). `markKeys` are the keys the manuscript paints a change by.
   `previewWithoutOperations` never hides a hunk no operation owns.
 - **A move from one draft's review to another's is held** (`features/project/dock/review-handover`).
-  Switcher pick, Apply draft, Discard draft, Next draft and Open on a refused draft all go through `openEditorReview`, which hands the
-  page's painted review (header, identity bar, body) to `ReviewHandoverFrame` as
-  inert markup, the way `FrozenReview` holds a review across a room rebuild. The
-  route, tab and URL change at the click; the copy covers the skeleton the route
-  settles through and is released in the commit that paints the target
-  (`inlineReview.shown` for its document and draft), or on a failed or cancelled
-  launch, or after 10 s. It captures only a painted review (`shown`), and a move
-  that follows a move keeps the first copy. Wrap any new page that hosts a
-  review in `ReviewHandoverFrame`. The next draft's preview is prefetched
-  (`useReviewHeader`) while the writer is still in this one; the review room is
-  still discovered with a fresh read, because a draft's room can change when it
-  is disposed.
+  Switcher pick, Apply draft, Discard draft, Next draft and Open on a refused draft all go through
+  `openEditorReview`, which hands the page's painted review (header, identity bar, body) to
+  `ReviewHandoverFrame` as inert markup, the way `FrozenReview` holds a review across a room
+  rebuild. The route, tab and URL change at the click. One hold has one owner (the handoff
+  provider's `useReviewHandoverOwner`) and is keyed to the review it waits for (`target`); the
+  markup is only what stands in for it:
+  - **Input.** The real page under the copy is inert for the whole hold (an `inert` wrapper
+    inside the frame, with an "Opening ..." status line outside it; focus that was in the page
+    moves to the status line and returns to the frame when the hold ends). The copy being
+    inert is not enough. Tabs, sidebar and the rest of the shell are outside the frame and stay
+    usable.
+  - **End.** The target paints (`inlineReview.shown`, released in that commit so the swap is
+    one frame), its review room fails (`reviewRoomError`), its review was entered and left, the
+    route goes anywhere but where the move started or the target (`useReviewHandoverRelease`,
+    mounted in the address owner, which is mounted whatever page is), the launch fails or is
+    cancelled, or the absolute expiry passes (10 s from the first capture, set in the owner; a
+    second move keeps it, and no page's mount or unmount can extend it).
+  It captures only a painted review (`shown`), and a move that follows a move keeps the first
+  copy. Wrap any new page that hosts a review in `ReviewHandoverFrame`. The next draft's
+  preview is prefetched (`useReviewHeader`) while the writer is still in this one; the review
+  room is still discovered with a fresh read, because a draft's room can change when it is
+  disposed.
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.

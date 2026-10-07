@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
 import type { ScreenKey } from "../shell/screens";
 import { useOpenEditorReview, usePendingEditorReviewDraftId } from "./editor-review-handoff";
+import { useReviewHandoverRelease } from "./review-handover";
 
 export function EditorReviewAddressOwner({
   review,
@@ -29,6 +30,13 @@ export function EditorReviewAddressOwner({
   onSetDraftId: (draftId: string | null) => void;
 }) {
   const openReview = useOpenEditorReview();
+  // The route is the destination a held review waits for; this owner is mounted
+  // whatever page is, so it is where a hold learns the destination changed.
+  useReviewHandoverRelease(review, {
+    screen: activeScreen,
+    scheme: activeScheme,
+    documentId: activeDocumentId,
+  });
   const pendingDraftId = usePendingEditorReviewDraftId();
   const restoring = useRef<string | null>(null);
   const ownedReview = useRef(false);
