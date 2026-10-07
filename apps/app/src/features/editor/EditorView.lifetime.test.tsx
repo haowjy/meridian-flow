@@ -223,6 +223,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   }),
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
+vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 // The real runtime and follower, with only the scope it reads observed.
 vi.mock("./surfaces/link", async () => {

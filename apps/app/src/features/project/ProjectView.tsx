@@ -44,6 +44,7 @@ import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigati
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
+  EditorReviewScope,
   useDraftReviewScopeValue,
 } from "@/features/chat/DraftReviewProvider";
 import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
@@ -750,25 +751,27 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   ];
 
   return (
-    <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-      <ProjectShell
-        layout={layout}
-        surfaces={stableSurfaces}
-        onSetWidth={setSurfaceWidth}
-        onSetCollapsed={setCollapsedFor}
-        onSetDockWidth={setDockWidth}
-        onSetDockCollapsed={setDockCollapsed}
-        bounds={SURFACE_WIDTH_BOUNDS}
-        mainMinWidth={MAIN_MIN_WIDTH}
-      >
-        <ProjectRouteBoundary
-          issue={props.routeIssues?.main}
-          destinationKey={props.routeLocationKey}
+    <EditorReviewScope value={props.editorReview}>
+      <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
+        <ProjectShell
+          layout={layout}
+          surfaces={stableSurfaces}
+          onSetWidth={setSurfaceWidth}
+          onSetCollapsed={setCollapsedFor}
+          onSetDockWidth={setDockWidth}
+          onSetDockCollapsed={setDockCollapsed}
+          bounds={SURFACE_WIDTH_BOUNDS}
+          mainMinWidth={MAIN_MIN_WIDTH}
         >
-          {renderDesktopPane(props, surfaceToggle)}
-        </ProjectRouteBoundary>
-      </ProjectShell>
-    </TreeCreationProvider>
+          <ProjectRouteBoundary
+            issue={props.routeIssues?.main}
+            destinationKey={props.routeLocationKey}
+          >
+            {renderDesktopPane(props, surfaceToggle)}
+          </ProjectRouteBoundary>
+        </ProjectShell>
+      </TreeCreationProvider>
+    </EditorReviewScope>
   );
 }
 

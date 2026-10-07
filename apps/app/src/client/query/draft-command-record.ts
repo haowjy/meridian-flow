@@ -23,6 +23,7 @@
  * the signed-in account changes.
  */
 import { create } from "zustand";
+import { resetChangeCommandRecords } from "./change-command-record";
 
 type DraftScope = { projectId: string; workId: string };
 type DraftRef = DraftScope & { documentId: string; draftId: string };
@@ -187,4 +188,5 @@ export function bindDraftCommandAccount(accountId: string): void {
 
 export function resetDraftCommandRecords(): void {
   useDraftCommandStore.setState({ records: {} });
+  resetChangeCommandRecords();
 }
