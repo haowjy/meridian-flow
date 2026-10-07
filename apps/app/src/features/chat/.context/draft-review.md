@@ -100,7 +100,11 @@ the click (the host passes the intent before the room resolves), until the
 review room has bound and its editor exists, then swaps in one step; Apply, Discard and
 Back to live reveal the warm live editor instead of rebuilding one. No review
 transition shows an empty body. A draft-only tab has no live editor to keep, so
-its shell (or schema notice) is visible from the first render. The review editor
+its shell (or schema notice) is visible from the first render. The controller's
+room request belongs to the review that started it: closing review A as launch B
+opens (same effect flush: the address owner exits A, the claimant enters B) must
+not cancel B's request, or B waits forever for a room (the draft-only editor
+that stayed empty under a "Review draft" chip). The review editor
 is keyed by its own branch room, never by the live binding, so a rename (which
 re-mints the live binding) does not remount the painted review.
 
