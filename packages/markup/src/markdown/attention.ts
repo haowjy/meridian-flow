@@ -15,17 +15,25 @@ type PhrasingParent = Parameters<State["containerPhrasing"]>[0];
 /**
  * Overlapping marks split into sibling runs (`**a *b***` then `* c*`). With one
  * marker everywhere the closing and opening runs fuse into `****` and pair
- * wrongly, so an attention node that directly follows another switches to `_`.
+ * wrongly. Alternating the marker along a chain of adjacent bold or italic
+ * runs keeps every neighbouring pair distinct: `*a*__b__*c*`.
  */
-function afterAttention(node: unknown, parent: Parent | undefined): boolean {
-  const index = parent?.children.indexOf(node) ?? -1;
-  const previous = index > 0 ? (parent?.children[index - 1] as { type?: string }) : undefined;
-  return previous?.type === "emphasis" || previous?.type === "strong";
+function usesUnderscore(node: unknown, parent: Parent | undefined): boolean {
+  const children = parent?.children ?? [];
+  let index = children.indexOf(node);
+  let adjacent = 0;
+  while (index > 0) {
+    const type = (children[index - 1] as { type?: string }).type;
+    if (type !== "emphasis" && type !== "strong") break;
+    adjacent += 1;
+    index -= 1;
+  }
+  return adjacent % 2 === 1;
 }
 
-function underscoreAfterAttention(option: "emphasis" | "strong", handle: Handle): PeekingHandle {
+function alternatingMarker(option: "emphasis" | "strong", handle: Handle): PeekingHandle {
   const handler: PeekingHandle = (node, parent, state, info) => {
-    if (!afterAttention(node, parent)) return handle(node, parent, state, info);
+    if (!usesUnderscore(node, parent)) return handle(node, parent, state, info);
     const marker = state.options[option];
     state.options[option] = "_";
     try {
@@ -35,7 +43,7 @@ function underscoreAfterAttention(option: "emphasis" | "strong", handle: Handle)
     }
   };
   handler.peek = (node, parent, state) =>
-    afterAttention(node, parent as Parent | undefined) ? "_" : (state.options[option] ?? "*");
+    usesUnderscore(node, parent as Parent | undefined) ? "_" : (state.options[option] ?? "*");
   return handler;
 }
 
@@ -67,7 +75,7 @@ const strike: PeekingHandle = (node, _parent, state, info: Info) => {
 };
 strike.peek = () => "~";
 
-/** mdast-util-to-markdown's rule for `*`, which GFM's `~` shares. */
+/** mdast-util-to-markdown@2.1.2's private rule for `*`, which upstream notes `~` shares. */
 function encodeInfo(outside: number, inside: number): { inside: boolean; outside: boolean } {
   const outsideKind = classifyCharacter(outside);
   const insideKind = classifyCharacter(inside);
@@ -86,7 +94,7 @@ function characterReference(code: number): string {
 }
 
 export const attentionHandlers = {
-  emphasis: underscoreAfterAttention("emphasis", defaultHandlers.emphasis),
-  strong: underscoreAfterAttention("strong", defaultHandlers.strong),
+  emphasis: alternatingMarker("emphasis", defaultHandlers.emphasis),
+  strong: alternatingMarker("strong", defaultHandlers.strong),
   delete: strike,
 };

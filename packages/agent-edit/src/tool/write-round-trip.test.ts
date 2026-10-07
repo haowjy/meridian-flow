@@ -59,6 +59,14 @@ const cases: Array<{ name: string; blocks: PMNode[] }> = [
     blocks: [paragraph(text("a ", "strong"), text("b", "strong", "em"), text(" c", "em"))],
   },
   {
+    name: "italic, bold, italic",
+    blocks: [paragraph(text("x", "em"), text("y", "strong"), text("z", "em"))],
+  },
+  {
+    name: "bold, italic, bold",
+    blocks: [paragraph(text("x", "strong"), text("y", "em"), text("z", "strong"))],
+  },
+  {
     name: "strike whose edges sit on spaces",
     blocks: [paragraph(text("Lin"), text(" Feng nasc", "strike"), text("ent "), text("x"))],
   },
