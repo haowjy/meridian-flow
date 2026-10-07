@@ -35,6 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const CHAPTER_ID = "00000000-0000-4000-8000-000000000b06";
     const MAP_ID = "00000000-0000-4000-8000-000000000b07";
     const SEAL_ID = "00000000-0000-4000-8000-000000000b08";
+    const STAMP_ID = "00000000-0000-4000-8000-000000000b09";
     const WRITER = { type: "user", actorUserId: USER_ID } as never;
 
     const db = createDb(DATABASE_URL, { max: 4 });
@@ -65,6 +66,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus as never);
       collabs.push(collab);
       return collab;
+    }
+
+    async function save(collab: ReturnType<typeof createCollab>, markdown: string) {
+      await collab.writeDocument({ documentId: CHAPTER_ID as never, markdown, origin: WRITER });
     }
 
     async function read(collab: ReturnType<typeof createCollab>): Promise<string> {
@@ -102,11 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("shows a moved image at its new path and a deleted one at its last", async () => {
       const collab = createCollab();
-      await collab.writeDocument({
-        documentId: CHAPTER_ID as never,
-        markdown: "![Map](assets/map.png)\n\n![Seal](assets/seal.png)",
-        origin: WRITER,
-      });
+      await save(collab, "![Map](assets/map.png)\n\n![Seal](assets/seal.png)");
 
       await db.update(documents).set({ folderId: ART_ID }).where(eq(documents.id, MAP_ID));
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, SEAL_ID));
@@ -114,14 +115,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await read(collab)).toBe("![Map](art/map.png)\n\n![Seal](assets/seal.png)\n");
     });
 
+    it("keeps a deleted image's reference through a writer save, even once its path is reused", async () => {
+      const collab = createCollab();
+      await save(collab, "![Map](assets/map.png)\n\n![Seal](assets/seal.png)");
+      const deleted = new Date();
+      await db.update(documents).set({ deletedAt: deleted }).where(eq(documents.id, MAP_ID));
+      await db.update(documents).set({ deletedAt: deleted }).where(eq(documents.id, SEAL_ID));
+      // A new image takes the deleted seal's path; the old seal must not read as it.
+      await db.insert(documents).values({
+        id: STAMP_ID,
+        contextSourceId: SOURCE_ID,
+        folderId: ASSETS_ID,
+        name: "seal",
+        extension: "png",
+        fileType: "image",
+        mimeType: "image/png",
+      });
+
+      const whileDeleted = await read(collab);
+      expect(whileDeleted).toBe(`![Map](assets/map.png)\n\n![Seal](asset:${SEAL_ID})\n`);
+      await save(collab, whileDeleted);
+
+      await db.update(documents).set({ folderId: ART_ID }).where(eq(documents.id, STAMP_ID));
+      await db.update(documents).set({ deletedAt: null }).where(eq(documents.id, MAP_ID));
+      await db.update(documents).set({ deletedAt: null }).where(eq(documents.id, SEAL_ID));
+
+      expect(await read(collab)).toBe("![Map](assets/map.png)\n\n![Seal](assets/seal.png)\n");
+    });
+
     it("reads a written path outside assets/ as a reference to the image there", async () => {
       await db.update(documents).set({ folderId: ART_ID }).where(eq(documents.id, MAP_ID));
       const collab = createCollab();
-      await collab.writeDocument({
-        documentId: CHAPTER_ID as never,
-        markdown: "![Map](art/map.png)",
-        origin: WRITER,
-      });
+      await save(collab, "![Map](art/map.png)");
 
       // Only a reference follows the image back; a literal path would stay put.
       await db.update(documents).set({ folderId: ASSETS_ID }).where(eq(documents.id, MAP_ID));
