@@ -266,14 +266,10 @@ describe("the phone review header", () => {
     await render(async () => {
       await openSwitcher();
       await act(async () => menuItem("Apply all 2 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith(
-        "apply",
-        [
-          { documentId: "doc-12", draftId: "draft-doc-12" },
-          { documentId: "doc-13", draftId: "draft-doc-13" },
-        ],
-        expect.anything(),
-      );
+      expect(controller.disposeDrafts).toHaveBeenCalledWith("apply", [
+        { documentId: "doc-12", draftId: "draft-doc-12" },
+        { documentId: "doc-13", draftId: "draft-doc-13" },
+      ]);
     });
   });
 

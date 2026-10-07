@@ -39,7 +39,6 @@ import {
 } from "@/features/project/routing/ProjectNavigationContext";
 import {
   type DraftBatchErrorCode,
-  type DraftBatchOptions,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
   type DraftReviewSelection,
@@ -121,6 +120,8 @@ export type DraftReviewController = {
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
   dockDispositionError: DraftBatchErrorCode | null;
+  /** Apply all or Discard all is under way. */
+  batchRunning: "apply" | "discard" | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -135,7 +136,6 @@ export type DraftReviewController = {
   disposeDrafts: (
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
-    options?: DraftBatchOptions,
   ) => Promise<DraftCommandOutcome[]>;
 };
 
@@ -190,6 +190,10 @@ export function useDraftReviewController({
     null,
   );
   const nextReviewAttemptIdRef = useRef(0);
+  /** The review open when Apply all or Discard all began, as it was listed then. */
+  const batchReviewedRef = useRef<(DraftReviewSelection & { documentName: string | null }) | null>(
+    null,
+  );
   stateRef.current = state;
 
   useEffect(() => {
@@ -201,6 +205,7 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
   const dockDispositionError = state.dockDispositionError;
+  const batchRunning = state.batchRunning;
 
   const activeDisposition = disposition.busy ? disposition.target : null;
   const isApplying = activeDisposition?.kind === "apply-draft";
@@ -317,6 +322,23 @@ export function useDraftReviewController({
     }
   };
 
+  /**
+   * Apply all or Discard all closed the draft the writer is reviewing. The
+   * review holds on "No changes left" (as it does after the last change) so the
+   * batch's pending and settled outcome stays in front of them, rather than
+   * falling to live as if every draft had applied.
+   */
+  const holdBatchClosedReview = (documentId: string, draftId: string): boolean => {
+    const reviewed = batchReviewedRef.current;
+    if (reviewed?.documentId !== documentId || reviewed.draftId !== draftId) return false;
+    const inline = stateRef.current.surface;
+    if (inline.kind !== "inline" || inline.documentId !== documentId || inline.draftId !== draftId)
+      return false;
+    if (!activeRef.current) return false;
+    dispatch({ type: "reviewClosed", documentId, draftId, documentName: reviewed.documentName });
+    return true;
+  };
+
   commandPortsRef.current = {
     scope: { projectId, workId },
     apply: async ({ documentId, draftId }) => {
@@ -374,10 +396,27 @@ export function useDraftReviewController({
         change,
         mode,
       ),
-    batchStarted: () => {
-      dispatch({ type: "batchStarted" });
+    batchStarted: (mode) => {
+      // Read now: the draft leaves the Work's list when it is applied.
+      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+      const listedDraft = inline
+        ? queryClient
+            .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
+            ?.find((item) => item.draftId === inline.draftId)
+        : undefined;
+      // A new document's review is promoted to the live document, not held.
+      batchReviewedRef.current =
+        inline && listedDraft?.isNewDocument !== true
+          ? {
+              documentId: inline.documentId,
+              draftId: inline.draftId,
+              documentName: listedDraft?.documentName ?? null,
+            }
+          : null;
+      dispatch({ type: "batchStarted", mode });
     },
     batchSettled: (error) => {
+      batchReviewedRef.current = null;
       dispatch({ type: "batchSettled", error });
     },
     // The tab closes with the click; a refusal leaves it closed and the error
@@ -386,10 +425,12 @@ export function useDraftReviewController({
       contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
     },
     draftApplied: ({ documentId, draftId }) => {
-      dispatch({ type: "applySucceeded", documentId, draftId });
+      if (!holdBatchClosedReview(documentId, draftId))
+        dispatch({ type: "applySucceeded", documentId, draftId });
     },
     draftDiscarded: ({ documentId, draftId }) => {
-      dispatch({ type: "discardSucceeded", draftId });
+      if (!holdBatchClosedReview(documentId, draftId))
+        dispatch({ type: "discardSucceeded", draftId });
       contextRemoval.discardDraft(projectId, workId, documentId, draftId);
     },
   };
@@ -603,8 +644,7 @@ export function useDraftReviewController({
     (
       mode: "apply" | "discard",
       drafts: readonly DraftReviewSelection[],
-      options?: DraftBatchOptions,
-    ): Promise<DraftCommandOutcome[]> => reviewSession.disposeDrafts(mode, drafts, options),
+    ): Promise<DraftCommandOutcome[]> => reviewSession.disposeDrafts(mode, drafts),
     [reviewSession],
   );
 
@@ -632,6 +672,7 @@ export function useDraftReviewController({
       toast: state.toast,
       dismissToast,
       dockDispositionError,
+      batchRunning,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -666,6 +707,7 @@ export function useDraftReviewController({
       state.toast,
       dismissToast,
       dockDispositionError,
+      batchRunning,
       enterInlineReview,
       exitInlineReview,
       exitReview,

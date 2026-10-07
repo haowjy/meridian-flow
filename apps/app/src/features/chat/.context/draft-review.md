@@ -110,7 +110,9 @@ command scope; per-change Apply is the one command that sends them. Apply/Discar
 are session outcomes rendered by the review header rather than ignored
 promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
 (`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
-the draft's rows, and named in the dock's typed error state.
+the draft's rows, and named in the dock's typed error state. It never navigates (no answer moves
+the writer); `batchRunning` shows "Applying"/"Discarding" in the open review, and a batch that
+closes the reviewed draft holds that review on `completion: closed` rather than clearing it.
 
 Cross-cutting server policy:
 [whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)
@@ -352,8 +354,7 @@ admission may enrich only the overlay with resolved live-resource metadata.
     switcher row, the composer strip, the Work Files row, the Changes view's
     other-drafts rows, and the identity-bar chip (which turns into a retry). It
     clears on the next Apply or Discard on that draft; opening Review clears
-    only a failed launch, so a batch that lands the writer on a refused draft
-    keeps its message. Work Files and the dock also offer Dismiss. A later list read
+    only a failed launch, so Open on a refused draft keeps its message. Work Files and the dock also offer Dismiss. A later list read
     that no longer lists the draft drops it too, so it never reaches a later
     proposal that reuses the draft id.
 - **Rejected and unknown Apply.** A response with a status is a rejection

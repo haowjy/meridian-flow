@@ -101,7 +101,10 @@ export function useReviewHeader({
     );
   }, [ready, nextDocumentId, nextDraftId, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
-  const { finished, completing, unlisted } = view;
+  const { finished, unlisted } = view;
+  // The batch's progress is the review's too: its draft may be closed (or not yet
+  // reached) while other drafts are still being sent.
+  const completing = view.completing ?? controller.batchRunning;
   const commandRecords = useDraftCommandRecords();
   const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
     projectId: controller.projectId,
@@ -138,23 +141,14 @@ export function useReviewHeader({
   }));
 
   /**
-   * Apply all or Discard all. The batch never stops at a refusal, and when one
-   * draft does not take it the writer is taken there as it happens (the first
-   * only, and never away from a draft that is itself the one refused): the draft
-   * the writer is in may be about to be applied, and the review would then fall
-   * back to live and read as done while drafts are left.
+   * Apply all or Discard all. The batch never stops at a refusal, and nothing in
+   * it moves the writer: the drafts are independent, an answer can come back
+   * long after the writer went elsewhere, and a refusal is held on its own draft
+   * (listed wherever drafts are, with Open as the way to it). The draft the
+   * writer is in holds on "No changes left" when the batch closes it.
    */
   const disposeAll = (mode: "apply" | "discard") => {
-    let moved = false;
-    void controller.disposeDrafts(mode, selections, {
-      onRefused: (refused) => {
-        if (moved) return;
-        moved = true;
-        if (refused.documentId === documentId) return;
-        const row = rows.find((candidate) => candidate.documentId === refused.documentId);
-        if (row) onOpenDraft(row);
-      },
-    });
+    void controller.disposeDrafts(mode, selections);
   };
 
   return {

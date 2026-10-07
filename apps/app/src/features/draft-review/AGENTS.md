@@ -68,8 +68,7 @@ is one server closure class.
   a removal). `markKeys` are the keys the manuscript paints a change by.
   `previewWithoutOperations` never hides a hunk no operation owns.
 - **A move from one draft's review to another's is held** (`features/project/dock/review-handover`).
-  Switcher pick, Apply draft, Discard draft, Next draft and Apply all's move to
-  the first draft that refused all go through `openEditorReview`, which hands the
+  Switcher pick, Apply draft, Discard draft, Next draft and Open on a refused draft all go through `openEditorReview`, which hands the
   page's painted review (header, identity bar, body) to `ReviewHandoverFrame` as
   inert markup, the way `FrozenReview` holds a review across a room rebuild. The
   route, tab and URL change at the click; the copy covers the skeleton the route
@@ -145,3 +144,10 @@ is one server closure class.
   until the writer acts on it again. **A batch (Apply all, Discard all) never stops at
   a refusal**: drafts are independent documents, so each gets its turn, each
   failure is held on its own draft, and `dockDispositionError` names the kind.
+  **A batch never navigates**: the writer stays where they are (nothing is
+  decided from an answer, which can arrive after they went elsewhere), and Open
+  on a refused draft's notice is the only way to it. While it runs, the header
+  says "Applying" or "Discarding" (`controller.batchRunning`). When it closes the
+  draft the writer is reviewing, that review holds on "No changes left" (the same
+  `completion: closed` a last change leaves; a new document's draft is promoted
+  instead), so the refusal notices stay in front of them.
