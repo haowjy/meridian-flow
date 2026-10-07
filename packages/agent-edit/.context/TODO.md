@@ -21,7 +21,37 @@ Design: [inline-diff-decoration-architecture.md] in
 
 [inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
 
+## Selective undo inside one turn refuses a safe undo
+
+`undo/journal-dependencies.ts` counts a later row's `origin`/`rightOrigin`
+anchor on the undone text as a dependency. The server checks a whole turn at
+once, so this never bites there, but `planUndo` checks single writes: two
+`insert`s in one turn, then `write undo since w1 to w1`, returns
+`cant_undo_dependent` (w2 sits after w1, not inside it). Undoing `w1..w2`
+works. Fix by ignoring a later row whose only link to the undone text is
+positional (it anchors on the undone text's edge and nothing it inserts sits
+inside it), keeping the server and `planUndo` on the one rule.
+
+## `find` misses text spelled with character references
+
+The codec encodes edge characters next to emphasis and strike as character
+references (`Li&#x6E;~~&#x20;Feng nasc~~ent`), so `find: "Lin Feng"` does not
+match. Decode character references in the find view
+(`src/model/markdown-text-view.ts`, used by `src/resolver/find.ts`) so `find`
+matches the text a writer sees.
+
 ## Deferred — reopen when earned
+
+- **One block LCS.** `src/apply/echo.ts` `bodyLcs` and
+  `src/resolver/block-alignment.ts` `alignBlocks` both align block lists;
+  `alignBlocks` trims head and tail and caps its table. Route echo through
+  `alignBlocks` (generic over equality) when echo next changes.
+
+- **Collapse `text` into `textRanges`.** With no direct-text tier, a
+  single-match `text` edit equals a one-range `textRanges` edit with the same
+  IR. Collapsing would delete `preflightTextEdit` and the `text` kind, but
+  `write-architecture.md` keeps the `text` shape for single matches on purpose;
+  decide before cleaning up.
 
 - **Full ProseMirror-out-of-kernel.** (Issue #70.) The CRDT (Yjs) axis is
   neutral; the content-representation axis is not — and the remaining coupling is
@@ -60,5 +90,6 @@ Design: [inline-diff-decoration-architecture.md] in
 - **Tier-2 surgical formatting.** Replace the `updateYFragment` reconcile with a
   mark-aware sequence diff (parse → plain-text edit + `format` range diff, tree
   fallback for inline non-text nodes). Token-aligned, not minimal-edit-distance
-  (minimal ≠ intent). Narrow payoff vs Tier 1; build on real merge observations,
+  (minimal ≠ intent). Narrow payoff now that matched blocks already diff in
+  place; build on real merge observations,
   not on spec.
