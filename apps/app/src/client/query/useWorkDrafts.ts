@@ -109,6 +109,8 @@ function compareDraftRecency(left: ThreadDraftListItem, right: ThreadDraftListIt
 export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
   drafts: ThreadDraftListItem[] | null;
   groups: ThreadDraftGroup[] | null;
+  /** Listed drafts the writer already handled to their last change. */
+  clearedGroups: ThreadDraftGroup[] | null;
 };
 
 export function useWorkDrafts(
@@ -136,25 +138,28 @@ export function useWorkDrafts(
   // allocate a fresh array on every render and bust memoization for every
   // streaming tick.
   const cleared = useClearedDrafts();
-  const grouped = useMemo(
-    () =>
-      result.data
-        ? groupDraftsByDocument(result.data).filter(
-            (group) =>
-              !isDraftCleared(
-                cleared,
-                {
-                  projectId: projectId ?? "",
-                  workId: workId ?? "",
-                  documentId: group.documentId,
-                  draftId: group.draft.draftId,
-                },
-                group.draft.lastActorTurnId,
-              ),
-          )
-        : null,
-    [result.data, cleared, projectId, workId],
+  const everyGroup = useMemo(
+    () => (result.data ? groupDraftsByDocument(result.data) : null),
+    [result.data],
   );
+  // Drafts the writer handled to their last change are no longer pending, though
+  // the server still lists them; they stay reachable by document for a review
+  // that is still open on one (`clearedGroups`).
+  const [grouped, clearedGroups] = useMemo(() => {
+    if (!everyGroup) return [null, null] as const;
+    const isCleared = (group: ThreadDraftGroup) =>
+      isDraftCleared(
+        cleared,
+        {
+          projectId: projectId ?? "",
+          workId: workId ?? "",
+          documentId: group.documentId,
+          draftId: group.draft.draftId,
+        },
+        group.draft.lastActorTurnId,
+      );
+    return [everyGroup.filter((group) => !isCleared(group)), everyGroup.filter(isCleared)] as const;
+  }, [everyGroup, cleared, projectId, workId]);
   const { catalog } = useContextCatalogView(projectId ?? "", "manuscript", {
     enabled: enabled && grouped !== null && grouped.length > 0,
     workId: null,
@@ -171,6 +176,7 @@ export function useWorkDrafts(
       status: "disabled",
       drafts: null,
       groups: null,
+      clearedGroups: null,
     };
   }
 
@@ -178,6 +184,7 @@ export function useWorkDrafts(
     ...result,
     drafts: result.data,
     groups,
+    clearedGroups,
   };
 }
 

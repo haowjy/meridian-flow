@@ -90,13 +90,22 @@ the dock is a bug (the dock is a sidebar).
 
 ### Changes view: controller seam
 
-`DockChangesView` reads from `DraftReviewProvider` (mounted at the project shell
-level). It does not own a review session — it consumes the shared controller and
-drives these actions:
+`DockChangesView` lists the change of the review open in the **Editor**. The
+dock sits in the Chat's `DraftReviewBoundary`, whose controller never has a
+review open, so the view reads the Editor scope's value through
+`useEditorDraftReview()` (`EditorReviewScope`, offered by `ProjectView`) and
+passes that controller to `useReviewChanges`. Reading the ambient controller was
+the old Changes view's bug: it listed nothing for a review that was open. It
+owns no review session; it renders `features/draft-review` rows and dispatches
+through the Editor controller:
 
-- `controller.focusReviewOperation(operationId)` — click-to-scroll on cards
-- `controller.discardOperation(operationId)` — per-card Discard
-- `controller.isDisposing` — global disposition lock
+- `view.focus(change, { scroll: true })` — click a row, focus it in the manuscript
+- `view.apply(change)` / `view.discard(change)` — per-change commands
+- `view.locked` — the global disposition lock, disabling every row together
+
+Below the changes it lists the Work's other drafts to open (the Editor Work's,
+and the Chat Work's when it differs). A draft the writer handled to its last
+change is not listed (`change-command-record`'s cleared marks).
 
 The review session owner is `useDraftReviewController` in the chat feature; the
 dock only renders review state and dispatches actions.
@@ -125,9 +134,10 @@ flowchart LR
 DockShell -->|dock: view=changes| Changes[DockChangesView]
 DockShell -->|Work view=file| File[ContextViewerBareHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
-    Changes --> DocGroup[ChangesDocumentGroup per doc]
-    DocGroup --> Card[ReviewOperationCard per Discard class]
-    Card --> Verbs[Selective Discard]
+    Changes --> List[ChangeList of the open review]
+    List --> Row[ReviewChangeRow per change]
+    Row --> Verbs[Apply and Discard one change]
+    Changes --> Other[DraftDocumentRow per other draft]
 ```
 
 `DockShell` is the single component both dock occupants (`ChatSurface`,
@@ -148,8 +158,8 @@ arbitrary value with no dedup category.
 This means stacking `border-border-subtle` with `border-primary` in a `cn()`
 call would leave **both** classes in the output, with CSS specificity
 determining the winner — unpredictable. The fix: use **one border-color class
-per state branch**, not a base + override. In `ReviewOperationCard`, the active
-and inactive states each supply exactly one border class:
+per state branch**, not a base + override. Where a row or card has an active and
+an inactive state, each supplies exactly one border class:
 
 ```tsx
 active
@@ -167,17 +177,13 @@ Never:
 This trap applies anywhere `border-subtle` (or any custom color token class) is
 combined with a standard Tailwind border-color class in a `cn()` call.
 
-### Operation card text is DOM-only
+### Change row text is DOM-only
 
-The card body shows the intended change text extracted from preview hunks and
-operation excerpts. This text is a **display artifact**, not editable content —
-it is plain `<span>` elements, never TipTap nodes. The card's click dispatches
-`focusReviewOperation` to scroll the manuscript; the card never manipulates
-editor state itself.
-
-Adding click-to-edit or inline editing in the card body would require resolving
-the same Yjs anchors the inline-review extension uses, which is not practical
-for a non-editor component. Keep card interactions as focus + verbs.
+A row shows a short excerpt extracted from preview hunks and operation excerpts.
+It is a **display artifact**, not editable content: plain `<span>` elements,
+never TipTap nodes. A row's click focuses the change through the controller
+(`focusReviewChange`); the row never manipulates editor state itself. Keep row
+interactions as focus + verbs.
 
 ### Selective Discard needs a real branch journal
 
@@ -206,10 +212,11 @@ gets a stale view. The default (occupant's native view) is the right starting
 point every time. The writer's explicit choice is remembered within a session
 so switching screens and coming back restores it.
 
-### Combined region unit = card unit
+### Combined region unit = change unit
 
-The dock renders the Discard classes the server hands it. Combining dependent
-regions into one unit happens upstream. The card groups directly by the
+The dock renders the closure classes the server hands it. Combining dependent
+regions into one unit happens upstream. `reviewChanges` groups directly by the
 required `closureClassId` and never repairs or reconstructs class membership.
-One server Discard class = one card = one selective-Discard granularity. Apply
-is document-level and is not a card action.
+One server closure class = one change = one Apply and one Discard, sent with
+every operation of the class. Whole-draft Apply and Discard stay in the review
+header.
