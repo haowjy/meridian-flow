@@ -19,8 +19,11 @@ export interface DocumentAssetPaths {
   within<T>(project: AssetPathProject, operation: () => Promise<T>): Promise<T>;
 }
 
-/** The project, named directly or by a document in it. */
-export type AssetPathProject = { projectId: string } | { documentId: string };
+/** The project, named directly or by a document or thread in it. */
+export type AssetPathProject =
+  | { projectId: string }
+  | { documentId: string }
+  | { threadId: string };
 
 /** For compositions with no project tree (in-memory, tests): no image is known. */
 export const NO_DOCUMENT_ASSET_PATHS: DocumentAssetPaths = {

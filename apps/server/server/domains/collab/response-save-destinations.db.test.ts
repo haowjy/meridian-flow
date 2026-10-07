@@ -403,6 +403,70 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await agentLiveRows(SCRATCH_ID)).toEqual([]);
     });
 
+    it("shows a moved image at its new path in the reply's settled receipt", async () => {
+      const collab = createTestCollab();
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.works.id, WORK_ID));
+      const MANUSCRIPT_ID = "00000000-0000-4000-8000-000000000a20";
+      const ASSETS_ID = "00000000-0000-4000-8000-000000000a21";
+      const ART_ID = "00000000-0000-4000-8000-000000000a22";
+      const MAP_ID = "00000000-0000-4000-8000-000000000a23";
+      await db.insert(schema.contextSources).values({
+        id: MANUSCRIPT_ID,
+        projectId: PROJECT_ID,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
+      await db.insert(schema.folders).values([
+        { id: ASSETS_ID, contextSourceId: MANUSCRIPT_ID, name: "assets" },
+        { id: ART_ID, contextSourceId: MANUSCRIPT_ID, name: "art" },
+      ]);
+      await db.insert(schema.documents).values({
+        id: MAP_ID,
+        contextSourceId: MANUSCRIPT_ID,
+        folderId: ASSETS_ID,
+        name: "map",
+        extension: "png",
+        fileType: "image",
+        mimeType: "image/png",
+      });
+      await collab.writeDocument({
+        documentId: KB_ID as never,
+        markdown: "![Map](assets/map.png)",
+        origin: { type: "user", actorUserId: USER_ID as never },
+      });
+      await db
+        .update(schema.documents)
+        .set({ folderId: ART_ID })
+        .where(eq(schema.documents.id, MAP_ID));
+
+      const agentEdit = collab.agentEdit();
+      const lore = await context(direct(), KB_ID);
+      const read = await agentEdit.read({ file: "lore.md", documentId: KB_ID }, lore);
+      expect(JSON.stringify(read.result)).toContain("art/map.png");
+      await expect(
+        agentEdit.write(
+          {
+            command: "replace",
+            file: "lore.md",
+            documentId: KB_ID,
+            find: "![Map](art/map.png)",
+            content: "![Map](art/map.png) The pass.",
+          },
+          { ...lore, responseId: RESPONSE_ID },
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
+
+      const receipts = JSON.stringify(committed.documents.map((document) => document.receipts));
+      expect(receipts).toContain("![Map](art/map.png) The pass.");
+      expect(receipts).not.toContain("asset:");
+    });
+
     it("saves two mixed replies whose Works overlap in opposite orders", async () => {
       const collab = createTestCollab();
       await addSecondWorkAndThread();

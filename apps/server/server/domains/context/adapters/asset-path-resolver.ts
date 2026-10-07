@@ -11,6 +11,24 @@ import type { AssetPathProject, DocumentAssetPaths } from "../../collab/index.js
 
 type ImageLocation = { id: string; path: string; deleted: boolean };
 
+function projectHost(project: AssetPathProject) {
+  if ("projectId" in project) {
+    return isUuid(project.projectId) ? sql`SELECT ${project.projectId}::uuid AS project_id` : null;
+  }
+  if ("threadId" in project) {
+    return isUuid(project.threadId)
+      ? sql`SELECT t.project_id FROM threads t WHERE t.id = ${project.threadId}`
+      : null;
+  }
+  if (!isUuid(project.documentId)) return null;
+  return sql`
+    SELECT COALESCE(cs.project_id, w.project_id) AS project_id
+    FROM documents d
+    JOIN context_sources cs ON cs.id = d.context_source_id
+    LEFT JOIN works w ON w.id = cs.work_id
+    WHERE d.id = ${project.documentId}`;
+}
+
 /**
  * Every image in the project's manuscript, wherever it sits,
  * including deleted ones at the location they were deleted from. Paths are
@@ -21,17 +39,8 @@ async function loadImageLocations(
   db: Database,
   project: AssetPathProject,
 ): Promise<ImageLocation[]> {
-  const id = "projectId" in project ? project.projectId : project.documentId;
-  if (!isUuid(id)) return [];
-  const host =
-    "projectId" in project
-      ? sql`SELECT ${id}::uuid AS project_id`
-      : sql`
-        SELECT COALESCE(cs.project_id, w.project_id) AS project_id
-        FROM documents d
-        JOIN context_sources cs ON cs.id = d.context_source_id
-        LEFT JOIN works w ON w.id = cs.work_id
-        WHERE d.id = ${id}`;
+  const host = projectHost(project);
+  if (!host) return [];
   return currentDrizzleDb(db).execute<ImageLocation>(sql`
     WITH RECURSIVE host AS (${host}),
     manuscript AS (
