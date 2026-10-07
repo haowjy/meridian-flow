@@ -1,7 +1,9 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
+
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { NO_DOCUMENT_ASSET_PATHS } from "../../domain/ports/document-asset-paths.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -849,6 +851,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const schema = buildDocumentSchema();
       const branchPush = createBranchPushService({
+        assetPaths: NO_DOCUMENT_ASSET_PATHS,
         changeEventDelivery: { deliver() {} },
         branchStore: store,
         ...createPushStores(
@@ -967,6 +970,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           realChangeTrails.reopenOwners(owners),
       };
       const branchPush = createBranchPushService({
+        assetPaths: NO_DOCUMENT_ASSET_PATHS,
         changeEventDelivery: { deliver() {} },
         branchStore: store,
         ...createPushStores(markdownProjectionSerializer(model, codec), failingChangeTrails),

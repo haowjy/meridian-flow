@@ -76,6 +76,7 @@ import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runti
 import {
   scopeAgentEditAssetPaths,
   scopeBranchPeerAssetPaths,
+  scopeOfflineReconciliationAssetPaths,
   scopeResponseFinalizerAssetPaths,
 } from "./domain/asset-path-scope.js";
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
@@ -294,6 +295,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator,
     model: runtime.model,
     codec: runtime.markupCodec,
+    assetPaths: deps.assetPaths,
     changeEventDelivery: createHocuspocusChangeEventDelivery({
       hocuspocus: hocuspocusBinding.require,
       eventSink: deps.eventSink,
@@ -352,14 +354,17 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.assetPaths,
   );
 
-  const offlineReconciliation = createDrizzleOfflineReconciliation({
-    journal: persistence.journal,
-    changeTrails,
-    model: runtime.model,
-    codec: runtime.codec,
-    resolveTurnThreadId: lookups.resolveTurnThreadId,
-    resolveDocumentUri: documentUriResolver,
-  });
+  const offlineReconciliation = scopeOfflineReconciliationAssetPaths(
+    createDrizzleOfflineReconciliation({
+      journal: persistence.journal,
+      changeTrails,
+      model: runtime.model,
+      codec: runtime.codec,
+      resolveTurnThreadId: lookups.resolveTurnThreadId,
+      resolveDocumentUri: documentUriResolver,
+    }),
+    deps.assetPaths,
+  );
   const authorityGeneration = createDrizzleAuthorityGenerationReader(deps.db);
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: persistence.journal,

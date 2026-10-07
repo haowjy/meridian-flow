@@ -491,7 +491,7 @@ export async function createProductionAppPorts(input: {
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
-  const assetPaths = createDrizzleDocumentAssetPaths(db);
+  const assetPaths = createDrizzleDocumentAssetPaths(db, eventSink);
   const agentRevisions = createDrizzleAgentRevisionStore(db);
   const chainDeps = {
     threads: threadRepos.threads,
