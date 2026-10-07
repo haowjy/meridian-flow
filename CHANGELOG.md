@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft review identifies the author of each removed text span, including mixed-author deletions in one change.
+
 - Draft review distinguishes CRDT interleaves from ordinary writer edits inside AI prose.
 
 - Draft review now retains every consecutive deletion, including cumulative Yjs delete-set updates.

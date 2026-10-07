@@ -1,4 +1,4 @@
-/** Unit coverage for draft live-vs-draft hunk extraction and attribution. */
+/** Real-Yjs coverage for draft live-vs-draft hunk extraction and attribution. */
 import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -213,6 +213,35 @@ describe("draft review hunk model", () => {
       ],
     });
     expect(result.hunks.some((hunk) => hunk.mergeArtifact)).toBe(true);
+  });
+
+  it("attributes adjacent deleted spans independently of inserted-text owners", () => {
+    const live = createDoc("Alpha sword blade remains with plenty of unchanged surrounding text.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const ai = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, ""),
+    );
+    const writer = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, "new "),
+    );
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 178, actorTurnId: "ai", updateData: ai },
+        { id: 179, actorTurnId: null, actorUserId: "writer", updateData: writer },
+      ],
+    });
+    const hunk = result.hunks[0];
+    expect(hunk).toMatchObject({
+      deletedText: "sword blade",
+      deletedSpans: [
+        { from: 0, to: 6, deletedBy: "agent" },
+        { from: 6, to: 11, deletedBy: "writer" },
+      ],
+    });
   });
 
   it("clusters writer rows in the same block into one writer operation", () => {

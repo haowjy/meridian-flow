@@ -92,10 +92,18 @@ type ReviewHunkBase = {
   mergeArtifact?: boolean;
 };
 
+/** UTF-16 offsets into deletedText; ordered, disjoint spans cover that text. */
+export type ReviewDeletedSpan = {
+  from: number;
+  to: number;
+  deletedBy: "agent" | "writer";
+};
+
 export type ReviewTextHunk = ReviewHunkBase & {
   kind: "text";
   spans: ReviewHunkSpan[];
   deletedText?: string;
+  deletedSpans?: ReviewDeletedSpan[];
 };
 
 export type ReviewBlockDisplay = { type: string; display: string };

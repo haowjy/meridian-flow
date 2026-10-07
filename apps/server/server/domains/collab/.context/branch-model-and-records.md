@@ -197,3 +197,11 @@ right-origin both lie in context deleted by the other author. Ordinary writer
 insertions inside intact AI prose keep their author-specific spans, even with
 multiple writer runs. A diff hunk can be writer-only while its deleted origin
 belongs to an adjacent AI rewrite. Run alternation is not the authority.
+
+Text hunks with `deletedText` also emit `deletedSpans`: ordered, disjoint UTF-16
+`from`/`to` offsets covering the full removed string, each with `deletedBy`
+(`agent` or `writer`). Authors come from deletion attribution, not inserted
+spans or the hunk's owning operations. A single semantic deletion can contain
+both authors. This field carries no journal row identifiers. Block-display
+hunks keep their existing contract. Cumulative delete-set visibility is checked
+per Yjs struct, so old tombstones cannot hide a newly deleted neighboring region.
