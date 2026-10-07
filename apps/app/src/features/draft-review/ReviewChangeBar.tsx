@@ -38,11 +38,11 @@ export function ReviewChangeBar({
       aria-label={t`Change`}
       data-review-change-bar={change.classId}
       className={cn(
-        "flex w-fit max-w-full flex-col gap-0.5 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-caption shadow-card",
+        "flex w-fit max-w-full flex-col gap-0.5 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-caption shadow-card",
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
         <ChangeAuthor attribution={change.attribution} />
         {change.includesWriterEdits ? (
           <span className="text-meta text-muted-foreground">
@@ -54,7 +54,7 @@ export function ReviewChangeBar({
             <Trans>Check it reads right</Trans>
           </span>
         ) : null}
-        <span className="ml-auto flex items-center gap-2.5 whitespace-nowrap">
+        <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
           <Button variant="quiet" size="xs" disabled={disabled} onClick={onDiscard}>
             {discardLabel(change)}
           </Button>

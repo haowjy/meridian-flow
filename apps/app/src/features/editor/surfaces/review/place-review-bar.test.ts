@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { BAR_GAP_PX, BAR_MAX_WIDTH_PX, BAR_MIN_WIDTH_PX, placeReviewBar } from "./place-review-bar";
+import {
+  BAR_EDGE_PX,
+  BAR_GAP_PX,
+  BAR_MAX_WIDTH_PX,
+  BAR_MIN_WIDTH_PX,
+  placeReviewBar,
+} from "./place-review-bar";
 
 const anchor = { left: 300, top: 210, right: 640, bottom: 260 };
 
@@ -13,7 +19,7 @@ describe("placeReviewBar", () => {
     expect(placement.top).toBe(anchor.top);
     expect(placement.left).toBeGreaterThanOrEqual(740 + BAR_GAP_PX);
     // Stays inside the pane, so nothing scrolls sideways.
-    expect(placement.left + placement.maxWidth).toBeLessThanOrEqual(920 - BAR_GAP_PX);
+    expect(placement.left + placement.maxWidth).toBeLessThanOrEqual(920 - BAR_EDGE_PX);
   });
 
   it("never grows past its one-row width in a wide margin", () => {
@@ -25,7 +31,7 @@ describe("placeReviewBar", () => {
     // Pane 664px wide, column ends at 640px: 24px of margin.
     expect(placeReviewBar({ anchor, columnRight: 640, paneWidth: 664 }).kind).toBe("below");
     // Just under the minimum.
-    const columnRight = 920 - BAR_GAP_PX * 2 - (BAR_MIN_WIDTH_PX - 1);
+    const columnRight = 920 - BAR_EDGE_PX - BAR_GAP_PX - (BAR_MIN_WIDTH_PX - 1);
     expect(placeReviewBar({ anchor, columnRight, paneWidth: 920 }).kind).toBe("below");
     expect(placeReviewBar({ anchor, columnRight: columnRight - 1, paneWidth: 920 }).kind).toBe(
       "margin",
