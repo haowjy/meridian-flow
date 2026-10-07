@@ -141,12 +141,27 @@ describe("per-change Apply (postgres)", () => {
         .where(eq(schema.works.id, WORK_ID));
     const request = {
       ...command,
-      operationIds: kind === "gone" ? ["missing"] : preview.operations.map((op) => op.operationId),
+      operationIds: preview.operations.map((op) => op.operationId),
       liveRevisionToken: preview.liveRevisionToken,
       draftRevisionToken: preview.draftRevisionToken,
     };
+    if (kind === "gone") {
+      await fixture.collab.draftReview.discardWorkDraft({
+        ...command,
+        operationIds: request.operationIds,
+      });
+      await expect(
+        fixture.collab.draftReview.applyWorkDraftChanges(request),
+      ).resolves.toMatchObject({ status: "stale" });
+      const current = await fixture.collab.draftReview.preview(command);
+      if (current.status !== "active") throw new Error("missing current preview");
+      request.liveRevisionToken = current.liveRevisionToken;
+      request.draftRevisionToken = current.draftRevisionToken;
+    }
     if (kind === "archived")
-      await expect(fixture.collab.draftReview.applyWorkDraftChanges(request)).rejects.toThrow();
+      await expect(fixture.collab.draftReview.applyWorkDraftChanges(request)).rejects.toMatchObject(
+        { name: "WorkLifecycleUnavailableError", state: "archived", workId: WORK_ID },
+      );
     else
       await expect(
         fixture.collab.draftReview.applyWorkDraftChanges(request),
