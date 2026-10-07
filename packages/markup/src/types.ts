@@ -10,8 +10,12 @@ export type { CodecParseErrorLocation, PMNode };
 
 /** Stable asset identity ↔ current project-relative path translation boundary. */
 export interface AssetPathResolver {
-  /** Return the current (or tombstoned last-known) path for an asset document. */
-  pathForAsset(assetDocumentId: string): string;
+  /**
+   * The current (or, once deleted, last) path of an asset document, or null for
+   * an id with no document at all. The codec spells null as the `asset:` ref
+   * itself, which parses back to the same reference.
+   */
+  pathForAsset(assetDocumentId: string): string | null;
   /** Return an asset document id only for a path known to the current project. */
   assetForPath(path: string): string | null;
 }
