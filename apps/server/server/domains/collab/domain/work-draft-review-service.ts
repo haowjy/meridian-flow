@@ -22,6 +22,7 @@ import type {
 import { DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
+import { documentEffectsEqual } from "./document-effect.js";
 import { documentRevision } from "./document-revision.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
@@ -282,13 +283,7 @@ export function createWorkDraftReviewService(input: {
       workId: command.workId,
       documentId: command.documentId,
       branchId: command.draftId,
-      isEmpty: (liveDoc, draftDoc, rows) =>
-        computeDraftReviewHunks({
-          liveDoc,
-          draftDoc,
-          model: input.model,
-          draftUpdates: reviewUpdates(rows),
-        }).operations.length === 0,
+      isEmpty: documentEffectsEqual,
     });
   }
 

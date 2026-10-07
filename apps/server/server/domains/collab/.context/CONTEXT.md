@@ -307,3 +307,11 @@ author. Tombstone attribution must not invent an author for that survivor.
 Unexpected missing deletion ownership logs a warning and omits all author spans
 for that removal (the existing default removal rendering still shows its whole
 text); returning only the known spans would hide the missing portion.
+
+### Complete-effect terminal settlement
+
+No visible review operations is not permission to reset a draft. Empty settlement
+compares the visible ProseMirror tree (text deltas including marks, element types,
+attributes, and ordered children), ignoring Yjs identities/history. Unrepresented
+formatting remains pending for document-level Apply/Discard; cancelled history can
+still settle when its complete document effect equals live.
