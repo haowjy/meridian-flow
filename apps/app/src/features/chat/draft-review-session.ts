@@ -87,11 +87,6 @@ export type DraftCommandOutcome =
   | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
   | { kind: "failed"; code: DraftCommandFailureCode };
 
-export type DraftBatchOptions = {
-  /** A draft did not take the command: called as it happens, while the rest of the batch still runs. */
-  onRefused?: (draft: DraftReviewSelection) => void;
-};
-
 export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
 
 export type ChangeApplyRequest = {
@@ -134,7 +129,7 @@ export type DraftReviewCommandPorts = {
     change: ChangeRef,
     mode: "apply" | "discard",
   ) => void;
-  batchStarted: () => void;
+  batchStarted: (mode: "apply" | "discard") => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
@@ -197,14 +192,13 @@ export class DraftReviewSession {
   async disposeDrafts(
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
-    options: DraftBatchOptions = {},
   ): Promise<DraftCommandOutcome[]> {
     if (drafts.length === 0) return [];
     const reservation = this.disposition.reserve({ kind: "batch", mode, count: drafts.length });
     if (!reservation) return [{ kind: "blocked" }];
     const ports = this.ports();
     const outcomes: DraftCommandOutcome[] = [];
-    ports.batchStarted();
+    ports.batchStarted(mode);
     try {
       for (const draft of drafts) {
         const outcome = await (mode === "apply"
@@ -213,10 +207,8 @@ export class DraftReviewSession {
         // A refusal belongs to the draft it was sent for and is held there
         // (`failDraftCommand`); the drafts after it are independent documents
         // and still get their turn, so the batch never ends half-done unannounced.
+        // Nothing here moves the writer: where they are is theirs to choose.
         outcomes.push(outcome);
-        if (outcome.kind === "failed" || outcome.kind === "apply-outcome-unknown") {
-          options.onRefused?.(draft);
-        }
       }
     } finally {
       this.disposition.release(reservation);
@@ -411,6 +403,8 @@ export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "e
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
+  /** Apply all or Discard all is under way: the review says so and holds on a draft it closes. */
+  batchRunning: "apply" | "discard" | null;
   dockDispositionError: DraftBatchErrorCode | null;
   /** The header's "Show changes": false hides every mark in the manuscript. */
   marksVisible: boolean;
@@ -441,7 +435,7 @@ export type DraftReviewAction =
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
-  | { type: "batchStarted" }
+  | { type: "batchStarted"; mode: "apply" | "discard" }
   | { type: "batchSettled"; error: DraftBatchErrorCode | null }
   | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
@@ -449,6 +443,7 @@ export type DraftReviewAction =
 
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
+  batchRunning: null,
   dockDispositionError: null,
   marksVisible: true,
   toast: null,
@@ -534,9 +529,9 @@ export function draftReviewReducer(
     case "toastDismissed":
       return state.toast?.id === action.id ? { ...state, toast: null } : state;
     case "batchStarted":
-      return { ...state, dockDispositionError: null };
+      return { ...state, batchRunning: action.mode, dockDispositionError: null };
     case "batchSettled":
-      return { ...state, dockDispositionError: action.error };
+      return { ...state, batchRunning: null, dockDispositionError: action.error };
     case "discardSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
