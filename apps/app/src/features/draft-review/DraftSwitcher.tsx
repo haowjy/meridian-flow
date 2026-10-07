@@ -27,6 +27,8 @@ export type DraftSwitcherProps = {
   rows: readonly DockRow[];
   /** The document under review. */
   currentDocumentId: string;
+  /** The current document's name when it is no longer among `rows` (its draft was handled to the end). */
+  currentName?: string | null;
   /** Changes per document; absent while the count is still being read. */
   counts: ReadonlyMap<string, number>;
   /** The menu is open or about to be: counts are read only then. */
@@ -43,6 +45,7 @@ export type DraftSwitcherProps = {
 export function DraftSwitcher({
   rows,
   currentDocumentId,
+  currentName = null,
   counts,
   onOpenChange,
   draftOnly,
@@ -55,7 +58,7 @@ export function DraftSwitcher({
   const [open, setOpen] = useState(false);
   const current = rows.find((row) => row.documentId === currentDocumentId) ?? null;
   const untitled = t`Untitled document`;
-  const name = current ? dockRowName(current, untitled) : untitled;
+  const name = current ? dockRowName(current, untitled) : (currentName ?? untitled);
   const total = rows.length;
 
   return (

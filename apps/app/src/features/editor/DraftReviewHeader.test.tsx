@@ -272,6 +272,9 @@ describe("DraftReviewHeader", () => {
       expect(onOpenDraft).not.toHaveBeenCalled();
       await act(async () => byText("Next draft")?.click());
       expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-13");
+      // Nothing is left to publish: the draft's own commands go with the changes.
+      expect(byText("Apply draft")).toBeUndefined();
+      expect(byText("Discard draft")).toBeUndefined();
       // The stepper has nothing to step through.
       expect(document.querySelector("[aria-label='Next change']")).toBeNull();
     });

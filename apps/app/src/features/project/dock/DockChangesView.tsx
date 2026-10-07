@@ -11,6 +11,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { FileCheck2 } from "lucide-react";
 import { useMemo } from "react";
+import { clearedDraftName, useClearedDrafts } from "@/client/query/change-command-record";
 import {
   clearDraftCommandFailure,
   draftCommandFailure,
@@ -36,13 +37,32 @@ export function DockChangesView({ className }: { className?: string }) {
   const { openAiDraft } = useAiDraftLauncher();
   const commandRecords = useDraftCommandRecords();
 
-  const rows = useMemo(() => dockRows(groups), [groups]);
   const editorRows = useMemo(() => dockRows(editorGroups), [editorGroups]);
+  // The chat can be in another Work than the Editor; its drafts are listed too,
+  // each opening in its own Work.
+  const chatRows = useMemo(
+    () => (editor.workId === controller.workId ? [] : dockRows(groups)),
+    [controller.workId, editor.workId, groups],
+  );
   const reviewed = editor.inlineReview;
   const reviewedRow = editorRows.find((row) => row.documentId === reviewed?.documentId) ?? null;
-  const sameWork = editor.workId === controller.workId;
+  // A draft handled to its last change leaves the list but its review stays open.
+  const cleared = useClearedDrafts();
+  const clearedName = reviewed
+    ? clearedDraftName(cleared, {
+        projectId: editor.projectId,
+        workId: editor.workId,
+        documentId: reviewed.documentId,
+        draftId: reviewed.draftId,
+      })
+    : null;
   // The reviewed document is listed by its changes, not as a row to open again.
-  const otherRows = rows.filter((row) => !(sameWork && row.documentId === reviewed?.documentId));
+  const otherRows = [
+    ...editorRows
+      .filter((row) => row.documentId !== reviewed?.documentId)
+      .map((row) => ({ row, workId: editor.workId })),
+    ...chatRows.map((row) => ({ row, workId: controller.workId })),
+  ];
 
   const openDraft = (row: DockRow, workId: string) =>
     row.contextPath &&
@@ -55,7 +75,7 @@ export function DockChangesView({ className }: { className?: string }) {
       isNewDocument: row.isNewDocument,
     });
 
-  if (!reviewed && rows.length === 0) {
+  if (!reviewed && otherRows.length === 0) {
     return (
       <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
         {/* Empty-state form (slice-7 study): centered glyph + title + one-line
@@ -78,32 +98,32 @@ export function DockChangesView({ className }: { className?: string }) {
       {reviewed ? (
         <ChangeList
           controller={editor}
-          name={reviewedRow ? documentName(reviewedRow) : t`This draft`}
-          next={reviewedRow ? draftAfter(editorRows, reviewedRow.documentId) : null}
+          name={reviewedRow ? documentName(reviewedRow) : (clearedName ?? t`This draft`)}
+          next={draftAfter(editorRows, reviewed.documentId)}
           onOpenNext={(row) => openDraft(row, editor.workId)}
         />
       ) : null}
       {otherRows.length > 0 ? (
         <div className="flex flex-col">
-          {otherRows.map((row) => (
+          {otherRows.map(({ row, workId }) => (
             <DraftDocumentRow
-              key={row.documentId}
+              key={`${workId}:${row.documentId}`}
               row={row}
               error={draftCommandFailure(commandRecords, {
                 projectId: controller.projectId,
-                workId: controller.workId,
+                workId,
                 documentId: row.documentId,
                 draftId: row.draft.draftId,
               })}
               onDismissError={() =>
                 clearDraftCommandFailure({
                   projectId: controller.projectId,
-                  workId: controller.workId,
+                  workId,
                   documentId: row.documentId,
                   draftId: row.draft.draftId,
                 })
               }
-              onReview={() => openDraft(row, controller.workId)}
+              onReview={() => openDraft(row, workId)}
             />
           ))}
         </div>

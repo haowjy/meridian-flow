@@ -13,6 +13,7 @@ import { useMemo } from "react";
 
 import { listWorkDrafts } from "@/client/api/drafts-api";
 import { updateWorkWriteMode } from "@/client/api/projects-api";
+import { isDraftCleared, useClearedDrafts } from "./change-command-record";
 import type { CatalogContextView } from "./context-catalog-projection";
 import { readDraftsAfterCommands } from "./draft-command-record";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
@@ -134,9 +135,25 @@ export function useWorkDrafts(
   // underlying drafts list actually changes — otherwise the grouping would
   // allocate a fresh array on every render and bust memoization for every
   // streaming tick.
+  const cleared = useClearedDrafts();
   const grouped = useMemo(
-    () => (result.data ? groupDraftsByDocument(result.data) : null),
-    [result.data],
+    () =>
+      result.data
+        ? groupDraftsByDocument(result.data).filter(
+            (group) =>
+              !isDraftCleared(
+                cleared,
+                {
+                  projectId: projectId ?? "",
+                  workId: workId ?? "",
+                  documentId: group.documentId,
+                  draftId: group.draft.draftId,
+                },
+                group.draft.lastActorTurnId,
+              ),
+          )
+        : null,
+    [result.data, cleared, projectId, workId],
   );
   const { catalog } = useContextCatalogView(projectId ?? "", "manuscript", {
     enabled: enabled && grouped !== null && grouped.length > 0,

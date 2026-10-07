@@ -1,6 +1,6 @@
 /** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
@@ -15,7 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
-import type { ChangeRef } from "@/client/query/change-command-record";
+import { type ChangeRef, markDraftCleared } from "@/client/query/change-command-record";
 import {
   clearDraftCommandFailure,
   draftCommandPendingIn,
@@ -480,6 +480,17 @@ export function useDraftReviewController({
             documentId: inline.documentId,
             draftId: inline.draftId,
           });
+          // The server keeps the emptied draft in its list; the writer is not offered it again.
+          const listed = queryClient
+            .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
+            ?.find((item) => item.draftId === inline.draftId);
+          markDraftCleared(
+            { projectId, workId, documentId: inline.documentId, draftId: inline.draftId },
+            {
+              lastActorTurnId: listed?.lastActorTurnId ?? null,
+              documentName: listed?.documentName ?? null,
+            },
+          );
         }
       }
       if (outcome.kind === "change-settled") {
