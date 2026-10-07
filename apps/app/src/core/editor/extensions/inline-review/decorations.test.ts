@@ -118,7 +118,7 @@ function textHunk(
 }
 
 function model(operations: ReviewOperation[], hunks: ResolvedReviewHunk[]): InlineReviewModel {
-  return { draftRevisionToken: 1, operations, hunks };
+  return { draftRevisionToken: "1", operations, hunks };
 }
 
 function setModel(editor: Editor, next: InlineReviewModel): void {
