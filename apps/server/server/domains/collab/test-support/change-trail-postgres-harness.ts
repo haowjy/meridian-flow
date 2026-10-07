@@ -19,7 +19,10 @@ import { grantedJournal, testFileGrant } from "../../../test-support/file-grants
 import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
-import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
+import {
+  createDrizzleEmptyDraftSettlement,
+  createDrizzleWorkDraftDiscard,
+} from "../adapters/drizzle-work-draft-discard.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -589,6 +592,14 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
+    settleEmptyDraft: createDrizzleEmptyDraftSettlement(
+      db,
+      branchStore,
+      branchCoordinator,
+      branchCriticalSections,
+      liveCoordinator,
+      durableBranchJournalReadStore,
+    ),
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       db,
       branchStore,

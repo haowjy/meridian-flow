@@ -265,3 +265,16 @@ Agent preview operations carry `actorThreadId` and the thread title at preview
 time (`actorThreadTitle`). The application service collects journal thread IDs
 and resolves titles with one batched lookup, never one query per operation.
 Writer operations carry neither field.
+
+### Empty per-change reviews
+
+After a successful per-change Apply or Discard, the command checks for remaining
+review operations under the same branch/live/Work locking order as full Discard.
+An empty review uses the existing generation-reset path, closing old review rooms
+and clearing current pending journal evidence through the Work projection mutation
+seam (the catalog wake hint). The infrastructure branch remains reusable, as for
+full Discard; future AI writes populate the new generation. Pushed history stays
+pushed. The terminal `draftDisposition` is `applied` when any current-generation
+journal row reached live, otherwise `discarded`, even if the last action was
+Discard. Success responses expose `draftClosed`; only closed responses expose
+`draftDisposition`. Whole Apply is unchanged.

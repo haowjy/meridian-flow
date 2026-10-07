@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Applying or discarding the last draft change closes the review on the server, including after reload.
+
 - Draft changes link to the chat that wrote them, using its current title.
 
 - Draft review identifies the author of each removed text span, including mixed-author deletions in one change.

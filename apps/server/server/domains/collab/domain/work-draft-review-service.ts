@@ -25,13 +25,18 @@ import type { ReviewableDraft } from "./branch-review.js";
 import { documentRevision } from "./document-revision.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { ApplicationBranchStore, WorkDraftDiscard } from "./ports/application-branch-store.js";
+import type {
+  ApplicationBranchStore,
+  WorkDraftDiscard,
+  WorkDraftEmptySettlement,
+} from "./ports/application-branch-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export function createWorkDraftReviewService(input: {
   branches: ApplicationBranchStore;
   discardWorkDraft: WorkDraftDiscard;
+  settleEmptyDraft: WorkDraftEmptySettlement;
   branchCoordinator: BranchCoordinator;
   branchJournal: BranchJournalReadStore;
   branchPush: BranchPushService;
@@ -272,6 +277,21 @@ export function createWorkDraftReviewService(input: {
     return { status: "applied" as const, draftId: command.draftId };
   }
 
+  function settleEmptyDraft(command: { workId: WorkId; documentId: DocumentId; draftId: string }) {
+    return input.settleEmptyDraft({
+      workId: command.workId,
+      documentId: command.documentId,
+      branchId: command.draftId,
+      isEmpty: (liveDoc, draftDoc, rows) =>
+        computeDraftReviewHunks({
+          liveDoc,
+          draftDoc,
+          model: input.model,
+          draftUpdates: reviewUpdates(rows),
+        }).operations.length === 0,
+    });
+  }
+
   async function applyWorkDraftChanges(
     command: DraftApplyChangesRequest & {
       projectId?: ProjectId;
@@ -343,6 +363,7 @@ export function createWorkDraftReviewService(input: {
         draftId: command.draftId,
         operationIds: appliedOperations,
         closureClassIds: appliedClasses,
+        ...(await settleEmptyDraft(command)),
       };
     } catch (cause) {
       if (cause instanceof DraftChangeRefusal)
@@ -381,6 +402,11 @@ export function createWorkDraftReviewService(input: {
         journalIds: [...updateIds],
         reviewedByUserId: command.userId,
       });
+      return {
+        status: "discarded" as const,
+        draftId: command.draftId,
+        ...(await settleEmptyDraft(command)),
+      };
     } else {
       const draftOnly =
         projectId &&
