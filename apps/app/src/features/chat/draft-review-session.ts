@@ -259,8 +259,6 @@ export type DraftReviewSelection = {
   draftId: string;
 };
 
-export type InlineDraftReview = DraftReviewSelection;
-
 /**
  * Stable identifiers for every writer-facing review message. The controller is
  * a state machine and must not carry localized copy; it emits a code and the
@@ -274,9 +272,18 @@ export type InlineReviewMessage = {
   tone?: "info" | "error";
 };
 
-export type DraftReviewSurface =
-  | { kind: "none" }
-  | ({ kind: "inline"; previewIdentity?: string } & DraftReviewSelection);
+export type InlineDraftReview = {
+  kind: "inline";
+  previewIdentity?: string;
+  /**
+   * The review body has painted and the review chrome (header, chip swap)
+   * may show with it. Until then the plain live view is held, header
+   * included, so the writer never sees review chrome over live text.
+   */
+  shown?: boolean;
+} & DraftReviewSelection;
+
+export type DraftReviewSurface = { kind: "none" } | InlineDraftReview;
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
@@ -288,6 +295,7 @@ export type DraftReviewState = {
 export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
+  | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
   | { type: "applySucceeded"; documentId: string; draftId: string }
   | { type: "discardStarted" }
   | { type: "discardFailed"; code: InlineReviewMessageCode }
@@ -323,6 +331,12 @@ export function draftReviewReducer(
       };
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
+    case "inlineShown":
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
+        return state;
+      }
+      if ((state.surface.shown ?? false) === action.shown) return state;
+      return { ...state, surface: { ...state.surface, shown: action.shown } };
     case "applySucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "discardStarted":

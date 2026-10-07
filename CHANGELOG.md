@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - Apply individual dependency-closed draft changes, with stale-preview refusal and preserved authorship.
+- Draft review shows removed text struck through in the manuscript like suggestion mode (red for the AI, gold for you; long removals fold), your typing in a draft is gold at once, and entering review keeps the live view and its header until the draft is ready, then switches in one frame.
+
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
 - A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.
