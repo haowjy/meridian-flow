@@ -295,6 +295,11 @@ Review classes close over overlapping branch delete sets as well as supplied
 struct references and same-client clock prefixes. Agent-edit writes now journal
 transaction deltas containing only their own deletions, so independent writes
 with distinct insertion clients no longer join through inherited tombstones.
+Thread-peer publication also captures the effective sync transaction on a
+provisional target clone before admission. It must not regenerate durable Work
+journal rows with a raw source state-vector diff, which reintroduces the
+tombstones. An unresolved sync dependency is an integrity failure, never a
+partially journaled update.
 Keep cumulative-delete closure: other producers and retained state-vector rows
 can still carry old branch deletions targeting live-base structs. Apply must
 show their operations before replaying those bytes. Delete ranges already
