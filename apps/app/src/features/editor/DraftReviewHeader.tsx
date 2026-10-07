@@ -1,6 +1,6 @@
 /**
  * DraftReviewHeader — the editor's chrome while a document is under inline
- * review, in one row: `Manuscript /`, the draft switcher, the stepper, Show
+ * review, in one row: the draft switcher, the stepper, Show
  * changes, Discard draft and Apply draft. Above the identity bar, review-only.
  *
  * Apply draft and Discard draft move straight to the next draft in the
@@ -90,9 +90,6 @@ export function DraftReviewHeader({
       data-draft-review-header
     >
       <div className="flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 px-4 py-1">
-        <span className="shrink-0 text-muted-foreground">
-          <Trans>Manuscript /</Trans>
-        </span>
         <DraftSwitcher
           rows={rows}
           currentDocumentId={documentId}
