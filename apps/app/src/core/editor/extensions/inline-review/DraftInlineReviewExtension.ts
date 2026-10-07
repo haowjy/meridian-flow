@@ -26,7 +26,7 @@
  */
 import { Extension } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 
 import { escapeCssIdent } from "@/lib/css-selector";
@@ -199,6 +199,27 @@ function removalHandlersFor(view: EditorView): RemovalHandlers {
   return {
     activate: (operationId, toggle, keyboard) =>
       dispatchMeta(view, { kind: "removal-click", operationId, toggle, keyboard }),
+    placeCaret: (identity, side) => {
+      // A read-only review (the phone's body) has no caret to move.
+      if (!view.editable) return;
+      // The widget stands between two characters (or two blocks); either side
+      // of it is that one document position, where the decoration is now.
+      const widget = draftInlineReviewPluginKey
+        .getState(view.state)
+        ?.decorations.find(
+          undefined,
+          undefined,
+          (spec) => typeof spec.key === "string" && spec.key.startsWith(`removal:${identity}:`),
+        )[0];
+      if (!widget) return;
+      const tr = view.state.tr
+        .setSelection(Selection.near(view.state.doc.resolve(widget.from), side))
+        .scrollIntoView();
+      tr.setMeta("addToHistory", false);
+      view.dispatch(tr);
+      // The press was cancelled to keep focus where it was; the caret now moves, so focus follows.
+      view.focus();
+    },
   };
 }
 

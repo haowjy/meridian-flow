@@ -200,7 +200,9 @@ pushes every refetched preview (compared by reference), not by revision tokens:
 The extension renders the net diff in the manuscript like suggestion mode:
 insertions as decorations over the draft text, removed live text as a read-only
 inline widget (struck, outside the document; AI crimson, writer gold; long ones
-fold and open on click), and the focused change (all operations sharing a
+fold and open on click; a click on the struck text puts the caret at the position
+it stands at, on the clicked side for a removed block, so typing lands there while
+the removal stays untouchable), and the focused change (all operations sharing a
 closure class) emphasized. Typing paints gold at once; the next model replaces
 it. `setInlineReviewMarksVisible` hides all marks without remounting. An active
 preview without a model is an invariant violation, logged loudly and ignored safely.
