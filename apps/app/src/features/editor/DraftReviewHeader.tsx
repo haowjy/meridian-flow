@@ -13,6 +13,7 @@ import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 
+import { clearedDraftName, useClearedDrafts } from "@/client/query/change-command-record";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
@@ -59,9 +60,18 @@ export function DraftReviewHeader({
     return merged;
   }, [counts, documentId, view.items.length, view.status]);
 
+  const cleared = useClearedDrafts();
+  const clearedName = clearedDraftName(cleared, {
+    projectId: controller.projectId,
+    workId: controller.workId,
+    documentId,
+    draftId,
+  });
   const next = draftAfter(rows, documentId);
   const locked = controller.dispositionLocked;
   const count = view.items.length;
+  // Nothing left to publish: the draft already matches live, so its commands go.
+  const finished = view.cleared || (view.status === "ready" && count === 0);
   const commandError =
     controller.inlineReviewMessage?.tone === "error" ? controller.inlineReviewMessage.code : null;
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
@@ -86,6 +96,7 @@ export function DraftReviewHeader({
         <DraftSwitcher
           rows={rows}
           currentDocumentId={documentId}
+          currentName={clearedName}
           counts={allCounts}
           onOpenChange={setSwitcherOpen}
           draftOnly={Boolean(onCloseDraftOnly)}
@@ -119,29 +130,35 @@ export function DraftReviewHeader({
             </label>
           </>
         ) : null}
-        <Button
-          variant="quiet"
-          size="xs"
-          disabled={locked}
-          onClick={() => dispose(() => controller.discard(documentId, draftId))}
-        >
-          <Trans>Discard draft</Trans>
-        </Button>
-        <Button
-          size="xs"
-          disabled={locked || !controller.canApplyReviewedDraft}
-          onClick={() => dispose(() => controller.apply(documentId, draftId))}
-        >
-          {controller.isApplying ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-          <Trans>Apply draft</Trans>
-        </Button>
+        {finished ? null : (
+          <>
+            <Button
+              variant="quiet"
+              size="xs"
+              disabled={locked}
+              onClick={() => dispose(() => controller.discard(documentId, draftId))}
+            >
+              <Trans>Discard draft</Trans>
+            </Button>
+            <Button
+              size="xs"
+              disabled={locked || !controller.canApplyReviewedDraft}
+              onClick={() => dispose(() => controller.apply(documentId, draftId))}
+            >
+              {controller.isApplying ? (
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+              ) : null}
+              <Trans>Apply draft</Trans>
+            </Button>
+          </>
+        )}
       </div>
       {commandError ? (
         <p className="px-4 pb-1.5 text-destructive" role="alert">
           <ReviewMessageText code={commandError} />
         </p>
       ) : null}
-      {view.cleared || (view.status === "ready" && count === 0) ? (
+      {finished ? (
         <div className="flex items-center gap-3 border-border border-t px-4 py-1.5" role="status">
           <p className="flex-1 text-muted-foreground">
             <Trans>No changes left</Trans>

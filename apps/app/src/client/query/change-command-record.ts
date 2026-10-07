@@ -299,4 +299,47 @@ export function changeCommandPendingIn(records: ChangeRecords, draft: DraftRef):
 
 export function resetChangeCommandRecords(): void {
   useChangeCommandStore.setState({ records: {} });
+  useClearedDraftStore.setState({ cleared: {} });
+}
+
+/**
+ * Drafts the writer has handled to the last change. The server keeps such a
+ * draft in its list, empty, until it is cleaned up; until then the writer must
+ * not be offered it as pending (not in the switcher, not as the next draft).
+ * The mark is the draft's last AI turn when it was cleared: a later AI write
+ * moves that turn on, and the draft is pending again. Its document's name is
+ * kept so the review that is still open can say what it is.
+ */
+type ClearedDraft = { lastActorTurnId: string | null; documentName: string | null };
+type ClearedDrafts = Readonly<Record<string, ClearedDraft>>;
+
+const useClearedDraftStore = create<{ cleared: ClearedDrafts }>(() => ({ cleared: {} }));
+
+export function markDraftCleared(draft: DraftRef, cleared: ClearedDraft): void {
+  useClearedDraftStore.setState((state) => ({
+    cleared: { ...state.cleared, [draftPrefix(draft)]: cleared },
+  }));
+}
+
+export function currentClearedDrafts(): ClearedDrafts {
+  return useClearedDraftStore.getState().cleared;
+}
+
+export function useClearedDrafts(): ClearedDrafts {
+  return useClearedDraftStore((state) => state.cleared);
+}
+
+/** The name of a cleared draft's document, for the review still open on it. */
+export function clearedDraftName(cleared: ClearedDrafts, draft: DraftRef): string | null {
+  return cleared[draftPrefix(draft)]?.documentName ?? null;
+}
+
+/** Whether a listed draft was already handled to its last change (and nothing new was written since). */
+export function isDraftCleared(
+  cleared: ClearedDrafts,
+  draft: DraftRef,
+  lastActorTurnId: string | null,
+): boolean {
+  const marked = cleared[draftPrefix(draft)];
+  return marked !== undefined && marked.lastActorTurnId === lastActorTurnId;
 }
