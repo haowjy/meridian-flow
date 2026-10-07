@@ -123,9 +123,13 @@ export function ChangeFailureText({
         <Trans>A new document is discarded as a whole. Use Discard draft.</Trans>
       );
     case "unknown":
-      return (
+      return mode === "apply" ? (
         <Trans>
           Couldn't confirm whether this applied. Check what is left before you try again.
+        </Trans>
+      ) : (
+        <Trans>
+          Couldn't confirm whether this was discarded. Check what is left before you try again.
         </Trans>
       );
     case "offline":

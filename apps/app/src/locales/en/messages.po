@@ -1185,6 +1185,10 @@ msgstr "Couldn't confirm whether this applied. Check what is left before you try
 #~ msgid "Couldn't confirm whether this applied. It will update when you're back online."
 #~ msgstr "Couldn't confirm whether this applied. It will update when you're back online."
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Couldn't confirm whether this was discarded. Check what is left before you try again."
+msgstr "Couldn't confirm whether this was discarded. Check what is left before you try again."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"
 msgstr "Couldn't copy"

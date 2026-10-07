@@ -23,7 +23,7 @@ import {
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import {
-  DraftApplyOutcomeUnknownError,
+  DraftCommandOutcomeUnknownError,
   settleConfirmedChange,
   useApplyDraft,
   useApplyDraftChanges,
@@ -72,6 +72,16 @@ export type InlineReviewRuntime = {
   documentId: string;
   draftId: string;
 };
+
+/** A command whose request got no answer settles as "unknown"; a rejection still throws. */
+async function unlessOutcomeUnknown<T>(command: Promise<T>): Promise<T | "unknown"> {
+  try {
+    return await command;
+  } catch (error) {
+    if (error instanceof DraftCommandOutcomeUnknownError) return "unknown";
+    throw error;
+  }
+}
 
 export type DraftReviewController = {
   projectId: string;
@@ -313,12 +323,12 @@ export function useDraftReviewController({
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
-      try {
-        await applyMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
-      } catch (error) {
-        if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
-        throw error;
-      }
+      if (
+        (await unlessOutcomeUnknown(
+          applyMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId }),
+        )) === "unknown"
+      )
+        return "unknown";
       // Confirmed is terminal for the command: the batch advances now. Tab
       // promotion and the route repair are navigation's business and run on.
       void settleConfirmedApply(tab);
@@ -328,21 +338,24 @@ export function useDraftReviewController({
       await discardMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
     },
     discardChanges: ({ documentId, draftId }, request) =>
-      discardMutation.mutateAsync({
-        projectId,
-        workId,
-        threadId,
-        documentId,
-        draftId,
-        request,
-        // Only an answered Discard can close the draft; a refusal says nothing about it.
-        onAnswered: (response) => {
-          if (response.status === "discarded") settleAnsweredCommand(documentId, draftId, response);
-        },
-      }),
-    applyChanges: async ({ documentId, draftId }, request) => {
-      try {
-        return await applyChangesMutation.mutateAsync({
+      unlessOutcomeUnknown(
+        discardMutation.mutateAsync({
+          projectId,
+          workId,
+          threadId,
+          documentId,
+          draftId,
+          request,
+          // Only an answered Discard can close the draft; a refusal says nothing about it.
+          onAnswered: (response) => {
+            if (response.status === "discarded")
+              settleAnsweredCommand(documentId, draftId, response);
+          },
+        }),
+      ),
+    applyChanges: ({ documentId, draftId }, request) =>
+      unlessOutcomeUnknown(
+        applyChangesMutation.mutateAsync({
           projectId,
           workId,
           threadId,
@@ -352,12 +365,8 @@ export function useDraftReviewController({
           onAnswered: (response) => {
             if (response.status === "applied") settleAnsweredCommand(documentId, draftId, response);
           },
-        });
-      } catch (error) {
-        if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
-        throw error;
-      }
-    },
+        }),
+      ),
     changeConfirmed: ({ documentId, draftId }, change, mode) =>
       settleConfirmedChange(
         queryClient,

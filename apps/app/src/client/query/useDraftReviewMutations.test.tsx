@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { resetDraftCommandRecords } from "./draft-command-record";
-import { DraftApplyOutcomeUnknownError, useApplyDraft } from "./useDraftReviewMutations";
+import { DraftCommandOutcomeUnknownError, useApplyDraft } from "./useDraftReviewMutations";
 import { useWorkDrafts } from "./useWorkDrafts";
 
 const api = vi.hoisted(() => ({
@@ -85,7 +85,7 @@ describe("useApplyDraft", () => {
       await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
       api.applyDraft.mockRejectedValue(lost());
       api.listWorkDrafts.mockResolvedValue(listing());
-      await act(async () => expect(await apply()).toBeInstanceOf(DraftApplyOutcomeUnknownError));
+      await act(async () => expect(await apply()).toBeInstanceOf(DraftCommandOutcomeUnknownError));
       await vi.waitFor(() => expect(listed()).toEqual([]));
     });
   });
@@ -94,7 +94,7 @@ describe("useApplyDraft", () => {
     await withHarness(async ({ apply, listed }) => {
       await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
       api.applyDraft.mockRejectedValue(lost());
-      await act(async () => expect(await apply()).toBeInstanceOf(DraftApplyOutcomeUnknownError));
+      await act(async () => expect(await apply()).toBeInstanceOf(DraftCommandOutcomeUnknownError));
       expect(listed()).toEqual(["draft-a"]);
     });
   });
