@@ -41,6 +41,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts",
   "apps/server/server/domains/collab/document-revisions.db.test.ts",
   "apps/server/server/domains/collab/writer-ingress.db.test.ts",
+  "apps/server/server/domains/context/adapters/asset-path-resolver.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-store.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.db.test.ts",
