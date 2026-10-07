@@ -122,7 +122,12 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 export type DraftApplyResponse = { status: "applied"; draftId: string };
 export type DraftApplyRequest = { draftId: string };
 
-export type DraftDiscardResponse = { status: "discarded"; draftId: string };
+export type DraftDiscardResponse = {
+  status: "discarded";
+  draftId: string;
+  draftClosed?: boolean;
+  draftDisposition?: "applied" | "discarded";
+};
 export type DraftDiscardRequest = { draftId: string; operationIds?: string[] };
 
 /** Select complete server-vended classes. Physical journal IDs never cross the wire. */
@@ -133,5 +138,12 @@ export type DraftApplyChangesRequest = {
   draftRevisionToken: string;
 };
 export type DraftApplyChangesResponse =
-  | { status: "applied"; draftId: string; operationIds: string[]; closureClassIds: string[] }
+  | {
+      status: "applied";
+      draftId: string;
+      operationIds: string[];
+      closureClassIds: string[];
+      draftClosed?: boolean;
+      draftDisposition?: "applied" | "discarded";
+    }
   | { status: "stale" | "gone" | "draft_only" | "incomplete_class"; draftId: string };

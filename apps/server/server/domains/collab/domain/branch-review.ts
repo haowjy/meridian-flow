@@ -40,6 +40,11 @@ export type DraftApplyResult =
   | { status: "applied"; draftId: string }
   | { status: "not_found"; draftId: string };
 
-export type DraftDiscardResult = { status: "discarded"; draftId: string };
+export type DraftDiscardResult = {
+  status: "discarded";
+  draftId: string;
+  draftClosed?: boolean;
+  draftDisposition?: "applied" | "discarded";
+};
 
 export { createBranchReviewOperations } from "./branch-review-operations.js";

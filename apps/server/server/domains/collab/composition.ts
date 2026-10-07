@@ -63,7 +63,10 @@ import {
 } from "./adapters/drizzle-pending-settlement.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
-import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
+import {
+  createDrizzleEmptyDraftSettlement,
+  createDrizzleWorkDraftDiscard,
+} from "./adapters/drizzle-work-draft-discard.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import {
@@ -400,6 +403,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deferUntilCommit: deferUntilDrizzleCommit,
   });
   const drafts = createWorkDraftReviewService({
+    settleEmptyDraft: createDrizzleEmptyDraftSettlement(
+      deps.db,
+      branches,
+      branchCoordinator,
+      criticalSections,
+      liveCoordinator,
+      branchJournal,
+    ),
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
       branches,
