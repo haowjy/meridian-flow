@@ -214,6 +214,12 @@ export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newTex
     );
   }
 
+  // Equal text at either edge stays, so its items, anchors and attribution survive.
+  const trimmed = trimUnchangedEdges(text.slice(span.from, span.to), newText);
+  span = { from: span.from + trimmed.prefix, to: span.to - trimmed.suffix };
+  newText = trimmed.text;
+  if (span.from === span.to && newText.length === 0) return;
+
   const segments = collectTextSegments(block);
   const insertAttrs = attributesAtFlatOffset(segments, span.from);
 
@@ -233,6 +239,35 @@ export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newTex
       segment.text.delete(segmentFrom - segment.start, segmentTo - segmentFrom);
     }
   }
+}
+
+function trimUnchangedEdges(
+  oldText: string,
+  newText: string,
+): { prefix: number; suffix: number; text: string } {
+  const limit = Math.min(oldText.length, newText.length);
+  let prefix = 0;
+  while (prefix < limit && oldText.charCodeAt(prefix) === newText.charCodeAt(prefix)) prefix += 1;
+  // Never split a surrogate pair: Yjs would store each half as a broken character.
+  if (prefix > 0 && isHighSurrogate(newText.charCodeAt(prefix - 1))) prefix -= 1;
+  let suffix = 0;
+  while (
+    suffix < limit - prefix &&
+    oldText.charCodeAt(oldText.length - 1 - suffix) ===
+      newText.charCodeAt(newText.length - 1 - suffix)
+  ) {
+    suffix += 1;
+  }
+  if (suffix > 0 && isLowSurrogate(newText.charCodeAt(newText.length - suffix))) suffix -= 1;
+  return { prefix, suffix, text: newText.slice(prefix, newText.length - suffix) };
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
 }
 
 export function applyBlockDiff(
