@@ -56,7 +56,7 @@ export function asPhysicalSourceUpdateIds(updateIds: readonly number[]): Physica
 export interface DraftReviewOperationInternal {
   operationId: string;
   closureClassId: string;
-  discardUpdateIds: PhysicalSourceUpdateIds;
+  closureUpdateIds: PhysicalSourceUpdateIds;
   sourceUpdateIds: SourceUpdateIds;
   actorTurnId?: string;
   actorUserId?: string;

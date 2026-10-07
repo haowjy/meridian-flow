@@ -275,7 +275,7 @@ export function createWorkDraftReviewService(input: {
       const updateIds = new Set<number>();
       for (const operation of preview.operations) {
         if (!requestedClassIds.has(operation.closureClassId)) continue;
-        for (const id of operation.discardUpdateIds) updateIds.add(id);
+        for (const id of operation.closureUpdateIds) updateIds.add(id);
       }
       await input.branchReview.discardSelected({
         branchId: branch.branchId,

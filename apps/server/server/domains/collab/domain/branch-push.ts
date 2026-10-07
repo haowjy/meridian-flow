@@ -5,7 +5,11 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
-import { buildCompanionCandidates, buildWholeBranchCandidates } from "./branch-push-candidates.js";
+import {
+  buildCompanionCandidates,
+  buildSelectedRowCandidates,
+  buildWholeBranchCandidates,
+} from "./branch-push-candidates.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
@@ -88,8 +92,9 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     let branchDoc: Y.Doc | null = null;
     try {
       let pushUpdate: Uint8Array;
-      if (candidate.kind === "manifest") {
-        const operation = "manifest_membership_push";
+      if (candidate.materialization === "selected_rows") {
+        const operation =
+          candidate.kind === "manifest" ? "manifest_membership_push" : "selective_content_push";
         afterDoc = createCollabYDoc({ gc: false });
         Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
         for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
@@ -347,6 +352,24 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       return mapCommitted(result);
     });
 
+  const pushSelectedToLive: BranchPushService["pushSelectedToLive"] = (pushInput) =>
+    withActiveWorkDraftBranchLock([pushInput.branchId], async ([branch], lease) => {
+      const source = await sourceFor(branch as BranchSnapshot);
+      const batch = buildSelectedRowCandidates({
+        source,
+        journalIds: pushInput.journalIds,
+        ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+      });
+      const result = await executeCandidateBatch(
+        batch,
+        branchMap([source.branch]),
+        lease,
+        pushInput.signal,
+      );
+      if (result.kind === "conflict") return { status: "already_pushed", push: result.push };
+      return mapCommitted(result);
+    });
+
   const pushToLiveWithManifestEntry: BranchPushService["pushToLiveWithManifestEntry"] = (
     pushInput,
   ) =>
@@ -397,6 +420,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
 
   return {
     pushToLive,
+    pushSelectedToLive,
     pushToLiveWithManifestEntry,
     recoverPendingLiveSettlements: transition.recover,
     ...workPushPolicy,
