@@ -7,8 +7,9 @@ grid slot. It has per-screen view sets (Chat-main: Context | Changes;
 Work/Editor-main: Chat | Changes, with transient File on Work) and a single header row with a contained
 segmented switch.
 The **Changes** view is the work-scoped settle surface: the change list of the
-review open in the Editor (one line per server closure class, each with Apply
-and Discard) and the Work's other drafts to open. Whole-draft Apply and Discard
+review open in the Editor (one line per server closure class, with Apply and
+Discard unless the change is unattributed or the server marks its class not
+actionable) and the Work's other drafts to open. Whole-draft Apply and Discard
 stay in the review header. It reads the Editor scope's controller, not the
 Chat's. It works on every screen, with or without a mounted manuscript, so
 entering review never has to leave the screen the writer is on.

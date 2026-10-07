@@ -51,9 +51,11 @@ the change's class id, matched by shared operations) for what outlives the claim
   it back (`readPreviewAfterChangeCommands`).
 - `failed`: the change comes back, with `offline` (the browser is offline and nothing was sent, or the server refused it:
   "Couldn't apply. Check your connection and try again."), `unknown` (an Apply
-  that got no answer: "Couldn't confirm whether this applied", never inferred
-  from later list membership), `stale` ("This change was updated. Check it and
-  apply again." / "...discard again.") or `draft-only`, shown on its bar and row.
+  that got no answer: "Couldn't confirm whether this applied. Check what is
+  left before you try again.", never inferred from later list membership),
+  `stale` ("This change was updated. Check it and apply again." / "...discard
+  again.") or `draft-only`, shown on its bar and row. A per-change Discard has
+  no `unknown`: any failure, a lost answer included, is held as `offline`.
   `gone` is not held: the change leaves with a toast. `incomplete_class` is
   treated as `stale`, for Apply and Discard alike.
 
@@ -142,10 +144,7 @@ editor exists and its change marks have arrived, then switches body and chrome
 in one frame. `EditorView` reports `shown` on the inline surface
 (`controller.setInlineReviewShown`, from a layout effect); the header and the
 identity-bar chip read it. The live text is read-only from the click. If the
-marks never arrive the review shows anyway after 1.5 s. Measured: zero frames of
-review header over live text and zero blank frames on enter, Back to live, Apply
-and Discard
-(`work/draft-review-repair/evidence/redesign-render/`).
+marks never arrive the review shows anyway after 1.5 s.
 
 When the server refuses a review room's pending edits (4409), the room is
 rebuilt in place and the review stays open. While the rebuild runs, `EditorView`
@@ -176,7 +175,7 @@ either scope controller. The phone document host publishes its resolved editable
 document to that Editor value and binds the selected review room back into its
 read-only `EditorView`, just as the desktop host binds its active editor. The editor's review chrome is
 `features/editor/DraftReviewHeader` (above the identity bar, review-only), one
-row: `Manuscript /`, the draft switcher (the Work's drafts with change counts,
+row: the draft switcher (the Work's drafts with change counts,
 Show live version or Close review, Apply all and Discard all), the stepper,
 Show changes, Discard draft and Apply draft, all delegating to the controller.
 Apply draft and Discard draft open the next draft in the switcher at once (or
@@ -223,14 +222,15 @@ are not part of this boundary.
 Apply and Discard outcomes, the command record, and the rejected post-Apply
 recovery protocol are recorded in
 [Draft Apply Is Done When the Server Confirms It](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-apply-done-at-server-confirmation.md).
-See the
-[requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
-for product decisions and the
+The product design is
+[Draft Review Is Inline Track Changes](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-inline-track-changes.md);
+the
 [editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-editable-branch.md)
-for cross-cutting architecture.
+covers cross-cutting architecture.
 
 The preview describes the branch-vs-live delta and supplies navigation evidence;
-it does not scope Apply. Apply always settles the server's current branch.
+it does not scope whole-draft Apply, which always settles the server's current
+branch. Per-change commands are scoped by the preview the writer saw.
 
 ## Draft review freshness
 
@@ -246,6 +246,12 @@ update in that branch room invalidates both:
 This subscription is a freshness seam only. The TipTap/Yjs session remains the
 single document-sync path; the provider never interprets update contents or builds
 a second draft model.
+
+`useInlineReviewSync` also re-reads the preview 500 ms after an update to the
+retained live session, which is how a second tab sees another tab's per-change
+Apply or Discard. `useDraftPreview` returns a stable `refetch`: the sync effect
+lists it as a dependency, so a new function on each render re-subscribed inside
+the debounce and its cleanup dropped the pending re-read.
 
 Preview refresh remains presentation freshness for whole-draft Apply, which
 sends no revision token or operation set; the server branch is its command
@@ -338,10 +344,13 @@ admission may enrich only the overlay with resolved live-resource metadata.
   - `failed`: a rejected Apply (`apply-failed`), a refused Discard
     (`discard-offline`), a lost Apply response (`apply-unknown`), or a Review launch that could not open
     (`review-failed`, recorded by the editor handoff and never over a pending
-    command), shown on the draft by the header, the composer strip, the Work
-    Files row, the Changes view, and the identity-bar chip (which turns into a
-    retry). It clears on the next action on that draft (Discard
-    retry, Apply, opening Review); Work Files also offers Dismiss. A later list read
+    command), shown on the draft by the header (the open draft's own line, or
+    the `failedElsewhere` notice with Open for the Work's other drafts), the
+    switcher row, the composer strip, the Work Files row, the Changes view's
+    other-drafts rows, and the identity-bar chip (which turns into a retry). It
+    clears on the next Apply or Discard on that draft; opening Review clears
+    only a failed launch, so a batch that lands the writer on a refused draft
+    keeps its message. Work Files and the dock also offer Dismiss. A later list read
     that no longer lists the draft drops it too, so it never reaches a later
     proposal that reuses the draft id.
 - **Rejected and unknown Apply.** A response with a status is a rejection
@@ -350,9 +359,10 @@ admission may enrich only the overlay with resolved live-resource metadata.
   next: the draft leaving the list is not evidence of Apply, because another
   browser's Discard looks the same, and a draft still listed is not proof of
   rejection, because the server may still be committing. Nothing infers a result
-  from the list, so unknown never claims "Applied" and never promotes a
-  draft-only tab. When the draft is gone the row simply stops rendering, review
-  exits, and the document view shows whatever is live.
+  from the list, so unknown never claims "Applied" and never itself promotes a
+  draft-only tab; only the catalog observation below decides that tab. When the
+  draft is gone the row simply stops rendering, review exits, and the document
+  view shows whatever is live.
 - **Optimistic Discard.** Whole-draft Discard calls `discardDraft` when the
   command starts. It closes the tab with the ordinary adjacent-tab/empty-Editor
   fallback and repairs the address in place. A refused Discard never reopens

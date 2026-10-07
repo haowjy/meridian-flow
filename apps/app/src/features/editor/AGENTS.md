@@ -29,7 +29,10 @@ the design, from the primitives.
   of them, and no selection policy belongs in a layout component.
 - Inline draft review mounts the server projection in an editable editor: the
   writer is a peer in the review branch room, and edits there land in that
-  branch.
+  branch. The phone mounts the same review read-only (`MobileDocumentHost`),
+  like every phone document. Review marks, removals and the merge flag come
+  from the server model; never re-derive authorship or interleave on the
+  client.
 - Peer-mark evidence reads delegate to `features/change-trail`; the anchored
   popover and the press it opens on are [`surfaces/peer-marks/`](surfaces/peer-marks/AGENTS.md).
 - A new control surface is a directory under `surfaces/` plus one entry in
