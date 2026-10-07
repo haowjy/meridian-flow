@@ -31,12 +31,27 @@ export function changeTextForOperations(
   hunks: ReviewHunk[],
 ): OperationChangeText {
   const opIds = new Set(operations.map((op) => op.operationId));
+  return changeTextForHunks(
+    hunks.filter((hunk) => hunk.operationIds.some((id) => opIds.has(id))),
+    operations,
+  );
+}
+
+/**
+ * What these hunks took out and put in. An unclassified text hunk has no
+ * operation to carry an excerpt, so its own `insertedText` is the insertion;
+ * `operations` only supply excerpts when the hunks themselves say nothing.
+ */
+export function changeTextForHunks(
+  hunks: readonly ReviewHunk[],
+  operations: readonly ReviewOperation[] = [],
+): OperationChangeText {
   const removedParts: string[] = [];
-  const addedBlockParts: string[] = [];
+  const addedParts: string[] = [];
   for (const hunk of hunks) {
-    if (!hunk.operationIds.some((id) => opIds.has(id))) continue;
     if (hunk.kind === "text") {
       if (hunk.deletedText) removedParts.push(hunk.deletedText);
+      if (hunk.unclassified && hunk.insertedText) addedParts.push(hunk.insertedText);
     } else {
       // Structural block displays (horizontal_rule → "───") are decoration,
       // not prose: a card body of nothing but separators reads as broken, so
@@ -45,7 +60,7 @@ export function changeTextForOperations(
         removedParts.push(hunk.deletedBlock.display);
       }
       if (hunk.insertedBlock && hasProse(hunk.insertedBlock.display)) {
-        addedBlockParts.push(hunk.insertedBlock.display);
+        addedParts.push(hunk.insertedBlock.display);
       }
     }
   }
@@ -54,7 +69,7 @@ export function changeTextForOperations(
       joinTrim(removedParts) ??
       joinTrim(operations.map((op) => op.beforeExcerpt ?? "").filter(Boolean)),
     added:
-      joinTrim(addedBlockParts) ??
+      joinTrim(addedParts) ??
       joinTrim(operations.map((op) => op.afterExcerpt ?? "").filter(Boolean)),
   };
 }

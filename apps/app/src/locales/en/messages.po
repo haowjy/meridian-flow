@@ -377,6 +377,10 @@ msgstr "A folder named {trimmed} already exists in this location."
 msgid "A new document is applied as a whole. Use Apply draft."
 msgstr "A new document is applied as a whole. Use Apply draft."
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "A new document is discarded as a whole. Use Discard draft."
+msgstr "A new document is discarded as a whole. Use Discard draft."
+
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
@@ -577,6 +581,10 @@ msgstr "Apply all 1 draft"
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply draft"
 msgstr "Apply draft"
+
+#: src/features/draft-review/ReviewChangeBar.tsx
+msgid "Apply draft or Discard draft handles this."
+msgstr "Apply draft or Discard draft handles this."
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/dock/DockChangesView.tsx
@@ -1995,6 +2003,14 @@ msgstr "Fork from here"
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
+
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+msgid "Formatting changes remain"
+msgstr "Formatting changes remain"
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
+msgstr "Formatting changes remain. Apply draft or Discard draft finishes them."
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -3992,6 +4008,10 @@ msgstr "This change no longer matches the chapter text, so it can't be reversed.
 msgid "This change was updated. Check it and apply again."
 msgstr "This change was updated. Check it and apply again."
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "This change was updated. Check it and discard again."
+msgstr "This change was updated. Check it and discard again."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This chapter is no longer available, so its change details can't be shown."
 msgstr "This chapter is no longer available, so its change details can't be shown."
@@ -4292,6 +4312,10 @@ msgstr "Unarchive"
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.unarchived"
 msgstr "Unarchived Work {name}"
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Unattributed"
+msgstr "Unattributed"
 
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Unavailable"

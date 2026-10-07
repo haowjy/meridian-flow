@@ -21,7 +21,7 @@ import {
   textHunk,
 } from "../../../../test-support/inline-review-editor";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
-import type { InlineReviewModel } from "./model";
+import { type InlineReviewModel, unattributedHunkKey } from "./model";
 import { REMOVAL_COLLAPSE_CHARS } from "./removal-widget";
 
 beforeEach(() => {
@@ -204,6 +204,60 @@ describe("removals", () => {
     expect(editor.getText()).toBe("Elder Mo raised one withered hand.");
     expect(editor.getHTML()).not.toContain("his");
     expect(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString()).not.toContain("his");
+  });
+
+  it("strikes an unclassified removal in full, in no author's colour", () => {
+    const { editor } = createReviewEditor(["Lin Feng counted the breath."]);
+    const at = posOf(editor, "breath");
+    const key = unattributedHunkKey("h-loose");
+    setModel(
+      editor,
+      model(
+        [],
+        [
+          textHunk(
+            editor,
+            "h-loose",
+            [key],
+            { from: at, to: at },
+            { deletedText: "first slow ", deletedSpans: [], unclassified: true },
+          ),
+        ],
+      ),
+    );
+    const [removal] = removals(editor);
+    const del = removal?.querySelector("del");
+    expect(del?.textContent).toBe("first slow ");
+    expect(del?.classList.contains("meridian-review-removal-text-unattributed")).toBe(true);
+    expect(del?.classList.contains("meridian-review-removal-text-writer")).toBe(false);
+    expect(removal?.classList.contains("meridian-review-removal-writer")).toBe(false);
+    expect(editor.getText()).not.toContain("first slow");
+
+    // Focusing it by its key emphasises it, as a click on it does.
+    editor.commands.setInlineReviewActiveOperation(key);
+    expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(true);
+  });
+
+  it("paints an unclassified insertion neutral, not as the AI's", () => {
+    const { editor } = createReviewEditor(["Elder Mo raised one withered hand."]);
+    const withered = posOf(editor, "one withered");
+    setModel(
+      editor,
+      model(
+        [],
+        [
+          textHunk(
+            editor,
+            "h-loose",
+            [unattributedHunkKey("h-loose")],
+            { from: withered, to: withered + 12 },
+            { unclassified: true },
+          ),
+        ],
+      ),
+    );
+    expect(marked(editor, "meridian-review-merged")).toEqual(["one withered"]);
+    expect(marked(editor, "meridian-review-added")).toEqual([]);
   });
 
   it("strikes the writer's removal of live text in gold", () => {

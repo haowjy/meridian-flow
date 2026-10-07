@@ -62,6 +62,8 @@ const change = (
   operations: [],
   operationIds: [classId],
   anchorOperationId: classId,
+  markKeys: [classId],
+  actionable: true,
   tone: "ai",
   includesWriterEdits: false,
   merged: false,
@@ -81,6 +83,7 @@ const view = vi.hoisted(() => ({
   canApply: true,
   locked: false,
   finished: false,
+  unlisted: false,
   completing: null as null | "apply" | "discard",
   focus: vi.fn(),
   step: vi.fn(),
@@ -123,6 +126,7 @@ beforeEach(() => {
     ],
     focused: null,
     finished: false,
+    unlisted: false,
     completing: null as null | "apply" | "discard",
     locked: false,
   });
@@ -195,6 +199,16 @@ describe("DockChangesView", () => {
     Object.assign(view, { items: [], completing: "discard" });
     await render(async () => {
       expect(document.body.textContent).toContain("Discarding");
+    });
+  });
+
+  it("says formatting remains, not No changes left, when the draft is open and lists no change", async () => {
+    Object.assign(view, { items: [], unlisted: true });
+    await render(async () => {
+      expect(document.body.textContent).toContain("Formatting changes remain");
+      expect(document.body.textContent).not.toContain("No changes left");
+      expect(button("Next draft")).toBeUndefined();
+      expect(document.body.textContent).not.toContain("0 changes");
     });
   });
 

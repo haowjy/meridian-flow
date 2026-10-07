@@ -17,6 +17,22 @@ import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";
 
+const UNATTRIBUTED_PREFIX = "unattributed:";
+
+/**
+ * The key a hunk with no owning operation is painted, focused and scrolled to
+ * by. Operations are how every other mark is found (`data-review-operations`),
+ * and an unclassified hunk has none, so the model gives it this stand-in. It is
+ * a client-side name only: it never reaches the server and no command takes it.
+ */
+export function unattributedHunkKey(hunkId: string): string {
+  return `${UNATTRIBUTED_PREFIX}${hunkId}`;
+}
+
+export function isUnattributedHunkKey(key: string): boolean {
+  return key.startsWith(UNATTRIBUTED_PREFIX);
+}
+
 /**
  * A per-operation piece of an inserted hunk. Every inserted character is
  * covered by exactly one span, so nested authorship (e.g. a writer edit
@@ -33,7 +49,13 @@ export interface ResolvedReviewSpan {
 /** Anchor pair shared by both hunk kinds, decoded to runtime `Y.RelativePosition`. */
 interface ResolvedReviewHunkBase {
   hunkId: string;
+  /** The owning operations; an unclassified hunk with none carries its `unattributedHunkKey`. */
   operationIds: string[];
+  /**
+   * The server could not say who made this hunk. Painted neutral, with its full
+   * removed text struck in no author's colour, and no author is invented.
+   */
+  unclassified?: boolean;
   /** Resolves to the start of the insertion / caret for a pure deletion. */
   relStart: Y.RelativePosition;
   /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
@@ -132,9 +154,11 @@ export function buildInlineReviewModel(input: {
     if (!relStart || !relEnd) continue;
     const base = {
       hunkId: hunk.hunkId,
-      operationIds: hunk.operationIds,
+      operationIds:
+        hunk.operationIds.length > 0 ? hunk.operationIds : [unattributedHunkKey(hunk.hunkId)],
       relStart,
       relEnd,
+      ...(hunk.unclassified ? { unclassified: true } : {}),
       ...(hunk.mergeArtifact ? { mergeArtifact: true } : {}),
     };
     if (hunk.kind === "block") {

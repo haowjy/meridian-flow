@@ -82,6 +82,7 @@ export function MobileReviewHeader({
         touch
         commandError={header.commandError}
         finished={finished}
+        unlisted={header.unlisted}
         completing={header.completing}
         next={header.next}
         draftOnly={switcher.draftOnly}

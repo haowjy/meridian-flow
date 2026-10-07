@@ -12,15 +12,20 @@
  * Pure data, no React.
  */
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import { unattributedHunkKey } from "@/core/editor/extensions/inline-review";
 import { type ChangeAttribution, changeAttribution } from "./change-attribution";
 import {
+  changeTextForHunks,
   changeTextForOperations,
   type OperationChangeText,
   operationsWithWriterEdits,
 } from "./operation-change-text";
 
-/** The dot's colour family: AI, the writer's, an AI removal, or a merge nobody can split by author. */
-export type ReviewChangeTone = "ai" | "writer" | "removal" | "merged";
+/**
+ * The dot's colour family: AI, the writer's, an AI removal, a merge nobody can
+ * split by author, or a difference the server could not attribute at all.
+ */
+export type ReviewChangeTone = "ai" | "writer" | "removal" | "merged" | "unattributed";
 
 export interface ReviewChange {
   /** Stable identity: the server's closure class id. */
@@ -28,8 +33,13 @@ export interface ReviewChange {
   operations: ReviewOperation[];
   /** Every operation of the class; Apply and Discard send all of them. */
   operationIds: string[];
-  /** One operation to focus the change in the manuscript by. */
+  /**
+   * The one key to focus the change in the manuscript by: an operation of the
+   * class, or the stand-in key of an unclassified hunk that has none.
+   */
   anchorOperationId: string;
+  /** Every key the manuscript paints this change's marks by. */
+  markKeys: string[];
   tone: ReviewChangeTone;
   /** The writer's own edits are inside this change (half-and-half dot, "Includes your edits"). */
   includesWriterEdits: boolean;
@@ -37,6 +47,12 @@ export interface ReviewChange {
   merged: boolean;
   change: OperationChangeText;
   attribution: ChangeAttribution;
+  /**
+   * Apply and Discard act on this change. False for an unclassified hunk with
+   * no operation, and for every member of a class the server flags
+   * `canApplyOrDiscard: false`; Apply draft and Discard draft handle those.
+   */
+  actionable: boolean;
 }
 
 /**
@@ -48,7 +64,6 @@ export function reviewChanges(
   operations: readonly ReviewOperation[],
   hunks: readonly ReviewHunk[],
 ): ReviewChange[] {
-  if (operations.length === 0) return [];
   const byClass = new Map<string, ReviewOperation[]>();
   for (const operation of operations) {
     const bucket = byClass.get(operation.closureClassId);
@@ -62,13 +77,42 @@ export function reviewChanges(
   });
   const writerJoined = operationsWithWriterEdits([...operations], [...hunks]);
 
-  const changes = [...byClass].map(([classId, classOps]) =>
-    describeChange(classId, classOps, hunks, firstHunk, writerJoined),
-  );
-  const position = (change: ReviewChange) =>
-    Math.min(...change.operationIds.map((id) => firstHunk.get(id) ?? Number.POSITIVE_INFINITY));
+  const ranked = [...byClass].map(([classId, classOps]) => {
+    const change = describeChange(classId, classOps, hunks, firstHunk, writerJoined);
+    return {
+      change,
+      position: Math.min(
+        ...change.operationIds.map((id) => firstHunk.get(id) ?? Number.POSITIVE_INFINITY),
+      ),
+    };
+  });
+  // A hunk no operation owns is still a difference the writer is shown: one
+  // change of its own, where it sits in the document.
+  hunks.forEach((hunk, index) => {
+    if (hunk.operationIds.length === 0) {
+      ranked.push({ change: describeUnattributed(hunk), position: index });
+    }
+  });
   // Array.sort is stable, so classes with no hunk keep the server's order, last.
-  return changes.sort((a, b) => position(a) - position(b));
+  return ranked.sort((a, b) => a.position - b.position).map(({ change }) => change);
+}
+
+/** A hunk the server could not attribute and that no operation owns. It has no per-change commands. */
+function describeUnattributed(hunk: ReviewHunk): ReviewChange {
+  const key = unattributedHunkKey(hunk.hunkId);
+  return {
+    classId: key,
+    operations: [],
+    operationIds: [],
+    anchorOperationId: key,
+    markKeys: [key],
+    tone: "unattributed",
+    includesWriterEdits: false,
+    merged: false,
+    change: changeTextForHunks([hunk]),
+    attribution: { kind: "unattributed" },
+    actionable: false,
+  };
 }
 
 function describeChange(
@@ -97,6 +141,8 @@ function describeChange(
     operations: classOps,
     operationIds,
     anchorOperationId,
+    markKeys: operationIds,
+    actionable: classOps.every((op) => op.canApplyOrDiscard !== false),
     tone: merged
       ? "merged"
       : agentOps.length === 0

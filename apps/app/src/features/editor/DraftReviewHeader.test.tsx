@@ -63,6 +63,7 @@ const view = vi.hoisted(() => ({
   items: [{}, {}, {}, {}, {}, {}] as unknown[],
   focusedIndex: 1,
   finished: false,
+  unlisted: false,
   completing: null as null | "apply" | "discard",
   step: vi.fn(),
 }));
@@ -121,6 +122,7 @@ beforeEach(() => {
     items: [{}, {}, {}, {}, {}, {}],
     focusedIndex: 1,
     finished: false,
+    unlisted: false,
     completing: null as null | "apply" | "discard",
   });
   for (const fn of [
@@ -284,6 +286,19 @@ describe("DraftReviewHeader", () => {
       expect(byText("Discard draft")).toBeUndefined();
       // The stepper has nothing to step through.
       expect(document.querySelector("[aria-label='Next change']")).toBeNull();
+    });
+  });
+
+  it("says formatting remains, not No changes left, and keeps Apply draft and Discard draft", async () => {
+    Object.assign(view, { items: [], unlisted: true });
+    const onOpenDraft = vi.fn();
+    await render({ onOpenDraft }, async () => {
+      expect(document.body.textContent).toContain("Formatting changes remain");
+      expect(document.body.textContent).not.toContain("No changes left");
+      expect(byText("Next draft")).toBeUndefined();
+      await act(async () => byText("Discard draft")?.click());
+      expect(controller.discard).toHaveBeenCalledWith("doc-12", "draft-doc-12");
+      expect(onOpenDraft).toHaveBeenCalled();
     });
   });
 

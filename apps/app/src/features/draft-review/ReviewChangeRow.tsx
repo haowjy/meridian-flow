@@ -96,34 +96,36 @@ export function ReviewChangeRow({
           attribution={change.attribution}
           className={touch ? "inline-flex min-h-11 items-center" : undefined}
         />
-        <span className="flex shrink-0 items-center">
-          <IconButton
-            size="xs"
-            tooltip={discardLabel(change)}
-            disabled={disabled}
-            className={iconButton}
-            onClick={(event) => {
-              event.stopPropagation();
-              onDiscard();
-            }}
-          >
-            <X aria-hidden />
-          </IconButton>
-          {canApply ? (
+        {change.actionable ? (
+          <span className="flex shrink-0 items-center">
             <IconButton
               size="xs"
-              tooltip={t`Apply`}
+              tooltip={discardLabel(change)}
               disabled={disabled}
+              className={iconButton}
               onClick={(event) => {
                 event.stopPropagation();
-                onApply();
+                onDiscard();
               }}
-              className={cn("text-primary hover:text-primary", iconButton)}
             >
-              <Check aria-hidden />
+              <X aria-hidden />
             </IconButton>
-          ) : null}
-        </span>
+            {canApply ? (
+              <IconButton
+                size="xs"
+                tooltip={t`Apply`}
+                disabled={disabled}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onApply();
+                }}
+                className={cn("text-primary hover:text-primary", iconButton)}
+              >
+                <Check aria-hidden />
+              </IconButton>
+            ) : null}
+          </span>
+        ) : null}
       </div>
       {failure ? (
         <p role="status" className="pl-4 text-caption text-destructive">
