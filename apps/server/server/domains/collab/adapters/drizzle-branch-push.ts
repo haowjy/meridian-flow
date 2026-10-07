@@ -23,6 +23,7 @@ import {
   type BranchJournalReadStore,
   type BranchJournalRow,
   BranchPushCommitConflictError,
+  DraftChangeRefusal,
   type PreparedDiscardCommit,
   type PreparedPushCommit,
   type PushCommitStore,
@@ -35,6 +36,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
+import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
@@ -557,6 +559,11 @@ async function commitPreparedPush(
   now: Date,
 ): Promise<typeof pushLineage.$inferSelect> {
   await lockDocumentMutation(db, input.branch.documentId);
+  if (
+    input.expectedLiveRevision !== undefined &&
+    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
+  )
+    throw new DraftChangeRefusal("stale");
 
   const [casRow] = await db
     .update(documentBranches)

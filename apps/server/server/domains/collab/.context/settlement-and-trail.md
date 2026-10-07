@@ -9,8 +9,8 @@
   in document-id order.
 - **One push commit seam**: whole-content and manifest-companion builders
   produce a `CandidateBatch` consumed by the single pipeline in
-  `branch-push.ts`. Content candidates always materialize the whole current
-  branch. Only the internal manifest candidate selects membership rows. Locked
+  `branch-push.ts`. Whole-document content candidates materialize the current branch. Per-change
+  content candidates and manifest companions replay only selected closed rows. Locked
   preparation in `branch-push-preparation.ts` computes one block diff from the
   live lock cut; `branch-trail-projection.ts` turns it into the sole durable
   publication record, while typed `push_lineage.branch_generation` supports
@@ -61,7 +61,7 @@
 - **Trail evidence is read-only**: durable Before/After excerpts support
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
-- **Draft Apply settles the whole current branch**: every writer Apply and
+- **Document Apply settles the whole current branch**: whole-document Apply and
   Auto-apply switch push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
   authority; sweep policy uses each AI row's value only as that candidate's
   observation watermark. Each candidate is classified against the pre-push
@@ -95,11 +95,28 @@
   `auto` since D59, so every claim settles `no_op` and drafts wait for the
   writer's Apply. This depends on the read model never rewriting a failed
   turn's status (see the threads read-model projector).
-- **Writer Apply is branch-scoped, not preview-scoped**:
+- **Whole-document Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.
-  Preview operations and revision tokens are presentation evidence, not command
-  selection or freshness authority.
+  Preview operations and revision tokens do not constrain this whole-document command.
+- **Per-change Apply is preview-scoped**: `DraftApplyChangesRequest` names a
+  nonempty set of operation IDs plus both opaque revision tokens. Under the shared
+  branch critical section, recompute the comparison against a durable live cut
+  and require complete classes. Refuse `stale`, `gone`, `draft_only`, or
+  `incomplete_class` without publishing. Draft-only manifest members expose
+  `isNewDocument` and use whole-document Apply with the existing manifest companion.
+  The live token includes authority identity, generation, and next admission
+  sequence captured with journal bytes under the document mutation lock. Recheck
+  that token inside durable push commit under the same lock, so an admission
+  after selection cannot sneak into a successful stale Apply. The draft token
+  hashes generation, delete-set-aware Yjs content revision, and reviewable row
+  identities/status. Branch-state CAS and selected-row settlement predicates fence
+  cross-process draft arrivals; retries recompute selection and tokens.
+  Only the selected rows become `pushed`; the branch retains its content and
+  generation. A later document Apply publishes the remainder once through Yjs
+  idempotence, retaining each selected row's original agent turn or writer user.
+  Success is returned only after the existing settlement completion fence, not
+  after a durable outbox handoff. Per-change Undo is not implemented.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;

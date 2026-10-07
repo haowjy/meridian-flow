@@ -39,8 +39,11 @@ authority.
 Review operations keep two internal journal-row identities separate.
 `SourceUpdateIds` name the logical source rows used for operation attribution
 and presentation; `PhysicalSourceUpdateIds` name every physical row needed to
-reconstruct Discard, including reversal rows. Discard classes use the physical
-set. Neither identity is wire data, and callers must not substitute one for the
+replay or reverse a review class, including invisible suppliers and reversal rows.
+`closureUpdateIds` is the shared physical set for per-change Apply and Discard.
+Classes union visible hunks, shared physical rows, Yjs origin/rightOrigin/parent
+references, delete-set overlaps, and same-client clock-prefix edges. Even unrelated
+visible edits can be inseparable when one Yjs client supplied both. Neither identity is wire data, and callers must not substitute one for the
 other just because both are represented by numbers at runtime.
 
 Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second

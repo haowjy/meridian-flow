@@ -317,6 +317,9 @@ function createInMemoryDraftStub(documents: {
           draftId: input.draftId,
         };
       },
+      async applyWorkDraftChanges(input) {
+        return { status: "gone", draftId: input.draftId };
+      },
       async discardWorkDraft(input) {
         return {
           status: "discarded",

@@ -96,7 +96,14 @@ export type PushToLiveResult =
       reason: "no_active_rows";
     };
 
+export class DraftChangeRefusal extends Error {
+  constructor(readonly status: "stale" | "gone" | "draft_only" | "incomplete_class") {
+    super(status);
+  }
+}
+
 export type PreparedPushCommit = {
+  expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   pushUpdate: Uint8Array;
@@ -171,13 +178,15 @@ export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
   rows: BranchJournalRow[];
-  /** Content publishes whole-branch state; manifest publishes only the selected membership rows. */
+  /** Selective content and manifest candidates replay only their selected rows. */
   kind: "content" | "manifest";
+  materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
   candidates: PushCandidate[];
   receiptId: string;
+  expectedLiveRevision?: string;
   resetPolicy?: "auto";
   pushedByUserId?: UserId;
 };
@@ -249,6 +258,16 @@ export type BranchPushService = {
     pushedByUserId?: UserId;
     signal?: AbortSignal;
     resetPolicy?: "auto";
+  }): Promise<PushToLiveResult>;
+  pushSelectedToLive(input: {
+    branchId: string;
+    journalIds?: readonly number[];
+    selectRows?: (
+      branch: BranchSnapshot,
+      rows: BranchJournalRow[],
+    ) => Promise<{ journalIds: readonly number[]; expectedLiveRevision: string }>;
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;

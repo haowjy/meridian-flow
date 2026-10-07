@@ -1,6 +1,8 @@
 /** Route core for authenticated AI draft preview/Apply/Discard over Work-scoped draft documents. */
 
 import type {
+  DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
   DraftApplyResponse,
   DraftDiscardResponse,
   DraftPreviewResponse,
@@ -166,6 +168,22 @@ export async function handleApplyWorkDraftRequest(
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
+export async function handleApplyWorkDraftChangesRequest(
+  deps: DraftRouteServices,
+  input: DraftApplyChangesRequest & {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    userId: UserId;
+    signal?: AbortSignal;
+  },
+): Promise<DraftApplyChangesResponse> {
+  const grants = await draftGrants(deps, input, "edit", { live: true });
+  return withEditGrants(deps.fileAccess, grants, () =>
+    callDraftReview(deps.documentSync.draftReview.applyWorkDraftChanges(input)),
+  );
+}
+
 export async function handleDiscardWorkDraftRequest(
   deps: DraftRouteServices,
   input: {
@@ -183,11 +201,11 @@ export async function handleDiscardWorkDraftRequest(
   );
 }
 
-function toWireReviewOperation<T extends { discardUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
+function toWireReviewOperation<T extends { closureUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
   operation: T,
 ) {
   const {
-    discardUpdateIds: _discardUpdateIds,
+    closureUpdateIds: _closureUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,
     ...wire
   } = operation;
