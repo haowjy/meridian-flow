@@ -403,8 +403,6 @@ export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "e
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
-  /** Apply all or Discard all is under way: the review says so and holds on a draft it closes. */
-  batchRunning: "apply" | "discard" | null;
   dockDispositionError: DraftBatchErrorCode | null;
   /** The header's "Show changes": false hides every mark in the manuscript. */
   marksVisible: boolean;
@@ -435,7 +433,7 @@ export type DraftReviewAction =
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
-  | { type: "batchStarted"; mode: "apply" | "discard" }
+  | { type: "batchStarted" }
   | { type: "batchSettled"; error: DraftBatchErrorCode | null }
   | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
@@ -443,7 +441,6 @@ export type DraftReviewAction =
 
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
-  batchRunning: null,
   dockDispositionError: null,
   marksVisible: true,
   toast: null,
@@ -529,9 +526,9 @@ export function draftReviewReducer(
     case "toastDismissed":
       return state.toast?.id === action.id ? { ...state, toast: null } : state;
     case "batchStarted":
-      return { ...state, batchRunning: action.mode, dockDispositionError: null };
+      return { ...state, dockDispositionError: null };
     case "batchSettled":
-      return { ...state, batchRunning: null, dockDispositionError: action.error };
+      return { ...state, dockDispositionError: action.error };
     case "discardSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
