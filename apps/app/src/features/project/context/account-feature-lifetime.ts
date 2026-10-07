@@ -2,6 +2,7 @@
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
@@ -23,8 +24,9 @@ export class AccountFeatureLifetime {
     readonly accountId: string,
     repairProjectCatalog: (projectId: string) => Promise<void>,
     onInvalidated: (error: Error) => void = () => undefined,
+    connectivityHints?: ConnectivityHintsPort,
   ) {
-    this.runtime = createAccountDocumentSessionRuntime({ accountId });
+    this.runtime = createAccountDocumentSessionRuntime({ accountId, connectivityHints });
     this.registry = this.runtime.registry;
     this.removal = new ContextRemovalCoordinator(accountId, { sessions: this.registry });
     this.availability = new ProjectContextAvailabilityCoordinator({
@@ -38,10 +40,15 @@ export class AccountFeatureLifetime {
     this.resources =
       typeof window === "undefined"
         ? null
-        : new AccountResourceReplica(accountId, this.runtime, (error) => {
-            this.beginClose();
-            onInvalidated(error);
-          });
+        : new AccountResourceReplica(
+            accountId,
+            this.runtime,
+            (error) => {
+              this.beginClose();
+              onInvalidated(error);
+            },
+            connectivityHints,
+          );
     if (this.resources) this.runtime.connectLocalResources(this.resources);
     this.opener = new ProjectDocumentLiveOpener({
       availability: this.availability,

@@ -6,6 +6,7 @@ import {
   readMultipartFormData,
   setResponseStatus,
 } from "nitro/h3";
+import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
 import { resolveContextRoute } from "./_helpers.js";
 
 function field(parts: Awaited<ReturnType<typeof readMultipartFormData>>, name: string): string {
@@ -31,7 +32,7 @@ export default defineEventHandler(async (event): Promise<UploadIntakeResult> => 
     ? { kind: "work" as const, projectId, workId }
     : await (async () => {
         const noWork = await app.workRepo.findNoWork(projectId);
-        if (!noWork) throw createError({ statusCode: 404, message: "Work not found" });
+        if (!noWork) throwContextWorkUnavailableHttpError("work_missing");
         return { kind: "work" as const, projectId, workId: noWork.id };
       })();
   const filename = file.filename;

@@ -1,5 +1,7 @@
 /** Immutable account epoch and narrowed facets over one private session core. */
 import type { AccountId } from "@meridian/contracts/protocol";
+import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type {
   LiveDocumentSessionRegistry,
   LocalDocumentSessionFactory,
@@ -40,10 +42,25 @@ export interface AccountDocumentSessionCore {
 type RuntimeInput = {
   accountId: AccountId;
   core?: AccountDocumentSessionCore;
+  connectivityHints?: ConnectivityHintsPort;
 };
 
-function createCore(accountId: AccountId): AccountDocumentSessionCore {
-  const registry = new DocumentSessionRegistry(undefined, undefined, accountId);
+function createCore(
+  accountId: AccountId,
+  connectivityHints?: ConnectivityHintsPort,
+): AccountDocumentSessionCore {
+  const registry = new DocumentSessionRegistry(
+    undefined,
+    undefined,
+    accountId,
+    ({ roomKey, document, awareness }) =>
+      createHocuspocusDocumentTransport({
+        roomName: roomKey,
+        document,
+        awareness,
+        connectivityHints,
+      }),
+  );
   return Object.freeze({
     accountId,
     registry,
@@ -60,7 +77,7 @@ function createCore(accountId: AccountId): AccountDocumentSessionCore {
 export function createAccountDocumentSessionRuntime(
   input: RuntimeInput,
 ): AccountDocumentSessionRuntime {
-  const core = input.core ?? createCore(input.accountId);
+  const core = input.core ?? createCore(input.accountId, input.connectivityHints);
   if (core.accountId !== input.accountId) {
     throw new Error("Account document session core belongs to a different account");
   }

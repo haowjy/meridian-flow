@@ -49,7 +49,6 @@ export type MobileContextBrowserProps = Pick<
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;
     parentPath: string;
-    workId: string | null;
   } | null;
   /** Closes the create row (after commit, cancel, or empty blur). */
   onCreateDone: () => void;
@@ -184,7 +183,6 @@ function MobileFolderListing({
       {creating ? (
         <MobileCreateRow
           projectId={projectId}
-          editorWorkId={creating.workId}
           scheme={creating.scheme}
           parent={creating.parentPath}
           kind={creating.kind}
@@ -328,7 +326,6 @@ function FolderListingBody({
 /** Phone inline naming row, pinned above the folder listing (iOS Files style). */
 function MobileCreateRow({
   projectId,
-  editorWorkId,
   scheme,
   parent,
   kind,
@@ -336,7 +333,6 @@ function MobileCreateRow({
   onDone,
 }: {
   projectId: string;
-  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   /** Parent folder path (`""` for the scheme root). */
   parent: string;
@@ -347,7 +343,6 @@ function MobileCreateRow({
 }) {
   const form = useCreateEntryForm({
     projectId,
-    workId: editorWorkId,
     scheme,
     kind,
     parent,

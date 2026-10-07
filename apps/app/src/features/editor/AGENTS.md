@@ -51,7 +51,9 @@ the design, from the primitives.
   closed as though the copy had happened.
 - **What the app knows reaches a surface as scope, not as props.**
   `EditorScopeProvider` carries `{ projectId, workId }` around the host, and
-  `useEditorScope()` is how a lane asks. It is runtime scope: a Work changing
+  `useEditorScope()` is how a lane asks. For links, `workId` comes from the
+  holder's replica location (Scratch/Uploads), or the No Work row (project
+  documents), never the Editor route or remembered Work. It is runtime scope: a holder moving
   never remounts the editor, and it never appears in `EditorMountIdentity`.
 - Anything opened over the manuscript hands the caret back on close
   (`onCloseAutoFocus` → prose) and defers Escape to the kernel's chain. Both

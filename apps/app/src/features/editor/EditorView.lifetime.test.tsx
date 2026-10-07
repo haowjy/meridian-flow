@@ -1,22 +1,45 @@
 // @vitest-environment jsdom
 /** Writer edits, undo history, and read-only fencing survive editor surface changes. */
+
+import type { Work } from "@meridian/contracts/works";
 import type { Editor } from "@tiptap/core";
 import { act, StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-
+import { resolveDocumentLink } from "@/client/api/document-links-api";
 import type {
   DocumentSession,
   DocumentSessionConnectionState,
   DocumentSessionSnapshot,
   SchemaFence,
 } from "@/core/editor/document-session";
+import { getLinkSurface } from "@/core/editor/links";
 import { createLocalPresence } from "@/core/editor/local-presence";
 import type { SchemaRepairEvent } from "@/core/editor/schema-repair-witness";
 import { SessionMarkerStore } from "@/core/editor/session-marker-store";
+import { createProjectLinkResolver } from "@/features/links/project-link-resolver";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
+import { type EditorScope, useEditorScope } from "./editor-scope";
+
+const noWork = { id: "no-work", slug: null, archivedAt: null } as Work;
+const namedWork = { id: "named-work", slug: "named", archivedAt: null } as Work;
+let holderScheme = "manuscript";
+let holderProjectionReady = true;
+let observedScope: EditorScope;
+let indexedWorkId: string | null;
+let referenceWorkId: string | null;
+vi.mock("./references/useReferenceBrowserCatalog", () => ({
+  useReferenceBrowserCatalog: (_projectId: string, workId: string | null) => {
+    referenceWorkId = workId;
+    return null;
+  },
+}));
+vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLink: vi.fn() }));
+vi.mock("@/client/query/useWorks", () => ({
+  useWorks: () => ({ noWork, works: [namedWork] }),
+}));
 
 type ThreadListItem = { id: string; title: string | null };
 
@@ -157,15 +180,54 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry,
   useOptionalAccountResourceReplica: () => null,
-  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
+  useAccountResourceProjection: () => ({
+    snapshot: null,
+    records: holderProjectionReady
+      ? [
+          {
+            resource: {
+              identity: { documentId: "holder" },
+              aliases: {},
+              lifecycle: { kind: "acknowledged" },
+              obligations: {},
+              canonical: {
+                scheme: holderScheme,
+                path: "/holder.md",
+                name: "holder.md",
+                workId:
+                  holderScheme === "scratch" || holderScheme === "uploads" ? namedWork.id : null,
+                workSlug: "named",
+              },
+            },
+            intents: [],
+          },
+        ]
+      : [],
+    error: null,
+  }),
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
-vi.mock("./surfaces/link", () => ({
-  ProjectLinkRuntime: () => null,
+// The real runtime and follower, with only the scope it reads observed.
+vi.mock("./surfaces/link", async () => {
+  const { ProjectLinkRuntime: Runtime } = await import("./surfaces/link/ProjectLinkRuntime");
+  return {
+    ProjectLinkRuntime: (props: React.ComponentProps<typeof Runtime>) => {
+      observedScope = useEditorScope();
+      return <Runtime {...props} />;
+    },
+  };
+});
+const openDocument = vi.hoisted(() => vi.fn());
+vi.mock("@/features/project/context/open-project-document", () => ({
+  useOpenProjectDocument: () => openDocument,
 }));
-vi.mock("@/features/links", () => ({
-  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
+vi.mock("@/features/links", async () => ({
+  useLinkFollower: (await import("@/features/links/use-link-follower")).useLinkFollower,
+  useLinkableDocuments: (scope: EditorScope) => {
+    indexedWorkId = scope.workId;
+    return { documents: [], revision: "", complete: false };
+  },
 }));
 // Lifetime is about which editor exists, not what hangs off it. An empty
 // registry keeps every lane's own dependencies out of this suite.
@@ -734,6 +796,101 @@ describe("editor lifetime", () => {
           expect(unavailable).toHaveBeenCalledOnce();
         },
       );
+    });
+  });
+});
+
+describe("holder-owned Editor link scope", () => {
+  it.each([
+    "manuscript",
+    "kb",
+    "user",
+    "unfiled",
+    "scratch",
+    "uploads",
+  ])("%s links use the holder's Work", async (scheme) => {
+    holderScheme = scheme;
+    const expectedWork = scheme === "scratch" || scheme === "uploads" ? namedWork : noWork;
+    await withReactRoot(
+      <Harness initial={{ documentId: "holder", projectId: "project-1" }} />,
+      async () => {
+        expect(observedScope.workId).toBe(expectedWork.id);
+        expect(indexedWorkId).toBe(expectedWork.id);
+        expect(referenceWorkId).toBe(expectedWork.id);
+        const index = { documents: [], revision: "", complete: false };
+        vi.mocked(resolveDocumentLink).mockResolvedValue({ document: null });
+        const target = { kind: "scheme" as const, uri: "scratch://x.md" };
+        await createProjectLinkResolver(
+          {
+            ...observedScope,
+            projectId: "project-1",
+            workId: observedScope.workId ?? "unresolved",
+            baseUri: null,
+          },
+          index,
+        )(target);
+        expect(resolveDocumentLink).toHaveBeenLastCalledWith(
+          "project-1",
+          expect.objectContaining({ workId: expectedWork.id }),
+        );
+      },
+    );
+    holderScheme = "manuscript";
+  });
+
+  describe("a follow while the holder's resource record is still arriving", () => {
+    const target = { kind: "scheme" as const, uri: "manuscript://existing.md" };
+    const existing = {
+      documentId: "target",
+      title: "Existing",
+      scheme: "manuscript" as const,
+      path: "existing.md",
+      uri: "manuscript://existing.md",
+      workId: null,
+    };
+    const hydrate = async (
+      follow: (surface: NonNullable<ReturnType<typeof getLinkSurface>>) => void,
+    ) => {
+      holderProjectionReady = false;
+      try {
+        await withReactRoot(
+          <Harness initial={{ documentId: "holder", projectId: "project-1" }} />,
+          async () => {
+            vi.mocked(resolveDocumentLink).mockClear();
+            openDocument.mockClear();
+            vi.mocked(resolveDocumentLink).mockResolvedValue({ document: existing });
+            const surface = getLinkSurface(mountedEditor());
+            if (!surface?.navigator) throw new Error("No link navigator");
+            await act(async () => {
+              surface.navigator?.({ target, disposition: "current" });
+              await new Promise((resolve) => setTimeout(resolve, 300));
+            });
+            // Asked of nobody yet, but the writer is told it is being checked.
+            expect(surface.state.follow?.state).toBe("checking");
+            expect(resolveDocumentLink).not.toHaveBeenCalled();
+            follow(surface);
+            await act(async () => {
+              holderProjectionReady = true;
+              applyProps({});
+            });
+          },
+        );
+      } finally {
+        holderProjectionReady = true;
+      }
+    };
+
+    it("opens once when the holder's Work arrives", async () => {
+      await hydrate(() => {});
+      expect(resolveDocumentLink).toHaveBeenCalledTimes(1);
+      expect(openDocument).toHaveBeenCalledTimes(1);
+      expect(openDocument).toHaveBeenCalledWith(expect.objectContaining({ documentId: "target" }));
+    });
+
+    it("opens nothing after the writer dismissed the wait", async () => {
+      await hydrate((surface) => act(() => surface.dismissFollow()));
+      expect(resolveDocumentLink).not.toHaveBeenCalled();
+      expect(openDocument).not.toHaveBeenCalled();
     });
   });
 });
