@@ -51,7 +51,7 @@ export function EditorReviewAddressOwner({
       // can say the writer left.
       const match = group
         ? addressNames(inline.documentId, group.contextPath)
-        : inline.cleared
+        : inline.completion
           ? addressNames(inline.documentId, undefined)
           : "no";
       if (activeScreen !== "context" || activeScheme !== "manuscript" || match === "no") {

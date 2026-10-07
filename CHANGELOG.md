@@ -7,6 +7,11 @@
 - Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
 
 - Handling the last text change preserves independent draft formatting for document-level Apply or Discard.
+- Draft review sends one command per draft at a time, whether it comes from the Editor or the Chat: while a change's Apply or Discard is in flight, the draft's Apply and Discard are disabled everywhere, and the other way round.
+- After you apply or discard the last change, the review says "Applying" or "Discarding" until the server answers, and shows "No changes left" only once it has closed the draft. A last Discard no longer lets you type into the finished text before the server answers; if another change arrived meanwhile, the review comes back with it.
+- A change you handled while a review was still opening no longer comes back in the list.
+- If Apply draft is refused after the review moved on to the next draft, the refusal shows on the draft that was refused (in the switcher, the Changes tab and Work files).
+- An Apply of one change whose answer never arrived says it couldn't confirm whether it applied, instead of saying it failed.
 
 - Draft preview stays available when different chats edit adjacent sentences, and retained punctuation is no longer shown as deleted.
 

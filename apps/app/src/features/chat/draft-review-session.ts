@@ -85,7 +85,7 @@ export type DraftCommandOutcome =
   | { kind: "change-settled"; mode: "apply" | "discard" }
   /** One change's command did not land; the reason is held on the change. */
   | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
-  | { kind: "failed"; code: InlineReviewMessageCode };
+  | { kind: "failed"; code: DraftCommandFailureCode };
 
 export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
 
@@ -101,11 +101,15 @@ export type DraftReviewCommandPorts = {
   /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
   apply: (selection: DraftReviewSelection) => Promise<"applied" | "unknown">;
   discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
-  /** Apply the complete classes `request` names; resolves with the server's answer, rejects when it got none. */
+  /**
+   * Apply the complete classes `request` names. Resolves with the server's
+   * answer, or "unknown" when the request got none (it may have landed), and
+   * rejects when the server refused it.
+   */
   applyChanges: (
     selection: DraftReviewSelection,
     request: ChangeApplyRequest,
-  ) => Promise<DraftApplyChangesResponse>;
+  ) => Promise<DraftApplyChangesResponse | "unknown">;
   /** The server confirmed one change: drop it from the cached preview and refresh around it. */
   changeConfirmed: (
     selection: DraftReviewSelection,
@@ -116,10 +120,6 @@ export type DraftReviewCommandPorts = {
   batchSettled: (error: DraftBatchErrorCode | null) => void;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
-  draftFailed: (
-    selection: DraftReviewSelection,
-    code: Extract<InlineReviewMessageCode, "apply-failed" | "apply-unknown" | "discard-offline">,
-  ) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
 };
 
@@ -155,7 +155,7 @@ export class DraftReviewSession {
         const draft = { ...ports.scope, ...selection };
         if (!beginChangeCommand(draft, change, "apply")) return { kind: "blocked" };
         try {
-          let response: DraftApplyChangesResponse;
+          let response: DraftApplyChangesResponse | "unknown";
           try {
             response = await ports.applyChanges(selection, {
               operationIds: [...change.operationIds],
@@ -164,6 +164,12 @@ export class DraftReviewSession {
           } catch {
             failChangeCommand(draft, change, "apply", "offline");
             return { kind: "change-refused", mode: "apply", code: "offline" };
+          }
+          if (response === "unknown") {
+            // No answer: the change may have landed. Held on the change as
+            // unknown, never as a refusal, and never inferred from the list.
+            failChangeCommand(draft, change, "apply", "unknown");
+            return { kind: "change-refused", mode: "apply", code: "unknown" };
           }
           if (response.status === "applied") {
             ports.changeConfirmed(selection, change, "apply");
@@ -178,7 +184,7 @@ export class DraftReviewSession {
           failChangeCommand(draft, change, "apply", code);
           return { kind: "change-refused", mode: "apply", code };
         } finally {
-          releaseChangeCommand(draft, change);
+          releaseChangeCommand(draft);
         }
       },
     );
@@ -201,7 +207,7 @@ export class DraftReviewSession {
           ports.changeConfirmed(selection, change, "discard");
           return { kind: "change-settled", mode: "discard" };
         } finally {
-          releaseChangeCommand(draft, change);
+          releaseChangeCommand(draft);
         }
       },
     );
@@ -253,13 +259,13 @@ export class DraftReviewSession {
       try {
         result = await ports.apply(selection);
       } catch {
-        releaseDraftCommand(draft);
-        ports.draftFailed(selection, "apply-failed");
+        // Held on the draft, not on the review: the writer may have moved on
+        // to the next draft, and this one's row still has to say it was refused.
+        failDraftCommand(draft, "apply-failed");
         return { kind: "failed", code: "apply-failed" };
       }
       if (result === "unknown") {
         failDraftCommand(draft, "apply-unknown");
-        ports.draftFailed(selection, "apply-unknown");
         return { kind: "apply-outcome-unknown" };
       }
       ports.draftApplied(selection);
@@ -285,7 +291,6 @@ export class DraftReviewSession {
         await ports.discard(selection);
       } catch {
         failDraftCommand(draft, "discard-offline");
-        ports.draftFailed(selection, "discard-offline");
         return { kind: "failed", code: "discard-offline" };
       }
       releaseDraftCommand(draft);
@@ -332,31 +337,18 @@ export type DraftReviewSelection = {
   draftId: string;
 };
 
-/**
- * Stable identifiers for every writer-facing review message. The controller is
- * a state machine and must not carry localized copy; it emits a code and the
- * render layer (`DockChangesView`) turns it into Lingui text. Keep this the
- * single source of message identity for the review's whole-draft messages.
- */
-export type InlineReviewMessageCode = "apply-failed" | DraftCommandFailureCode;
-
-export type InlineReviewMessage = {
-  code: InlineReviewMessageCode;
-  tone?: "info" | "error";
-};
-
 export type InlineDraftReview = {
   kind: "inline";
   previewIdentity?: string;
   /** The change (server closure class) the writer is looking at, if any. */
   focusedClassId?: string | null;
   /**
-   * The writer handled the last change. The draft now matches live and the
-   * server has closed it (it leaves the Work's list); the review stays open,
-   * saying so, until the writer moves on. Its own state, not list membership,
-   * holds it, so it also carries the document's name for the chrome.
+   * The writer handled the last change. The one completion state every
+   * surface reads (header, list, editor); it comes from the command's own
+   * answer, never from how many changes are left on screen. It also carries
+   * the document's name, since the draft leaves the Work's list.
    */
-  cleared?: { documentName: string | null };
+  completion?: ReviewCompletion;
   /**
    * The review body has painted and the review chrome (header, chip swap)
    * may show with it. Until then the plain live view is held, header
@@ -364,6 +356,18 @@ export type InlineDraftReview = {
    */
   shown?: boolean;
 } & DraftReviewSelection;
+
+/**
+ * `pending`: the last change's command is in flight; its outcome is unknown.
+ * The writer sees what they did (the change is gone), but nothing is finished
+ * and nothing is editable that could land in the wrong place. `closed`: the
+ * server answered that it closed the draft; the review stays open on "No
+ * changes left" until the writer moves on. A success that did not close the
+ * draft is neither: the review simply carries on.
+ */
+export type ReviewCompletion =
+  | { phase: "pending"; mode: "apply" | "discard"; documentName: string | null }
+  | { phase: "closed"; documentName: string | null };
 
 export type DraftReviewSurface = { kind: "none" } | InlineDraftReview;
 
@@ -374,7 +378,6 @@ export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "e
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
-  inlineReviewMessage: InlineReviewMessage | null;
   dockDispositionError: DraftBatchErrorCode | null;
   /** The header's "Show changes": false hides every mark in the manuscript. */
   marksVisible: boolean;
@@ -389,7 +392,14 @@ export type DraftReviewAction =
   | { type: "applySucceeded"; documentId: string; draftId: string }
   | { type: "changeFocused"; documentId: string; draftId: string; classId: string | null }
   | {
-      type: "reviewCleared";
+      type: "reviewCompleting";
+      documentId: string;
+      draftId: string;
+      mode: "apply" | "discard";
+      documentName: string | null;
+    }
+  | {
+      type: "reviewClosed";
       documentId: string;
       draftId: string;
       documentName: string | null;
@@ -400,18 +410,12 @@ export type DraftReviewAction =
   | { type: "toastDismissed"; id: number }
   | { type: "batchStarted" }
   | { type: "batchSettled"; error: DraftBatchErrorCode | null }
-  | {
-      type: "draftCommandFailed";
-      selection: DraftReviewSelection;
-      code: Extract<InlineReviewMessageCode, "apply-failed" | "apply-unknown" | "discard-offline">;
-    }
   | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
 
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
-  inlineReviewMessage: null,
   dockDispositionError: null,
   marksVisible: true,
   toast: null,
@@ -427,7 +431,6 @@ export function draftReviewReducer(
       return {
         ...state,
         surface: inlineSurfaceForEnter(state.surface, action),
-        inlineReviewMessage: null,
       };
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
@@ -445,22 +448,45 @@ export function draftReviewReducer(
       }
       if ((state.surface.focusedClassId ?? null) === action.classId) return state;
       return { ...state, surface: { ...state.surface, focusedClassId: action.classId } };
-    case "reviewCleared":
+    case "reviewCompleting":
       if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
         return state;
       }
-      return state.surface.cleared
+      // A closed draft stays closed; a prediction never overrides the server's answer.
+      return state.surface.completion
         ? state
         : {
             ...state,
-            surface: { ...state.surface, cleared: { documentName: action.documentName } },
+            surface: {
+              ...state.surface,
+              completion: {
+                phase: "pending",
+                mode: action.mode,
+                documentName: action.documentName,
+              },
+            },
+          };
+    case "reviewClosed":
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
+        return state;
+      }
+      return state.surface.completion?.phase === "closed"
+        ? state
+        : {
+            ...state,
+            surface: {
+              ...state.surface,
+              completion: { phase: "closed", documentName: action.documentName },
+            },
           };
     case "reviewReopened": {
       if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
         return state;
       }
-      const { cleared: _cleared, ...reopened } = state.surface;
-      return state.surface.cleared ? { ...state, surface: reopened } : state;
+      // Only a prediction is withdrawn: what the server closed stays closed.
+      if (state.surface.completion?.phase !== "pending") return state;
+      const { completion: _completion, ...reopened } = state.surface;
+      return { ...state, surface: reopened };
     }
     case "marksVisible":
       return state.marksVisible === action.visible
@@ -478,10 +504,6 @@ export function draftReviewReducer(
       return { ...state, dockDispositionError: null };
     case "batchSettled":
       return { ...state, dockDispositionError: action.error };
-    case "draftCommandFailed":
-      return surfaceMatchesDraft(state.surface, action.selection)
-        ? { ...state, inlineReviewMessage: { code: action.code, tone: "error" } }
-        : state;
     case "discardSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
@@ -517,7 +539,6 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
   return {
     ...state,
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
-    inlineReviewMessage: currentDraftId === draftId ? null : state.inlineReviewMessage,
   };
 }
 
@@ -536,9 +557,9 @@ function stateAfterInlineModelAvailable(
   return { ...state, surface: nextSurface };
 }
 
-/** Leaving review: its messages go with it, and the next review starts with its marks showing. */
+/** Leaving review: the next review starts with its marks showing. */
 function clearInlineState(state: DraftReviewState): DraftReviewState {
-  return { ...state, inlineReviewMessage: null, marksVisible: true };
+  return { ...state, marksVisible: true };
 }
 
 function surfaceMatchesDraft(

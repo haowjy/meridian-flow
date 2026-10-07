@@ -29,6 +29,15 @@ asking about, and a suite standing on it cannot fail the way the app does.
 Neither can it see clipping — jsdom lays nothing out, so what is only PART
 visible is a browser question and belongs in a probe.
 
+## Review fixtures
+
+- **`draft-review-scope.tsx`** — the draft review's real composition (Editor and
+  Chat scopes over one Work, controllers, mutations, query cache, and the
+  header's model) for a claim about a cross-surface outcome. The suite fakes only
+  the network (`@/client/api/drafts-api`); never set the review's state by hand.
+- **`editor-session-fakes.ts`** — fake document sessions and a branch-room
+  registry for suites about which editor exists and when (`EditorView`).
+
 ## Green tests are quiet
 
 A warning on a passing run trains readers to ignore stderr. If a fixture makes

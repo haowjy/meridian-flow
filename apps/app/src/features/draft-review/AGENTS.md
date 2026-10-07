@@ -20,8 +20,16 @@ is one server closure class.
   confirmed, is already gone from the preview these read
   (`client/query/change-command-record`). A failure brings it back with its
   reason, shown on its bar and row. A read that started before a confirmation
-  cannot bring a change back. One command in flight disables every command
-  (`controller.dispositionLocked`), so each is sent once.
+  cannot bring a change back.
+- **One command authority per draft.** `draft-command-record` holds the one
+  claim per draft (project, Work, document, draft): a whole-draft Apply or
+  Discard, or a per-change one with its operation set. It is reserved
+  synchronously before anything is sent, so a second command for the same
+  draft is refused whichever surface or session (Editor, Chat) sends it, and
+  every surface's busy state (`controller.isDisposing`,
+  `dispositionLocked`) is read from it. The change record never keeps its own
+  pending state: a change's pending is the draft's claim. Never add a
+  surface-specific guard or lock beside it.
 - **`useReviewHeader`** is the header's model without its layout: the Work's
   drafts and their counts, the whole-draft commands that move on to the next
   draft, the refusal line and "No changes left". The desktop header
@@ -48,14 +56,29 @@ is one server closure class.
 - A change's excerpt reads its text once: operations of one change that report
   the same or overlapping text (the writer's edit inside an AI insert repeats it)
   are joined without the repeats.
-- The last change handled holds the review open (`inlineReview.cleared`, which
-  carries the document's name) with "No changes left" and a Next draft button
-  (or Back to live when no draft is left); it never jumps on its own. The server
-  closes the draft in the command that handles its last change, so the draft
-  leaves the Work's list. The hold is the review's own state, set from the
-  command's `draftClosed` answer before the list and preview re-reads, and
-  neither the provider nor the address owner exits a cleared review because its
-  draft left the list. The client keeps no list of "cleared" drafts.
-- A last Discard settles at the click (live already is the finished text) and
-  reopens if it does not land; a last Apply settles on its answer, because live
-  has no change in it until then.
+- **Completion is one explicit state** (`inlineReview.completion`), set from the
+  last change's command, never from how many changes are left on screen.
+  `pending` (with the mode and the document's name): the command is in flight,
+  its outcome unknown. The change is already gone from the list (optimistic),
+  but header and dock say "Applying" or "Discarding", not "No changes left", and
+  offer no way on. `closed`: the server's `draftClosed: true` answer. The review
+  holds on "No changes left" with a Next draft button (or Back to live when no
+  draft is left) and never jumps on its own. A success with `draftClosed: false`
+  (another change arrived) withdraws `pending` and the review carries on. The
+  draft leaves the Work's list when closed, so the hold is the review's own
+  state, set from the answer before the list and preview re-reads; neither the
+  provider nor the address owner exits a closed review because its draft left
+  the list. The client keeps no list of "cleared" drafts. `useReviewChanges`
+  derives `completing` and `finished` once (header and dock both read them);
+  an empty optimistic list with a command still hiding a change is not finished.
+- The editor follows it. A last Discard shows the warm live editor at the click
+  (live already is the finished text, and the review room's reset would show
+  doubled text), but inert until `closed`, and the review comes back if the draft
+  stays open. A last Apply keeps the review editor, marks gone, until the answer
+  (live has no change in it before).
+- Unknown outcomes are held, not guessed. A per-change Apply that got no answer
+  is held on its change as `unknown` ("Couldn't confirm whether this applied"),
+  the whole-draft Apply's wording, apart from a refusal (`offline`). A rejected
+  whole-draft Apply is held on that draft's record (`apply-failed`) and shown
+  wherever the draft is listed (switcher row, composer strip, Work files, Changes
+  tab) after the review moved on to the next draft; it never navigates back.

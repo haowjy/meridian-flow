@@ -1,17 +1,24 @@
 // @vitest-environment jsdom
-/** The last change handled settles the review from the command's answer, before the closed draft leaves the list. */
+/**
+ * The last change handled: what every surface says is the command's own answer,
+ * never the optimistic projection's change count. Pending until the server
+ * answers, closed when it says it closed the draft, carrying on when it did not.
+ * Real provider, controller, mutations and query cache; the network is the only fake.
+ */
 
-import type { Work } from "@meridian/contracts/works";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetChangeCommandRecords } from "@/client/query/change-command-record";
-import { withReactRoot } from "@/test-support/react-dom-harness";
+import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import {
-  DraftReviewBoundary,
-  type DraftReviewContextValue,
-  useDraftReviewScopeValue,
-} from "./DraftReviewProvider";
+  applied,
+  change,
+  discarded,
+  listed,
+  preview,
+  previewOf,
+  renderReviewScopes,
+  type ScopeProbe,
+} from "@/test-support/draft-review-scope";
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -36,54 +43,12 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   }),
 }));
 
-const work = { id: "work-a", projectId: "project-a", name: "Work A", archivedAt: null } as Work;
-const listed = {
-  draftId: "draft-a",
-  documentId: "document-a",
-  documentName: "Chapter 12",
-  status: "active",
-  lastActorTurnId: "turn-1",
-  updatedAt: "2026-10-07T00:00:00.000Z",
-};
-const operation = (id: string) => ({
-  operationId: id,
-  closureClassId: `class-${id}`,
-  kind: "agent",
-  contribution: "added",
-  classification: "addition",
-  hunkCount: 1,
-});
-const preview = {
-  status: "active",
-  draftId: "draft-a",
-  inlineModelPresent: true,
-  reviewRoomName: "review-room-a",
-  liveRevisionToken: "live-1",
-  draftRevisionToken: "draft-1",
-  operations: [operation("1"), operation("2")],
-  hunks: [],
-};
-const change = (id: string) => ({ classId: `class-${id}`, operationIds: [id] });
-const applied = (draftClosed: boolean) => ({
-  status: "applied",
-  draftId: "draft-a",
-  operationIds: ["2"],
-  closureClassIds: ["class-2"],
-  draftClosed,
-});
+const classIds = (probe: ScopeProbe) => probe.header.view.items.map((item) => item.change.classId);
 
-let review: DraftReviewContextValue | null = null;
-function ReviewScope() {
-  const value = useDraftReviewScopeValue({ projectId: "project-a", work });
-  review = value;
-  return <DraftReviewBoundary value={value}>{null}</DraftReviewBoundary>;
-}
-
-async function reviewOpened() {
+async function reviewOpened(probe: () => ScopeProbe) {
   await vi.waitFor(() => expect(mocks.listWorkDrafts).toHaveBeenCalled());
-  await act(async () => review?.controller.enterInlineReview("document-a", "draft-a"));
-  await vi.waitFor(() => expect(mocks.getDraftPreview).toHaveBeenCalled());
-  await act(async () => undefined);
+  await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+  await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
 }
 
 /** The server closes the draft with the command: the list loses it before the answer reaches the controller. */
@@ -94,111 +59,193 @@ function serverClosesDraftWith<T>(answer: T): () => Promise<T> {
   };
 }
 
-function renderScope(run: () => Promise<void>) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return withReactRoot(
-    <QueryClientProvider client={queryClient}>
-      <ReviewScope />
-    </QueryClientProvider>,
-    run,
-  );
+/** A command whose answer the test releases. */
+function heldCommand(mock: typeof mocks.discardDraft) {
+  let answer!: (response: unknown) => void;
+  mock.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  return (response: unknown) => answer(response);
 }
 
 describe("a review whose last change closes the draft", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetChangeCommandRecords();
-    review = null;
+    resetDraftCommandRecords();
     mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
     mocks.getDraftPreview.mockResolvedValue(preview);
   });
 
   it("holds on No changes left when Apply closes the draft and the list drops it", async () => {
     mocks.applyDraftChanges.mockImplementation(serverClosesDraftWith(applied(true)));
-    await renderScope(async () => {
-      await reviewOpened();
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
       await act(async () => {
-        await review?.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChange(change("2"));
       });
       await act(async () => undefined);
-      expect(review?.controller.inlineReview?.cleared).toEqual({ documentName: "Chapter 12" });
+      expect(probe().editor.controller.inlineReview?.completion).toEqual({
+        phase: "closed",
+        documentName: "Chapter 12",
+      });
+      expect(probe().header.finished).toBe(true);
       // The list no longer has the draft; the review does not follow it out.
-      expect(review?.groups).toEqual([]);
-      expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(probe().editor.groups).toEqual([]);
+      expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-a");
     });
   });
 
   it("holds when Discard closes the draft, even though other changes still show in the cache", async () => {
-    mocks.discardDraft.mockImplementation(
-      serverClosesDraftWith({ status: "discarded", draftId: "draft-a", draftClosed: true }),
-    );
-    await renderScope(async () => {
-      await reviewOpened();
+    mocks.discardDraft.mockImplementation(serverClosesDraftWith(discarded(true)));
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
       await act(async () => {
-        await review?.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChange(change("2"));
       });
       await act(async () => undefined);
-      expect(review?.controller.inlineReview?.cleared).toEqual({ documentName: "Chapter 12" });
+      expect(probe().editor.controller.inlineReview?.completion).toMatchObject({
+        phase: "closed",
+      });
+      expect(probe().header.finished).toBe(true);
+      expect(classIds(probe())).toEqual([]);
+    });
+  });
+});
+
+describe("the last change's command in flight", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetDraftCommandRecords();
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+    mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
+  });
+
+  it("a last Apply shows the change gone but says Applying, not No changes left", async () => {
+    const answer = heldCommand(mocks.applyDraftChanges);
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      let done: Promise<unknown> | undefined;
+      await act(async () => {
+        done = probe().editor.controller.applyChange(change("2"));
+      });
+      // The optimistic row is gone; nothing is finished.
+      expect(classIds(probe())).toEqual([]);
+      expect(probe().header.completing).toBe("apply");
+      expect(probe().header.finished).toBe(false);
+      expect(probe().editor.controller.inlineReview?.completion).toMatchObject({
+        phase: "pending",
+        mode: "apply",
+      });
+      expect(probe().editor.controller.isDisposing).toBe(true);
+
+      await act(async () => {
+        answer(applied(true));
+        await done;
+      });
+      expect(probe().header.completing).toBeNull();
+      expect(probe().header.finished).toBe(true);
+      expect(probe().editor.controller.inlineReview?.completion?.phase).toBe("closed");
     });
   });
 
-  describe("discarding the last change", () => {
-    const oneChange = { ...preview, operations: [operation("2")] };
-
-    it("settles at the click, before the server's reset reaches the review room", async () => {
-      mocks.getDraftPreview.mockResolvedValue(oneChange);
-      let answer!: (response: unknown) => void;
-      mocks.discardDraft.mockReturnValue(new Promise((resolve) => (answer = resolve)));
-      await renderScope(async () => {
-        await reviewOpened();
-        let done: Promise<unknown> | undefined;
-        await act(async () => {
-          done = review?.controller.discardChange(change("2"));
-        });
-        expect(review?.controller.inlineReview?.cleared).toEqual({ documentName: "Chapter 12" });
-        await act(async () => {
-          answer({ status: "discarded", draftId: "draft-a", draftClosed: true });
-          await done;
-        });
-        expect(review?.controller.inlineReview?.cleared).toBeDefined();
+  it("a last Discard holds pending at the click, then closed on the answer", async () => {
+    const answer = heldCommand(mocks.discardDraft);
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      let done: Promise<unknown> | undefined;
+      await act(async () => {
+        done = probe().editor.controller.discardChange(change("2"));
       });
-    });
-
-    it("brings the review back when the Discard does not land", async () => {
-      mocks.getDraftPreview.mockResolvedValue(oneChange);
-      mocks.discardDraft.mockRejectedValue(new Error("offline"));
-      await renderScope(async () => {
-        await reviewOpened();
-        await act(async () => {
-          await review?.controller.discardChange(change("2"));
-        });
-        expect(review?.controller.inlineReview?.cleared).toBeUndefined();
-        expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(probe().editor.controller.inlineReview?.completion).toEqual({
+        phase: "pending",
+        mode: "discard",
+        documentName: "Chapter 12",
       });
-    });
-
-    it("does not settle while another change is left", async () => {
-      mocks.discardDraft.mockReturnValue(new Promise(() => undefined));
-      await renderScope(async () => {
-        await reviewOpened();
-        await act(async () => {
-          void review?.controller.discardChange(change("2"));
-        });
-        expect(review?.controller.inlineReview?.cleared).toBeUndefined();
+      expect(probe().header.finished).toBe(false);
+      expect(probe().header.completing).toBe("discard");
+      await act(async () => {
+        answer(discarded(true));
+        await done;
       });
+      expect(probe().editor.controller.inlineReview?.completion?.phase).toBe("closed");
+      expect(probe().header.finished).toBe(true);
     });
   });
 
-  it("stays unfinished while the server keeps the draft open", async () => {
+  it("a last Discard answered with the draft still open restores the review, with the change that arrived", async () => {
+    const answer = heldCommand(mocks.discardDraft);
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      let done: Promise<unknown> | undefined;
+      await act(async () => {
+        done = probe().editor.controller.discardChange(change("2"));
+      });
+      expect(probe().editor.controller.inlineReview?.completion?.phase).toBe("pending");
+
+      // Another change arrived while the command was in flight.
+      mocks.getDraftPreview.mockResolvedValue(previewOf("3"));
+      await act(async () => {
+        answer(discarded(false));
+        await done;
+      });
+      await vi.waitFor(() => expect(classIds(probe())).toEqual(["class-3"]));
+      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+      expect(probe().header.finished).toBe(false);
+      expect(probe().header.completing).toBeNull();
+      expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-a");
+    });
+  });
+
+  it("a last Apply answered with the draft still open carries on, finished nowhere", async () => {
     mocks.applyDraftChanges.mockResolvedValue(applied(false));
-    await renderScope(async () => {
-      await reviewOpened();
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      mocks.getDraftPreview.mockResolvedValue(previewOf("3"));
       await act(async () => {
-        await review?.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChange(change("2"));
       });
-      await act(async () => undefined);
-      expect(review?.controller.inlineReview?.cleared).toBeUndefined();
-      expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      await vi.waitFor(() => expect(classIds(probe())).toEqual(["class-3"]));
+      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+      expect(probe().header.finished).toBe(false);
+    });
+  });
+
+  it("brings the review back when the Discard does not land", async () => {
+    mocks.discardDraft.mockRejectedValue(new Error("offline"));
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await act(async () => {
+        await probe().editor.controller.discardChange(change("2"));
+      });
+      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+      expect(probe().header.finished).toBe(false);
+      expect(classIds(probe())).toEqual(["class-2"]);
+      expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-a");
+    });
+  });
+
+  it("brings the review back when the Apply is refused", async () => {
+    mocks.applyDraftChanges.mockResolvedValue({ status: "stale", draftId: "draft-a" });
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await act(async () => {
+        await probe().editor.controller.applyChange(change("2"));
+      });
+      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+      expect(classIds(probe())).toEqual(["class-2"]);
+      expect(probe().header.view.items[0]?.failure).toMatchObject({ code: "stale" });
+    });
+  });
+
+  it("does not predict a completion while another change is left", async () => {
+    mocks.getDraftPreview.mockResolvedValue(preview);
+    mocks.discardDraft.mockReturnValue(new Promise(() => undefined));
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await act(async () => {
+        void probe().editor.controller.discardChange(change("2"));
+      });
+      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+      expect(probe().header.completing).toBeNull();
+      expect(classIds(probe())).toEqual(["class-1"]);
     });
   });
 });

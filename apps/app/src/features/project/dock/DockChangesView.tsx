@@ -9,7 +9,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FileCheck2 } from "lucide-react";
+import { FileCheck2, Loader2 } from "lucide-react";
 import { useMemo } from "react";
 import {
   clearDraftCommandFailure,
@@ -79,7 +79,7 @@ export function DockChangesView({ className }: { className?: string }) {
           name={
             reviewedRow
               ? documentName(reviewedRow)
-              : (reviewed.cleared?.documentName ?? t`This draft`)
+              : (reviewed.completion?.documentName ?? t`This draft`)
           }
           next={draftAfter(editorRows, reviewed.documentId)}
           onOpenNext={(row) => openDraft(row, editor.workId)}
@@ -140,7 +140,7 @@ function ChangeList({
     <section aria-label={t`Changes in ${name}`} className="flex flex-col gap-1">
       <h3 className="flex items-baseline gap-2 px-2 pt-1 text-caption font-medium text-foreground">
         <span className="min-w-0 flex-1 truncate">{name}</span>
-        {view.status === "ready" && !view.cleared ? (
+        {view.status === "ready" && !view.finished && !view.completing ? (
           <span className="shrink-0 text-meta font-normal text-muted-foreground tabular-nums">
             {count === 1 ? t`1 change` : t`${count} changes`}
           </span>
@@ -151,7 +151,9 @@ function ChangeList({
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-4/5" />
         </div>
-      ) : view.cleared || (view.status === "ready" && count === 0) ? (
+      ) : view.completing ? (
+        <ReviewCompleting mode={view.completing} />
+      ) : view.finished ? (
         <ReviewDone next={next} onOpenNext={onOpenNext} onBack={controller.exitInlineReview} />
       ) : (
         <ul className="flex flex-col gap-0.5">
@@ -172,6 +174,20 @@ function ChangeList({
         </ul>
       )}
     </section>
+  );
+}
+
+/** The last change's command is in flight: what the writer did shows, and nothing says it is finished. */
+function ReviewCompleting({ mode }: { mode: "apply" | "discard" }) {
+  return (
+    <p
+      className="flex items-center gap-2 px-2 py-2 text-caption text-muted-foreground"
+      role="status"
+      aria-busy
+    >
+      <Loader2 className="size-3 animate-spin" aria-hidden />
+      {mode === "apply" ? <Trans>Applying</Trans> : <Trans>Discarding</Trans>}
+    </p>
   );
 }
 

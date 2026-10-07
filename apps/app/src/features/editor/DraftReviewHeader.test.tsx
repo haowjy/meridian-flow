@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { failDraftCommand, resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { DockRow } from "@/features/chat/docked-drafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -47,8 +48,9 @@ const controller = vi.hoisted(() => ({
   dispositionLocked: false,
   isApplying: false,
   canApplyReviewedDraft: true,
-  inlineReview: null as null | { cleared?: { documentName: string | null } },
-  inlineReviewMessage: null as null | { code: string; tone: string },
+  inlineReview: null as null | {
+    completion?: { phase: "pending" | "closed"; documentName: string | null };
+  },
   marksVisible: true,
   setMarksVisible: vi.fn(),
   exitInlineReview: vi.fn(),
@@ -60,7 +62,8 @@ const view = vi.hoisted(() => ({
   status: "ready",
   items: [{}, {}, {}, {}, {}, {}] as unknown[],
   focusedIndex: 1,
-  cleared: false,
+  finished: false,
+  completing: null as null | "apply" | "discard",
   step: vi.fn(),
 }));
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
@@ -107,17 +110,18 @@ async function openSwitcher() {
 }
 
 beforeEach(() => {
+  resetDraftCommandRecords();
   Object.assign(controller, {
     dispositionLocked: false,
     inlineReview: null,
-    inlineReviewMessage: null,
     marksVisible: true,
   });
   Object.assign(view, {
     status: "ready",
     items: [{}, {}, {}, {}, {}, {}],
     focusedIndex: 1,
-    cleared: false,
+    finished: false,
+    completing: null as null | "apply" | "discard",
   });
   for (const fn of [
     controller.apply,
@@ -268,7 +272,7 @@ describe("DraftReviewHeader", () => {
   });
 
   it("when the last change is handled, says so and offers the next draft without jumping", async () => {
-    Object.assign(view, { items: [], cleared: true });
+    Object.assign(view, { items: [], finished: true });
     const onOpenDraft = vi.fn();
     await render({ onOpenDraft }, async () => {
       expect(document.body.textContent).toContain("No changes left");
@@ -286,8 +290,8 @@ describe("DraftReviewHeader", () => {
   it("holds on No changes left after the server closed the draft and the list lost it", async () => {
     // The closed draft is no longer among the Work's drafts; the review itself says it finished.
     const closed = groups.splice(0, 1);
-    Object.assign(view, { items: [], cleared: true });
-    controller.inlineReview = { cleared: { documentName: "Chapter 12" } };
+    Object.assign(view, { items: [], finished: true });
+    controller.inlineReview = { completion: { phase: "closed", documentName: "Chapter 12" } };
     const onOpenDraft = vi.fn();
     try {
       await render({ onOpenDraft }, async () => {
@@ -304,8 +308,8 @@ describe("DraftReviewHeader", () => {
 
   it("offers the way back to live when no other draft is left", async () => {
     const all = groups.splice(0, groups.length);
-    Object.assign(view, { items: [], cleared: true });
-    controller.inlineReview = { cleared: { documentName: "Chapter 12" } };
+    Object.assign(view, { items: [], finished: true });
+    controller.inlineReview = { completion: { phase: "closed", documentName: "Chapter 12" } };
     try {
       await render({}, async () => {
         expect(document.body.textContent).toContain("No changes left");
@@ -318,10 +322,52 @@ describe("DraftReviewHeader", () => {
     }
   });
 
-  it("shows a failed whole-draft command on the header", async () => {
-    controller.inlineReviewMessage = { code: "apply-failed", tone: "error" };
+  it("shows a failed whole-draft command on the header, from the draft's own record", async () => {
+    failDraftCommand(
+      { projectId: "p", workId: "w", documentId: "doc-12", draftId: "draft-doc-12" },
+      "apply-failed",
+    );
     await render({}, async () => {
       expect(document.querySelector("[role=alert]")?.textContent).toContain("Couldn't apply");
+    });
+  });
+
+  it("says Applying, not No changes left, while the last change's command is in flight", async () => {
+    Object.assign(view, { items: [], completing: "apply" });
+    controller.dispositionLocked = true;
+    await render({}, async () => {
+      const text = document.body.textContent ?? "";
+      expect(text).toContain("Applying");
+      expect(text).not.toContain("No changes left");
+      expect(byText("Next draft")).toBeUndefined();
+      // Not finished: the draft's own commands stay, held by the lock.
+      expect((byText("Apply draft") as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  it("says Discarding while the last Discard is in flight", async () => {
+    Object.assign(view, { items: [], completing: "discard" });
+    await render({}, async () => {
+      expect(document.body.textContent).toContain("Discarding");
+      expect(document.body.textContent).not.toContain("No changes left");
+    });
+  });
+
+  it("names a refused or unanswered Apply on the draft's row in the switcher, after the review moved on", async () => {
+    failDraftCommand(
+      { projectId: "p", workId: "w", documentId: "doc-13", draftId: "draft-doc-13" },
+      "apply-unknown",
+    );
+    await render({}, async () => {
+      await openSwitcher();
+      const row = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
+        (node) => node.textContent?.includes("Chapter 13"),
+      );
+      expect(row?.textContent).toContain("Couldn't confirm whether this applied");
+      const other = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
+        (node) => node.textContent?.includes("Interlude"),
+      );
+      expect(other?.textContent).not.toContain("Couldn't");
     });
   });
 });
