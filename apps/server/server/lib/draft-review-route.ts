@@ -193,6 +193,8 @@ export async function handleDiscardWorkDraftRequest(
     draftId: string;
     userId: UserId;
     operationIds?: string[];
+    liveRevisionToken?: string;
+    draftRevisionToken?: string;
   },
 ): Promise<DraftDiscardResponse> {
   const grants = await draftGrants(deps, input, "edit");

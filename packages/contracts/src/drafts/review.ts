@@ -123,12 +123,18 @@ export type DraftApplyResponse = { status: "applied"; draftId: string };
 export type DraftApplyRequest = { draftId: string };
 
 export type DraftDiscardResponse = {
-  status: "discarded";
+  status: "discarded" | "stale" | "gone" | "draft_only" | "incomplete_class";
   draftId: string;
   draftClosed?: boolean;
   draftDisposition?: "applied" | "discarded";
 };
-export type DraftDiscardRequest = { draftId: string; operationIds?: string[] };
+export type DraftDiscardRequest = {
+  draftId: string;
+  operationIds?: string[];
+  /** Required for per-change Discard; absent for whole-document Discard. */
+  liveRevisionToken?: string;
+  draftRevisionToken?: string;
+};
 
 /** Select complete server-vended classes. Physical journal IDs never cross the wire. */
 export type DraftApplyChangesRequest = {

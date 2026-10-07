@@ -315,3 +315,12 @@ compares the visible ProseMirror tree (text deltas including marks, element type
 attributes, and ordered children), ignoring Yjs identities/history. Unrepresented
 formatting remains pending for document-level Apply/Discard; cancelled history can
 still settle when its complete document effect equals live.
+
+### Preview-scoped selective Discard
+
+Apply and Discard use one operation-to-closure resolver inside their branch
+critical section and again on each snapshot-CAS retry. Per-change Discard now
+requires the displayed live/draft revision tokens; missing or changed tokens
+return `stale` without modifying the draft. Discard still expands a requested
+operation to its entire server-vended class; Apply requires all class members.
+Whole-document Discard remains unfenced.

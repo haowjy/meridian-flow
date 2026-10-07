@@ -325,6 +325,8 @@ export type DraftReviewApi = {
     draftId: string;
     userId?: UserId;
     operationIds?: string[];
+    liveRevisionToken?: string;
+    draftRevisionToken?: string;
   }): Promise<DraftDiscardResult>;
 };
 
