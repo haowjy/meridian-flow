@@ -270,19 +270,23 @@ function isLowSurrogate(code: number): boolean {
   return code >= 0xdc00 && code <= 0xdfff;
 }
 
+/**
+ * Rewrites a block as `replacement` in place: its attributes are written and
+ * its content is diffed against the current children, so equal text keeps its
+ * items, anchors and attribution.
+ */
 export function applyBlockDiff(
   doc: Y.Doc,
   block: Y.XmlElement | BlockRef,
   replacement: PMNode,
 ): void {
-  block = unwrapBlock(toRef(block));
-  if (block.nodeName !== replacement.type.name) {
-    throw new Error(`Cannot update ${block.nodeName} block with ${replacement.type.name} content`);
+  const element = unwrapBlock(toRef(block));
+  if (element.nodeName !== replacement.type.name) {
+    throw new Error(
+      `Cannot update ${element.nodeName} block with ${replacement.type.name} content`,
+    );
   }
-  const current = toProsemirrorBlock(doc, block, replacement.type.schema);
-  const transform = new Transform(current);
-  transform.replaceWith(0, current.content.size, replacement.content);
-  updateYFragment(doc, block as unknown as Y.XmlFragment, transform.doc, createBindingMetadata());
+  writePmBlock(doc, element, replacement);
 }
 
 function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
