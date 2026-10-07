@@ -6,6 +6,8 @@
  * Presentational: the desktop dock's Changes tab and the phone's change sheet
  * both render it, and neither passes a controller. The row never decides what
  * Apply or Discard means; it calls what it is given.
+ *
+ * `touch` is the phone's row: the same line with every control a 44px target.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -31,6 +33,7 @@ export type ReviewChangeRowProps = {
   onFocus: () => void;
   onApply: () => void;
   onDiscard: () => void;
+  touch?: boolean;
 };
 
 export function ReviewChangeRow({
@@ -43,8 +46,10 @@ export function ReviewChangeRow({
   onFocus,
   onApply,
   onDiscard,
+  touch = false,
 }: ReviewChangeRowProps) {
   const { added, removed } = changeExcerpt(change);
+  const iconButton = touch ? "size-11 [&_svg:not([class*='size-'])]:size-5" : undefined;
   return (
     // Mouse convenience only: the keyboard reaches the same command through
     // the excerpt button, which is the row's one tab stop for focusing it.
@@ -68,7 +73,10 @@ export function ReviewChangeRow({
             event.stopPropagation();
             onFocus();
           }}
-          className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-caption"
+          className={cn(
+            "focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-caption",
+            touch && "min-h-11 text-sm",
+          )}
         >
           <ChangeDot change={change} />
           <span className="min-w-0 flex-1 truncate">
@@ -84,12 +92,16 @@ export function ReviewChangeRow({
             )}
           </span>
         </button>
-        <ChangeAuthor attribution={change.attribution} />
+        <ChangeAuthor
+          attribution={change.attribution}
+          className={touch ? "inline-flex min-h-11 items-center" : undefined}
+        />
         <span className="flex shrink-0 items-center">
           <IconButton
             size="xs"
             tooltip={discardLabel(change)}
             disabled={disabled}
+            className={iconButton}
             onClick={(event) => {
               event.stopPropagation();
               onDiscard();
@@ -106,7 +118,7 @@ export function ReviewChangeRow({
                 event.stopPropagation();
                 onApply();
               }}
-              className="text-primary hover:text-primary"
+              className={cn("text-primary hover:text-primary", iconButton)}
             >
               <Check aria-hidden />
             </IconButton>

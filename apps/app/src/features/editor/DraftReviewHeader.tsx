@@ -4,25 +4,21 @@
  * changes, Discard draft and Apply draft. Above the identity bar, review-only.
  *
  * Apply draft and Discard draft move straight to the next draft in the
- * switcher, or back to live when none is left. When the writer has handled the
- * last change, a line under the row says so and offers the next draft; the
- * review does not jump on its own, so the finished text can be read.
+ * switcher, or back to live when none is left. The model is shared with the
+ * phone header (`useReviewHeader`); this is the desktop layout.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId } from "react";
 
-import { clearedDraftName, useClearedDrafts } from "@/client/query/change-command-record";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, dockRows, draftAfter } from "@/features/chat/docked-drafts";
-import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
+import type { DockRow } from "@/features/chat/docked-drafts";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
+import { ReviewHeaderNotices } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
-import { useDraftChangeCounts } from "@/features/draft-review/useDraftChangeCounts";
-import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
 
 export type DraftReviewHeaderProps = {
   documentId: string;
@@ -33,55 +29,11 @@ export type DraftReviewHeaderProps = {
   onOpenDraft: (row: DockRow) => void;
 };
 
-export function DraftReviewHeader({
-  documentId,
-  draftId,
-  onCloseDraftOnly,
-  onOpenDraft,
-}: DraftReviewHeaderProps) {
-  const { controller, groups } = useDraftReview();
-  const view = useReviewChanges(controller);
-  const rows = useMemo(() => dockRows(groups), [groups]);
-  const [switcherOpen, setSwitcherOpen] = useState(false);
+export function DraftReviewHeader(props: DraftReviewHeaderProps) {
+  const header = useReviewHeader(props);
+  const { controller, view, locked, finished } = header;
   const marksId = useId();
-  const counts = useDraftChangeCounts(
-    controller,
-    rows
-      .filter((row) => row.documentId !== documentId)
-      .map((row) => ({
-        documentId: row.documentId,
-        draftId: row.draft.draftId,
-      })),
-    switcherOpen,
-  );
-  const allCounts = useMemo(() => {
-    const merged = new Map(counts);
-    if (view.status === "ready") merged.set(documentId, view.items.length);
-    return merged;
-  }, [counts, documentId, view.items.length, view.status]);
-
-  const cleared = useClearedDrafts();
-  const clearedName = clearedDraftName(cleared, {
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId,
-    draftId,
-  });
-  const next = draftAfter(rows, documentId);
-  const locked = controller.dispositionLocked;
   const count = view.items.length;
-  // Nothing left to publish: the draft already matches live, so its commands go.
-  const finished = view.cleared || (view.status === "ready" && count === 0);
-  const commandError =
-    controller.inlineReviewMessage?.tone === "error" ? controller.inlineReviewMessage.code : null;
-  const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
-
-  /** Run a whole-draft command, then move to the next draft (or live) without waiting on it. */
-  const dispose = (command: () => Promise<unknown>) => {
-    if (locked) return;
-    void command();
-    if (next) onOpenDraft(next);
-  };
 
   return (
     <section
@@ -93,19 +45,7 @@ export function DraftReviewHeader({
         <span className="shrink-0 text-muted-foreground">
           <Trans>Manuscript /</Trans>
         </span>
-        <DraftSwitcher
-          rows={rows}
-          currentDocumentId={documentId}
-          currentName={clearedName}
-          counts={allCounts}
-          onOpenChange={setSwitcherOpen}
-          draftOnly={Boolean(onCloseDraftOnly)}
-          disabled={locked}
-          onOpenDraft={onOpenDraft}
-          onShowLive={showLive}
-          onApplyAll={() => void controller.disposeDrafts("apply", draftSelections(rows))}
-          onDiscardAll={() => void controller.disposeDrafts("discard", draftSelections(rows))}
-        />
+        <DraftSwitcher {...header.switcher} />
         <span className="flex-1" />
         {view.status === "ready" && count > 0 ? (
           <>
@@ -132,18 +72,13 @@ export function DraftReviewHeader({
         ) : null}
         {finished ? null : (
           <>
-            <Button
-              variant="quiet"
-              size="xs"
-              disabled={locked}
-              onClick={() => dispose(() => controller.discard(documentId, draftId))}
-            >
+            <Button variant="quiet" size="xs" disabled={locked} onClick={header.discardDraft}>
               <Trans>Discard draft</Trans>
             </Button>
             <Button
               size="xs"
               disabled={locked || !controller.canApplyReviewedDraft}
-              onClick={() => dispose(() => controller.apply(documentId, draftId))}
+              onClick={header.applyDraft}
             >
               {controller.isApplying ? (
                 <Loader2 className="size-3 animate-spin" aria-hidden />
@@ -153,31 +88,14 @@ export function DraftReviewHeader({
           </>
         )}
       </div>
-      {commandError ? (
-        <p className="px-4 pb-1.5 text-destructive" role="alert">
-          <ReviewMessageText code={commandError} />
-        </p>
-      ) : null}
-      {finished ? (
-        <div className="flex items-center gap-3 border-border border-t px-4 py-1.5" role="status">
-          <p className="flex-1 text-muted-foreground">
-            <Trans>No changes left</Trans>
-          </p>
-          {next ? (
-            <Button size="xs" onClick={() => onOpenDraft(next)}>
-              <Trans>Next draft</Trans>
-            </Button>
-          ) : (
-            <Button size="xs" variant="outline" onClick={showLive}>
-              {onCloseDraftOnly ? <Trans>Close review</Trans> : <Trans>Back to live</Trans>}
-            </Button>
-          )}
-        </div>
-      ) : null}
+      <ReviewHeaderNotices
+        commandError={header.commandError}
+        finished={finished}
+        next={header.next}
+        draftOnly={header.switcher.draftOnly}
+        onOpenNext={header.switcher.onOpenDraft}
+        onShowLive={header.showLive}
+      />
     </section>
   );
-}
-
-function draftSelections(rows: readonly DockRow[]) {
-  return rows.map((row) => ({ documentId: row.documentId, draftId: row.draft.draftId }));
 }

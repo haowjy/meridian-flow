@@ -49,8 +49,9 @@ vi.mock("@/client/query/draft-command-record", () => ({
   draftCommandFailure: () => null,
   useDraftCommandRecords: () => ({}),
 }));
-const openAiDraft = vi.hoisted(() => vi.fn());
-vi.mock("./useAiDraftLauncher", () => ({ useAiDraftLauncher: () => ({ openAiDraft }) }));
+const openAiDraft = vi.hoisted(() => vi.fn(async () => undefined));
+// The launcher is real; the route-owned handoff behind it is what a Review entry calls.
+vi.mock("./editor-review-handoff", () => ({ useOpenEditorReview: () => openAiDraft }));
 
 const change = (
   classId: string,

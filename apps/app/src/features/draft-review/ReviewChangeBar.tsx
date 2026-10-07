@@ -3,6 +3,10 @@
  * looking at: the chat that wrote it, a note when it needs a second look,
  * Discard and Apply. Where it sits (beside the change in the manuscript, above
  * the keyboard on a phone) is its host's business; this is only the bar.
+ *
+ * `touch` is the phone's bar: who and why stack on the left, and Discard and
+ * Apply are 44px targets on the right. Discard reads just "Discard" there, as
+ * "Includes your edits" stands beside it; its accessible name stays in full.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -20,6 +24,7 @@ export type ReviewChangeBarProps = {
   failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
   onApply: () => void;
   onDiscard: () => void;
+  touch?: boolean;
   className?: string;
 };
 
@@ -30,8 +35,10 @@ export function ReviewChangeBar({
   failure,
   onApply,
   onDiscard,
+  touch = false,
   className,
 }: ReviewChangeBarProps) {
+  const label = discardLabel(change);
   return (
     <section
       aria-label={t`Change`}
@@ -41,24 +48,51 @@ export function ReviewChangeBar({
         className,
       )}
     >
-      <div className="flex items-center gap-2.5 whitespace-nowrap">
-        <ChangeAuthor attribution={change.attribution} />
-        {change.includesWriterEdits ? (
-          <span className="text-meta text-muted-foreground">
-            <Trans>Includes your edits</Trans>
-          </span>
-        ) : null}
-        {change.merged ? (
-          <span className="text-meta text-muted-foreground">
-            <Trans>Check it reads right</Trans>
-          </span>
-        ) : null}
-        <span className="flex-1" />
-        <Button variant="quiet" size="xs" disabled={disabled} onClick={onDiscard}>
-          {discardLabel(change)}
+      <div
+        className={cn("flex items-center gap-2.5", touch ? "gap-3 py-0.5" : "whitespace-nowrap")}
+      >
+        <div className={touch ? "flex min-w-0 flex-1 flex-col items-start" : "contents"}>
+          <ChangeAuthor
+            attribution={change.attribution}
+            className={
+              touch
+                ? cn(
+                    "inline-flex min-h-11 items-center",
+                    // The note sits in the link's padding, so the pair stays two lines tall.
+                    (change.includesWriterEdits || change.merged) && "-mb-3",
+                  )
+                : undefined
+            }
+          />
+          {change.includesWriterEdits ? (
+            <span className="text-meta text-muted-foreground">
+              <Trans>Includes your edits</Trans>
+            </span>
+          ) : null}
+          {change.merged ? (
+            <span className="text-meta text-muted-foreground">
+              <Trans>Check it reads right</Trans>
+            </span>
+          ) : null}
+        </div>
+        {touch ? null : <span className="flex-1" />}
+        <Button
+          variant="quiet"
+          size="xs"
+          className={touch ? "h-11 px-4 text-sm" : undefined}
+          aria-label={touch ? label : undefined}
+          disabled={disabled}
+          onClick={onDiscard}
+        >
+          {touch ? <Trans>Discard</Trans> : label}
         </Button>
         {canApply ? (
-          <Button size="xs" disabled={disabled} onClick={onApply}>
+          <Button
+            size="xs"
+            className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
+            disabled={disabled}
+            onClick={onApply}
+          >
             <Trans>Apply</Trans>
           </Button>
         ) : null}

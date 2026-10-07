@@ -14,9 +14,12 @@ const VISIBLE_MS = 3500;
 export function ReviewToast({
   toast,
   onDismiss,
+  className,
 }: {
   toast: ReviewToastValue | null;
   onDismiss: (id: number) => void;
+  /** Where the host wants it (the phone lifts it above the change bar). */
+  className?: string;
 }) {
   const id = toast?.id;
   useEffect(() => {
@@ -34,6 +37,7 @@ export function ReviewToast({
         "pointer-events-none absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-md px-3 py-1.5 text-caption shadow-card",
         "animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none",
         "bg-foreground text-background",
+        className,
       )}
     >
       {toast.code === "applied" ? <Trans>Applied</Trans> : null}

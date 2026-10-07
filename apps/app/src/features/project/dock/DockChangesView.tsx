@@ -34,7 +34,7 @@ import { useAiDraftLauncher } from "./useAiDraftLauncher";
 export function DockChangesView({ className }: { className?: string }) {
   const { groups, controller } = useDraftReview();
   const { controller: editor, groups: editorGroups } = useEditorDraftReview();
-  const { openAiDraft } = useAiDraftLauncher();
+  const { openDockRow: openDraft } = useAiDraftLauncher();
   const commandRecords = useDraftCommandRecords();
 
   const editorRows = useMemo(() => dockRows(editorGroups), [editorGroups]);
@@ -63,17 +63,6 @@ export function DockChangesView({ className }: { className?: string }) {
       .map((row) => ({ row, workId: editor.workId })),
     ...chatRows.map((row) => ({ row, workId: controller.workId })),
   ];
-
-  const openDraft = (row: DockRow, workId: string) =>
-    row.contextPath &&
-    openAiDraft({
-      workId,
-      documentId: row.documentId,
-      draftId: row.draft.draftId,
-      contextPath: row.contextPath,
-      documentName: row.documentName ?? undefined,
-      isNewDocument: row.isNewDocument,
-    });
 
   if (!reviewed && otherRows.length === 0) {
     return (
