@@ -25,7 +25,11 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
   const commandRecords = useDraftCommandRecords();
 
   // Don't show during inline review — the review header handles that state.
-  if (controller.inlineReview?.documentId === documentId) return null;
+  // Held with the rest of the live view until the review body paints, then
+  // swapped out with the header in the same frame.
+  if (controller.inlineReview?.documentId === documentId && controller.inlineReview.shown) {
+    return null;
+  }
 
   const group = groupForDocument(documentId);
   if (!group) return null;

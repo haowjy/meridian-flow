@@ -97,6 +97,8 @@ export type DraftReviewController = {
   exitInlineReview: () => void;
   exitReview: () => void;
   inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
+  /** The review editor reports when its body is (or stops being) the painted one. */
+  setInlineReviewShown: (documentId: string, draftId: string, shown: boolean) => void;
   /** Claim/release the single review-runtime slot. */
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
@@ -356,6 +358,13 @@ export function useDraftReviewController({
     [],
   );
 
+  const setInlineReviewShown = useCallback(
+    (documentId: string, draftId: string, shown: boolean) => {
+      dispatch({ type: "inlineShown", documentId, draftId, shown });
+    },
+    [],
+  );
+
   const registerInlineReviewRuntime = useCallback((runtime: InlineReviewRuntime) => {
     inlineRuntimeRef.current = runtime;
   }, []);
@@ -439,6 +448,7 @@ export function useDraftReviewController({
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
+      setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       focusReviewOperation,
@@ -469,6 +479,7 @@ export function useDraftReviewController({
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
+      setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
       focusReviewOperation,

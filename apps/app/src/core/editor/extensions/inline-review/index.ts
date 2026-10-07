@@ -8,6 +8,7 @@ export {
 export { inlineReviewClassNames } from "./decorations";
 export {
   buildInlineReviewModel,
+  changeOperationIds,
   decodeAnchor,
   hunkKind,
   type InlineReviewModel,
@@ -16,4 +17,5 @@ export {
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
+  removalKind,
 } from "./model";

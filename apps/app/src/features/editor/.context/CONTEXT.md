@@ -76,25 +76,40 @@ Two self-contained surfaces, both resolving their own state from
 `DraftReviewProvider` (never props-drilled):
 
 - `DraftReviewChip` — the pending-changes nudge, mounted by the context
-  feature's `DocumentIdentityBar` in the breadcrumb row. Hides itself while
-  its document is under inline review.
+  feature's `DocumentIdentityBar` in the breadcrumb row. Hides itself once its
+  document's review has painted (`inlineReview.shown`).
 - `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
   ABOVE the identity bar (order: tab strip → review strip → identity bar →
-  prose). Matches the DraftDock strip's geometry and tone
-  (`min-h-7`, `bg-dock-surface`, `text-caption`); destructive verb left,
-  jade primary pill far right — the same order as the dock.
+  prose), only once `inlineReview.shown`. Matches the DraftDock strip's
+  geometry and tone (`min-h-7`, `bg-dock-surface`, `text-caption`);
+  destructive verb left, jade primary pill far right — the same order as the dock.
 
 The chip and header are mutually exclusive by the chip's own inline-review
-check, not by a shared slot.
+check, not by a shared slot. Both read the same `shown` flag, so the swap
+happens in one frame.
 
-The review manuscript is the server draft projection, not a track-changes
-composition. Inline decorations may style ranges that exist in that projection,
-but must not inject deleted live prose or blocks. Zero-content seams mark
-pure-deletion locations for visible Changes-card navigation. Before/after
-content belongs in the dock's Changes cards. The review editor stays editable:
-the draft is a Yjs room and the writer is one more peer in it, so keystrokes in
-review land in the draft branch rather than live. The review header is the
-visible signal that the draft surface is active.
+**Entry hold.** Entering review holds the plain live view, header included,
+until the review editor exists AND its change marks have arrived, then switches
+everything in one frame. `EditorView` reports `chromeShown` to the controller
+in a layout effect (`setInlineReviewShown`); the live wrapper hides, the review
+wrapper shows and the header mounts in the same paint. If the marks never
+arrive the review shows anyway after 1.5 s (`REVIEW_MARKS_WAIT_MS`). A
+draft-only tab has no live view to hold and reports shown at once. Wrappers
+carry `data-editor-surface="live|review"` for frame probes
+(`work/draft-review-repair/evidence/redesign-render/hold-scenario.js`).
+
+The review manuscript is the server draft projection plus decorations, in the
+manner of suggestion mode. Insertions are inline decorations over text that
+exists in the projection (green AI, gold writer, gold inside green for a writer
+edit inside an AI change, dashed grey when authorship cannot be split).
+Removed live text is a read-only widget decoration (`removal-widget.ts`), struck
+through where it was: crimson for the AI, gold for the writer, never part of the
+Y.Doc or the TipTap document, so it cannot be typed into or saved. Long removals
+(over 200 characters) fold to "N paragraphs removed" and open on click. The
+review editor stays editable: the draft is a Yjs room and the writer is one more
+peer in it, so keystrokes in review land in the draft branch rather than live.
+`setInlineReviewMarksVisible(false)` hides every mark and removal without
+remounting; the model, selection and open folds survive.
 
 ### Rejected placements
 
