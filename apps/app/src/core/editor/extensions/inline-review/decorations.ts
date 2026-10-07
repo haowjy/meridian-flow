@@ -32,6 +32,7 @@ import {
   type ResolvedTextReviewHunk,
 } from "./model";
 import {
+  createBarSlotElement,
   createRemovalElement,
   planRemovals,
   type RemovalHandlers,
@@ -72,6 +73,8 @@ export interface ReviewPaintState {
   expandedRemovals: ReadonlySet<string>;
   /** The removal whose fold the writer just used from the keyboard; its rebuilt widget takes focus. */
   refocusRemoval: string | null;
+  /** Open a block for the focused change's bar after the paragraph the change ends in. */
+  barSlot: boolean;
 }
 
 /**
@@ -95,6 +98,8 @@ export function buildDecorations(
   const isPulsed = (ids: readonly string[]) => ids.some((id) => paint.pulsedOperationIds.has(id));
   const decorations: Decoration[] = [];
   const removals: RemovalInput[] = [];
+  /** Where the focused change ends: the bar's block goes after the paragraph holding this. */
+  let focusedEnd: number | null = null;
 
   for (const hunk of model.hunks) {
     const focused = isFocused(hunk.operationIds);
@@ -102,6 +107,10 @@ export function buildDecorations(
 
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
+    if (focused) {
+      const endPos = resolveAnchor(hunk.relEnd, resolver);
+      focusedEnd = Math.max(focusedEnd ?? startPos, startPos, endPos ?? startPos);
+    }
 
     const removed = removedSegments(hunk, operationsById);
     if (removed.length > 0) {
@@ -219,7 +228,29 @@ export function buildDecorations(
     );
   }
 
+  if (paint.barSlot && focusedEnd !== null) {
+    decorations.push(
+      Decoration.widget(
+        slotPosition(resolver.doc, focusedEnd),
+        (view) => createBarSlotElement(view.dom.ownerDocument),
+        {
+          // One slot per focused change, so the bar's DOM survives refetches.
+          key: `bar-slot:${paint.activeOperationId}`,
+          side: 1,
+          stopEvent: () => true,
+          ignoreSelection: true,
+        },
+      ),
+    );
+  }
+
   return DecorationSet.create(resolver.doc, decorations);
+}
+
+/** After the paragraph a position is in, or the position itself when it is already between blocks. */
+function slotPosition(doc: PMNode, position: number): number {
+  const $position = doc.resolve(position);
+  return $position.parent.inlineContent ? $position.after() : position;
 }
 
 /**
