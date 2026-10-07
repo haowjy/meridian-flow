@@ -7,7 +7,12 @@
  *
  * Kept free of ProseMirror imports so it can be unit-tested without a DOM.
  */
-import type { ReviewBlockDisplay, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type {
+  ReviewBlockDisplay,
+  ReviewDeletedSpan,
+  ReviewHunk,
+  ReviewOperation,
+} from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";
@@ -55,6 +60,8 @@ export interface ResolvedTextReviewHunk extends ResolvedReviewHunkBase {
   spans: ResolvedReviewSpan[];
   /** Present when the hunk shows text removed from live but absent in draft. */
   deletedText?: string;
+  /** Who removed each stretch of `deletedText`; the server covers the whole string. */
+  deletedSpans?: ReviewDeletedSpan[];
 }
 
 /**
@@ -155,6 +162,7 @@ export function buildInlineReviewModel(input: {
       kind: "text",
       spans,
       ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+      ...(hunk.deletedSpans ? { deletedSpans: hunk.deletedSpans } : {}),
     });
   }
   return {
@@ -193,40 +201,13 @@ export function hunkKind(
 }
 
 /**
- * Whether a hunk is a merge the writer can't read by author, so it paints
- * dashed grey instead of green with gold inside.
- *
- * The server sets `mergeArtifact` for any hunk that carries both an AI and a
- * writer operation, which includes the ordinary case of the writer typing
- * inside AI text. That case reads cleanly (spans are exact per author), and the
- * design shows it as gold inside green. Authorship stops being readable when
- * the runs alternate more than one writer run can account for (AI, writer, AI
- * at most), or a span's operation is unknown.
+ * Who removed the live block a block hunk shows struck. The preview carries no
+ * per-removal author for blocks, only the hunk's owning operations, so the
+ * removal is the writer's when every owning operation is the writer's and the
+ * AI's otherwise. (Text hunks say who removed each stretch: `deletedSpans`.)
  */
-export function isUnsplittableMerge(
-  hunk: { mergeArtifact?: boolean; spans: readonly { operationId: string }[] },
-  operationsById: ReadonlyMap<string, ReviewOperation>,
-): boolean {
-  if (!hunk.mergeArtifact) return false;
-  if (hunk.spans.length === 0) return true;
-  const runs: InlineReviewOperationKind[] = [];
-  for (const span of hunk.spans) {
-    const op = operationsById.get(span.operationId);
-    if (!op) return true;
-    if (runs[runs.length - 1] !== op.kind) runs.push(op.kind);
-  }
-  return runs.length > 3;
-}
-
-/**
- * Who removed the live text a hunk shows struck. The preview carries no
- * per-removal author, only the hunk's owning operations, so the removal is the
- * writer's when every owning operation is the writer's and the AI's otherwise.
- * (A hunk mixing both is the AI's rewrite with the writer's edits inside it;
- * the AI is what took the live words out.)
- */
-export function removalKind(
-  hunk: ResolvedReviewHunk,
+export function blockRemovalKind(
+  hunk: ResolvedBlockReviewHunk,
   operationsById: ReadonlyMap<string, ReviewOperation>,
 ): InlineReviewOperationKind {
   let sawWriter = false;

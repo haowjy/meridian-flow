@@ -7,6 +7,7 @@ export {
 } from "./DraftInlineReviewExtension";
 export { inlineReviewClassNames } from "./decorations";
 export {
+  blockRemovalKind,
   buildInlineReviewModel,
   changeOperationIds,
   decodeAnchor,
@@ -14,9 +15,7 @@ export {
   type InlineReviewModel,
   type InlineReviewOperationKind,
   indexOperations,
-  isUnsplittableMerge,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
-  removalKind,
 } from "./model";

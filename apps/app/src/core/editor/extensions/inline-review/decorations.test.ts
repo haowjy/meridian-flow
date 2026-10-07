@@ -5,7 +5,7 @@
  * collaborative TipTap editor so anchors resolve exactly as they do in review.
  */
 
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewDeletedSpan, ReviewOperation } from "@meridian/contracts/drafts";
 import { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
@@ -102,6 +102,7 @@ function textHunk(
   extra: {
     spans?: ResolvedReviewSpan[];
     deletedText?: string;
+    deletedSpans?: ReviewDeletedSpan[];
     mergeArtifact?: boolean;
   } = {},
 ): ResolvedReviewHunk {
@@ -113,6 +114,7 @@ function textHunk(
     relEnd: rel(editor, range.to),
     spans: extra.spans ?? [],
     ...(extra.deletedText ? { deletedText: extra.deletedText } : {}),
+    ...(extra.deletedSpans ? { deletedSpans: extra.deletedSpans } : {}),
     ...(extra.mergeArtifact ? { mergeArtifact: true } : {}),
   };
 }
@@ -178,15 +180,13 @@ describe("insertion marks", () => {
       model(
         [operation("a1", "agent", "closure:a1+w1"), operation("w1", "writer", "closure:a1+w1")],
         [
-          // The server flags any hunk holding both authors as a merge artifact;
-          // one writer run inside AI text is still readable by author.
+          // Ordinary writer typing inside AI text: the server does not flag it.
           textHunk(
             editor,
             "h1",
             ["a1", "w1"],
             { from: start, to: end },
             {
-              mergeArtifact: true,
               spans: [
                 span(editor, "a1", start, bone),
                 span(editor, "w1", bone, bone + 10),
@@ -204,12 +204,12 @@ describe("insertion marks", () => {
     expect(marked(editor, "meridian-review-merged")).toEqual([]);
   });
 
-  it("paints a merge the author runs cannot explain as one dashed grey region", () => {
+  it("paints a hunk the server flags as a merge artifact as one dashed grey region, whatever its author runs", () => {
     const { editor } = createReviewEditor(["The outer disciples fell back to their knees."]);
     const start = posOf(editor, "fell");
     const end = posOf(editor, ".");
-    const cuts = [start, start + 4, start + 9, start + 14, start + 20, end];
-    const kinds = ["a1", "w1", "a1", "w1", "a1"];
+    // Two author runs only: a run-counting heuristic would have called this readable.
+    const cut = start + 9;
     setModel(
       editor,
       model(
@@ -222,9 +222,7 @@ describe("insertion marks", () => {
             { from: start, to: end },
             {
               mergeArtifact: true,
-              spans: kinds.map((id, i) =>
-                span(editor, id, cuts[i] as number, cuts[i + 1] as number),
-              ),
+              spans: [span(editor, "a1", start, cut), span(editor, "w1", cut, end)],
             },
           ),
         ],
@@ -233,6 +231,20 @@ describe("insertion marks", () => {
     expect(marked(editor, "meridian-review-merged")).toEqual(["fell back to their knees"]);
     expect(marked(editor, "meridian-review-added")).toEqual([]);
     expect(marked(editor, "meridian-review-writer")).toEqual([]);
+  });
+
+  it("paints a writer-only hunk the server flags as merged dashed too", () => {
+    const { editor } = createReviewEditor(["The outer disciples fell back."]);
+    const start = posOf(editor, "fell");
+    const end = posOf(editor, ".");
+    setModel(
+      editor,
+      model(
+        [operation("w1", "writer")],
+        [textHunk(editor, "h1", ["w1"], { from: start, to: end }, { mergeArtifact: true })],
+      ),
+    );
+    expect(marked(editor, "meridian-review-merged")).toEqual(["fell back"]);
   });
 
   it("marks what the writer types at once, before any refetch", () => {
@@ -292,7 +304,15 @@ describe("removals", () => {
       editor,
       model(
         [operation("w1", "writer")],
-        [textHunk(editor, "h1", ["w1"], { from: at, to: at }, { deletedText: "first " })],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["w1"],
+            { from: at, to: at },
+            { deletedText: "first ", deletedSpans: [{ from: 0, to: 6, deletedBy: "writer" }] },
+          ),
+        ],
       ),
     );
     const [removal] = removals(editor);
@@ -301,17 +321,60 @@ describe("removals", () => {
     expect(editor.getText()).not.toContain("first");
   });
 
-  it("calls a replacement the AI's when the writer edited inside it", () => {
-    const { editor } = createReviewEditor(["He raised one withered hand."]);
-    const at = posOf(editor, "one withered");
+  it("strikes each stretch of one removal in its remover's colour", () => {
+    const { editor } = createReviewEditor(["He raised his hand."]);
+    const at = posOf(editor, "hand");
+    const spans: ReviewDeletedSpan[] = [
+      { from: 0, to: 6, deletedBy: "agent" },
+      { from: 6, to: 11, deletedBy: "writer" },
+    ];
     setModel(
       editor,
       model(
         [operation("a1", "agent", "closure:x"), operation("w1", "writer", "closure:x")],
-        [textHunk(editor, "h1", ["a1", "w1"], { from: at, to: at + 12 }, { deletedText: "his" })],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["a1", "w1"],
+            { from: at, to: at + 4 },
+            { deletedText: "sword blade", deletedSpans: spans },
+          ),
+        ],
       ),
     );
-    expect(removals(editor)[0]?.classList.contains("meridian-review-removal-writer")).toBe(false);
+    const [removal] = removals(editor);
+    const struck = [...(removal?.querySelectorAll("del") ?? [])];
+    expect(struck.map((del) => del.textContent)).toEqual(["sword ", "blade"]);
+    expect(
+      struck.map((del) => del.classList.contains("meridian-review-removal-text-writer")),
+    ).toEqual([false, true]);
+    // Mixed authors: the fold, if any, reads as the AI's.
+    expect(removal?.classList.contains("meridian-review-removal-writer")).toBe(false);
+  });
+
+  it("reads a block removal by its owning operations", () => {
+    const { editor } = createReviewEditor(["Before.", "After."]);
+    const after = posOf(editor, "After") - 1;
+    setModel(
+      editor,
+      model(
+        [operation("w1", "writer")],
+        [
+          {
+            kind: "block",
+            hunkId: "b1",
+            operationIds: ["w1"],
+            relStart: rel(editor, after),
+            relEnd: rel(editor, after),
+            deletedBlock: { type: "paragraph", display: "A gone paragraph." },
+          },
+        ],
+      ),
+    );
+    const del = removals(editor)[0]?.querySelector("del");
+    expect(del?.textContent).toBe("A gone paragraph.");
+    expect(del?.classList.contains("meridian-review-removal-text-writer")).toBe(true);
   });
 
   it("keeps short removals open and folds past the character threshold", () => {

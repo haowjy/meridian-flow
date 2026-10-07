@@ -10,7 +10,7 @@ is one server closure class.
   operations grouped by `closureClassId`, in document order (by the earliest
   hunk each owns; the server's operations are not in reading order), each with
   its colour (`tone`), whether the writer's edits are inside it, whether it is a
-  merge nobody can split by author, and who made it (`change-attribution`).
+  merge the server flags (`mergeArtifact` on a hunk), and who made it (`change-attribution`).
 - **`useReviewChanges(controller)`** reads the preview (`useDraftPreview`) and
   the change command records and returns the changes, the focused one, and
   `focus`, `step`, `apply`, `discard`. It takes the controller as an argument:
