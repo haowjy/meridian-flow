@@ -71,6 +71,14 @@ describe("DraftDock refused Discard", () => {
     });
   });
 
+  it("shows a rejected Apply on its draft's row, whichever draft the review moved on to", async () => {
+    await renderDock(dockWith([row("a"), row("b")], { a: "apply-failed" }), (host) => {
+      const rowError = host.querySelector("[data-draft-dock-row-error]");
+      expect(rowError?.textContent).toBe("Couldn't apply. Check your connection and try again.");
+      expect(rowError?.previousElementSibling?.textContent).toContain("a.md");
+    });
+  });
+
   it("mounts after rendering empty, with a refusal already held", async () => {
     const hidden = { ...dockWith([row("a"), row("b")], { b: "discard-offline" }), mounted: false };
     const shown = dockWith([row("a"), row("b")], { b: "discard-offline" });
