@@ -48,22 +48,40 @@ export function scopeMarkdownEngineAssetPaths(
 
 /**
  * A model call is scoped by its grant's project, which exists even for a
- * chapter the call is creating; a reversal by the document it reverses.
+ * chapter the call is creating; a reversal by the document it reverses. A
+ * reply's save renders the receipts the model reads afterwards, so it runs in
+ * the project its calls ran in.
  */
 export function scopeAgentEditAssetPaths(
   core: ThreadPeerAgentEditCore,
   assetPaths: DocumentAssetPaths,
 ): ThreadPeerAgentEditCore {
+  const replyProjects = new Map<string, string>();
+  function call<T>(
+    context: { grant: { facts: { projectId: string } }; responseId?: string },
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const { projectId } = context.grant.facts;
+    if (context.responseId) replyProjects.set(context.responseId, projectId);
+    return assetPaths.within({ projectId }, run);
+  }
   return asThreadPeerAgentEditCore({
     ...core,
-    read: (command, context) =>
-      assetPaths.within({ projectId: context.grant.facts.projectId }, () =>
-        core.read(command, context),
-      ),
-    write: (command, context) =>
-      assetPaths.within({ projectId: context.grant.facts.projectId }, () =>
-        core.write(command, context),
-      ),
+    read: (command, context) => call(context, () => core.read(command, context)),
+    write: (command, context) => call(context, () => core.write(command, context)),
+    async commitResponse(responseId, options) {
+      const projectId = replyProjects.get(responseId);
+      const saved = await (projectId
+        ? assetPaths.within({ projectId }, () => core.commitResponse(responseId, options))
+        : core.commitResponse(responseId, options));
+      replyProjects.delete(responseId);
+      return saved;
+    },
+    async rollbackResponse(responseId, ...rest) {
+      const rolledBack = await core.rollbackResponse(responseId, ...rest);
+      replyProjects.delete(responseId);
+      return rolledBack;
+    },
     undo: (docId, threadId) =>
       assetPaths.within({ documentId: docId }, () => core.undo(docId, threadId)),
     redo: (docId, threadId) =>
