@@ -173,7 +173,7 @@ export function useDraftReviewScopeValue({
     if (!selection || controller.isDisposing) return;
     // The writer handled the last change: the draft leaving the list is the
     // result they just caused, and the review stays open to say so.
-    if (selection.cleared) return;
+    if (selection.completion) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const stillActive = (drafts.drafts ?? groups.map((group) => group.draft)).some(
       (draft) => draft.documentId === selection.documentId && draft.draftId === selection.draftId,

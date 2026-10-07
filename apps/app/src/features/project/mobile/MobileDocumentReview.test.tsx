@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { failDraftCommand, resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { DockRow } from "@/features/chat/docked-drafts";
 import type { ReviewChange } from "@/features/draft-review/review-changes";
@@ -62,9 +63,8 @@ const controller = vi.hoisted(() => ({
     documentId: string;
     draftId: string;
     shown: boolean;
-    cleared?: { documentName: string | null };
+    completion?: { phase: "pending" | "closed"; documentName: string | null };
   },
-  inlineReviewMessage: null as null | { code: string; tone: string },
   marksVisible: true,
   setMarksVisible: vi.fn(),
   exitInlineReview: vi.fn(),
@@ -83,7 +83,8 @@ const view = vi.hoisted(() => ({
   focusedIndex: -1,
   canApply: true,
   locked: false,
-  cleared: false,
+  finished: false,
+  completing: null as null | "apply" | "discard",
   focus: vi.fn(),
   step: vi.fn(),
   apply: vi.fn(async () => {}),
@@ -103,9 +104,9 @@ vi.mock("../dock/useAiDraftLauncher", () => ({ useAiDraftLauncher: () => launche
 const all = [change("c1"), change("c2", { includesWriterEdits: true }), change("c3")];
 
 beforeEach(() => {
+  resetDraftCommandRecords();
   Object.assign(controller, {
     inlineReview: { documentId: "doc-12", draftId: "draft-doc-12", shown: true },
-    inlineReviewMessage: null,
     dispositionLocked: false,
     marksVisible: true,
     toast: null,
@@ -117,7 +118,8 @@ beforeEach(() => {
     focusedIndex: -1,
     canApply: true,
     locked: false,
-    cleared: false,
+    finished: false,
+    completing: null as null | "apply" | "discard",
   });
   for (const fn of [
     controller.setMarksVisible,
@@ -282,7 +284,7 @@ describe("the phone review header", () => {
   });
 
   it("says No changes left with Next draft, and offers no draft commands", async () => {
-    Object.assign(view, { items: [], cleared: true });
+    Object.assign(view, { items: [], finished: true });
     await render(async () => {
       expect(header()?.textContent).toContain("No changes left");
       await openSwitcher();
@@ -297,12 +299,12 @@ describe("the phone review header", () => {
 
   it("holds on No changes left after the server closed the draft and the list lost it", async () => {
     const closed = groups.splice(0, 1);
-    Object.assign(view, { items: [], cleared: true });
+    Object.assign(view, { items: [], finished: true });
     controller.inlineReview = {
       documentId: "doc-12",
       draftId: "draft-doc-12",
       shown: true,
-      cleared: { documentName: "Chapter 12" },
+      completion: { phase: "closed", documentName: "Chapter 12" },
     };
     try {
       await render(async () => {
@@ -322,12 +324,12 @@ describe("the phone review header", () => {
 
   it("offers the way back to live when no other draft is left", async () => {
     const all = groups.splice(0, groups.length);
-    Object.assign(view, { items: [], cleared: true });
+    Object.assign(view, { items: [], finished: true });
     controller.inlineReview = {
       documentId: "doc-12",
       draftId: "draft-doc-12",
       shown: true,
-      cleared: { documentName: "Chapter 12" },
+      completion: { phase: "closed", documentName: "Chapter 12" },
     };
     try {
       await render(async () => {
@@ -341,8 +343,20 @@ describe("the phone review header", () => {
     }
   });
 
-  it("shows a refused whole-draft command under the row", async () => {
-    controller.inlineReviewMessage = { code: "apply-failed", tone: "error" };
+  it("says Applying, not No changes left, while the last change's command is in flight", async () => {
+    Object.assign(view, { items: [], completing: "apply" });
+    await render(async () => {
+      expect(header()?.textContent).toContain("Applying");
+      expect(header()?.textContent).not.toContain("No changes left");
+      expect(named("Next draft")).toBeUndefined();
+    });
+  });
+
+  it("shows a refused whole-draft command under the row, from the draft's own record", async () => {
+    failDraftCommand(
+      { projectId: "p", workId: "w", documentId: "doc-12", draftId: "draft-doc-12" },
+      "apply-failed",
+    );
     await render(async () => {
       expect(header()?.textContent).toContain("Couldn't apply");
     });
@@ -418,7 +432,7 @@ describe("the change-list sheet", () => {
     await render(async () => {
       await act(async () => named("Show the 3 changes")?.click());
       expect(sheet()).not.toBeNull();
-      await flip(() => Object.assign(view, { items: [], cleared: true }));
+      await flip(() => Object.assign(view, { items: [], finished: true }));
       expect(sheet()).toBeNull();
     });
   });

@@ -9,9 +9,13 @@
  */
 import { useMemo, useState } from "react";
 
+import {
+  type DraftCommandFailureCode,
+  draftCommandFailure,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, draftAfter } from "@/features/chat/docked-drafts";
-import type { InlineReviewMessageCode } from "@/features/chat/draft-review-session";
 import type { DraftSwitcherProps } from "./DraftSwitcher";
 import { useDraftChangeCounts } from "./useDraftChangeCounts";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
@@ -33,10 +37,12 @@ export type ReviewHeaderModel = {
   /** The next draft in the switcher, if the Work has one. */
   next: DockRow | null;
   locked: boolean;
-  /** Nothing left to publish: the draft already matches live, so its commands go. */
+  /** Nothing left to publish: the server closed the draft, so its commands go. */
   finished: boolean;
-  /** The refusal code of the last whole-draft command, if it was refused. */
-  commandError: InlineReviewMessageCode | null;
+  /** The last change's command is in flight: the review says so and is not finished. */
+  completing: "apply" | "discard" | null;
+  /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
+  commandError: DraftCommandFailureCode | null;
   showLive: () => void;
   applyDraft: () => void;
   discardDraft: () => void;
@@ -67,9 +73,26 @@ export function useReviewHeader({
 
   const next = draftAfter(rows, documentId);
   const locked = controller.dispositionLocked;
-  const finished = view.cleared || (view.status === "ready" && view.items.length === 0);
-  const commandError =
-    controller.inlineReviewMessage?.tone === "error" ? controller.inlineReviewMessage.code : null;
+  const { finished, completing } = view;
+  const commandRecords = useDraftCommandRecords();
+  const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
+    projectId: controller.projectId,
+    workId: controller.workId,
+    documentId: row.documentId,
+    draftId: row.draft.draftId,
+  });
+  const commandError = draftCommandFailure(commandRecords, {
+    projectId: controller.projectId,
+    workId: controller.workId,
+    documentId,
+    draftId,
+  });
+  // Every listed draft that holds one, so a draft the review moved on from still says it was refused.
+  const failures = new Map<string, DraftCommandFailureCode>();
+  for (const row of rows) {
+    const code = draftCommandFailure(commandRecords, draftOf(row));
+    if (code) failures.set(row.documentId, code);
+  }
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
   /** Run a whole-draft command, then move to the next draft (or live) without waiting on it. */
@@ -89,6 +112,7 @@ export function useReviewHeader({
     next,
     locked,
     finished,
+    completing,
     commandError,
     showLive,
     applyDraft: () => dispose(() => controller.apply(documentId, draftId)),
@@ -96,8 +120,9 @@ export function useReviewHeader({
     switcher: {
       rows,
       currentDocumentId: documentId,
-      currentName: controller.inlineReview?.cleared?.documentName ?? null,
+      currentName: controller.inlineReview?.completion?.documentName ?? null,
       counts: allCounts,
+      failures,
       onOpenChange: setSwitcherOpen,
       draftOnly: Boolean(onCloseDraftOnly),
       disabled: locked,

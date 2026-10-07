@@ -375,7 +375,6 @@ describe("draft dispositions", () => {
         });
         expect(outcome).toEqual({ kind: "apply-outcome-unknown" });
         expect(heldError()).toBe("apply-unknown");
-        expect(controller?.inlineReviewMessage).toMatchObject({ code: "apply-unknown" });
         expect(controller?.inlineReview).toMatchObject({ draftId: "draft-a" });
         expect(
           getContextTabs("project-a").tabs.some((tab) => "draftOnly" in tab && tab.draftOnly),
@@ -386,8 +385,8 @@ describe("draft dispositions", () => {
           outcome = await controller?.apply("document-a", "draft-a");
         });
         expect(outcome).toEqual({ kind: "failed", code: "apply-failed" });
-        expect(heldError()).toBeNull();
-        expect(controller?.inlineReviewMessage).toMatchObject({ code: "apply-failed" });
+        // A rejection is held on the draft too, apart from the unknown outcome.
+        expect(heldError()).toBe("apply-failed");
       },
     );
   });

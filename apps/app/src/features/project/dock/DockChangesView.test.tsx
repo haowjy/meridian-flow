@@ -80,7 +80,8 @@ const view = vi.hoisted(() => ({
   focusedIndex: -1,
   canApply: true,
   locked: false,
-  cleared: false,
+  finished: false,
+  completing: null as null | "apply" | "discard",
   focus: vi.fn(),
   step: vi.fn(),
   apply: vi.fn(async () => {}),
@@ -121,7 +122,8 @@ beforeEach(() => {
       { change: change("c2", "fell back", { includesWriterEdits: true }), failure: null },
     ],
     focused: null,
-    cleared: false,
+    finished: false,
+    completing: null as null | "apply" | "discard",
     locked: false,
   });
 });
@@ -179,8 +181,25 @@ describe("DockChangesView", () => {
     });
   });
 
+  it("says Applying, not No changes left, while the last change's command is in flight", async () => {
+    Object.assign(view, { items: [], completing: "apply" });
+    await render(async () => {
+      expect(document.body.textContent).toContain("Applying");
+      expect(document.body.textContent).not.toContain("No changes left");
+      expect(button("Next draft")).toBeUndefined();
+      expect(document.body.textContent).not.toContain("1 change");
+    });
+  });
+
+  it("says Discarding while the last Discard is in flight", async () => {
+    Object.assign(view, { items: [], completing: "discard" });
+    await render(async () => {
+      expect(document.body.textContent).toContain("Discarding");
+    });
+  });
+
   it("when the last change is handled, says so and offers the next draft", async () => {
-    Object.assign(view, { items: [], cleared: true });
+    Object.assign(view, { items: [], finished: true });
     await render(async () => {
       expect(document.body.textContent).toContain("No changes left");
       await act(async () => button("Next draft")?.click());

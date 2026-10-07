@@ -22,7 +22,7 @@ let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 type InlineReview = {
   documentId: string;
   draftId: string;
-  cleared?: { documentName: string | null };
+  completion?: { phase: "pending" | "closed"; documentName: string | null };
 };
 let setInline: ((inline: InlineReview | null) => void) | null = null;
 
@@ -211,7 +211,7 @@ describe("EditorReviewAddressOwner", () => {
     const finished = {
       documentId: draft.documentId,
       draftId: draft.draftId,
-      cleared: { documentName: "A" },
+      completion: { phase: "closed" as const, documentName: "A" },
     };
 
     it("stays open on its document although the list no longer names it", async () => {

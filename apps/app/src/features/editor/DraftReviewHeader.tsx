@@ -88,6 +88,7 @@ export function DraftReviewHeader(props: DraftReviewHeaderProps) {
       <ReviewHeaderNotices
         commandError={header.commandError}
         finished={finished}
+        completing={header.completing}
         next={header.next}
         draftOnly={header.switcher.draftOnly}
         onOpenNext={header.switcher.onOpenDraft}

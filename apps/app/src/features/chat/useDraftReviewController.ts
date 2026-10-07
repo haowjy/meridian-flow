@@ -14,7 +14,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { getDraftPreview } from "@/client/api/drafts-api";
 import type { ChangeRef } from "@/client/query/change-command-record";
 import {
   clearDraftCommandFailure,
@@ -22,6 +21,7 @@ import {
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import {
   DraftApplyOutcomeUnknownError,
   settleConfirmedChange,
@@ -46,13 +46,11 @@ import {
   draftReviewReducer,
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
-  type InlineReviewMessage,
-  type InlineReviewMessageCode,
   inlineReviewFromState,
   type ReviewToast,
 } from "./draft-review-session";
 
-export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode, ReviewToast };
+export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
 export type ReviewChangeTarget = ChangeRef & { anchorOperationId: string };
@@ -97,7 +95,6 @@ export type DraftReviewController = {
    * stays available on a frozen Work.
    */
   dispositionLocked: boolean;
-  inlineReviewMessage: InlineReviewMessage | null;
   /** The header's "Show changes". The editor paints from it (`useInlineReviewFocus`). */
   marksVisible: boolean;
   setMarksVisible: (visible: boolean) => void;
@@ -191,7 +188,6 @@ export function useDraftReviewController({
   }, []);
 
   const inlineReview = inlineReviewFromState(state);
-  const inlineReviewMessage = state.inlineReviewMessage;
   const dockDispositionError = state.dockDispositionError;
 
   const activeDisposition = disposition.busy ? disposition.target : null;
@@ -234,32 +230,28 @@ export function useDraftReviewController({
       activeReviewRequestRef.current = { documentId, draftId, attemptId };
       setReviewRoomName(null);
       setReviewRoomError(false);
-      void getDraftPreview(projectId, workId, documentId, draftId)
+      const owned = () => {
+        const current = activeReviewRequestRef.current;
+        return (
+          current?.documentId === documentId &&
+          current.draftId === draftId &&
+          current.attemptId === attemptId
+        );
+      };
+      // The room is found through the one fenced preview query, read fresh, so
+      // the read joins any in flight, commits to the shared cache only through
+      // the fence (a change handled meanwhile cannot come back), and a review
+      // that has moved on commits nothing of its own.
+      void queryClient
+        .fetchQuery({
+          ...draftPreviewQueryOptions({ projectId, workId, documentId, draftId }),
+          staleTime: 0,
+        })
         .then((preview) => {
-          queryClient.setQueryData(
-            projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-            preview,
-          );
-          const current = activeReviewRequestRef.current;
-          if (
-            current?.documentId !== documentId ||
-            current.draftId !== draftId ||
-            current.attemptId !== attemptId
-          )
-            return;
-          if (preview.status === "active") setReviewRoomName(preview.reviewRoomName);
+          if (owned() && preview.status === "active") setReviewRoomName(preview.reviewRoomName);
         })
         .catch(() => {
-          const current = activeReviewRequestRef.current;
-          if (
-            current?.documentId !== documentId ||
-            current.draftId !== draftId ||
-            current.attemptId !== attemptId
-          )
-            return;
-          void queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-          });
+          if (!owned()) return;
           setReviewRoomName(null);
           setReviewRoomError(true);
         });
@@ -289,24 +281,28 @@ export function useDraftReviewController({
   }
 
   /**
-   * The server closed the draft with the change it just handled: the review
-   * holds on "No changes left" now. This runs on the command's answer, before
-   * the draft list and preview re-reads that follow it, because the list drops
-   * the closed draft and every "the draft left the list" exit would otherwise
-   * win the race.
+   * The server answered the last change's command. If it closed the draft, the
+   * review holds on "No changes left" now; this runs on the answer, before the
+   * draft list and preview re-reads that follow it, because the list drops the
+   * closed draft and every "the draft left the list" exit would otherwise win
+   * the race. If it did not (another change arrived), the review carries on.
    */
-  const settleClosedDraft = (
+  const settleAnsweredCommand = (
     documentId: string,
     draftId: string,
     response: { draftClosed?: boolean },
   ) => {
-    if (!response.draftClosed || !activeRef.current) return;
-    dispatch({
-      type: "reviewCleared",
-      documentId,
-      draftId,
-      documentName: listedDocumentName(queryClient, projectId, workId, draftId),
-    });
+    if (!activeRef.current) return;
+    if (response.draftClosed) {
+      dispatch({
+        type: "reviewClosed",
+        documentId,
+        draftId,
+        documentName: listedDocumentName(queryClient, projectId, workId, draftId),
+      });
+    } else {
+      dispatch({ type: "reviewReopened", documentId, draftId });
+    }
   };
 
   commandPortsRef.current = {
@@ -336,22 +332,28 @@ export function useDraftReviewController({
         ...input,
         // Only a per-change Discard can end a review by closing its draft.
         onAnswered: input
-          ? (response) => settleClosedDraft(documentId, draftId, response)
+          ? (response) => settleAnsweredCommand(documentId, draftId, response)
           : undefined,
       });
     },
-    applyChanges: ({ documentId, draftId }, request) =>
-      applyChangesMutation.mutateAsync({
-        projectId,
-        workId,
-        threadId,
-        documentId,
-        draftId,
-        request,
-        onAnswered: (response) => {
-          if (response.status === "applied") settleClosedDraft(documentId, draftId, response);
-        },
-      }),
+    applyChanges: async ({ documentId, draftId }, request) => {
+      try {
+        return await applyChangesMutation.mutateAsync({
+          projectId,
+          workId,
+          threadId,
+          documentId,
+          draftId,
+          request,
+          onAnswered: (response) => {
+            if (response.status === "applied") settleAnsweredCommand(documentId, draftId, response);
+          },
+        });
+      } catch (error) {
+        if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
+        throw error;
+      }
+    },
     changeConfirmed: ({ documentId, draftId }, change, mode) =>
       settleConfirmedChange(
         queryClient,
@@ -372,9 +374,6 @@ export function useDraftReviewController({
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
-    },
-    draftFailed: (selection, code) => {
-      dispatch({ type: "draftCommandFailed", selection, code });
     },
     draftDiscarded: ({ documentId, draftId }) => {
       dispatch({ type: "discardSucceeded", draftId });
@@ -497,21 +496,24 @@ export function useDraftReviewController({
       );
       // Read before the command: it may be the one that takes the draft out of the list.
       const documentName = listedDocumentName(queryClient, projectId, workId, inline.draftId);
-      // Discarding the last change leaves live as it is, so the finished text is
-      // already on screen: settle at the click. Waiting for the answer would show
-      // the review room merging the server's reset (the discarded text doubled).
-      // Apply waits for its answer instead: live has no change in it until then.
-      const settlesAtClick =
-        mode === "discard" &&
+      // The last change handled: nothing is finished until the command's own
+      // answer says so (`settleAnsweredCommand`), but the writer's click shows
+      // at once as a pending completion. A last Discard leaves live as it is,
+      // so the finished text is already on screen: hold that inert at the
+      // click, since waiting would show the review room merging the server's
+      // reset (the discarded text doubled). A last Apply keeps the review
+      // room, marks gone, until the answer: live has no change in it until then.
+      const handlesLast =
         cached?.status === "active" &&
         reviewChanges(cached.operations, cached.hunks).every(
           (candidate) => candidate.classId === change.classId,
         );
-      if (settlesAtClick) {
+      if (handlesLast) {
         dispatch({
-          type: "reviewCleared",
+          type: "reviewCompleting",
           documentId: inline.documentId,
           draftId: inline.draftId,
+          mode,
           documentName,
         });
       }
@@ -525,41 +527,15 @@ export function useDraftReviewController({
           : null,
       );
       if (!activeRef.current) return outcome;
-      if (
-        settlesAtClick &&
-        outcome.kind !== "change-settled" &&
-        !(outcome.kind === "change-refused" && outcome.code === "gone")
-      ) {
-        // The Discard did not land: the change is back, and so is the review of it.
+      if (handlesLast && outcome.kind !== "change-settled") {
+        // The command did not land (or the change was already gone): the
+        // change is back, and so is the review of it. A change that landed was
+        // answered by `settleAnsweredCommand`, closed or not.
         dispatch({
           type: "reviewReopened",
           documentId: inline.documentId,
           draftId: inline.draftId,
         });
-      }
-      if (
-        outcome.kind === "change-settled" ||
-        (outcome.kind === "change-refused" && outcome.code === "gone")
-      ) {
-        // The cache already lost the change (`settleConfirmedChange`): if that
-        // was the last one, the review stays open to say so rather than
-        // closing under the writer. The server's `draftClosed` answer settles
-        // it earlier (`settleClosedDraft`); this covers a change that was
-        // already gone, whose answer carries no such flag.
-        const after = queryClient.getQueryData<DraftPreviewResponse>(
-          projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
-        );
-        if (
-          after?.status === "active" &&
-          reviewChanges(after.operations, after.hunks).length === 0
-        ) {
-          dispatch({
-            type: "reviewCleared",
-            documentId: inline.documentId,
-            draftId: inline.draftId,
-            documentName,
-          });
-        }
       }
       if (outcome.kind === "change-settled") {
         dispatch({
@@ -628,7 +604,6 @@ export function useDraftReviewController({
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
-      inlineReviewMessage,
       marksVisible: state.marksVisible,
       setMarksVisible,
       focusedClassId: inlineReview?.focusedClassId ?? null,
@@ -663,7 +638,6 @@ export function useDraftReviewController({
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
-      inlineReviewMessage,
       state.marksVisible,
       setMarksVisible,
       inlineReview?.focusedClassId,

@@ -7,24 +7,27 @@
  * a phone's 44px.
  */
 import { Trans } from "@lingui/react/macro";
-
+import { Loader2 } from "lucide-react";
+import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
 import type { DockRow } from "@/features/chat/docked-drafts";
-import type { InlineReviewMessageCode } from "@/features/chat/draft-review-session";
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { cn } from "@/lib/utils";
 
 export function ReviewHeaderNotices({
   commandError,
   finished,
+  completing = null,
   next,
   draftOnly,
   onOpenNext,
   onShowLive,
   touch = false,
 }: {
-  commandError: InlineReviewMessageCode | null;
+  commandError: DraftCommandFailureCode | null;
   finished: boolean;
+  /** The last change's command is in flight: nothing is finished yet. */
+  completing?: "apply" | "discard" | null;
   next: DockRow | null;
   draftOnly: boolean;
   onOpenNext: (row: DockRow) => void;
@@ -38,6 +41,19 @@ export function ReviewHeaderNotices({
         <p className="px-4 pb-1.5 text-destructive" role="alert">
           <ReviewMessageText code={commandError} />
         </p>
+      ) : null}
+      {completing ? (
+        <div
+          className={cn(
+            "flex items-center gap-2 border-border border-t px-4 text-muted-foreground",
+            touch ? "py-2.5" : "py-1.5",
+          )}
+          role="status"
+          aria-busy
+        >
+          <Loader2 className="size-3 animate-spin" aria-hidden />
+          <p>{completing === "apply" ? <Trans>Applying</Trans> : <Trans>Discarding</Trans>}</p>
+        </div>
       ) : null}
       {finished ? (
         <div
