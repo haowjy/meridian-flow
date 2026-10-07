@@ -71,11 +71,16 @@ export function projectResourceLocation(
   const create = record.intents.find(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;
-  const named = record.intents.some(
-    (intent) => intent.desired.kind === "set-location" && intent.state === "settled",
+  // Refused filing returns a normal file to its accepted home, not a provisional reservation.
+  const filed = record.intents.some(
+    (intent) =>
+      intent.desired.kind === "set-location" &&
+      (intent.state === "settled" ||
+        intent.state === "needs-repair" ||
+        intent.state === "superseded"),
   );
   if (record.resource.canonical)
-    return { ...record.resource.canonical, provisional: create?.kind === "create" && !named };
+    return { ...record.resource.canonical, provisional: create?.kind === "create" && !filed };
   if (create?.kind !== "create") return null;
   const folder = create.folderPath.split("/").filter(Boolean).join("/");
   const name = create.provisionalName ?? "Untitled";

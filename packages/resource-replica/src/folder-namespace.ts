@@ -290,16 +290,18 @@ export function settleFolderNamespaceOutcome(
   const outcome = intent?.attempts.at(-1)?.outcome;
   if (
     intent?.state !== "received" ||
-    outcome?.kind !== "operation" ||
-    outcome.receipt.command.kind !== "move"
+    !outcome ||
+    outcome.kind === "create" ||
+    (outcome.kind === "operation" && outcome.receipt.command.kind !== "move")
   )
     return null;
+  const accepted = outcome.kind === "operation" && outcome.receipt.result.ok;
   const write = replaceIntent(record, intent.intentId, (current) => ({
     ...current,
-    state: outcome.receipt.result.ok ? "settled" : "needs-repair",
+    state: accepted ? "settled" : "needs-repair",
     settledAt,
   }));
-  if (outcome.receipt.result.ok) {
+  if (outcome.kind === "operation" && accepted) {
     write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
   } else {
     write.next.intents = cancelRefusedLocationChain(write.next.intents, intent);

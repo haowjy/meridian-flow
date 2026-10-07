@@ -22,11 +22,12 @@ export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 /**
  * Whether the writer can create files/folders inside a scheme from a browse
  * surface. Uploads is intake only (Jimmy's ruling, 2026-08-06): its files
- * arrive by uploading, never by in-tree creation, so no surface offers
- * New file / New folder there. Scratch is the work's authoring space.
+ * arrive by uploading, never by in-tree creation. Scratch notes are made only
+ * from a Work's Files tab (New note) and by the AI (owner, 2026-10-05), so no
+ * Editor surface offers New file / New folder there either.
  */
 export function schemeAllowsCreation(scheme: ProjectContextTreeScheme): boolean {
-  return scheme !== "uploads";
+  return scheme !== "uploads" && scheme !== "scratch";
 }
 
 export function schemeLabel(scheme: ProjectContextTreeScheme): string {

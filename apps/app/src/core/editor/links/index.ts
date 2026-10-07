@@ -17,6 +17,7 @@ export {
   type CreatableLinkScheme,
   documentFileName,
   isCreatableLinkScheme,
+  isLinkDocumentScheme,
   linkAheadAddress,
   linkTargetAddress,
 } from "./link-address";

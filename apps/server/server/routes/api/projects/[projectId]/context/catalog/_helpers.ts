@@ -4,6 +4,7 @@ import type { H3Event } from "nitro/h3";
 import { createError, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
+import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
 import { requireRequestId } from "../../../../../../lib/request-id.js";
 
 export async function resolveCatalogRoute(event: H3Event) {
@@ -18,7 +19,7 @@ export async function resolveCatalogRoute(event: H3Event) {
   else if (kind === "work") {
     const workId = requireRequestId(query.workId, "workId");
     if (!(await app.workAuthorityResolver.byId(projectId, workId))) {
-      throw createError({ statusCode: 404, message: "Work not found" });
+      throwContextWorkUnavailableHttpError("work_missing");
     }
     scope = { kind, projectId, workId };
   } else {

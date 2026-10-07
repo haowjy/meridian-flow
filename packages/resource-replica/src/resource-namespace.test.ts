@@ -600,7 +600,14 @@ describe("namespace reconciliation", () => {
   });
 });
 
-it("keeps canonical Scratch placement after a rejected rename and rejected delete", async () => {
+it.each([
+  ["work_archived", false],
+  ["work_deleted", false],
+  ["work_missing", false],
+  ["work_archived", true],
+  ["work_deleted", true],
+  ["work_missing", true],
+] as const)("keeps accepted placement after %s (receiptless %s) and does not replay", async (reason, receiptless) => {
   const before = local();
   before.resource.canonical = {
     scheme: "scratch",
@@ -633,19 +640,39 @@ it("keeps canonical Scratch placement after a rejected rename and rejected delet
     lock: immediateLock,
     newAttemptIds: () => ({ attemptId: "attempt", operationId: "operation" }),
     transport: transport({
-      submit: async () => ({
-        kind: "operation",
-        receipt: {
-          operationId: "operation",
-          command: {
-            kind: "move",
-            sourceUri: "scratch://@/before.md",
-            destinationUri: "scratch://@/after.md",
-            expected: { kind: "file", nodeId: "document" },
-          },
-          result: { ok: false, error: { code: "conflict", uri: "scratch://@/after.md" } },
-        },
-      }),
+      submit: async () =>
+        receiptless
+          ? {
+              kind: "refusal",
+              operationId: "operation",
+              error: {
+                code: reason,
+                message: "Work unavailable",
+                source: "system",
+                retryable: false,
+              },
+            }
+          : {
+              kind: "operation",
+              receipt: {
+                operationId: "operation",
+                command: {
+                  kind: "move",
+                  sourceUri: "scratch://@/before.md",
+                  destinationUri: "scratch://@/after.md",
+                  expected: { kind: "file", nodeId: "document" },
+                },
+                result: {
+                  ok: false,
+                  error: {
+                    code: "context_unavailable",
+                    reason,
+                    workSlug: null,
+                    uri: "scratch://@/after.md",
+                  },
+                },
+              },
+            },
     }),
   });
   expect(result).toBe("needs-repair");
@@ -656,6 +683,17 @@ it("keeps canonical Scratch placement after a rejected rename and rejected delet
     kind: "set-location",
     name: "after.md",
   });
+  const noReplay = vi.fn();
+  await expect(
+    reconcileResourceNamespace({
+      key: before.resource,
+      metadata: asMetadata(store),
+      lock: immediateLock,
+      newAttemptIds: () => ({ attemptId: "unused", operationId: "unused" }),
+      transport: transport({ submit: noReplay }),
+    }),
+  ).resolves.toBe("needs-repair");
+  expect(noReplay).not.toHaveBeenCalled();
   const rejectedRename = structuredClone(store.record.intents[0]?.attempts);
   const deletion = planResourceDeletion(store.record, "project", "delete");
   if (!deletion) throw new Error("Delete must supersede the rejected rename");

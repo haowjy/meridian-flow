@@ -17,7 +17,7 @@
  * would be a transient surface the kernel never heard about — and this one can
  * open a quarter second late, long after the writer summoned something else.
  *
- * A Work switch, a base URI arriving, a rename, and a change to the document's
+ * A holder location change, a base URI arriving, a rename, and a change to the document's
  * own text are all scope changes the follower re-registers on, so nothing here remounts the collaborative editor.
  */
 
@@ -39,7 +39,7 @@ import { useDocumentRevision } from "./useDocumentRevision";
 
 /**
  * The Editor's destination: the document opens in this editor's pane, or on
- * the tab strip for a new-tab gesture, in the editor's own Work.
+ * the tab strip for a new-tab gesture, using the holder's link scope.
  */
 export function useEditorLinkDestination(): LinkDestination {
   const { projectId, workId } = useEditorScope();
@@ -82,11 +82,15 @@ export function ProjectLinkRuntime({
 
   const documentRevision = useDocumentRevision(editor);
 
-  const scope = useMemo<LinkResolutionScope | null>(
+  // The holder's Work arrives with its resource record. Until then the scope is
+  // pending, so a click waits for the real scope instead of being dropped.
+  const scope = useMemo<LinkResolutionScope | "pending" | null>(
     () =>
-      active && projectId && workId
-        ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
-        : null,
+      !active || !projectId
+        ? null
+        : workId
+          ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
+          : "pending",
     [active, baseUri, documentId, documentRevision, projectId, workId],
   );
   const reporter = useMemo<FollowReporter>(
@@ -96,7 +100,7 @@ export function ProjectLinkRuntime({
     }),
     [surface],
   );
-  // Inactive is scope null: the follower aborts and dismisses on its own.
+  // Inactive or project-less is scope null: the follower aborts and dismisses on its own.
   const follower = useLinkFollower({ scope, index, resolution, open, reporter });
 
   useEffect(() => {

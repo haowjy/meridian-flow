@@ -1,6 +1,6 @@
 /** Account-fenced document namespace transport; durable ownership and retry scheduling stay upstream. */
 import type { NamespaceRequest, ResourceNamespaceTransport } from "@meridian/resource-replica";
-import { httpErrorStatus } from "@/client/api/http-client";
+import { httpErrorStatus, isMeridianApiError } from "@/client/api/http-client";
 import {
   createUntitledContextDocument,
   deleteContextEntry,
@@ -56,7 +56,22 @@ export function createResourceNamespaceTransport(
           );
         }
       } catch (error) {
-        // Only a persisted receipt proves rejection. Offline/timeouts retain replay.
+        // A typed final HTTP refusal proves rejection even before receipt intake.
+        const status = httpErrorStatus(error);
+        if (
+          isMeridianApiError(error) &&
+          !error.retryable &&
+          status !== undefined &&
+          status >= 400 &&
+          status < 500
+        ) {
+          return {
+            kind: "refusal" as const,
+            operationId: request.body.operationId,
+            error: error.envelope,
+          };
+        }
+        // Bare HTTP failures and offline/timeouts still need persisted evidence.
         if (httpErrorStatus(error) === undefined) throw error;
         const outcome = await readOutcome(projectId, request);
         if (outcome) return outcome;

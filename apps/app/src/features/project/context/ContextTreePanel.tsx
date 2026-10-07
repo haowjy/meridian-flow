@@ -79,13 +79,11 @@ export function ContextTreePanel({
       defaultExpanded={scheme === schemes[0]}
       onSelectFile={onSelectFile}
       creating={
-        creating?.scheme === scheme && creating.workId === editorWorkId
+        creating?.scheme === scheme
           ? { kind: creating.kind, parentPath: creating.parentPath }
           : null
       }
-      onRequestCreate={(kind, parentPath) =>
-        onRequestCreate({ scheme, kind, parentPath, workId: editorWorkId })
-      }
+      onRequestCreate={(kind, parentPath) => onRequestCreate({ scheme, kind, parentPath })}
       onCreateDone={onCreateDone}
     />
   );

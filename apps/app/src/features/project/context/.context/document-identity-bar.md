@@ -42,7 +42,7 @@ Contracts:
   `use-identity-commit.ts`. The hook resolves the stable resource handle and
   writes one durable location intent. The optimistic resource projection updates
   the tab and route immediately; the namespace runner later settles the exact
-  server receipt. A same-name explicit Save clears provisional presentation.
+  server receipt or a typed final HTTP refusal tied to the submitted operation. A same-name explicit Save clears provisional presentation.
   Navigation additionally requires that the committed document is still active.
   The field does not blur-dismiss while a save is pending.
 - **Repair receipts**: a failed placement remains `needs-repair` in the journal.

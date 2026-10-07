@@ -17,7 +17,8 @@ paste policy). The surface is `AtReferenceMenu` in
 - **The Editor links ahead.** When a root search names no listed document
   exactly, the catalog's `linkAhead` adds one row that links
   `<holder folder>/<name>.md` (`linkAheadAddress`, the filename rule a follow's
-  Create shares; `manuscript://<name>.md` from a holder with no address). It
+  Create shares; `manuscript://<name>.md` from a holder with no address or in
+  Scratch, Uploads, or Unfiled, which a link cannot create into). It
   inserts a link and creates nothing: the chip is dashed until a follow's Create
   makes the document at exactly that address.
 - **The composer reuses this lane with its own insertion** (`insertReference`)

@@ -753,7 +753,9 @@ export class AccountResourceReplica {
         lock: this.lock,
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
-      if (namespace === "needs-repair" && (await this.remintCreateConflict(key))) continue;
+      if (namespace === "needs-repair") {
+        if (await this.remintCreateConflict(key)) continue;
+      }
       await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
       const adoption = await this.adoption.reconcile(key);
       const cleanup = await this.reconcileLocalCleanup(key);

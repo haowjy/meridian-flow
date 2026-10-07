@@ -100,7 +100,6 @@ function MobileLocalDocumentHost({
   return (
     <ContextEditorMountHost
       projectId={projectId}
-      workId={workId}
       trackedTabs={[tab]}
       activeTabId={tab.documentId}
       active
@@ -280,7 +279,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       <PassageNotice documentId={activeTab.documentId} />
       <EditorView
         projectId={projectId}
-        workId={workId}
         documentId={activeTab.documentId}
         session={liveSession}
         schemaType={activeTab.schemaType}
