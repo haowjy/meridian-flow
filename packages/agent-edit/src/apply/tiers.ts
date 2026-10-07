@@ -77,6 +77,9 @@ export function applyEdits(
   options: ApplyEditsOptions = {},
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
+  if (editList.length === 0) {
+    return applyError("invalid_write", "applyEdits requires at least one edit");
+  }
 
   const turnSafety = validateNoSameTurnTombstones(doc, model, editList);
   if (!turnSafety.ok) return turnSafety;
@@ -134,8 +137,8 @@ export function applyEdits(
   return {
     ok: true,
     status: "success",
-    documentId: editList[0]?.documentId ?? "",
-    file: editList[0]?.file ?? "",
+    documentId: editList[0].documentId,
+    file: editList[0].file,
     echo,
     ...(concurrent.info ? { concurrentEdits: concurrent.info } : {}),
     changedBlocks: orderedLiveHashes(after, accumulator.touchedHashes),

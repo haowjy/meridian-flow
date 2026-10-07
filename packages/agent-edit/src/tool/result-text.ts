@@ -108,6 +108,8 @@ function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork
   return result.destination === "live" ? "live" : "";
 }
 
+const UNCHANGED_NOTE = "unchanged: the file already matches this content; nothing was written.";
+
 function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]): string[] {
   const lines: string[] = [];
   const removed = result.write?.deletedHashes ?? [];
@@ -116,6 +118,7 @@ function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]
     lines.push("later edits were kept, so the text may not match how it was before the write.");
   }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
+  if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.concurrent) {
     const shown = new Set(
       groups
