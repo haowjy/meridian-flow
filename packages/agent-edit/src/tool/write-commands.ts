@@ -256,62 +256,65 @@ export function createWriteCommands(deps: {
     let deletedHashes = new Set<string>();
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
-    if (overwriting && existingBlocks.length > 0) {
-      const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
-      const resolved = resolveWrite(
-        { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-        empty
-          ? {
-              command: "remove",
-              documentAddress: address,
-              in: [1, existingBlocks.length],
-            }
-          : {
-              command: "replace",
-              documentAddress: address,
-              ...(copiedNodes ? { blocks: copiedNodes } : { content }),
-              in: [1, existingBlocks.length],
-            },
-      );
-      if (!resolved.ok) {
-        return errorResponse(
-          resolved.error.code,
-          resolved.error.message,
-          address.filePath,
-          documentBlocksDetail(resolved.error.details),
+    const { result: failure, update } = captureWriteUpdate(runtime.doc, () => {
+      if (overwriting && existingBlocks.length > 0) {
+        const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
+        const resolved = resolveWrite(
+          { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
+          empty
+            ? {
+                command: "remove",
+                documentAddress: address,
+                in: [1, existingBlocks.length],
+              }
+            : {
+                command: "replace",
+                documentAddress: address,
+                ...(copiedNodes ? { blocks: copiedNodes } : { content }),
+                in: [1, existingBlocks.length],
+              },
         );
+        if (!resolved.ok) {
+          return errorResponse(
+            resolved.error.code,
+            resolved.error.message,
+            address.filePath,
+            documentBlocksDetail(resolved.error.details),
+          );
+        }
+        validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+        semanticEditIr = resolved.ir;
+        const applied = applyEdits(
+          toDocHandle(runtime.doc),
+          options.model,
+          options.codec,
+          resolved.edits,
+          origin,
+          { ...(turnId ? { ownActorTurnId: turnId } : {}) },
+        );
+        if (!applied.ok) {
+          restorePreWriteSnapshot(runtime, preWriteSnapshot);
+          return errorResponse(applied.error.code, applied.error.message, address.filePath);
+        }
+        writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preWriteSnapshot);
+        touchedHashes = new Set(applied.changedBlocks ?? []);
+        deletedHashes = new Set(applied.deletedBlocks ?? []);
+        insertedHashes = insertedBlockIds(applied.appliedEdits);
+      } else {
+        runtime.doc.transact(() => {
+          insertedHashes = options.model
+            .insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed)
+            .map((block) => options.model.getBlockId(block));
+        }, origin);
       }
-      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
-      semanticEditIr = resolved.ir;
-      const applied = applyEdits(
-        toDocHandle(runtime.doc),
-        options.model,
-        options.codec,
-        resolved.edits,
-        origin,
-        { ...(turnId ? { ownActorTurnId: turnId } : {}) },
-      );
-      if (!applied.ok) {
-        restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        return errorResponse(applied.error.code, applied.error.message, address.filePath);
-      }
-      writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preWriteSnapshot);
-      touchedHashes = new Set(applied.changedBlocks ?? []);
-      deletedHashes = new Set(applied.deletedBlocks ?? []);
-      insertedHashes = insertedBlockIds(applied.appliedEdits);
-    } else {
-      runtime.doc.transact(() => {
-        insertedHashes = options.model
-          .insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed)
-          .map((block) => options.model.getBlockId(block));
-      }, origin);
-    }
+      return undefined;
+    });
+    if (failure) return failure;
     const copied = copiedNodes
       ? copySummary(command.command === "copy" ? command.from.path : "", insertedHashes, {
           edges: false,
         })
       : undefined;
-    const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
 
     if (context.responseId && actor.kind === "agent") {
@@ -513,22 +516,25 @@ export function createWriteCommands(deps: {
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    const applied = applyEdits(
-      toDocHandle(runtime.doc),
-      options.model,
-      options.codec,
-      resolved.edits,
-      origin,
-      {
-        ...(turnId ? { ownActorTurnId: turnId } : {}),
-        syncStateVector: synced.stateVector,
-      },
-    );
+    const { result: applied, update: ownUpdate } = captureWriteUpdate(runtime.doc, () => {
+      const applied = applyEdits(
+        toDocHandle(runtime.doc),
+        options.model,
+        options.codec,
+        resolved.edits,
+        origin,
+        {
+          ...(turnId ? { ownActorTurnId: turnId } : {}),
+          syncStateVector: synced.stateVector,
+        },
+      );
+      if (applied.ok) writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
+      return applied;
+    });
     if (!applied.ok) {
       restorePreWriteSnapshot(runtime, preOwnSnapshot);
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
     }
-    writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
     const copied =
       from && copiedNodes
         ? copySummary(from.path, insertedBlockIds(applied.appliedEdits), { edges: true })
@@ -546,7 +552,6 @@ export function createWriteCommands(deps: {
           }
         : {};
 
-    const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = mutationMeta(actor);
 
     if (context.responseId && actor.kind === "agent") {
@@ -811,4 +816,20 @@ function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array):
 
 function documentBlocksDetail(details: Record<string, unknown> | undefined): number | undefined {
   return typeof details?.documentBlocks === "number" ? details.documentBlocks : undefined;
+}
+
+/**
+ * Capture the synchronous content and certification transactions, not a state-vector
+ * diff: that diff includes every old tombstone and couples otherwise independent writes.
+ */
+function captureWriteUpdate<T>(doc: Y.Doc, write: () => T): { result: T; update: Uint8Array } {
+  const updates: Uint8Array[] = [];
+  const collect = (update: Uint8Array) => updates.push(update);
+  doc.on("update", collect);
+  try {
+    const result = write();
+    return { result, update: Y.mergeUpdates(updates) };
+  } finally {
+    doc.off("update", collect);
+  }
 }

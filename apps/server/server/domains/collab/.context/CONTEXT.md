@@ -292,11 +292,15 @@ new one at the same URI. Its fresh document identity does not inherit old drafts
 ### Cumulative-delete Apply closure
 
 Review classes close over overlapping branch delete sets as well as supplied
-struct references and same-client clock prefixes. State-vector rows carry old
-branch deletions even when those deletions target live-base structs; Apply must
-show their operations in the selected class before replaying that row. Delete
-ranges already present on the current live cut are excluded from this edge.
-Whole-document Apply and journal bytes are unchanged.
+struct references and same-client clock prefixes. Agent-edit writes now journal
+transaction deltas containing only their own deletions, so independent writes
+with distinct insertion clients no longer join through inherited tombstones.
+Keep cumulative-delete closure: other producers and retained state-vector rows
+can still carry old branch deletions targeting live-base structs. Apply must
+show their operations before replaying those bytes. Delete ranges already
+present on the current live cut are excluded from this edge. Same-chat writes
+without a runtime rebuild still join through their same-client clock prefix;
+fresh-client-per-write ownership belongs to the thread-peer pool.
 
 ### Surviving-text review anchors
 
