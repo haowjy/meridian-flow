@@ -3,7 +3,7 @@
  * class). The change leaves at once, refusals bring it back with their reason,
  * one change in flight disables every command, and each is sent once.
  */
-import type { DraftApplyChangesResponse } from "@meridian/contracts/drafts";
+import type { DraftApplyChangesResponse, DraftDiscardResponse } from "@meridian/contracts/drafts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -33,6 +33,12 @@ function harness(answer: Answer | (() => Promise<DraftApplyChangesResponse>)) {
     scope,
     apply: vi.fn(),
     discard: vi.fn(async () => {}),
+    discardChanges: vi.fn(
+      async (): Promise<DraftDiscardResponse> => ({
+        status: "discarded",
+        draftId: "draft",
+      }),
+    ),
     applyChanges,
     changeConfirmed: vi.fn(),
     batchStarted: vi.fn(),
@@ -94,7 +100,7 @@ describe("applying one change", () => {
     const first = session.applyChange(selection, change, tokens);
     expect(await session.applyChange(selection, change, tokens)).toEqual({ kind: "blocked" });
     expect(
-      await session.discardChange(selection, { classId: "other", operationIds: ["9"] }),
+      await session.discardChange(selection, { classId: "other", operationIds: ["9"] }, tokens),
     ).toEqual({ kind: "blocked" });
     expect(await session.applyReviewedDraft(selection)).toEqual({ kind: "blocked" });
     expect(ports.applyChanges).toHaveBeenCalledTimes(1);
@@ -107,7 +113,7 @@ describe("applying one change", () => {
     await first;
     // Released: the next change can go.
     expect(
-      (await session.discardChange(selection, { classId: "o", operationIds: ["9"] })).kind,
+      (await session.discardChange(selection, { classId: "o", operationIds: ["9"] }, tokens)).kind,
     ).toBe("change-settled");
   });
 
@@ -181,18 +187,52 @@ describe("discarding one change", () => {
     resetDraftCommandRecords();
   });
 
-  it("sends every operation of the change, including the writer's edits inside it", async () => {
-    const { session, ports } = harness({ status: "stale", draftId: "draft" });
-    const outcome = await session.discardChange(selection, change);
+  it("sends every operation of the change, including the writer's edits inside it, with the tokens the writer saw", async () => {
+    const { session, ports } = harness("unknown");
+    const outcome = await session.discardChange(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-settled", mode: "discard" });
-    expect(ports.discard).toHaveBeenCalledWith(selection, { operationIds: ["1", "2"] });
+    expect(ports.discardChanges).toHaveBeenCalledWith(selection, {
+      operationIds: ["1", "2"],
+      ...tokens,
+    });
+    expect(ports.discard).not.toHaveBeenCalled();
+    expect(ports.changeConfirmed).toHaveBeenCalledWith(selection, change, "discard");
+  });
+
+  it.each([
+    ["stale", "stale"],
+    ["incomplete_class", "stale"],
+    ["draft_only", "draft-only"],
+  ] as const)("a %s refusal brings the change back with its reason, never as a discard", async (status, code) => {
+    const { session, ports } = harness("unknown");
+    ports.discardChanges.mockResolvedValueOnce({ status, draftId: "draft", draftClosed: true });
+    const outcome = await session.discardChange(selection, change, tokens);
+    expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code });
+    expect(ports.changeConfirmed).not.toHaveBeenCalled();
+    const held = await records();
+    expect(hiddenOperationIds(held, draft).size).toBe(0);
+    expect(changeCommandState(held, draft, change)).toEqual({
+      phase: "failed",
+      mode: "discard",
+      code,
+    });
+  });
+
+  it("a change the server no longer has leaves, and says so", async () => {
+    const { session, ports } = harness("unknown");
+    ports.discardChanges.mockResolvedValueOnce({ status: "gone", draftId: "draft" });
+    expect(await session.discardChange(selection, change, tokens)).toEqual({
+      kind: "change-refused",
+      mode: "discard",
+      code: "gone",
+    });
     expect(ports.changeConfirmed).toHaveBeenCalledWith(selection, change, "discard");
   });
 
   it("a Discard that got no answer brings the change back", async () => {
-    const { session, ports } = harness({ status: "stale", draftId: "draft" });
-    ports.discard.mockRejectedValueOnce(new Error("offline"));
-    const outcome = await session.discardChange(selection, change);
+    const { session, ports } = harness("unknown");
+    ports.discardChanges.mockRejectedValueOnce(new Error("offline"));
+    const outcome = await session.discardChange(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code: "offline" });
     expect(changeCommandState(await records(), draft, change)).toEqual({
       phase: "failed",

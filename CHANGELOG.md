@@ -5,6 +5,7 @@
 - Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.
 
 - Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
+- Discarding one change sends the preview you saw, as applying one does. If the change was updated meanwhile, it comes back with "This change was updated. Check it and discard again." instead of vanishing, and the draft is never treated as discarded or closed.
 
 - Handling the last text change preserves independent draft formatting for document-level Apply or Discard.
 - Draft review sends one command per draft at a time, whether it comes from the Editor or the Chat: while a change's Apply or Discard is in flight, the draft's Apply and Discard are disabled everywhere, and the other way round.

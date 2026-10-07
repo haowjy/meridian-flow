@@ -101,11 +101,19 @@ export function ChangeFailureText({
 }) {
   switch (code) {
     case "stale":
-      return <Trans>This change was updated. Check it and apply again.</Trans>;
+      return mode === "apply" ? (
+        <Trans>This change was updated. Check it and apply again.</Trans>
+      ) : (
+        <Trans>This change was updated. Check it and discard again.</Trans>
+      );
     case "gone":
       return <Trans>That change is no longer in the draft.</Trans>;
     case "draft-only":
-      return <Trans>A new document is applied as a whole. Use Apply draft.</Trans>;
+      return mode === "apply" ? (
+        <Trans>A new document is applied as a whole. Use Apply draft.</Trans>
+      ) : (
+        <Trans>A new document is discarded as a whole. Use Discard draft.</Trans>
+      );
     case "unknown":
       return (
         <Trans>

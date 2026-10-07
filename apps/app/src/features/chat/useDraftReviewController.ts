@@ -322,20 +322,22 @@ export function useDraftReviewController({
       void settleConfirmedApply(tab);
       return "applied";
     },
-    discard: async ({ documentId, draftId }, input) => {
-      await discardMutation.mutateAsync({
+    discard: async ({ documentId, draftId }) => {
+      await discardMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
+    },
+    discardChanges: ({ documentId, draftId }, request) =>
+      discardMutation.mutateAsync({
         projectId,
         workId,
         threadId,
         documentId,
         draftId,
-        ...input,
-        // Only a per-change Discard can end a review by closing its draft.
-        onAnswered: input
-          ? (response) => settleAnsweredCommand(documentId, draftId, response)
-          : undefined,
-      });
-    },
+        request,
+        // Only an answered Discard can close the draft; a refusal says nothing about it.
+        onAnswered: (response) => {
+          if (response.status === "discarded") settleAnsweredCommand(documentId, draftId, response);
+        },
+      }),
     applyChanges: async ({ documentId, draftId }, request) => {
       try {
         return await applyChangesMutation.mutateAsync({
@@ -564,8 +566,11 @@ export function useDraftReviewController({
 
   const discardChange = useCallback(
     (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand("discard", change, (selection) =>
-        reviewSession.discardChange(selection, change),
+      runChangeCommand("discard", change, (selection, tokens) =>
+        // As with Apply: without a preview there is nothing the writer saw to discard.
+        tokens
+          ? reviewSession.discardChange(selection, change, tokens)
+          : Promise.resolve({ kind: "change-refused", mode: "discard", code: "stale" }),
       ),
     [reviewSession, runChangeCommand],
   );

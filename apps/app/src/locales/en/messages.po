@@ -377,6 +377,10 @@ msgstr "A folder named {trimmed} already exists in this location."
 msgid "A new document is applied as a whole. Use Apply draft."
 msgstr "A new document is applied as a whole. Use Apply draft."
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "A new document is discarded as a whole. Use Discard draft."
+msgstr "A new document is discarded as a whole. Use Discard draft."
+
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
@@ -3991,6 +3995,10 @@ msgstr "This change no longer matches the chapter text, so it can't be reversed.
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "This change was updated. Check it and apply again."
 msgstr "This change was updated. Check it and apply again."
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "This change was updated. Check it and discard again."
+msgstr "This change was updated. Check it and discard again."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This chapter is no longer available, so its change details can't be shown."
