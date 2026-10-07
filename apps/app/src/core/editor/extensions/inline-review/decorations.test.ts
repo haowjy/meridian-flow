@@ -554,11 +554,20 @@ describe("clicking a removal puts the caret where it stands", () => {
     removal?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     removal?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX, clientY }));
   };
-  /** jsdom lays nothing out: give the widget a box so a click has a side. */
+  /**
+   * jsdom lays nothing out: give the widget a box so a click has a side. Like a
+   * browser, a widget that has left the document has no box, so a side read
+   * after the click rebuilt the widget comes out as zero.
+   */
   const boxed = (removal: HTMLElement | undefined) =>
     vi
       .spyOn(removal as HTMLElement, "getBoundingClientRect")
-      .mockReturnValue({ left: 100, top: 10, width: 40, height: 20 } as DOMRect);
+      .mockImplementation(
+        () =>
+          (removal?.parentNode
+            ? { left: 100, top: 10, width: 40, height: 20 }
+            : { left: 0, top: 0, width: 0, height: 0 }) as DOMRect,
+      );
 
   it("moves the caret to the removal's position, so typing lands there", () => {
     const { editor } = createReviewEditor(["Alpha beta gamma."]);
@@ -623,9 +632,12 @@ describe("clicking a removal puts the caret where it stands", () => {
     );
     const [removal] = removals(editor);
     boxed(removal);
+    // The first click focuses the change and rebuilds the widget under the pointer.
     pressAndRelease(removal, 110, 12);
     expect(editor.state.selection.from).toBe(posOf(editor, "one.") + 4);
-    pressAndRelease(removal, 110, 25);
+    const [rebuilt] = removals(editor);
+    boxed(rebuilt);
+    pressAndRelease(rebuilt, 110, 25);
     expect(editor.state.selection.from).toBe(posOf(editor, "Keep two"));
   });
 
