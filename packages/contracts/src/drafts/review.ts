@@ -88,7 +88,7 @@ type ReviewHunkBase = {
     relStart: string;
     relEnd: string;
   };
-  /** True when branch and live CRDT structs interleave in one text node; this marks a merge artifact, not authorship. */
+  /** True when surviving inserted text has both insertion boundaries in context removed by the other author. Mixed author spans alone are not a merge artifact. */
   mergeArtifact?: boolean;
 };
 
