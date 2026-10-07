@@ -8,6 +8,7 @@ import type { LineageRange } from "../lineage/range-set.js";
 import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
+import { alignBlocks } from "./block-alignment.js";
 import {
   findTextMatches,
   serializeBlockBody,
@@ -475,6 +476,12 @@ function parseReplacementRange(
   }
 }
 
+/**
+ * Rewrite a scope as `parsed`: blocks equal to their replacement are left
+ * alone, a changed block keeps its identity and is diffed in place, and only
+ * blocks with no counterpart are inserted or removed. Atoms (pictures, hard
+ * breaks) are matched as nodes, never through flat text offsets.
+ */
 function replaceScope(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -484,8 +491,12 @@ function replaceScope(
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
   const newBlocks = parsed.blocks;
+  const allBlocks = ctx.model.getBlocks(ctx.doc);
+  const projected = ctx.model.projectBlocks(ctx.doc);
+  const indexByBlock = new Map(allBlocks.map((block, index) => [block, index]));
+  const oldNodes = oldBlocks.map((block) => projected[indexByBlock.get(block) ?? -1]);
   let anchor: BlockRef | undefined =
-    scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
+    scope.startIndex > 0 ? allBlocks[scope.startIndex - 1] : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
 
@@ -511,47 +522,33 @@ function replaceScope(
     pendingDelete = [];
   };
 
-  const sharedCount = Math.min(oldBlocks.length, newBlocks.length);
-  for (let index = 0; index < sharedCount; index += 1) {
-    const oldBlock = oldBlocks[index];
-    const newBlock = newBlocks[index];
-    if (
-      ctx.model.getBlockType(oldBlock) === newBlock.type.name &&
-      reusableAttrs(ctx, oldBlock, newBlock)
-    ) {
-      flushStructural();
-      edits.push(
-        newBlock.isTextblock && newBlock.type.name !== "code_block"
-          ? {
-              documentId: params.documentAddress.documentId,
-              file: params.documentAddress.filePath,
-              kind: "text",
-              block: oldBlock,
-              span: { start: 0, end: ctx.model.getText(oldBlock).length },
-              newText: serializePmBlockBody(ctx, newBlock),
-              ...(params.find !== undefined ? { semanticLowering: "prosemirror" as const } : {}),
-            }
-          : {
-              documentId: params.documentAddress.documentId,
-              file: params.documentAddress.filePath,
-              kind: "block",
-              block: oldBlock,
-              replacement: newBlock,
-            },
-      );
-      anchor = oldBlock;
+  for (const step of alignBlocks(oldNodes, newBlocks)) {
+    if (step.kind === "remove") {
+      pendingDelete.push(oldBlocks[step.old]);
       continue;
     }
-    pendingDelete.push(oldBlock);
-    pendingInsert.push(newBlock);
-  }
-
-  for (let index = sharedCount; index < oldBlocks.length; index += 1) {
-    pendingDelete.push(oldBlocks[index]);
-  }
-
-  for (let index = sharedCount; index < newBlocks.length; index += 1) {
-    pendingInsert.push(newBlocks[index]);
+    if (step.kind === "add") {
+      pendingInsert.push(newBlocks[step.next]);
+      continue;
+    }
+    const oldBlock = oldBlocks[step.old];
+    const newBlock = newBlocks[step.next];
+    if (step.kind === "change" && !reusableAttrs(ctx, oldBlock, newBlock)) {
+      pendingDelete.push(oldBlock);
+      pendingInsert.push(newBlock);
+      continue;
+    }
+    flushStructural();
+    if (step.kind === "change") {
+      edits.push({
+        documentId: params.documentAddress.documentId,
+        file: params.documentAddress.filePath,
+        kind: "block",
+        block: oldBlock,
+        replacement: newBlock,
+      });
+    }
+    anchor = oldBlock;
   }
   flushStructural();
 

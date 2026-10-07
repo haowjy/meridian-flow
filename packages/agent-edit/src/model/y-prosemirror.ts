@@ -320,11 +320,18 @@ export function applyInlineReplacement(
       message: `Text edits with formatting are not supported for ${current.type.name} blocks`,
     };
   }
-  const replacement = replaceFlatText(current, span, inline.nodes);
-  if (replacement.type.name !== blockType) {
-    return blockTypeMismatch(blockType, replacement.type.name);
+  // Flat offsets skip atoms, so a block holding a picture or a break is only
+  // ever replaced whole, through a block edit; here offsets are PM positions.
+  if (!hasFlatInlineContent(current)) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: `Text edits require flat inline content in ${current.type.name} blocks`,
+    };
   }
-  writePmBlock(doc, element, replacement);
+  const transform = new Transform(current);
+  transform.replaceWith(span.from, span.to, Fragment.from(inline.nodes));
+  writePmBlock(doc, element, transform.doc);
   return { ok: true };
 }
 
@@ -339,7 +346,7 @@ export function applyInlineReplacements(
   const current = toProsemirrorBlock(doc, element, schema);
   const blockType = element.nodeName;
   if (current.type.name !== blockType) return blockTypeMismatch(blockType, current.type.name);
-  if (!canReplaceInline(current) || current.content.size !== current.textContent.length) {
+  if (!canReplaceInline(current) || !hasFlatInlineContent(current)) {
     return {
       ok: false,
       code: "invalid_write",
@@ -422,53 +429,8 @@ function canReplaceInline(block: PMNode): boolean {
   return block.isTextblock && block.type.name !== "code_block";
 }
 
-function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode[]): PMNode {
-  if (block.content.size === block.textContent.length) {
-    const transform = new Transform(block);
-    transform.replaceWith(span.from, span.to, Fragment.from(replacement));
-    return transform.doc;
-  }
-
-  // Flat resolver offsets intentionally exclude atoms such as hard breaks. Until a span crosses
-  // one, preserve the atom structurally instead of pretending the flat offset is a PM position.
-  let cursor = 0;
-  let inserted = false;
-  const children: PMNode[] = [];
-
-  const insertReplacement = () => {
-    if (inserted) return;
-    children.push(...replacement);
-    inserted = true;
-  };
-
-  block.forEach((child) => {
-    if (!child.isText) {
-      if (cursor >= span.from && cursor <= span.to) insertReplacement();
-      children.push(child);
-      return;
-    }
-    const text = child.text ?? "";
-    const start = cursor;
-    const end = cursor + text.length;
-    if (end <= span.from || start >= span.to) {
-      if (!inserted && span.from === span.to && span.from === start) insertReplacement();
-      children.push(child);
-      cursor = end;
-      return;
-    }
-
-    const keepLeft = Math.max(0, span.from - start);
-    const keepRight = Math.max(0, end - span.to);
-    if (keepLeft > 0) children.push(child.type.schema.text(text.slice(0, keepLeft), child.marks));
-    insertReplacement();
-    if (keepRight > 0) {
-      children.push(child.type.schema.text(text.slice(text.length - keepRight), child.marks));
-    }
-    cursor = end;
-  });
-  if (!inserted) insertReplacement();
-
-  return block.type.create(block.attrs, children, block.marks);
+function hasFlatInlineContent(block: PMNode): boolean {
+  return block.content.size === block.textContent.length;
 }
 
 function serializeBlockLines(

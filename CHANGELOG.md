@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- An AI overwrite or replace changes only the paragraphs and words that differ. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and writing a chapter back unchanged changes nothing.
 - Overlapping bold and italic, and strikethrough that starts or ends on a space, export as Markdown that reads back with the same formatting instead of stray `*` or `~~`.
 - A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`.
 
