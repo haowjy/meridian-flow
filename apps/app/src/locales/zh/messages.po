@@ -573,6 +573,7 @@ msgstr ""
 msgid "Apply all 1 draft"
 msgstr ""
 
+#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply draft"
 msgstr ""
@@ -629,7 +630,7 @@ msgstr ""
 msgid "Back to chat"
 msgstr ""
 
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Back to live"
@@ -762,6 +763,7 @@ msgid "Changed 1 Work"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
+#: src/features/project/mobile/MobileChangeSheet.tsx
 msgid "Changes"
 msgstr ""
 
@@ -913,12 +915,16 @@ msgid "Close chat"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "Close review"
 msgstr ""
 
 #: src/features/account/PhoneSettings.tsx
 msgid "Close settings"
+msgstr ""
+
+#: src/features/project/mobile/MobileChangeSheet.tsx
+msgid "Close the list"
 msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
@@ -1624,6 +1630,7 @@ msgid "Diagram"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -1650,6 +1657,7 @@ msgstr ""
 msgid "Discard changes"
 msgstr ""
 
+#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Discard draft"
 msgstr ""
@@ -1720,6 +1728,7 @@ msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgstr ""
 
 #: src/features/editor/DraftReviewHeader.tsx
+#: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
 msgstr ""
 
@@ -2064,6 +2073,10 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
+msgstr ""
+
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Hide changes"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -2581,7 +2594,7 @@ msgstr ""
 msgid "Next change"
 msgstr ""
 
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Next draft"
 msgstr ""
@@ -2604,7 +2617,7 @@ msgstr ""
 msgid "No billing activity yet."
 msgstr ""
 
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No changes left"
 msgstr ""
@@ -3473,6 +3486,7 @@ msgstr ""
 msgid "Shared an attachment"
 msgstr "分享了附件"
 
+#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Show changes"
 msgstr ""
@@ -3492,6 +3506,14 @@ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
+msgstr ""
+
+#: src/features/project/mobile/MobileReviewHeader.tsx
+msgid "Show the {count} changes"
+msgstr ""
+
+#: src/features/project/mobile/MobileReviewHeader.tsx
+msgid "Show the 1 change"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -3734,6 +3756,10 @@ msgstr ""
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "说出来理一理"
+
+#: src/features/project/mobile/MobileChangeSheet.tsx
+msgid "Tap a change to go to it in the manuscript."
+msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"

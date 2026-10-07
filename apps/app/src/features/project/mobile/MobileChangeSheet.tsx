@@ -78,11 +78,11 @@ export function MobileChangeSheet({
             />
           ))}
         </ul>
-        {/* The scrim sits over the manuscript's own toast; this one is seen. */}
+        {/* The scrim sits over the manuscript's own toast: this one rides the sheet's top edge, undimmed. */}
         <ReviewToast
           toast={controller.toast}
           onDismiss={controller.dismissToast}
-          className="bottom-[calc(env(safe-area-inset-bottom)+1rem)]"
+          className="bottom-full mb-3"
         />
       </SheetContent>
     </Sheet>
