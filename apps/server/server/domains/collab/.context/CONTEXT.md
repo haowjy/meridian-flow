@@ -288,3 +288,12 @@ covers both sources rewriting the live base of a pending insertion, then applyin
 that insertion without losing the live rewrite. `./mf doc put --overwrite` is not
 this path: on conflict its CLI explicitly deletes the old document and creates a
 new one at the same URI. Its fresh document identity does not inherit old drafts.
+
+### Cumulative-delete Apply closure
+
+Review classes close over overlapping branch delete sets as well as supplied
+struct references and same-client clock prefixes. State-vector rows carry old
+branch deletions even when those deletions target live-base structs; Apply must
+show their operations in the selected class before replaying that row. Delete
+ranges already present on the current live cut are excluded from this edge.
+Whole-document Apply and journal bytes are unchanged.
