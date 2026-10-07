@@ -584,6 +584,7 @@
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-text {
+  color: var(--color-review-removed-foreground);
   background: var(--color-review-removed-tint);
   border-radius: 2px;
   text-decoration: line-through;
@@ -593,17 +594,32 @@
 }
 
 /* A struck removal beside the text that replaced it must read as two things,
-   not "his" fused into "one": a word-space of air outside the tint. Inline
-   removals only; a block removal is its own paragraph. */
+   not "his" fused into "one". The air is a margin on the widget, never a space
+   character, so it is not text and cannot be selected or saved. Before
+   punctuation or a line end there is none: a gap before "," reads as a typo.
+   Inline removals only; a block removal is its own paragraph. */
 .meridian-editor .ProseMirror span.meridian-review-removal:not(.meridian-review-removal-block) {
-  margin-inline-end: 0.3em;
+  margin-inline-end: 0.12em;
+}
+
+.meridian-editor .ProseMirror span.meridian-review-removal-tight {
+  margin-inline-end: 0;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal-tight
+  > .meridian-review-removal-text:last-child {
+  padding-inline-end: 0;
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-writer {
   color: var(--color-review-writer-removed-foreground);
 }
 
-.meridian-editor .ProseMirror .meridian-review-removal-writer .meridian-review-removal-text {
+/* Colour is per stretch: one removal can hold the AI's words and the writer's. */
+.meridian-editor .ProseMirror .meridian-review-removal-text-writer {
+  color: var(--color-review-writer-removed-foreground);
   background: var(--color-review-writer-tint);
 }
 
@@ -625,10 +641,25 @@
 
 .meridian-editor
   .ProseMirror
-  .meridian-review-removal-writer.meridian-review-emphasized
-  .meridian-review-removal-text {
+  .meridian-review-removal.meridian-review-emphasized
+  .meridian-review-removal-text-writer {
   background: var(--color-review-writer-emphasis);
   box-shadow: inset 0 -2px 0 0 var(--color-review-writer-ring);
+}
+
+/* The focused change's bar, when the margin has no room for it: a block of its
+   own after the change's paragraph. It sits in the manuscript's flow, so the
+   text below moves down for it. The manuscript's serif and prose rhythm stop
+   at its edge; the bar is app chrome. */
+.meridian-editor .ProseMirror .meridian-review-bar-slot {
+  margin-block: 0.5rem 0.75rem;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-foreground);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* A long removal folds to one quiet line the writer can open. */

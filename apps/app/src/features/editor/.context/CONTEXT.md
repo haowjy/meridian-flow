@@ -80,14 +80,19 @@ Two self-contained surfaces, both resolving their own state from
   document's review has painted (`inlineReview.shown`).
 - `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
   ABOVE the identity bar (order: tab strip → review strip → identity bar →
-  prose), only once `inlineReview.shown`. One row: `Manuscript /`, the draft
+  prose), only once `inlineReview.shown`. One row: the draft
   switcher, the stepper, Show changes, Discard draft, Apply draft; a second line
   appears only for a failed whole-draft command or when the last change is
   handled ("No changes left" with Next draft). Its parts live in
   `features/draft-review`.
 - The focused change's bar is the `review-change-bar` chrome surface
-  (`surfaces/review`), portalled into the manuscript's scroll pane beside the
-  change. `useInlineReviewFocus` keeps the marks and the controller saying the
+  (`surfaces/review`). It never covers manuscript text. With room in the right
+  margin (`place-review-bar`: at least 132px between the text column and the
+  pane edge) it is portalled into the manuscript's scroll pane beside the
+  change's first line. Without, the surface asks the inline-review plugin for a
+  bar slot (`setInlineReviewBarSlot`): an empty non-editable block widget after
+  the paragraph the change ends in, which the bar is portalled into, so the
+  text below moves down for it. Both scroll with the text. `useInlineReviewFocus` keeps the marks and the controller saying the
   same thing (Show changes, the focused change, a click on a mark, the pulse on
   arrivals).
 
@@ -108,9 +113,12 @@ carry `data-editor-surface="live|review"` for frame probes
 The review manuscript is the server draft projection plus decorations, in the
 manner of suggestion mode. Insertions are inline decorations over text that
 exists in the projection (green AI, gold writer, gold inside green for a writer
-edit inside an AI change, dashed grey when authorship cannot be split).
+edit inside an AI change, dashed grey when the server flags `mergeArtifact`: a
+true CRDT interleave, not merely two authors in one hunk).
 Removed live text is a read-only widget decoration (`removal-widget.ts`), struck
-through where it was: crimson for the AI, gold for the writer, never part of the
+through where it was: crimson for the AI, gold for the writer, each stretch in its
+remover's colour (a text hunk's `deletedSpans`; a block hunk's removal is read
+from its owning operations), never part of the
 Y.Doc or the TipTap document, so it cannot be typed into or saved. Long removals
 (over 200 characters) fold to "N paragraphs removed" and open on click. The
 review editor stays editable: the draft is a Yjs room and the writer is one more
