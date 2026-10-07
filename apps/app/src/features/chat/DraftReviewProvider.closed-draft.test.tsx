@@ -142,6 +142,53 @@ describe("a review whose last change closes the draft", () => {
     });
   });
 
+  describe("discarding the last change", () => {
+    const oneChange = { ...preview, operations: [operation("2")] };
+
+    it("settles at the click, before the server's reset reaches the review room", async () => {
+      mocks.getDraftPreview.mockResolvedValue(oneChange);
+      let answer!: (response: unknown) => void;
+      mocks.discardDraft.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+      await renderScope(async () => {
+        await reviewOpened();
+        let done: Promise<unknown> | undefined;
+        await act(async () => {
+          done = review?.controller.discardChange(change("2"));
+        });
+        expect(review?.controller.inlineReview?.cleared).toEqual({ documentName: "Chapter 12" });
+        await act(async () => {
+          answer({ status: "discarded", draftId: "draft-a", draftClosed: true });
+          await done;
+        });
+        expect(review?.controller.inlineReview?.cleared).toBeDefined();
+      });
+    });
+
+    it("brings the review back when the Discard does not land", async () => {
+      mocks.getDraftPreview.mockResolvedValue(oneChange);
+      mocks.discardDraft.mockRejectedValue(new Error("offline"));
+      await renderScope(async () => {
+        await reviewOpened();
+        await act(async () => {
+          await review?.controller.discardChange(change("2"));
+        });
+        expect(review?.controller.inlineReview?.cleared).toBeUndefined();
+        expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      });
+    });
+
+    it("does not settle while another change is left", async () => {
+      mocks.discardDraft.mockReturnValue(new Promise(() => undefined));
+      await renderScope(async () => {
+        await reviewOpened();
+        await act(async () => {
+          void review?.controller.discardChange(change("2"));
+        });
+        expect(review?.controller.inlineReview?.cleared).toBeUndefined();
+      });
+    });
+  });
+
   it("stays unfinished while the server keeps the draft open", async () => {
     mocks.applyDraftChanges.mockResolvedValue(applied(false));
     await renderScope(async () => {

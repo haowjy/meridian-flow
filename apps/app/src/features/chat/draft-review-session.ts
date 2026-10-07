@@ -394,6 +394,7 @@ export type DraftReviewAction =
       draftId: string;
       documentName: string | null;
     }
+  | { type: "reviewReopened"; documentId: string; draftId: string }
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
@@ -454,6 +455,13 @@ export function draftReviewReducer(
             ...state,
             surface: { ...state.surface, cleared: { documentName: action.documentName } },
           };
+    case "reviewReopened": {
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
+        return state;
+      }
+      const { cleared: _cleared, ...reopened } = state.surface;
+      return state.surface.cleared ? { ...state, surface: reopened } : state;
+    }
     case "marksVisible":
       return state.marksVisible === action.visible
         ? state
