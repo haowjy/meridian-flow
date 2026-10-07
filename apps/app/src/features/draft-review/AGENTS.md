@@ -42,9 +42,20 @@ is one server closure class.
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.
-- The chat link reads `actorThreadId` and `actorThreadTitle` from an operation;
-  until the preview carries them every AI change reads "AI".
-- The last change handled holds the review open (`cleared`) with "No changes
-  left" and a Next draft button; it never jumps on its own. The draft is marked
-  cleared (`markDraftCleared`) so it is not offered again while the server still
-  lists it, emptied.
+- The chat link reads `actorThreadId` and `actorThreadTitle` from an operation
+  and names the chat as the chat list does (`displayThreadTitle`: "New chat"
+  when untitled); an operation the server cannot place in a chat reads "AI".
+- A change's excerpt reads its text once: operations of one change that report
+  the same or overlapping text (the writer's edit inside an AI insert repeats it)
+  are joined without the repeats.
+- The last change handled holds the review open (`inlineReview.cleared`, which
+  carries the document's name) with "No changes left" and a Next draft button
+  (or Back to live when no draft is left); it never jumps on its own. The server
+  closes the draft in the command that handles its last change, so the draft
+  leaves the Work's list. The hold is the review's own state, set from the
+  command's `draftClosed` answer before the list and preview re-reads, and
+  neither the provider nor the address owner exits a cleared review because its
+  draft left the list. The client keeps no list of "cleared" drafts.
+- A last Discard settles at the click (live already is the finished text) and
+  reopens if it does not land; a last Apply settles on its answer, because live
+  has no change in it until then.

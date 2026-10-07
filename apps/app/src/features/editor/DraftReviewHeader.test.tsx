@@ -302,6 +302,22 @@ describe("DraftReviewHeader", () => {
     }
   });
 
+  it("offers the way back to live when no other draft is left", async () => {
+    const all = groups.splice(0, groups.length);
+    Object.assign(view, { items: [], cleared: true });
+    controller.inlineReview = { cleared: { documentName: "Chapter 12" } };
+    try {
+      await render({}, async () => {
+        expect(document.body.textContent).toContain("No changes left");
+        expect(byText("Next draft")).toBeUndefined();
+        await act(async () => byText("Back to live")?.click());
+        expect(controller.exitInlineReview).toHaveBeenCalledOnce();
+      });
+    } finally {
+      groups.push(...all);
+    }
+  });
+
   it("shows a failed whole-draft command on the header", async () => {
     controller.inlineReviewMessage = { code: "apply-failed", tone: "error" };
     await render({}, async () => {

@@ -5,6 +5,7 @@ import {
   BAR_GAP_PX,
   BAR_MAX_WIDTH_PX,
   BAR_MIN_WIDTH_PX,
+  BAR_MIN_WIDTH_WITH_EDITS_PX,
   placeReviewBar,
 } from "./place-review-bar";
 
@@ -36,6 +37,20 @@ describe("placeReviewBar", () => {
     expect(placeReviewBar({ anchor, columnRight: columnRight - 1, paneWidth: 920 }).kind).toBe(
       "margin",
     );
+  });
+
+  it("needs a wider margin for a change with the writer's edits, whose Discard reads in full", () => {
+    // A 1280px window's margin holds the plain bar but would push Apply past the pane's edge.
+    const room = BAR_MIN_WIDTH_PX + 10;
+    const columnRight = 920 - BAR_EDGE_PX - BAR_GAP_PX - room;
+    expect(placeReviewBar({ anchor, columnRight, paneWidth: 920 }).kind).toBe("margin");
+    expect(
+      placeReviewBar({ anchor, columnRight, paneWidth: 920, includesWriterEdits: true }).kind,
+    ).toBe("below");
+    const wide = 920 - BAR_EDGE_PX - BAR_GAP_PX - BAR_MIN_WIDTH_WITH_EDITS_PX;
+    expect(
+      placeReviewBar({ anchor, columnRight: wide, paneWidth: 920, includesWriterEdits: true }).kind,
+    ).toBe("margin");
   });
 
   it("keeps a change scrolled to the very top on the page", () => {

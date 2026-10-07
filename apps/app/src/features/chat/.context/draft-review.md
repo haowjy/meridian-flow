@@ -52,12 +52,18 @@ draft and the change's class id, matched by shared operations):
 Apply sends the live and draft revision tokens of the cached preview the writer
 saw (opaque strings), so a change updated under them is refused, never applied.
 The toast ("Applied", "Discarded", "That change is no longer in the draft.") is
-controller state (`toast`), rendered by `ReviewToast`. The last change handled
-sets `inlineReview.cleared`: the review stays open with "No changes left" and
-Next draft, the provider does not exit it when the draft leaves the server's
-list, and the draft is marked cleared (`markDraftCleared`, until the AI writes
-again) so no surface offers it as pending while the server still lists it
-emptied.
+controller state (`toast`), rendered by `ReviewToast`. The server closes a draft
+in the command that handles its last change (the response carries `draftClosed`
+and `draftDisposition`), so the draft leaves the Work's list. The controller
+settles the review from that answer, ahead of the list and preview re-reads
+(`onAnswered` on the mutation): `inlineReview.cleared` holds the review open on
+"No changes left" with Next draft (Back to live when no draft is left), and
+neither the provider's "draft left the list" exit nor the address owner ends a
+cleared review. A last per-change Discard settles at the click and reopens if it
+does not land. `EditorView` shows the warm live editor, editable, in place of the
+review editor (the draft equals live; the review room is a closed generation and
+its reset would otherwise show doubled text), with the review chrome up. After a
+reload the draft is not listed and the address falls back to live.
 
 Focus is controller state too (`inlineReview.focusedClassId`,
 `focusReviewChange`). `useInlineReviewFocus` (in `EditorView`) syncs it, Show
