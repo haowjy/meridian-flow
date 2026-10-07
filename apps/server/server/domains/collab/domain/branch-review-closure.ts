@@ -1,4 +1,4 @@
-/** Builds server-authoritative selective-Discard classes. */
+/** Builds server-authoritative dependency-closed Apply/Discard classes. */
 
 import {
   asPhysicalSourceUpdateIds,
@@ -16,7 +16,7 @@ import {
 type DependencyUpdate = { id: number; updateData: Uint8Array | Buffer };
 
 /**
- * One Discard class joins operations that share a visible hunk or a physical
+ * One review class joins operations that share a visible hunk or a physical
  * journal row. Physical rows include the later rows that carry or reverse a
  * logical operation, so overlap is the review model's causal/dependent edge.
  */

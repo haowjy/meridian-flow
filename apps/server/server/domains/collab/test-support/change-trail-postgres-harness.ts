@@ -1,3 +1,4 @@
+import { createDrizzleDraftReviewLive } from "../adapters/drizzle-draft-review-live.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -600,12 +601,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branchPush: realBranchPush,
     branchReview,
     workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
-    liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
     resolveDocumentUri,
-    latestUpdateSeq: persistence.store.latestUpdateSeq,
+    readLiveReviewCut: createDrizzleDraftReviewLive(db, persistence.journal),
   });
   const collab = {
     agentEdit: () => agentEdit,

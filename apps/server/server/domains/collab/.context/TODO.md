@@ -1,5 +1,12 @@
 # collab TODO
 
+## Per-change Apply Undo
+
+Add a durable applied-class receipt and a live reversal planner over that receipt’s
+authored rows, with later-dependency checks. Keep `system:reconcile` non-semantic
+and non-targetable. Per-change Apply currently confirms settlement only; it does
+not vend a reversal receipt or implement per-change Undo.
+
 ## Paths that hold a pooled connection while taking another
 
 The live-pull deadlock (10 concurrent pulls each held a root transaction and

@@ -17,6 +17,7 @@ import {
   type BranchPushService,
   type BranchPushServiceInput,
   type CandidateBatch,
+  DraftChangeRefusal,
   type PendingLiveSettlement,
   type PushCandidate,
   type PushLineageRow,
@@ -198,6 +199,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           });
           return {
             ...candidate.prepared,
+            expectedLiveRevision: batch.expectedLiveRevision,
             receiptId: batch.receiptId,
             pushedByUserId: batch.pushedByUserId,
             trail,
@@ -250,6 +252,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   async function withActiveWorkDraftBranchLock<T>(
     branchIds: readonly string[],
     run: (branches: readonly BranchSnapshot[], lease: BranchLockLease) => Promise<T>,
+    refuseGone = false,
   ): Promise<T> {
     const retryBranchId = branchIds[0];
     if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
@@ -258,7 +261,11 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         return await criticalSections.withBranches(branchIds, async (lease) => {
           const branches = await Promise.all(
             branchIds.map(async (branchId) =>
-              assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId),
+              assertActiveWorkDraftBranch(
+                await input.branchStore.getBranch(branchId),
+                branchId,
+                refuseGone,
+              ),
             ),
           );
           return run(branches, lease);
@@ -353,22 +360,28 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     });
 
   const pushSelectedToLive: BranchPushService["pushSelectedToLive"] = (pushInput) =>
-    withActiveWorkDraftBranchLock([pushInput.branchId], async ([branch], lease) => {
-      const source = await sourceFor(branch as BranchSnapshot);
-      const batch = buildSelectedRowCandidates({
-        source,
-        journalIds: pushInput.journalIds,
-        ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-      });
-      const result = await executeCandidateBatch(
-        batch,
-        branchMap([source.branch]),
-        lease,
-        pushInput.signal,
-      );
-      if (result.kind === "conflict") return { status: "already_pushed", push: result.push };
-      return mapCommitted(result);
-    });
+    withActiveWorkDraftBranchLock(
+      [pushInput.branchId],
+      async ([branch], lease) => {
+        const source = await sourceFor(branch as BranchSnapshot);
+        const selection = await pushInput.selectRows?.(source.branch, source.rows);
+        const batch = buildSelectedRowCandidates({
+          source,
+          journalIds: selection?.journalIds ?? pushInput.journalIds ?? [],
+          ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+        });
+        batch.expectedLiveRevision = selection?.expectedLiveRevision;
+        const result = await executeCandidateBatch(
+          batch,
+          branchMap([source.branch]),
+          lease,
+          pushInput.signal,
+        );
+        if (result.kind === "conflict") return { status: "already_pushed", push: result.push };
+        return mapCommitted(result);
+      },
+      true,
+    );
 
   const pushToLiveWithManifestEntry: BranchPushService["pushToLiveWithManifestEntry"] = (
     pushInput,
@@ -462,7 +475,10 @@ function branchMap(branches: readonly BranchSnapshot[]): ReadonlyMap<string, Bra
 function assertActiveWorkDraftBranch(
   branch: BranchSnapshot | null | undefined,
   branchId: string,
+  refuseGone = false,
 ): BranchSnapshot {
+  if (refuseGone && (branch?.kind !== "work_draft" || branch.status !== "active"))
+    throw new DraftChangeRefusal("gone");
   if (!branch) throw new Error(`Branch ${branchId} does not exist`);
   if (branch.kind !== "work_draft" || branch.status !== "active") {
     throw new Error(`Branch ${branchId} is not an active work draft`);

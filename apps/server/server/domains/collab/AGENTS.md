@@ -10,8 +10,9 @@ editor UI or transport-shell policy.
   Sync propagates between them; journals are durable and runtime state is
   reconstructible.
 - A Work draft is shared by every thread editing the same document in that Work.
-  Apply publishes its whole current branch; Discard operates on server-vended
-  review classes rather than client-reconstructed turns.
+  Document Apply publishes its whole current branch. Per-change Apply and Discard
+  share server-vended dependency-closed classes, never client-reconstructed turns.
+  Per-change Apply fences both preview revisions; document Apply remains unfenced.
 - Each live document has a durable authority head whose identity, generation,
   and admission sequence fence every connection and mutation.
 - `@meridian/agent-edit` owns schema-safe mutation and reversal planning. This

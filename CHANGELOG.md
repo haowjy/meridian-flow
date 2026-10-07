@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Apply individual dependency-closed draft changes, with stale-preview refusal and preserved authorship.
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
 - A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.

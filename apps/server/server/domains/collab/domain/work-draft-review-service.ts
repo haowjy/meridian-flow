@@ -1,5 +1,10 @@
 /** Work-draft listing, repair, preview, Apply, and Discard orchestration. */
+import { createHash } from "node:crypto";
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import type {
+  DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
+} from "@meridian/contracts/drafts";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -9,12 +14,15 @@ import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type {
   BranchJournalReadStore,
+  BranchJournalRow,
   BranchPushService,
   BranchReviewService,
   PushToLiveResult,
 } from "./branch-push-contracts.js";
+import { DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
+import { documentRevision } from "./document-revision.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore, WorkDraftDiscard } from "./ports/application-branch-store.js";
@@ -29,14 +37,11 @@ export function createWorkDraftReviewService(input: {
   branchPush: BranchPushService;
   branchReview: BranchReviewService;
   workDraftPending: WorkDraftPending;
-  liveCoordinator: {
-    withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
-  };
   documents: Pick<MarkdownDocumentEngine, "serializeDocument">;
   model: YProsemirrorDocumentModel;
   agentEdit: ThreadPeerAgentEditCore;
   resolveDocumentUri(documentId: string): Promise<string | null>;
-  latestUpdateSeq(documentId: string): Promise<number>;
+  readLiveReviewCut(documentId: string): Promise<{ state: Uint8Array; revision: string }>;
 }): CollabDrafts {
   async function resolveDraftOnlyDocumentIds(command: {
     projectId?: ProjectId;
@@ -97,13 +102,7 @@ export function createWorkDraftReviewService(input: {
     workId: WorkId;
     draftId: string;
   }) {
-    const liveState = await input.liveCoordinator.withDocument(
-      command.documentId,
-      async (liveDoc) => ({
-        state: Y.encodeStateAsUpdate(liveDoc),
-        markdown: await input.documents.serializeDocument(command.documentId, liveDoc),
-      }),
-    );
+    const liveState = await input.readLiveReviewCut(command.documentId);
     const liveDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(liveDoc, liveState.state);
     let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
@@ -133,15 +132,11 @@ export function createWorkDraftReviewService(input: {
       }
       if (branch.branchId !== command.draftId) throw new Error("draft_not_found");
       try {
-        const draftUpdates = (
-          await input.branchJournal.listReviewableJournalRows(branch.branchId, branch.generation)
-        ).map((row) => ({
-          id: row.id,
-          actorTurnId: row.turnId,
-          actorUserId: row.actorUserId,
-          updateData: row.updateData,
-          updateKind: row.status === "rollback_pending" ? "rollback_pending" : row.source,
-        }));
+        const rows = await input.branchJournal.listReviewableJournalRows(
+          branch.branchId,
+          branch.generation,
+        );
+        const draftUpdates = reviewUpdates(rows);
         const review = computeDraftReviewHunks({
           liveDoc,
           draftDoc: branch.doc,
@@ -152,11 +147,11 @@ export function createWorkDraftReviewService(input: {
           status: "active" as const,
           draftId: command.draftId,
           reviewRoomName: branchRoomName(branch.branchId, branch.generation),
-          live: liveState.markdown,
+          live: await input.documents.serializeDocument(command.documentId, liveDoc),
           markdown: await input.documents.serializeDocument(command.documentId, branch.doc),
           isNewDocument: await isDraftOnlyManifestDocument(command),
-          liveRevisionToken: await input.latestUpdateSeq(command.documentId),
-          draftRevisionToken: branch.generation,
+          liveRevisionToken: liveState.revision,
+          draftRevisionToken: draftReviewRevision(branch.generation, branch.doc, rows),
           inlineModelPresent: true as const,
           operations: review.operations,
           hunks: review.hunks,
@@ -252,6 +247,85 @@ export function createWorkDraftReviewService(input: {
     return { status: "applied" as const, draftId: command.draftId };
   }
 
+  async function applyWorkDraftChanges(
+    command: DraftApplyChangesRequest & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      documentId: DocumentId;
+      userId: UserId;
+      signal?: AbortSignal;
+    },
+  ): Promise<DraftApplyChangesResponse> {
+    const branch = await resolveActiveWorkDraft(command);
+    if (!branch) return { status: "gone", draftId: command.draftId };
+    let appliedOperations: string[] = [];
+    let appliedClasses: string[] = [];
+    try {
+      await input.branchPush.pushSelectedToLive({
+        branchId: branch.branchId,
+        pushedByUserId: command.userId,
+        signal: command.signal,
+        selectRows: async (snapshot, rows) => {
+          if (await isDraftOnlyManifestDocument(command))
+            throw new DraftChangeRefusal("draft_only");
+          const liveCut = await input.readLiveReviewCut(command.documentId);
+          const liveDoc = createCollabYDoc({ gc: false });
+          const draftDoc = createCollabYDoc({ gc: false });
+          try {
+            Y.applyUpdate(liveDoc, liveCut.state);
+            Y.applyUpdate(draftDoc, snapshot.state);
+            const draftUpdates = reviewUpdates(rows);
+            const draftRevisionToken = draftReviewRevision(snapshot.generation, draftDoc, rows);
+            if (
+              command.liveRevisionToken !== liveCut.revision ||
+              command.draftRevisionToken !== draftRevisionToken
+            )
+              throw new DraftChangeRefusal("stale");
+            const preview = computeDraftReviewHunks({
+              liveDoc,
+              draftDoc,
+              model: input.model,
+              draftUpdates,
+            });
+            const requested = new Set(command.operationIds);
+            if (
+              !requested.size ||
+              [...requested].some((id) => !preview.operations.some((op) => op.operationId === id))
+            )
+              throw new DraftChangeRefusal("gone");
+            const classes = new Set(
+              preview.operations
+                .filter((op) => requested.has(op.operationId))
+                .map((op) => op.closureClassId),
+            );
+            const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
+            if (selected.some((op) => !requested.has(op.operationId)))
+              throw new DraftChangeRefusal("incomplete_class");
+            appliedOperations = selected.map((op) => op.operationId);
+            appliedClasses = [...classes];
+            return {
+              journalIds: [...new Set(selected.flatMap((op) => op.closureUpdateIds))],
+              expectedLiveRevision: liveCut.revision,
+            };
+          } finally {
+            liveDoc.destroy();
+            draftDoc.destroy();
+          }
+        },
+      });
+      return {
+        status: "applied",
+        draftId: command.draftId,
+        operationIds: appliedOperations,
+        closureClassIds: appliedClasses,
+      };
+    } catch (cause) {
+      if (cause instanceof DraftChangeRefusal)
+        return { status: cause.status, draftId: command.draftId };
+      throw cause;
+    }
+  }
+
   async function discardWorkDraft(command: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -312,6 +386,7 @@ export function createWorkDraftReviewService(input: {
       async applyWorkDraft(command) {
         return applyWorkDraft(command);
       },
+      applyWorkDraftChanges,
       async discardWorkDraft(command) {
         return discardWorkDraft(command);
       },
@@ -328,4 +403,28 @@ function manuscriptContextPath(uri: string | null): string | null {
   if (!uri?.startsWith("manuscript://")) return null;
   const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
   return path ? `/${path}` : null;
+}
+
+function reviewUpdates(rows: readonly BranchJournalRow[]) {
+  return rows.map((row) => ({
+    id: row.id,
+    actorTurnId: row.turnId,
+    actorUserId: row.actorUserId,
+    updateData: row.updateData,
+    updateKind: row.status === "rollback_pending" ? ("rollback_pending" as const) : row.source,
+  }));
+}
+
+function draftReviewRevision(
+  generation: number,
+  doc: Y.Doc,
+  rows: readonly BranchJournalRow[],
+): string {
+  const journal = rows
+    .map((row) => `${row.id}:${row.status}`)
+    .sort()
+    .join(",");
+  return `d1:${createHash("sha256")
+    .update(`${generation}:${documentRevision(doc)}:${journal}`)
+    .digest("base64url")}`;
 }

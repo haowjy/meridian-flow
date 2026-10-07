@@ -14,8 +14,7 @@ export interface ThreadDraftListItem {
   wordsAdded: number | null;
   wordsRemoved: number | null;
   /**
-   * the draft creates a document that does not yet exist in the
-   * writer's live project (spec §5.5) — empty live root, no prior push_lineage.
+   * the draft contains a document outside the writer's live project manifest.
    * Drives the dock row `New` badge + additions-only stats and the review
    * card's `New document` variant. Derived server-side from the branching
    * model; consumed here. Absent/false = edit of a live document.
@@ -34,13 +33,14 @@ type ActiveDraftPreviewBase = {
   reviewRoomName: string;
   live: string;
   preview: string;
-  liveRevisionToken: number;
-  draftRevisionToken: number;
+  liveRevisionToken: string;
+  draftRevisionToken: string;
   notice?: { code: "branch_corrupt_reset"; message: string };
   /**
    * mirrors `ThreadDraftListItem.isNewDocument` (spec §5.5) so the
    * open review can render the all-additions `New document` card variant
    * without a second lookup. Produced by the server preview builder.
+   * Per-change Apply is unavailable when true; use whole-document Apply.
    */
   isNewDocument?: boolean;
 };
@@ -61,8 +61,8 @@ export interface ReviewOperation {
   actorTurnId?: string;
   /**
    * Server-vended closure-class id. Every operation in one journal-backed
-   * hunk-sharing closure class carries the same id; the review surface renders
-   * one proposal card per distinct id.
+   * dependency-closed review class carries the same id; the review surface renders
+   * one change per distinct id.
    */
   closureClassId: string;
   kind: "agent" | "writer";
@@ -113,3 +113,14 @@ export type DraftApplyRequest = { draftId: string };
 
 export type DraftDiscardResponse = { status: "discarded"; draftId: string };
 export type DraftDiscardRequest = { draftId: string; operationIds?: string[] };
+
+/** Select complete server-vended classes. Physical journal IDs never cross the wire. */
+export type DraftApplyChangesRequest = {
+  draftId: string;
+  operationIds: string[];
+  liveRevisionToken: string;
+  draftRevisionToken: string;
+};
+export type DraftApplyChangesResponse =
+  | { status: "applied"; draftId: string; operationIds: string[]; closureClassIds: string[] }
+  | { status: "stale" | "gone" | "draft_only" | "incomplete_class"; draftId: string };

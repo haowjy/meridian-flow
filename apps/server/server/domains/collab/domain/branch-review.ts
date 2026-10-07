@@ -28,8 +28,8 @@ export type DraftReviewPreview = {
   live: string;
   markdown: string;
   isNewDocument?: boolean;
-  liveRevisionToken: number;
-  draftRevisionToken: number;
+  liveRevisionToken: string;
+  draftRevisionToken: string;
   inlineModelPresent: true;
   operations: DraftReviewOperationInternal[];
   hunks: DraftReviewHunkInternal[];

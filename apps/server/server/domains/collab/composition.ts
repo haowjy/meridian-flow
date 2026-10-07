@@ -1,3 +1,4 @@
+import { createDrizzleDraftReviewLive } from "./adapters/drizzle-draft-review-live.js";
 /** Production dependency graph for the server collab domain. */
 
 import type { Database } from "@meridian/database";
@@ -412,12 +413,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPush,
     branchReview,
     workDraftPending,
-    liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
     resolveDocumentUri: documentUriResolver,
-    latestUpdateSeq: persistence.store.latestUpdateSeq,
+    readLiveReviewCut: createDrizzleDraftReviewLive(deps.db, persistence.journal),
   });
   const branchPeers = createEffectiveDocumentReader({
     branches,

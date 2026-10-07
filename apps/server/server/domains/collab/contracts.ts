@@ -4,6 +4,10 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
+import type {
+  DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
+} from "@meridian/contracts/drafts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -304,6 +308,15 @@ export type DraftReviewApi = {
     userId: UserId;
     signal?: AbortSignal;
   }): Promise<DraftApplyResult>;
+  applyWorkDraftChanges(
+    input: DraftApplyChangesRequest & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      documentId: DocumentId;
+      userId: UserId;
+      signal?: AbortSignal;
+    },
+  ): Promise<DraftApplyChangesResponse>;
   discardWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;
