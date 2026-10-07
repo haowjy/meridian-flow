@@ -35,6 +35,7 @@ type DraftUpdateAttributionIndex = {
     insertedRanges: readonly ClockRange[];
     deletedRanges: readonly ClockRange[];
   }): string[];
+  hasInterleavedEdits(insertedRanges: readonly ClockRange[]): boolean;
   operationRangesForInsertedRanges(insertedRanges: readonly ClockRange[]): OperationClockRange[];
   operationContributionsForRanges(input: {
     insertedRanges: readonly ClockRange[];
@@ -71,6 +72,8 @@ type ItemLike = {
   length: number;
   deleted?: boolean;
   redone?: YId | null;
+  origin?: YId | null;
+  rightOrigin?: YId | null;
   content?: unknown;
 };
 
@@ -87,6 +90,7 @@ function indexDraftUpdates(input: {
   const deleted: RangeLookup = new Map();
   const deletedHistory: RangeLookup = new Map();
   const aliases: RangeAlias[] = [];
+  const insertedItems: ItemLike[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
   const deletedContentByOperationId = new Map<string, DeletedContent>();
   const physicalUpdateIdsByOperationId = new Map<string, Set<PhysicalSourceUpdateId>>();
@@ -107,6 +111,7 @@ function indexDraftUpdates(input: {
       addPhysicalUpdateId(physicalUpdateIdsByOperationId, operationId, update.id);
 
       const decoded = Y.decodeUpdate(update.updateData);
+      insertedItems.push(...(decoded.structs as ItemLike[]));
       const beforeRanges = deleteSetRanges(decoded.ds).flatMap((range) =>
         splitRangeAtStructBoundaries(replayDoc, range),
       );
@@ -249,6 +254,35 @@ function indexDraftUpdates(input: {
         if (ids.size === beforeSize) addMatchingOperations(ids, deletedHistory, range);
       }
       return [...ids].sort();
+    },
+    hasInterleavedEdits(insertedRanges) {
+      // Surviving text anchored inside the other author's removed context is a
+      // CRDT interleave, unlike typing into intact AI prose. This can affect a
+      // writer-only hunk when the semantic diff split the AI rewrite next to it.
+      return insertedItems.some((item) => {
+        if (
+          !insertedRanges.some(
+            (range) =>
+              range.client === item.id.client &&
+              range.clock < item.id.clock + item.length &&
+              item.id.clock < range.clock + range.length,
+          )
+        )
+          return false;
+        const owner = matchingOperationIds(introduced, { ...item.id, length: item.length });
+        // Both boundaries must be inside removed context. One removed boundary
+        // alone is an ordinary adjacent edit, not an unsplittable interleave.
+        return [item.origin, item.rightOrigin].every(
+          (origin) =>
+            origin &&
+            matchingOperationIds(deleted, { ...origin, length: 1 }).some((remover) =>
+              owner.some(
+                (inserter) =>
+                  byOperationId.get(inserter)?.kind !== byOperationId.get(remover)?.kind,
+              ),
+            ),
+        );
+      });
     },
     operationRangesForInsertedRanges(insertedRanges) {
       return operationRangesForRanges(introduced, insertedRanges);
@@ -926,11 +960,15 @@ function groupOperationsForHunks(
       return {
         ...hunk.review,
         operationIds,
+        ...(attribution.hasInterleavedEdits(hunk.raw.insertedRanges)
+          ? { mergeArtifact: true }
+          : {}),
       } satisfies DraftReviewHunkInternal;
     }
     return {
       ...hunk.review,
       operationIds,
+      ...(attribution.hasInterleavedEdits(hunk.raw.insertedRanges) ? { mergeArtifact: true } : {}),
       spans: hunkSpans(
         attribution.operationRangesForInsertedRanges(hunk.raw.insertedRanges),
         writerRemap,

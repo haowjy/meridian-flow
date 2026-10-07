@@ -189,3 +189,11 @@ durable journal for origin and structural-delete attribution, and reports each
 removed writer-owned canonical block identity. Missing ancestry/body/owner
 evidence emits degradation telemetry rather than guessing from update bytes;
 it does not make the optional mark overlay authoritative.
+
+### Preview interleave semantics
+
+`mergeArtifact` identifies surviving insertion structs whose Yjs origin and
+right-origin both lie in context deleted by the other author. Ordinary writer
+insertions inside intact AI prose keep their author-specific spans, even with
+multiple writer runs. A diff hunk can be writer-only while its deleted origin
+belongs to an adjacent AI rewrite. Run alternation is not the authority.

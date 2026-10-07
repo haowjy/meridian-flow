@@ -144,6 +144,77 @@ describe("draft review hunk model", () => {
     expect(result.wordDelta).toEqual({ wordsAdded: 0, wordsRemoved: 6 });
   });
 
+  it("keeps writer insertions inside AI prose author-separable", () => {
+    const live = createDoc("Old sentence. Tail unchanged for alignment.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const ai = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 0, to: 13 }, "New AI sentence."),
+    );
+    const writer = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 6 }, "careful "),
+    );
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 178, actorTurnId: "ai", updateData: ai },
+        { id: 179, actorTurnId: null, actorUserId: "writer", updateData: writer },
+      ],
+    });
+    expect(result.hunks.some((hunk) => hunk.operationIds.length === 2)).toBe(true);
+    expect(result.hunks.every((hunk) => !hunk.mergeArtifact)).toBe(true);
+  });
+
+  it("does not flag adjacent edits with only one removed insertion boundary", () => {
+    const live = createDoc("Alpha sword remains with enough unchanged surrounding text.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const ai = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 11, to: 11 }, " AI"),
+    );
+    const writer = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 11 }, ""),
+    );
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 178, actorTurnId: "ai", updateData: ai },
+        { id: 179, actorTurnId: null, actorUserId: "writer", updateData: writer },
+      ],
+    });
+    expect(result.hunks.every((hunk) => !hunk.mergeArtifact)).toBe(true);
+  });
+
+  it("flags writer typing into a sentence concurrently rewritten by AI", () => {
+    const live = createDoc("Old sentence. Tail unchanged for alignment.");
+    const draft = cloneDoc(live);
+    const peer = cloneDoc(live);
+    peer.clientID = 3;
+    const [aiBlock] = model.getBlocks(toDocHandle(draft));
+    const [writerBlock] = model.getBlocks(toDocHandle(peer));
+    const ai = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), aiBlock, { from: 0, to: 13 }, "New AI sentence."),
+    );
+    const writer = captureUpdate(peer, () =>
+      model.applyTextEdit(toDocHandle(peer), writerBlock, { from: 5, to: 5 }, "careful "),
+    );
+    Y.applyUpdate(draft, writer);
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 178, actorTurnId: "ai", updateData: ai },
+        { id: 179, actorTurnId: null, actorUserId: "writer", updateData: writer },
+      ],
+    });
+    expect(result.hunks.some((hunk) => hunk.mergeArtifact)).toBe(true);
+  });
+
   it("clusters writer rows in the same block into one writer operation", () => {
     const live = createDoc("Alpha. Tail text for a writer edit cluster.");
     const draft = cloneDoc(live);

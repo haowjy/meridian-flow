@@ -77,15 +77,9 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     .map((hunk) => rawByHunkId.get(hunk.hunkId))
     .filter((hunk): hunk is RawHunk => hunk !== undefined);
   const operations = visible.operations;
-  const operationKind = new Map(
-    operations.map((operation) => [operation.operationId, operation.kind]),
-  );
   return {
     operations,
-    hunks: visible.hunks.map((hunk) => ({
-      ...hunk,
-      ...(hasAgentAndWriter(hunk.operationIds, operationKind) ? { mergeArtifact: true } : {}),
-    })),
+    hunks: visible.hunks,
     wordDelta: sumDraftWordDelta(visibleRawHunks.map(hunkDisplayText)),
   };
 }
@@ -883,14 +877,6 @@ function itemContentLength(item: ItemLike): number {
 
 function visibleTextItemLength(item: ItemLike): number {
   return typeof item.content?.str === "string" ? item.content.str.length : 0;
-}
-
-function hasAgentAndWriter(
-  operationIds: readonly string[],
-  operationKind: ReadonlyMap<string, "agent" | "writer">,
-): boolean {
-  const kinds = new Set(operationIds.map((operationId) => operationKind.get(operationId)));
-  return kinds.has("agent") && kinds.has("writer");
 }
 
 function sumDraftWordDelta(

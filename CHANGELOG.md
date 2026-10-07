@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft review distinguishes CRDT interleaves from ordinary writer edits inside AI prose.
+
 - Draft review now retains every consecutive deletion, including cumulative Yjs delete-set updates.
 
 - Apply individual dependency-closed draft changes, with stale-preview refusal and preserved authorship.
