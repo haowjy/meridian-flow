@@ -1,10 +1,10 @@
-// Three-tier apply path for resolved agent edits.
+// Apply path for resolved agent edits: inline and block rewrites (tier 2), structural edits (tier 3).
 
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel, TextRun } from "../ports/model.js";
+import type { AgentEditModel } from "../ports/model.js";
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
@@ -25,13 +25,6 @@ import type {
 type Ref = BlockRef;
 
 type PlannedEdit =
-  | {
-      kind: "text";
-      tier: 1;
-      edit: Extract<ResolvedEdit, { kind: "text" }>;
-      span: Span;
-      blockId: string;
-    }
   | {
       kind: "textRanges";
       tier: 2;
@@ -74,7 +67,7 @@ interface ApplyAccumulator {
 
 type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 
-/** Apply resolved edits to an agent-local document using the three-tier mutation plan. */
+/** Apply resolved edits to an agent-local document, preflighting each before it mutates. */
 export function applyEdits(
   doc: DocHandle,
   model: AgentEditModel,
@@ -102,17 +95,12 @@ export function applyEdits(
       return applyError(planned.code, planned.message, planned.details, { committedEdits });
     }
 
-    const group = collectTierOneGroup(doc, model, codec, editList, index, planned.plan);
-    if (!group.ok) {
-      return applyError(group.code, group.message, group.details, { committedEdits });
-    }
-
     try {
       let executionFailure: ApplyFailure | undefined;
       model.transact(
         doc,
         () => {
-          executionFailure = executePlans(doc, model, codec, group.plans, accumulator);
+          executionFailure = executePlan(doc, model, codec, planned.plan, accumulator);
         },
         origin,
       );
@@ -125,8 +113,7 @@ export function applyEdits(
         { committedEdits },
       );
     }
-    committedEdits += group.plans.length;
-    index += group.plans.length - 1;
+    committedEdits += 1;
   }
 
   const concurrent = applyConcurrentUpdates(
@@ -286,18 +273,6 @@ function preflightTextEdit(
   const parsed = parseContent(codec, edit.newText, "text");
   if (!parsed.ok) return parsed;
 
-  const sameMarkContext = spanWithinSingleMarkContext(model.inlineRuns(edit.block), span);
-  if (
-    edit.semanticLowering !== "prosemirror" &&
-    sameMarkContext &&
-    model.isPlainTextReplacement(parsed.parsed, edit.newText)
-  ) {
-    return {
-      ok: true,
-      plan: { kind: "text", tier: 1, edit, span, blockId: model.getBlockId(block) },
-    };
-  }
-
   return {
     ok: true,
     plan: { kind: "text", tier: 2, edit, span, blockId: model.getBlockId(block) },
@@ -354,108 +329,60 @@ function preflightDelete(
   };
 }
 
-function executePlans(
+function executePlan(
   doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
-  plans: readonly PlannedEdit[],
+  plan: PlannedEdit,
   accumulator: ApplyAccumulator,
 ): ApplyFailure | undefined {
-  const ordered = [...plans].sort((left, right) => {
-    if (left.kind !== "text" || right.kind !== "text") return 0;
-    if (left.edit.block !== right.edit.block) return 0;
-    return textPlanStart(right) - textPlanStart(left);
-  });
-
-  for (const plan of ordered) {
-    switch (plan.kind) {
-      case "text":
-        if (plan.tier === 1) {
-          model.applyTextEdit(doc, plan.edit.block, plan.span, plan.edit.newText);
-        } else {
-          const applied = model.applyInlineReplacement(
-            doc,
-            plan.edit.block,
-            plan.span,
-            plan.edit.newText,
-            codec,
-          );
-          if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
-        }
-        accumulator.touchedHashes.add(plan.blockId);
-        accumulator.applied.push({ kind: "text", tier: plan.tier, blockIds: [plan.blockId] });
-        break;
-      case "textRanges": {
-        const applied = model.applyInlineReplacements(
-          doc,
-          plan.edit.block,
-          plan.replacements,
-          codec,
-        );
-        if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
-        accumulator.touchedHashes.add(plan.blockId);
-        accumulator.applied.push({
-          kind: "textRanges",
-          tier: 2,
-          blockIds: [plan.blockId],
-        });
-        break;
-      }
-      case "insert": {
-        const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
-        const blockIds = inserted.map((block) => model.getBlockId(block));
-        for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
-        accumulator.applied.push({ kind: "insert", tier: 3, blockIds });
-        break;
-      }
-      case "delete":
-        model.deleteBlock(doc, plan.edit.block);
-        if (plan.removesBlock) {
-          accumulator.deletedHashes.add(plan.blockId);
-        } else {
-          accumulator.touchedHashes.add(plan.blockId);
-        }
-        accumulator.applied.push({ kind: "delete", tier: 3, blockIds: [plan.blockId] });
-        break;
-      case "block":
-        model.applyBlockReplacement(doc, plan.edit.block, plan.edit.replacement);
-        accumulator.touchedHashes.add(plan.blockId);
-        accumulator.applied.push({ kind: "block", tier: 2, blockIds: [plan.blockId] });
-        break;
+  switch (plan.kind) {
+    case "text": {
+      const applied = model.applyInlineReplacement(
+        doc,
+        plan.edit.block,
+        plan.span,
+        plan.edit.newText,
+        codec,
+      );
+      if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
+      accumulator.touchedHashes.add(plan.blockId);
+      accumulator.applied.push({ kind: "text", tier: 2, blockIds: [plan.blockId] });
+      break;
     }
+    case "textRanges": {
+      const applied = model.applyInlineReplacements(doc, plan.edit.block, plan.replacements, codec);
+      if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
+      accumulator.touchedHashes.add(plan.blockId);
+      accumulator.applied.push({
+        kind: "textRanges",
+        tier: 2,
+        blockIds: [plan.blockId],
+      });
+      break;
+    }
+    case "insert": {
+      const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
+      const blockIds = inserted.map((block) => model.getBlockId(block));
+      for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
+      accumulator.applied.push({ kind: "insert", tier: 3, blockIds });
+      break;
+    }
+    case "delete":
+      model.deleteBlock(doc, plan.edit.block);
+      if (plan.removesBlock) {
+        accumulator.deletedHashes.add(plan.blockId);
+      } else {
+        accumulator.touchedHashes.add(plan.blockId);
+      }
+      accumulator.applied.push({ kind: "delete", tier: 3, blockIds: [plan.blockId] });
+      break;
+    case "block":
+      model.applyBlockReplacement(doc, plan.edit.block, plan.edit.replacement);
+      accumulator.touchedHashes.add(plan.blockId);
+      accumulator.applied.push({ kind: "block", tier: 2, blockIds: [plan.blockId] });
+      break;
   }
-}
-
-function textPlanStart(plan: Extract<PlannedEdit, { kind: "text" }>): number {
-  return plan.tier === 1 ? plan.span.from : plan.edit.span.start;
-}
-
-function collectTierOneGroup(
-  doc: DocHandle,
-  model: AgentEditModel,
-  codec: AgentEditCodec,
-  edits: readonly ResolvedEdit[],
-  startIndex: number,
-  firstPlan: PlannedEdit,
-):
-  | { ok: true; plans: PlannedEdit[] }
-  | { ok: false; code: ApplyErrorCode; message: string; details?: Record<string, unknown> } {
-  if (firstPlan.kind !== "text" || firstPlan.tier !== 1) return { ok: true, plans: [firstPlan] };
-  const plans: PlannedEdit[] = [firstPlan];
-  let previousEnd = firstPlan.span.to;
-
-  for (let index = startIndex + 1; index < edits.length; index += 1) {
-    const candidate = edits[index];
-    if (candidate.kind !== "text" || candidate.block !== firstPlan.edit.block) break;
-    const planned = preflightEdit(doc, model, codec, candidate);
-    if (!planned.ok) return planned;
-    if (planned.plan.kind !== "text" || planned.plan.tier !== 1) break;
-    if (candidate.span.start < previousEnd) break;
-    plans.push(planned.plan);
-    previousEnd = planned.plan.span.to;
-  }
-
-  return { ok: true, plans };
 }
 
 function validateNoSameTurnTombstones(
@@ -536,19 +463,6 @@ function parseContent(
       ...(Object.keys(details).length > 0 ? { details } : {}),
     };
   }
-}
-
-function spanWithinSingleMarkContext(runs: readonly TextRun[], span: Span): boolean {
-  if (span.from === span.to) return insertionPointHasContext(runs, span.from);
-  const covered = runs.filter((run) => span.from < run.start + run.length && span.to > run.start);
-  if (covered.length === 0) return false;
-  const firstKey = covered[0]?.attrsKey;
-  return covered.every((run) => run.attrsKey === firstKey);
-}
-
-function insertionPointHasContext(runs: readonly TextRun[], offset: number): boolean {
-  if (runs.length === 0) return offset === 0;
-  return runs.some((run) => offset >= run.start && offset <= run.start + run.length);
 }
 
 function orderedLiveHashes(after: readonly BlockSnapshot[], hashes: ReadonlySet<string>): string[] {

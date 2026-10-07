@@ -1,7 +1,7 @@
 // Agent-edit local codec-adjacent types.
 import type { PMNode } from "@meridian/markup";
 
-/** Character offsets within a block's plain text for find/match and Tier 1 edits. */
+/** Character offsets within a block's plain text for find/match and plain-text edits. */
 export interface Span {
   from: number;
   to: number;

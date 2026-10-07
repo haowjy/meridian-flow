@@ -49,19 +49,18 @@ paragraph never takes over an edited one's element and comments. Writing a docum
 Flat `text` offsets exclude atoms (pictures, hard breaks), so `text` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 
-### 3-tier apply (`src/apply/tiers.ts`)
+### Tiered apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
 references, parses content, computes offsets, and validates the semantic IR.
-Phase 2 (inside `doc.transact()`) applies pre-computed operations. Find-based
-text edits deliberately bypass the direct-text fast path so their single PM
-lowering is the certification seam; the resolver emits no other `text` edits,
-so Tier 1 serves only directly built edits. It trims unchanged edge text before
+Phase 2 (inside `doc.transact()`) applies pre-computed operations. Every agent
+text edit lowers through ProseMirror (`applyInlineReplacement`), the single
+certification seam; there is no direct-text tier. `applyTextEdit` remains as the
+model's plain-text verb for undo repair and trims unchanged edge text before
 touching Yjs.
 
 | Tier | Kind | Mechanism |
 |---|---|---|
-| 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary/formatting change, `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
+| 2 | `text`, `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
 | 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of

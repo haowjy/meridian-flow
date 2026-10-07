@@ -121,10 +121,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    isPlainTextReplacement(parsed, source) {
-      return isPlainTextReplacement(parsed, source);
-    },
-
     applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
       return applyInlineReplacement(
         unwrapDoc(doc),
@@ -383,24 +379,6 @@ export function applyInlineReplacements(
     writePmBlock(doc, element, transform.doc);
   }
   return { ok: true };
-}
-
-function isPlainTextReplacement(parsed: ParsedContent, source: string): boolean {
-  if (source.length === 0) return true;
-  if (parsed.blocks.length !== 1) return false;
-  const block = parsed.blocks[0];
-  if (!block?.isTextblock) return false;
-  if (block.textContent !== source) return false;
-  let plain = true;
-  block.descendants((node) => {
-    if (node.isText) {
-      if (node.marks.length > 0) plain = false;
-      return false;
-    }
-    if (node.type.name !== "hard_break") plain = false;
-    return !plain;
-  });
-  return plain;
 }
 
 function inlineReplacement(
