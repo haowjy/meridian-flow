@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft review now retains every consecutive deletion, including cumulative Yjs delete-set updates.
+
 - Apply individual dependency-closed draft changes, with stale-preview refusal and preserved authorship.
 - Draft review shows removed text struck through in the manuscript like suggestion mode (red for the AI, gold for you; long removals fold), your typing in a draft is gold at once, and entering review keeps the live view and its header until the draft is ready, then switches in one frame.
 
