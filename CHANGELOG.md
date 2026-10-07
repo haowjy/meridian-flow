@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A draft open in two tabs stays in step: when one tab applies a change, the other tab's list and marks update within a second, instead of keeping the applied change until its next action was refused as out of date.
+
 - Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.
 
 - Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
