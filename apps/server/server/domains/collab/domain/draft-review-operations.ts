@@ -802,8 +802,8 @@ type WriterGroup = {
  * - closureUpdateIds: physical rows that currently carry or reverse the
  *   logical operation.
  *
- * Invariant: a Discard class joins every operation that shares a physical row
- * or visible hunk, and every class member carries the class-wide row set.
+ * Invariant: a review class joins physical-row/visible-hunk overlap and Yjs
+ * dependencies, and every class member carries the same closed row set.
  *
  * Span invariant: hunk spans are inserted-text-only, ordered, non-overlapping,
  * and cover the hunk's inserted ranges exactly once after writer operation id

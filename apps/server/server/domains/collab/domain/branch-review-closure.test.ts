@@ -1,4 +1,4 @@
-/** Unit coverage for server-vended selective-Discard classes. */
+/** Unit coverage for server-vended Apply/Discard classes. */
 
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -36,7 +36,7 @@ function hunk(id: string, operationIds: string[]): DraftReviewHunkInternal {
 }
 
 describe("assignReviewClasses", () => {
-  it("joins operations whose discard closures share a physical row", () => {
+  it("joins operations whose review closures share a physical row", () => {
     const operations = assignReviewClasses({
       operations: [op("a", [1], [1, 2]), op("b", [2], [2])],
       hunks: [hunk("h1", ["a"]), hunk("h2", ["b"])],

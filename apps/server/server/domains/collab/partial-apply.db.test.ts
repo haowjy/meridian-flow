@@ -2,23 +2,38 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { asc, eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   ALPHA_ID,
   createHarness,
   db,
+  expirePendingClaims,
   schema,
   setupSettlementFixture,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
-import { THREAD_ID, TURN_ID, WORK_ID } from "./test-support/change-trail-postgres-harness.js";
+import {
+  PROJECT_ID,
+  THREAD_ID,
+  TURN_ID,
+  WORK_ID,
+} from "./test-support/change-trail-postgres-harness.js";
 
 setupSettlementFixture();
+let warmHarness: ReturnType<typeof createHarness> | undefined;
+afterEach(() => {
+  warmHarness?.destroyWarmState();
+  warmHarness = undefined;
+});
+function createReviewHarness(options?: Parameters<typeof createHarness>[0]) {
+  warmHarness = createHarness(options);
+  return warmHarness;
+}
 
-describe("partial Apply POC (postgres)", () => {
+describe("per-change Apply (postgres)", () => {
   it("publishes one closed group, removes it from review, then whole Apply publishes the rest once", async () => {
-    const harness = createHarness();
+    const harness = createReviewHarness();
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "partial-apply-poc");
     const fixture = harness.crossWorkProbeFixture();
     const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
@@ -27,13 +42,28 @@ describe("partial Apply POC (postgres)", () => {
     const firstId = await stageText(fixture, branch.branchId, 0, " Agent-one", "agent");
     const secondId = await stageText(fixture, branch.branchId, 1, " Writer-two", "writer");
 
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const before = await fixture.collab.draftReview.preview(command);
+    if (before.status !== "active") throw new Error("missing preview");
+    const first = before.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
+    if (!first) throw new Error("missing selected operation");
     await expect(
-      fixture.realBranchPush.pushSelectedToLive({
-        branchId: branch.branchId,
-        journalIds: [firstId],
-        pushedByUserId: USER_ID,
+      fixture.collab.draftReview.applyWorkDraftChanges({
+        ...command,
+        operationIds: [first.operationId],
+        liveRevisionToken: before.liveRevisionToken,
+        draftRevisionToken: before.draftRevisionToken,
       }),
-    ).resolves.toMatchObject({ status: "pushed" });
+    ).resolves.toMatchObject({
+      status: "applied",
+      operationIds: [first.operationId],
+      closureClassIds: [first.closureClassId],
+    });
 
     const afterPartial = await harness.liveMarkdown(ALPHA_ID);
     expect(afterPartial).toBe("Alpha base. Agent-one\n\nBeta base.\n");
@@ -79,11 +109,289 @@ describe("partial Apply POC (postgres)", () => {
         expect.objectContaining({ originType: "human", actorUserId: USER_ID }),
       ]),
     );
-    harness.destroyWarmState();
+  });
+
+  it.each([
+    "live",
+    "draft",
+    "gone",
+    "archived",
+  ] as const)("refuses %s without publishing", async (kind) => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "refusal");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    if (kind === "draft") await stageText(fixture, branch.branchId, 1, " Later", "writer");
+    if (kind === "live")
+      await harness.seedWriterDocument("Changed live.\n\nBeta base.", "live-change");
+    if (kind === "archived")
+      await db
+        .update(schema.works)
+        .set({ archivedAt: new Date() })
+        .where(eq(schema.works.id, WORK_ID));
+    const request = {
+      ...command,
+      operationIds: kind === "gone" ? ["missing"] : preview.operations.map((op) => op.operationId),
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
+    };
+    if (kind === "archived")
+      await expect(fixture.collab.draftReview.applyWorkDraftChanges(request)).rejects.toThrow();
+    else
+      await expect(
+        fixture.collab.draftReview.applyWorkDraftChanges(request),
+      ).resolves.toMatchObject({ status: kind === "gone" ? "gone" : "stale" });
+    expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("Proposed");
+  });
+
+  it("refuses draft-only manifest documents and exposes the preview flag", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.", "draft-only");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
+    await fixture.branchStore.recordManifestDocumentDeleted(ALPHA_ID);
+    await fixture.branchStore.recordManifestDocumentCreated(ALPHA_ID, {
+      projectId: PROJECT_ID,
+      workId: WORK_ID,
+      threadId: THREAD_ID,
+    });
+    const command = {
+      projectId: PROJECT_ID,
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    expect(preview.isNewDocument).toBe(true);
+    await expect(
+      fixture.collab.draftReview.applyWorkDraftChanges({
+        ...command,
+        operationIds: preview.operations.map((op) => op.operationId),
+        liveRevisionToken: preview.liveRevisionToken,
+        draftRevisionToken: preview.draftRevisionToken,
+      }),
+    ).resolves.toMatchObject({ status: "draft_only" });
+    expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("Proposed");
+  });
+
+  it("applies a mixed agent/writer class with both authors, rejecting an incomplete class", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.", "mixed-class");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await stageText(fixture, branch.branchId, 0, " Agent", "agent");
+    await stageText(fixture, branch.branchId, 0, " Writer", "writer");
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    expect(preview.operations).toHaveLength(2);
+    expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(1);
+    const request = {
+      ...command,
+      operationIds: preview.operations.map((op) => op.operationId),
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
+    };
+    await expect(
+      fixture.collab.draftReview.applyWorkDraftChanges({
+        ...request,
+        operationIds: request.operationIds.slice(0, 1),
+      }),
+    ).resolves.toMatchObject({ status: "incomplete_class" });
+    await expect(fixture.collab.draftReview.applyWorkDraftChanges(request)).resolves.toEqual({
+      status: "applied",
+      draftId: branch.branchId,
+      operationIds: request.operationIds,
+      closureClassIds: [preview.operations[0].closureClassId],
+    });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha base. Agent Writer\n");
+    const authors = await db
+      .select({
+        origin: schema.documentYjsUpdates.originType,
+        turn: schema.documentYjsUpdates.actorTurnId,
+        user: schema.documentYjsUpdates.actorUserId,
+      })
+      .from(schema.documentYjsUpdates)
+      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID));
+    expect(authors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ origin: "agent", turn: TURN_ID }),
+        expect.objectContaining({ origin: "human", user: USER_ID }),
+      ]),
+    );
+  });
+
+  it("Discard of one operation removes the entire mixed dependency class", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.", "mixed-discard");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await stageText(fixture, branch.branchId, 0, " Agent", "agent");
+    await stageText(fixture, branch.branchId, 0, " Writer", "writer");
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    await fixture.collab.draftReview.discardWorkDraft({
+      ...command,
+      operationIds: [preview.operations[0].operationId],
+    });
+    const after = await fixture.collab.draftReview.preview(command);
+    if (after.status !== "active") throw new Error("missing preview");
+    expect(after.markdown).toBe("Alpha base.\n");
+    expect(after.operations).toEqual([]);
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha base.\n");
+  });
+
+  it("rejects a live admission arriving after selection at the durable commit fence", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.", "commit-fence");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const selectedId = await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
+    const preview = await fixture.collab.draftReview.preview({
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+    });
+    if (preview.status !== "active") throw new Error("missing preview");
+    await expect(
+      fixture.realBranchPush.pushSelectedToLive({
+        branchId: branch.branchId,
+        pushedByUserId: USER_ID,
+        selectRows: async () => {
+          await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+            const before = Y.encodeStateVector(doc);
+            const block = fixture.model.getBlocks(toDocHandle(doc))[0];
+            fixture.model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "New live. ");
+            await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+              origin: `human:${USER_ID}`,
+              seq: 0,
+            });
+          });
+          return { journalIds: [selectedId], expectedLiveRevision: preview.liveRevisionToken };
+        },
+      }),
+    ).rejects.toMatchObject({ status: "stale" });
+    expect(await journalStatuses(branch.branchId)).toEqual([{ id: selectedId, status: "active" }]);
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("New live. Alpha base.\n");
+  });
+
+  it("Discard closes independent visible hunks sharing a Yjs client clock prefix", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "clock-discard");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const first = await stageText(fixture, branch.branchId, 0, " Agent", "agent");
+    const [row] = await db
+      .select()
+      .from(schema.branchWriteJournal)
+      .where(eq(schema.branchWriteJournal.id, first));
+    const clientId = Y.decodeUpdate(row.updateData).structs[0].id.client;
+    await stageText(fixture, branch.branchId, 1, " Writer", "writer", clientId);
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    expect(preview.hunks).toHaveLength(2);
+    expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(1);
+    await fixture.collab.draftReview.discardWorkDraft({
+      ...command,
+      operationIds: [preview.operations[0].operationId],
+    });
+    const after = await fixture.collab.draftReview.preview(command);
+    if (after.status !== "active") throw new Error("missing preview");
+    expect(after.markdown).toBe("Alpha base.\n\nBeta base.\n");
+    expect(after.operations).toEqual([]);
+  });
+
+  it("recovers a partial durable handoff before whole Apply publishes the remainder", async () => {
+    let failOnce = true;
+    const harness = createReviewHarness({
+      afterDurableCommit: async () => {
+        if (failOnce) {
+          failOnce = false;
+          throw new Error("death after partial commit");
+        }
+      },
+    });
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "partial-recovery");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const firstId = await stageText(fixture, branch.branchId, 0, " Agent", "agent");
+    const secondId = await stageText(fixture, branch.branchId, 1, " Writer", "writer");
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    const selected = preview.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
+    if (!selected) throw new Error("missing operation");
+    await expect(
+      fixture.collab.draftReview.applyWorkDraftChanges({
+        ...command,
+        operationIds: [selected.operationId],
+        liveRevisionToken: preview.liveRevisionToken,
+        draftRevisionToken: preview.draftRevisionToken,
+      }),
+    ).rejects.toThrow("death after partial commit");
+    expect(await journalStatuses(branch.branchId)).toEqual([
+      { id: firstId, status: "pushed" },
+      { id: secondId, status: "active" },
+    ]);
+    await expirePendingClaims();
+    expect(await fixture.realBranchPush.recoverPendingLiveSettlements()).toBe(1);
+    await expect(fixture.collab.draftReview.applyWorkDraft(command)).resolves.toMatchObject({
+      status: "applied",
+    });
+    const live = await harness.liveMarkdown(ALPHA_ID);
+    expect(occurrences(live, "Agent")).toBe(1);
+    expect(occurrences(live, "Writer")).toBe(1);
+    const outbox = await db
+      .select({ state: schema.branchPushSettlementOutbox.state })
+      .from(schema.branchPushSettlementOutbox)
+      .where(eq(schema.branchPushSettlementOutbox.documentId, ALPHA_ID));
+    expect(outbox).toHaveLength(2);
+    expect(outbox.every((row) => row.state === "completed")).toBe(true);
   });
 
   it("selective and whole-draft Discard never revert a partially applied group on live", async () => {
-    const harness = createHarness();
+    const harness = createReviewHarness();
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "partial-discard-poc");
     const fixture = harness.crossWorkProbeFixture();
     const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
@@ -129,7 +437,6 @@ describe("partial Apply POC (postgres)", () => {
     expect(live).toContain("Applied");
     expect(live).not.toContain("Discard-me");
     expect(live).not.toContain("Whole-discard");
-    harness.destroyWarmState();
   });
 });
 
@@ -141,6 +448,7 @@ async function stageText(
   blockIndex: number,
   suffix: string,
   source: "agent" | "writer",
+  clientId?: number,
 ): Promise<number> {
   const staged = await fixture.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
     const clone = createCollabYDoc({ gc: false });
@@ -148,6 +456,7 @@ async function stageText(
     return { clone, generation: snapshot.generation };
   });
   try {
+    if (clientId !== undefined) staged.clone.clientID = clientId;
     const block = fixture.model.getBlocks(toDocHandle(staged.clone))[blockIndex];
     if (!block) throw new Error(`missing block ${blockIndex}`);
     const end = fixture.model.getText(block).length;
