@@ -16,7 +16,7 @@ import {
 } from "react";
 import type { ChangeRef } from "@/client/query/change-command-record";
 import {
-  clearDraftCommandFailure,
+  clearDraftReviewLaunchFailure,
   draftCommandPendingIn,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -39,6 +39,7 @@ import {
 } from "@/features/project/routing/ProjectNavigationContext";
 import {
   type DraftBatchErrorCode,
+  type DraftBatchOptions,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
   type DraftReviewSelection,
@@ -124,6 +125,7 @@ export type DraftReviewController = {
   disposeDrafts: (
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
+    options?: DraftBatchOptions,
   ) => Promise<DraftCommandOutcome[]>;
 };
 
@@ -385,7 +387,7 @@ export function useDraftReviewController({
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
-      clearDraftCommandFailure({ projectId, workId, documentId, draftId });
+      clearDraftReviewLaunchFailure({ projectId, workId, documentId, draftId });
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },
@@ -592,7 +594,8 @@ export function useDraftReviewController({
     (
       mode: "apply" | "discard",
       drafts: readonly DraftReviewSelection[],
-    ): Promise<DraftCommandOutcome[]> => reviewSession.disposeDrafts(mode, drafts),
+      options?: DraftBatchOptions,
+    ): Promise<DraftCommandOutcome[]> => reviewSession.disposeDrafts(mode, drafts, options),
     [reviewSession],
   );
 

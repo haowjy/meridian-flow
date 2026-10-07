@@ -195,16 +195,24 @@ describe("DraftReviewHeader", () => {
     await render({}, async () => {
       await openSwitcher();
       await act(async () => byText("Apply all 3 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith("apply", [
-        { documentId: "doc-12", draftId: "draft-doc-12" },
-        { documentId: "doc-13", draftId: "draft-doc-13" },
-        { documentId: "doc-int", draftId: "draft-doc-int" },
-      ]);
+      expect(controller.disposeDrafts).toHaveBeenCalledWith(
+        "apply",
+        [
+          { documentId: "doc-12", draftId: "draft-doc-12" },
+          { documentId: "doc-13", draftId: "draft-doc-13" },
+          { documentId: "doc-int", draftId: "draft-doc-int" },
+        ],
+        expect.anything(),
+      );
     });
     await render({}, async () => {
       await openSwitcher();
       await act(async () => byText("Discard all 3 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith("discard", expect.any(Array));
+      expect(controller.disposeDrafts).toHaveBeenCalledWith(
+        "discard",
+        expect.any(Array),
+        expect.anything(),
+      );
     });
   });
 
@@ -365,6 +373,23 @@ describe("DraftReviewHeader", () => {
     await render({}, async () => {
       expect(document.body.textContent).toContain("Discarding");
       expect(document.body.textContent).not.toContain("No changes left");
+    });
+  });
+
+  it("says which other draft did not apply, on the header the writer was moved to, and opens it on request", async () => {
+    failDraftCommand(
+      { projectId: "p", workId: "w", documentId: "doc-13", draftId: "draft-doc-13" },
+      "apply-failed",
+    );
+    const onOpenDraft = vi.fn();
+    await render({ onOpenDraft }, async () => {
+      const alert = document.querySelector("[role=alert]");
+      expect(alert?.textContent).toContain("Chapter 13");
+      expect(alert?.textContent).toContain("Couldn't apply. Check your connection and try again.");
+      // Nothing navigates back by itself; the writer chooses to.
+      expect(onOpenDraft).not.toHaveBeenCalled();
+      await act(async () => byText("Open")?.click());
+      expect(onOpenDraft).toHaveBeenCalledWith(expect.objectContaining({ documentId: "doc-13" }));
     });
   });
 

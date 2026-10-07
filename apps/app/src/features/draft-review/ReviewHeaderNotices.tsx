@@ -1,12 +1,14 @@
 /**
  * ReviewHeaderNotices — the lines a review header can grow under its row: why
- * the last whole-draft command was refused, and, once the writer has handled
+ * the last whole-draft command was refused, which other drafts of the Work did
+ * not apply (the review has moved on from them, so their rows alone would be
+ * easy to miss), and, once the writer has handled
  * the last change, "No changes left" with the way on (the next draft, or back
  * to live). The review does not jump on its own, so the finished text can be
  * read. Shared by the desktop and phone headers; `touch` raises the buttons to
  * a phone's 44px.
  */
-import { Trans } from "@lingui/react/macro";
+import { Plural, Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
 import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
@@ -14,8 +16,12 @@ import type { DockRow } from "@/features/chat/docked-drafts";
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { cn } from "@/lib/utils";
 
+/** More refused drafts than this are summarised, so the notice never outgrows the header. */
+const MAX_NAMED_FAILURES = 3;
+
 export function ReviewHeaderNotices({
   commandError,
+  failedElsewhere = [],
   finished,
   unlisted = false,
   completing = null,
@@ -26,6 +32,8 @@ export function ReviewHeaderNotices({
   touch = false,
 }: {
   commandError: DraftCommandFailureCode | null;
+  /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
+  failedElsewhere?: { row: DockRow; code: DraftCommandFailureCode }[];
   finished: boolean;
   /** The draft is open and lists no change: what remains is handled by Apply draft or Discard draft. */
   unlisted?: boolean;
@@ -43,6 +51,34 @@ export function ReviewHeaderNotices({
       {commandError ? (
         <p className="px-4 pb-1.5 text-destructive" role="alert">
           <ReviewMessageText code={commandError} />
+        </p>
+      ) : null}
+      {failedElsewhere.slice(0, MAX_NAMED_FAILURES).map(({ row, code }) => (
+        <div
+          key={row.documentId}
+          className={cn(
+            "flex items-center gap-3 border-border border-t px-4 text-destructive",
+            touch ? "py-1" : "py-1",
+          )}
+          role="alert"
+        >
+          <p className="min-w-0 flex-1">
+            <span className="font-medium">{row.documentName ?? <Trans>Untitled</Trans>}</span>
+            <br />
+            <ReviewMessageText code={code} />
+          </p>
+          <Button size="xs" variant="outline" className={button} onClick={() => onOpenNext(row)}>
+            <Trans>Open</Trans>
+          </Button>
+        </div>
+      ))}
+      {failedElsewhere.length > MAX_NAMED_FAILURES ? (
+        <p className="border-border border-t px-4 py-1 text-destructive" role="alert">
+          <Plural
+            value={failedElsewhere.length - MAX_NAMED_FAILURES}
+            one="# more draft did not apply"
+            other="# more drafts did not apply"
+          />
         </p>
       ) : null}
       {completing ? (

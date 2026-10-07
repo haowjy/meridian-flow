@@ -49,13 +49,15 @@ the change's class id, matched by shared operations) for what outlives the claim
 - `confirmed`: the server confirmed. The cached preview loses the change
   (`settleConfirmedChange`) and a preview read that started earlier cannot bring
   it back (`readPreviewAfterChangeCommands`).
-- `failed`: the change comes back, with `offline` (the server refused it:
+- `failed`: the change comes back, with `offline` (the browser is offline and nothing was sent, or the server refused it:
   "Couldn't apply. Check your connection and try again."), `unknown` (an Apply
   that got no answer: "Couldn't confirm whether this applied", never inferred
   from later list membership), `stale` ("This change was updated. Check it and
   apply again." / "...discard again.") or `draft-only`, shown on its bar and row.
   `gone` is not held: the change leaves with a toast. `incomplete_class` is
   treated as `stale`, for Apply and Discard alike.
+
+Apply and Discard are not queued offline: their mutations run with `networkMode: "always"` and throw `DraftCommandNotSentError` when the browser is offline, so the click is refused on the change (or the draft) at once and nothing fires on reconnect.
 
 Apply and Discard send the live and draft revision tokens of the cached preview
 the writer saw (opaque strings), so a change updated under them is refused,
@@ -101,8 +103,9 @@ including writer rows created after the last preview. For whole-draft Apply the
 client therefore treats preview operations and revisions as evidence, not
 command scope; per-change Apply is the one command that sends them. Apply/Discard failures
 are session outcomes rendered by the review header rather than ignored
-promises. A batch stops at its first failure or unknown outcome; transport
-failures surface through the dock's typed error state.
+promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
+(`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
+the draft's rows, and named in the dock's typed error state.
 
 Cross-cutting server policy:
 [whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)
@@ -154,6 +157,11 @@ no other review, and a retired attempt's completion or failure is ignored. Do
 not keep the old TipTap view mounted instead; the registry destroys the reset
 branch's Y.Doc, so that would need a new detach-and-retain contract.
 
+A move from one draft's review to another's keeps the review being left painted
+and inert (`features/project/dock/review-handover`, a markup copy over the page)
+until the target's header and marks have painted, then swaps in one frame; see
+`features/draft-review/AGENTS.md`.
+
 Review mode is a full-width Editor; the dock remains in the writer's chosen
 open/collapsed state and view. There is no in-editor review split.
 `useAiDraftLauncher` submits an explicit Work/document/
@@ -197,7 +205,9 @@ pushes every refetched preview (compared by reference), not by revision tokens:
 The extension renders the net diff in the manuscript like suggestion mode:
 insertions as decorations over the draft text, removed live text as a read-only
 inline widget (struck, outside the document; AI crimson, writer gold; long ones
-fold and open on click), and the focused change (all operations sharing a
+fold and open on click; a click on the struck text puts the caret at the position
+it stands at, on the clicked side for a removed block, so typing lands there while
+the removal stays untouchable), and the focused change (all operations sharing a
 closure class) emphasized. Typing paints gold at once; the next model replaces
 it. `setInlineReviewMarksVisible` hides all marks without remounting. An active
 preview without a model is an invariant violation, logged loudly and ignored safely.

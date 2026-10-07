@@ -20,6 +20,7 @@ import type { DockRow } from "@/features/chat/docked-drafts";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
+import { ReviewHandoverFrame } from "../dock/review-handover";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
@@ -156,7 +157,7 @@ export function ContextViewer({
       />
       {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
-      <div className="page-sheet relative">
+      <ReviewHandoverFrame className="page-sheet relative">
         {/* A jump that could not find its passage says so here, over the page
             rather than in the layout. */}
         <PassageNotice documentId={activeTabId} />
@@ -243,7 +244,7 @@ export function ContextViewer({
         {controller.inlineReview?.shown ? (
           <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
         ) : null}
-      </div>
+      </ReviewHandoverFrame>
     </div>
   );
 }
