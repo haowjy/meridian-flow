@@ -9,7 +9,7 @@
  */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { getDraftPreview } from "@/client/api/drafts-api";
 import {
@@ -81,12 +81,11 @@ export function useDraftPreview(
     [data, hiddenKey],
   );
 
-  return {
-    preview,
-    isError,
-    isFetching,
-    refetch: () => {
-      void refetch();
-    },
-  };
+  // Stable: a debounced re-read waits on this identity (`useInlineReviewSync`),
+  // and a new function each render would drop the read it was waiting to send.
+  const refetchPreview = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  return { preview, isError, isFetching, refetch: refetchPreview };
 }

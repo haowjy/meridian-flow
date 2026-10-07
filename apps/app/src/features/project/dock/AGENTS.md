@@ -94,3 +94,11 @@ finds an active draft.
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — draft review controller, docked-drafts, DraftDock composer strip
 - [`../../editor/DraftReviewHeader.tsx`](../../editor/DraftReviewHeader.tsx) — full-width editor review chrome
 - [KB: Draft Review Commands Keep Authority on the Server](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md)
+
+## Review handover
+
+`review-handover.tsx` holds the review being left on screen while another
+draft's opens: `EditorReviewHandoffProvider` owns the hold (`openEditorReview`
+begins it, a failed or cancelled launch releases it) and `ReviewHandoverFrame`
+goes around each page a review is painted in (the desktop page sheet, the phone
+document column). See `features/draft-review/AGENTS.md`.
