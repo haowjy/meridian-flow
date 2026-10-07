@@ -609,7 +609,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await collab.writeDocument({
         documentId: DOC_ID as never,
-        markdown: "Base.\n\nAgent HUMAN-KEEP paragraph.",
+        // Rewrites agent-born words; an insertion alone leaves the agent text undoable.
+        markdown: "Base.\n\nAgent HUMAN-KEEP.",
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
@@ -626,7 +627,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: { type: "user", userId: USER_ID },
       });
       expect(reversed.status).toBe("cant_undo_dependent");
-      expect(await readMarkdown(collab, DOC_ID)).toContain("Agent HUMAN-KEEP paragraph.");
+      expect(await readMarkdown(collab, DOC_ID)).toContain("Agent HUMAN-KEEP.");
     });
 
     it("keeps live turn undo available when a later writer edit is elsewhere", async () => {

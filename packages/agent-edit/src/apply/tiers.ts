@@ -84,8 +84,6 @@ export function applyEdits(
   options: ApplyEditsOptions = {},
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
-  if (editList.length === 0)
-    return applyError("invalid_write", "applyEdits requires at least one edit");
 
   const turnSafety = validateNoSameTurnTombstones(doc, model, editList);
   if (!turnSafety.ok) return turnSafety;

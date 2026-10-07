@@ -38,17 +38,28 @@ insertion attribution.
 Single-match output retains the existing `text` shape. Formatted
 and cross-block finds keep the serialized-markdown reconciliation path.
 
+A scope rewrite (`replace` over `in`, a formatted or cross-block find, and
+`create { overwrite: true }`) goes through `replaceScope`, which aligns the
+scope's blocks with the parsed replacement (`resolver/block-alignment.ts`):
+equal blocks get no edit, a changed block of the same type becomes a `block`
+edit that `updateYFragment` diffs in place, and only unmatched blocks are
+inserted or deleted. Writing a document's own export back is an empty update.
+Flat `text` offsets exclude atoms (pictures, hard breaks), so `text` edits
+apply only to blocks without atoms; anything else is a `block` edit.
+
 ### 3-tier apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
 references, parses content, computes offsets, and validates the semantic IR.
 Phase 2 (inside `doc.transact()`) applies pre-computed operations. Find-based
 text edits deliberately bypass the direct-text fast path so their single PM
-lowering is the certification seam; other eligible plain edits retain Tier 1.
+lowering is the certification seam; the resolver emits no other `text` edits,
+so Tier 1 serves only directly built edits. It trims unchanged edge text before
+touching Yjs.
 
 | Tier | Kind | Mechanism |
 |---|---|---|
 | 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary/formatting change, `textRanges`, or a same-type complex block changes | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
+| 2 | `text` crosses mark boundary/formatting change, `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
 | 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
