@@ -3,14 +3,14 @@
  * run with its project's image paths loaded fresh (see
  * `ports/document-asset-paths.ts`).
  *
- * Text crosses three doors: the Markdown engine (reads, the read API and
+ * Text crosses four doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections, link rewrites), the model's
- * edit core, and the draft-aware hashline read. Codec calls elsewhere compare
+ * edit core, a reply's save, and the draft-aware hashline read. Codec calls elsewhere compare
  * a document with another version of itself, where the `asset:` spelling an
  * unscoped call gives is as good as a path.
  */
 
-import type { BranchPeerShadowAccess } from "../contracts.js";
+import type { BranchPeerShadowAccess, ResponseWriteFinalizer } from "../contracts.js";
 import { asThreadPeerAgentEditCore, type ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
@@ -48,46 +48,44 @@ export function scopeMarkdownEngineAssetPaths(
 
 /**
  * A model call is scoped by its grant's project, which exists even for a
- * chapter the call is creating; a reversal by the document it reverses. A
- * reply's save renders the receipts the model reads afterwards, so it runs in
- * the project its calls ran in.
+ * chapter the call is creating; a reversal by the document it reverses.
  */
 export function scopeAgentEditAssetPaths(
   core: ThreadPeerAgentEditCore,
   assetPaths: DocumentAssetPaths,
 ): ThreadPeerAgentEditCore {
-  const replyProjects = new Map<string, string>();
-  function call<T>(
-    context: { grant: { facts: { projectId: string } }; responseId?: string },
-    run: () => Promise<T>,
-  ): Promise<T> {
-    const { projectId } = context.grant.facts;
-    if (context.responseId) replyProjects.set(context.responseId, projectId);
-    return assetPaths.within({ projectId }, run);
-  }
+  const byGrant = (context: { grant: { facts: { projectId: string } } }) => ({
+    projectId: context.grant.facts.projectId,
+  });
   return asThreadPeerAgentEditCore({
     ...core,
-    read: (command, context) => call(context, () => core.read(command, context)),
-    write: (command, context) => call(context, () => core.write(command, context)),
-    async commitResponse(responseId, options) {
-      const projectId = replyProjects.get(responseId);
-      const saved = await (projectId
-        ? assetPaths.within({ projectId }, () => core.commitResponse(responseId, options))
-        : core.commitResponse(responseId, options));
-      replyProjects.delete(responseId);
-      return saved;
-    },
-    async rollbackResponse(responseId, ...rest) {
-      const rolledBack = await core.rollbackResponse(responseId, ...rest);
-      replyProjects.delete(responseId);
-      return rolledBack;
-    },
+    read: (command, context) =>
+      assetPaths.within(byGrant(context), () => core.read(command, context)),
+    write: (command, context) =>
+      assetPaths.within(byGrant(context), () => core.write(command, context)),
     undo: (docId, threadId) =>
       assetPaths.within({ documentId: docId }, () => core.undo(docId, threadId)),
     redo: (docId, threadId) =>
       assetPaths.within({ documentId: docId }, () => core.redo(docId, threadId)),
     reverse: (input) => assetPaths.within({ documentId: input.docId }, () => core.reverse(input)),
   });
+}
+
+/** A reply's save renders the receipts the model reads next, in its thread's project. */
+export function scopeResponseFinalizerAssetPaths(
+  finalizer: ResponseWriteFinalizer,
+  assetPaths: DocumentAssetPaths,
+): ResponseWriteFinalizer {
+  return {
+    finalizeResponseCommit: (responseId, ctx, beforeTransactionCommit) =>
+      assetPaths.within({ threadId: ctx.threadId }, () =>
+        finalizer.finalizeResponseCommit(responseId, ctx, beforeTransactionCommit),
+      ),
+    finalizeResponseRollback: (responseId, ctx) =>
+      assetPaths.within({ threadId: ctx.threadId }, () =>
+        finalizer.finalizeResponseRollback(responseId, ctx),
+      ),
+  };
 }
 
 export function scopeBranchPeerAssetPaths(

@@ -73,7 +73,11 @@ import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
-import { scopeAgentEditAssetPaths, scopeBranchPeerAssetPaths } from "./domain/asset-path-scope.js";
+import {
+  scopeAgentEditAssetPaths,
+  scopeBranchPeerAssetPaths,
+  scopeResponseFinalizerAssetPaths,
+} from "./domain/asset-path-scope.js";
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
@@ -386,22 +390,25 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       })
     : SILENT_POST_DURABILITY_NOTICES;
   const liveDependencies = createDrizzleLiveTurnDependencyStore(deps.db);
-  const responseFinalizer = createResponseWriteFinalizer({
-    agentEdit,
-    liveAgentEdit: runtime.liveUtilityCore,
-    reversalStore: persistence.journal,
-    liveReversal: liveDependencies,
-    resolveDocumentUri: documentUriResolver,
-    branches: createResponseBranchFinalization({
-      branches,
-      branchCoordinator,
-      branchJournal,
-      branchReview,
+  const responseFinalizer = scopeResponseFinalizerAssetPaths(
+    createResponseWriteFinalizer({
+      agentEdit,
+      liveAgentEdit: runtime.liveUtilityCore,
+      reversalStore: persistence.journal,
+      liveReversal: liveDependencies,
+      resolveDocumentUri: documentUriResolver,
+      branches: createResponseBranchFinalization({
+        branches,
+        branchCoordinator,
+        branchJournal,
+        branchReview,
+      }),
+      projections: projectionRefresher,
+      notices: postDurabilityNotices,
+      deferUntilCommit: deferUntilDrizzleCommit,
     }),
-    projections: projectionRefresher,
-    notices: postDurabilityNotices,
-    deferUntilCommit: deferUntilDrizzleCommit,
-  });
+    deps.assetPaths,
+  );
   const drafts = createWorkDraftReviewService({
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
