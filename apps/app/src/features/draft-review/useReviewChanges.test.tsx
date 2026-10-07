@@ -12,8 +12,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   beginChangeCommand,
   failChangeCommand,
-  resetChangeCommandRecords,
+  releaseChangeCommand,
 } from "@/client/query/change-command-record";
+import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { settleConfirmedChange } from "@/client/query/useDraftReviewMutations";
 import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
@@ -123,7 +124,7 @@ const flush = (ms = 0) =>
 const classIds = () => latest.items.map((item) => item.change.classId);
 
 beforeEach(() => {
-  resetChangeCommandRecords();
+  resetDraftCommandRecords();
   getDraftPreview.mockReset();
 });
 
@@ -161,6 +162,7 @@ describe("useReviewChanges", () => {
       expect(classIds()).toEqual(["c1", "c3"]);
       await act(async () => {
         failChangeCommand(draft, second, "apply", "offline");
+        releaseChangeCommand(draft);
       });
       expect(classIds()).toEqual(["c1", "c2", "c3"]);
       expect(latest.items[1].failure).toMatchObject({ code: "offline", mode: "apply" });
@@ -298,5 +300,63 @@ describe("useReviewChanges", () => {
       fakeController({ dispositionLocked: true } as Partial<DraftReviewController>),
       async () => expect(latest.locked).toBe(true),
     );
+  });
+
+  describe("finished and completing", () => {
+    const inline = (completion?: unknown) =>
+      fakeController({
+        inlineReview: { kind: "inline", documentId: "doc", draftId: "draft", completion },
+      } as unknown as Partial<DraftReviewController>);
+    const last = () => preview([op("1", "c1")], [hunk("h1", ["1"])]);
+
+    it("is not finished while the last change's command is in flight, however empty the list looks", async () => {
+      await mount(
+        inline({ phase: "pending", mode: "apply", documentName: "Chapter 12" }),
+        async () => {
+          await act(async () => {
+            beginChangeCommand(draft, latest.items[0].change, "apply");
+          });
+          expect(classIds()).toEqual([]);
+          expect(latest.completing).toBe("apply");
+          expect(latest.finished).toBe(false);
+        },
+        last(),
+      );
+    });
+
+    it("is not finished while a command hides the last change, even with no completion predicted", async () => {
+      await mount(
+        inline(),
+        async () => {
+          await act(async () => {
+            beginChangeCommand(draft, latest.items[0].change, "discard");
+          });
+          expect(classIds()).toEqual([]);
+          expect(latest.completing).toBeNull();
+          expect(latest.finished).toBe(false);
+        },
+        last(),
+      );
+    });
+
+    it("is finished when the server closed the draft, with nothing listed from a stale read", async () => {
+      await mount(
+        inline({ phase: "closed", documentName: "Chapter 12" }),
+        async () => {
+          expect(latest.finished).toBe(true);
+          expect(latest.completing).toBeNull();
+          expect(classIds()).toEqual([]);
+        },
+        baseline(),
+      );
+    });
+
+    it("is finished when the server's own read shows no change and no command is hiding one", async () => {
+      await mount(inline(), async () => expect(latest.finished).toBe(true), preview([], []));
+    });
+
+    it("is not finished while changes remain", async () => {
+      await mount(inline(), async () => expect(latest.finished).toBe(false));
+    });
   });
 });

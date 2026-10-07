@@ -5,10 +5,10 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftDock, type DraftDockModel } from "./DraftDock";
 import type { DockRow } from "./docked-drafts";
-import type { InlineReviewMessageCode } from "./draft-review-session";
 
 function row(documentId: string): DockRow {
   return {
@@ -20,7 +20,7 @@ function row(documentId: string): DockRow {
   };
 }
 
-function dockWith(rows: DockRow[], refused: Record<string, InlineReviewMessageCode>) {
+function dockWith(rows: DockRow[], refused: Record<string, DraftCommandFailureCode>) {
   return {
     generating: false,
     rows,

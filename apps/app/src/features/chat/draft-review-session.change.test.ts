@@ -21,7 +21,7 @@ const draft = { ...scope, ...selection };
 const change = { classId: "closure:1+2", operationIds: ["1", "2"] };
 const tokens = { liveRevisionToken: "live-1", draftRevisionToken: "draft-1" };
 
-type Answer = DraftApplyChangesResponse | Error;
+type Answer = DraftApplyChangesResponse | "unknown" | Error;
 
 function harness(answer: Answer | (() => Promise<DraftApplyChangesResponse>)) {
   const applyChanges = vi.fn(async () => {
@@ -39,7 +39,6 @@ function harness(answer: Answer | (() => Promise<DraftApplyChangesResponse>)) {
     batchSettled: vi.fn(),
     draftDiscardStarted: vi.fn(),
     draftApplied: vi.fn(),
-    draftFailed: vi.fn(),
     draftDiscarded: vi.fn(),
   } satisfies DraftReviewCommandPorts;
   return { ports, session: new DraftReviewSession(() => ports) };
@@ -137,8 +136,20 @@ describe("applying one change", () => {
     expect(ports.changeConfirmed).toHaveBeenCalledWith(selection, change, "apply");
   });
 
-  it("a request that got no answer brings the change back as an offline failure", async () => {
-    const { session, ports } = harness(new Error("offline"));
+  it("a request that got no answer is held on the change as unknown, never as a refusal", async () => {
+    const { session, ports } = harness("unknown");
+    const outcome = await session.applyChange(selection, change, tokens);
+    expect(outcome).toEqual({ kind: "change-refused", mode: "apply", code: "unknown" });
+    expect(ports.changeConfirmed).not.toHaveBeenCalled();
+    expect(changeCommandState(await records(), draft, change)).toEqual({
+      phase: "failed",
+      mode: "apply",
+      code: "unknown",
+    });
+  });
+
+  it("a request the server refused brings the change back as an offline failure", async () => {
+    const { session, ports } = harness(new Error("refused"));
     const outcome = await session.applyChange(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "apply", code: "offline" });
     expect(ports.changeConfirmed).not.toHaveBeenCalled();

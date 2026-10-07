@@ -14,7 +14,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { useState } from "react";
-
+import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type DockRow, dockRowName } from "@/features/chat/docked-drafts";
+import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { cn } from "@/lib/utils";
 
 export type DraftSwitcherProps = {
@@ -35,6 +36,8 @@ export type DraftSwitcherProps = {
   currentName?: string | null;
   /** Changes per document; absent while the count is still being read. */
   counts: ReadonlyMap<string, number>;
+  /** What a refused or unanswered command left on a document's draft, so the row says so wherever the review is. */
+  failures?: ReadonlyMap<string, DraftCommandFailureCode>;
   /** The menu is open or about to be: counts are read only then. */
   onOpenChange: (open: boolean) => void;
   /** A draft-only document has no live version: its exit closes the tab. */
@@ -62,6 +65,7 @@ export function DraftSwitcher({
   currentDocumentId,
   currentName = null,
   counts,
+  failures,
   onOpenChange,
   draftOnly,
   disabled,
@@ -108,13 +112,14 @@ export function DraftSwitcher({
         {rows.map((row) => {
           const isCurrent = row.documentId === currentDocumentId;
           const count = counts.get(row.documentId);
+          const failure = failures?.get(row.documentId);
           return (
             <DropdownMenuItem
               key={row.documentId}
               onSelect={() => {
                 if (!isCurrent) onOpenDraft(row);
               }}
-              className="grid grid-cols-[1rem_minmax(0,1fr)_auto] gap-2"
+              className="grid grid-cols-[1rem_minmax(0,1fr)_auto] gap-x-2 gap-y-0.5"
             >
               <span className="text-primary">
                 {isCurrent ? <Check aria-hidden className="size-3.5" /> : null}
@@ -129,6 +134,11 @@ export function DraftSwitcher({
                   {count === 1 ? t`1 change` : t`${count} changes`}
                 </span>
               )}
+              {failure ? (
+                <span className="col-start-2 col-span-2 text-caption text-destructive" role="alert">
+                  <ReviewMessageText code={failure} />
+                </span>
+              ) : null}
             </DropdownMenuItem>
           );
         })}

@@ -172,17 +172,24 @@ export function EditorView(props: EditorViewProps) {
   const { controller } = useDraftReview();
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
   const liveSession = props.session ?? null;
-  // The writer handled the last change: the server closed the draft, so the
-  // draft's text is the live text and its room is a dead generation. The
-  // finished text is the live editor, revealed in place of the review's (the
-  // review chrome stays, saying so) and editable again; the review editor and
-  // its room go with the review's marks.
+  // The writer handled the last change. A Discard leaves live as it is, so the
+  // finished text is already the live editor: shown in place of the review's at
+  // the click, but inert, because nothing is known yet. The server's `draftClosed`
+  // answer then makes it editable (the draft's text is the live text and its
+  // room a dead generation; the review chrome stays, saying so). An answer that
+  // did not close the draft withdraws it and the review comes back. A last Apply
+  // keeps the review's editor, marks gone, until that answer: live has no change
+  // in it before.
+  const completion =
+    controller.inlineReview?.documentId === props.documentId &&
+    controller.inlineReview.draftId === reviewDraftId
+      ? controller.inlineReview.completion
+      : undefined;
+  const closed = completion?.phase === "closed";
   const settled =
     inReview &&
     liveSession !== null &&
-    controller.inlineReview?.cleared !== undefined &&
-    controller.inlineReview.documentId === props.documentId &&
-    controller.inlineReview.draftId === reviewDraftId;
+    (closed || (completion?.phase === "pending" && completion.mode === "discard"));
   const marksReady =
     reviewDraftId !== null &&
     controller.inlineReview?.documentId === props.documentId &&
@@ -321,11 +328,11 @@ export function EditorView(props: EditorViewProps) {
           <SessionEditorView
             key={`${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`}
             {...props}
-            editable={reviewRequested && !settled ? false : props.editable}
+            editable={reviewRequested && !closed ? false : props.editable}
             identity={mountIdentity(props, "live")}
             session={liveSession}
             liveSession={liveSession}
-            held={reviewRequested && !settled}
+            held={reviewRequested && !closed}
           />
         </div>
       ) : null}

@@ -1,12 +1,14 @@
 /**
- * The one command record per change under review (a server closure class),
+ * What the writer sees of each change under review (a server closure class),
  * shared by every surface that shows it: the manuscript's marks and bar, the
  * change list, the stepper, the header counts. Sits beside
- * `draft-command-record`, which does the same for whole drafts.
+ * `draft-command-record`, which is the one command authority per draft.
  *
- * - `pending`: an Apply or Discard of this change is dispatched. The change
- *   leaves every surface at once (the writer sees the result of the click) and
- *   a second command for it is refused instead of sent twice.
+ * - `pending`: an Apply or Discard of this change is dispatched. It is not
+ *   stored here: it is the draft's own pending claim (`beginDraftCommand`,
+ *   carrying the change's operation set), so a whole-draft command, or a
+ *   command from another session, cannot be sent beside it. The change leaves
+ *   every surface at once (the writer sees the result of the click).
  * - `failed`: the command did not land. The change comes back, showing why on
  *   its own bar and row. It clears on the next action on that change, and when
  *   a later preview no longer lists any of its operations.
@@ -24,16 +26,30 @@
  * `draft-command-record`) empties it by calling `resetChangeCommandRecords`.
  */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import { useMemo } from "react";
 import { create } from "zustand";
+import {
+  beginDraftCommand,
+  type ChangeCommandMode,
+  type ChangeRef,
+  currentDraftCommandRecords,
+  type DraftCommandRecords,
+  onDraftCommandRecordsReset,
+  pendingChangeCommand,
+  releaseDraftCommand,
+  useDraftCommandRecords,
+} from "./draft-command-record";
+
+export type { ChangeCommandMode, ChangeRef };
 
 type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
 
-export type ChangeCommandMode = "apply" | "discard";
-
 /** Why a change command did not land; the copy lives in the render layer. */
 export type ChangeFailureCode =
-  /** The request got no answer, or the server failed. */
+  /** The server refused the request or failed. */
   | "offline"
+  /** An Apply got no answer: it may or may not have landed. Never read as a refusal. */
+  | "unknown"
   /** The change was updated under the writer; the preview is re-read. */
   | "stale"
   /** The change is no longer in the draft. */
@@ -41,11 +57,8 @@ export type ChangeFailureCode =
   /** A new document's changes cannot be applied one by one. */
   | "draft-only";
 
-export type ChangeRef = { classId: string; operationIds: readonly string[] };
-
 type ChangeCommandRecord = ChangeRef &
   (
-    | { phase: "pending"; mode: ChangeCommandMode }
     | { phase: "failed"; mode: ChangeCommandMode; code: ChangeFailureCode; at: number }
     | { phase: "confirmed"; mode: ChangeCommandMode; at: number }
   );
@@ -55,6 +68,9 @@ export type ChangeCommandState =
   | { phase: "failed"; mode: ChangeCommandMode; code: ChangeFailureCode };
 
 type ChangeRecords = Readonly<Record<string, ChangeCommandRecord>>;
+
+/** Everything that says what is happening to a draft's changes: held outcomes and the draft's own claim. */
+export type ChangeCommandRecords = { changes: ChangeRecords; drafts: DraftCommandRecords };
 
 const useChangeCommandStore = create<{ records: ChangeRecords; clock: number }>(() => ({
   records: {},
@@ -90,25 +106,25 @@ function recordFor(draft: DraftRef, classId: string): ChangeCommandRecord | unde
   return useChangeCommandStore.getState().records[recordKey(draft, classId)];
 }
 
-/** Claim the change for one command; false when one is already in flight on it. */
+/** Claim the draft for one command on this change; false when any command is in flight on the draft. */
 export function beginChangeCommand(
   draft: DraftRef,
   change: ChangeRef,
   mode: ChangeCommandMode,
 ): boolean {
-  if (recordFor(draft, change.classId)?.phase === "pending") return false;
-  setRecord(draft, change, () => ({
-    phase: "pending",
-    mode,
-    classId: change.classId,
-    operationIds: change.operationIds,
-  }));
+  if (
+    !beginDraftCommand(draft, { classId: change.classId, operationIds: change.operationIds, mode })
+  ) {
+    return false;
+  }
+  // The claim is the next action on the change: a failure it held is stale now.
+  clearChangeFailure(draft, change);
   return true;
 }
 
 /** Give back a claim that ended without a confirmation or a held failure. */
-export function releaseChangeCommand(draft: DraftRef, change: ChangeRef): void {
-  if (recordFor(draft, change.classId)?.phase === "pending") setRecord(draft, change, null);
+export function releaseChangeCommand(draft: DraftRef): void {
+  releaseDraftCommand(draft);
 }
 
 export function failChangeCommand(
@@ -246,14 +262,19 @@ function dropFailuresWithoutOperations(
   }));
 }
 
-/** Every held record; look changes up with `changeCommandState`. */
-export function useChangeCommandRecords(): ChangeRecords {
-  return useChangeCommandStore((state) => state.records);
+/** Every held record and claim; look changes up with `changeCommandState`. */
+export function useChangeCommandRecords(): ChangeCommandRecords {
+  const changes = useChangeCommandStore((state) => state.records);
+  const drafts = useDraftCommandRecords();
+  return useMemo(() => ({ changes, drafts }), [changes, drafts]);
 }
 
 /** The records right now, for code that is not a render (commands, tests). */
-export function currentChangeCommandRecords(): ChangeRecords {
-  return useChangeCommandStore.getState().records;
+export function currentChangeCommandRecords(): ChangeCommandRecords {
+  return {
+    changes: useChangeCommandStore.getState().records,
+    drafts: currentDraftCommandRecords(),
+  };
 }
 
 function recordsOfDraft(records: ChangeRecords, draft: DraftRef): ChangeCommandRecord[] {
@@ -264,39 +285,46 @@ function recordsOfDraft(records: ChangeRecords, draft: DraftRef): ChangeCommandR
 }
 
 /** The operations hidden from this draft's preview: every change pending or confirmed. */
-export function hiddenOperationIds(records: ChangeRecords, draft: DraftRef): ReadonlySet<string> {
+export function hiddenOperationIds(
+  records: ChangeCommandRecords,
+  draft: DraftRef,
+): ReadonlySet<string> {
   const hidden = new Set<string>();
-  for (const record of recordsOfDraft(records, draft)) {
+  for (const record of recordsOfDraft(records.changes, draft)) {
     if (record.phase === "failed") continue;
     for (const id of record.operationIds) hidden.add(id);
   }
+  for (const id of pendingChangeCommand(records.drafts, draft)?.operationIds ?? []) hidden.add(id);
   return hidden;
 }
 
 /** What a change's command record says, matched by class id or any shared operation. */
 export function changeCommandState(
-  records: ChangeRecords,
+  records: ChangeCommandRecords,
   draft: DraftRef,
   change: ChangeRef,
 ): ChangeCommandState | null {
-  const own = records[recordKey(draft, change.classId)];
-  const candidates = own ? [own] : recordsOfDraft(records, draft);
+  const pending = pendingChangeCommand(records.drafts, draft);
+  if (
+    pending &&
+    (pending.classId === change.classId ||
+      pending.operationIds.some((id) => change.operationIds.includes(id)))
+  ) {
+    return { phase: "pending", mode: pending.mode };
+  }
+  const own = records.changes[recordKey(draft, change.classId)];
+  const candidates = own ? [own] : recordsOfDraft(records.changes, draft);
   const ids = new Set(change.operationIds);
   for (const record of candidates) {
-    if (record.phase === "confirmed") continue;
+    if (record.phase !== "failed") continue;
     if (record !== own && !record.operationIds.some((id) => ids.has(id))) continue;
-    return record.phase === "pending"
-      ? { phase: "pending", mode: record.mode }
-      : { phase: "failed", mode: record.mode, code: record.code };
+    return { phase: "failed", mode: record.mode, code: record.code };
   }
   return null;
-}
-
-/** Any change of this Work's draft is in flight. */
-export function changeCommandPendingIn(records: ChangeRecords, draft: DraftRef): boolean {
-  return recordsOfDraft(records, draft).some((record) => record.phase === "pending");
 }
 
 export function resetChangeCommandRecords(): void {
   useChangeCommandStore.setState({ records: {} });
 }
+
+onDraftCommandRecordsReset(resetChangeCommandRecords);

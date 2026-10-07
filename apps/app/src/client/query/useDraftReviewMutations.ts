@@ -155,7 +155,8 @@ export type DraftChangesApplyInput = DraftReviewMutationBase & {
 /**
  * Apply complete changes (server closure classes) of one draft. The server's
  * answer is data, not an error: a refusal (`stale`, `gone`, ...) resolves, and
- * the caller decides what it means. Either way the draft's list and preview
+ * the caller decides what it means. A rejection with a status throws as is; a
+ * request that got no answer throws the distinct unknown outcome, as Apply does. Either way the draft's list and preview
  * are re-read before the mutation settles, so the surfaces that act next read
  * current tokens.
  */
@@ -171,10 +172,17 @@ export function useApplyDraftChanges() {
       request,
       onAnswered,
     }: DraftChangesApplyInput) => {
-      const response = await applyDraftChanges(projectId, workId, documentId, {
-        draftId,
-        ...request,
-      });
+      let response: DraftApplyChangesResponse;
+      try {
+        response = await applyDraftChanges(projectId, workId, documentId, {
+          draftId,
+          ...request,
+        });
+      } catch (error) {
+        // No answer is not a refusal: the change may have landed.
+        if (httpErrorStatus(error) !== undefined) throw error;
+        throw new DraftApplyOutcomeUnknownError();
+      }
       onAnswered?.(response);
       return response;
     },

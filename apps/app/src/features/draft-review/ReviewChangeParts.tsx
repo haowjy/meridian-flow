@@ -106,6 +106,12 @@ export function ChangeFailureText({
       return <Trans>That change is no longer in the draft.</Trans>;
     case "draft-only":
       return <Trans>A new document is applied as a whole. Use Apply draft.</Trans>;
+    case "unknown":
+      return (
+        <Trans>
+          Couldn't confirm whether this applied. It will update when you're back online.
+        </Trans>
+      );
     case "offline":
       return mode === "apply" ? (
         <Trans>Couldn't apply. Check your connection and try again.</Trans>

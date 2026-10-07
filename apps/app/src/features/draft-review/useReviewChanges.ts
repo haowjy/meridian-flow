@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   type ChangeCommandState,
   changeCommandState,
+  hiddenOperationIds,
   useChangeCommandRecords,
 } from "@/client/query/change-command-record";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
@@ -43,13 +44,25 @@ export type ReviewChangesView = {
   canApply: boolean;
   /** Every Apply and Discard disables on this. */
   locked: boolean;
-  /** Every change has been handled; the review is held open to say so. */
-  cleared: boolean;
+  /**
+   * The last change's command is in flight (`"apply"` or `"discard"`): the
+   * change is gone from the list, but nothing is finished until the server
+   * answers. Surfaces say so honestly and offer no way on.
+   */
+  completing: "apply" | "discard" | null;
+  /**
+   * Nothing is left to review: the server closed the draft, or its own read
+   * shows no change and no command of ours is hiding one. Never from an
+   * optimistic projection that is waiting on a command.
+   */
+  finished: boolean;
   focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
   step: (direction: 1 | -1) => void;
   apply: (change: ReviewChange) => Promise<void>;
   discard: (change: ReviewChange) => Promise<void>;
 };
+
+const NO_ITEMS: readonly ReviewChangeItem[] = [];
 
 type ActivePreview = Extract<DraftPreviewResponse, { status: "active"; inlineModelPresent: true }>;
 
@@ -173,16 +186,34 @@ export function useReviewChanges(
     [controller.discardChange, run],
   );
 
+  const completion = inline?.completion;
+  const completing = completion?.phase === "pending" ? completion.mode : null;
+  const status: ReviewChangesView["status"] = !inline
+    ? "idle"
+    : active
+      ? "ready"
+      : preview?.status === "gone"
+        ? "gone"
+        : "loading";
+  const finished =
+    completion?.phase === "closed" ||
+    (status === "ready" &&
+      completing === null &&
+      items.length === 0 &&
+      (draftRef ? hiddenOperationIds(records, draftRef).size === 0 : true));
+
   return {
     documentId,
     draftId,
-    status: !inline ? "idle" : active ? "ready" : preview?.status === "gone" ? "gone" : "loading",
-    items,
+    status,
+    // A draft the server closed has nothing to list, whatever a stale read still holds.
+    items: completion?.phase === "closed" ? NO_ITEMS : items,
     focused,
     focusedIndex,
     canApply: active?.isNewDocument !== true,
     locked: controller.dispositionLocked,
-    cleared: inline?.cleared !== undefined && changes.length === 0,
+    completing,
+    finished,
     focus,
     step,
     apply,

@@ -1,8 +1,8 @@
 /** Writer-facing copy for a review message code; the controller emits codes, never localized text. */
 import { Trans } from "@lingui/react/macro";
-import type { InlineReviewMessageCode } from "./draft-review-session";
+import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
 
-export function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
+export function ReviewMessageText({ code }: { code: DraftCommandFailureCode }) {
   switch (code) {
     case "apply-failed":
       return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
