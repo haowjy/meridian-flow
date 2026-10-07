@@ -187,6 +187,71 @@ describe("ReviewChangeRow", () => {
   });
 });
 
+describe("touch forms", () => {
+  const targets = (selector: string) =>
+    Array.from(document.querySelectorAll<HTMLElement>(selector)).filter((node) =>
+      node.className.includes("size-11"),
+    );
+
+  it("raises the row's Discard and Apply to 44px targets", async () => {
+    await render(
+      <ul>
+        <ReviewChangeRow {...rowProps()} touch />
+      </ul>,
+      async () => {
+        expect(button("Discard")?.className).toContain("size-11");
+        expect(button("Apply")?.className).toContain("size-11");
+        expect(document.querySelector("li button[aria-current], li button")?.className).toContain(
+          "min-h-11",
+        );
+      },
+    );
+  });
+
+  it("keeps the bar's accessible Discard name in full while showing only Discard", async () => {
+    const props = {
+      change: change({ includesWriterEdits: true }),
+      disabled: false,
+      canApply: true,
+      failure: null,
+      onApply: vi.fn(),
+      onDiscard: vi.fn(),
+    };
+    await render(<ReviewChangeBar {...props} touch />, async () => {
+      const discard = button("Discard with your edits");
+      expect(discard?.textContent).toBe("Discard");
+      expect(discard?.className).toContain("h-11");
+      expect(button("Apply")?.className).toContain("h-11");
+      expect(document.body.textContent).toContain("Includes your edits");
+      await act(async () => discard?.click());
+      expect(props.onDiscard).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("makes both stepper arrows 44px", async () => {
+    await render(
+      <ReviewStepper count={6} focusedIndex={2} disabled={false} onStep={vi.fn()} touch />,
+      async () => {
+        expect(targets("button")).toHaveLength(2);
+        expect(document.body.textContent).toContain("3 of 6");
+      },
+    );
+  });
+
+  it("places the toast where the host asks", async () => {
+    await render(
+      <ReviewToast
+        toast={{ id: 1, code: "applied", tone: "success" } as never}
+        onDismiss={vi.fn()}
+        className="bottom-24"
+      />,
+      async () => {
+        expect(document.querySelector("[data-review-toast]")?.className).toContain("bottom-24");
+      },
+    );
+  });
+});
+
 describe("ReviewChangeBar", () => {
   const barProps = (overrides: Partial<React.ComponentProps<typeof ReviewChangeBar>> = {}) => ({
     change: change(),

@@ -116,19 +116,10 @@ export function ContextViewer({
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.
   const { controller } = useDraftReview();
-  const { openAiDraft } = useAiDraftLauncher();
+  const { openDockRow } = useAiDraftLauncher();
   // The header's draft switcher opens another draft of this Work through the
   // same launcher every Review entry uses.
-  const openDraft = (row: DockRow) =>
-    row.contextPath &&
-    openAiDraft({
-      workId: controller.workId,
-      documentId: row.documentId,
-      draftId: row.draft.draftId,
-      contextPath: row.contextPath,
-      documentName: row.documentName ?? undefined,
-      isNewDocument: row.isNewDocument,
-    });
+  const openDraft = (row: DockRow) => openDockRow(row, controller.workId);
   const activeReviewDraftId =
     activeTab && controller.inlineReview?.documentId === activeTab.documentId
       ? controller.inlineReview.draftId
