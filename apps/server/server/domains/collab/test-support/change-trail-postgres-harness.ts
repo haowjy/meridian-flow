@@ -72,6 +72,7 @@ const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } =
 const {
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
+  createDraftReviewDiagnostics,
   createDocumentProjectionDiagnostics,
   createReversalNoticeDiagnostics,
 } = await import("../adapters/agent-edit-observability.js");
@@ -592,6 +593,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
+    diagnostics: createDraftReviewDiagnostics(eventSink),
     settleEmptyDraft: createDrizzleEmptyDraftSettlement(
       db,
       branchStore,

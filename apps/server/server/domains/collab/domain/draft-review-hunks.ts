@@ -21,6 +21,7 @@ import {
   type IndexedDraftUpdate,
 } from "./draft-review-operations.js";
 import type {
+  DraftReviewDiagnostic,
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
@@ -44,19 +45,29 @@ export type DraftReviewHunkResult = {
   operations: DraftReviewOperationInternal[];
   hunks: DraftReviewHunkInternal[];
   wordDelta: DraftWordDelta;
+  diagnostics: DraftReviewDiagnostic[];
 };
 
 export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftReviewHunkResult {
   const liveBlocks = describeBlocks(input.liveDoc, input.model);
   const draftBlocks = describeBlocks(input.draftDoc, input.model);
   if (blockContentShapesMatch(liveBlocks, draftBlocks)) {
-    return { operations: [], hunks: [], wordDelta: { wordsAdded: 0, wordsRemoved: 0 } };
+    return {
+      operations: [],
+      hunks: [],
+      diagnostics: [],
+      wordDelta: { wordsAdded: 0, wordsRemoved: 0 },
+    };
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
 
   const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
   const rawByHunkId = new Map<string, RawHunk>();
-  const { hunks, operations: rawOperations } = computeDraftReviewOperations({
+  const {
+    hunks,
+    operations: rawOperations,
+    diagnostics,
+  } = computeDraftReviewOperations({
     baseDoc: input.liveDoc,
     updates: input.draftUpdates,
     hunks: rawHunks.map((hunk, index) => {
@@ -79,6 +90,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
   const operations = visible.operations;
   return {
     operations,
+    diagnostics,
     hunks: visible.hunks,
     wordDelta: sumDraftWordDelta(visibleRawHunks.map(hunkDisplayText)),
   };
@@ -477,6 +489,7 @@ function isRestorativeRejectPair(
   rawByHunkId: ReadonlyMap<string, RawHunk>,
   operationsById: ReadonlyMap<string, DraftReviewOperationInternal>,
 ): boolean {
+  if (left.unclassified || right.unclassified) return false;
   const leftRaw = rawByHunkId.get(left.hunkId);
   const rightRaw = rawByHunkId.get(right.hunkId);
   if (!leftRaw || !rightRaw) return false;

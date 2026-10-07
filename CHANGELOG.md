@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.
+
 - Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
 
 - Handling the last text change preserves independent draft formatting for document-level Apply or Discard.

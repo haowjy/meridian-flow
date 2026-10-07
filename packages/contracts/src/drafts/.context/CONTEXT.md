@@ -27,3 +27,10 @@ Selective Discard must send `liveRevisionToken` and `draftRevisionToken` from th
 preview alongside `operationIds`. Missing/changed tokens return `stale`; refresh
 instead of reporting success or closing the review. Whole-document Discard omits
 these tokens and remains unfenced.
+
+Incomplete attribution retains an explicit `unclassified: true` hunk; empty
+`operationIds` means there is no attributable author, not no difference. Render
+its complete removal or insertion (text insertions supply `insertedText` as a
+fallback). Do not invent an author. `canApplyOrDiscard: false` disables actions
+for every operation of a class touching that hunk; absence means eligible under
+the ordinary class rules. Such effects need document-level Apply/Discard.

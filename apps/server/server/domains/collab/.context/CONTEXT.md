@@ -304,9 +304,18 @@ Within aligned blocks, pin common live/draft Yjs text identities before semantic
 text diffing the gaps. Text-only alignment may match an identical deleted full
 stop instead of the surviving one, producing a fictitious deletion without an
 author. Tombstone attribution must not invent an author for that survivor.
-Unexpected missing deletion ownership logs a warning and omits all author spans
-for that removal (the existing default removal rendering still shows its whole
-text); returning only the known spans would hide the missing portion.
+Missing ownership preserves the complete hunk as `unclassified`, including wholly
+unattributed insertions/removals. The attribution index returns explicit coverage;
+partial deletion coverage drops all author spans, not any removed text. Every
+class touching such a hunk carries `canApplyOrDiscard: false`; both selectors
+refuse it as `incomplete_class`. Only document-level Apply/Discard can handle it.
+Preview diagnostics reach the domain's event-sink adapter as a warning with the
+document correlation and affected hunk count, never document content.
+
+`domain/draft-review-attribution.ts` owns replay, restoration aliases, range
+ownership and completeness. `domain/draft-review-operations.ts` owns writer
+grouping, presentation and dependency classes. The complete difference enters
+that grouping unchanged; missing authorship never filters out a hunk.
 
 ### Complete-effect terminal settlement
 

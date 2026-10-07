@@ -1,6 +1,7 @@
 /** Durable regressions for complete-effect settlement and preview-scoped Discard. */
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -177,6 +178,86 @@ it.each([
       status: "discarded",
       draftClosed: true,
     });
+  } finally {
+    harness.destroyWarmState();
+  }
+});
+
+it("keeps incomplete attribution document-only and whole Apply still publishes its full effect", async () => {
+  const harness = createHarness();
+  try {
+    await harness.seedWriterDocument("Alpha stays.", "missing-removal-owner");
+    const f = harness.crossWorkProbeFixture();
+    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    for (const edit of ["insert", "remove"] as const) {
+      const staged = await f.branchCoordinator.readBranch(
+        branch.branchId,
+        async (doc, snapshot) => {
+          const clone = createCollabYDoc({ gc: false });
+          Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+          return { clone, generation: snapshot.generation };
+        },
+      );
+      try {
+        const block = f.model.getBlocks(toDocHandle(staged.clone))[0];
+        f.model.applyTextEdit(
+          toDocHandle(staged.clone),
+          block,
+          edit === "insert" ? { from: 0, to: 0 } : { from: 4, to: 9 },
+          edit === "insert" ? "New " : "",
+        );
+        await f.branchCoordinator.commitSyncFromDoc({
+          branchId: branch.branchId,
+          sourceDoc: staged.clone,
+          expectedGeneration: staged.generation,
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        });
+      } finally {
+        staged.clone.destroy();
+      }
+    }
+    // Fault-inject missing attribution evidence while preserving the persisted effect.
+    const rows = await f.db.select().from(f.schema.branchWriteJournal);
+    const removal = rows.sort((a, b) => b.id - a.id)[0];
+    await f.db
+      .update(f.schema.branchWriteJournal)
+      .set({ status: "discarded" })
+      .where(eq(f.schema.branchWriteJournal.id, removal.id));
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await f.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    expect(preview.hunks[0]).toMatchObject({
+      unclassified: true,
+      deletedText: "Alpha",
+      deletedSpans: [],
+    });
+    expect(preview.operations[0]).toMatchObject({ canApplyOrDiscard: false });
+    const request = {
+      ...command,
+      operationIds: preview.operations.map((op) => op.operationId),
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
+    };
+    expect(await f.collab.draftReview.applyWorkDraftChanges(request)).toMatchObject({
+      status: "incomplete_class",
+    });
+    expect(await f.collab.draftReview.discardWorkDraft(request)).toMatchObject({
+      status: "incomplete_class",
+    });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha stays.\n");
+    expect(await f.collab.draftReview.applyWorkDraft(command)).toMatchObject({ status: "applied" });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("New  stays.\n");
   } finally {
     harness.destroyWarmState();
   }
