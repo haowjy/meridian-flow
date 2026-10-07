@@ -49,13 +49,15 @@ the change's class id, matched by shared operations) for what outlives the claim
 - `confirmed`: the server confirmed. The cached preview loses the change
   (`settleConfirmedChange`) and a preview read that started earlier cannot bring
   it back (`readPreviewAfterChangeCommands`).
-- `failed`: the change comes back, with `offline` (the server refused it:
+- `failed`: the change comes back, with `offline` (the browser is offline and nothing was sent, or the server refused it:
   "Couldn't apply. Check your connection and try again."), `unknown` (an Apply
   that got no answer: "Couldn't confirm whether this applied", never inferred
   from later list membership), `stale` ("This change was updated. Check it and
   apply again." / "...discard again.") or `draft-only`, shown on its bar and row.
   `gone` is not held: the change leaves with a toast. `incomplete_class` is
   treated as `stale`, for Apply and Discard alike.
+
+Apply and Discard are not queued offline: their mutations run with `networkMode: "always"` and throw `DraftCommandNotSentError` when the browser is offline, so the click is refused on the change (or the draft) at once and nothing fires on reconnect.
 
 Apply and Discard send the live and draft revision tokens of the cached preview
 the writer saw (opaque strings), so a change updated under them is refused,

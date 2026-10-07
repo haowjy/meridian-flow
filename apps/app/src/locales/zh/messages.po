@@ -1172,8 +1172,13 @@ msgstr ""
 
 #: src/features/chat/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Couldn't confirm whether this applied. It will update when you're back online."
+msgid "Couldn't confirm whether this applied. Check what is left before you try again."
 msgstr ""
+
+#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewChangeParts.tsx
+#~ msgid "Couldn't confirm whether this applied. It will update when you're back online."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"

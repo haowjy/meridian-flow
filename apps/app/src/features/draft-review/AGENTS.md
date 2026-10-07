@@ -101,9 +101,20 @@ is one server closure class.
   doubled text), but inert until `closed`, and the review comes back if the draft
   stays open. A last Apply keeps the review editor, marks gone, until the answer
   (live has no change in it before).
+- **Offline is a refusal of the click, never a queue.** The Apply and Discard
+  mutations (`useDraftReviewMutations`) run with `networkMode: "always"` and
+  refuse with `DraftCommandNotSentError` when `onlineManager` says the browser
+  is offline: the change comes back as `offline` ("Couldn't apply/discard. Check
+  your connection and try again.") and a whole-draft command is held on its
+  draft (`apply-failed`, `discard-offline`), the same as a rejection. TanStack's
+  default would pause the mutation and fire it on reconnect with the change
+  gone from the screen meanwhile. Nothing fires when the network returns; the
+  writer acts again.
 - Unknown outcomes are held, not guessed. A per-change Apply that got no answer
-  is held on its change as `unknown` ("Couldn't confirm whether this applied"),
-  the whole-draft Apply's wording, apart from a refusal (`offline`). A rejected
+  is held on its change as `unknown` ("Couldn't confirm whether this applied.
+  Check what is left before you try again."), the whole-draft Apply's wording,
+  apart from a refusal (`offline`). The copy promises no automatic update: only
+  a read after the failure can resolve the change, and one can find it still there. A rejected
   whole-draft Apply is held on that draft's record (`apply-failed`) and shown
   wherever the draft is listed (switcher row, composer strip, Work files, Changes
   tab) after the review moved on to the next draft; it never navigates back.

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Apply and Discard on a change (or a whole draft) while you are offline now say so right away on the change ("Couldn't apply. Check your connection and try again.") and send nothing, instead of removing the change, doing nothing, and applying it silently when the network came back. When an Apply's answer is lost, the message no longer promises it will update by itself: "Couldn't confirm whether this applied. Check what is left before you try again."
 - A draft open in two tabs stays in step: when one tab applies a change, the other tab's list and marks update within a second, instead of keeping the applied change until its next action was refused as out of date.
 
 - Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.

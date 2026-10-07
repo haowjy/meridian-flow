@@ -125,7 +125,7 @@ export function ChangeFailureText({
     case "unknown":
       return (
         <Trans>
-          Couldn't confirm whether this applied. It will update when you're back online.
+          Couldn't confirm whether this applied. Check what is left before you try again.
         </Trans>
       );
     case "offline":
