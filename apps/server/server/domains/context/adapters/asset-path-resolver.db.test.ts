@@ -174,5 +174,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(await later).toBe("art/map.png");
     });
+
+    it("keeps the enclosing paths for a nested call whose project isn't found", async () => {
+      const assetPaths = createDrizzleDocumentAssetPaths(db);
+      const unknownThread = "00000000-0000-4000-8000-000000000bff";
+
+      const path = await assetPaths.within({ documentId: CHAPTER_ID }, () =>
+        assetPaths.within({ threadId: unknownThread }, async () =>
+          assetPaths.resolver.pathForAsset(MAP_ID),
+        ),
+      );
+
+      expect(path).toBe("assets/map.png");
+    });
   });
 }
