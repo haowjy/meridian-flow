@@ -58,7 +58,12 @@ const controller = vi.hoisted(() => ({
   dispositionLocked: false,
   isApplying: false,
   canApplyReviewedDraft: true,
-  inlineReview: null as null | { documentId: string; draftId: string; shown: boolean },
+  inlineReview: null as null | {
+    documentId: string;
+    draftId: string;
+    shown: boolean;
+    cleared?: { documentName: string | null };
+  },
   inlineReviewMessage: null as null | { code: string; tone: string },
   marksVisible: true,
   setMarksVisible: vi.fn(),
@@ -288,6 +293,52 @@ describe("the phone review header", () => {
         "w",
       );
     });
+  });
+
+  it("holds on No changes left after the server closed the draft and the list lost it", async () => {
+    const closed = groups.splice(0, 1);
+    Object.assign(view, { items: [], cleared: true });
+    controller.inlineReview = {
+      documentId: "doc-12",
+      draftId: "draft-doc-12",
+      shown: true,
+      cleared: { documentName: "Chapter 12" },
+    };
+    try {
+      await render(async () => {
+        expect(header()?.textContent).toContain("No changes left");
+        expect(header()?.textContent).toContain("Chapter 12");
+        expect(controller.exitInlineReview).not.toHaveBeenCalled();
+        await act(async () => named("Next draft")?.click());
+        expect(launcher.openDockRow).toHaveBeenCalledWith(
+          expect.objectContaining({ documentId: "doc-13" }),
+          "w",
+        );
+      });
+    } finally {
+      groups.unshift(...closed);
+    }
+  });
+
+  it("offers the way back to live when no other draft is left", async () => {
+    const all = groups.splice(0, groups.length);
+    Object.assign(view, { items: [], cleared: true });
+    controller.inlineReview = {
+      documentId: "doc-12",
+      draftId: "draft-doc-12",
+      shown: true,
+      cleared: { documentName: "Chapter 12" },
+    };
+    try {
+      await render(async () => {
+        expect(header()?.textContent).toContain("No changes left");
+        expect(named("Next draft")).toBeUndefined();
+        await act(async () => named("Back to live")?.click());
+        expect(controller.exitInlineReview).toHaveBeenCalledOnce();
+      });
+    } finally {
+      groups.push(...all);
+    }
   });
 
   it("shows a refused whole-draft command under the row", async () => {

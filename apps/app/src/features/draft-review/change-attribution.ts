@@ -5,15 +5,9 @@
  * The chat comes from the operation's thread (`actorThreadId`,
  * `actorThreadTitle`). A class can hold several chats' operations (two turns
  * that edited the same spot); it links to the latest, the one whose text won.
- * Until the preview carries the thread, every AI change reads "AI".
+ * An operation the server cannot place in a chat reads "AI".
  */
 import type { ReviewOperation } from "@meridian/contracts/drafts";
-
-/** The additive preview fields attribution reads; absent until the server supplies them. */
-type ThreadAttributed = ReviewOperation & {
-  actorThreadId?: string | null;
-  actorThreadTitle?: string | null;
-};
 
 export type ChangeAttribution =
   | { kind: "you" }
@@ -21,7 +15,7 @@ export type ChangeAttribution =
   | { kind: "ai" };
 
 export function changeAttribution(operations: readonly ReviewOperation[]): ChangeAttribution {
-  const agentOps = operations.filter((op): op is ThreadAttributed => op.kind === "agent");
+  const agentOps = operations.filter((op) => op.kind === "agent");
   if (agentOps.length === 0) return { kind: "you" };
   // Operation ids are increasing integers in journal order; the highest is the latest.
   const latest = [...agentOps].sort(
@@ -33,6 +27,6 @@ export function changeAttribution(operations: readonly ReviewOperation[]): Chang
   return {
     kind: "chat",
     threadId: threaded.actorThreadId,
-    title: threaded.actorThreadTitle ?? null,
+    title: threaded.actorThreadTitle?.trim() || null,
   };
 }

@@ -92,6 +92,54 @@ describe("operationChangeText", () => {
   });
 });
 
+describe("a change that includes the writer's edits", () => {
+  // The real preview of an AI replacement the writer typed " frail" into: the
+  // AI operation and the writer's report the same text after the edit.
+  const hunks: ReviewHunk[] = [
+    {
+      kind: "text",
+      hunkId: "h1",
+      operationIds: ["61", "writer:66"],
+      anchor: { relStart: "", relEnd: "" },
+      spans: [],
+      deletedText: "his",
+    },
+  ];
+  const agent = op({
+    operationId: "61",
+    classification: "rewrite",
+    beforeExcerpt: "his",
+    afterExcerpt: "one withered frail",
+  });
+  const writer = op({
+    operationId: "writer:66",
+    kind: "writer",
+    classification: "rewrite",
+    beforeExcerpt: "his",
+    afterExcerpt: "one withered frail",
+  });
+
+  it("reads the text once", () => {
+    expect(changeTextForOperations([agent, writer], hunks)).toEqual({
+      removed: "his",
+      added: "one withered frail",
+    });
+  });
+
+  it("keeps the longer text when one operation's excerpt contains the other's", () => {
+    const shorter = { ...agent, afterExcerpt: "one withered" };
+    expect(changeTextForOperations([shorter, writer], hunks).added).toBe("one withered frail");
+    expect(changeTextForOperations([writer, shorter], hunks).added).toBe("one withered frail");
+  });
+
+  it("keeps separate texts separate", () => {
+    const other = { ...writer, afterExcerpt: "a second thought" };
+    expect(changeTextForOperations([agent, other], hunks).added).toBe(
+      "one withered frail\na second thought",
+    );
+  });
+});
+
 describe("operationsWithWriterEdits", () => {
   const textHunk = (hunkId: string, operationIds: string[]): ReviewHunk => ({
     kind: "text",

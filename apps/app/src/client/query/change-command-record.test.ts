@@ -9,13 +9,9 @@ import {
   beginChangeCommand,
   changeCommandState,
   clearChangeFailure,
-  clearedDraftName,
   confirmChangeCommand,
   currentChangeCommandRecords,
-  currentClearedDrafts,
   failChangeCommand,
-  isDraftCleared,
-  markDraftCleared,
   previewWithoutOperations,
   readPreviewAfterChangeCommands,
   resetChangeCommandRecords,
@@ -132,14 +128,5 @@ describe("change command record", () => {
     beginChangeCommand(draft, one, "apply");
     const other = { ...draft, draftId: "y" };
     expect(changeCommandState(currentChangeCommandRecords(), other, one)).toBeNull();
-  });
-
-  it("a draft handled to its last change stays out of the pending list until the AI writes again", () => {
-    markDraftCleared(draft, { lastActorTurnId: "turn-7", documentName: "Chapter 12" });
-    const cleared = currentClearedDrafts();
-    expect(isDraftCleared(cleared, draft, "turn-7")).toBe(true);
-    expect(isDraftCleared(cleared, draft, "turn-8")).toBe(false);
-    expect(isDraftCleared(cleared, { ...draft, draftId: "other" }, "turn-7")).toBe(false);
-    expect(clearedDraftName(cleared, draft)).toBe("Chapter 12");
   });
 });
