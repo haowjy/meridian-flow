@@ -7,13 +7,15 @@
  * so Apply draft, Discard draft, Apply all, "No changes left" and the refusal
  * line cannot drift between them.
  */
-import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   type DraftCommandFailureCode,
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
+import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, draftAfter } from "@/features/chat/docked-drafts";
 import type { DraftSwitcherProps } from "./DraftSwitcher";
@@ -80,6 +82,24 @@ export function useReviewHeader({
   }, [counts, documentId, view.items.length, view.status]);
 
   const next = draftAfter(rows, documentId);
+  // The draft Apply draft, Discard draft and Next draft move to is read while
+  // the writer is still here (once this review's own read is in), so opening it
+  // finds its preview already in the cache.
+  const queryClient = useQueryClient();
+  const nextDocumentId = next?.documentId;
+  const nextDraftId = next?.draft.draftId;
+  const ready = view.status === "ready";
+  useEffect(() => {
+    if (!ready || !nextDocumentId || !nextDraftId) return;
+    void queryClient.prefetchQuery(
+      draftPreviewQueryOptions({
+        projectId: controller.projectId,
+        workId: controller.workId,
+        documentId: nextDocumentId,
+        draftId: nextDraftId,
+      }),
+    );
+  }, [ready, nextDocumentId, nextDraftId, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
   const { finished, completing, unlisted } = view;
   const commandRecords = useDraftCommandRecords();
@@ -118,21 +138,23 @@ export function useReviewHeader({
   }));
 
   /**
-   * Apply all or Discard all. When some draft did not take it and the draft the
-   * writer is in did (it is leaving the list), the review would fall back to
-   * live and read as done: it goes to the first draft that did not, which says
-   * why. A draft the writer is already in stays; its own notice says so.
+   * Apply all or Discard all. The batch never stops at a refusal, and when one
+   * draft does not take it the writer is taken there as it happens (the first
+   * only, and never away from a draft that is itself the one refused): the draft
+   * the writer is in may be about to be applied, and the review would then fall
+   * back to live and read as done while drafts are left.
    */
-  const disposeAll = async (mode: "apply" | "discard") => {
-    const outcomes = await controller.disposeDrafts(mode, selections);
-    const refused = selections.filter((_, index) => {
-      const kind = outcomes[index]?.kind;
-      return kind === "failed" || kind === "apply-outcome-unknown";
+  const disposeAll = (mode: "apply" | "discard") => {
+    let moved = false;
+    void controller.disposeDrafts(mode, selections, {
+      onRefused: (refused) => {
+        if (moved) return;
+        moved = true;
+        if (refused.documentId === documentId) return;
+        const row = rows.find((candidate) => candidate.documentId === refused.documentId);
+        if (row) onOpenDraft(row);
+      },
     });
-    const first = refused[0];
-    if (!first || refused.some((selection) => selection.documentId === documentId)) return;
-    const row = rows.find((candidate) => candidate.documentId === first.documentId);
-    if (row) onOpenDraft(row);
   };
 
   return {
@@ -159,8 +181,8 @@ export function useReviewHeader({
       disabled: locked,
       onOpenDraft,
       onShowLive: showLive,
-      onApplyAll: () => void disposeAll("apply"),
-      onDiscardAll: () => void disposeAll("discard"),
+      onApplyAll: () => disposeAll("apply"),
+      onDiscardAll: () => disposeAll("discard"),
     },
   };
 }

@@ -65,6 +65,20 @@ is one server closure class.
   seam for an insertion, the full `deletedText` struck in no author's colour for
   a removal). `markKeys` are the keys the manuscript paints a change by.
   `previewWithoutOperations` never hides a hunk no operation owns.
+- **A move from one draft's review to another's is held** (`features/project/dock/review-handover`).
+  Switcher pick, Apply draft, Discard draft, Next draft and Apply all's move to a
+  draft that did not apply all go through `openEditorReview`, which hands the
+  page's painted review (header, identity bar, body) to `ReviewHandoverFrame` as
+  inert markup, the way `FrozenReview` holds a review across a room rebuild. The
+  route, tab and URL change at the click; the copy covers the skeleton the route
+  settles through and is released in the commit that paints the target
+  (`inlineReview.shown` for its document and draft), or on a failed or cancelled
+  launch, or after 10 s. It captures only a painted review (`shown`), and a move
+  that follows a move keeps the first copy. Wrap any new page that hosts a
+  review in `ReviewHandoverFrame`. The next draft's preview is prefetched
+  (`useReviewHeader`) while the writer is still in this one; the review room is
+  still discovered with a fresh read, because a draft's room can change when it
+  is disposed.
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.
@@ -123,6 +137,8 @@ is one server closure class.
   `ReviewHeaderNotices` shows each by name with an Open button, on both shells
   (Apply draft and Apply all move on or finish while the command runs, and the
   switcher's row is behind a closed menu). Opening the draft is the writer's
-  move and clears its failure. **A batch (Apply all, Discard all) never stops at
+  move and keeps its failure (opening Review clears only a failed launch,
+  `clearDraftReviewLaunchFailure`); it is then that draft's own header message
+  until the writer acts on it again. **A batch (Apply all, Discard all) never stops at
   a refusal**: drafts are independent documents, so each gets its turn, each
   failure is held on its own draft, and `dockDispositionError` names the kind.
