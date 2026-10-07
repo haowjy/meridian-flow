@@ -51,11 +51,14 @@ the change's class id, matched by shared operations) for what outlives the claim
   it back (`readPreviewAfterChangeCommands`).
 - `failed`: the change comes back, with `offline` (the browser is offline and nothing was sent, or the server refused it:
   "Couldn't apply. Check your connection and try again."), `unknown` (an Apply
-  that got no answer: "Couldn't confirm whether this applied. Check what is
-  left before you try again.", never inferred from later list membership),
+  or Discard that got no answer: "Couldn't confirm whether this applied." / "...was
+  discarded. Check what is left before you try again.", never inferred from later
+  list membership; the next preview that no longer lists the change drops it),
   `stale` ("This change was updated. Check it and apply again." / "...discard
-  again.") or `draft-only`, shown on its bar and row. A per-change Discard has
-  no `unknown`: any failure, a lost answer included, is held as `offline`.
+  again.") or `draft-only`, shown on its bar and row. Both commands share one flow
+  (`DraftReviewSession.changeCommand`) and one lost-answer rule
+  (`DraftCommandOutcomeUnknownError`). A whole-draft Discard is unfenced and has
+  no `unknown`: a lost answer is `discard-offline`.
   `gone` is not held: the change leaves with a toast. `incomplete_class` is
   treated as `stale`, for Apply and Discard alike.
 
@@ -107,7 +110,11 @@ command scope; per-change Apply is the one command that sends them. Apply/Discar
 are session outcomes rendered by the review header rather than ignored
 promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
 (`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
-the draft's rows, and named in the dock's typed error state.
+the draft's rows, and named in the dock's typed error state. It never navigates (no answer moves
+the writer). The review the writer is in is part of the batch: `batchStarted` sets its completion to
+`pending` (the header says "Applying"/"Discarding"), its own answer closes it (`completion: closed`,
+"No changes left") instead of clearing it, and a batch that ends without closing it withdraws the
+pending state (`reviewReopened`).
 
 Cross-cutting server policy:
 [whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)
@@ -349,8 +356,7 @@ admission may enrich only the overlay with resolved live-resource metadata.
     switcher row, the composer strip, the Work Files row, the Changes view's
     other-drafts rows, and the identity-bar chip (which turns into a retry). It
     clears on the next Apply or Discard on that draft; opening Review clears
-    only a failed launch, so a batch that lands the writer on a refused draft
-    keeps its message. Work Files and the dock also offer Dismiss. A later list read
+    only a failed launch, so Open on a refused draft keeps its message. Work Files and the dock also offer Dismiss. A later list read
     that no longer lists the draft drops it too, so it never reaches a later
     proposal that reuses the draft id.
 - **Rejected and unknown Apply.** A response with a status is a rejection

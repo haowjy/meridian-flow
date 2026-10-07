@@ -99,7 +99,11 @@ finds an active draft.
 ## Review handover
 
 `review-handover.tsx` holds the review being left on screen while another
-draft's opens: `EditorReviewHandoffProvider` owns the hold (`openEditorReview`
-begins it, a failed or cancelled launch releases it) and `ReviewHandoverFrame`
-goes around each page a review is painted in (the desktop page sheet, the phone
-document column). See `features/draft-review/AGENTS.md`.
+draft's opens. `EditorReviewHandoffProvider` owns the hold (`openEditorReview`
+begins it, a failed or cancelled launch releases it, an expiry set at capture
+ends it), `ReviewHandoverFrame` goes around each page a review is painted in
+(the desktop page sheet, the phone document column) and makes that page inert
+while the hold lasts, and `useReviewHandoverRelease` (called by
+`EditorReviewAddressOwner`, which stays mounted) ends it when the target paints
+or fails or the route goes elsewhere. Keep navigation (tabs, sidebar) outside
+the frame. See `features/draft-review/AGENTS.md`.

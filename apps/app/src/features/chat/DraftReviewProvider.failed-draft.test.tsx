@@ -122,7 +122,7 @@ describe("Apply all", () => {
     );
   });
 
-  it("takes the writer to the first draft that did not apply when the draft they were in did", async () => {
+  it("does not move the writer when a draft refuses, and says which one in the review they are in", async () => {
     refused.add("document-a");
     refused.add("document-c");
     const onOpenDraft = vi.fn();
@@ -130,12 +130,95 @@ describe("Apply all", () => {
       async (probe) => {
         await ready(probe);
         await act(async () => probe().header.switcher.onApplyAll());
-        await vi.waitFor(() => expect(onOpenDraft).toHaveBeenCalledTimes(1));
-        expect(onOpenDraft).toHaveBeenCalledWith(
-          expect.objectContaining({ documentId: "document-a" }),
+        await vi.waitFor(() =>
+          expect(elsewhere(probe())).toEqual([
+            ["Chapter a", "apply-failed"],
+            ["Chapter c", "apply-failed"],
+          ]),
         );
+        // Open is the only way to a refused draft.
+        expect(onOpenDraft).not.toHaveBeenCalled();
       },
       { reviewed: ref("b"), onOpenDraft },
+    );
+  });
+
+  it("does not take the writer back to a draft whose refusal arrives after they moved on", async () => {
+    let rejectApply!: (error: unknown) => void;
+    mocks.applyDraft.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectApply = reject;
+        }),
+    );
+    const onOpenDraft = vi.fn();
+    await renderReviewScopes(
+      async (probe) => {
+        await ready(probe);
+        await act(async () => probe().header.switcher.onApplyAll());
+        await vi.waitFor(() => expect(rejectApply).toBeTypeOf("function"));
+        await probe().openDraft(ref("c"));
+        await act(async () => probe().editor.controller.enterInlineReview("document-c", "draft-c"));
+        await act(async () => rejectApply(new HttpResponseError("injected", 500, null)));
+        await vi.waitFor(() =>
+          expect(probe().editor.controller.dockDispositionError).toBe("apply-failed"),
+        );
+        expect(onOpenDraft).not.toHaveBeenCalled();
+        expect(elsewhere(probe())).toEqual([["Chapter a", "apply-failed"]]);
+      },
+      { reviewed: ref("b"), onOpenDraft },
+    );
+  });
+
+  it("keeps the review of the draft it applied open on the batch's pending and settled outcome", async () => {
+    refused.add("document-c");
+    let finishA!: () => void;
+    mocks.applyDraft.mockImplementation(async (_project, _work, documentId: string) => {
+      if (documentId === "document-a") await new Promise<void>((resolve) => (finishA = resolve));
+      if (refused.has(documentId)) throw new HttpResponseError("injected", 500, null);
+      return { status: "applied" };
+    });
+    await renderReviewScopes(
+      async (probe) => {
+        await ready(probe);
+        await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
+        await act(async () => probe().header.switcher.onApplyAll());
+        await vi.waitFor(() => expect(finishA).toBeTypeOf("function"));
+        // Another draft is still being sent. The review says so, and is held on it: every
+        // "the draft left the list" exit reads a pending completion as the writer's own.
+        expect(probe().header.completing).toBe("apply");
+        expect(probe().editor.controller.inlineReview?.completion).toMatchObject({
+          phase: "pending",
+          mode: "apply",
+        });
+
+        await act(async () => finishA());
+        await vi.waitFor(() => expect(elsewhere(probe())).toEqual([["Chapter c", "apply-failed"]]));
+        // The draft they were in is applied; its review holds on the outcome instead of falling to live.
+        expect(probe().editor.controller.inlineReview).toMatchObject({
+          draftId: "draft-b",
+          completion: { phase: "closed" },
+        });
+        expect(probe().header.finished).toBe(true);
+        expect(probe().header.completing).toBeNull();
+      },
+      { reviewed: ref("b") },
+    );
+  });
+
+  it("carries a review on when its own draft is the one that did not apply", async () => {
+    refused.add("document-b");
+    await renderReviewScopes(
+      async (probe) => {
+        await ready(probe);
+        await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
+        await act(async () => probe().header.switcher.onApplyAll());
+        await vi.waitFor(() => expect(probe().header.commandError).toBe("apply-failed"));
+        expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+        expect(probe().header.finished).toBe(false);
+        expect(probe().header.completing).toBeNull();
+      },
+      { reviewed: ref("b") },
     );
   });
 

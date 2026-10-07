@@ -68,19 +68,28 @@ is one server closure class.
   a removal). `markKeys` are the keys the manuscript paints a change by.
   `previewWithoutOperations` never hides a hunk no operation owns.
 - **A move from one draft's review to another's is held** (`features/project/dock/review-handover`).
-  Switcher pick, Apply draft, Discard draft, Next draft and Apply all's move to
-  the first draft that refused all go through `openEditorReview`, which hands the
-  page's painted review (header, identity bar, body) to `ReviewHandoverFrame` as
-  inert markup, the way `FrozenReview` holds a review across a room rebuild. The
-  route, tab and URL change at the click; the copy covers the skeleton the route
-  settles through and is released in the commit that paints the target
-  (`inlineReview.shown` for its document and draft), or on a failed or cancelled
-  launch, or after 10 s. It captures only a painted review (`shown`), and a move
-  that follows a move keeps the first copy. Wrap any new page that hosts a
-  review in `ReviewHandoverFrame`. The next draft's preview is prefetched
-  (`useReviewHeader`) while the writer is still in this one; the review room is
-  still discovered with a fresh read, because a draft's room can change when it
-  is disposed.
+  Switcher pick, Apply draft, Discard draft, Next draft and Open on a refused draft all go through
+  `openEditorReview`, which hands the page's painted review (header, identity bar, body) to
+  `ReviewHandoverFrame` as inert markup, the way `FrozenReview` holds a review across a room
+  rebuild. The route, tab and URL change at the click. One hold has one owner (the handoff
+  provider's `useReviewHandoverOwner`) and is keyed to the review it waits for (`target`); the
+  markup is only what stands in for it:
+  - **Input.** The real page under the copy is inert for the whole hold (an `inert` wrapper
+    inside the frame, with an "Opening ..." status line outside it; focus that was in the page
+    moves to the status line and returns to the frame when the hold ends). The copy being
+    inert is not enough. Tabs, sidebar and the rest of the shell are outside the frame and stay
+    usable.
+  - **End.** The target paints (`inlineReview.shown`, released in that commit so the swap is
+    one frame), its review room fails (`reviewRoomError`), its review was entered and left, the
+    route goes anywhere but where the move started or the target (`useReviewHandoverRelease`,
+    mounted in the address owner, which is mounted whatever page is), the launch fails or is
+    cancelled, or the absolute expiry passes (10 s from the first capture, set in the owner; a
+    second move keeps it, and no page's mount or unmount can extend it).
+  It captures only a painted review (`shown`), and a move that follows a move keeps the first
+  copy. Wrap any new page that hosts a review in `ReviewHandoverFrame`. The next draft's
+  preview is prefetched (`useReviewHeader`) while the writer is still in this one; the review
+  room is still discovered with a fresh read, because a draft's room can change when it is
+  disposed.
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.
@@ -126,11 +135,11 @@ is one server closure class.
   default would pause the mutation and fire it on reconnect with the change
   gone from the screen meanwhile. Nothing fires when the network returns; the
   writer acts again.
-- Unknown outcomes are held, not guessed. A per-change Apply that got no answer
-  is held on its change as `unknown` ("Couldn't confirm whether this applied.
-  Check what is left before you try again."), the whole-draft Apply's wording,
-  apart from a refusal (`offline`). A per-change Discard has no unknown outcome
-  yet: a lost answer is held as `offline`. The copy promises no automatic update: only
+- Unknown outcomes are held, not guessed. A per-change Apply or Discard that got
+  no answer is held on its change as `unknown` ("Couldn't confirm whether this
+  applied." / "...was discarded. Check what is left before you try again."),
+  apart from a refusal (`offline`); both run through one flow in the session. A
+  whole-draft Discard has no unknown outcome: a lost answer is `discard-offline`. The copy promises no automatic update: only
   a read after the failure can resolve the change, and one can find it still there. A rejected
   whole-draft Apply is held on that draft's record (`apply-failed`) and shown
   wherever the draft is listed (switcher row, composer strip, Work files, Changes
@@ -145,3 +154,13 @@ is one server closure class.
   until the writer acts on it again. **A batch (Apply all, Discard all) never stops at
   a refusal**: drafts are independent documents, so each gets its turn, each
   failure is held on its own draft, and `dockDispositionError` names the kind.
+  **A batch never navigates**: the writer stays where they are (nothing is
+  decided from an answer, which can arrive after they went elsewhere), and Open
+  on a refused draft's notice is the only way to it. The review the writer is in
+  is part of the batch: `batchStarted` sets its completion to `pending` (the
+  header says "Applying" or "Discarding", and every "the draft left the list"
+  exit reads it as the writer's own), its own answer closes it (`reviewClosed`,
+  "No changes left", the same state a last change leaves, so the refusal notices
+  stay in front of the writer), and a batch that ends without closing it
+  (refused, lost) withdraws the pending state. A new document's review is not
+  held: it is promoted to the live document as before.

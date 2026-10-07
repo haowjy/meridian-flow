@@ -94,7 +94,11 @@ export function EditorReviewHandoffProvider({
       // A new attempt retires the previous attempt's message.
       clearDraftReviewLaunchFailure(draft);
       // Navigation happens first; what is painted stays until the review being opened has painted.
-      const held = beginHandover({ documentId: target.documentId, draftId: target.draftId });
+      const held = beginHandover({
+        documentId: target.documentId,
+        draftId: target.draftId,
+        documentName: target.documentName,
+      });
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;

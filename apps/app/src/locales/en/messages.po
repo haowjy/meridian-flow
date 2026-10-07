@@ -1185,6 +1185,10 @@ msgstr "Couldn't confirm whether this applied. Check what is left before you try
 #~ msgid "Couldn't confirm whether this applied. It will update when you're back online."
 #~ msgstr "Couldn't confirm whether this applied. It will update when you're back online."
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Couldn't confirm whether this was discarded. Check what is left before you try again."
+msgstr "Couldn't confirm whether this was discarded. Check what is left before you try again."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"
 msgstr "Couldn't copy"
@@ -2916,6 +2920,10 @@ msgstr "Open the chat that wrote this change"
 msgid "Open this document in a project to upload figures."
 msgstr "Open this document in a project to upload figures."
 
+#: src/features/project/dock/review-handover.tsx
+msgid "Opening {name}"
+msgstr "Opening {name}"
+
 #: src/features/billing/BillingPage.tsx
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Opening checkout…"
@@ -2924,6 +2932,10 @@ msgstr "Opening checkout…"
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
+
+#: src/features/project/dock/review-handover.tsx
+msgid "Opening draft"
+msgstr "Opening draft"
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Opening the link"
