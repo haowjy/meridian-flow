@@ -39,6 +39,8 @@ export type ReviewHeaderModel = {
   locked: boolean;
   /** Nothing left to publish: the server closed the draft, so its commands go. */
   finished: boolean;
+  /** The draft is open but lists no change: formatting remains, handled by Apply draft or Discard draft. */
+  unlisted: boolean;
   /** The last change's command is in flight: the review says so and is not finished. */
   completing: "apply" | "discard" | null;
   /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
@@ -73,7 +75,7 @@ export function useReviewHeader({
 
   const next = draftAfter(rows, documentId);
   const locked = controller.dispositionLocked;
-  const { finished, completing } = view;
+  const { finished, completing, unlisted } = view;
   const commandRecords = useDraftCommandRecords();
   const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
     projectId: controller.projectId,
@@ -112,6 +114,7 @@ export function useReviewHeader({
     next,
     locked,
     finished,
+    unlisted,
     completing,
     commandError,
     showLive,

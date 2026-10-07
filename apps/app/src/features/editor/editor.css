@@ -623,6 +623,12 @@
   background: var(--color-review-writer-tint);
 }
 
+/* Struck, but in no author's colour: the server could not say who removed it. */
+.meridian-editor .ProseMirror .meridian-review-removal-text-unattributed {
+  color: var(--color-muted-foreground);
+  background: var(--color-review-merged-tint);
+}
+
 .meridian-editor .ProseMirror .meridian-review-removal-block > p {
   margin: 0;
 }
@@ -637,6 +643,14 @@
   .meridian-review-removal-text {
   background: color-mix(in oklab, var(--color-review-removed-ring) 45%, transparent);
   box-shadow: inset 0 -2px 0 0 var(--color-review-removed-ring);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal.meridian-review-emphasized
+  .meridian-review-removal-text-unattributed {
+  background: var(--color-review-merged-emphasis);
+  box-shadow: inset 0 -2px 0 0 var(--color-review-merged-ring);
 }
 
 .meridian-editor

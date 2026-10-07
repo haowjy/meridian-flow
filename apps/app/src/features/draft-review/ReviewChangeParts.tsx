@@ -19,6 +19,7 @@ const DOT_TONE: Record<ReviewChangeTone, string> = {
   writer: "bg-gold",
   removal: "bg-destructive",
   merged: "bg-muted-foreground",
+  unattributed: "bg-muted-foreground/60",
 };
 
 /** A dot in the change's colour. Half green, half gold when the writer's edits are inside an AI change. */
@@ -60,6 +61,13 @@ export function ChangeAuthor({
         )}
       >
         <Trans>You</Trans>
+      </span>
+    );
+  }
+  if (attribution.kind === "unattributed") {
+    return (
+      <span className={cn("shrink-0 text-caption text-muted-foreground", className)}>
+        <Trans>Unattributed</Trans>
       </span>
     );
   }

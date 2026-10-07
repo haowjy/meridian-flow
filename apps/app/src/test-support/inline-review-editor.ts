@@ -117,6 +117,7 @@ export function textHunk(
     deletedText?: string;
     deletedSpans?: ReviewDeletedSpan[];
     mergeArtifact?: boolean;
+    unclassified?: boolean;
   } = {},
 ): ResolvedReviewHunk {
   return {
@@ -129,6 +130,7 @@ export function textHunk(
     ...(extra.deletedText ? { deletedText: extra.deletedText } : {}),
     ...(extra.deletedSpans ? { deletedSpans: extra.deletedSpans } : {}),
     ...(extra.mergeArtifact ? { mergeArtifact: true } : {}),
+    ...(extra.unclassified ? { unclassified: true } : {}),
   };
 }
 

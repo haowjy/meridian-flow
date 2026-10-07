@@ -23,6 +23,8 @@ function change(overrides: Partial<ReviewChange> = {}): ReviewChange {
     operations: [],
     operationIds: ["1"],
     anchorOperationId: "1",
+    markKeys: ["1"],
+    actionable: true,
     tone: "ai",
     includesWriterEdits: false,
     merged: false,
@@ -269,6 +271,83 @@ describe("touch forms", () => {
       async () => {
         expect(document.querySelector("[data-review-toast]")?.className).toContain("bottom-24");
       },
+    );
+  });
+});
+
+const unattributed = (overrides: Partial<ReviewChange> = {}) =>
+  change({
+    classId: "unattributed:h",
+    operationIds: [],
+    anchorOperationId: "unattributed:h",
+    markKeys: ["unattributed:h"],
+    actionable: false,
+    tone: "unattributed",
+    attribution: { kind: "unattributed" },
+    change: { removed: "Alpha", added: null },
+    ...overrides,
+  });
+
+describe("a change with no per-change commands", () => {
+  it("a row names no author, shows what was removed, and has no Apply or Discard", async () => {
+    await render(
+      <ul>
+        <ReviewChangeRow {...rowProps({ change: unattributed() })} />
+      </ul>,
+      async () => {
+        const row = document.querySelector("[data-review-change-row]");
+        expect(row?.textContent).toContain("Alpha");
+        expect(row?.textContent).toContain("Unattributed");
+        expect(button("Discard")).toBeUndefined();
+        expect(button("Apply")).toBeUndefined();
+        expect(document.querySelector("[data-tone=unattributed]")).not.toBeNull();
+      },
+    );
+  });
+
+  it("a row of a class the server flags has no commands either, whoever wrote it", async () => {
+    await render(
+      <ul>
+        <ReviewChangeRow {...rowProps({ change: change({ actionable: false }) })} />
+      </ul>,
+      async () => {
+        expect(document.querySelector("[data-review-change-row]")?.textContent).toContain("AI");
+        expect(button("Discard")).toBeUndefined();
+        expect(button("Apply")).toBeUndefined();
+      },
+    );
+  });
+
+  it("the bar says Apply draft or Discard draft handles it, with no buttons", async () => {
+    await render(
+      <ReviewChangeBar
+        change={unattributed()}
+        disabled={false}
+        canApply
+        failure={null}
+        onApply={vi.fn()}
+        onDiscard={vi.fn()}
+      />,
+      async () => {
+        expect(document.body.textContent).toContain("Unattributed");
+        expect(document.body.textContent).toContain("Apply draft or Discard draft handles this.");
+        expect(button("Discard")).toBeUndefined();
+        expect(button("Apply")).toBeUndefined();
+      },
+    );
+  });
+
+  it("an ordinary bar carries no such note", async () => {
+    await render(
+      <ReviewChangeBar
+        change={change()}
+        disabled={false}
+        canApply
+        failure={null}
+        onApply={vi.fn()}
+        onDiscard={vi.fn()}
+      />,
+      async () => expect(document.body.textContent).not.toContain("handles this"),
     );
   });
 });

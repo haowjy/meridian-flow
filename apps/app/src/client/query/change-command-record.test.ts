@@ -133,6 +133,25 @@ describe("change command record", () => {
     expect(hidden.hunks.map((h) => h.hunkId)).toEqual(["h1"]);
   });
 
+  it("never hides a hunk no operation owns (an unclassified one)", () => {
+    const base = preview();
+    if (base.status !== "active") throw new Error("active");
+    const loose = {
+      kind: "text",
+      hunkId: "h-loose",
+      operationIds: [],
+      unclassified: true,
+      anchor: { relStart: "", relEnd: "" },
+      spans: [],
+    } as const;
+    const hidden = previewWithoutOperations(
+      { ...base, hunks: [...base.hunks, loose] } as DraftPreviewResponse,
+      new Set(["1", "2", "3"]),
+    );
+    if (hidden.status !== "active") throw new Error("active");
+    expect(hidden.hunks.map((h) => h.hunkId)).toEqual(["h-loose"]);
+  });
+
   it("keeps the same preview object when nothing is hidden", () => {
     const original = preview();
     expect(previewWithoutOperations(original, new Set())).toBe(original);

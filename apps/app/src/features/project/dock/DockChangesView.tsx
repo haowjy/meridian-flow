@@ -140,7 +140,7 @@ function ChangeList({
     <section aria-label={t`Changes in ${name}`} className="flex flex-col gap-1">
       <h3 className="flex items-baseline gap-2 px-2 pt-1 text-caption font-medium text-foreground">
         <span className="min-w-0 flex-1 truncate">{name}</span>
-        {view.status === "ready" && !view.finished && !view.completing ? (
+        {view.status === "ready" && !view.finished && !view.completing && !view.unlisted ? (
           <span className="shrink-0 text-meta font-normal text-muted-foreground tabular-nums">
             {count === 1 ? t`1 change` : t`${count} changes`}
           </span>
@@ -155,6 +155,10 @@ function ChangeList({
         <ReviewCompleting mode={view.completing} />
       ) : view.finished ? (
         <ReviewDone next={next} onOpenNext={onOpenNext} onBack={controller.exitInlineReview} />
+      ) : view.unlisted ? (
+        <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
+          <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
+        </p>
       ) : (
         <ul className="flex flex-col gap-0.5">
           {view.items.map(({ change, failure }) => (

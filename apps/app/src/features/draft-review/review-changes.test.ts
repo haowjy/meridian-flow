@@ -156,4 +156,80 @@ describe("reviewChanges", () => {
     const [change] = reviewChanges([agent, writer], []);
     expect(changeExcerpt(change)).toEqual({ added: "one withered frail", removed: "his" });
   });
+
+  describe("what the server could not attribute", () => {
+    const unclassified = (overrides: Partial<ReviewHunk> & { hunkId: string }) =>
+      textHunk({ unclassified: true, ...overrides });
+
+    it("lists an unclassified hunk with no operation as a change with no author and no commands", () => {
+      const hunks = [
+        textHunk({ hunkId: "h1", operationIds: ["a"] }),
+        unclassified({ hunkId: "h2", deletedText: "Alpha", deletedSpans: [] }),
+      ];
+      const changes = reviewChanges([op({ operationId: "a" })], hunks);
+      expect(changes).toHaveLength(2);
+      const [classified, loose] = changes;
+      expect(classified.actionable).toBe(true);
+      expect(loose).toMatchObject({
+        attribution: { kind: "unattributed" },
+        actionable: false,
+        operationIds: [],
+        tone: "unattributed",
+        includesWriterEdits: false,
+      });
+      expect(loose.classId).toBe(loose.anchorOperationId);
+      expect(loose.markKeys).toEqual([loose.anchorOperationId]);
+      // The full removal, not an author's share of it.
+      expect(changeExcerpt(loose)).toEqual({ added: null, removed: "Alpha" });
+    });
+
+    it("reads an unclassified insertion from insertedText", () => {
+      const [loose] = reviewChanges([], [unclassified({ hunkId: "h", insertedText: "Beta" })]);
+      expect(changeExcerpt(loose)).toEqual({ added: "Beta", removed: null });
+    });
+
+    it("keeps a block hunk's own displays", () => {
+      const block = {
+        kind: "block",
+        hunkId: "b",
+        operationIds: [],
+        unclassified: true,
+        anchor: { relStart: "", relEnd: "" },
+        deletedBlock: { type: "paragraph", display: "A removed paragraph" },
+      } as ReviewHunk;
+      const [loose] = reviewChanges([], [block]);
+      expect(changeExcerpt(loose)).toEqual({ added: null, removed: "A removed paragraph" });
+    });
+
+    it("places it where it sits in the document, among the classified changes", () => {
+      const hunks = [
+        textHunk({ hunkId: "h1", operationIds: ["a"] }),
+        unclassified({ hunkId: "h2", deletedText: "x" }),
+        textHunk({ hunkId: "h3", operationIds: ["b"] }),
+      ];
+      const changes = reviewChanges([op({ operationId: "a" }), op({ operationId: "b" })], hunks);
+      expect(changes.map((change) => change.attribution.kind)).toEqual([
+        "ai",
+        "unattributed",
+        "ai",
+      ]);
+    });
+
+    it("keeps the class's author when an unclassified hunk touches it, but offers no commands", () => {
+      const ops = [
+        op({ operationId: "a", closureClassId: "c", canApplyOrDiscard: false }),
+        op({ operationId: "b", closureClassId: "c", canApplyOrDiscard: false }),
+      ];
+      const hunks = [unclassified({ hunkId: "h", operationIds: ["a"], deletedText: "Alpha" })];
+      const [change] = reviewChanges(ops, hunks);
+      expect(change.actionable).toBe(false);
+      expect(change.attribution).toEqual({ kind: "ai" });
+      expect(change.operationIds).toEqual(["a", "b"]);
+    });
+
+    it("treats an absent flag as ordinary eligibility", () => {
+      const [change] = reviewChanges([op({ operationId: "a" })], []);
+      expect(change.actionable).toBe(true);
+    });
+  });
 });

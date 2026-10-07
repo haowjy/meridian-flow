@@ -81,35 +81,42 @@ export function ReviewChangeBar({
               <Trans>Check it reads right</Trans>
             </span>
           ) : null}
+          {change.actionable ? null : (
+            <span className="text-meta text-muted-foreground">
+              <Trans>Apply draft or Discard draft handles this.</Trans>
+            </span>
+          )}
         </div>
-        <span
-          className={
-            touch
-              ? "flex items-center gap-3"
-              : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
-          }
-        >
-          <Button
-            variant="quiet"
-            size="xs"
-            className={touch ? "h-11 px-4 text-sm" : undefined}
-            aria-label={touch ? label : undefined}
-            disabled={disabled}
-            onClick={onDiscard}
+        {change.actionable ? (
+          <span
+            className={
+              touch
+                ? "flex items-center gap-3"
+                : "ml-auto flex items-center gap-1.5 whitespace-nowrap"
+            }
           >
-            {touch ? <Trans>Discard</Trans> : label}
-          </Button>
-          {canApply ? (
             <Button
+              variant="quiet"
               size="xs"
-              className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
+              className={touch ? "h-11 px-4 text-sm" : undefined}
+              aria-label={touch ? label : undefined}
               disabled={disabled}
-              onClick={onApply}
+              onClick={onDiscard}
             >
-              <Trans>Apply</Trans>
+              {touch ? <Trans>Discard</Trans> : label}
             </Button>
-          ) : null}
-        </span>
+            {canApply ? (
+              <Button
+                size="xs"
+                className={touch ? "h-11 min-w-20 px-5 text-sm" : undefined}
+                disabled={disabled}
+                onClick={onApply}
+              >
+                <Trans>Apply</Trans>
+              </Button>
+            ) : null}
+          </span>
+        ) : null}
       </div>
       {failure ? (
         <p role="status" className="pr-2 text-meta text-destructive">

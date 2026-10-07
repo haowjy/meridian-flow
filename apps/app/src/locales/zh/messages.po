@@ -582,6 +582,10 @@ msgstr ""
 msgid "Apply draft"
 msgstr ""
 
+#: src/features/draft-review/ReviewChangeBar.tsx
+msgid "Apply draft or Discard draft handles this."
+msgstr ""
+
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Applying"
@@ -1998,6 +2002,14 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
+msgstr ""
+
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+msgid "Formatting changes remain"
+msgstr ""
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -4299,6 +4311,10 @@ msgstr ""
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
 msgid "workReceipt.unarchived"
+msgstr ""
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Unattributed"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx

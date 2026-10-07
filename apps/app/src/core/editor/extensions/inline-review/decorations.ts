@@ -138,9 +138,10 @@ export function buildDecorations(
     // writer edit inside an AI insertion) paints in each owner's color.
     // Fall back to whole-hunk coloring when spans are missing or every span
     // anchor failed to decode.
-    if (hunk.mergeArtifact === true) {
-      // A merge artifact is neutral, not authored: paint the whole combined
-      // range with the merged seam and skip the hued per-span split.
+    if (hunk.mergeArtifact === true || hunk.unclassified === true) {
+      // A merge artifact, or a hunk nobody can be named for, is neutral, not
+      // authored: paint the whole range with the merged seam and skip the hued
+      // per-span split.
       decorations.push(
         Decoration.inline(
           startPos,
@@ -268,7 +269,10 @@ function removedSegments(
   }
   const text = hunk.deletedText;
   if (!text) return [];
-  if (!hunk.deletedSpans?.length) return [{ text, kind: "agent" }];
+  if (!hunk.deletedSpans?.length) {
+    // Nobody is named for an unclassified removal; elsewhere the AI is the default remover.
+    return [{ text, kind: hunk.unclassified ? "unattributed" : "agent" }];
+  }
   return hunk.deletedSpans.map((span) => ({
     text: text.slice(span.from, span.to),
     kind: span.deletedBy,
