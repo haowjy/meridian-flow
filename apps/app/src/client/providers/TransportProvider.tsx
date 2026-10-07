@@ -10,10 +10,13 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from "
 import type { ThreadTransport } from "@/core/transport";
 import { WsThreadTransport } from "@/core/transport";
 
+import { useConnectivityHints } from "./ConnectivityProvider";
+
 const ThreadTransportContext = createContext<ThreadTransport | null>(null);
 
 export function TransportProvider({ children }: { children: ReactNode }) {
-  const [transport] = useState(() => new WsThreadTransport());
+  const connectivityHints = useConnectivityHints();
+  const [transport] = useState(() => new WsThreadTransport({ connectivityHints }));
 
   useEffect(() => {
     transport.connect();

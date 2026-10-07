@@ -228,9 +228,7 @@ export class DocumentSessionRegistry
       return false;
     }
     this.cancelPendingTeardown(lease.documentId);
-    await session.restartTransport(({ roomKey, document, awareness }) =>
-      createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
-    );
+    await session.restartTransport(this.transportFactory);
     return true;
   }
 

@@ -36,6 +36,7 @@ import type {
   LocalLineageTerminalOperation,
   LocalLineageTerminalPort,
 } from "@/core/editor/document-session-coordination-contract";
+import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { createResourceCatalogTransport } from "./resource-catalog-transport";
 import type { ResourceContentOpenResult } from "./resource-content-access";
@@ -145,6 +146,7 @@ export class AccountResourceReplica {
   private reservationTail: Promise<void> = Promise.resolve();
   private readonly reservationLocks = nativeLocks();
   private readonly locationOperations = new ResourceLocationOperationQueue();
+  private stopHints: (() => void) | null = null;
   private retryTimer: number | null = null;
   private started = false;
   private stopReconciliation: (() => void) | null = null;
@@ -167,6 +169,7 @@ export class AccountResourceReplica {
     readonly accountId: string,
     private readonly runtime: AccountDocumentSessionRuntime,
     onInvalidated: (error: Error) => void = () => undefined,
+    private readonly connectivityHints?: ConnectivityHintsPort,
   ) {
     if (runtime.accountId !== accountId) throw new Error("Resource replica account mismatch");
     this.metadata = new IndexedDbResourceMetadata(accountId, () => {
@@ -294,8 +297,10 @@ export class AccountResourceReplica {
     this.requireOpen();
     if (this.started) return;
     this.started = true;
-    window.addEventListener("focus", this.retryAll);
-    window.addEventListener("online", this.retryAll);
+    this.stopHints =
+      this.connectivityHints?.subscribe(this, (hint) => {
+        if (hint === "retry-now") this.retryAll();
+      }) ?? null;
     this.retryTimer = window.setInterval(this.retryAll, 30_000);
     // Reconciliation belongs to the account lifetime, not mounted catalog consumers.
     this.stopReconciliation = this.metadata.observeProjection(
@@ -873,8 +878,8 @@ export class AccountResourceReplica {
     if (this.closing) return;
     this.closing = true;
     if (this.started) {
-      window.removeEventListener("focus", this.retryAll);
-      window.removeEventListener("online", this.retryAll);
+      this.stopHints?.();
+      this.stopHints = null;
       if (this.retryTimer !== null) window.clearInterval(this.retryTimer);
       this.retryTimer = null;
     }

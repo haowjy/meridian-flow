@@ -48,10 +48,17 @@ it("reconciles a newly committed intent with no UI subscribers", async () => {
   });
   const accountId = crypto.randomUUID();
   const runtime = createAccountDocumentSessionRuntime({ accountId });
-  const replica = new AccountResourceReplica(accountId, runtime);
+  const stopHints = vi.fn();
+  const subscribe = vi.fn(() => stopHints);
+  const replica = new AccountResourceReplica(accountId, runtime, undefined, {
+    subscribe,
+    reportConnected: () => {},
+    reportDisconnected: () => {},
+  });
   const writer = new IndexedDbResourceMetadata(accountId, () => {});
   try {
     replica.start();
+    expect(subscribe).toHaveBeenCalledTimes(1);
     // Wait for initial storage observation before committing from another owner.
     await replica.readProjection("project");
     const reserved = reserveResourceDocument({
@@ -74,6 +81,7 @@ it("reconciles a newly committed intent with no UI subscribers", async () => {
     });
   } finally {
     await replica.finishClose();
+    expect(stopHints).toHaveBeenCalledTimes(1);
     await runtime.finishClose();
     await writer.finishClose();
     await Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
