@@ -97,10 +97,21 @@ export function resolveWrite(
       break;
   }
   if (!resolved.ok) return resolved;
-  return { ...resolved, ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved.edits) };
+  return {
+    ok: true,
+    edits: resolved.edits,
+    ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved),
+  };
 }
 
-type ResolveWriteResultWithoutIr = { ok: true; edits: ResolvedEdit[] } | ResolveWriteFailure;
+type ResolveWriteResultWithoutIr =
+  | {
+      ok: true;
+      edits: ResolvedEdit[];
+      /** Some of the scope's blocks were already equal to their replacement and kept. */
+      keptBlocks?: true;
+    }
+  | ResolveWriteFailure;
 
 function resolveInsert(
   ctx: ConcreteResolveContext,
@@ -507,6 +518,7 @@ function replaceScope(
     scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
+  let keptBlocks = false;
 
   const flushStructural = () => {
     if (pendingInsert.length > 0) {
@@ -552,12 +564,13 @@ function replaceScope(
       case "keep":
         flushStructural();
         anchor = oldBlocks[step.old];
+        keptBlocks = true;
         break;
     }
   }
   flushStructural();
 
-  return { ok: true, edits };
+  return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
 /** A block keeps its element only as the same node type and heading level. */
@@ -584,8 +597,9 @@ function trimOneTrailingNewline(value: string): string {
 function semanticIrForResolvedEdits(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
-  edits: readonly ResolvedEdit[],
+  resolved: Extract<ResolveWriteResultWithoutIr, { ok: true }>,
 ): SemanticEditIRV1 {
+  const { edits } = resolved;
   const scope: LineageRange[] = [];
   const deleted: LineageRange[] = [];
   const mappedEdits = edits.map((edit) => {
@@ -638,9 +652,12 @@ function semanticIrForResolvedEdits(
   });
   const normalizedScope = normalizeLineageRanges(scope);
   const normalizedDeleted = normalizeLineageRanges(deleted);
+  // Its payload is the whole requested content, so it only describes a scope
+  // whose every block was rewritten.
   const isTotalFreshReplacement =
     params.command === "replace" &&
     params.find === undefined &&
+    resolved.keptBlocks === undefined &&
     normalizedScope.length > 0 &&
     sameLineageRanges(normalizedScope, normalizedDeleted);
   return {
