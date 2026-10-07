@@ -75,20 +75,17 @@ function TargetLocation({ outcome }: { outcome: LinkFollowOutcome }) {
 export function FollowOutcomeContent({
   outcome,
   projectId,
-  workId,
   onClose,
   onRetry,
   onOpen,
 }: {
   outcome: LinkFollowOutcome;
   projectId: string | null;
-  /** The surface's Work: where a contextual `scratch://` address is created. */
-  workId: string | null;
   onClose: () => void;
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
 }) {
-  const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId, workId);
+  const { create, creating, failed: failedToCreate } = useCreateLinkedDocument(projectId);
   const creation = outcome.state === "missing" ? linkCreationTarget(outcome.address) : null;
   const name = outcome.state === "missing" ? targetName(outcome) : "";
 

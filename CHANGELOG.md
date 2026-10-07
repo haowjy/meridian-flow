@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
+
+- A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.
+- A link to a Scratch note that doesn't exist says it can't be found, and nothing in the Editor creates Scratch notes. Scratch notes are made from the Work's Files tab or by the AI.
+- A link clicked while the Editor is still loading its document's details waits, then opens, instead of doing nothing.
+
 - The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
 
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.

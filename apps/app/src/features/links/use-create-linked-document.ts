@@ -3,24 +3,22 @@
  * there.
  *
  * The document goes at exactly the link's address: its scheme, its folders,
- * its filename (with `.md` when the link omitted the extension), and for
- * Scratch the Work its authority names (`@slug`, `@/` for No Work, or the
- * surface's own Work for a contextual `scratch://`). Uploads are files a writer
- * brings, never documents a link conjures, so they are not creatable here.
+ * and its filename (with `.md` when the link omitted the extension). Only
+ * manuscript, kb, and user documents are conjured by a link. Scratch notes are
+ * made from a Work's Files tab or by the AI, and Uploads are files a writer
+ * brings, so neither is creatable here.
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
  * and syncs in the background; the server's move creates any missing folders.
  * A later sync failure lands on the document itself. Nothing about the link
- changes on creation: the project now holds a document at that address, which
+ * changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
  */
 
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
-import { type ResourceWorkAuthority, resourceWorkAuthorityFor } from "@meridian/resource-replica";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import { useCallback, useRef, useState } from "react";
 
-import { useWorks } from "@/client/query/useWorks";
 import {
   type CreatableLinkScheme,
   documentFileName,
@@ -32,7 +30,6 @@ export type LinkCreationTarget = {
   scheme: CreatableLinkScheme;
   folderPath: string;
   name: string;
-  authority: ParsedContextAuthority;
 };
 
 /** Where Create puts the document for this address, or null when it cannot. */
@@ -40,7 +37,7 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
   if (!address) return null;
   const parsed = parseContextUri(address);
   if (!parsed.ok) return null;
-  const { scheme, path, authority } = parsed.value;
+  const { scheme, path } = parsed.value;
   if (!isCreatableLinkScheme(scheme)) return null;
   const folders = path.split("/");
   const leaf = folders.pop();
@@ -48,7 +45,7 @@ export function linkCreationTarget(address: string | null): LinkCreationTarget |
   const name = documentFileName(leaf);
   if (!name) return null;
   if (![...folders, name].every((segment) => validateContextEntryName(segment).ok)) return null;
-  return { scheme, folderPath: folders.join("/"), name, authority };
+  return { scheme, folderPath: folders.join("/"), name };
 }
 
 export type CreateLinkedDocument = {
@@ -58,17 +55,8 @@ export type CreateLinkedDocument = {
   failed: boolean;
 };
 
-type WorkList = readonly { id: string; slug: string | null }[];
-
-/**
- * `workId` is the surface's Work (a named Work or the No Work row; null while unresolved): what a contextual `scratch://` address means there.
- */
-export function useCreateLinkedDocument(
-  projectId: string | null,
-  workId: string | null,
-): CreateLinkedDocument {
+export function useCreateLinkedDocument(projectId: string | null): CreateLinkedDocument {
   const resources = useAccountResourceReplica();
-  const { works, noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const [creating, setCreating] = useState(false);
   const [failed, setFailed] = useState(false);
   // State lands a render late; a second press in the same tick must not
@@ -84,13 +72,6 @@ export function useCreateLinkedDocument(
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
-        const work =
-          target.scheme === "scratch"
-            ? workId && noWork
-              ? scratchWork(target, workId, { works: works ?? [], noWork })
-              : "unknown"
-            : { workId: null };
-        if (work === "unknown") throw new Error("The address names no Work this project has");
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
@@ -101,7 +82,7 @@ export function useCreateLinkedDocument(
             scheme: target.scheme,
             folderPath: target.folderPath,
             name: target.name,
-            ...work,
+            workId: null,
           });
         } finally {
           reservation.content.handle.release();
@@ -119,25 +100,8 @@ export function useCreateLinkedDocument(
       if (!documentId) setFailed(true);
       return documentId;
     },
-    [noWork, projectId, resources, workId, works],
+    [projectId, resources],
   );
 
   return { create, creating, failed };
-}
-
-/** Resolve URI authority once against the surface's loaded Works snapshot. */
-function scratchWork(
-  target: LinkCreationTarget,
-  surfaceWorkId: string,
-  snapshot: { works: WorkList; noWork: { id: string } },
-): ResourceWorkAuthority | "unknown" {
-  const { authority } = target;
-  const workId =
-    authority.kind === "none"
-      ? snapshot.noWork.id
-      : authority.kind === "contextual"
-        ? surfaceWorkId
-        : snapshot.works.find((work) => work.slug === authority.workSlug)?.id;
-  if (!workId) return "unknown";
-  return resourceWorkAuthorityFor(workId, snapshot);
 }

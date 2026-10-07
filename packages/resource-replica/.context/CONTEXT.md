@@ -121,3 +121,9 @@ journal evidence. Surfaces own the timer/rerender that removes their note.
 Completed successful file naming remains evidence after canonical refresh retires
 placement ownership. Retained create history alone cannot make a named file
 provisional again.
+
+A refused first filing preserves the server-accepted Unfiled document and its
+exact content database. Refused or superseded filing history ends provisional
+naming at the accepted location; it never authorizes automatic deletion. An
+explicit delete command can still retire an accepted document. Never-submitted
+reservations can still be deleted locally.
