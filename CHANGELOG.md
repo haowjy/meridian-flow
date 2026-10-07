@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
-- An AI overwrite or replace changes only the paragraphs and words that differ. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and writing a chapter back unchanged changes nothing.
-- Overlapping bold and italic, and strikethrough that starts or ends on a space, export as Markdown that reads back with the same formatting instead of stray `*` or `~~`.
-- A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`.
+- An AI overwrite or replace changes only the paragraphs and words that differ. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and a paragraph the AI adds never takes over the comments of the one it edits next to it.
+
+- An AI write that changes nothing (a chapter written back as it is, or a word replaced with itself) records nothing: no write, no receipt and nothing to undo.
+
+- An AI write that only centers a paragraph or renumbers a list now applies the change instead of reporting success and dropping it.
+
+- A turn's receipt offers Undo only when Undo will work. Text you type inside the AI's words now shows the turn as no longer undoable, as Undo itself already treated it.
+
+- Overlapping bold and italic, runs of alternating bold and italic, and strikethrough that starts or ends on a space export as Markdown that reads back with the same formatting instead of stray `*`, `_` or `~~`.
+
+- A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`. A paragraph of only line breaks comes back as one paragraph.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
