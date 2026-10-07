@@ -156,8 +156,11 @@ is one server closure class.
   failure is held on its own draft, and `dockDispositionError` names the kind.
   **A batch never navigates**: the writer stays where they are (nothing is
   decided from an answer, which can arrive after they went elsewhere), and Open
-  on a refused draft's notice is the only way to it. While it runs, the header
-  says "Applying" or "Discarding" (`controller.batchRunning`). When it closes the
-  draft the writer is reviewing, that review holds on "No changes left" (the same
-  `completion: closed` a last change leaves; a new document's draft is promoted
-  instead), so the refusal notices stay in front of them.
+  on a refused draft's notice is the only way to it. The review the writer is in
+  is part of the batch: `batchStarted` sets its completion to `pending` (the
+  header says "Applying" or "Discarding", and every "the draft left the list"
+  exit reads it as the writer's own), its own answer closes it (`reviewClosed`,
+  "No changes left", the same state a last change leaves, so the refusal notices
+  stay in front of the writer), and a batch that ends without closing it
+  (refused, lost) withdraws the pending state. A new document's review is not
+  held: it is promoted to the live document as before.

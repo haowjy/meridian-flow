@@ -111,8 +111,10 @@ are session outcomes rendered by the review header rather than ignored
 promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
 (`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
 the draft's rows, and named in the dock's typed error state. It never navigates (no answer moves
-the writer); `batchRunning` shows "Applying"/"Discarding" in the open review, and a batch that
-closes the reviewed draft holds that review on `completion: closed` rather than clearing it.
+the writer). The review the writer is in is part of the batch: `batchStarted` sets its completion to
+`pending` (the header says "Applying"/"Discarding"), its own answer closes it (`completion: closed`,
+"No changes left") instead of clearing it, and a batch that ends without closing it withdraws the
+pending state (`reviewReopened`)
 
 Cross-cutting server policy:
 [whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)

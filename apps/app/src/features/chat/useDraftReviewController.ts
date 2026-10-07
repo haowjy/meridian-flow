@@ -120,8 +120,6 @@ export type DraftReviewController = {
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
   dockDispositionError: DraftBatchErrorCode | null;
-  /** Apply all or Discard all is under way. */
-  batchRunning: "apply" | "discard" | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -205,7 +203,6 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
   const dockDispositionError = state.dockDispositionError;
-  const batchRunning = state.batchRunning;
 
   const activeDisposition = disposition.busy ? disposition.target : null;
   const isApplying = activeDisposition?.kind === "apply-draft";
@@ -397,7 +394,9 @@ export function useDraftReviewController({
         mode,
       ),
     batchStarted: (mode) => {
-      // Read now: the draft leaves the Work's list when it is applied.
+      // The review the writer is in is part of the batch: its completion is pending
+      // until its own command answers, and the header says so. Read now: the draft
+      // leaves the Work's list when it is applied.
       const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
       const listedDraft = inline
         ? queryClient
@@ -405,18 +404,36 @@ export function useDraftReviewController({
             ?.find((item) => item.draftId === inline.draftId)
         : undefined;
       // A new document's review is promoted to the live document, not held.
-      batchReviewedRef.current =
-        inline && listedDraft?.isNewDocument !== true
-          ? {
-              documentId: inline.documentId,
-              draftId: inline.draftId,
-              documentName: listedDraft?.documentName ?? null,
-            }
-          : null;
-      dispatch({ type: "batchStarted", mode });
+      if (inline && listedDraft?.isNewDocument !== true) {
+        const documentName = listedDraft?.documentName ?? null;
+        batchReviewedRef.current = {
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          documentName,
+        };
+        dispatch({
+          type: "reviewCompleting",
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          mode,
+          documentName,
+        });
+      } else {
+        batchReviewedRef.current = null;
+      }
+      dispatch({ type: "batchStarted" });
     },
     batchSettled: (error) => {
+      const reviewed = batchReviewedRef.current;
       batchReviewedRef.current = null;
+      // Its command did not close it (refused, lost): the review carries on, with
+      // the refusal on it. A no-op when it closed.
+      if (reviewed)
+        dispatch({
+          type: "reviewReopened",
+          documentId: reviewed.documentId,
+          draftId: reviewed.draftId,
+        });
       dispatch({ type: "batchSettled", error });
     },
     // The tab closes with the click; a refusal leaves it closed and the error
@@ -672,7 +689,6 @@ export function useDraftReviewController({
       toast: state.toast,
       dismissToast,
       dockDispositionError,
-      batchRunning,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -707,7 +723,6 @@ export function useDraftReviewController({
       state.toast,
       dismissToast,
       dockDispositionError,
-      batchRunning,
       enterInlineReview,
       exitInlineReview,
       exitReview,

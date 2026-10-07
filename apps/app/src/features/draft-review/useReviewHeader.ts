@@ -101,10 +101,7 @@ export function useReviewHeader({
     );
   }, [ready, nextDocumentId, nextDraftId, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
-  const { finished, unlisted } = view;
-  // The batch's progress is the review's too: its draft may be closed (or not yet
-  // reached) while other drafts are still being sent.
-  const completing = view.completing ?? controller.batchRunning;
+  const { finished, completing, unlisted } = view;
   const commandRecords = useDraftCommandRecords();
   const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
     projectId: controller.projectId,
