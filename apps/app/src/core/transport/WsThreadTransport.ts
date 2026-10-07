@@ -40,7 +40,6 @@ type WsThreadTransportOptions = SocketLifecycleOptions;
 
 export class WsThreadTransport implements ThreadTransport {
   private readonly socket: SocketLifecycleController;
-  private connectionState: ConnectionState = { kind: "disconnected" };
   private readonly subscriptions = new WsThreadSubscriptionRegistry();
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
   private readonly catalogSubscriptions = new Map<
@@ -100,14 +99,14 @@ export class WsThreadTransport implements ThreadTransport {
   }
 
   reconnect(): void {
-    if (this.connectionState.kind === "terminal") return;
+    if (this.socket.state.kind === "terminal") return;
     this.wantsConnection = true;
     this.socket.reconnectNow();
   }
 
   onConnectionState(listener: (state: ConnectionState) => void): () => void {
     this.connectionListeners.add(listener);
-    listener(this.connectionState);
+    listener(this.socket.state);
     return () => {
       this.connectionListeners.delete(listener);
     };
@@ -125,7 +124,7 @@ export class WsThreadTransport implements ThreadTransport {
     );
 
     if (handlers.onConnectionState) {
-      handlers.onConnectionState(this.connectionState);
+      handlers.onConnectionState(this.socket.state);
     }
 
     this.ensureConnected();
@@ -217,7 +216,7 @@ export class WsThreadTransport implements ThreadTransport {
       onConnected: () => {
         this.socket.resetBackoff();
         this.serverConnected = true;
-        this.publishConnectionState({ kind: "connected" });
+        this.socket.publishConnectionState({ kind: "connected" });
         this.sendResume();
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", projectId });
@@ -339,7 +338,6 @@ export class WsThreadTransport implements ThreadTransport {
   }
 
   private publishConnectionState(state: ConnectionState): void {
-    this.connectionState = state;
     for (const listener of this.connectionListeners) {
       listener(state);
     }

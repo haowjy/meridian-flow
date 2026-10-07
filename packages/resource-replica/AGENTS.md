@@ -12,3 +12,8 @@ Namespace intent `settled` means accepted by the server. Rejected work retired
 by a later command (including a reminted create conflict) is terminal
 `superseded`: retain its attempts as evidence, never as executable work or
 placement/deletion ownership.
+
+Typed non-retryable HTTP 4xx refusals also settle namespace attempts when route
+intake rejects before a server receipt exists. Persist that refusal against the
+submitted operation ID, never invent a server receipt. Bare HTTP/network failures
+still need receipt evidence and remain replayable otherwise.

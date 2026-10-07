@@ -1,3 +1,4 @@
+import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
 /**
  * Shared route helpers for `/api/projects/:projectId/context/:scheme/*` routes.
  *
@@ -76,14 +77,14 @@ export async function resolveContextRoute(
         requestedWorkId: workId,
       })
     : await contextPortForProjectBrowse({ deps, projectId, userId: user.userId, workId });
-  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+  if (!port) throwContextWorkUnavailableHttpError("work_missing");
   let authority: CanonicalContextAuthority = { kind: "contextual" };
   if (isWorkScopedBrowseScheme(scheme)) {
     if (!workId) authority = { kind: "none" };
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, workId);
       if (!resolved) {
-        throw createError({ statusCode: 404, message: "Work not found" });
+        throwContextWorkUnavailableHttpError("work_missing");
       }
       authority = resolved;
     }

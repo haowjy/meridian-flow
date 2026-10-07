@@ -10,7 +10,7 @@ import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
-import { schemeLabel } from "../context/context-schemes";
+import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { useDockViewStore } from "../dock/dock-view-store";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
@@ -124,7 +124,6 @@ export function MobileProject(props: MobileProjectProps) {
                     scheme: props.activeContextScheme,
                     kind,
                     parentPath: props.activeContextFolder ?? "",
-                    workId: props.editorWorkId,
                   });
                 })
               : undefined
@@ -210,10 +209,11 @@ function trailingAction(
       </PhoneIconButton>
     );
   }
-  // All schemes accept creation when browsing a scheme root, matching the desktop tree's per-scheme `+`.
+  // Same per-scheme policy as the desktop tree's `+`: Scratch and Uploads offer no creation.
   if (
     props.activeScreen === "context" &&
     props.activeContextScheme &&
+    schemeAllowsCreation(props.activeContextScheme) &&
     !props.activeContextPath &&
     !props.activeLocalDocumentId
   ) {
@@ -290,7 +290,6 @@ function renderActiveView(
                       kind: creating.kind,
                       scheme: creating.scheme,
                       parentPath: creating.parentPath,
-                      workId: creating.workId,
                     }
                   : null
               }

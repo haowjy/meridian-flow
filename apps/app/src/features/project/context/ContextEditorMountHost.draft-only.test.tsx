@@ -117,7 +117,6 @@ describe("ContextEditorMountHost draft-only review", () => {
           <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
             <ContextEditorMountHost
               projectId="project-a"
-              workId="work-a"
               trackedTabs={[hostedTab]}
               activeTabId="document-a"
               active
@@ -172,7 +171,6 @@ describe("ContextEditorMountHost draft-only review", () => {
         <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
           <ContextEditorMountHost
             projectId="project-a"
-            workId="work-a"
             trackedTabs={[tab]}
             activeTabId="document-a"
             active

@@ -194,6 +194,8 @@ export function namespaceOutcomeMatches(
         outcome.result.documentId === attempt.request.body.documentId)
     );
   }
+  if (outcome.kind === "refusal")
+    return outcome.operationId === attempt.request.body.operationId && !outcome.error.retryable;
   if (
     outcome.kind !== "operation" ||
     outcome.receipt.operationId !== attempt.request.body.operationId ||
@@ -285,6 +287,8 @@ export function namespaceAttemptWithOutcome(
 ): NamespaceAttempt {
   if (attemptIs(attempt, "create") && outcome.kind === "create")
     return { attemptId: attempt.attemptId, request: attempt.request, outcome };
+  if (outcome.kind === "refusal" && (attemptIs(attempt, "move") || attemptIs(attempt, "delete")))
+    return { ...attempt, outcome };
   if (
     attemptIs(attempt, "move") &&
     outcome.kind === "operation" &&
@@ -388,6 +392,8 @@ export function settleNamespaceOutcome(
         },
       };
     }
+  } else if (outcome.kind === "refusal") {
+    repair = true;
   } else if (attemptIs(attempt, "move")) {
     const receipt = outcome.receipt;
     if (!receiptIs(receipt, "move") || !receipt.result.ok || !identityStillMatches) repair = true;
@@ -436,7 +442,10 @@ export function settleNamespaceOutcome(
     state: repair ? "needs-repair" : "settled",
     settledAt,
   }));
-  if (repair && outcome.kind === "operation" && !outcome.receipt.result.ok)
+  if (
+    repair &&
+    (outcome.kind === "refusal" || (outcome.kind === "operation" && !outcome.receipt.result.ok))
+  )
     next.intents = cancelRefusedLocationChain(next.intents, intent);
   return { expectedRevision: record.resource.revision, next };
 }

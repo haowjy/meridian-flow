@@ -7,6 +7,7 @@ import type {
   CreateUntitledContextDocumentRequest,
   CreateUntitledContextDocumentResult,
   DeleteContextEntryRequest,
+  MeridianError,
   MoveContextEntryRequest,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -99,10 +100,12 @@ export type NamespaceAttempt = {
     request: Extract<NamespaceRequest, { kind: Kind }>;
     outcome?: Kind extends "create"
       ? Extract<NamespaceOutcome, { kind: "create" }>
-      : {
-          kind: "operation";
-          receipt: Extract<ContextOperationReceipt, { command: { kind: Kind } }>;
-        };
+      :
+          | Extract<NamespaceOutcome, { kind: "refusal" }>
+          | {
+              kind: "operation";
+              receipt: Extract<ContextOperationReceipt, { command: { kind: Kind } }>;
+            };
   };
 }[NamespaceRequest["kind"]];
 
@@ -115,7 +118,10 @@ export type NamespaceIntent = ResourceKey & {
   identityRevision: number;
   desired:
     | { kind: "create"; folderPath: string; provisionalName?: string }
-    | { kind: "set-location"; destination: ResourceDestination }
+    | {
+        kind: "set-location";
+        destination: ResourceDestination;
+      }
     | { kind: "set-folder-location"; destination: ResourceDestination }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
@@ -205,7 +211,8 @@ export interface ResourceMetadataStore {
 /** Transport evidence is matched to its recorded attempt by journal policy before installation. */
 export type NamespaceOutcome =
   | { kind: "create"; result: CreateUntitledContextDocumentResult }
-  | { kind: "operation"; receipt: ContextOperationReceipt };
+  | { kind: "operation"; receipt: ContextOperationReceipt }
+  | { kind: "refusal"; operationId: string; error: MeridianError };
 
 /** The caller persists the immutable attempt before submit and retains uncertainty on failure. */
 export interface ResourceNamespaceTransport {
