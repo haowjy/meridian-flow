@@ -6,9 +6,9 @@
  */
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { Work, WorksSnapshot } from "@meridian/contracts/works";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   archiveWork,
   createProjectWork,
@@ -48,6 +48,9 @@ vi.mock("@/client/api/projects-api", () => ({
   updateWork: vi.fn(),
   updateWorkWriteMode: vi.fn(),
 }));
+
+beforeEach(() => notifyManager.setScheduler(queueMicrotask));
+afterEach(() => notifyManager.setScheduler((callback) => setTimeout(callback, 0)));
 
 const PROJECT_ID = WORK.projectId;
 const SECOND = {
@@ -107,7 +110,10 @@ async function withProbe(server: WorksSnapshot, run: (client: QueryClient) => Pr
   }
 }
 
-const settle = (check: () => void) => act(() => vi.waitFor(check));
+const settle = async (check: () => void) => {
+  await act(async () => {});
+  check();
+};
 const recordStatuses = (client: QueryClient) =>
   (client.getQueryData<WorkCommandRecord[]>(projectQueryKeys.workCommands(PROJECT_ID)) ?? []).map(
     (record) => record.status,
@@ -215,7 +221,7 @@ describe("Work command projection", () => {
       await settle(() => expect(listProjectWorks).toHaveBeenCalledTimes(2));
 
       await act(async () => archiveRead.resolve(snapshot([WORK, archived(SECOND)], "2")));
-      // Query and mutation notifications flush on a timer; wait for the render.
+      // Deliver the controlled query notifications before inspecting the render.
       await settle(() => {
         expect(field(SECOND.id, "archivedAt")).not.toBeNull();
         expect(field(WORK.id, "name")).toBe("Revised arc");

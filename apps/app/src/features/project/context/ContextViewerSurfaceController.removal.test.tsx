@@ -99,6 +99,15 @@ beforeEach(() => {
   });
 });
 
+const shellProps = {
+  editorWork: null,
+  sidebarToggle: { open: true, onExpand: vi.fn(), label: "Sidebar" },
+  dockToggle: { open: true, onExpand: vi.fn(), label: "Dock" },
+  onSelectContextPath: vi.fn(),
+  onOpenContextTarget: vi.fn(),
+  onShowEditorRecents: vi.fn(),
+};
+
 it("keeps the current Work's scratch tab on the Editor surface", async () => {
   const current: ContextTab = {
     kind: "tracked",
@@ -125,18 +134,13 @@ it("keeps the current Work's scratch tab on the Editor surface", async () => {
   await withReactRoot(
     <AccountFeatureTestProvider accountId="work-scratch-account">
       <ContextViewerSurfaceController
+        {...shellProps}
         projectId="project"
         editorWorkId="work-a"
-        editorWork={null}
         localDocumentId={current.documentId}
         activeContextScheme="scratch"
         activeContextPath={current.path}
         active={false}
-        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-        onSelectContextPath={vi.fn()}
-        onOpenContextTarget={vi.fn()}
-        onShowEditorRecents={vi.fn()}
       />
     </AccountFeatureTestProvider>,
     () => {
@@ -214,16 +218,13 @@ it("persists and admits the real New action without an empty working-set route",
           }}
         />
         <ContextViewerSurfaceController
+          {...shellProps}
           projectId="project"
           editorWorkId="work-a"
-          editorWork={null}
           activeContextScheme={route.scheme}
           activeContextPath={route.path}
           active
-          sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-          dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
           onSelectContextPath={updateRoute}
-          onShowEditorRecents={vi.fn()}
           onOpenContextTarget={(target, options) =>
             new Promise((resolve) => {
               releaseLocalRoute = () => {
@@ -347,17 +348,12 @@ it("guarded-redirects a selected materialized local owner before admitting its s
           }}
         />
         <ContextViewerSurfaceController
+          {...shellProps}
           projectId="project"
           editorWorkId="work-a"
-          editorWork={null}
           activeContextScheme="unfiled"
           activeContextPath={path}
           active
-          sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-          dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-          onSelectContextPath={vi.fn()}
-          onOpenContextTarget={vi.fn()}
-          onShowEditorRecents={vi.fn()}
         />
       </AccountFeatureTestProvider>
     );
@@ -429,17 +425,12 @@ it("restores the exact older local owner across A to B to A through mounted cont
           }}
         />
         <ContextViewerSurfaceController
+          {...shellProps}
           projectId="project"
           editorWorkId={workId}
-          editorWork={null}
           activeContextScheme={search.scheme ?? null}
           activeContextPath={search.path ?? null}
           active
-          sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-          dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-          onSelectContextPath={vi.fn()}
-          onOpenContextTarget={vi.fn()}
-          onShowEditorRecents={vi.fn()}
         />
       </AccountFeatureTestProvider>
     );
@@ -503,17 +494,12 @@ it.each([
         route={route}
       />
       <ContextViewerSurfaceController
+        {...shellProps}
         projectId="project"
         editorWorkId="work-1"
-        editorWork={null}
         activeContextScheme="manuscript"
         activeContextPath="/missing.md"
         active
-        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-        onSelectContextPath={vi.fn()}
-        onOpenContextTarget={vi.fn()}
-        onShowEditorRecents={vi.fn()}
       />
     </AccountFeatureTestProvider>,
     () => {
@@ -533,9 +519,9 @@ it("does not admit an old bound document while its retained controller is inacti
       <AccountFeatureTestProvider accountId="parked-account">
         <CaptureCoordinator />
         <ContextViewerSurfaceController
+          {...shellProps}
           projectId="project"
           editorWorkId="work-1"
-          editorWork={null}
           activeContextScheme="manuscript"
           activeContextPath="/a.md"
           active={false}
@@ -544,7 +530,6 @@ it("does not admit an old bound document while its retained controller is inacti
           onSelectContextPath={() => {
             throw new Error("Inactive navigation");
           }}
-          onShowEditorRecents={vi.fn()}
           onOpenContextTarget={() => {
             throw new Error("Inactive navigation");
           }}

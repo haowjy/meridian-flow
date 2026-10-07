@@ -27,6 +27,7 @@ import {
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
+  type ContextCatalogMutationPort,
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
   createContextUploadContentPort,
@@ -54,7 +55,9 @@ import {
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkUpdateWorker,
+  type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
+  type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
   type ResultRepository,
   type UnifiedContextPortFactory,
@@ -121,7 +124,10 @@ import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
-import { createDetachedWorkTracker } from "../domains/runtime/detached-work.js";
+import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+} from "../domains/runtime/detached-work.js";
 import { MODEL_REGISTRY, type MockScriptQueue } from "../domains/runtime/gateway/index.js";
 import { generateHandoffBrief } from "../domains/runtime/handoff/brief-request.js";
 import {
@@ -245,6 +251,7 @@ export type AppServices = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
+  contextCatalogRefresh: ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -311,6 +318,8 @@ function stripeReady(env: NodeJS.ProcessEnv): boolean {
 
 export type ProductionAppPorts = {
   db: Database;
+  /** Detached work any port started; the composed app drains it at shutdown. */
+  backgroundTasks: DetachedWorkTracker;
   /** A thread's delegation chain, read fresh (file-access §8). */
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
   /** The chain's effective permission, from the lighter lineage walk. */
@@ -327,7 +336,10 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog;
+  contextCatalog: ContextCatalog &
+    ContextCatalogMutationPort &
+    ProjectCatalogLifecyclePort &
+    ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -436,10 +448,22 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
+  const backgroundTasks = createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
+  let boundManifestMembership: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
+    eventSink,
+    backgroundTasks,
+    manifestMembership: {
+      resolveManifestMembership: (input) => {
+        if (!boundManifestMembership) {
+          throw new Error("Manifest membership resolver used before the collab domain was bound");
+        }
+        return boundManifestMembership.resolveManifestMembership(input);
+      },
+    },
   });
   const workProjectionMutation = createWorkProjectionMutation({
     db,
@@ -511,6 +535,7 @@ export async function createProductionAppPorts(input: {
         ),
     },
   });
+  boundManifestMembership = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     objectStore,
@@ -597,6 +622,7 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
+    backgroundTasks,
     runClaim,
     statusReader,
     gateway,
@@ -656,7 +682,7 @@ export async function createProductionAppPorts(input: {
 
 /** Pure wiring — no env reads and no concrete adapter construction. */
 export function composeAppServices(ports: ProductionAppPorts): AppServices {
-  const backgroundTasks = createDetachedWorkTracker();
+  const { backgroundTasks } = ports;
   const shutdown = { started: false };
   const threadEventHub = createThreadEventHub({
     journalReader: ports.journalReader,
@@ -1020,6 +1046,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
+    contextCatalogRefresh: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
@@ -1302,6 +1329,11 @@ export function createInMemoryAppServices(): AppServices {
     linkUpdates: { sweep: async () => 0, kick() {}, stop: async () => {} },
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
+    contextCatalogRefresh: {
+      async refreshProjectDocuments() {
+        throw new Error("Project document catalog refresh is unavailable in memory");
+      },
+    },
     documentAddresses: {
       async resolve() {
         return { kind: "unavailable" };

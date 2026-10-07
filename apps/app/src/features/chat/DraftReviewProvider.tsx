@@ -15,29 +15,19 @@ import {
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import {
-  contextCatalogQueryOptions,
-  contextCatalogScope,
-  projectCatalogView,
-} from "@/client/query/useContextCatalog";
+import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
   useWorkDrafts,
 } from "@/client/query/useWorkDrafts";
-import { getContextTabs } from "@/client/stores";
+import { type ContextTab, getContextTabs } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
 import {
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
-import {
-  usePostApplyAccountId,
-  usePostApplyDispositionOwner,
-  usePostApplySnapshot,
-} from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
-import { projectPostApplyDraftGroups } from "@/features/project/draft-apply-recovery/draft-group-projections";
 import {
   type DraftReviewController,
   type DraftReviewStateOwner,
@@ -46,7 +36,6 @@ import {
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
-  serverActiveGroups: ThreadDraftGroup[];
   groups: ThreadDraftGroup[];
   drafts: ThreadDraftsStatus;
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
@@ -87,13 +76,9 @@ export function useDraftReviewScopeValue({
   threadId?: string | null;
 }): DraftReviewContextValue {
   const workId = work?.id ?? null;
-  const owningWorkLabel = work?.name ?? null;
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const contextRemoval = useContextRemovalCoordinator();
-  const dispositionOwner = usePostApplyDispositionOwner();
-  const dispositionSnapshot = usePostApplySnapshot();
-  const accountId = usePostApplyAccountId();
   const registry = useLiveDocumentSessionRegistry();
   const reviewProjectionOwner = useRef(
     `draft-review-projection:${++reviewProjectionOwnerSequence}`,
@@ -102,20 +87,7 @@ export function useDraftReviewScopeValue({
   // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
-  const rawGroups = drafts.groups ?? [];
-  const projections = useMemo(
-    () =>
-      projectPostApplyDraftGroups(
-        rawGroups,
-        dispositionSnapshot,
-        accountId,
-        projectId ?? "",
-        workId ?? "",
-      ),
-    [accountId, dispositionSnapshot, projectId, rawGroups, workId],
-  );
-  const serverActiveGroups = projections.serverActiveGroups ?? [];
-  const groups = projections.commandEligibleGroups ?? [];
+  const groups = drafts.groups ?? [];
   const controller = useDraftReviewController({
     projectId: effectiveProjectId,
     work,
@@ -123,71 +95,12 @@ export function useDraftReviewScopeValue({
     stateOwner,
   });
 
-  useEffect(() => {
-    if (!projectId || !workId || (drafts.status !== "ready" && drafts.status !== "empty")) return;
-    const tabs = getContextTabs(projectId).tabs;
-    dispositionOwner.reconcileForcedDraftList({
-      accountId,
-      projectId,
-      workId,
-      activeDrafts: (drafts.drafts ?? []).map((draft) => {
-        const tab = tabs.find((candidate) => candidate.documentId === draft.documentId);
-        return {
-          identity: {
-            accountId,
-            projectId,
-            workId,
-            documentId: draft.documentId,
-            draftId: draft.draftId,
-          },
-          presentation: {
-            documentName: draft.documentName,
-            contextPath: draft.contextPath,
-            owningWorkLabel,
-          },
-          obligations: {
-            draftTab:
-              draft.isNewDocument &&
-              tab?.kind === "tracked" &&
-              tab.draftOnly &&
-              tab.reviewWorkId === workId &&
-              tab.reviewDraftId === draft.draftId &&
-              tab.tabInstanceToken
-                ? {
-                    kind: "draft-only" as const,
-                    reviewWorkId: workId,
-                    reviewDraftId: draft.draftId,
-                    tabInstanceToken: tab.tabInstanceToken,
-                  }
-                : { kind: "none" as const },
-            branch:
-              controller.inlineReview?.draftId === draft.draftId && controller.reviewRoomName
-                ? {
-                    kind: "generation-qualified" as const,
-                    reviewRoomName: controller.reviewRoomName,
-                  }
-                : { kind: "none" as const },
-          },
-        };
-      }),
-    });
-  }, [
-    accountId,
-    controller.inlineReview?.draftId,
-    controller.reviewRoomName,
-    dispositionOwner,
-    drafts.drafts,
-    drafts.status,
-    projectId,
-    owningWorkLabel,
-    workId,
-  ]);
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
   // itself lives in the controller state machine.
   const [activeEditorProjection, setActiveEditorProjection] = useState<{
     documentId: string;
-    session: DocumentSession;
+    session: DocumentSession | null;
     inReview: boolean;
     owner: object | null;
   } | null>(null);
@@ -200,7 +113,7 @@ export function useDraftReviewScopeValue({
       owner: object | null = null,
     ) => {
       setActiveEditorProjection((current) => {
-        if (documentId && session) return { documentId, session, inReview, owner };
+        if (documentId) return { documentId, session, inReview, owner };
         return owner && current?.owner !== owner ? current : null;
       });
     },
@@ -228,179 +141,70 @@ export function useDraftReviewScopeValue({
     [controller.inlineReview, controller.reviewRoomName],
   );
 
+  // The reviewed draft left the active list (applied or discarded elsewhere):
+  // there is nothing left to review. A local disposition ends review itself.
   useEffect(() => {
-    const activeSelection = controller.inlineReview;
-    if (!activeSelection || (drafts.status !== "ready" && drafts.status !== "empty")) return;
-    const matchingIdentity = (identity: {
-      accountId: string;
-      projectId: string;
-      workId: string;
-      documentId: string;
-      draftId: string;
-    }) =>
-      identity.accountId === accountId &&
-      identity.projectId === projectId &&
-      identity.workId === workId &&
-      identity.documentId === activeSelection.documentId &&
-      identity.draftId === activeSelection.draftId;
-    if (
-      dispositionSnapshot.reservations.some((item) => matchingIdentity(item.identity)) ||
-      dispositionSnapshot.items.some((item) => matchingIdentity(item.identity))
-    )
-      return;
-    if (
-      dispositionSnapshot.appliedSuppressions.some(
-        (item) => matchingIdentity(item.identity) && item.terminalDisposition,
-      )
-    ) {
-      controller.exitReview();
-      return;
-    }
-    const activeDrafts = drafts.drafts ?? rawGroups.flatMap((group) => group.drafts);
-    if (
-      activeDrafts.some(
-        (draft) =>
-          draft.documentId === activeSelection.documentId &&
-          draft.draftId === activeSelection.draftId,
-      )
-    )
-      return;
-    if (!projectId || !workId) {
-      controller.exitReview();
-      return;
-    }
-    const tab = getContextTabs(projectId).tabs.find(
-      (candidate) => candidate.documentId === activeSelection.documentId,
+    const selection = controller.inlineReview;
+    if (!selection || controller.isDisposing) return;
+    if (drafts.status !== "ready" && drafts.status !== "empty") return;
+    const stillActive = (drafts.drafts ?? groups.map((group) => group.draft)).some(
+      (draft) => draft.documentId === selection.documentId && draft.draftId === selection.draftId,
     );
-    if (
-      tab?.kind !== "tracked" ||
-      !tab.draftOnly ||
-      tab.reviewWorkId !== workId ||
-      tab.reviewDraftId !== activeSelection.draftId ||
-      !tab.tabInstanceToken
-    )
-      controller.exitReview();
+    if (!stillActive) controller.exitReview();
   }, [
-    accountId,
     controller.exitReview,
     controller.inlineReview,
-    dispositionSnapshot.appliedSuppressions,
-    dispositionSnapshot.items,
-    dispositionSnapshot.reservations,
+    controller.isDisposing,
     drafts.drafts,
     drafts.status,
-    projectId,
-    rawGroups,
-    workId,
+    groups,
   ]);
 
+  // A draft-only tab whose draft left the active list was disposed of
+  // elsewhere. The list cannot say how, so the catalog decides: a document
+  // that now exists was applied, otherwise the draft was discarded.
   useEffect(() => {
-    if (!resources) return;
+    if (!resources || !projectId || !workId || controller.isDisposing) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    if (controller.isDisposing) return;
-    if (!projectId || !workId) {
-      return;
-    }
-    const tabs = getContextTabs(projectId).tabs;
-    const activeDrafts = drafts.drafts ?? rawGroups.flatMap((group) => group.drafts);
-    const candidates = dispositionSnapshot.remoteDraftWitnesses.flatMap((witness) => {
-      if (
-        witness.identity.accountId !== accountId ||
-        witness.identity.projectId !== projectId ||
-        witness.identity.workId !== workId ||
-        activeDrafts.some(
-          (draft) =>
-            draft.documentId === witness.identity.documentId &&
-            draft.draftId === witness.identity.draftId,
-        )
-      )
-        return [];
-      const tab = tabs.find((candidate) => candidate.documentId === witness.identity.documentId);
-      if (
-        tab?.kind !== "tracked" ||
-        !tab.draftOnly ||
-        tab.reviewWorkId !== workId ||
-        tab.reviewDraftId !== witness.identity.draftId ||
-        !tab.tabInstanceToken
-      )
-        return [];
-      return [{ witness, tab }];
-    });
-    if (candidates.length === 0) return;
+    const isOrphan = (tab: ContextTab, activeDrafts: readonly ThreadDraftListItem[]) =>
+      tab.kind === "tracked" &&
+      tab.draftOnly &&
+      tab.reviewWorkId === workId &&
+      !activeDrafts.some((draft) => draft.draftId === tab.reviewDraftId);
+    const activeDrafts = drafts.drafts ?? groups.map((group) => group.draft);
+    if (!getContextTabs(projectId).tabs.some((tab) => isOrphan(tab, activeDrafts))) return;
 
-    // The active-only list cannot say why a remote disposition removed the
-    // draft. The account witness survives provider replacement, so every
-    // returned scope classifies its exact absent draft-created rows rather than
-    // tying recovery to whichever row happens to be selected inline.
-    const treeQuery = contextCatalogQueryOptions(
-      resources,
+    const scope = contextCatalogScope(projectId, "manuscript", null) ?? {
+      kind: "project" as const,
       projectId,
-      contextCatalogScope(projectId, "manuscript", null) ?? { kind: "project", projectId },
-    );
+    };
     const attempt = new AbortController();
-    void queryClient
-      .cancelQueries({ queryKey: treeQuery.queryKey })
-      .then(() => queryClient.fetchQuery({ ...treeQuery, staleTime: 0 }))
+    // A catalog observation that starts now: joining an older in-flight one
+    // could report the pre-Apply tree and misread a remote Apply as a Discard.
+    void resources
+      .acquireCatalogAfter(projectId, scope)
       .then((view) => {
         if (attempt.signal.aborted) return;
+        queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
         const catalog = projectCatalogView(projectId, "manuscript", view);
-        const currentTabs = getContextTabs(projectId).tabs;
         const currentDrafts =
           queryClient.getQueryData<ThreadDraftListItem[]>(
             projectQueryKeys.workDrafts(projectId, workId),
           ) ?? [];
-        for (const { witness } of candidates) {
-          if (
-            currentDrafts.some(
-              (draft) =>
-                draft.documentId === witness.identity.documentId &&
-                draft.draftId === witness.identity.draftId,
-            )
-          )
-            continue;
-          const currentTab = currentTabs.find(
-            (candidate) => candidate.documentId === witness.identity.documentId,
-          );
-          if (
-            currentTab?.kind !== "tracked" ||
-            !currentTab.draftOnly ||
-            currentTab.reviewWorkId !== workId ||
-            currentTab.reviewDraftId !== witness.identity.draftId ||
-            !currentTab.tabInstanceToken
-          )
-            continue;
-          const witnessRef = {
-            identity: witness.identity,
-            witnessVersion: witness.witnessVersion,
-          };
-          if (catalog.findDocument(witness.identity.documentId)) {
-            dispositionOwner.recordServerApplied({
-              kind: "remote-new-document-manifest",
-              witness: witnessRef,
-              confirmedAbsent: true,
-              manifestDocumentId: witness.identity.documentId,
-              currentDraftTab: {
-                kind: "draft-only",
-                reviewWorkId: workId,
-                reviewDraftId: currentTab.reviewDraftId,
-                tabInstanceToken: currentTab.tabInstanceToken,
-              },
-            });
+        for (const tab of getContextTabs(projectId).tabs) {
+          if (tab.kind !== "tracked" || !isOrphan(tab, currentDrafts)) continue;
+          if (catalog.findDocument(tab.documentId)) {
+            void contextRemoval.promoteAppliedDraft(projectId, tab);
             continue;
           }
+          const draftId = tab.reviewDraftId;
+          if (!draftId) continue;
           if (
-            dispositionOwner.discardRemoteDraftWitness({
-              witness: witnessRef,
-              evidence: "manifest-proven-discard",
-            })
-          ) {
-            if (
-              controller.inlineReview?.documentId === witness.identity.documentId &&
-              controller.inlineReview.draftId === witness.identity.draftId
-            )
-              controller.exitReview();
-            void contextRemoval.discardDraft(projectId, workId, witness.identity.documentId);
-          }
+            controller.inlineReview?.documentId === tab.documentId &&
+            controller.inlineReview.draftId === draftId
+          )
+            controller.exitReview();
+          contextRemoval.discardDraft(projectId, workId, tab.documentId, draftId);
         }
       })
       // A failed membership check must leave the tab intact rather than guess
@@ -409,18 +213,15 @@ export function useDraftReviewScopeValue({
     return () => attempt.abort();
   }, [
     contextRemoval,
-    dispositionOwner,
-    resources,
-    dispositionSnapshot.remoteDraftWitnesses,
     controller.exitReview,
     controller.inlineReview,
     controller.isDisposing,
-    drafts.status,
-    accountId,
     drafts.drafts,
+    drafts.status,
+    groups,
     projectId,
     queryClient,
-    rawGroups,
+    resources,
     workId,
   ]);
 
@@ -473,6 +274,7 @@ export function useDraftReviewScopeValue({
   useEffect(() => {
     if (!threadId || !activeEditorProjection || activeEditorProjection.inReview) return;
     const session = activeEditorProjection.session;
+    if (!session) return;
     let timer: number | null = null;
     const invalidateLineage = () => {
       if (timer != null) window.clearTimeout(timer);
@@ -491,7 +293,6 @@ export function useDraftReviewScopeValue({
   const value = useMemo<DraftReviewContextValue>(
     () => ({
       controller,
-      serverActiveGroups,
       groups,
       drafts,
       groupForDocument,
@@ -499,15 +300,7 @@ export function useDraftReviewScopeValue({
       activeEditorDocumentId,
       setActiveEditorDocumentId,
     }),
-    [
-      controller,
-      serverActiveGroups,
-      groups,
-      drafts,
-      groupForDocument,
-      reviewRoomNameForDraft,
-      activeEditorDocumentId,
-    ],
+    [controller, groups, drafts, groupForDocument, reviewRoomNameForDraft, activeEditorDocumentId],
   );
 
   return value;

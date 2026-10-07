@@ -101,11 +101,6 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
-#. placeholder {0}: group.drafts.length
-#: src/features/project/work/WorkDrafts.tsx
-msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
-msgstr ""
-
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
@@ -131,7 +126,7 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr ""
 
-#. placeholder {0}: dock.serverActiveCount
+#. placeholder {0}: dock.rows.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr ""
@@ -533,10 +528,6 @@ msgid "Appearance and behavior settings."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Applied. Reopening live document."
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
 msgid "Apply"
 msgstr ""
 
@@ -784,11 +775,6 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Check again"
-msgstr ""
-
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Check submission status"
@@ -800,10 +786,6 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Checking pending changes…"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Checking whether Apply finished."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -860,8 +842,6 @@ msgstr ""
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
@@ -879,6 +859,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileChatSheetHeader.tsx
 msgid "Close chat"
+msgstr ""
+
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Close review"
 msgstr ""
 
 #: src/features/account/PhoneSettings.tsx
@@ -1098,9 +1082,7 @@ msgstr ""
 msgid "Couldn't apply every change, so you're still in Draft."
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't apply. Check your connection and try again."
 msgstr ""
 
@@ -1114,6 +1096,10 @@ msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
+msgstr ""
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't confirm whether this applied. It will update when you're back online."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1160,13 +1146,11 @@ msgstr ""
 msgid "Couldn't delete this entry. Try again."
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't discard. Try again."
 msgstr ""
 
@@ -1256,6 +1240,10 @@ msgstr ""
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
+msgstr ""
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't open this draft. Try again."
 msgstr ""
 
 #: src/features/chat/compaction/control-copy.ts
@@ -1869,16 +1857,6 @@ msgstr ""
 msgid "Filter subagents"
 msgstr "筛选子代理"
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Finish close"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-msgid "Finish reopening"
-msgstr ""
-
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "finished"
 msgstr "已完成"
@@ -1887,14 +1865,6 @@ msgstr "已完成"
 #: src/features/chat/SubagentHeader.tsx
 msgid "Finished"
 msgstr "已完成"
-
-#: src/features/chat/DraftDock.tsx
-msgid "Finishing close"
-msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-msgid "Finishing reopening"
-msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
 msgid "Finishing write mode change"
@@ -2834,6 +2804,10 @@ msgid "Paused to reread"
 msgstr ""
 
 #: src/features/project/work/WorkDrafts.tsx
+msgid "Pending draft"
+msgstr ""
+
+#: src/features/project/work/WorkDrafts.tsx
 msgid "Pending drafts couldn’t load"
 msgstr ""
 
@@ -3158,15 +3132,14 @@ msgstr ""
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
+#: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/features/project/work/WorkFileRows.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
@@ -3513,8 +3486,6 @@ msgstr "状态未知"
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
 msgid "Stop"
 msgstr "停止"
 
@@ -4098,6 +4069,10 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"
+msgstr ""
+
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "Try again, or close this tab. The draft stays in your list."
 msgstr ""
 
 #: src/features/project/context/ContextEditorMountHost.tsx

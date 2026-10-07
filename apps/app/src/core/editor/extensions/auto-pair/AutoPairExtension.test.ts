@@ -13,28 +13,23 @@
  * boundary rules around the caret, nesting, and gestures that degrade to plain
  * insertion.
  */
-import { Editor } from "@tiptap/core";
+import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createStandaloneEditorExtensions } from "../../config";
+import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/standalone-editor";
 import type { AutoPairContext } from "./auto-pairs";
 
-const live: Editor[] = [];
+const live: StandaloneEditor[] = [];
 
 afterEach(() => {
-  for (const editor of live.splice(0)) editor.destroy();
+  for (const fixture of live.splice(0)) fixture.destroy();
 });
 
 function openEditor(content = "<p></p>", schemaType: "document" | "code" = "document"): Editor {
-  const element = document.createElement("div");
-  document.body.append(element);
-  const editor = new Editor({
-    element,
-    extensions: createStandaloneEditorExtensions({ schemaType }),
-    content,
-  });
-  live.push(editor);
+  const fixture = createStandaloneEditor({ content, schemaType });
+  live.push(fixture);
+  const { editor } = fixture;
   editor.commands.focus("end");
   return editor;
 }

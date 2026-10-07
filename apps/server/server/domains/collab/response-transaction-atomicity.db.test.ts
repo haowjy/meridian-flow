@@ -14,6 +14,7 @@ import {
   PROJECT_ID,
   resetDatabase,
   runInDrizzleTransaction,
+  SOURCE_ID,
   schema,
   THREAD_ID,
   TURN_ID,
@@ -88,6 +89,94 @@ describe("change trail (postgres)", () => {
       ]),
     });
     await harness.expectSuccessfulCommit("retry-response");
+  });
+
+  it("publishes two draft-only documents back to back without retaining the branch lock", async () => {
+    const harness = createHarness();
+    const fixture = harness.crossWorkProbeFixture();
+    const created = [
+      "00000000-0000-4000-8000-0000000008d1",
+      "00000000-0000-4000-8000-0000000008d2",
+    ] as const;
+    await db.insert(schema.documents).values(
+      created.map((id, index) => ({
+        id: id as never,
+        contextSourceId: SOURCE_ID,
+        name: `new-${index + 1}`,
+        extension: "md",
+        fileType: "markdown" as const,
+      })),
+    );
+    for (const [index, documentId] of created.entries()) {
+      await fixture.persistence.lifecycle.ensureDocument(documentId as never);
+      const emptyLive = new Y.Doc({ gc: false });
+      const branch = await fixture.branchStore.ensureWorkDraftBranch({
+        documentId: documentId as never,
+        workId: WORK_ID,
+        liveDoc: emptyLive,
+      });
+      emptyLive.destroy();
+      const content = new Y.Doc({ gc: false });
+      fixture.model.insertBlocks(
+        toDocHandle(content),
+        null,
+        fixture.markupCodec.parse(`Created document ${index + 1}.`),
+      );
+      await fixture.branchCoordinator.commitUpdate({
+        branchId: branch.branchId,
+        updateData: Y.encodeStateAsUpdate(content),
+        source: "agent",
+        threadId: THREAD_ID,
+      });
+      content.destroy();
+      await fixture.branchStore.recordManifestDocumentCreated(documentId as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        threadId: THREAD_ID,
+      });
+    }
+
+    const drafts = await fixture.collab.draftReview.list({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+    });
+    const withDeadline = async <T>(operation: Promise<T>) => {
+      let timer!: ReturnType<typeof setTimeout>;
+      try {
+        return await Promise.race([
+          operation,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("draft disposition retained a lock")), 5_000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    for (const documentId of created) {
+      const draft = drafts.find((candidate) => candidate.documentId === documentId);
+      if (!draft) throw new Error(`missing draft for ${documentId}`);
+      await expect(
+        withDeadline(
+          fixture.collab.draftReview.applyWorkDraft({
+            projectId: PROJECT_ID as never,
+            workId: WORK_ID,
+            documentId: documentId as never,
+            draftId: draft.draftId,
+            userId: USER_ID as never,
+          }),
+        ),
+      ).resolves.toMatchObject({ status: "applied" });
+    }
+
+    await expect(
+      fixture.branchStore.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+    ).resolves.toMatchObject({ members: expect.arrayContaining([...created]) });
+    for (const [index, documentId] of created.entries()) {
+      await expect(harness.liveMarkdown(documentId as never)).resolves.toContain(
+        `Created document ${index + 1}.`,
+      );
+    }
   });
 
   // D42: a mixed save that fails after beta's live append leaves nothing, live or drafted.
@@ -230,7 +319,7 @@ describe("change trail (postgres)", () => {
         documentCount: 1,
       }),
     ]);
-    expect(trail.shells[0]?.changeCount).toBeGreaterThan(0);
+    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
       expect.objectContaining({
         changes: expect.arrayContaining([

@@ -15,15 +15,14 @@ import {
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
+import { activeEditorDocumentId } from "./context/active-editor-document";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
 import { resolveWorkspaceRoute } from "./context/context-route-workspace-owner";
 import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
-import { identityCommitMayNavigate } from "./context/use-identity-commit";
-import { useOptionalPostApplyDisposition } from "./draft-apply-recovery/DraftApplyRecoveryProvider";
-import { useOptionalProjectDraftApplyRecovery } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
+import { identityCommitMayNavigate, identityCommitRoute } from "./context/use-identity-commit";
 import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
@@ -79,11 +78,12 @@ export function ContextViewerSurfaceController({
   const availability = useProjectContextAvailabilityCoordinator();
   const resources = useAccountResourceReplica();
   const resourceProjection = useAccountResourceProjection(projectId);
-  const postApply = useOptionalPostApplyDisposition();
-  const postApplyCommands = useOptionalProjectDraftApplyRecovery();
 
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
-  const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId];
+  const selectedDocumentId = activeEditorDocumentId(
+    localDocumentId,
+    selectedTabIdByWork[routeWorkId],
+  );
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
@@ -92,9 +92,24 @@ export function ContextViewerSurfaceController({
     activeContextScheme !== null && activeContextPath !== null
       ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
       : null;
-  const workspaceRoute = resolveWorkspaceRoute({ tabs, selectedDocumentId, locator });
-  const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
   const removalState = useContextRemovalProject(projectId);
+  const routeSelection = removalState.selection;
+  const boundDocumentId =
+    locator !== null &&
+    routeSelection.status === "bound" &&
+    routeSelection.identity.kind === "server" &&
+    routeSelection.locator.scheme === locator.scheme &&
+    routeSelection.locator.path === locator.path &&
+    routeSelection.locator.workId === locator.workId
+      ? routeSelection.identity.documentId
+      : null;
+  const workspaceRoute = resolveWorkspaceRoute({
+    tabs,
+    selectedDocumentId,
+    locator,
+    boundDocumentId,
+  });
+  const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
   const editorScopeKey = `${projectId}:${routeWorkId}`;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   const retainedActiveTabId = selectedDocumentId ?? null;
@@ -277,41 +292,6 @@ export function ContextViewerSurfaceController({
   }
 
   function handleCloseTab(documentId: string) {
-    const tab = tabs.find((candidate) => candidate.documentId === documentId);
-    if (
-      tab?.kind !== "new" &&
-      tab?.draftOnly &&
-      tab.reviewWorkId &&
-      tab.reviewDraftId &&
-      tab.tabInstanceToken
-    ) {
-      const item = postApply?.owner
-        .getSnapshot()
-        .items.find(
-          (candidate) =>
-            candidate.identity.projectId === projectId &&
-            candidate.identity.workId === tab.reviewWorkId &&
-            candidate.identity.documentId === documentId &&
-            candidate.identity.draftId === tab.reviewDraftId,
-        );
-      if (item && postApplyCommands) {
-        postApplyCommands.abandon({ identity: item.identity, entryVersion: item.entryVersion });
-        return;
-      }
-      if (
-        postApply?.owner.draftTabMutationFence({
-          identity: {
-            accountId: resources.accountId,
-            projectId,
-            workId: tab.reviewWorkId,
-            documentId,
-            draftId: tab.reviewDraftId,
-          },
-          tabInstanceToken: tab.tabInstanceToken,
-        }) === "apply-reservation-pending"
-      )
-        return;
-    }
     settleWriterClose(contextRemoval.writerClose(projectId, documentId));
   }
 
@@ -518,11 +498,13 @@ export function ContextViewerSurfaceController({
             documentId,
           )
         ) {
-          onOpenContextTarget({
-            path: next.path,
-            scheme: next.scheme,
-            workId: next.routeWorkId ?? undefined,
-          });
+          const { request, options } = identityCommitRoute(documentId, next);
+          void onOpenContextTarget(request, options).then(
+            (settlement) => {
+              if (settlement.kind === "failed") reportError(settlement.error);
+            },
+            (error: unknown) => reportError(error),
+          );
         }
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}

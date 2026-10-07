@@ -30,7 +30,7 @@ export type DisplayedProjectSelection = {
 };
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
-  | { kind: "failed"; ticket: ProjectNavigationTicket };
+  | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
 export type ProjectNavigationTicket = { revision: number; key: string; href: string };
 
 export type NavigationSettlement =
@@ -45,6 +45,15 @@ export type ProjectLeaveGuard = {
   dirty(): boolean;
   cancel(): void;
 };
+
+/** Whether the entry already holds exactly this address, including its no-Work pin. */
+function sameEntryAddress(entry: ProjectHistoryEntry, address: ProjectAddress): boolean {
+  return (
+    entry.href === projectAddressHref(address) &&
+    JSON.stringify(entry.state.meridianProjectEmptySelection) ===
+      JSON.stringify(projectAddressState(address).meridianProjectEmptySelection)
+  );
+}
 
 export function createProjectNavigation(
   port: ProjectNavigationPort,
@@ -165,6 +174,14 @@ export function createProjectNavigation(
             ? { ...address, settings: current.address.settings }
             : address;
         try {
+          // A replacement of the entry by itself: another writer (address admission following a
+          // rename) already put this address there. Writing it again only repeats the history
+          // write, so the destination is reached without one.
+          if (options.replace && !options.state && sameEntryAddress(port.read(), next)) {
+            prepared?.commit();
+            resolve({ kind: "applied" });
+            return;
+          }
           if (!options.replace) {
             departureWrite = true;
             try {
@@ -274,20 +291,17 @@ export function createProjectNavigation(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
     ): Promise<ProjectAddressReplacement> {
-      if (!isCurrent(ticket)) return { kind: "superseded" };
+      // Address ownership effects may race a writer's destination command. A
+      // delayed repair must never retire that command or ask its leave guard.
+      if (!isCurrent(ticket) || pending || cancelDecision) return { kind: "superseded" };
       const entry = port.read();
-      const href = projectAddressHref(address);
-      const state = projectAddressState(address, entry.state);
-      if (
-        href === entry.href &&
-        JSON.stringify(state.meridianProjectEmptySelection) ===
-          JSON.stringify(entry.state.meridianProjectEmptySelection)
-      )
+      if (sameEntryAddress(entry, address)) return { kind: "replaced" };
+      try {
+        port.replaceEntry(projectAddressHref(address), projectAddressState(address, entry.state));
         return { kind: "replaced" };
-      const result = await transition(address, { replace: true, state });
-      if (result.kind === "applied") return { kind: "replaced" };
-      if (result.kind === "failed") return { kind: "failed", ticket: result.ticket };
-      return { kind: "superseded" };
+      } catch (error) {
+        return { kind: "failed", error, ticket: capture() };
+      }
     },
     dispose() {
       claimIntent(false);

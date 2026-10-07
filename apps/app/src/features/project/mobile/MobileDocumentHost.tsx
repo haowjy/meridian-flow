@@ -26,11 +26,7 @@ import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner"
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useRefusedEditsReopen } from "../context/use-refused-edits-reopen";
-import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
-import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import type { MobileDocumentRoute } from "./mobile-document-route";
-
-let mobileHostGeneration = 0;
 
 export type MobileDocumentHostProps = {
   projectId: string;
@@ -40,14 +36,39 @@ export type MobileDocumentHostProps = {
 };
 
 export function MobileDocumentHost(props: MobileDocumentHostProps) {
-  return props.localTab ? (
-    <MobileLocalDocumentHost
-      projectId={props.projectId}
-      workId={props.editorWorkId}
-      tab={props.localTab}
+  if (props.localTab)
+    return (
+      <MobileLocalDocumentHost
+        projectId={props.projectId}
+        workId={props.editorWorkId}
+        tab={props.localTab}
+      />
+    );
+  const tab = props.route.tab;
+  // A pending new-document draft has no live room and the server refuses one: its
+  // branch is hosted alone, exactly as the desktop does.
+  if (tab?.kind === "tracked" && tab.draftOnly)
+    return <MobileDraftOnlyDocumentHost {...props} tab={tab} />;
+  return <MobileServerDocumentHost {...props} />;
+}
+
+function MobileDraftOnlyDocumentHost({
+  projectId,
+  editorWorkId,
+  route,
+  tab,
+}: MobileDocumentHostProps & { tab: Extract<ContextTab, { kind: "tracked" }> }) {
+  // The route is bound to the draft's document, but never remembered or activated: its
+  // path dies if the draft is discarded.
+  useMobileRouteBinding({ projectId, workId: editorWorkId, route, activate: false });
+  return (
+    <ContextEditorMountHost
+      projectId={projectId}
+      trackedTabs={[tab]}
+      activeTabId={tab.documentId}
+      active
+      readOnly
     />
-  ) : (
-    <MobileServerDocumentHost {...props} />
   );
 }
 
@@ -108,18 +129,28 @@ function MobileLocalDocumentHost({
   );
 }
 
-function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
-  const workId = editorWorkId;
-  const projectionOwner = useRef({});
-  const hostGeneration = useRef(++mobileHostGeneration);
+/**
+ * Binds the routed locator to the document the route resolved to, or rejects it once the
+ * catalog has settled without one. `activate` marks the route as the one to remember.
+ */
+function useMobileRouteBinding({
+  projectId,
+  workId,
+  route,
+  activate,
+}: {
+  projectId: string;
+  workId: string;
+  route: MobileDocumentRoute;
+  activate: boolean;
+}) {
   const contextRemoval = useContextRemovalCoordinator();
   const removalState = useContextRemovalProject(projectId);
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const hasRouteDocument = route.requested;
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
   const activeTab = route.tab;
-  const { catalogResolved, isError, isFetching } = route;
+  const { catalogResolved, addressState, isError, isFetching } = route;
 
   useLayoutEffect(() => {
     if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null) return;
@@ -131,12 +162,20 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       selection.locator.workId !== workId
     )
       return;
-    if (activeTab && !isFetching && !isError) {
+    // The live catalog says nothing about a pending draft: its tab is the identity.
+    const catalogSettled = !isFetching && !isError;
+    const draftOnly = activeTab?.kind === "tracked" && activeTab.draftOnly === true;
+    if (activeTab && (draftOnly || catalogSettled)) {
       contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: "server",
         documentId: activeTab.documentId,
       });
-    } else if (selection.status === "candidate" && catalogResolved && !isFetching && !isError) {
+    } else if (
+      selection.status === "candidate" &&
+      catalogResolved &&
+      catalogSettled &&
+      addressState === "settled"
+    ) {
       contextRemoval.rejectRouteCandidate(projectId, selection.revision);
     }
   }, [
@@ -150,11 +189,13 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     projectId,
     removalState.selection,
     catalogResolved,
+    addressState,
     workId,
   ]);
 
   useLayoutEffect(() => {
     if (
+      !activate ||
       !activeTab ||
       removalState.selection.status !== "bound" ||
       activeTab.documentId !== removalState.selection.identity.documentId
@@ -168,7 +209,18 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       identity: removalState.selection.identity,
       owner: { kind: "route-only" },
     });
-  }, [activeTab, contextRemoval, projectId, removalState]);
+  }, [activate, activeTab, contextRemoval, projectId, removalState]);
+}
+
+function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
+  const workId = editorWorkId;
+  const projectionOwner = useRef({});
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const activeContextScheme = route.scheme;
+  const activeContextPath = route.path;
+  const activeTab = route.tab;
+  const { catalogResolved, addressState, isError, isFetching } = route;
+  useMobileRouteBinding({ projectId, workId, route, activate: true });
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
   const selectedReviewDraftId =
@@ -186,8 +238,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     documentId: activeTab?.editable ? activeTab.documentId : null,
     owner: "mobile-project-document-host",
   });
-  useLiveBindingAcknowledgementHost(projectId, activeEditorDocumentId, live);
-  usePostApplyHostWake(projectId, activeEditorDocumentId, hostGeneration.current);
   const liveState = live.state;
   const bindableLiveSession = useRefusedEditsReopen(
     liveState.kind === "opened" ? liveState.session : null,
@@ -228,7 +278,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
 
   if (!activeTab) {
-    if (isFetching && !catalogResolved) {
+    if (addressState === "pending" || (isFetching && !catalogResolved)) {
       return (
         <DocumentStatus tone="muted">
           <Loader2 className="size-4 animate-spin" aria-hidden />

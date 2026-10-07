@@ -48,6 +48,51 @@ function createFactory(created: DocumentSession[] = []): LocalDocumentSessionFac
   };
 }
 
+function exactDatabaseName(record: ResourceRecord): string {
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  return record.resource.content.databaseName;
+}
+
+async function registrySession(record: ResourceRecord) {
+  const session = createFactory().createDetached({
+    accountId,
+    projectId: "project",
+    documentId: record.resource.identity.documentId,
+    persistenceKey: exactDatabaseName(record),
+  });
+  await session.whenLocalPersistenceSynced();
+  return session;
+}
+
+function registryOwnership(
+  record: ResourceRecord,
+  release: () => void,
+  generation = "7",
+  projectId = "project",
+): TransferredDocumentSessionOwnership {
+  return {
+    lease: { accountId, projectId, documentId: record.resource.identity.documentId, generation },
+    persistenceGeneration: generation,
+    exactDatabaseName: exactDatabaseName(record),
+    release,
+  };
+}
+
+function transferRequest(
+  record: ResourceRecord,
+  key: ResourceKey,
+  projectId = "project",
+): ResourceContentTransfer {
+  return {
+    projectId,
+    key,
+    transitionId: "transition",
+    documentId: record.resource.identity.documentId,
+    identityRevision: record.resource.identity.revision,
+    databaseName: exactDatabaseName(record),
+  };
+}
+
 function openMetadata() {
   const metadata = new IndexedDbResourceMetadata(accountId, vi.fn());
   stores.push(metadata);
@@ -242,27 +287,15 @@ it("keeps a server-acquired session through navigation until the editor binds it
   const record = resource("server-acquired");
   await initialize(record);
   const key = await install(metadata, record);
-  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
-  const session = createFactory().createDetached({
-    accountId,
-    projectId: "project",
-    documentId: record.resource.identity.documentId,
-    persistenceKey: record.resource.content.databaseName,
-  });
-  await session.whenLocalPersistenceSynced();
+  const session = await registrySession(record);
   const { access } = openAccess(metadata);
   const release = vi.fn();
-  await access.adoptRegistrySession("project", key, session, {
-    lease: {
-      accountId,
-      projectId: "project",
-      documentId: record.resource.identity.documentId,
-      generation: "7",
-    },
-    persistenceGeneration: "7",
-    exactDatabaseName: record.resource.content.databaseName,
-    release,
-  });
+  await access.adoptRegistrySession(
+    "project",
+    key,
+    session,
+    registryOwnership(record, release, "7", "project"),
+  );
 
   const abort = new AbortController();
   const readAccessibleResource = metadata.readAccessibleResource.bind(metadata);
@@ -295,6 +328,32 @@ it("keeps a server-acquired session through navigation until the editor binds it
   await session.destroy();
 });
 
+it("replaces stale same-project registry ownership when availability advances", async () => {
+  const metadata = openMetadata();
+  const record = resource("refreshed-server-ownership");
+  await initialize(record);
+  const key = await install(metadata, record);
+  const session = await registrySession(record);
+  const { access } = openAccess(metadata);
+  const releaseOld = vi.fn();
+  const releaseCurrent = vi.fn();
+  const ownership = (generation: string, release: () => void) =>
+    registryOwnership(record, release, generation);
+
+  await access.adoptRegistrySession("project", key, session, ownership("7", releaseOld));
+  await access.adoptRegistrySession("project", key, session, ownership("8", releaseCurrent));
+
+  expect(releaseOld).toHaveBeenCalledOnce();
+  expect(releaseCurrent).not.toHaveBeenCalled();
+  const editor = await access.open("project", key, "editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (editor.kind !== "opened") throw new Error("Expected acquired editor content");
+  editor.handle.release();
+  expect(releaseCurrent).toHaveBeenCalledOnce();
+  await session.destroy();
+});
+
 it("lets server acquisition replace a local construction that has not opened", async () => {
   const metadata = openMetadata();
   const record = resource("acquisition-race");
@@ -310,23 +369,14 @@ it("lets server acquisition replace a local construction that has not opened", a
   sessionFactory.whenAuthorityReady = () => authority;
   const { access } = openAccess(metadata, sessionFactory);
   const opening = access.open("project", key, "navigation");
-  const serverSession = new DocumentSession({
-    roomKey: record.resource.identity.documentId,
-    persistence: { kind: "indexeddb", key: record.resource.content.databaseName },
-  });
-  await serverSession.whenLocalPersistenceSynced();
+  const serverSession = await registrySession(record);
   const release = vi.fn();
-  const adoption = access.adoptRegistrySession("project", key, serverSession, {
-    lease: {
-      accountId,
-      projectId: "project",
-      documentId: record.resource.identity.documentId,
-      generation: "7",
-    },
-    persistenceGeneration: "7",
-    exactDatabaseName: record.resource.content.databaseName,
-    release,
-  });
+  const adoption = access.adoptRegistrySession(
+    "project",
+    key,
+    serverSession,
+    registryOwnership(record, release, "7", "project"),
+  );
 
   releaseAuthority();
   await adoption;
@@ -357,25 +407,16 @@ it("does not replace local content while its identity remint is prepared", async
     record.resource.identity.revision + 1,
   );
   if (!pending) throw new Error("Expected a prepared remint");
-  const serverSession = new DocumentSession({
-    roomKey: record.resource.identity.documentId,
-    persistence: { kind: "indexeddb", key: record.resource.content.databaseName },
-  });
-  await serverSession.whenLocalPersistenceSynced();
+  const serverSession = await registrySession(record);
   const release = vi.fn();
 
   await expect(
-    access.adoptRegistrySession("project", key, serverSession, {
-      lease: {
-        accountId,
-        projectId: "project",
-        documentId: record.resource.identity.documentId,
-        generation: "7",
-      },
-      persistenceGeneration: "7",
-      exactDatabaseName: record.resource.content.databaseName,
-      release,
-    }),
+    access.adoptRegistrySession(
+      "project",
+      key,
+      serverSession,
+      registryOwnership(record, release, "7", "project"),
+    ),
   ).rejects.toThrow("Resource already owns another session");
   expect(release).toHaveBeenCalledOnce();
   expect(access.ownershipFor(key, "project")).toBe("local");
@@ -406,15 +447,7 @@ it("keeps a failed transfer reserved until the next mounted editor retries", asy
     abort: vi.fn(),
   };
 
-  const request: ResourceContentTransfer = {
-    projectId: "project",
-    key,
-    transitionId: "transition",
-    documentId: record.resource.identity.documentId,
-    identityRevision: record.resource.identity.revision,
-    databaseName:
-      record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-  };
+  const request: ResourceContentTransfer = transferRequest(record, key, "project");
   await expect(access.reserveTransfer(request, reservations)).resolves.toEqual({
     kind: "reserved",
     handoff,
@@ -424,17 +457,12 @@ it("keeps a failed transfer reserved until the next mounted editor retries", asy
   expect(session.getSnapshot().status).toBe("detached");
 
   const release = vi.fn();
-  const ownership: TransferredDocumentSessionOwnership = {
-    lease: {
-      accountId,
-      projectId: "project",
-      documentId: record.resource.identity.documentId,
-      generation: "7",
-    },
-    persistenceGeneration: "7",
-    exactDatabaseName: "content:transfer",
+  const ownership: TransferredDocumentSessionOwnership = registryOwnership(
+    record,
     release,
-  };
+    "7",
+    "project",
+  );
   transfer?.prepareCommit();
   await expect(async () => {
     await transfer?.completeCommit(ownership);
@@ -478,19 +506,7 @@ it("retires an uncommitted transfer only after its reservation is aborted", asyn
     reserve: vi.fn(() => handoff),
     abort: vi.fn(),
   };
-  const identity = record.resource.identity;
-  await access.reserveTransfer(
-    {
-      projectId: "project",
-      key,
-      transitionId: "transition",
-      documentId: identity.documentId,
-      identityRevision: identity.revision,
-      databaseName:
-        record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-    },
-    reservations,
-  );
+  await access.reserveTransfer(transferRequest(record, key, "project"), reservations);
 
   opened.handle.release();
   expect(opened.handle.session.getSnapshot().status).toBe("detached");
@@ -517,18 +533,7 @@ it("destroys an unsettled transfer once during account close", async () => {
     reserve: vi.fn(() => handoff),
     abort: vi.fn(),
   };
-  await access.reserveTransfer(
-    {
-      projectId: "project",
-      key,
-      transitionId: "transition",
-      documentId: record.resource.identity.documentId,
-      identityRevision: record.resource.identity.revision,
-      databaseName:
-        record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-    },
-    reservations,
-  );
+  await access.reserveTransfer(transferRequest(record, key, "project"), reservations);
 
   await access.finishClose();
 
@@ -548,74 +553,6 @@ it("does not expose an account resource outside the requesting project's project
     kind: "unavailable",
     reason: "missing",
   });
-});
-
-it("shares one User-catalog session across the projects that expose it", async () => {
-  const metadata = openMetadata();
-  const record = resource("user-shared");
-  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: null };
-  record.intents = [];
-  await initialize(record);
-  const key = await install(metadata, record);
-  const scope = { kind: "user" as const, userId: accountId };
-  const entries = [
-    {
-      kind: "source" as const,
-      entryId: "user-source",
-      scope,
-      scheme: "user" as const,
-      name: "User",
-      uri: "user://",
-    },
-    {
-      kind: "file" as const,
-      entryId: record.resource.identity.documentId,
-      scope,
-      sourceId: "user-source",
-      parentId: "user-source",
-      name: "shared.md",
-      aliases: [],
-      path: ["shared.md"],
-      uri: "user://shared.md" as const,
-      provisionalName: false,
-      editable: true,
-      filetype: "markdown" as const,
-      schemaType: "document" as const,
-    },
-  ] as const;
-  for (const [index, projectId] of ["project-a", "project-b"].entries()) {
-    expect(
-      await metadata.commitCatalog({
-        expectedRevision: null,
-        next: {
-          projectId,
-          scope,
-          revision: 1,
-          generation: "generation",
-          appliedRevision: "1",
-          observedHeadRevision: "1",
-          cursor: `cursor-${index}`,
-          entries,
-          invalidatedEntryIds: [],
-        },
-        resources: [],
-        folders: [],
-      }),
-    ).toBe("committed");
-  }
-  const created: DocumentSession[] = [];
-  const { access } = openAccess(metadata, createFactory(created));
-
-  const [first, second] = await Promise.all([
-    access.open("project-a", key, "tab-a"),
-    access.open("project-b", key, "tab-b"),
-  ]);
-
-  if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
-  expect(first.handle.session).toBe(second.handle.session);
-  expect(created).toHaveLength(1);
-  first.handle.release();
-  second.handle.release();
 });
 
 it("releases every project registry ownership after the final shared-content lease", async () => {
@@ -671,60 +608,41 @@ it("releases every project registry ownership after the final shared-content lea
       }),
     ).toBe("committed");
   }
-  const { access } = openAccess(metadata);
-  const first = await access.open("project-a", key, "tab-a", undefined, {
-    adoptionEligible: true,
-  });
-  const second = await access.open("project-b", key, "tab-b", undefined, {
-    adoptionEligible: true,
-  });
+  const created: DocumentSession[] = [];
+  const { access } = openAccess(metadata, createFactory(created));
+  const [first, second] = await Promise.all([
+    access.open("project-a", key, "tab-a", undefined, { adoptionEligible: true }),
+    access.open("project-b", key, "tab-b", undefined, { adoptionEligible: true }),
+  ]);
   if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
+  expect(first.handle.session).toBe(second.handle.session);
+  expect(created).toHaveLength(1);
   const session = first.handle.session;
   let transfer: LocalDocumentSessionTransfer | undefined;
   const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
-  await access.reserveTransfer(
-    {
-      projectId: "project-a",
-      key,
-      transitionId: "transition",
-      documentId: record.resource.identity.documentId,
-      identityRevision: record.resource.identity.revision,
-      databaseName: session.persistenceName ?? "",
+  await access.reserveTransfer(transferRequest(record, key, "project-a"), {
+    reserve(candidate) {
+      transfer = candidate;
+      return handoff;
     },
-    {
-      reserve(candidate) {
-        transfer = candidate;
-        return handoff;
-      },
-      abort() {},
-    },
-  );
+    abort() {},
+  });
   const releaseA = vi.fn();
   const releaseB = vi.fn();
-  const ownershipA: TransferredDocumentSessionOwnership = {
-    lease: {
-      accountId,
-      projectId: "project-a",
-      documentId: record.resource.identity.documentId,
-      generation: "1",
-    },
-    persistenceGeneration: "1",
-    exactDatabaseName: session.persistenceName ?? "",
-    release: releaseA,
-  };
+  const ownershipA: TransferredDocumentSessionOwnership = registryOwnership(
+    record,
+    releaseA,
+    "1",
+    "project-a",
+  );
   transfer?.prepareCommit();
   await transfer?.completeCommit(ownershipA);
-  await access.adoptRegistrySession("project-b", key, session, {
-    lease: {
-      accountId,
-      projectId: "project-b",
-      documentId: record.resource.identity.documentId,
-      generation: "2",
-    },
-    persistenceGeneration: "2",
-    exactDatabaseName: session.persistenceName ?? "",
-    release: releaseB,
-  });
+  await access.adoptRegistrySession(
+    "project-b",
+    key,
+    session,
+    registryOwnership(record, releaseB, "2", "project-b"),
+  );
 
   first.handle.release();
   expect(releaseA).not.toHaveBeenCalled();

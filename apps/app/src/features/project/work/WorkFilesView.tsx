@@ -18,7 +18,6 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { RuledList, type RuledRow } from "../RuledList";
-import type { ProjectRouteCommands } from "../routing/project-route";
 import { useWorkNoteIntake } from "./use-work-note-intake";
 import { WorkDrafts } from "./WorkDrafts";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
@@ -75,13 +74,11 @@ export function WorkFilesActions({ files }: { files: WorkFiles }) {
 export function WorkFilesView({
   projectId,
   work,
-  commands,
   search,
   files,
 }: {
   projectId: string;
   work: AddressableWork;
-  commands: ProjectRouteCommands;
   search: string;
   files: WorkFiles;
 }) {
@@ -167,12 +164,7 @@ export function WorkFilesView({
 
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
-      <WorkDrafts
-        projectId={projectId}
-        workId={work.id}
-        commands={commands}
-        matchesSearch={matchesSearch}
-      />
+      <WorkDrafts projectId={projectId} workId={work.id} matchesSearch={matchesSearch} />
       <WorkFileGroup label={t`Scratch`}>
         {scratch.isError ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />

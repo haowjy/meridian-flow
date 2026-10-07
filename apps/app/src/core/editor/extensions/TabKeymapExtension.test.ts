@@ -1,23 +1,20 @@
 // @vitest-environment jsdom
-import { Editor, type JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
-import { createStandaloneEditorExtensions } from "../config";
+import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/standalone-editor";
 
-let editor: Editor | null = null;
-let host: HTMLElement | null = null;
+let fixture: StandaloneEditor | null = null;
 
 // Tab reaches prosemirror-tables, which asks the view where the textblock ends.
 installJsdomLayout();
 
 afterEach(() => {
-  editor?.destroy();
-  editor = null;
-  host?.remove();
-  host = null;
+  fixture?.destroy();
+  fixture = null;
 });
 
 const paragraph = (text: string): JSONContent => ({
@@ -52,16 +49,9 @@ const table: JSONContent = {
 };
 
 function mount(content: JSONContent[], editable = true): Editor {
-  const element = document.createElement("div");
-  document.body.append(element);
-  host = element;
-  editor = new Editor({
-    element,
-    editable,
-    extensions: createStandaloneEditorExtensions(),
-    content: { type: "doc", content },
-  });
-  return editor;
+  fixture = createStandaloneEditor({ content: { type: "doc", content } });
+  fixture.editor.setEditable(editable);
+  return fixture.editor;
 }
 
 function caretInside(instance: Editor, type: string, index = 0): number {

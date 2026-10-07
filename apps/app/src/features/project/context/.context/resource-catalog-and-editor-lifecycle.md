@@ -103,6 +103,36 @@ and never alongside a terminal state. `SyncStatus` treats it as an outage
 (see `core/editor/.context/CONTEXT.md`); elapsed detached time alone shows
 nothing, because a session merely awaiting its transport is healthy.
 
+A tab that loses its resource handle but keeps its document (a review launch
+re-opens it without one) keeps painting its cached session while the exact
+lookup re-probes; the boundary never drops to a skeleton for that identity flip.
+
+The desktop `ContextTabSessionBoundary` opens the ordinary live binding once its
+local session has been probed (`useLiveDocumentBinding`: open, bind, explicit
+retry). It presents the live session in place of the cached one when that
+binding opens, and shows the session's own connection state. An availability
+recheck that returns terminal, deleted, or schema-mismatch releases the cached
+handle and its resource ownership lease rather than leaving the stale session
+mounted. A local cache-open failure falls through to exact server availability
+instead of terminalizing the tab from stale metadata. A failed binding offers
+Retry and also retries once each time the resource availability revision
+advances. The phone document host (`MobileDocumentHost`) uses the same binding
+but neither offers Retry nor retries on a revision change, so a failed phone
+open has no in-place recovery yet.
+
+A draft-only tab (a new document proposed by a draft) opens no live binding at
+all: it has no live manifest membership and the server refuses a room for it,
+so review hosts the draft branch room alone (`liveRoom={!branchOnly}`) and a
+failed branch room offers Retry or closing the tab, never a fallback to an empty
+live editor. The phone hosts it through the same `ContextEditorMountHost`
+(`MobileDraftOnlyDocumentHost`), never its live-acquiring server host; both
+shells find the tab through `route-document-owner.ts`, the bound identity in the
+live catalog and then the draft-only admission before any path occupant.
+Once the server confirms Apply the tab is promoted to a durable tab
+and this host opens its live room like any other document. Whether that open is
+slow, fails, or disconnects is the host's business and never changes whether
+Apply completed.
+
 ## Unfiled materialization and recovery
 
 A new document is an account resource exposed to its creating project before it

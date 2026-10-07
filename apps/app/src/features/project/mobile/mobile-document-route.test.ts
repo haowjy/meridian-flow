@@ -3,7 +3,7 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import { mobileEditableDocumentId, resolveMobileDocumentRoute } from "./mobile-document-route";
+import { resolveMobileDocumentRoute } from "./mobile-document-route";
 
 function catalogWith(file: CatalogFile): CatalogContextView {
   return {
@@ -30,7 +30,7 @@ describe("mobile document route composition", () => {
     ["scratch", "work-a"],
     ["kb", undefined],
     ["user", undefined],
-  ] as const)("passes the normalized routed %s identity to host demand", (scheme, workId) => {
+  ] as const)("passes the normalized routed %s identity to the host", (scheme, workId) => {
     const route = resolveMobileDocumentRoute({
       enabled: true,
       scheme: scheme as ProjectContextTreeScheme,
@@ -47,21 +47,85 @@ describe("mobile document route composition", () => {
       path: file.path,
       ...(workId ? { workId } : {}),
     });
-    expect(mobileEditableDocumentId(route)).toBe(file.documentId);
   });
+});
 
-  it("publishes no demand when the phone route has no document", () => {
-    const route = resolveMobileDocumentRoute({
+describe("phone draft-only review route", () => {
+  const draftTab = {
+    kind: "tracked",
+    documentId: "document-draft",
+    scheme: "manuscript",
+    path: "/new-chapter.md",
+    name: "new-chapter.md",
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+    draftOnly: true,
+    reviewWorkId: "work-a",
+    reviewDraftId: "draft-a",
+  } as const;
+  const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
+  const route = (
+    overrides: Partial<Parameters<typeof resolveMobileDocumentRoute>[0]> = {},
+  ): ReturnType<typeof resolveMobileDocumentRoute> =>
+    resolveMobileDocumentRoute({
       enabled: true,
-      scheme: "scratch",
-      path: null,
+      scheme: "manuscript",
+      path: "/new-chapter.md",
       workId: "work-a",
-      catalog: catalogWith(file),
+      workspaceTabs: [draftTab],
+      catalog: emptyCatalog,
       isError: false,
       isFetching: false,
+      ...overrides,
     });
 
-    expect(route.tab).toBeNull();
-    expect(mobileEditableDocumentId(route)).toBeNull();
+  it("resolves a pending new document, which the live catalog never lists, from its review tab", () => {
+    expect(route().tab).toMatchObject({ documentId: "document-draft", draftOnly: true });
+  });
+
+  it("follows the bound document when its path has moved", () => {
+    expect(route({ path: "/renamed.md", boundDocumentId: "document-draft" }).tab).toMatchObject({
+      documentId: "document-draft",
+    });
+    expect(route({ path: "/renamed.md" }).tab).toBeNull();
+  });
+
+  it("is never another Work's draft, and never a live tab", () => {
+    expect(route({ workId: "work-b" }).tab).toBeNull();
+    expect(route({ workspaceTabs: [{ ...draftTab, draftOnly: undefined }] }).tab).toBeNull();
+  });
+
+  it("keeps a bound draft-only document when another document now holds its old path", () => {
+    // Document A moved from /old.md to /new.md and B took /old.md before the URL repaired.
+    const occupant = { ...file, documentId: "document-b", path: "/old.md" };
+    const catalog = {
+      findPath: (path: string) => (path === occupant.path ? occupant : null),
+      findDocument: (id: string) => (id === occupant.documentId ? occupant : null),
+    } as never;
+    const moved = { ...draftTab, path: "/new.md", name: "new.md" };
+    const resolved = route({
+      path: "/old.md",
+      boundDocumentId: "document-draft",
+      workspaceTabs: [moved],
+      catalog,
+    });
+    expect(resolved.tab).toMatchObject({ documentId: "document-draft", draftOnly: true });
+    // A bound document no source resolves is pending, never the occupant.
+    expect(
+      route({ path: "/old.md", boundDocumentId: "document-draft", workspaceTabs: [], catalog }).tab,
+    ).toBeNull();
+  });
+
+  it("prefers the live document once the catalog lists it", () => {
+    const live = { ...file, documentId: "document-draft", path: "/new-chapter.md" };
+    const tab = route({
+      catalog: {
+        findPath: (path: string) => (path === live.path ? live : null),
+        findDocument: () => null,
+      } as never,
+    }).tab;
+    expect(tab).toMatchObject({ documentId: "document-draft" });
+    expect(tab).not.toHaveProperty("draftOnly", true);
   });
 });

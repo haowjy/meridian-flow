@@ -37,6 +37,8 @@ export type ProjectAddress = {
   workView?: "files";
   /** The Work list's Active tab is the default and is omitted from the address. */
   worksView?: "archived" | "deleted";
+  /** Pending draft projected by the current manuscript Editor address. */
+  draftId?: string;
   settings?: SettingsSection;
   results: boolean;
 };
@@ -46,7 +48,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "settings", "results", "view"]);
+const RECOGNIZED_QUERY = new Set(["work", "draft", "settings", "results", "view"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -160,12 +162,14 @@ export function parseProjectAddress(
   const view = query.get("view");
   const worksView =
     destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
+  const draftId = destination.kind === "document" ? query.get("draft") || undefined : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
     work,
     ...(workView ? { workView } : {}),
     ...(worksView ? { worksView } : {}),
+    ...(draftId ? { draftId } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
   };
@@ -185,12 +189,26 @@ export function parseProjectAddress(
   return { kind: "valid", address, href };
 }
 
+/**
+ * Whether the address itself says "No Work" (`?work=`) rather than leaving it to history state.
+ * A resource's Work is its identity. A review address is shared and reloaded outside its history
+ * entry, and its draft belongs to exactly one Work, so it states No Work instead of borrowing
+ * whichever Work is selected.
+ */
+function queryStatesNoWork(address: ProjectAddress): boolean {
+  return (
+    address.work.kind === "none" &&
+    (workIsIdentity(address.destination) ||
+      (address.destination.kind === "document" && address.draftId !== undefined))
+  );
+}
+
 function writeWork(query: URLSearchParams, address: ProjectAddress): void {
   const work = address.work;
   if (work.kind === "id") query.set("work", work.id);
   else if (work.kind === "malformed") query.set("work", work.value);
   // An Editor context of no Work is pinned by history state; a resource of No Work is `?work=`.
-  else if (work.kind === "none" && workIsIdentity(address.destination)) query.set("work", "");
+  else if (work.kind === "none" && queryStatesNoWork(address)) query.set("work", "");
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
@@ -225,6 +243,7 @@ export function projectAddressHref(address: ProjectAddress): string {
   const query = new URLSearchParams();
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   if (context) writeWork(query, address);
+  if (d.kind === "document" && address.draftId) query.set("draft", address.draftId);
   if ((context || d.kind === "chat") && address.results) query.set("results", "");
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
@@ -243,7 +262,8 @@ export function projectAddressState(
   // Non-Editor destinations do not read an Editor Work selection back from history.
   const noWork =
     (destination === "editor" || destination === "document" || destination === "browse") &&
-    address.work.kind === "none";
+    address.work.kind === "none" &&
+    !queryStatesNoWork(address);
   return {
     ...state,
     meridianProjectEmptySelection: noWork
