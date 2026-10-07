@@ -57,6 +57,7 @@ describe("per-change Apply (postgres)", () => {
         [1, " It was a very tense moment for everyone present.", ""],
         [2, "fell silent.", "fell silent. Lin Feng felt the qi coil."],
       ] as const) {
+        const beforeVector = Y.encodeStateVector(staged.clone);
         const block = fixture.model.getBlocks(toDocHandle(staged.clone))[blockIndex];
         const from = fixture.model.getText(block).indexOf(find);
         fixture.model.applyTextEdit(
@@ -65,10 +66,11 @@ describe("per-change Apply (postgres)", () => {
           { from, to: from + find.length },
           replacement,
         );
-        await fixture.branchCoordinator.commitSyncFromDoc({
+        // Retained/other-producer cumulative rows must still close together.
+        await fixture.branchCoordinator.appendJournaledUpdate({
           branchId: branch.branchId,
-          sourceDoc: staged.clone,
-          expectedGeneration: staged.generation,
+          updateData: Y.encodeStateAsUpdate(staged.clone, beforeVector),
+          generation: staged.generation,
           source: "agent",
           actorUserId: null,
           threadId: THREAD_ID,

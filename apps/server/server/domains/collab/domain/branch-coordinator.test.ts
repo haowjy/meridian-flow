@@ -344,7 +344,7 @@ describe("BranchCoordinator", () => {
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
   });
 
-  it("journals raw multi-range delete-set updates so replay reaches byte-identical state", async () => {
+  it("journals only new multi-range deletions so replay reaches byte-identical state", async () => {
     const store = new MemoryBranchStore();
     const base = docWithText("abcdef");
     const workDoc = materialize(branchSnapshot({ branchId: "base", doc: base }));
@@ -370,7 +370,10 @@ describe("BranchCoordinator", () => {
     expect(store.journal).toHaveLength(1);
     const decoded = Y.decodeUpdate(store.journal[0]);
     expect(decoded.structs).toHaveLength(0);
-    expect([...decoded.ds.clients.values()].flat().length).toBeGreaterThanOrEqual(2);
+    expect([...decoded.ds.clients.values()].flat()).toEqual([
+      { clock: 1, len: 1 },
+      { clock: 4, len: 1 },
+    ]);
 
     const replayed = materialize(beforeWork);
     Y.applyUpdate(replayed, store.journal[0]);

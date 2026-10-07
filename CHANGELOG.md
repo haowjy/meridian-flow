@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Publishing a chat's edits to its Work draft preserves their own deletion ranges instead of adding earlier edits' deletions back.
 - Independent AI replacements can be reviewed and applied separately instead of carrying earlier changes' deletions with them.
 
 - Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.
