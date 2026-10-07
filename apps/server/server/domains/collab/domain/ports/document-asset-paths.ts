@@ -12,6 +12,10 @@ import { type AssetPathResolver, unresolvedAssetPathResolver } from "@meridian/m
  * operation the resolver knows no image: refs stay `asset:` refs and paths
  * stay literal, which is consistent but never what a writer or model sees, so
  * the production adapter reports a picture serialized there.
+ *
+ * The paths are a snapshot taken when the scope opens, before the operation
+ * takes its document lock or transaction. A move that lands in between, or one
+ * the operation itself makes, shows only in the next scope.
  */
 export interface DocumentAssetPaths {
   /** Handed to the codec once; answers from the innermost `within`. */
