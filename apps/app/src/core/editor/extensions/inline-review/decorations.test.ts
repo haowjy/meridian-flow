@@ -377,6 +377,61 @@ describe("removals", () => {
     expect(del?.classList.contains("meridian-review-removal-text-writer")).toBe(true);
   });
 
+  it("leaves the gap after an inline removal to CSS, never a text node", () => {
+    const { editor } = createReviewEditor(["Elder Mo raised one withered hand."]);
+    const withered = posOf(editor, "one withered");
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent")],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["a1"],
+            { from: withered, to: withered + 12 },
+            { deletedText: "his" },
+          ),
+        ],
+      ),
+    );
+    const [removal] = removals(editor);
+    expect([...(removal?.childNodes ?? [])].map((node) => node.nodeType)).toEqual([
+      Node.ELEMENT_NODE,
+    ]);
+    expect(removal?.textContent).toBe("his");
+    // Followed by a word: it keeps its small margin.
+    expect(removal?.classList.contains("meridian-review-removal-tight")).toBe(false);
+  });
+
+  it("keeps no gap before punctuation or at a line end", () => {
+    const { editor } = createReviewEditor([
+      "Su Yin said nothing, but she waited.",
+      "Then she left",
+    ]);
+    const comma = posOf(editor, ", but");
+    const end = posOf(editor, "left") + 4;
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent"), operation("a2", "agent")],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["a1"],
+            { from: comma, to: comma + 5 },
+            { deletedText: ". It was tense" },
+          ),
+          textHunk(editor, "h2", ["a2"], { from: end, to: end }, { deletedText: " quietly" }),
+        ],
+      ),
+    );
+    expect(
+      removals(editor).map((el) => el.classList.contains("meridian-review-removal-tight")),
+    ).toEqual([true, true]);
+  });
+
   it("keeps short removals open and folds past the character threshold", () => {
     const { editor } = createReviewEditor(["Before.", "After."]);
     const after = posOf(editor, "After") - 1;

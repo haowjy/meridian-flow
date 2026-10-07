@@ -17,6 +17,8 @@ export const REMOVAL_CLASS = "meridian-review-removal";
 export const REMOVAL_BLOCK_CLASS = "meridian-review-removal-block";
 export const REMOVAL_WRITER_CLASS = "meridian-review-removal-writer";
 export const REMOVAL_TOGGLE_CLASS = "meridian-review-removal-toggle";
+/** The removal sits before punctuation or a line end, so it keeps no air after it. */
+export const REMOVAL_TIGHT_CLASS = "meridian-review-removal-tight";
 export const REMOVAL_TEXT_CLASS = "meridian-review-removal-text";
 export const REMOVAL_TEXT_WRITER_CLASS = "meridian-review-removal-text-writer";
 
@@ -33,6 +35,8 @@ export interface RemovalPlan {
   position: number;
   /** Sits between blocks and renders as paragraphs, rather than inside a text block. */
   block: boolean;
+  /** Followed by punctuation or the end of the line: no gap after the struck text. */
+  tight: boolean;
   /** The writer's only when every segment is; colours the fold, since the text carries its own. */
   kind: InlineReviewOperationKind;
   /** Each paragraph is its removed stretches in order, each in its author's colour. */
@@ -46,6 +50,7 @@ export interface RemovalInput {
   position: number;
   block: boolean;
   segments: RemovalSegment[];
+  tight: boolean;
   hunkId: string;
   operationIds: string[];
 }
@@ -81,6 +86,7 @@ export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
       identity: removalIdentity(input.operationIds, [segments]),
       position: input.position,
       block: input.block,
+      tight: input.tight,
       kind: planKind([segments]),
       paragraphs: [segments],
       hunkIds: [input.hunkId],
@@ -160,6 +166,7 @@ export function createRemovalElement(
   root.className = [
     REMOVAL_CLASS,
     plan.block ? REMOVAL_BLOCK_CLASS : "",
+    plan.tight && !plan.block ? REMOVAL_TIGHT_CLASS : "",
     plan.kind === "writer" ? REMOVAL_WRITER_CLASS : "",
     options.focused ? "meridian-review-emphasized" : "",
     options.pulsed ? "meridian-review-arrived" : "",

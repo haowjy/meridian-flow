@@ -109,6 +109,7 @@ export function buildDecorations(
         position: startPos,
         block: isBlockPosition(resolver.doc, startPos),
         segments: removed,
+        tight: endsBeforePunctuation(resolver.doc, startPos),
         hunkId: hunk.hunkId,
         operationIds: hunk.operationIds,
       });
@@ -208,7 +209,7 @@ export function buildDecorations(
             operationAttr: OPERATION_ATTR,
           }),
         {
-          key: `removal:${plan.identity}:${plan.kind}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}`,
+          key: `removal:${plan.identity}:${plan.kind}${plan.tight ? ":tight" : ""}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.
@@ -241,6 +242,15 @@ function removedSegments(
     text: text.slice(span.from, span.to),
     kind: span.deletedBy,
   }));
+}
+
+/** Closing punctuation never takes a space before it, so a removal ahead of it keeps none. */
+const CLOSING_PUNCTUATION = /^[,.;:!?)\]}…’”]/;
+
+/** The removal sits at the end of its line, or right before punctuation. */
+function endsBeforePunctuation(doc: PMNode, position: number): boolean {
+  const next = doc.textBetween(position, Math.min(position + 1, doc.content.size), "", "");
+  return next === "" || CLOSING_PUNCTUATION.test(next);
 }
 
 /** A position between blocks (or inside a container), where an inline widget would be invalid. */

@@ -594,10 +594,23 @@
 }
 
 /* A struck removal beside the text that replaced it must read as two things,
-   not "his" fused into "one": a word-space of air outside the tint. Inline
-   removals only; a block removal is its own paragraph. */
+   not "his" fused into "one". The air is a margin on the widget, never a space
+   character, so it is not text and cannot be selected or saved. Before
+   punctuation or a line end there is none: a gap before "," reads as a typo.
+   Inline removals only; a block removal is its own paragraph. */
 .meridian-editor .ProseMirror span.meridian-review-removal:not(.meridian-review-removal-block) {
-  margin-inline-end: 0.3em;
+  margin-inline-end: 0.12em;
+}
+
+.meridian-editor .ProseMirror span.meridian-review-removal-tight {
+  margin-inline-end: 0;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal-tight
+  > .meridian-review-removal-text:last-child {
+  padding-inline-end: 0;
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-writer {
