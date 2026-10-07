@@ -59,6 +59,9 @@ export type ReviewOperationClassification = "rename" | "addition" | "removal" | 
 export interface ReviewOperation {
   operationId: string;
   actorTurnId?: string;
+  /** Originating chat and its title at preview time. Agent operations only. */
+  actorThreadId?: string;
+  actorThreadTitle?: string;
   /**
    * Server-vended closure-class id. Every operation in one journal-backed
    * dependency-closed review class carries the same id; the review surface renders

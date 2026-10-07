@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft changes link to the chat that wrote them, using its current title.
+
 - Draft review identifies the author of each removed text span, including mixed-author deletions in one change.
 
 - Draft review distinguishes CRDT interleaves from ordinary writer edits inside AI prose.

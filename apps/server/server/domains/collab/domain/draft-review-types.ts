@@ -67,6 +67,9 @@ export interface DraftReviewOperationInternal {
   closureUpdateIds: PhysicalSourceUpdateIds;
   sourceUpdateIds: SourceUpdateIds;
   actorTurnId?: string;
+  /** Originating chat and its title at preview time. Agent operations only. */
+  actorThreadId?: string;
+  actorThreadTitle?: string;
   actorUserId?: string;
   kind: "agent" | "writer";
   contribution: DraftReviewOperationContribution;

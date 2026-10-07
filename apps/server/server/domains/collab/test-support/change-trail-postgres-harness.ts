@@ -1,3 +1,4 @@
+import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDraftReviewLive } from "../adapters/drizzle-draft-review-live.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
@@ -605,6 +606,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     model: runtime.model,
     agentEdit,
     resolveDocumentUri,
+    resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
     readLiveReviewCut: createDrizzleDraftReviewLive(db, persistence.journal),
   });
   const collab = {
