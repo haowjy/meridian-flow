@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Overlapping bold and italic, and strikethrough that starts or ends on a space, export as Markdown that reads back with the same formatting instead of stray `*` or `~~`.
 - A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
