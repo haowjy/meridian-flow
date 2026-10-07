@@ -10,8 +10,10 @@
  */
 import type { OverlayBox } from "../../chrome/manuscript-overlay";
 
-/** Air between the text column and the bar, and between the bar and the pane edge. */
-export const BAR_GAP_PX = 12;
+/** Air between the text column and the bar. */
+export const BAR_GAP_PX = 10;
+/** Air between the bar and the pane's edge. */
+export const BAR_EDGE_PX = 8;
 /** The bar wraps to two short rows; below this it would have to break its words. */
 export const BAR_MIN_WIDTH_PX = 132;
 /** Wider margins give the bar no more than its one-row width. */
@@ -30,7 +32,7 @@ export function placeReviewBar(input: {
   paneWidth: number;
 }): ReviewBarPlacement {
   const left = input.columnRight + BAR_GAP_PX;
-  const room = input.paneWidth - BAR_GAP_PX - left;
+  const room = input.paneWidth - BAR_EDGE_PX - left;
   if (room < BAR_MIN_WIDTH_PX) return { kind: "below" };
   return {
     kind: "margin",
