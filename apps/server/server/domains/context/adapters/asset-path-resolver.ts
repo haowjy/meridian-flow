@@ -109,8 +109,17 @@ function resolverFor(locations: readonly ImageLocation[]): AssetPathResolver {
   };
 }
 
-/** The paths one `within` loaded, and the doors already known to share its project. */
-type Scope = { projectId: string | null; resolver: AssetPathResolver; members: Set<string> };
+/**
+ * The paths one `within` loaded, and the doors already known to share its
+ * project. `open` until its operation settles: timers and other work
+ * scheduled inside inherit the scope, and must load fresh once it is over.
+ */
+type Scope = {
+  projectId: string | null;
+  resolver: AssetPathResolver;
+  members: Set<string>;
+  open: boolean;
+};
 
 const memberKey = (project: AssetPathProject) =>
   "projectId" in project
@@ -136,7 +145,8 @@ export function createDrizzleDocumentAssetPaths(
       assetForPath: (path) => scope.getStore()?.resolver.assetForPath(path) ?? null,
     },
     async within(project, operation) {
-      const outer = scope.getStore();
+      const enclosing = scope.getStore();
+      const outer = enclosing?.open ? enclosing : undefined;
       const key = memberKey(project);
       // A nested call for the same project reads the enclosing operation's paths.
       if (outer?.members.has(key)) return operation();
@@ -146,8 +156,17 @@ export function createDrizzleDocumentAssetPaths(
         return operation();
       }
       const locations = projectId ? await loadImageLocations(db, projectId) : [];
-      const members = new Set([key, ...(projectId ? [`project:${projectId}`] : [])]);
-      return scope.run({ projectId, resolver: resolverFor(locations), members }, operation);
+      const opened: Scope = {
+        projectId,
+        resolver: resolverFor(locations),
+        members: new Set([key, ...(projectId ? [`project:${projectId}`] : [])]),
+        open: true,
+      };
+      try {
+        return await scope.run(opened, operation);
+      } finally {
+        opened.open = false;
+      }
     },
   };
 }

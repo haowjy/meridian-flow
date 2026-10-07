@@ -22,7 +22,9 @@ export interface DocumentAssetPaths {
   readonly resolver: AssetPathResolver;
   /**
    * Run `operation` with the image paths of one project loaded fresh. Nested
-   * inside a scope for the same project, it reuses that scope's paths.
+   * inside a scope for the same project whose operation is still running, it
+   * reuses that scope's paths; work that only inherited a settled scope, such
+   * as a timer, loads fresh.
    */
   within<T>(project: AssetPathProject, operation: () => Promise<T>): Promise<T>;
 }
