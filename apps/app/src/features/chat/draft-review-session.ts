@@ -1,6 +1,6 @@
 /** One command/state policy for Work-draft selection and disposition. */
 
-import type { DraftApplyChangesResponse } from "@meridian/contracts/drafts";
+import type { DraftApplyChangesResponse, DraftDiscardResponse } from "@meridian/contracts/drafts";
 import {
   beginChangeCommand,
   type ChangeFailureCode,
@@ -100,7 +100,17 @@ export type DraftReviewCommandPorts = {
   scope: { projectId: string; workId: string };
   /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
   apply: (selection: DraftReviewSelection) => Promise<"applied" | "unknown">;
-  discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
+  /** Whole-draft Discard: unfenced, no operation ids. */
+  discard: (selection: DraftReviewSelection) => Promise<void>;
+  /**
+   * Discard the complete classes `request` names, fenced by the revision tokens
+   * the writer saw. Resolves with the server's answer (`stale` is data, not an
+   * error) and rejects when the request got none or was refused.
+   */
+  discardChanges: (
+    selection: DraftReviewSelection,
+    request: ChangeApplyRequest,
+  ) => Promise<DraftDiscardResponse>;
   /**
    * Apply the complete classes `request` names. Resolves with the server's
    * answer, or "unknown" when the request got none (it may have landed), and
@@ -190,22 +200,44 @@ export class DraftReviewSession {
     );
   }
 
-  /** Discard one change: its operations go in a selective Discard, the draft's text returns to live's. */
-  discardChange(selection: DraftReviewSelection, change: ChangeRef): Promise<DraftCommandOutcome> {
+  /**
+   * Discard one change: its operations go in a selective Discard, the draft's
+   * text returns to live's. Fenced by the same tokens as Apply, and answered the
+   * same way: `stale` brings the change back; it never reads as a discarded or
+   * closed draft.
+   */
+  discardChange(
+    selection: DraftReviewSelection,
+    change: ChangeRef,
+    tokens: Pick<ChangeApplyRequest, "liveRevisionToken" | "draftRevisionToken">,
+  ): Promise<DraftCommandOutcome> {
     return this.withReservation(
       { kind: "discard-change", ...selection, classId: change.classId },
       async (_reservation, ports) => {
         const draft = { ...ports.scope, ...selection };
         if (!beginChangeCommand(draft, change, "discard")) return { kind: "blocked" };
         try {
+          let response: DraftDiscardResponse;
           try {
-            await ports.discard(selection, { operationIds: [...change.operationIds] });
+            response = await ports.discardChanges(selection, {
+              operationIds: [...change.operationIds],
+              ...tokens,
+            });
           } catch {
             failChangeCommand(draft, change, "discard", "offline");
             return { kind: "change-refused", mode: "discard", code: "offline" };
           }
-          ports.changeConfirmed(selection, change, "discard");
-          return { kind: "change-settled", mode: "discard" };
+          if (response.status === "discarded") {
+            ports.changeConfirmed(selection, change, "discard");
+            return { kind: "change-settled", mode: "discard" };
+          }
+          if (response.status === "gone") {
+            ports.changeConfirmed(selection, change, "discard");
+            return { kind: "change-refused", mode: "discard", code: "gone" };
+          }
+          const code = response.status === "draft_only" ? "draft-only" : "stale";
+          failChangeCommand(draft, change, "discard", code);
+          return { kind: "change-refused", mode: "discard", code };
         } finally {
           releaseChangeCommand(draft);
         }

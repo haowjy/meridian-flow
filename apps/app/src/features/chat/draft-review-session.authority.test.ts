@@ -45,6 +45,7 @@ function twoSessions() {
         }),
     ),
     discard: vi.fn(async () => {}),
+    discardChanges: vi.fn(),
     applyChanges: vi.fn(
       () => new Promise<DraftApplyChangesResponse>((resolve) => (answerChange = resolve)),
     ),
@@ -76,6 +77,7 @@ describe("one command per draft, whichever session sends it", () => {
     expect(await chat.applyReviewedDraft(selection)).toEqual({ kind: "blocked" });
     expect(await chat.disposeDrafts("discard", [selection])).toEqual([{ kind: "blocked" }]);
     expect(ports.discard).not.toHaveBeenCalled();
+    expect(ports.discardChanges).not.toHaveBeenCalled();
     expect(ports.apply).not.toHaveBeenCalled();
     expect(ports.draftDiscardStarted).not.toHaveBeenCalled();
 
@@ -89,7 +91,7 @@ describe("one command per draft, whichever session sends it", () => {
     const pending = chat.applyReviewedDraft(selection);
 
     expect(await editor.applyChange(selection, change, tokens)).toEqual({ kind: "blocked" });
-    expect(await editor.discardChange(selection, otherChange)).toEqual({ kind: "blocked" });
+    expect(await editor.discardChange(selection, otherChange, tokens)).toEqual({ kind: "blocked" });
     expect(ports.applyChanges).not.toHaveBeenCalled();
     expect(ports.discard).not.toHaveBeenCalled();
 

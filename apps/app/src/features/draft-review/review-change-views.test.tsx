@@ -358,12 +358,14 @@ describe("ReviewChangeBar", () => {
       expect(button("Apply")?.disabled).toBe(true);
     });
     const messages = [
-      ["stale", "This change was updated. Check it and apply again."],
-      ["offline", "Couldn't apply. Check your connection and try again."],
+      ["apply", "stale", "This change was updated. Check it and apply again."],
+      ["apply", "offline", "Couldn't apply. Check your connection and try again."],
+      ["discard", "stale", "This change was updated. Check it and discard again."],
+      ["discard", "offline", "Couldn't discard. Check your connection and try again."],
     ] as const;
-    for (const [code, text] of messages) {
+    for (const [mode, code, text] of messages) {
       await render(
-        <ReviewChangeBar {...barProps({ failure: { phase: "failed", mode: "apply", code } })} />,
+        <ReviewChangeBar {...barProps({ failure: { phase: "failed", mode, code } })} />,
         async () => expect(document.body.textContent).toContain(text),
       );
     }

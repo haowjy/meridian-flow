@@ -377,6 +377,10 @@ msgstr ""
 msgid "A new document is applied as a whole. Use Apply draft."
 msgstr ""
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "A new document is discarded as a whole. Use Discard draft."
+msgstr ""
+
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
@@ -3990,6 +3994,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "This change was updated. Check it and apply again."
+msgstr ""
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "This change was updated. Check it and discard again."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
