@@ -10,13 +10,14 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { TurnId } from "@meridian/contracts/runtime";
-import { type AssetPathResolver, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
+import { scopeMarkdownEngineAssetPaths } from "./asset-path-scope.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
 import { documentRevision } from "./document-revision.js";
 import {
@@ -24,6 +25,7 @@ import {
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
+import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
@@ -54,17 +56,17 @@ export function createAgentEditRuntime(input: {
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
   /**
-   * Project asset index for `asset:<documentId>` ↔ project-relative path
-   * translation. Compositions with no asset namespace (in-memory, tests) leave
-   * it out and get the resolver that refuses to serialize an asset ref.
+   * Image paths for `asset:<documentId>` ↔ path translation, loaded per
+   * operation. Compositions with no project tree (in-memory, tests) leave it
+   * out: refs then stay refs and paths stay literal.
    */
-  assetPathResolver?: AssetPathResolver;
+  assetPaths?: DocumentAssetPaths;
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 }) {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({
     schema,
-    assetPathResolver: input.assetPathResolver ?? unresolvedAssetPathResolver,
+    assetPathResolver: input.assetPaths?.resolver ?? unresolvedAssetPathResolver,
   });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
@@ -84,7 +86,7 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     }),
   );
-  const markdownDocuments = createMarkdownDocumentEngine({
+  const unscopedMarkdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     schema,
     model,
@@ -118,6 +120,9 @@ export function createAgentEditRuntime(input: {
     resolveFiletype: input.resolveDocumentFiletype,
     observeSerializationAnomaly: input.observeSerializationAnomaly,
   });
+  const markdownDocuments = input.assetPaths
+    ? scopeMarkdownEngineAssetPaths(unscopedMarkdownDocuments, input.assetPaths)
+    : unscopedMarkdownDocuments;
   return {
     codec,
     liveUtilityCore,

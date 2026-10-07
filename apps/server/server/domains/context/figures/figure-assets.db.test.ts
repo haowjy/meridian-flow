@@ -9,7 +9,6 @@ import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
 import { createObjectStorageUrl } from "../../storage/object-storage-url.js";
 import type { ObjectStorePort } from "../../storage/ports/object-store.js";
-import { createDrizzleAssetPathResolver } from "../adapters/asset-path-resolver.js";
 import { createDrizzleFigureDocumentRepository } from "../adapters/figures/drizzle-figure-document-repository.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createFigureAssetService } from "./figure-assets.js";
@@ -88,7 +87,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     it("creates a distinct binary asset without changing the host document", async () => {
-      const rememberedPaths = new Map<string, string>();
       const contextPorts = createProductionUnifiedContextPortFactory({
         db,
         documentSync: createInMemoryCollabDomain(),
@@ -107,11 +105,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           emit() {},
           emitBatch() {},
           async flush() {},
-        },
-        assetPaths: {
-          remember(assetDocumentId, path) {
-            rememberedPaths.set(assetDocumentId, path);
-          },
         },
       });
       const [before] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
@@ -137,11 +130,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(uploaded.value.assetDocumentId).not.toBe(HOST_DOCUMENT_ID);
       expect(uploaded.value.figure.src).toBe(`asset:${uploaded.value.assetDocumentId}`);
       expect(uploaded.value.assetPath).toBe(`assets/${ASSET_KEY_ID}-map.png`);
-      expect(rememberedPaths.get(uploaded.value.assetDocumentId)).toBe(uploaded.value.assetPath);
-      const persistedResolver = await createDrizzleAssetPathResolver(db);
-      expect(persistedResolver.pathForAsset(uploaded.value.assetDocumentId)).toBe(
-        uploaded.value.assetPath,
-      );
 
       const [after] = await db.select().from(documents).where(eq(documents.id, HOST_DOCUMENT_ID));
       expect(after).toEqual(before);

@@ -1,75 +1,93 @@
-/** Project context-tree adapter for markup's stable asset-path resolver port. */
+/** Context-tree adapter for the codec's image paths, loaded fresh for each document operation. */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+import { parseContextUri } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, folders } from "@meridian/database/schema";
-import type { AssetPathResolver } from "@meridian/markup";
-import { and, eq, isNull } from "drizzle-orm";
+import { type AssetPathResolver, unresolvedAssetPathResolver } from "@meridian/markup";
+import { sql } from "drizzle-orm";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { isUuid } from "../../../shared/uuid.js";
+import type { AssetPathProject, DocumentAssetPaths } from "../../collab/index.js";
 
-export type MutableAssetPathResolver = AssetPathResolver & {
-  remember(assetDocumentId: string, path: string): void;
-};
+type ImageLocation = { id: string; path: string; deleted: boolean };
 
 /**
- * `pathForAsset` is unambiguous because asset document ids are unique. The
- * reverse is not: two projects may both hold `assets/map.png`, and handing a
- * codec the wrong project's asset id would plant a reference that can never
- * resolve. An ambiguous path therefore resolves to nothing and stays literal.
+ * Every image in the project's manuscript, wherever it sits,
+ * including deleted ones at the location they were deleted from. Paths are
+ * manuscript-root-relative: the bare spelling `parseContextUri` reads as
+ * `manuscript://`, and the one figure upload has always written.
  */
-class AssetPathIndex implements MutableAssetPathResolver {
-  private readonly pathById = new Map<string, string>();
-  private readonly idsByPath = new Map<string, Set<string>>();
-
-  pathForAsset(assetDocumentId: string): string {
-    const path = this.pathById.get(assetDocumentId);
-    if (!path) throw new Error(`No current or last-known path for asset:${assetDocumentId}`);
-    return path;
-  }
-
-  assetForPath(path: string): string | null {
-    const ids = this.idsByPath.get(path);
-    if (ids?.size !== 1) return null;
-    return [...ids][0] ?? null;
-  }
-
-  remember(assetDocumentId: string, path: string): void {
-    const previous = this.pathById.get(assetDocumentId);
-    if (previous) this.idsByPath.get(previous)?.delete(assetDocumentId);
-    this.pathById.set(assetDocumentId, path);
-    const ids = this.idsByPath.get(path) ?? new Set<string>();
-    ids.add(assetDocumentId);
-    this.idsByPath.set(path, ids);
-  }
+async function loadImageLocations(
+  db: Database,
+  project: AssetPathProject,
+): Promise<ImageLocation[]> {
+  const id = "projectId" in project ? project.projectId : project.documentId;
+  if (!isUuid(id)) return [];
+  const host =
+    "projectId" in project
+      ? sql`SELECT ${id}::uuid AS project_id`
+      : sql`
+        SELECT COALESCE(cs.project_id, w.project_id) AS project_id
+        FROM documents d
+        JOIN context_sources cs ON cs.id = d.context_source_id
+        LEFT JOIN works w ON w.id = cs.work_id
+        WHERE d.id = ${id}`;
+  return currentDrizzleDb(db).execute<ImageLocation>(sql`
+    WITH RECURSIVE host AS (${host}),
+    manuscript AS (
+      SELECT cs.id FROM context_sources cs JOIN host ON cs.project_id = host.project_id
+      WHERE cs.slug = 'manuscript' AND cs.work_id IS NULL
+    ),
+    paths AS (
+      SELECT f.id, f.name AS path, f.deleted_at IS NOT NULL AS deleted
+      FROM folders f
+      WHERE f.parent_id IS NULL AND f.context_source_id IN (SELECT id FROM manuscript)
+      UNION ALL
+      SELECT f.id, p.path || '/' || f.name, p.deleted OR f.deleted_at IS NOT NULL
+      FROM folders f JOIN paths p ON f.parent_id = p.id
+    )
+    SELECT d.id::text AS id,
+      COALESCE(p.path || '/', '') || d.name ||
+        CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS path,
+      d.deleted_at IS NOT NULL OR COALESCE(p.deleted, false) AS deleted
+    FROM documents d LEFT JOIN paths p ON p.id = d.folder_id
+    WHERE d.context_source_id IN (SELECT id FROM manuscript)
+      AND d.kind = 'content' AND d.file_type = 'image'
+  `);
 }
 
-/** Loads the persisted manuscript assets used by production codec composition. */
-export async function createDrizzleAssetPathResolver(
-  db: Database,
-): Promise<MutableAssetPathResolver> {
-  const rows = await db
-    .select({
-      assetDocumentId: documents.id,
-      name: documents.name,
-      extension: documents.extension,
-    })
-    .from(documents)
-    .innerJoin(folders, eq(documents.folderId, folders.id))
-    .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-    .where(
-      and(
-        eq(contextSources.slug, "manuscript"),
-        eq(folders.name, "assets"),
-        isNull(folders.parentId),
-        isNull(documents.deletedAt),
-        isNull(folders.deletedAt),
-        isNull(contextSources.deletedAt),
-      ),
-    );
-  const resolver = new AssetPathIndex();
-  for (const row of rows) {
-    resolver.remember(
-      row.assetDocumentId,
-      `assets/${row.name}${row.extension ? `.${row.extension}` : ""}`,
-    );
-  }
-  return resolver;
+/**
+ * Serializing asks by id and gets the image's current path, or its last one
+ * once deleted, so a restore needs no text repair. Parsing asks by path, in
+ * either spelling, and only a live image claims it.
+ */
+function resolverFor(locations: readonly ImageLocation[]): AssetPathResolver {
+  const pathById = new Map(locations.map((location) => [location.id, location.path]));
+  const liveIdByPath = new Map(
+    locations
+      .filter((location) => !location.deleted)
+      .map((location) => [location.path, location.id]),
+  );
+  return {
+    pathForAsset: (assetDocumentId) => pathById.get(assetDocumentId) ?? null,
+    assetForPath(path) {
+      const parsed = parseContextUri(path);
+      if (!parsed.ok || parsed.value.scheme !== "manuscript" || !parsed.value.path) return null;
+      return liveIdByPath.get(parsed.value.path) ?? null;
+    },
+  };
+}
+
+export function createDrizzleDocumentAssetPaths(db: Database): DocumentAssetPaths {
+  const scope = new AsyncLocalStorage<AssetPathResolver>();
+  const current = () => scope.getStore() ?? unresolvedAssetPathResolver;
+  return {
+    resolver: {
+      pathForAsset: (assetDocumentId) => current().pathForAsset(assetDocumentId),
+      assetForPath: (path) => current().assetForPath(path),
+    },
+    async within(project, operation) {
+      return scope.run(resolverFor(await loadImageLocations(db, project)), operation);
+    },
+  };
 }
