@@ -589,8 +589,14 @@
   text-decoration: line-through;
   text-decoration-thickness: 1.5px;
   text-decoration-color: color-mix(in oklab, currentColor 70%, transparent);
-  /* Hair of air so the strike never fuses with the insertion beside it. */
   padding-inline-end: 0.15em;
+}
+
+/* A struck removal beside the text that replaced it must read as two things,
+   not "his" fused into "one": a word-space of air outside the tint. Inline
+   removals only; a block removal is its own paragraph. */
+.meridian-editor .ProseMirror span.meridian-review-removal:not(.meridian-review-removal-block) {
+  margin-inline-end: 0.3em;
 }
 
 .meridian-editor .ProseMirror .meridian-review-removal-writer {
