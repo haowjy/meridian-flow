@@ -6,26 +6,37 @@
  * position via `y-prosemirror`'s binding mapping, so decorations survive
  * remote sync and are never coupled to a specific insert index.
  *
- * Decorations only style content that exists in the draft projection. Removed
- * live content belongs in the Changes compare surface; injecting it as widget
- * DOM makes the manuscript read like the old and proposed versions were merged.
+ * Insertions style text that exists in the draft projection. Removed live text
+ * is a read-only widget (`removal-widget.ts`) beside the insertion that replaced
+ * it, struck through like suggestion mode. It is DOM only: the editor document
+ * never contains it.
  */
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type * as Y from "yjs";
 import {
   relativePositionRuntimeFromState,
   resolveRelativePosition,
 } from "../../relative-position-runtime";
 
-import type { InlineReviewOperationKind } from "./model";
 import {
+  changeOperationIds,
   hunkKind,
   type InlineReviewModel,
+  type InlineReviewOperationKind,
   indexOperations,
+  isUnsplittableMerge,
   type ResolvedBlockReviewHunk,
+  type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
+  removalKind,
 } from "./model";
+import {
+  createRemovalElement,
+  planRemovals,
+  type RemovalHandlers,
+  type RemovalInput,
+} from "./removal-widget";
 
 /**
  * Everything the builder needs from the editor state to resolve anchors.
@@ -45,11 +56,16 @@ const WRITER_CLASS = "meridian-review-writer";
 /** Neutral dashed seam for a CRDT merge artifact (spec §6.2) — not an author tint. */
 const MERGED_CLASS = "meridian-review-merged";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
-const DELETION_ANCHOR_CLASS = "meridian-review-deletion-anchor";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
 const HUNK_ATTR = "data-review-hunk";
 const OPERATION_ATTR = "data-review-operations";
+
+/** What the painter needs besides the model: which change is selected and which folds are open. */
+export interface ReviewPaintState {
+  activeOperationId: string | null;
+  expandedRemovals: ReadonlySet<string>;
+}
 
 /**
  * Build a fresh `DecorationSet` from the resolved model. When an anchor no
@@ -60,19 +76,35 @@ const OPERATION_ATTR = "data-review-operations";
  */
 export function buildDecorations(
   model: InlineReviewModel | null,
-  activeOperationId: string | null,
+  paint: ReviewPaintState,
   resolver: DecorationResolver,
+  handlersFor: (view: EditorView) => RemovalHandlers,
 ): DecorationSet {
   if (!model || model.hunks.length === 0) return DecorationSet.empty;
 
   const operationsById = indexOperations(model.operations);
+  const focusedIds = changeOperationIds(model.operations, paint.activeOperationId);
+  const isFocused = (ids: readonly string[]) => ids.some((id) => focusedIds.has(id));
   const decorations: Decoration[] = [];
+  const removals: RemovalInput[] = [];
 
   for (const hunk of model.hunks) {
-    const focused = activeOperationId ? hunk.operationIds.includes(activeOperationId) : false;
+    const focused = isFocused(hunk.operationIds);
 
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
+
+    const removed = removedText(hunk);
+    if (removed) {
+      removals.push({
+        position: startPos,
+        block: isBlockPosition(resolver.doc, startPos),
+        kind: removalKind(hunk, operationsById),
+        text: removed,
+        hunkId: hunk.hunkId,
+        operationIds: hunk.operationIds,
+      });
+    }
 
     if (hunk.kind === "block") {
       decorations.push(...blockHunkDecorations(hunk, focused, startPos, operationsById, resolver));
@@ -80,16 +112,13 @@ export function buildDecorations(
     }
 
     const endPos = resolveAnchor(hunk.relEnd, resolver);
-    if (endPos == null || endPos <= startPos) {
-      decorations.push(deletionAnchorDecoration(hunk, focused, startPos));
-      continue;
-    }
+    if (endPos == null || endPos <= startPos) continue;
 
     // Insertion range — one decoration per span so nested authorship (a
     // writer edit inside an AI insertion) paints in each owner's color.
     // Fall back to whole-hunk coloring when spans are missing or every span
     // anchor failed to decode.
-    if (hunk.mergeArtifact) {
+    if (isUnsplittableMerge(hunk, operationsById)) {
       // A merge artifact is neutral, not authored: paint the whole combined
       // range with the merged seam and skip the hued per-span split.
       decorations.push(
@@ -113,8 +142,7 @@ export function buildDecorations(
         for (const span of spanRanges) {
           const spanOp = operationsById.get(span.operationId);
           const kind: InlineReviewOperationKind = spanOp?.kind === "writer" ? "writer" : "agent";
-          const spanFocused =
-            focused || (activeOperationId != null && activeOperationId === span.operationId);
+          const spanFocused = focused || focusedIds.has(span.operationId);
           decorations.push(
             Decoration.inline(
               span.from,
@@ -152,15 +180,49 @@ export function buildDecorations(
     }
   }
 
+  for (const plan of planRemovals(removals)) {
+    const focused = isFocused(plan.operationIds);
+    const expanded = paint.expandedRemovals.has(plan.identity);
+    decorations.push(
+      Decoration.widget(
+        plan.position,
+        (view) =>
+          createRemovalElement(view.dom.ownerDocument, plan, {
+            focused,
+            expanded,
+            handlers: handlersFor(view),
+            hunkAttr: HUNK_ATTR,
+            operationAttr: OPERATION_ATTR,
+          }),
+        {
+          key: `removal:${plan.identity}:${plan.kind}:${focused ? "focused" : "idle"}:${expanded ? "open" : "folded"}`,
+          side: -1,
+          // The widget owns its pointer events; ProseMirror must not move the
+          // caret or start a drag from them.
+          stopEvent: () => true,
+        },
+      ),
+    );
+  }
+
   return DecorationSet.create(resolver.doc, decorations);
+}
+
+function removedText(hunk: ResolvedReviewHunk): string | null {
+  if (hunk.kind === "text") return hunk.deletedText ?? null;
+  return hunk.deletedBlock?.display ?? null;
+}
+
+/** A position between blocks (or inside a container), where an inline widget would be invalid. */
+function isBlockPosition(doc: PMNode, position: number): boolean {
+  return !doc.resolve(position).parent.inlineContent;
 }
 
 /**
  * Decorations for a whole-block replace hunk. The inserted draft block gets a
  * `Decoration.node` (the anchor spans exactly that node), painting the same
- * insert tint family as text hunks at node granularity. Deleted live blocks
- * are intentionally absent here so the editor remains the exact draft
- * projection; their before/after comparison lives in the Changes surface.
+ * insert tint family as text hunks at node granularity. A deleted live block
+ * is a removal widget, planned by the caller.
  */
 function blockHunkDecorations(
   hunk: ResolvedBlockReviewHunk,
@@ -194,37 +256,8 @@ function blockHunkDecorations(
         decorations.push(Decoration.inline(startPos, endPos, attrs, dataAttrs));
       }
     }
-  } else {
-    decorations.push(deletionAnchorDecoration(hunk, focused, startPos));
   }
   return decorations;
-}
-
-function deletionAnchorDecoration(
-  hunk: ResolvedTextReviewHunk | ResolvedBlockReviewHunk,
-  focused: boolean,
-  position: number,
-): Decoration {
-  const dataAttrs = {
-    [HUNK_ATTR]: hunk.hunkId,
-    [OPERATION_ATTR]: hunk.operationIds.join(" "),
-  };
-  return Decoration.widget(
-    position,
-    (view) => {
-      const anchor = view.dom.ownerDocument.createElement("span");
-      anchor.setAttribute("aria-hidden", "true");
-      anchor.setAttribute(HUNK_ATTR, hunk.hunkId);
-      anchor.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
-      anchor.className = classNames(DELETION_ANCHOR_CLASS, focused && EMPHASIS_CLASS);
-      return anchor;
-    },
-    {
-      ...dataAttrs,
-      key: `deletion-anchor:${hunk.hunkId}:${focused ? "focused" : "idle"}`,
-      side: -1,
-    },
-  );
 }
 
 interface ResolvedSpanRange {
@@ -308,5 +341,4 @@ export const inlineReviewClassNames = {
   merged: MERGED_CLASS,
   emphasized: EMPHASIS_CLASS,
   block: BLOCK_CLASS,
-  deletionAnchor: DELETION_ANCHOR_CLASS,
 } as const;

@@ -192,6 +192,71 @@ export function hunkKind(
   return "agent";
 }
 
+/**
+ * Whether a hunk is a merge the writer can't read by author, so it paints
+ * dashed grey instead of green with gold inside.
+ *
+ * The server sets `mergeArtifact` for any hunk that carries both an AI and a
+ * writer operation, which includes the ordinary case of the writer typing
+ * inside AI text. That case reads cleanly (spans are exact per author), and the
+ * design shows it as gold inside green. Authorship stops being readable when
+ * the runs alternate more than one writer run can account for (AI, writer, AI
+ * at most), or a span's operation is unknown.
+ */
+export function isUnsplittableMerge(
+  hunk: ResolvedTextReviewHunk,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+): boolean {
+  if (!hunk.mergeArtifact) return false;
+  if (hunk.spans.length === 0) return true;
+  const runs: InlineReviewOperationKind[] = [];
+  for (const span of hunk.spans) {
+    const op = operationsById.get(span.operationId);
+    if (!op) return true;
+    if (runs[runs.length - 1] !== op.kind) runs.push(op.kind);
+  }
+  return runs.length > 3;
+}
+
+/**
+ * Who removed the live text a hunk shows struck. The preview carries no
+ * per-removal author, only the hunk's owning operations, so the removal is the
+ * writer's when every owning operation is the writer's and the AI's otherwise.
+ * (A hunk mixing both is the AI's rewrite with the writer's edits inside it;
+ * the AI is what took the live words out.)
+ */
+export function removalKind(
+  hunk: ResolvedReviewHunk,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+): InlineReviewOperationKind {
+  let sawWriter = false;
+  for (const opId of hunk.operationIds) {
+    const op = operationsById.get(opId);
+    if (op?.kind === "writer") sawWriter = true;
+    else return "agent";
+  }
+  return sawWriter ? "writer" : "agent";
+}
+
+/**
+ * The operations that make up the one change the active operation belongs to.
+ * Operations sharing a server closure class overlap, so the writer sees and
+ * acts on them as a single change; focusing one focuses them all.
+ */
+export function changeOperationIds(
+  operations: readonly ReviewOperation[],
+  activeOperationId: string | null,
+): ReadonlySet<string> {
+  if (!activeOperationId) return new Set();
+  const active = operations.find((op) => op.operationId === activeOperationId);
+  const ids = new Set([activeOperationId]);
+  if (!active) return ids;
+  for (const op of operations) {
+    if (op.closureClassId === active.closureClassId) ids.add(op.operationId);
+  }
+  return ids;
+}
+
 export function indexOperations(
   operations: readonly ReviewOperation[],
 ): Map<string, ReviewOperation> {
