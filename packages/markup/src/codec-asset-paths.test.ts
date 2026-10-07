@@ -21,11 +21,19 @@ describe("asset path resolution", () => {
     }
   });
 
+  // An image whose document is gone entirely must not take the chapter's
+  // serialization with it, and a read-then-write must not lose the reference.
+  it("spells a ref with no document as the ref, which parses back to itself", () => {
+    const orphan = paragraph(schema.node("image", { src: "asset:gone", alt: "Map", title: null }));
+    const serialized = codec.serialize([orphan]);
+    expect(serialized).toBe("![Map](asset:gone)\n");
+    expect(parsedDoc(codec, serialized).toJSON()).toEqual(docFrom([orphan]).toJSON());
+  });
+
   // A picture the editor has reserved a slot for but not uploaded yet carries
   // `src: ""` — the one source that names nothing. The wire has to hold it
-  // without inventing an address and without throwing: an `asset:` ref minted
-  // before its asset exists would reach `pathForAsset` and take the whole
-  // document's serialization with it.
+  // without inventing an address: an `asset:` ref minted before its asset
+  // exists would reach the wire as a ref nothing can render.
   it("round-trips a source-less image instead of resolving one", () => {
     const pending = paragraph(schema.node("image", { src: "", alt: "cover art", title: null }));
     const serialized = codec.serialize([pending]);

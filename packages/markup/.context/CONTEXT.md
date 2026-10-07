@@ -6,8 +6,8 @@
 
 - Presets: `markdownCodec({ schema, assetPathResolver })` and
   `mdxCodec({ schema, components, assetPathResolver })`.
-- `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (refuses to
-  serialize an asset ref) and `createAssetPathResolver(entries)`.
+- `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (knows no assets:
+  refs stay refs, paths stay literal) and `createAssetPathResolver(entries)`.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
   surfaces that spell a link without serializing a document (a chat
   reference, a clipboard fallback). It shares the link mark's destination rule.
@@ -88,7 +88,9 @@ explicit registry parameter.
 Images hold a stable `asset:<documentId>` src inside ProseMirror; markdown holds
 a project-relative path. `AssetPathResolver` is the only translation seam, and
 it is required — a consumer with no project asset namespace passes
-`unresolvedAssetPathResolver` and gets a throw rather than a silently wrong URL.
+`unresolvedAssetPathResolver`. A picture never fails its document:
+`pathForAsset` returns null for an id with no document, and the codec spells it
+as the `asset:` ref itself, which parses back to the same reference.
 `assetForPath` returns null for anything the project does not know, so external
 and unknown paths stay literal.
 
