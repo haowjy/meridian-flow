@@ -95,8 +95,8 @@ export function DockChangesView({ className }: { className?: string }) {
 type ActivePreview = {
   operations: ReviewOperation[];
   hunks: ReviewHunk[];
-  liveRevisionToken: number;
-  draftRevisionToken: number;
+  liveRevisionToken: string;
+  draftRevisionToken: string;
   // server preview flag for a draft-created document (spec §5.5).
   isNewDocument?: boolean;
 };

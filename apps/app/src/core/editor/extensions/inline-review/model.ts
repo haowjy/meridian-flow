@@ -76,9 +76,9 @@ export type ResolvedReviewHunk = ResolvedTextReviewHunk | ResolvedBlockReviewHun
 /** The full plugin input: hunks + operations + a revision token from the server. */
 export interface InlineReviewModel {
   /** Server-issued token identifying the live base the model was computed against. */
-  liveRevisionToken?: number;
+  liveRevisionToken?: string;
   /** Server-issued token identifying the draft state the model was computed against. */
-  draftRevisionToken: number;
+  draftRevisionToken: string;
   operations: ReviewOperation[];
   hunks: ResolvedReviewHunk[];
 }
@@ -113,8 +113,8 @@ export function decodeAnchor(encoded: string): Y.RelativePosition | null {
  * crash review; it just means one hunk is invisible until the next refetch.
  */
 export function buildInlineReviewModel(input: {
-  liveRevisionToken?: number;
-  draftRevisionToken: number;
+  liveRevisionToken?: string;
+  draftRevisionToken: string;
   operations: ReviewOperation[];
   hunks: ReviewHunk[];
 }): InlineReviewModel {
