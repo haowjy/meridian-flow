@@ -28,6 +28,7 @@ import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner"
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useRefusedEditsReopen } from "../context/use-refused-edits-reopen";
+import { ReviewHandoverFrame } from "../dock/review-handover";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
@@ -38,7 +39,20 @@ export type MobileDocumentHostProps = {
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>;
 };
 
+/**
+ * One frame around whichever host the route resolves to, so the review being
+ * left stays painted over the document column while the next one opens (the
+ * hosts below swap, and a status line replaces the editor, as the route settles).
+ */
 export function MobileDocumentHost(props: MobileDocumentHostProps) {
+  return (
+    <ReviewHandoverFrame className="relative h-full min-h-0">
+      <MobileDocumentHostForRoute {...props} />
+    </ReviewHandoverFrame>
+  );
+}
+
+function MobileDocumentHostForRoute(props: MobileDocumentHostProps) {
   if (props.localTab)
     return (
       <MobileLocalDocumentHost

@@ -87,6 +87,11 @@ export type DraftCommandOutcome =
   | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
   | { kind: "failed"; code: DraftCommandFailureCode };
 
+export type DraftBatchOptions = {
+  /** A draft did not take the command: called as it happens, while the rest of the batch still runs. */
+  onRefused?: (draft: DraftReviewSelection) => void;
+};
+
 export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
 
 export type ChangeApplyRequest = {
@@ -254,6 +259,7 @@ export class DraftReviewSession {
   async disposeDrafts(
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
+    options: DraftBatchOptions = {},
   ): Promise<DraftCommandOutcome[]> {
     if (drafts.length === 0) return [];
     const reservation = this.disposition.reserve({ kind: "batch", mode, count: drafts.length });
@@ -270,6 +276,9 @@ export class DraftReviewSession {
         // (`failDraftCommand`); the drafts after it are independent documents
         // and still get their turn, so the batch never ends half-done unannounced.
         outcomes.push(outcome);
+        if (outcome.kind === "failed" || outcome.kind === "apply-outcome-unknown") {
+          options.onRefused?.(draft);
+        }
       }
     } finally {
       this.disposition.release(reservation);

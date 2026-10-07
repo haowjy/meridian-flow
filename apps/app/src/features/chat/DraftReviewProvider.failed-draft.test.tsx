@@ -72,7 +72,7 @@ async function ready(probe: () => ScopeProbe) {
 }
 
 describe("a whole-draft Apply the server refused", () => {
-  it("is reported by the next draft's review, which the writer was moved to, until that draft is opened", async () => {
+  it("is reported by the next draft's review, which the writer was moved to, and stays on its own draft when opened", async () => {
     refused.add("document-a");
     await renderReviewScopes(
       async (probe) => {
@@ -86,9 +86,11 @@ describe("a whole-draft Apply the server refused", () => {
         expect(probe().header.commandError).toBeNull();
         expect(elsewhere(probe())).toEqual([["Chapter a", "apply-failed"]]);
 
-        // Opening the refused draft is the writer's own move, and clears it.
+        // Opening the refused draft is the writer's own move. The refusal is that draft's own
+        // message now, and stays on it until they act on it again.
         await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-        await probe().openDraft(ref("b"));
+        await probe().openDraft(ref("a"));
+        expect(probe().header.commandError).toBe("apply-failed");
         expect(elsewhere(probe())).toEqual([]);
       },
       { reviewed: ref("a") },

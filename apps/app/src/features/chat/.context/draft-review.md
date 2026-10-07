@@ -157,6 +157,11 @@ no other review, and a retired attempt's completion or failure is ignored. Do
 not keep the old TipTap view mounted instead; the registry destroys the reset
 branch's Y.Doc, so that would need a new detach-and-retain contract.
 
+A move from one draft's review to another's keeps the review being left painted
+and inert (`features/project/dock/review-handover`, a markup copy over the page)
+until the target's header and marks have painted, then swaps in one frame; see
+`features/draft-review/AGENTS.md`.
+
 Review mode is a full-width Editor; the dock remains in the writer's chosen
 open/collapsed state and view. There is no in-editor review split.
 `useAiDraftLauncher` submits an explicit Work/document/

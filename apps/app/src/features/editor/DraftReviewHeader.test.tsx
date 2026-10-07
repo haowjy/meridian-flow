@@ -195,16 +195,24 @@ describe("DraftReviewHeader", () => {
     await render({}, async () => {
       await openSwitcher();
       await act(async () => byText("Apply all 3 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith("apply", [
-        { documentId: "doc-12", draftId: "draft-doc-12" },
-        { documentId: "doc-13", draftId: "draft-doc-13" },
-        { documentId: "doc-int", draftId: "draft-doc-int" },
-      ]);
+      expect(controller.disposeDrafts).toHaveBeenCalledWith(
+        "apply",
+        [
+          { documentId: "doc-12", draftId: "draft-doc-12" },
+          { documentId: "doc-13", draftId: "draft-doc-13" },
+          { documentId: "doc-int", draftId: "draft-doc-int" },
+        ],
+        expect.anything(),
+      );
     });
     await render({}, async () => {
       await openSwitcher();
       await act(async () => byText("Discard all 3 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith("discard", expect.any(Array));
+      expect(controller.disposeDrafts).toHaveBeenCalledWith(
+        "discard",
+        expect.any(Array),
+        expect.anything(),
+      );
     });
   });
 

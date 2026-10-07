@@ -12,8 +12,8 @@
  *   refused, an Apply response was lost (`apply-unknown`), or opening Review
  *   failed (`review-failed`). The draft is still listed, so its row shows the
  *   message wherever the draft is listed, even after the review moved on.
- *   It clears on the next action on the draft (Discard retry, Apply, opening
- *   Review), and when a later draft-list read no longer lists the draft. That
+ *   It clears on the next action on the draft (Discard retry, Apply; opening
+ *   Review clears only a failed launch), and when a later draft-list read no longer lists the draft. That
  *   absence is not evidence of Apply (a remote Discard looks the same), so the
  *   record never turns unknown into success; it only stops showing a message
  *   on a row that is gone.
@@ -113,9 +113,19 @@ export function failDraftReviewLaunch(draft: DraftRef): void {
   if (recordFor(draft)?.phase !== "pending") failDraftCommand(draft, "review-failed");
 }
 
-/** Drop a held failure (opening Review, dismissing it); never touches a claim. */
+/** Drop a held failure (dismissing it); never touches a claim. */
 export function clearDraftCommandFailure(draft: DraftRef): void {
   if (recordFor(draft)?.phase === "failed") setRecord(draft, () => null);
+}
+
+/**
+ * Opening Review is a new attempt: it retires the message of the last attempt
+ * to open it. A refused Apply or Discard is not that message, and stays: the
+ * writer may be taken to the draft that refused precisely to be told so.
+ */
+export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
+  const record = recordFor(draft);
+  if (record?.phase === "failed" && record.code === "review-failed") setRecord(draft, () => null);
 }
 
 export function confirmDraftCommand(draft: DraftRef): void {
