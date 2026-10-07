@@ -154,4 +154,23 @@ describe("overwrite with a document's own export", () => {
 
     expect(exported(ctx.doc)).toBe(expected);
   });
+
+  it("keeps an edited paragraph's anchor when a new paragraph lands before it", async () => {
+    const ctx = harnessWith(fromMarkdown("Opening.\n\nThe old road bent east past the shrine."));
+    const edited = (ctx.doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1) as Y.XmlElement).get(
+      0,
+    ) as Y.XmlText;
+    const anchor = Y.createRelativePositionFromTypeIndex(edited, "The old road".length);
+    const markdown = exported(ctx.doc).replace(
+      "The old road bent east past the shrine.",
+      "A crow called.\n\nThe old road bent east past the ruined shrine.",
+    );
+
+    expectOutcome(await overwrite(ctx, markdown), "success");
+
+    expect(exported(ctx.doc)).toBe(markdown);
+    const resolved = Y.createAbsolutePositionFromRelativePosition(anchor, ctx.doc);
+    expect(resolved?.type).toBe(edited);
+    expect(resolved?.index).toBe("The old road".length);
+  });
 });

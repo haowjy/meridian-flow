@@ -41,9 +41,11 @@ and cross-block finds keep the serialized-markdown reconciliation path.
 A scope rewrite (`replace` over `in`, a formatted or cross-block find, and
 `create { overwrite: true }`) goes through `replaceScope`, which aligns the
 scope's blocks with the parsed replacement (`resolver/block-alignment.ts`):
-equal blocks get no edit, a changed block of the same type becomes a `block`
-edit that `updateYFragment` diffs in place, and only unmatched blocks are
-inserted or deleted. Writing a document's own export back is an empty update.
+equal blocks get no edit; between them, blocks that may pair (same node type,
+same heading level) pair by shared edge text first and by position after, and
+each pair becomes a `block` edit that `updateYFragment` diffs in place,
+attributes included. Only unpaired blocks are inserted or deleted, so a new
+paragraph never takes over an edited one's element and comments. Writing a document's own export back is an empty update.
 Flat `text` offsets exclude atoms (pictures, hard breaks), so `text` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 
