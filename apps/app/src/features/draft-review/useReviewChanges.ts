@@ -182,7 +182,7 @@ export function useReviewChanges(
     focusedIndex,
     canApply: active?.isNewDocument !== true,
     locked: controller.dispositionLocked,
-    cleared: inline?.cleared === true,
+    cleared: inline?.cleared !== undefined && changes.length === 0,
     focus,
     step,
     apply,

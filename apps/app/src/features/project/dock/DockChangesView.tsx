@@ -11,7 +11,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { FileCheck2 } from "lucide-react";
 import { useMemo } from "react";
-import { clearedDraftName, useClearedDrafts } from "@/client/query/change-command-record";
 import {
   clearDraftCommandFailure,
   draftCommandFailure,
@@ -46,16 +45,6 @@ export function DockChangesView({ className }: { className?: string }) {
   );
   const reviewed = editor.inlineReview;
   const reviewedRow = editorRows.find((row) => row.documentId === reviewed?.documentId) ?? null;
-  // A draft handled to its last change leaves the list but its review stays open.
-  const cleared = useClearedDrafts();
-  const clearedName = reviewed
-    ? clearedDraftName(cleared, {
-        projectId: editor.projectId,
-        workId: editor.workId,
-        documentId: reviewed.documentId,
-        draftId: reviewed.draftId,
-      })
-    : null;
   // The reviewed document is listed by its changes, not as a row to open again.
   const otherRows = [
     ...editorRows
@@ -87,7 +76,11 @@ export function DockChangesView({ className }: { className?: string }) {
       {reviewed ? (
         <ChangeList
           controller={editor}
-          name={reviewedRow ? documentName(reviewedRow) : (clearedName ?? t`This draft`)}
+          name={
+            reviewedRow
+              ? documentName(reviewedRow)
+              : (reviewed.cleared?.documentName ?? t`This draft`)
+          }
           next={draftAfter(editorRows, reviewed.documentId)}
           onOpenNext={(row) => openDraft(row, editor.workId)}
         />

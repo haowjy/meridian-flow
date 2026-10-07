@@ -19,7 +19,12 @@ const draft: AiDraftLaunchTarget = {
   contextPath: "chapters/a.md",
 };
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
-let setInline: ((inline: { documentId: string; draftId: string } | null) => void) | null = null;
+type InlineReview = {
+  documentId: string;
+  draftId: string;
+  cleared?: { documentName: string | null };
+};
+let setInline: ((inline: InlineReview | null) => void) | null = null;
 
 function CommandCapture() {
   const open = useOpenEditorReview();
@@ -38,7 +43,10 @@ function Harness({
   onSetDraftId,
   exitInlineReview,
   openContextRoute,
+  listed = true,
 }: {
+  /** The Work's draft list still names the reviewed document. */
+  listed?: boolean;
   requestedDraftId?: string;
   activeScreen?: "chat" | "work" | "context";
   activeScheme?: "manuscript" | null;
@@ -48,7 +56,7 @@ function Harness({
   exitInlineReview?: () => void;
   openContextRoute: OpenContextRoute;
 }) {
-  const [inline, updateInline] = useState<{ documentId: string; draftId: string } | null>(null);
+  const [inline, updateInline] = useState<InlineReview | null>(null);
   setInline = updateInline;
   const review = useMemo(
     () =>
@@ -75,7 +83,7 @@ function Harness({
           },
         ],
         groupForDocument: (documentId: string | null | undefined) =>
-          documentId === draft.documentId
+          listed && documentId === draft.documentId
             ? {
                 documentId: draft.documentId,
                 documentName: "A",
@@ -84,7 +92,7 @@ function Harness({
               }
             : null,
       }) as unknown as DraftReviewContextValue,
-    [exitInlineReview, inline],
+    [exitInlineReview, inline, listed],
   );
   return (
     <EditorReviewHandoffProvider projectId="project-1" openContextRoute={openContextRoute}>
@@ -197,6 +205,85 @@ describe("EditorReviewAddressOwner", () => {
         expect(exit).toHaveBeenCalledOnce();
       },
     );
+  });
+
+  describe("a finished review the server has closed", () => {
+    const finished = {
+      documentId: draft.documentId,
+      draftId: draft.draftId,
+      cleared: { documentName: "A" },
+    };
+
+    it("stays open on its document although the list no longer names it", async () => {
+      const exit = vi.fn();
+      await withReactRoot(
+        <Harness
+          listed={false}
+          activeDocumentId={draft.documentId}
+          requestedDraftId={draft.draftId}
+          onSetDraftId={vi.fn()}
+          exitInlineReview={exit}
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        />,
+        async () => {
+          await act(async () => setInline?.(finished));
+          expect(exit).not.toHaveBeenCalled();
+        },
+      );
+    });
+
+    it("stays open while the address is still resolving", async () => {
+      const exit = vi.fn();
+      await withReactRoot(
+        <Harness
+          listed={false}
+          onSetDraftId={vi.fn()}
+          exitInlineReview={exit}
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        />,
+        async () => {
+          await act(async () => setInline?.(finished));
+          expect(exit).not.toHaveBeenCalled();
+        },
+      );
+    });
+
+    it("still leaves when the writer goes to another document", async () => {
+      const exit = vi.fn();
+      await withReactRoot(
+        <Harness
+          listed={false}
+          activePath="chapters/b.md"
+          activeDocumentId="document-b"
+          onSetDraftId={vi.fn()}
+          exitInlineReview={exit}
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        />,
+        async () => {
+          await act(async () => setInline?.(finished));
+          expect(exit).toHaveBeenCalledOnce();
+        },
+      );
+    });
+
+    it("an unfinished review whose draft left the list still exits", async () => {
+      const exit = vi.fn();
+      await withReactRoot(
+        <Harness
+          listed={false}
+          activeDocumentId={draft.documentId}
+          onSetDraftId={vi.fn()}
+          exitInlineReview={exit}
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        />,
+        async () => {
+          await act(async () =>
+            setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
+          );
+          expect(exit).toHaveBeenCalledOnce();
+        },
+      );
+    });
   });
 
   it("never writes a draft identity on a non-document screen", async () => {

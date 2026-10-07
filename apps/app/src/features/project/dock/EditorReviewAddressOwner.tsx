@@ -46,7 +46,14 @@ export function EditorReviewAddressOwner({
       ownedReview.current = true;
       restoring.current = null;
       const group = review.groupForDocument(inline.documentId);
-      const match = group ? addressNames(inline.documentId, group.contextPath) : "no";
+      // A review the writer finished holds on its own: the server closed its
+      // draft, so the list no longer names the document, and only the address
+      // can say the writer left.
+      const match = group
+        ? addressNames(inline.documentId, group.contextPath)
+        : inline.cleared
+          ? addressNames(inline.documentId, undefined)
+          : "no";
       if (activeScreen !== "context" || activeScheme !== "manuscript" || match === "no") {
         review.controller.exitInlineReview();
         return;

@@ -47,6 +47,7 @@ const controller = vi.hoisted(() => ({
   dispositionLocked: false,
   isApplying: false,
   canApplyReviewedDraft: true,
+  inlineReview: null as null | { cleared?: { documentName: string | null } },
   inlineReviewMessage: null as null | { code: string; tone: string },
   marksVisible: true,
   setMarksVisible: vi.fn(),
@@ -108,6 +109,7 @@ async function openSwitcher() {
 beforeEach(() => {
   Object.assign(controller, {
     dispositionLocked: false,
+    inlineReview: null,
     inlineReviewMessage: null,
     marksVisible: true,
   });
@@ -279,6 +281,25 @@ describe("DraftReviewHeader", () => {
       // The stepper has nothing to step through.
       expect(document.querySelector("[aria-label='Next change']")).toBeNull();
     });
+  });
+
+  it("holds on No changes left after the server closed the draft and the list lost it", async () => {
+    // The closed draft is no longer among the Work's drafts; the review itself says it finished.
+    const closed = groups.splice(0, 1);
+    Object.assign(view, { items: [], cleared: true });
+    controller.inlineReview = { cleared: { documentName: "Chapter 12" } };
+    const onOpenDraft = vi.fn();
+    try {
+      await render({ onOpenDraft }, async () => {
+        expect(document.body.textContent).toContain("No changes left");
+        expect(document.body.textContent).toContain("Chapter 12");
+        expect(controller.exitInlineReview).not.toHaveBeenCalled();
+        await act(async () => byText("Next draft")?.click());
+        expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-13");
+      });
+    } finally {
+      groups.unshift(...closed);
+    }
   });
 
   it("shows a failed whole-draft command on the header", async () => {
