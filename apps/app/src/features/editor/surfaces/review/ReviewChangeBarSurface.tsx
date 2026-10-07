@@ -15,6 +15,7 @@ import { getInlineReviewPluginState } from "@/core/editor/extensions/inline-revi
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { escapeCssIdent } from "@/lib/css-selector";
 import type { EditorChromeSurfaceProps } from "../../chrome";
 import { manuscriptOverlay, overlayViewport } from "../../chrome/manuscript-overlay";
@@ -35,8 +36,11 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   );
   const rect = useAnchorRect(editor, anchor);
   const overlay = manuscriptOverlay(editor);
+  // A phone's bar is pinned to the bottom of the screen (`MobileChangeBar`).
+  const phone = usePhoneShell();
 
-  if (!reviewing || !controller.marksVisible || !focusedItem || !rect || !overlay) return null;
+  if (phone || !reviewing || !controller.marksVisible || !focusedItem || !rect || !overlay)
+    return null;
 
   const viewport = overlayViewport(overlay);
   const above = rect.top - viewport.top >= FLIP_ABOVE_PX;

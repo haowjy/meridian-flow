@@ -1,8 +1,10 @@
 /**
- * MobileDocumentHost — read-only phone document/viewer host with route-owned binding.
+ * MobileDocumentHost — phone document/viewer host with route-owned binding.
  *
- * Mobile never lets users type into collaborative documents, but it keeps the
- * TipTap/Yjs binding alive so AI edits stream into the read-only editor. This
+ * The live document is read-only on a phone, but its TipTap/Yjs binding stays
+ * alive so AI edits stream into it. While the document is under inline review
+ * `MobileDocumentReview` wraps the editor with the review's header, bar and
+ * change list. This
  * host is the mobile binding owner: entering a document opens and binds exactly
  * that document; leaving the view releases it so sessions do not leak. Mobile route
  * navigation deliberately derives the active tab from the context tree instead
@@ -26,6 +28,7 @@ import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner"
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useRefusedEditsReopen } from "../context/use-refused-edits-reopen";
+import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 export type MobileDocumentHostProps = {
@@ -61,14 +64,24 @@ function MobileDraftOnlyDocumentHost({
   // The route is bound to the draft's document, but never remembered or activated: its
   // path dies if the draft is discarded.
   useMobileRouteBinding({ projectId, workId: editorWorkId, route, activate: false });
+  const removal = useContextRemovalCoordinator();
   return (
-    <ContextEditorMountHost
-      projectId={projectId}
-      trackedTabs={[tab]}
-      activeTabId={tab.documentId}
-      active
-      readOnly
-    />
+    <MobileDocumentReview
+      documentId={tab.documentId}
+      // A draft-only document has no live version to return to: its review closes the document.
+      onCloseDraftOnly={() => {
+        const closing = removal.writerClose(projectId, tab.documentId);
+        if (closing instanceof Promise) closing.catch((error: unknown) => reportError(error));
+      }}
+    >
+      <ContextEditorMountHost
+        projectId={projectId}
+        trackedTabs={[tab]}
+        activeTabId={tab.documentId}
+        active
+        readOnly
+      />
+    </MobileDocumentReview>
   );
 }
 
@@ -325,23 +338,25 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
 
   return (
-    <div className="relative h-full min-h-0">
-      <PassageNotice documentId={activeTab.documentId} />
-      <EditorView
-        projectId={projectId}
-        documentId={activeTab.documentId}
-        session={liveSession}
-        schemaType={activeTab.schemaType}
-        editable={false}
-        showToolbar={false}
-        ariaLabel={t`Read-only live document`}
-        showCollaborationDecorations={false}
-        reviewDraftId={reviewDraftId}
-        reviewRoomName={reviewRoomName}
-        reviewWorkId={reviewDraftId ? controller.workId : null}
-        onReviewSessionUnavailable={controller.exitInlineReview}
-      />
-    </div>
+    <MobileDocumentReview documentId={activeTab.documentId}>
+      <div className="relative min-h-0 flex-1">
+        <PassageNotice documentId={activeTab.documentId} />
+        <EditorView
+          projectId={projectId}
+          documentId={activeTab.documentId}
+          session={liveSession}
+          schemaType={activeTab.schemaType}
+          editable={false}
+          showToolbar={false}
+          ariaLabel={t`Read-only live document`}
+          showCollaborationDecorations={false}
+          reviewDraftId={reviewDraftId}
+          reviewRoomName={reviewRoomName}
+          reviewWorkId={reviewDraftId ? controller.workId : null}
+          onReviewSessionUnavailable={controller.exitInlineReview}
+        />
+      </div>
+    </MobileDocumentReview>
   );
 }
 
