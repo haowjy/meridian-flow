@@ -44,7 +44,14 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
 
   const showing =
     !phone && reviewing && controller.marksVisible && Boolean(focusedItem) && Boolean(rect);
-  const placement = showing && rect && column ? placeReviewBar({ anchor: rect, ...column }) : null;
+  const placement =
+    showing && rect && column && focusedItem
+      ? placeReviewBar({
+          anchor: rect,
+          ...column,
+          includesWriterEdits: focusedItem.change.includesWriterEdits,
+        })
+      : null;
   const wantsSlot = placement?.kind === "below";
   const slot = useBarSlot(editor, wantsSlot);
 

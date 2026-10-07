@@ -320,6 +320,27 @@ describe("the phone review header", () => {
     }
   });
 
+  it("offers the way back to live when no other draft is left", async () => {
+    const all = groups.splice(0, groups.length);
+    Object.assign(view, { items: [], cleared: true });
+    controller.inlineReview = {
+      documentId: "doc-12",
+      draftId: "draft-doc-12",
+      shown: true,
+      cleared: { documentName: "Chapter 12" },
+    };
+    try {
+      await render(async () => {
+        expect(header()?.textContent).toContain("No changes left");
+        expect(named("Next draft")).toBeUndefined();
+        await act(async () => named("Back to live")?.click());
+        expect(controller.exitInlineReview).toHaveBeenCalledOnce();
+      });
+    } finally {
+      groups.push(...all);
+    }
+  });
+
   it("shows a refused whole-draft command under the row", async () => {
     controller.inlineReviewMessage = { code: "apply-failed", tone: "error" };
     await render(async () => {
