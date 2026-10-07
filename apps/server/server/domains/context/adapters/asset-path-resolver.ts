@@ -57,23 +57,40 @@ async function loadImageLocations(
 }
 
 /**
- * Serializing asks by id and gets the image's current path, or its last one
- * once deleted, so a restore needs no text repair. Parsing asks by path, in
- * either spelling, and only a live image claims it.
+ * Serializing asks by id and gets the image's current path; parsing asks by
+ * path, in either spelling. A deleted image keeps its last path only while
+ * that path still reads back to it alone, so a chapter saved while the image
+ * is gone still points at it on restore. Once a live image or another deleted
+ * one holds the path, the deleted image spells as its `asset:` ref instead.
  */
 function resolverFor(locations: readonly ImageLocation[]): AssetPathResolver {
-  const pathById = new Map(locations.map((location) => [location.id, location.path]));
-  const liveIdByPath = new Map(
-    locations
-      .filter((location) => !location.deleted)
-      .map((location) => [location.path, location.id]),
-  );
+  const byId = new Map(locations.map((location) => [location.id, location]));
+  const liveIdByPath = new Map<string, string>();
+  const deletedIdsByPath = new Map<string, string[]>();
+  for (const location of locations) {
+    if (!location.deleted) liveIdByPath.set(location.path, location.id);
+    else
+      deletedIdsByPath.set(location.path, [
+        ...(deletedIdsByPath.get(location.path) ?? []),
+        location.id,
+      ]);
+  }
+  const soleDeletedAt = (path: string) => {
+    const ids = deletedIdsByPath.get(path);
+    return !liveIdByPath.has(path) && ids?.length === 1 ? ids[0] : undefined;
+  };
   return {
-    pathForAsset: (assetDocumentId) => pathById.get(assetDocumentId) ?? null,
+    pathForAsset(assetDocumentId) {
+      const location = byId.get(assetDocumentId);
+      if (!location) return null;
+      if (!location.deleted) return location.path;
+      return soleDeletedAt(location.path) === location.id ? location.path : null;
+    },
     assetForPath(path) {
       const parsed = parseContextUri(path);
       if (!parsed.ok || parsed.value.scheme !== "manuscript" || !parsed.value.path) return null;
-      return liveIdByPath.get(parsed.value.path) ?? null;
+      const target = parsed.value.path;
+      return liveIdByPath.get(target) ?? soleDeletedAt(target) ?? null;
     },
   };
 }
