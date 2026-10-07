@@ -2,7 +2,7 @@
 import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
@@ -263,7 +263,7 @@ describe("draft review hunk model", () => {
     live.destroy();
   });
 
-  it("keeps a malformed unattributed removal visible and logs instead of failing preview", () => {
+  it("keeps an unattributed removal beside an attributed insertion and reports the gap", () => {
     const live = createDoc("Alpha stays.");
     const draft = cloneDoc(live);
     const block = model.getBlocks(toDocHandle(draft))[0];
@@ -299,9 +299,105 @@ describe("draft review hunk model", () => {
           },
         ],
       });
-      expect(result.hunks[0]).toMatchObject({ deletedText: "Alpha", deletedSpans: [] });
+      expect(result.hunks[0]).toMatchObject({
+        deletedText: "Alpha",
+        deletedSpans: [],
+        unclassified: true,
+      });
+      expect(result.diagnostics).toEqual([{ code: "unattributed_hunk", hunkId: "test" }]);
+      expect(result.operations[0]).toMatchObject({ canApplyOrDiscard: false });
     } finally {
       draft.destroy();
+      live.destroy();
+    }
+  });
+
+  it("keeps the full partly attributed removal rather than only its known author spans", () => {
+    const live = createDoc("Alpha stays.");
+    const draft = cloneDoc(live);
+    try {
+      const block = model.getBlocks(toDocHandle(draft))[0];
+      const updateData = captureUpdate(draft, () =>
+        model.applyTextEdit(toDocHandle(draft), block, { from: 0, to: 5 }, ""),
+      );
+      const known = [...Y.decodeUpdate(updateData).ds.clients].flatMap(([client, ranges]) =>
+        ranges.map((range) => ({ client, clock: range.clock, length: range.len })),
+      );
+      const result = computeDraftReviewOperations({
+        baseDoc: live,
+        updates: [{ id: 991, actorTurnId: "turn", updateData }],
+        hunks: [
+          {
+            raw: {
+              insertedRanges: [],
+              deletedRanges: [...known, { client: Number.MAX_SAFE_INTEGER, clock: 3, length: 1 }],
+              insertedText: "",
+              deletedText: "Alpha?",
+              blockKey: "test",
+              blockIndex: 0,
+            },
+            review: {
+              kind: "text",
+              hunkId: "partial",
+              operationIds: [],
+              spans: [],
+              deletedText: "Alpha?",
+              anchor: { relStart: "", relEnd: "" },
+            },
+          },
+        ],
+      });
+      expect(result.hunks[0]).toMatchObject({
+        deletedText: "Alpha?",
+        deletedSpans: [],
+        unclassified: true,
+      });
+      expect(result.operations[0]).toMatchObject({ canApplyOrDiscard: false });
+      expect(result.diagnostics).toEqual([{ code: "unattributed_hunk", hunkId: "partial" }]);
+    } finally {
+      draft.destroy();
+      live.destroy();
+    }
+  });
+
+  it.each([
+    "removal",
+    "insertion",
+  ] as const)("retains a wholly unattributed %s without inventing an author", (kind) => {
+    const live = createDoc("Alpha stays.");
+    try {
+      const result = computeDraftReviewOperations({
+        baseDoc: live,
+        updates: [],
+        hunks: [
+          {
+            raw: {
+              insertedRanges: kind === "insertion" ? [{ client: 1, clock: 3, length: 5 }] : [],
+              deletedRanges: kind === "removal" ? [{ client: 1, clock: 3, length: 5 }] : [],
+              insertedText: kind === "insertion" ? "Alpha" : "",
+              deletedText: kind === "removal" ? "Alpha" : "",
+              blockKey: "test",
+              blockIndex: 0,
+            },
+            review: {
+              kind: "text",
+              hunkId: "test",
+              operationIds: [],
+              spans: [],
+              ...(kind === "removal" ? { deletedText: "Alpha" } : {}),
+              anchor: { relStart: "", relEnd: "" },
+            },
+          },
+        ],
+      });
+      expect(result.hunks).toHaveLength(1);
+      expect(result.hunks[0]).toMatchObject({ operationIds: [], unclassified: true, spans: [] });
+      if (kind === "removal")
+        expect(result.hunks[0]).toMatchObject({ deletedText: "Alpha", deletedSpans: [] });
+      else expect(result.hunks[0]).toMatchObject({ insertedText: "Alpha" });
+      expect(result.operations).toEqual([]);
+      expect(result.diagnostics).toEqual([{ code: "unattributed_hunk", hunkId: "test" }]);
+    } finally {
       live.destroy();
     }
   });

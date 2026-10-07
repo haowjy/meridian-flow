@@ -12,6 +12,8 @@ export interface DraftReviewHunkSpanInternal {
 type DraftReviewHunkBaseInternal = {
   hunkId: string;
   operationIds: string[];
+  /** Attribution is incomplete; only document-level disposition is available. */
+  unclassified?: boolean;
   /** Both insertion boundaries lie in context removed by the other author. */
   mergeArtifact?: boolean;
   anchor: {
@@ -29,6 +31,8 @@ export type DraftReviewDeletedSpanInternal = {
 export type DraftReviewTextHunkInternal = DraftReviewHunkBaseInternal & {
   kind: "text";
   spans: DraftReviewHunkSpanInternal[];
+  /** Full insertion fallback for an incompletely attributed hunk. */
+  insertedText?: string;
   deletedText?: string;
   deletedSpans?: DraftReviewDeletedSpanInternal[];
 };
@@ -64,6 +68,8 @@ export function asPhysicalSourceUpdateIds(updateIds: readonly number[]): Physica
 export interface DraftReviewOperationInternal {
   operationId: string;
   closureClassId: string;
+  /** False for every member of a class touching an unclassified hunk. */
+  canApplyOrDiscard?: boolean;
   closureUpdateIds: PhysicalSourceUpdateIds;
   sourceUpdateIds: SourceUpdateIds;
   actorTurnId?: string;
@@ -78,3 +84,5 @@ export interface DraftReviewOperationInternal {
   afterExcerpt?: string;
   hunkCount: number;
 }
+
+export type DraftReviewDiagnostic = { code: "unattributed_hunk"; hunkId: string };

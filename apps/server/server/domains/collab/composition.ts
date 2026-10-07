@@ -27,6 +27,7 @@ import {
   createBranchAgentEditDiagnostics,
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
+  createDraftReviewDiagnostics,
   createMarkdownSerializationAnomalyObserver,
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
@@ -403,6 +404,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deferUntilCommit: deferUntilDrizzleCommit,
   });
   const drafts = createWorkDraftReviewService({
+    diagnostics: createDraftReviewDiagnostics(deps.eventSink),
     settleEmptyDraft: createDrizzleEmptyDraftSettlement(
       deps.db,
       branches,

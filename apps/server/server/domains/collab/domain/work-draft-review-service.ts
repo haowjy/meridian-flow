@@ -34,7 +34,12 @@ import type {
 import { documentTitleFromUri } from "./reversal-notices.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
+export type DraftReviewDiagnostics = {
+  unattributedHunks(detail: { documentId: string; draftId: string; hunkIds: string[] }): void;
+};
+
 export function createWorkDraftReviewService(input: {
+  diagnostics: DraftReviewDiagnostics;
   branches: ApplicationBranchStore;
   discardWorkDraft: WorkDraftDiscard;
   settleEmptyDraft: WorkDraftEmptySettlement;
@@ -150,6 +155,12 @@ export function createWorkDraftReviewService(input: {
           model: input.model,
           draftUpdates,
         });
+        if (review.diagnostics.length)
+          input.diagnostics.unattributedHunks({
+            documentId: command.documentId,
+            draftId: command.draftId,
+            hunkIds: review.diagnostics.map((diagnostic) => diagnostic.hunkId),
+          });
         const threadIds = [
           ...new Set(
             rows
@@ -328,6 +339,8 @@ export function createWorkDraftReviewService(input: {
             .map((op) => op.closureClassId),
         );
         const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
+        if (selected.some((op) => op.canApplyOrDiscard === false))
+          throw new DraftChangeRefusal("incomplete_class");
 
         if (requireCompleteClass && selected.some((op) => !requested.has(op.operationId)))
           throw new DraftChangeRefusal("incomplete_class");

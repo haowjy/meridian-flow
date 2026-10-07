@@ -68,6 +68,8 @@ export interface ReviewOperation {
    * one change per distinct id.
    */
   closureClassId: string;
+  /** False when this class contains incomplete attribution; omit per-change actions. */
+  canApplyOrDiscard?: boolean;
   kind: "agent" | "writer";
   contribution: ReviewOperationContribution;
   classification: ReviewOperationClassification;
@@ -87,6 +89,8 @@ export interface ReviewHunkSpan {
 type ReviewHunkBase = {
   hunkId: string;
   operationIds: string[];
+  /** Render without inventing an author; only document-level disposition is available. */
+  unclassified?: boolean;
   anchor: {
     relStart: string;
     relEnd: string;
@@ -105,6 +109,8 @@ export type ReviewDeletedSpan = {
 export type ReviewTextHunk = ReviewHunkBase & {
   kind: "text";
   spans: ReviewHunkSpan[];
+  /** Full insertion fallback for an unclassified hunk. */
+  insertedText?: string;
   deletedText?: string;
   deletedSpans?: ReviewDeletedSpan[];
 };

@@ -2,7 +2,10 @@
 import type { DocumentCommandName } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { createAgentEditObservabilityOptions } from "./agent-edit-observability.js";
+import {
+  createAgentEditObservabilityOptions,
+  createDraftReviewDiagnostics,
+} from "./agent-edit-observability.js";
 
 describe("agent-edit unexpected write diagnostics", () => {
   it("emits a correlation-rich safe error envelope", () => {
@@ -63,4 +66,22 @@ describe("agent-edit unexpected write diagnostics", () => {
 
     expect(sink.events[0]?.payload.command).toBe(command);
   });
+});
+
+it("reports incomplete draft attribution without including writer content", () => {
+  const sink = createInMemoryEventSink();
+  createDraftReviewDiagnostics(sink).unattributedHunks({
+    documentId: "document-1",
+    draftId: "draft-1",
+    hunkIds: ["h1"],
+  });
+  expect(sink.events).toEqual([
+    expect.objectContaining({
+      level: "warn",
+      source: "collab.draft_review",
+      name: "attribution.incomplete",
+      correlation: { documentId: "document-1" },
+      payload: { hunkCount: 1 },
+    }),
+  ]);
 });
