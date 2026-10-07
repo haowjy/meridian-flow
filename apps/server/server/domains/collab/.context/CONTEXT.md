@@ -297,3 +297,13 @@ branch deletions even when those deletions target live-base structs; Apply must
 show their operations in the selected class before replaying that row. Delete
 ranges already present on the current live cut are excluded from this edge.
 Whole-document Apply and journal bytes are unchanged.
+
+### Surviving-text review anchors
+
+Within aligned blocks, pin common live/draft Yjs text identities before semantic
+text diffing the gaps. Text-only alignment may match an identical deleted full
+stop instead of the surviving one, producing a fictitious deletion without an
+author. Tombstone attribution must not invent an author for that survivor.
+Unexpected missing deletion ownership logs a warning and omits all author spans
+for that removal (the existing default removal rendering still shows its whole
+text); returning only the known spans would hide the missing portion.

@@ -582,13 +582,69 @@ function humanizeBlockType(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/**
+ * Text-only alignment can pair a surviving full stop with an identical deleted
+ * one, falsely displaying the survivor as removed. Pin common Yjs identities
+ * before semantic diffing the gaps so every removal names actually deleted text.
+ */
+function diffWithSurvivingAnchors(live: BlockInfo, draft: BlockInfo): Diff[] {
+  const positionedRanges = (block: BlockInfo) =>
+    block.textSegments.flatMap((segment) => {
+      let offset = segment.start;
+      return segment.itemRanges.map((range) => {
+        const positioned = { ...range, offset };
+        offset += range.length;
+        return positioned;
+      });
+    });
+  const draftRanges = positionedRanges(draft);
+  const anchors = positionedRanges(live)
+    .flatMap((source) =>
+      draftRanges.flatMap((target) => {
+        if (source.client !== target.client) return [];
+        const start = Math.max(source.clock, target.clock);
+        const end = Math.min(source.clock + source.length, target.clock + target.length);
+        if (end <= start) return [];
+        return [
+          {
+            liveStart: source.offset + start - source.clock,
+            draftStart: target.offset + start - target.clock,
+            length: end - start,
+          },
+        ];
+      }),
+    )
+    .sort((left, right) => left.liveStart - right.liveStart);
+  const diffs: Diff[] = [];
+  let liveOffset = 0;
+  let draftOffset = 0;
+  for (const anchor of anchors) {
+    if (anchor.liveStart < liveOffset || anchor.draftStart < draftOffset) continue;
+    diffs.push(
+      ...cleanupSemantic(
+        makeDiff(
+          live.text.slice(liveOffset, anchor.liveStart),
+          draft.text.slice(draftOffset, anchor.draftStart),
+        ),
+      ),
+    );
+    diffs.push([DIFF_EQUAL, live.text.slice(anchor.liveStart, anchor.liveStart + anchor.length)]);
+    liveOffset = anchor.liveStart + anchor.length;
+    draftOffset = anchor.draftStart + anchor.length;
+  }
+  diffs.push(
+    ...cleanupSemantic(makeDiff(live.text.slice(liveOffset), draft.text.slice(draftOffset))),
+  );
+  return diffs;
+}
+
 function diffChangedBlock(
   live: BlockInfo,
   draft: BlockInfo,
   draftDoc: Y.Doc,
   blockIndex: number,
 ): RawHunk[] {
-  const diffs = cleanupSemantic(makeDiff(live.text, draft.text));
+  const diffs = diffWithSurvivingAnchors(live, draft);
   const hunks: RawHunk[] = [];
   let liveOffset = 0;
   let draftOffset = 0;

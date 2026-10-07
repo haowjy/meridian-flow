@@ -2,10 +2,11 @@
 import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
+import { computeDraftReviewOperations } from "./draft-review-operations.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
@@ -116,7 +117,14 @@ describe("draft review hunk model", () => {
     ]);
   });
 
-  it("publishes exactly every selected class and leaves exactly its preview complement", () => {
+  it.each([
+    { label: "shared client", adjacentRewrite: false, freshPeers: false },
+    { label: "shared client with adjacent rewrite", adjacentRewrite: true, freshPeers: false },
+    { label: "fresh chat peers (reported operation 72)", adjacentRewrite: false, freshPeers: true },
+  ])("publishes every class and its preview complement ($label)", ({
+    adjacentRewrite,
+    freshPeers,
+  }) => {
     const base = [
       "Elder Mo raised his hand, and the courtyard fell silent.",
       "Su Yin said nothing. It was a very tense moment for everyone present.",
@@ -143,10 +151,18 @@ describe("draft review hunk model", () => {
       { id: 74, block: 3, find: "stayed still.", replacement: "stayed still. A bell rang." },
       { id: 75, block: 2, find: "stepped back", replacement: "fell back to their knees" },
     ];
+    if (adjacentRewrite)
+      edits.push({
+        id: 77,
+        block: 1,
+        find: "Su Yin said nothing.",
+        replacement: "Su Yin said nothing, but her sleeve hid a drawn talisman.",
+      });
     const updates = edits.map((edit) => ({
       id: edit.id,
       actorTurnId: `turn-${edit.id}`,
       updateData: captureUpdate(draft, () => {
+        if (freshPeers) draft.clientID = 10 + edit.id;
         const block = model.getBlocks(toDocHandle(draft))[edit.block];
         const from = model.getText(block).indexOf(edit.find);
         model.applyBlockReplacement(
@@ -181,7 +197,11 @@ describe("draft review hunk model", () => {
     });
     const classes = new Set(preview.operations.map((op) => op.closureClassId));
     expect(classes.size).toBeGreaterThan(1);
-    for (const classId of classes) {
+    // Exercise the reported later insertion first, then every other class.
+    const reportedClass = preview.operations.find((op) => op.operationId === "72")?.closureClassId;
+    for (const classId of [...classes].sort(
+      (a, b) => Number(b === reportedClass) - Number(a === reportedClass),
+    )) {
       const selected = preview.operations.filter((op) => op.closureClassId === classId);
       const ids = new Set(selected.map((op) => op.operationId));
       const rowIds = new Set<number>(selected.flatMap((op) => op.closureUpdateIds));
@@ -225,6 +245,15 @@ describe("draft review hunk model", () => {
                   .join("")
               : hunk.insertedBlock?.display,
         }));
+      const published = computeDraftReviewHunks({
+        liveDoc: live,
+        draftDoc: applied,
+        model,
+        draftUpdates: updates.filter((row) => rowIds.has(row.id)),
+      });
+      expect(signature(published.hunks), classId).toEqual(
+        signature(preview.hunks.filter((hunk) => hunk.operationIds.some((id) => ids.has(id)))),
+      );
       expect(signature(remaining.hunks), classId).toEqual(
         signature(preview.hunks.filter((hunk) => !hunk.operationIds.some((id) => ids.has(id)))),
       );
@@ -232,6 +261,107 @@ describe("draft review hunk model", () => {
     }
     draft.destroy();
     live.destroy();
+  });
+
+  it("keeps a malformed unattributed removal visible and logs instead of failing preview", () => {
+    const live = createDoc("Alpha stays.");
+    const draft = cloneDoc(live);
+    const block = model.getBlocks(toDocHandle(draft))[0];
+    const updateData = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), block, { from: 0, to: 0 }, "New "),
+    );
+    const insertedRanges = Y.decodeUpdate(updateData).structs.map((item) => ({
+      ...item.id,
+      length: item.length,
+    }));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const result = computeDraftReviewOperations({
+        baseDoc: live,
+        updates: [{ id: 990, actorTurnId: "turn", updateData }],
+        hunks: [
+          {
+            raw: {
+              insertedRanges,
+              deletedRanges: [{ client: 1, clock: 3, length: 5 }],
+              insertedText: "New ",
+              deletedText: "Alpha",
+              blockKey: "test",
+              blockIndex: 0,
+            },
+            review: {
+              kind: "text",
+              hunkId: "test",
+              operationIds: [],
+              spans: [],
+              deletedText: "Alpha",
+              anchor: { relStart: "", relEnd: "" },
+            },
+          },
+        ],
+      });
+      expect(result.hunks[0]).toMatchObject({ deletedText: "Alpha", deletedSpans: [] });
+      expect(warning).toHaveBeenCalledWith(
+        "Unattributed deleted text in draft review",
+        expect.objectContaining({ range: expect.any(Object) }),
+      );
+    } finally {
+      warning.mockRestore();
+      draft.destroy();
+      live.destroy();
+    }
+  });
+
+  it("covers adjacent cross-chat sentence removal and replacement without attribution gaps", () => {
+    const live = createDoc(
+      "Su Yin said nothing. It was a very tense moment for everyone present.\n\nEnd.",
+    );
+    const draft = cloneDoc(live);
+    const edits = [
+      [" It was a very tense moment for everyone present.", ""],
+      ["Su Yin said nothing.", "Su Yin said nothing, but her sleeve hid a drawn talisman."],
+    ];
+    const updates = edits.map(([find, replacement], index) => ({
+      id: 901 + index,
+      actorTurnId: `chat-${index}`,
+      updateData: captureUpdate(draft, () => {
+        const [block] = model.getBlocks(toDocHandle(draft));
+        const text = model.getText(block);
+        const from = text.indexOf(find);
+        model.applyBlockReplacement(
+          toDocHandle(draft),
+          block,
+          codec.parse(text.slice(0, from) + replacement + text.slice(from + find.length)).blocks[0],
+        );
+      }),
+    }));
+    const warning = vi.spyOn(console, "warn");
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: updates,
+    });
+    expect(warning).not.toHaveBeenCalled();
+    warning.mockRestore();
+    expect(
+      result.hunks
+        .filter((h) => h.kind === "text")
+        .map((h) => h.deletedText ?? "")
+        .join(""),
+    ).toBe(edits[0][0]);
+    expect(result.hunks.find((h) => h.kind === "text" && h.deletedText)?.operationIds).toEqual([
+      "901",
+    ]);
+    expect(result.hunks.flatMap((h) => h.operationIds)).toEqual(
+      expect.arrayContaining(["901", "902"]),
+    );
+    for (const hunk of result.hunks) {
+      if (hunk.kind !== "text" || !hunk.deletedText) continue;
+      expect(hunk.deletedSpans?.reduce((length, span) => length + span.to - span.from, 0)).toBe(
+        hunk.deletedText.length,
+      );
+    }
   });
 
   it("covers the full difference after consecutive cumulative paragraph deletions", () => {

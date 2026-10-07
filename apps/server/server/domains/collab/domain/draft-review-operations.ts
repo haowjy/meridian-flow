@@ -280,9 +280,15 @@ function indexDraftUpdates(input: {
           const operationId =
             matchingOperationIds(deleted, part)[0] ?? matchingOperationIds(deletedHistory, part)[0];
           const operation = operationId ? byOperationId.get(operationId) : undefined;
-          if (!operation) throw new Error("Unattributed deleted text in draft review");
+          if (!operation) {
+            console.warn("Unattributed deleted text in draft review", { range: part });
+            // The client renders an unclassified removal when spans are absent.
+            // Returning partial spans would omit the unattributed text entirely.
+            return [];
+          }
           const previous = spans.at(-1);
-          if (previous?.deletedBy === operation.kind) previous.to += part.length;
+          if (previous?.deletedBy === operation.kind && previous.to === offset)
+            previous.to += part.length;
           else spans.push({ from: offset, to: offset + part.length, deletedBy: operation.kind });
           offset += part.length;
         }

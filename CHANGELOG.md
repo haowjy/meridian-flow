@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft preview stays available when different chats edit adjacent sentences, and retained punctuation is no longer shown as deleted.
+
 - Applying a draft change no longer silently publishes earlier deletions. Changes carried by the same Yjs update are shown and handled together.
 
 - Applying or discarding the last draft change closes the review on the server, including after reload.
