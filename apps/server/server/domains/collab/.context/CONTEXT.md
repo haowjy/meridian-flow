@@ -278,3 +278,13 @@ pushed. The terminal `draftDisposition` is `applied` when any current-generation
 journal row reached live, otherwise `discarded`, even if the last action was
 Discard. Success responses expose `draftClosed`; only closed responses expose
 `draftDisposition`. Whole Apply is unchanged.
+
+### Live writes versus CLI replacement
+
+Live writer SET and agent writes routed to live preserve a pending Work draft:
+parent-to-child pulls merge live edits into the existing draft without resetting
+its generation or settling its authored rows. The partial-Apply Postgres suite
+covers both sources rewriting the live base of a pending insertion, then applying
+that insertion without losing the live rewrite. `./mf doc put --overwrite` is not
+this path: on conflict its CLI explicitly deletes the old document and creates a
+new one at the same URI. Its fresh document identity does not inherit old drafts.

@@ -1,9 +1,11 @@
 /** PostgreSQL proof for dependency-closed partial Apply settlement. */
+import { randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { asc, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import {
   ALPHA_ID,
   createHarness,
@@ -155,6 +157,87 @@ describe("per-change Apply (postgres)", () => {
       });
       expect(closed).toMatchObject({ draftClosed: true, draftDisposition: "applied" });
     }
+  });
+
+  it.each([
+    "writer",
+    "agent",
+  ] as const)("a %s live write preserves a pending draft's changes and identity", async (source) => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "live-write-investigation");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const pendingId = await stageText(fixture, branch.branchId, 0, " Pending proposal", "agent");
+    if (source === "writer") {
+      await fixture.collab.writeDocument({
+        documentId: ALPHA_ID,
+        markdown: "Alpha rewritten. Live writer.\n\nBeta base.",
+        origin: { type: "user", actorUserId: USER_ID },
+        threadId: THREAD_ID,
+      });
+    } else {
+      const responseId = randomUUID();
+      await db.insert(schema.modelResponses).values({
+        id: responseId as never,
+        turnId: TURN_ID,
+        sequence: 1,
+        provider: "fixture",
+        model: "fixture",
+        requestMessageCount: 1,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      const context = {
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+        grant: testFileGrant({ kind: "live" }),
+      };
+      await fixture.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, context);
+      await expect(
+        fixture.collab.agentEdit().write(
+          {
+            command: "replace",
+            file: "alpha.md",
+            documentId: ALPHA_ID,
+            find: "Alpha base.",
+            content: "Alpha rewritten. Live agent.",
+          },
+          context,
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      await expect(
+        fixture.collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+      ).resolves.toMatchObject({ status: "committed" });
+    }
+    await fixture.branchPulls.flushLivePull(ALPHA_ID);
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing pending preview");
+    expect(preview.markdown).toContain("Pending proposal");
+    expect(preview.markdown).toContain(source === "writer" ? "Live writer" : "Live agent");
+    expect(preview.live).not.toContain("Pending proposal");
+    expect(preview.operations.flatMap((op) => op.sourceUpdateIds)).toContain(pendingId);
+    expect(await journalStatuses(branch.branchId)).toContainEqual({
+      id: pendingId,
+      status: "active",
+    });
+    expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
+    expect((await fixture.branchStore.getBranch(branch.branchId))?.generation).toBe(
+      branch.generation,
+    );
+    await fixture.collab.draftReview.applyWorkDraft(command);
+    expect(await harness.liveMarkdown(ALPHA_ID)).toContain("Pending proposal");
+    expect(await harness.liveMarkdown(ALPHA_ID)).toContain(
+      source === "writer" ? "Live writer" : "Live agent",
+    );
   });
 
   it("publishes one closed group, removes it from review, then whole Apply publishes the rest once", async () => {
