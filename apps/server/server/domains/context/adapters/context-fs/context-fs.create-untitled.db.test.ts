@@ -13,6 +13,7 @@ import {
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createCollabDomain } from "../../../collab/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../../projects/index.js";
+import { createDrizzleDocumentAssetPaths } from "../asset-path-resolver.js";
 import { ContextFS } from "./context-fs.js";
 import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
@@ -55,6 +56,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("persists and reloads a live document with zero CRDT structs", async () => {
       const collab = createCollabDomain({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),

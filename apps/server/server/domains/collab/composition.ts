@@ -118,7 +118,7 @@ export type { DocumentWriteHook } from "./contracts.js";
 type CollabDomainDeps = {
   db: Database;
   /** Image paths for the markup codec, loaded per document operation. */
-  assetPaths?: DocumentAssetPaths;
+  assetPaths: DocumentAssetPaths;
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
@@ -308,45 +308,45 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deferUntilCommit: deferUntilDrizzleCommit,
   });
 
-  const unscopedAgentEdit = createBranchThreadPeerAgentEditCore({
-    liveUtilityCore: runtime.liveUtilityCore,
-    fileAccess: deps.fileAccess,
-    async lockWorks(workIds) {
-      await lockWorksInIdOrder(currentDrizzleDb(deps.db), workIds);
-    },
-    async lockLiveDocuments(documentIds) {
-      const tx = currentDrizzleDb(deps.db);
-      for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
-    },
-    journal: persistence.journal,
-    liveCoordinator,
-    lifecycle: persistence.lifecycle,
-    branches,
-    branchCoordinator,
-    branchPulls,
-    branchJournal,
-    concurrentJournalWatermarks,
-    diagnostics: createBranchAgentEditDiagnostics(deps.eventSink),
-    afterCommit: runAfterDrizzleCommit,
-    enlistResponseParticipant,
-    model: runtime.model,
-    codec: runtime.codec,
-    semanticProvenance: runtime.semanticProvenance,
-    observability,
-    commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
-    responseTransactionSettlement: {
-      deferUntilCommit: deferUntilDrizzleCommit,
-      deferUntilRollback: deferUntilDrizzleRollback,
-    },
-    responseTransactions: {
-      enlist: enlistResponseParticipant,
-      run: (atomic, operation, settlement) =>
-        runResponseTransaction(atomic, operation, settlement, responseTransactionDiagnostics),
-    },
-  });
-  const agentEdit = deps.assetPaths
-    ? scopeAgentEditAssetPaths(unscopedAgentEdit, deps.assetPaths)
-    : unscopedAgentEdit;
+  const agentEdit = scopeAgentEditAssetPaths(
+    createBranchThreadPeerAgentEditCore({
+      liveUtilityCore: runtime.liveUtilityCore,
+      fileAccess: deps.fileAccess,
+      async lockWorks(workIds) {
+        await lockWorksInIdOrder(currentDrizzleDb(deps.db), workIds);
+      },
+      async lockLiveDocuments(documentIds) {
+        const tx = currentDrizzleDb(deps.db);
+        for (const documentId of documentIds) await lockDocumentMutation(tx, documentId);
+      },
+      journal: persistence.journal,
+      liveCoordinator,
+      lifecycle: persistence.lifecycle,
+      branches,
+      branchCoordinator,
+      branchPulls,
+      branchJournal,
+      concurrentJournalWatermarks,
+      diagnostics: createBranchAgentEditDiagnostics(deps.eventSink),
+      afterCommit: runAfterDrizzleCommit,
+      enlistResponseParticipant,
+      model: runtime.model,
+      codec: runtime.codec,
+      semanticProvenance: runtime.semanticProvenance,
+      observability,
+      commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
+      responseTransactionSettlement: {
+        deferUntilCommit: deferUntilDrizzleCommit,
+        deferUntilRollback: deferUntilDrizzleRollback,
+      },
+      responseTransactions: {
+        enlist: enlistResponseParticipant,
+        run: (atomic, operation, settlement) =>
+          runResponseTransaction(atomic, operation, settlement, responseTransactionDiagnostics),
+      },
+    }),
+    deps.assetPaths,
+  );
 
   const offlineReconciliation = createDrizzleOfflineReconciliation({
     journal: persistence.journal,
@@ -423,19 +423,19 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
   });
-  const unscopedBranchPeers = createEffectiveDocumentReader({
-    branches,
-    branchCoordinator,
-    branchPulls,
-    liveCoordinator,
-    agentEdit,
-    documents: runtime.markdownDocuments,
-    model: runtime.model,
-    codec: runtime.codec,
-  });
-  const branchPeers = deps.assetPaths
-    ? scopeBranchPeerAssetPaths(unscopedBranchPeers, deps.assetPaths)
-    : unscopedBranchPeers;
+  const branchPeers = scopeBranchPeerAssetPaths(
+    createEffectiveDocumentReader({
+      branches,
+      branchCoordinator,
+      branchPulls,
+      liveCoordinator,
+      agentEdit,
+      documents: runtime.markdownDocuments,
+      model: runtime.model,
+      codec: runtime.codec,
+    }),
+    deps.assetPaths,
+  );
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
     db: deps.db,

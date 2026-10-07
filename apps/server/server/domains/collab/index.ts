@@ -5,7 +5,11 @@ export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export type { DocumentLinkSubstitution } from "./domain/document-link-occurrences.js";
-export type { AssetPathProject, DocumentAssetPaths } from "./domain/ports/document-asset-paths.js";
+export {
+  type AssetPathProject,
+  type DocumentAssetPaths,
+  NO_DOCUMENT_ASSET_PATHS,
+} from "./domain/ports/document-asset-paths.js";
 export type {
   DocumentLinkMover,
   DocumentLinkRewriteClaim,
