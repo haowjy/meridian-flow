@@ -81,6 +81,7 @@ export function MobileReviewHeader({
       <ReviewHeaderNotices
         touch
         commandError={header.commandError}
+        failedElsewhere={header.failedElsewhere}
         finished={finished}
         unlisted={header.unlisted}
         completing={header.completing}

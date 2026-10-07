@@ -103,8 +103,9 @@ including writer rows created after the last preview. For whole-draft Apply the
 client therefore treats preview operations and revisions as evidence, not
 command scope; per-change Apply is the one command that sends them. Apply/Discard failures
 are session outcomes rendered by the review header rather than ignored
-promises. A batch stops at its first failure or unknown outcome; transport
-failures surface through the dock's typed error state.
+promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
+(`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
+the draft's rows, and named in the dock's typed error state.
 
 Cross-cutting server policy:
 [whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)

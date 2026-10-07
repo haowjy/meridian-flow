@@ -87,6 +87,7 @@ export function DraftReviewHeader(props: DraftReviewHeaderProps) {
       </div>
       <ReviewHeaderNotices
         commandError={header.commandError}
+        failedElsewhere={header.failedElsewhere}
         finished={finished}
         unlisted={header.unlisted}
         completing={header.completing}

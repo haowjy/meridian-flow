@@ -101,6 +101,11 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
+#. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+msgid "{0, plural, one {# more draft did not apply} other {# more drafts did not apply}}"
+msgstr ""
+
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
@@ -2798,6 +2803,10 @@ msgstr ""
 msgid "Only part of this change could be reversed."
 msgstr ""
 
+#: src/features/draft-review/ReviewHeaderNotices.tsx
+msgid "Open"
+msgstr ""
+
 #: src/features/chat/OpenSubagentChatButton.tsx
 msgid "Open \"{name}\""
 msgstr "打开“{name}”"
@@ -4369,6 +4378,7 @@ msgstr "未知"
 msgid "Unknown component: {kindLabel}"
 msgstr ""
 
+#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Untitled"
 msgstr ""

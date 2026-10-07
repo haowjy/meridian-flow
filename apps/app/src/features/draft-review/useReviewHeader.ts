@@ -45,6 +45,12 @@ export type ReviewHeaderModel = {
   completing: "apply" | "discard" | null;
   /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
   commandError: DraftCommandFailureCode | null;
+  /**
+   * The Work's other listed drafts that hold a refusal or a lost answer: Apply
+   * draft and Apply all move on (or finish) while the command runs, so the
+   * review the writer is in must still say which drafts did not apply.
+   */
+  failedElsewhere: { row: DockRow; code: DraftCommandFailureCode }[];
   showLive: () => void;
   applyDraft: () => void;
   discardDraft: () => void;
@@ -91,9 +97,12 @@ export function useReviewHeader({
   });
   // Every listed draft that holds one, so a draft the review moved on from still says it was refused.
   const failures = new Map<string, DraftCommandFailureCode>();
+  const failedElsewhere: ReviewHeaderModel["failedElsewhere"] = [];
   for (const row of rows) {
     const code = draftCommandFailure(commandRecords, draftOf(row));
-    if (code) failures.set(row.documentId, code);
+    if (!code) continue;
+    failures.set(row.documentId, code);
+    if (row.documentId !== documentId) failedElsewhere.push({ row, code });
   }
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
@@ -108,6 +117,24 @@ export function useReviewHeader({
     draftId: row.draft.draftId,
   }));
 
+  /**
+   * Apply all or Discard all. When some draft did not take it and the draft the
+   * writer is in did (it is leaving the list), the review would fall back to
+   * live and read as done: it goes to the first draft that did not, which says
+   * why. A draft the writer is already in stays; its own notice says so.
+   */
+  const disposeAll = async (mode: "apply" | "discard") => {
+    const outcomes = await controller.disposeDrafts(mode, selections);
+    const refused = selections.filter((_, index) => {
+      const kind = outcomes[index]?.kind;
+      return kind === "failed" || kind === "apply-outcome-unknown";
+    });
+    const first = refused[0];
+    if (!first || refused.some((selection) => selection.documentId === documentId)) return;
+    const row = rows.find((candidate) => candidate.documentId === first.documentId);
+    if (row) onOpenDraft(row);
+  };
+
   return {
     controller,
     view,
@@ -117,6 +144,7 @@ export function useReviewHeader({
     unlisted,
     completing,
     commandError,
+    failedElsewhere,
     showLive,
     applyDraft: () => dispose(() => controller.apply(documentId, draftId)),
     discardDraft: () => dispose(() => controller.discard(documentId, draftId)),
@@ -131,8 +159,8 @@ export function useReviewHeader({
       disabled: locked,
       onOpenDraft,
       onShowLive: showLive,
-      onApplyAll: () => void controller.disposeDrafts("apply", selections),
-      onDiscardAll: () => void controller.disposeDrafts("discard", selections),
+      onApplyAll: () => void disposeAll("apply"),
+      onDiscardAll: () => void disposeAll("discard"),
     },
   };
 }

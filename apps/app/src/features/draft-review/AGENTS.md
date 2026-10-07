@@ -118,3 +118,11 @@ is one server closure class.
   whole-draft Apply is held on that draft's record (`apply-failed`) and shown
   wherever the draft is listed (switcher row, composer strip, Work files, Changes
   tab) after the review moved on to the next draft; it never navigates back.
+  The review the writer is in also says it: `useReviewHeader.failedElsewhere`
+  lists the Work's other drafts that hold a refusal or lost answer, and
+  `ReviewHeaderNotices` shows each by name with an Open button, on both shells
+  (Apply draft and Apply all move on or finish while the command runs, and the
+  switcher's row is behind a closed menu). Opening the draft is the writer's
+  move and clears its failure. **A batch (Apply all, Discard all) never stops at
+  a refusal**: drafts are independent documents, so each gets its turn, each
+  failure is held on its own draft, and `dockDispositionError` names the kind.
