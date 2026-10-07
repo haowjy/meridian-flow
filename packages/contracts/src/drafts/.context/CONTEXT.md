@@ -7,10 +7,16 @@ The review wire shape is intentionally JSON-natural and UI-oriented:
   `reviewRoomName`, live markdown, branch markdown, review operations, and
   hunks. Agent operations carry `actorThreadId` and `actorThreadTitle` (the
   chat title at preview time); writer operations carry neither.
-- Apply and whole-branch Discard requests address only `draftId`. Apply settles
-  the whole current Work draft; preview operation ids and revision tokens are
-  not part of the Apply request. Selective Discard adds operation ids, and the
-  server maps them through its required `closureClassId`.
+- Whole-document Apply and whole-branch Discard requests address only
+  `draftId`. Whole Apply settles the whole current Work draft; preview operation
+  ids and revision tokens are not part of its request.
+- Per-change Apply (`DraftApplyChangesRequest`, the `draft/apply-changes`
+  route) sends every operation id of the selected `closureClassId`s plus the
+  preview's opaque `liveRevisionToken` and `draftRevisionToken`. It answers
+  `applied` with the applied `operationIds` and `closureClassIds`, or `stale`,
+  `gone`, `draft_only` (new document) or `incomplete_class`, all as HTTP 200.
+  Selective Discard sends operation ids and the same tokens; the server expands
+  each id to its class.
 - Successful per-change Apply and Discard responses add `draftClosed`. When
   true, `draftDisposition` names the settled review (`applied` if any content
   reached live, otherwise `discarded`). No client-side operation-count guess

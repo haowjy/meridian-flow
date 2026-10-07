@@ -50,7 +50,9 @@ is one server closure class.
   discard) again.", and keeps focus on the updated change (matched by shared
   operations, since the class id can change). A refusal is never a closed or
   discarded draft: only a `discarded` or `applied` answer can carry `draftClosed`
-  to the review. Whole-draft Discard stays unfenced.
+  to the review. `incomplete_class` reads as `stale`; `gone` drops the change
+  with a toast; `draft_only` points to Apply draft or Discard draft.
+  Whole-draft Discard stays unfenced.
 - **What the server could not attribute is still a change.** An unclassified
   hunk with no operation (`unclassified: true`, `operationIds: []`) is listed
   (`reviewChanges`) as its own change, in document order, with no author
@@ -66,8 +68,8 @@ is one server closure class.
   a removal). `markKeys` are the keys the manuscript paints a change by.
   `previewWithoutOperations` never hides a hunk no operation owns.
 - **A move from one draft's review to another's is held** (`features/project/dock/review-handover`).
-  Switcher pick, Apply draft, Discard draft, Next draft and Apply all's move to a
-  draft that did not apply all go through `openEditorReview`, which hands the
+  Switcher pick, Apply draft, Discard draft, Next draft and Apply all's move to
+  the first draft that refused all go through `openEditorReview`, which hands the
   page's painted review (header, identity bar, body) to `ReviewHandoverFrame` as
   inert markup, the way `FrozenReview` holds a review across a room rebuild. The
   route, tab and URL change at the click; the copy covers the skeleton the route
@@ -127,7 +129,8 @@ is one server closure class.
 - Unknown outcomes are held, not guessed. A per-change Apply that got no answer
   is held on its change as `unknown` ("Couldn't confirm whether this applied.
   Check what is left before you try again."), the whole-draft Apply's wording,
-  apart from a refusal (`offline`). The copy promises no automatic update: only
+  apart from a refusal (`offline`). A per-change Discard has no unknown outcome
+  yet: a lost answer is held as `offline`. The copy promises no automatic update: only
   a read after the failure can resolve the change, and one can find it still there. A rejected
   whole-draft Apply is held on that draft's record (`apply-failed`) and shown
   wherever the draft is listed (switcher row, composer strip, Work files, Changes

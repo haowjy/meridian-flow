@@ -89,7 +89,7 @@ Two self-contained surfaces, both resolving their own state from
 - The focused change's bar is the `review-change-bar` chrome surface
   (`surfaces/review`). It never covers manuscript text. With room in the right
   margin (`place-review-bar`: at least 132px between the text column and the
-  pane edge) it is portalled into the manuscript's scroll pane beside the
+  pane edge, 200px when the bar carries "Discard with your edits") it is portalled into the manuscript's scroll pane beside the
   change's first line. Without, the surface asks the inline-review plugin for a
   bar slot (`setInlineReviewBarSlot`): an empty non-editable block widget after
   the paragraph the change ends in, which the bar is portalled into, so the
@@ -108,8 +108,9 @@ in a layout effect (`setInlineReviewShown`); the live wrapper hides, the review
 wrapper shows and the header mounts in the same paint. If the marks never
 arrive the review shows anyway after 1.5 s (`REVIEW_MARKS_WAIT_MS`). A
 draft-only tab has no live view to hold and reports shown at once. Wrappers
-carry `data-editor-surface="live|review"` for frame probes
-(`work/draft-review-repair/evidence/redesign-render/hold-scenario.js`).
+carry `data-editor-surface="live|review"` for frame probes. A move between two
+drafts' reviews is held the same way by `features/project/dock/review-handover`
+(see `features/draft-review/AGENTS.md`).
 
 The review manuscript is the server draft projection plus decorations, in the
 manner of suggestion mode. Insertions are inline decorations over text that
@@ -120,21 +121,19 @@ Removed live text is a read-only widget decoration (`removal-widget.ts`), struck
 through where it was: crimson for the AI, gold for the writer, each stretch in its
 remover's colour (a text hunk's `deletedSpans`; a block hunk's removal is read
 from its owning operations), never part of the
-Y.Doc or the TipTap document, so it cannot be typed into or saved. Long removals
-(over 200 characters) fold to "N paragraphs removed" and open on click. The
-review editor stays editable: the draft is a Yjs room and the writer is one more
-peer in it, so keystrokes in review land in the draft branch rather than live.
+Y.Doc or the TipTap document, so it cannot be typed into, selected into or
+saved. A removal the server could not attribute is struck in no author's
+colour. Long removals (over 200 removed characters) fold to "N paragraphs
+removed" (between blocks) or "N words removed" (inside a paragraph) and open on
+click. A pointer click on the struck text puts the caret at the removal's
+position (for a removed block, before or after it by the clicked half); the
+removal itself stays untouched. Focus emphasizes every operation sharing the
+change's `closureClassId`. The review editor stays editable on desktop: the
+draft is a Yjs room and the writer is one more peer in it, so keystrokes in
+review land in the draft branch rather than live. The phone mounts it
+read-only (`features/project/mobile`).
 `setInlineReviewMarksVisible(false)` hides every mark and removal without
 remounting; the model, selection and open folds survive.
-
-### Rejected placements
-
-| Placement | Reason rejected |
-|---|---|
-| Floating card pinned top-left | Card chrome broke the no-lines stack; overlay covered the first line and needed a `pt-16` reserve |
-| Centered over the page | Balanced but least connected to chrome or text; still covers first line |
-| Corner-right palette | Out of the writing path but further from reach |
-| Full-width strip above editor | Mismatched the centered text column; read as stray chrome |
 
 ## Component API
 

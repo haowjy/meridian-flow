@@ -90,8 +90,9 @@ creates Yjs sessions that the registry cannot know are closed.
 
 `MobileDocumentReview` wraps the editor of both document hosts (a live document
 and a pending new document) and adds the review's chrome while that document is
-under inline review. The editor keeps one place in its tree whether or not a
-review is open, so entering and leaving never remounts it. Nothing here owns
+under inline review. The column keeps one place in the tree whether or not a
+review is open, so entering and leaving never remounts the warm live editor;
+the review editor mounts beside it and swaps in, as on desktop (`EditorView`). Nothing here owns
 review state: the header runs `useReviewHeader`, the bar and sheet run
 `useReviewChanges`, both over the Editor scope's controller, the same hooks the
 desktop header and dock use. Optimistic Apply and Discard, refusals held on the
@@ -104,8 +105,9 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
   Discard all live in the switcher's menu, so the row stays short. A refused
   whole-draft command, "No changes left" and "Formatting changes remain" take a
   line under it.
-- **Bar** (`MobileChangeBar`): a tap on a change selects it (the editor's
-  mousedown seam, the same as a click) and its bar sits at the bottom of the
+- **Bar** (`MobileChangeBar`): a tap on a change selects it (the inline-review
+  plugin's mousedown handler, reached by the compatibility mousedown a tap fires;
+  verified in Chromium touch emulation, not on an iPhone) and its bar sits at the bottom of the
   manuscript column, in the page's flow so nothing is hidden behind it. It clears
   `env(safe-area-inset-bottom)` or the on-screen keyboard
   (`--mobile-keyboard-height`, from `MobileKeyboardAware`, which the review column
@@ -121,7 +123,10 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
   select a change, not raise the keyboard over its bar, and the phone has none of
   the editing chrome (the desktop's block grip shows once a caret is placed).
   Making the draft editable is one prop (`editable` on `EditorView`) plus those two
-  pieces of work.
+  pieces of work. The desktop's struck-removal click (caret beside the removal)
+  does nothing on this read-only body.
+- The phone has no identity bar, so a live document with a pending draft offers
+  no way into its review; the composer strip and Work files are the entries.
 
 ## Architecture
 

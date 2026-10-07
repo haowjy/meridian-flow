@@ -268,9 +268,10 @@ Writer operations carry neither field.
 
 ### Empty per-change reviews
 
-After a successful per-change Apply or Discard, the command checks for remaining
-review operations under the same branch/live/Work locking order as full Discard.
-An empty review uses the existing generation-reset path, closing old review rooms
+After a successful per-change Apply or Discard, the command re-checks the draft
+under the same branch/live/Work locking order as full Discard. A draft whose
+complete document effect equals live (see "Complete-effect terminal settlement")
+uses the existing generation-reset path, closing old review rooms
 and clearing current pending journal evidence through the Work projection mutation
 seam (the catalog wake hint). The infrastructure branch remains reusable, as for
 full Discard; future AI writes populate the new generation. Pushed history stays
@@ -283,11 +284,9 @@ Discard. Success responses expose `draftClosed`; only closed responses expose
 
 Live writer SET and agent writes routed to live preserve a pending Work draft:
 parent-to-child pulls merge live edits into the existing draft without resetting
-its generation or settling its authored rows. The partial-Apply Postgres suite
-covers both sources rewriting the live base of a pending insertion, then applying
-that insertion without losing the live rewrite. `./mf doc put --overwrite` is not
-this path: on conflict its CLI explicitly deletes the old document and creates a
-new one at the same URI. Its fresh document identity does not inherit old drafts.
+its generation or settling its authored rows. `./mf doc put --overwrite` is not
+this path: it deletes the document and creates a new one at the same URI, and
+the new identity inherits no drafts.
 
 ### Cumulative-delete Apply closure
 
@@ -297,6 +296,14 @@ branch deletions even when those deletions target live-base structs; Apply must
 show their operations in the selected class before replaying that row. Delete
 ranges already present on the current live cut are excluded from this edge.
 Whole-document Apply and journal bytes are unchanged.
+
+This makes classes coarser than the writer's view of a change, and that is the
+correct result for today's bytes: an AI write's journal row is a state-vector
+update that repeats every inherited deletion, so two independent replaces share
+a deletion and one class; and a pooled thread peer keeps one Yjs client across
+writes (a `read` rebuilds it), so one chat's writes also chain by clock. Never
+weaken the closure to split them; fix the producer instead (per-write deletion
+encoding, a fresh client per AI write).
 
 ### Surviving-text review anchors
 
@@ -327,8 +334,8 @@ still settle when its complete document effect equals live.
 
 ### Preview-scoped selective Discard
 
-Apply and Discard use one operation-to-closure resolver inside their branch
-critical section and again on each snapshot-CAS retry. Per-change Discard now
+Apply and Discard share one operation-to-closure resolver, run inside their
+branch critical section and again on each snapshot-CAS retry. Per-change Discard now
 requires the displayed live/draft revision tokens; missing or changed tokens
 return `stale` without modifying the draft. Discard still expands a requested
 operation to its entire server-vended class; Apply requires all class members.
