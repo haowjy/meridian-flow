@@ -108,9 +108,12 @@ carry `data-editor-surface="live|review"` for frame probes
 The review manuscript is the server draft projection plus decorations, in the
 manner of suggestion mode. Insertions are inline decorations over text that
 exists in the projection (green AI, gold writer, gold inside green for a writer
-edit inside an AI change, dashed grey when authorship cannot be split).
+edit inside an AI change, dashed grey when the server flags `mergeArtifact`: a
+true CRDT interleave, not merely two authors in one hunk).
 Removed live text is a read-only widget decoration (`removal-widget.ts`), struck
-through where it was: crimson for the AI, gold for the writer, never part of the
+through where it was: crimson for the AI, gold for the writer, each stretch in its
+remover's colour (a text hunk's `deletedSpans`; a block hunk's removal is read
+from its owning operations), never part of the
 Y.Doc or the TipTap document, so it cannot be typed into or saved. Long removals
 (over 200 characters) fold to "N paragraphs removed" and open on click. The
 review editor stays editable: the draft is a Yjs room and the writer is one more
