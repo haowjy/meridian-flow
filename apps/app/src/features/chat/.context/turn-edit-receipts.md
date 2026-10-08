@@ -29,15 +29,19 @@ header, which then reads "Changed" rather than "Edited", list as lines in the
 expanded receipt, and give a move-only or delete-only turn its receipt and
 whole-turn Undo. Their timeline rows (`NamespaceChangeRow`) read the same
 lineage, so a model `undo`/`redo`, the turn's Undo and the writer's Restore
-all reach the row one way: the lineage refetches. A model `undo`/`redo` result
+all reach the row through lineage; Restore also installs the confirmed status
+before refetching. A model `undo`/`redo` result
 on the thread stream invalidates every turn's lineage, since it can reverse
 any earlier turn. That includes an error result, which may follow steps that
 went through. Restore sits on both the delete's timeline row and its receipt line
-while the delete is applied. Both surfaces share the transient per-delete mutation
-key and show Restoring immediately; only server confirmation marks the lineage
-reversed. A refusal stays next to the control the writer clicked. No matching
-delete is not proof of restoration: the server distinguishes `nothing_to_restore`
-from `already_restored`, which requires a reversed delete and a live document.
+while the delete is applied. Both surfaces share one per-delete command record and show Restoring immediately;
+only server confirmation marks the lineage reversed. A refusal's status is shared,
+with detail next to the control the writer clicked. A new attempt or a confirmed
+restoration retires the old refusal, so redo cannot revive it. Restore sends the
+exact write ordinal along with the document and turn; a newer undone delete cannot
+hide the selected active one. No matching delete is not proof of restoration: the
+server distinguishes `nothing_to_restore` from `already_restored`, which requires
+the selected delete to be reversed and its document to be live.
 Namespace refusals retain typed causes; localized row messages never parse model
 prose. Move destinations retain their section and explicit Work when either differs.
 

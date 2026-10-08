@@ -739,6 +739,10 @@ msgid "Can't {command}: you don't have permission to change this document here."
 msgstr "Can't {command}: you don't have permission to change this document here."
 
 #: src/features/chat/NamespaceChangeRow.tsx
+msgid "Can't restore"
+msgstr "Can't restore"
+
+#: src/features/chat/NamespaceChangeRow.tsx
 msgid "Can't restore: another document is at {place}. Move or rename that document, then try again."
 msgstr "Can't restore: another document is at {place}. Move or rename that document, then try again."
 
@@ -2051,6 +2055,10 @@ msgstr "Fit"
 msgid "flowchart"
 msgstr "flowchart"
 
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Folder missing"
+msgstr "Folder missing"
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
 msgstr "Folder name"
@@ -2461,6 +2469,10 @@ msgstr "Loading Work…"
 msgid "Loading…"
 msgstr "Loading…"
 
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Location taken"
+msgstr "Location taken"
+
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
 msgstr "Log out"
@@ -2828,6 +2840,10 @@ msgstr "Nothing opened yet"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to redo yet."
 msgstr "Nothing to redo yet."
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Nothing to restore"
+msgstr "Nothing to restore"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to undo yet."

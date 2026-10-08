@@ -73,11 +73,12 @@ export interface AgentNamespaceChangeStore {
     threadId: string,
     uri: string,
   ): Promise<{ documentId: string; fromUri: string } | null>;
-  /** The turn's latest delete and the document's current live state, for Restore. */
+  /** The selected delete and the document's current live state, for Restore. */
   findTurnDelete(
     threadId: string,
     turnId: string,
     documentId: string,
+    wId: number,
   ): Promise<(NamespaceChangeRecord & { documentLive: boolean }) | null>;
   /**
    * Moves a change from `from` to the other status, claiming it so only one

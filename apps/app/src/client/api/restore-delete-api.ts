@@ -18,11 +18,11 @@ const REFUSALS: ReadonlySet<unknown> = new Set<RestoreDeleteOutcome["status"]>([
 
 export async function restoreAgentDelete(
   threadId: string,
-  input: { turnId: string; documentId: string },
+  input: { turnId: string; documentId: string; wId: number },
 ): Promise<RestoreDeleteOutcome> {
   const response = await postJson<RestoreAgentDeleteResponse>(
     apiThreadTurnRestoreDeletePath(threadId, input.turnId),
-    { documentId: input.documentId },
+    { documentId: input.documentId, wId: input.wId },
     // Expected refusals preserve their typed body; unknown HTTP failures stay request errors.
     {
       acceptErrorResponse: (status, payload) =>

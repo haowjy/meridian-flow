@@ -1,7 +1,7 @@
 /**
  * POST /api/threads/[threadId]/turns/[turnId]/restore-delete: the writer
  * restores a document the agent deleted live in this turn, named by the
- * delete receipt's `documentId`. 409 when its location is taken, its folder
+ * delete receipt's `documentId` and `wId`. 409 when its location is taken, its folder
  * is gone, or the turn has no delete of it still applied (`nothing_to_restore`).
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -17,6 +17,7 @@ import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { restoreAgentDelete } from "../../../../../../lib/thread-context-route.js";
 
 const restoreBodySchema = z.object({
+  wId: z.number().int().positive(),
   documentId: z
     .string({ error: "documentId must be a non-empty string" })
     .min(1, "documentId must be a non-empty string"),
@@ -42,6 +43,7 @@ export default defineEventHandler(async (event) => {
       threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
       turnId: getRouterParam(event, "turnId") ?? "",
       documentId: parsed.data.documentId,
+      wId: parsed.data.wId,
       userId: user.userId,
     },
   );

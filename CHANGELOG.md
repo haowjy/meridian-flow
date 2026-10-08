@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Restore targets the clicked delete, shares refusal state, and drops stale errors after retry or redo.
+
 - Move, delete and Restore refusals keep their cause and recovery instruction in model results and chat rows.
 
 - Restore distinguishes an already-restored document from a missing deletion.

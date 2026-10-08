@@ -69,13 +69,20 @@ export function namespaceContextRefusal(command: DocumentCommandName, error: Con
         "permission_denied",
         { path: error.uri, reason: "work_archived" },
       );
-    case "permission_denied":
-      return writeToolError(
-        command,
-        `Can't ${command}: you don't have permission to change this document here. Tell the user the change wasn't made.`,
-        "permission_denied",
-        { path: error.uri, reason: "action_denied" },
-      );
+    case "permission_denied": {
+      if (error.reason === "not_found")
+        return namespaceRefusal(command, error.uri, "document_missing");
+      const reason = error.reason ?? "action_denied";
+      const message =
+        reason === "work_archived"
+          ? `Can't ${command}: the document's Work is archived. Unarchive the Work, then retry.`
+          : reason === "uploads_read_only"
+            ? `Can't ${command}: documents in uploads:// are read-only. Tell the user the change wasn't made.`
+            : reason === "agent_read_only"
+              ? `Can't ${command}: your permission is read, so you can change only this chat's scratch://. Tell the user the change wasn't made.`
+              : `Can't ${command}: you don't have permission to change this document here. Tell the user the change wasn't made.`;
+      return writeToolError(command, message, "permission_denied", { path: error.uri, reason });
+    }
     case "operation_mismatch":
       return namespaceRefusal(command, error.uri, "stale_location");
     case "io_error":

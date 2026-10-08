@@ -158,7 +158,7 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
       return row ?? null;
     },
 
-    async findTurnDelete(threadId, turnId, documentId) {
+    async findTurnDelete(threadId, turnId, documentId, wId) {
       const [row] = await currentDrizzleDb(db)
         .select({ change: agentNamespaceChanges, deletedAt: documents.deletedAt })
         .from(agentNamespaceChanges)
@@ -169,9 +169,9 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
             eq(agentNamespaceChanges.turnId, turnId as TurnId),
             eq(agentNamespaceChanges.documentId, documentId as DocumentId),
             eq(agentNamespaceChanges.kind, "delete"),
+            eq(agentNamespaceChanges.wId, wId),
           ),
         )
-        .orderBy(desc(agentNamespaceChanges.id))
         .limit(1);
       return row ? { ...toRecord(row.change), documentLive: row.deletedAt === null } : null;
     },

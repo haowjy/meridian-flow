@@ -398,7 +398,7 @@ function locationTakenCopy(direction: ReversalDirection, uri: string | undefined
       ? t`Couldn't redo. Something else is in its place now.`
       : t`Couldn't undo. Something else is in its place now.`;
   }
-  const path = documentLocationPath(uri);
+  const path = documentLocationPath(uri, true);
   return direction === "redo"
     ? t`Couldn't redo. Something else is at ${path} now.`
     : t`Couldn't undo. Something else is at ${path} now.`;

@@ -14,8 +14,10 @@ import { Trans } from "@lingui/react/macro";
 import type { JsonValue, TurnNamespaceChangeItem } from "@meridian/contracts/protocol";
 import type { ReactNode } from "react";
 
-import type { RestoreDeleteOutcome } from "@/client/api/restore-delete-api";
-import { useRestoreDeleteMutation } from "@/client/query/useRestoreDeleteMutation";
+import {
+  type RestoreDeleteFailure,
+  useRestoreDeleteMutation,
+} from "@/client/query/useRestoreDeleteMutation";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { Button } from "@/components/ui/button";
 import { ActivityRow } from "./ActivityRow";
@@ -99,12 +101,12 @@ function MoveSentence({ from, to, undone }: { from: string; to: string; undone: 
 function DeleteSentence({
   path,
   restored,
-  pending,
+  status,
   children,
 }: {
   path: string;
   restored: boolean;
-  pending: boolean;
+  status: string | null;
   /** The restore control, on the row that offers it. */
   children?: ReactNode;
 }) {
@@ -114,7 +116,7 @@ function DeleteSentence({
     <Plain>{documentDisplayName(path)}</Plain>
   );
   return (
-    <TitleLine status={pending ? t`Restoring…` : restored ? t`Restored` : null}>
+    <TitleLine status={status ?? (restored ? t`Restored` : null)}>
       <Trans>Deleted {document}</Trans>
       {children}
     </TitleLine>
@@ -134,7 +136,7 @@ export function NamespaceChangeLine({
   threadId: string;
   turnId: string;
 }) {
-  const restore = useRestoreControl(threadId, turnId, change);
+  const restore = useRestoreControl(threadId, turnId, change, "receipt");
   if (change.kind === "move") {
     return (
       <MoveSentence
@@ -149,7 +151,7 @@ export function NamespaceChangeLine({
       <DeleteSentence
         path={change.fromUri}
         restored={change.status === "reversed"}
-        pending={restore.pending}
+        status={restore.status}
       >
         {restore.control}
       </DeleteSentence>
@@ -169,10 +171,10 @@ function DeleteRow({
   turnId: string;
   change: TurnNamespaceChangeItem | null;
 }) {
-  const restore = useRestoreControl(threadId, turnId, change);
+  const restore = useRestoreControl(threadId, turnId, change, "tool");
   const path = change?.fromUri ?? stringInput(toolInputObject(tool), "path") ?? "";
   const title = (
-    <DeleteSentence path={path} restored={change?.status === "reversed"} pending={restore.pending}>
+    <DeleteSentence path={path} restored={change?.status === "reversed"} status={restore.status}>
       {restore.control}
     </DeleteSentence>
   );
@@ -186,28 +188,28 @@ function DeleteRow({
 
 /**
  * The writer's Restore for one delete, wherever the delete is shown: its
- * control while the delete stands, and what came of it. Each place keeps its
- * own note, so a refusal lands where the writer clicked; the delete's status
- * is the shared lineage, so every place follows it.
+ * control while the delete stands, and what came of it. The command's current outcome is shared, with detail on the initiating
+ * surface; confirmed status comes from the lineage.
  */
 function useRestoreControl(
   threadId: string,
   turnId: string,
   change: TurnNamespaceChangeItem | null,
-): { control: ReactNode; note: string | null; pending: boolean } {
+  surface: "tool" | "receipt",
+): { control: ReactNode; note: string | null; status: string | null } {
   const restore = useRestoreDeleteMutation(
     threadId,
     change ? { turnId, documentId: change.documentId, wId: change.wId } : null,
+    surface,
+    change?.status === "active",
   );
   const path = change?.fromUri ?? "";
-  const note =
-    change?.status === "active" && !restore.isPending
-      ? restoreNote(restore.isError ? { status: "request_failed" } : restore.data, path)
-      : null;
+  const note = restore.showNote ? restoreNote(restore.outcome, path) : null;
+  const status = restore.isPending ? t`Restoring…` : restoreFailureStatus(restore.outcome);
   // The control needs the server's word that the delete still stands; an
   // unloaded or rolled-back change offers nothing to act on.
   if (change?.kind !== "delete" || change.status !== "active" || restore.isPending) {
-    return { control: null, note, pending: restore.isPending };
+    return { control: null, note, status };
   }
   const name = documentDisplayName(path);
   const control = (
@@ -225,7 +227,7 @@ function useRestoreControl(
       <Trans>Restore</Trans>
     </Button>
   );
-  return { control, note, pending: restore.isPending };
+  return { control, note, status };
 }
 
 function RestoreNote({ className, children }: { className?: string; children: ReactNode }) {
@@ -236,11 +238,25 @@ function RestoreNote({ className, children }: { className?: string; children: Re
   );
 }
 
+/** Both surfaces show the same outcome; only the clicked one expands its cause. */
+function restoreFailureStatus(outcome: RestoreDeleteFailure | undefined): string | null {
+  switch (outcome?.status) {
+    case "location_taken":
+      return t`Location taken`;
+    case "folder_missing":
+      return t`Folder missing`;
+    case "nothing_to_restore":
+      return t`Nothing to restore`;
+    case "permission_denied":
+    case "request_failed":
+      return t`Can't restore`;
+    default:
+      return null;
+  }
+}
+
 /** Why the writer's restore didn't do what they asked; null when it did. */
-function restoreNote(
-  outcome: RestoreDeleteOutcome | { status: "request_failed" } | undefined,
-  path: string,
-): string | null {
+function restoreNote(outcome: RestoreDeleteFailure | undefined, path: string): string | null {
   switch (outcome?.status) {
     case "location_taken": {
       const place = documentLocationPath(path, true);

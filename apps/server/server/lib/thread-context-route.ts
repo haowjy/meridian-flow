@@ -179,13 +179,18 @@ function writerTree(
  */
 export async function restoreAgentDelete(
   deps: ThreadContextRouteDeps & { namespaceChanges: NamespaceChanges },
-  input: { threadId: ThreadId; turnId: string; documentId: string; userId: UserId },
+  input: { threadId: ThreadId; turnId: string; documentId: string; wId: number; userId: UserId },
 ): Promise<RestoreAgentDeleteResponse> {
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId");
   const documentId = requireRequestId(input.documentId, "documentId");
   const tree = await writerNamespaceTree(deps, threadId, input.userId);
-  const change = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
+  const change = await deps.namespaceChanges.findTurnDelete(
+    threadId,
+    turnId,
+    documentId,
+    input.wId,
+  );
   if (change?.status !== "active") {
     return change?.status === "reversed" && change.documentLive
       ? { status: "already_restored", documentId, uri: change.fromUri }
@@ -201,7 +206,12 @@ export async function restoreAgentDelete(
         ? { status: "permission_denied", reason: "work_archived" }
         : { status: "nothing_to_restore" };
     case "claimed": {
-      const current = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
+      const current = await deps.namespaceChanges.findTurnDelete(
+        threadId,
+        turnId,
+        documentId,
+        input.wId,
+      );
       return current?.status === "reversed" && current.documentLive
         ? { status: "already_restored", documentId, uri: current.fromUri }
         : { status: "nothing_to_restore" };

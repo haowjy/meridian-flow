@@ -80,7 +80,14 @@ function serve(restore: {
       throw new Error(`unexpected fetch ${url}`);
     }),
   );
-  return { restoreRequests };
+  return {
+    restoreRequests,
+    respondWith: (next: { status: number; body: unknown; restores: boolean }) =>
+      Object.assign(restore, next),
+    redoDelete: () => {
+      deleteStatus = "active";
+    },
+  };
 }
 
 describe("a delete row's Restore", () => {
@@ -155,6 +162,43 @@ describe("a delete row's Restore", () => {
     expect(server.restoreRequests).toHaveLength(1);
   });
 
+  it("shares the current refusal while keeping detail on the clicked surface, and retires old outcomes", async () => {
+    const server = serve({
+      status: 409,
+      body: { status: "location_taken", uri: "manuscript://ch2.md" },
+      restores: false,
+    });
+    await renderRow();
+    await act(async () => restoreButton("row")?.click());
+    await vi.waitFor(() => expect(text("row")).toContain("Location taken"));
+    expect(text("receipt")).toContain("Location taken");
+    expect(text("receipt")).not.toContain("another document");
+    server.respondWith({
+      status: 409,
+      body: { status: "folder_missing", uri: "manuscript://ch2.md" },
+      restores: false,
+    });
+    await act(async () => restoreButton("receipt")?.click());
+    await vi.waitFor(() => expect(text("receipt")).toContain("Folder missing"));
+    expect(text("row")).toContain("Folder missing");
+    expect(text("row")).not.toContain("another document");
+    expect(text("row")).not.toContain("original folder");
+    server.respondWith({
+      status: 200,
+      body: { status: "restored", documentId: DOCUMENT, uri: "manuscript://ch2.md" },
+      restores: true,
+    });
+    await act(async () => restoreButton("row")?.click());
+    await vi.waitFor(() => expect(text("receipt")).toContain("Restored"));
+    server.redoDelete();
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await vi.waitFor(() => expect(restoreButton("receipt")).not.toBeNull());
+    expect(host.querySelector("[data-restore-note]")).toBeNull();
+    expect(host.textContent).not.toContain("Folder missing");
+  });
+
   it("restores the document and the row says so", async () => {
     const server = serve({
       status: 200,
@@ -168,7 +212,7 @@ describe("a delete row's Restore", () => {
 
     await vi.waitFor(() => expect(host.textContent).toContain("Restored"));
     expect(restoreButton()).toBeNull();
-    expect(server.restoreRequests).toEqual([{ documentId: DOCUMENT }]);
+    expect(server.restoreRequests).toEqual([{ documentId: DOCUMENT, wId: 1 }]);
   });
 
   it("restores from the turn's receipt, and the row follows", async () => {
@@ -186,7 +230,7 @@ describe("a delete row's Restore", () => {
     expect(text("row")).toContain("Restored");
     expect(restoreButton("receipt")).toBeNull();
     expect(restoreButton("row")).toBeNull();
-    expect(server.restoreRequests).toEqual([{ documentId: DOCUMENT }]);
+    expect(server.restoreRequests).toEqual([{ documentId: DOCUMENT, wId: 1 }]);
   });
 
   it("does not claim restoration when there is no matching deletion", async () => {
@@ -229,7 +273,7 @@ describe("a delete row's Restore", () => {
         "Can't restore: the document's Work is archived. Unarchive the Work, then try again.",
       ),
     );
-    expect(text("row")).not.toContain("Can't restore");
+    expect(text("row")).not.toContain("Work is archived");
     expect(host.textContent).not.toContain("Restored");
   });
 

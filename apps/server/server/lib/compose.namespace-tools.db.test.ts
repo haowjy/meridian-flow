@@ -515,6 +515,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD.threadId as never,
           turnId: THREAD.turnId,
           documentId: DOC_ID,
+          wId: 1,
           userId: USER_ID as never,
         });
       const port = app.contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
@@ -549,9 +550,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD.threadId as never,
           turnId: THREAD.turnId,
           documentId: randomUUID(),
+          wId: 1,
           userId: USER_ID as never,
         }),
       ).resolves.toEqual({ status: "nothing_to_restore" });
+    });
+
+    it("restores the selected delete even when a newer delete in the same turn was undone", async () => {
+      const { runtime, script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "delete", path: CHAPTER });
+        await call("write", { command: "undo", path: CHAPTER, to: "w1" });
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "delete", path: CHAPTER });
+        await call("write", { command: "undo", path: CHAPTER, to: "w2" });
+        await call("write", { command: "redo", path: CHAPTER, to: "w1" });
+      });
+      const app = runtime.app;
+      const deps = {
+        contextPorts: app.contextPorts,
+        fileAccess: app.fileAccess,
+        threads: app.threadRepos.threads,
+        threadWorks: app.threadRepos.threadWorks,
+        works: app.workRepo,
+        workAuthorityResolver: app.workAuthorityResolver,
+        namespaceChanges: app.documentSync.namespaceChanges,
+      };
+      const restore = (wId: number) =>
+        restoreAgentDelete(deps, {
+          threadId: THREAD.threadId as never,
+          turnId: THREAD.turnId,
+          documentId: DOC_ID,
+          wId,
+          userId: USER_ID as never,
+        });
+      await expect(restore(2)).resolves.toEqual({ status: "nothing_to_restore" });
+      expect((await documentRow(DOC_ID))?.deletedAt).not.toBeNull();
+      await expect(restore(1)).resolves.toMatchObject({ status: "restored", documentId: DOC_ID });
+      await expect(restore(1)).resolves.toMatchObject({
+        status: "already_restored",
+        documentId: DOC_ID,
+      });
+      await expect(restore(999)).resolves.toEqual({ status: "nothing_to_restore" });
     });
 
     it("the writer's turn undo names a taken path, then puts back the turn's move and delete, and redo makes them again", async () => {

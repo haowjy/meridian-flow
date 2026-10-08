@@ -1,28 +1,63 @@
 /**
- * Restore lifecycle shared by the receipt and tool row for one delete.
- * Pending is immediate; only the server can mark the lineage reversed.
- * Refusals stay on the caller, and both controls unlock for another attempt.
+ * One command record per delete, shared by its receipt and tool row. Pending
+ * and the current refusal are shared; detail stays on the initiating surface.
+ * A new attempt or confirmed restoration retires the previous outcome.
  */
 import type { ListTurnLiveLineageResponse } from "@meridian/contracts/protocol";
-import { useIsMutating, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 
 import { type RestoreDeleteOutcome, restoreAgentDelete } from "@/client/api/restore-delete-api";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { threadQueryKeys } from "./thread-query-keys";
 
-/** `wId` identifies the exact delete in the lineage. */
 export type RestoreDeleteInput = { turnId: string; documentId: string; wId: number };
+export type RestoreDeleteFailure = RestoreDeleteOutcome | { status: "request_failed" };
+type Surface = "tool" | "receipt";
+type RestoreRecord =
+  | { phase: "pending" }
+  | { phase: "failed"; surface: Surface; outcome: RestoreDeleteFailure };
 
-export function useRestoreDeleteMutation(threadId: string, input: RestoreDeleteInput | null) {
+export function useRestoreDeleteMutation(
+  threadId: string,
+  input: RestoreDeleteInput | null,
+  surface: Surface,
+  active: boolean,
+) {
   const queryClient = useQueryClient();
-  const mutationKey = ["restore-delete", threadId, input?.turnId, input?.documentId, input?.wId];
-  const pending = useIsMutating({ mutationKey, exact: true }) > 0;
+  const accountSignal = useOptionalAccountEpochSignal();
+  const recordKey = useMemo(
+    () => ["restore-delete-command", threadId, input?.turnId, input?.documentId, input?.wId],
+    [threadId, input?.turnId, input?.documentId, input?.wId],
+  );
+  const { data: record } = useQuery<RestoreRecord | null>({
+    queryKey: recordKey,
+    queryFn: () => queryClient.getQueryData<RestoreRecord>(recordKey) ?? null,
+    initialData: null,
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const setRecord = (value: RestoreRecord | null) => queryClient.setQueryData(recordKey, value);
+  useEffect(() => {
+    if (!active && record?.phase === "failed") queryClient.setQueryData(recordKey, null);
+  }, [active, record, queryClient, recordKey]);
+  useEffect(() => {
+    const clear = () => queryClient.removeQueries({ queryKey: recordKey, exact: true });
+    accountSignal?.addEventListener("abort", clear, { once: true });
+    return () => accountSignal?.removeEventListener("abort", clear);
+  }, [accountSignal, queryClient, recordKey]);
+
   const mutation = useMutation<RestoreDeleteOutcome, Error, RestoreDeleteInput>({
-    mutationKey,
-    mutationFn: ({ turnId, documentId }) => restoreAgentDelete(threadId, { turnId, documentId }),
+    mutationFn: (input) => restoreAgentDelete(threadId, input),
     onSuccess: async (outcome, restored) => {
-      if (outcome.status !== "restored" && outcome.status !== "already_restored") return;
+      if (accountSignal?.aborted) return;
+      if (outcome.status !== "restored" && outcome.status !== "already_restored") {
+        setRecord({ phase: "failed", surface, outcome });
+        return;
+      }
       const queryKey = threadQueryKeys.liveLineage(threadId, restored.turnId);
       await queryClient.cancelQueries({ queryKey });
+      if (accountSignal?.aborted) return;
       queryClient.setQueryData<ListTurnLiveLineageResponse>(
         queryKey,
         (lineage) =>
@@ -37,15 +72,29 @@ export function useRestoreDeleteMutation(threadId: string, input: RestoreDeleteI
             ),
           },
       );
+      setRecord(null);
     },
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) }),
+    onError: () => {
+      if (!accountSignal?.aborted)
+        setRecord({ phase: "failed", surface, outcome: { status: "request_failed" } });
+    },
+    onSettled: () => {
+      if (!accountSignal?.aborted)
+        void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
+    },
   });
   return {
-    ...mutation,
-    isPending: pending || mutation.isPending,
+    isPending: record?.phase === "pending",
+    outcome: active && record?.phase === "failed" ? record.outcome : undefined,
+    showNote: record?.phase === "failed" && record.surface === surface,
     mutate: () => {
-      if (!input || queryClient.isMutating({ mutationKey, exact: true }) > 0) return;
+      if (
+        !input ||
+        accountSignal?.aborted ||
+        queryClient.getQueryData<RestoreRecord>(recordKey)?.phase === "pending"
+      )
+        return;
+      setRecord({ phase: "pending" });
       mutation.mutate(input);
     },
   };
