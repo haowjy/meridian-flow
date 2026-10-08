@@ -129,6 +129,12 @@ tools/dev/
   `pnpm check` and `pnpm test:db` at once in one worktree. Inspect the cleanup
   log when detached drops are still waiting on a
   PostgreSQL checkpoint. Cleanup relocates that I/O; it does not eliminate it.
+- **Combined tests:** `pnpm test:all` provisions the same managed database fleet,
+  then runs unit and DB projects in one Vitest invocation. Unit workers use
+  threads; DB workers remain capped forks with their own database clones. Its
+  reporter requires executed DB tests, including tests nested in suites: a
+  unit-only selection cannot pass as a combined check. `pnpm test` remains
+  database-free, and `pnpm test:db` remains the DB-only command.
 - **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
   missing or unreachable configured Postgres server is a loud skip because the
   static CI job has no database service; a reachable server runs the same

@@ -140,7 +140,9 @@ export default defineProject({
   },
   test: {
     name: "db",
+    dir: root,
     environment: "node",
+    pool: "forks",
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
     setupFiles: [fileURLToPath(new URL("../../tools/ci/db-test-worker-setup.ts", import.meta.url))],
