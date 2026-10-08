@@ -130,11 +130,18 @@ tools/dev/
   log when detached drops are still waiting on a
   PostgreSQL checkpoint. Cleanup relocates that I/O; it does not eliminate it.
 - **Combined tests:** `pnpm test:all` provisions the same managed database fleet,
-  then runs unit and DB projects in one Vitest invocation. Unit workers use
-  threads; DB workers remain capped forks with their own database clones. Its
-  reporter requires executed DB tests, including tests nested in suites: a
-  unit-only selection cannot pass as a combined check. `pnpm test` remains
+  then runs unit and DB projects in one Vitest invocation. The root worker
+  budget matches the owned clone count; a per-project DB cap alone is not
+  sufficient. Unit workers use threads; DB workers use forks. The DB project
+  sets both `root` and `test.dir` to the repository root so package and tooling
+  cases are collected alongside server cases. The configured DB reporter
+  rejects runs with no passed or failed DB test, including tests nested in
+  suites. Caller-selected reporters must preserve that execution guard; a
+  unit-only result is not combined-run evidence. `pnpm test` remains
   database-free, and `pnpm test:db` remains the DB-only command.
+  Contracts and markup reuse pure worker modules; DB suites reuse modules
+  while suite-owned connections and rollback/FK resets isolate state. Other
+  unit projects retain normal per-file module isolation.
 - **Root check integration:** `pnpm check` ends with `check-db-gate.ts`. A
   missing or unreachable configured Postgres server is a loud skip because the
   static CI job has no database service; a reachable server runs the same
