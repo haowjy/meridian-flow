@@ -237,12 +237,14 @@ storage or lifecycle eligibility (the caller checks those).
 or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
 words have writer-protected birth provenance. Maintenance is excluded from both
 live overlap dependencies and reversal lineage blockers, so rewriting a link
-inside an AI paragraph does not prevent the paragraph's Undo. Draft attribution
-does not yet keep it neutral: `liveAttributionRows` in
-`domain/branch-agent-edit.ts` labels every non-agent live row `writer`, so a
-rewrite after a draft's baseline echoes as a writer edit
-([#719](https://github.com/haowjy/meridian-flow/issues/719)). Do not build on
-that label.
+inside an AI paragraph does not prevent the paragraph's Undo. Draft attribution normalizes live and branch journal entries to the package's
+`ConcurrentUpdateOrigin` before block coverage. `link-update` and
+`system:reconcile` keep neutral `system` provenance: their bytes converge, but
+neither touched/deleted hashes nor new lineage become human or agent echoes.
+Maintenance accounts for changed blocks without replacing prior authored
+coverage. Coverage projects the CRDT join of baseline, upstream, and journal
+rows, since preflight can observe a live rewrite before the Work draft does;
+a recheck must not mistake that older upstream for a new writer edit.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This
