@@ -27,7 +27,7 @@ import { useAiDraftLauncher } from "./useAiDraftLauncher";
 export function DockChangesView({ className }: { className?: string }) {
   const { groups, controller } = useDraftReview();
   const { controller: editor, groups: editorGroups } = useEditorDraftReview();
-  const { openDockRow: openDraft } = useAiDraftLauncher();
+  const { openReviewFile: openDraft } = useAiDraftLauncher();
   const view = useReviewChanges(editor);
 
   // One list per Work: the Editor's, and the Chat's when the chat is in another

@@ -2,64 +2,18 @@
 
 ## [Unreleased]
 
-- Independent writer edits stay separate in draft review, including edits in neighboring paragraphs. Selective Discard refuses an outdated preview instead of discarding against a changed live document, and malformed selections never discard the whole draft.
-- Discarding a draft's last change keeps it discarded when the same chat writes again. Applying a later draft no longer brings the earlier discarded text back.
-
-- Draft review has one row, not two. The review header above the document is gone: the Draft chip, the stepper, Show changes, Discard and Apply now sit in the row that shows the document's path, and the page below does not move when you enter or leave review. The "Review draft" button on a live document is the same chip, so the control you click to get in is the one you look at to get out. When the row gets narrow it gives up room in order (folders become `…`, Show changes becomes an icon, `4 of 4` becomes `4/4`, then the file name shortens); the Draft chip, Discard and Apply always stay. Rename moves into the Draft chip's menu while you review.
-- The Draft chip's menu is about this document: its live version and its draft, plus Rename. Moving to another file, and Apply all or Discard all for the Work, are in the Changes list (the dock's Changes tab, and the change list on the phone), where every draft file appears once in the same order, with the file you are reviewing opened in place instead of jumping to the top. Work files, the composer's draft strip and Next draft use that order too.
-- On the phone, a live document with a pending draft now has a Draft chip under the top bar that opens its review.
-- A refused Apply or Discard no longer always says to check your connection. A server refusal says "Couldn't apply this change." (or "this draft") followed by the reason the server gave, such as "This Work is archived and read-only."; an error with no reason says "Try again."; only a request that never arrived mentions the connection.
-- In draft review, typing inside one AI change no longer pulls unrelated typing elsewhere into its Apply. Separate untouched typing sites also stay separate. Pauses alone do not split a change, and normal live editing is unchanged.
-
-- Independent AI replacements from separate chats now stay separate in draft review. Applying one puts only that edit on live: both write encoding and publication to the Work draft preserve each edit's own deletion ranges.
-- Moving from one draft to another (picking it in the switcher, Apply draft, Discard draft, Next draft) no longer shows a blank skeleton with no header in between. The review you are leaving stays on screen until the next one has painted with its header and marks, then the two swap in one step, on desktop and phone. While it is held, the page being opened cannot be clicked, tabbed to or read by a screen reader (it says "Opening" and the chapter's name instead), tabs and the sidebar still work, and the held review goes as soon as you go anywhere else, the draft fails to load, or ten seconds have passed. The next draft is also read ahead while you are in the current one. Opening a draft that refused to apply keeps its refusal on it.
-- Clicking or double-clicking struck-through (removed) text in a draft now puts the caret where that text stood, so what you type lands there. The removed text itself still cannot be selected or edited. The first click on a removed paragraph that was not selected yet follows the same rule: its top half puts the caret before the paragraph, its bottom half after.
-- When Apply draft is refused, the draft you were moved to now says which draft did not apply, with an Open button (phone and desktop), instead of the refusal showing only on a row in the closed draft menu. Apply all and Discard all no longer stop at the first draft that fails: they finish the rest, name every draft that did not apply (with an Open button each), and never move you: they leave you where you are, even when the answer arrives after you went to another draft. If Apply all or Discard all closes the draft you are reviewing, the review stays on "No changes left" with the outcome in front of you instead of dropping to the live text as if everything were done.
-- Apply and Discard on a change (or a whole draft) while you are offline now say so right away on the change ("Couldn't apply. Check your connection and try again.") and send nothing, instead of removing the change, doing nothing, and applying it silently when the network came back. When an Apply's answer is lost, the message no longer promises it will update by itself: "Couldn't confirm whether this applied. Check what is left before you try again."
-- A draft open in two tabs stays in step: when one tab applies a change, the other tab's list and marks update within a second, instead of keeping the applied change until its next action was refused as out of date.
-
-- Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.
-
-- Discarding an individual change now refuses a stale preview rather than removing a newly enlarged dependency class.
-- Discarding one change sends the preview you saw, as applying one does. If the change was updated meanwhile, it comes back with "This change was updated. Check it and discard again." instead of vanishing, and the draft is never treated as discarded or closed.
-- A change the server could not attribute to anyone is still shown in the review, listed as "Unattributed" with its full removed or inserted text, and has no Apply or Discard of its own: the bar says Apply draft or Discard draft handles it. A change that shares a class with one of these has no per-change buttons either.
-- Applying or discarding the last change that can be handled one by one no longer reads as finishing the draft while a change that can't is left. A draft whose only remaining difference is formatting says "Formatting changes remain" instead of "No changes left", with Apply draft and Discard draft still available.
-
-- Handling the last text change preserves independent draft formatting for document-level Apply or Discard.
-- Draft review sends one command per draft at a time, whether it comes from the Editor or the Chat: while a change's Apply or Discard is in flight, the draft's Apply and Discard are disabled everywhere, and the other way round.
-- After you apply or discard the last change, the review says "Applying" or "Discarding" until the server answers, and shows "No changes left" only once it has closed the draft. A last Discard no longer lets you type into the finished text before the server answers; if another change arrived meanwhile, the review comes back with it.
-- A change you handled while a review was still opening no longer comes back in the list.
-- If Apply draft is refused after the review moved on to the next draft, the refusal shows on the draft that was refused (in the switcher, the Changes tab and Work files).
-- An Apply or Discard of one change whose answer never arrived says it couldn't confirm whether it applied (or was discarded), instead of saying it failed.
-
-- Draft preview stays available when different chats edit adjacent sentences, and retained punctuation is no longer shown as deleted.
-
-- Applying a draft change no longer silently publishes earlier deletions. Changes carried by the same Yjs update are shown and handled together.
-- After you apply or discard the last change of a draft, the review stays on the finished text with "No changes left" and a Next draft button (Back to live when no draft is left), on desktop and phone, and a reload shows the live document. The text on screen is the live document, editable again, with no blank frame.
-- A change's excerpt in the list no longer repeats its text when your own edits are inside it.
-- The chat link on a change reads "New chat" for an untitled chat, as the chat list does.
-- The bar for a change with your edits inside it moves under the change when the margin is too narrow to show Apply.
-
-- Applying or discarding the last draft change closes the review on the server, including after reload.
-
-- Draft changes link to the chat that wrote them, using its current title.
-
-- Draft review identifies the author of each removed text span, including mixed-author deletions in one change.
-
-- Draft review distinguishes CRDT interleaves from ordinary writer edits inside AI prose.
-
-- Draft review now retains every consecutive deletion, including cumulative Yjs delete-set updates.
-
-- Apply individual dependency-closed draft changes, with stale-preview refusal and preserved authorship.
-- Draft review has one header row: the draft switcher (every draft of the Work with its change count, Show live version, Apply all and Discard all), a stepper through the changes, Show changes, Discard draft and Apply draft. Apply draft and Discard draft move straight to the next draft. A focused change gets a small bar beside it with the chat that wrote it, Discard and Apply, and the dock's Changes tab lists every change on one line each. Applying or discarding one change takes it off the screen at once, with a short confirmation; new AI changes join the list as they arrive. When the last change is handled, the review says so and offers the next draft.
-- A struck-through removal in a draft no longer runs into the text that replaced it, and leaves no gap before a comma or full stop.
-- The bar for the change you are looking at no longer covers your text. It stands in the right margin beside the change, and when the window is too narrow for that, it takes a line of its own under the change and the text below moves down.
-- Opening a new document's draft from an open review (the draft switcher, Apply draft or Next draft) shows its review instead of an empty editor.
-- The draft review header starts with the draft switcher; the path is already on the bar below it.
-- Draft review strikes each stretch of a removal in its remover's colour (red for the AI, gold for you, even inside one removal), and paints a change as a merge only when the server says the two edits are interleaved.
-- Draft review works on the phone. A compact header under the top bar holds the draft switcher, a stepper through the changes and a change count; tap a change to select it and its bar (the chat that wrote it, Discard, Apply) sits at the bottom of the page, above the keyboard when it is up. The count opens the change list as a sheet over the dimmed manuscript; tap a row to go to that change. Apply draft, Discard draft, Apply all and Discard all are in the switcher's menu. Every control is a 44px target.
-- A struck-through removal in a draft no longer runs into the text that replaced it.
-- Draft review shows removed text struck through in the manuscript like suggestion mode (red for the AI, gold for you; long removals fold), your typing in a draft is gold at once, and entering review keeps the live view and its header until the draft is ready, then switches in one frame.
+- Draft review shows a draft in the manuscript like suggestion mode. Added text is coloured by who wrote it (the AI, or you in gold, at once as you type), and removed text stays in place struck through in its remover's colour, even when one removal mixes both. Long removals fold to a "3 paragraphs removed" line you can open. Removed text cannot be selected or edited, and clicking it puts the caret where it stood. A change the server cannot attribute is shown without an author's colour, listed as "Unattributed", and is handled by Apply draft or Discard draft.
+- You can apply or discard one change at a time. Each change is the smallest set of edits that can go to live on its own: edits from different chats, and your own separate edits, stay separate, including edits in neighbouring paragraphs, while typing inside an AI change stays with it. Applying one puts only that change on live. If the draft or live document changed since you looked, the command refuses with "This change was updated. Check it and apply again." (or discard) instead of acting on something you did not see, and an empty or malformed selection never discards the whole draft.
+- A focused change has a small bar beside it in the margin (under the change when the margin is narrow) with the chat that wrote it, Discard and Apply. Applying or discarding takes the change off the screen at once; new AI changes join as they arrive. After the last change, the review says "Applying" or "Discarding" until the server answers, then "No changes left" with Next draft (or Back to live), and a reload shows the live document. A draft whose only difference left is formatting says "Formatting changes remain" with Apply draft and Discard draft still available.
+- Draft review has one row: the path, the version chip, the stepper, Show changes, Discard draft and Apply draft share the row under the tab, tinted while you review a draft, and the page does not move when you enter or leave review. The chip is the same menu on a live document (Live) and in review (Draft): this document's live version and its draft, plus Rename. As the row narrows it gives up room in order and the chip, Discard and Apply always stay.
+- The Changes list (the dock's Changes tab, and the change sheet on the phone) lists every draft file of the Work once, in one stable order, with the file you are reviewing opened in place and its changes in document order. Apply all and Discard all for the Work are its menu, and its count is the drafts still to review. Work files, the composer's draft strip and Next draft use the same order.
+- Moving between drafts keeps the review you are leaving on screen until the next one has painted, then swaps in one step, on desktop and phone. The page being opened cannot be clicked or read by a screen reader until then, and the hold ends when you go elsewhere, the draft fails to load, or after ten seconds. The next draft is read ahead.
+- Draft review works on the phone: a Draft chip under the top bar opens a live document's draft, the review has a stepper and a change count, a selected change's bar sits above the keyboard, and the change sheet keeps the file list and Apply all or Discard all even when the open file has no listed changes. Every control is a 44px target.
+- Apply, Discard, Apply all and Discard all explain what happened. Offline, they say so on the change at once and send nothing (nothing applies later by itself). A server refusal gives its reason in your language when it is a known one, such as an archived Work. A lost answer says it couldn't confirm whether it applied. Apply all and Discard all finish every draft they can, name each one that did not apply with an Open button, and never move you. A refusal stays on the draft it belongs to after you move on.
+- Only one command runs per draft at a time, from the Editor or the Chat, and a draft open in two tabs stays in step within a second.
+- Undo and Redo in draft review keep the original author of the text they restore, including after reload and when the draft is applied. Retyping the same words by hand stays yours.
+- Independent AI replacements stay separate changes: each AI write records only its own edits, including when a chat's edit is published into the Work's draft. Discarding a draft's last change keeps it discarded when the same chat writes again.
+- Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree and the Changes list only redraw rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
@@ -77,11 +31,6 @@
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
 
 ## [Unreleased]
-
-- Draft review has one row, not two. The review header above the document is gone: the Draft chip, the stepper, Show changes, Discard and Apply now sit in the row that shows the document's path, and the page below does not move when you enter or leave review. The "Review draft" button on a live document is the same chip, so the control you click to get in is the one you look at to get out. When the row gets narrow it gives up room in order (folders become `…`, Show changes becomes an icon, `4 of 4` becomes `4/4`, then the file name shortens); the Draft chip, Discard and Apply always stay. Rename moves into the Draft chip's menu while you review.
-- The Draft chip's menu is about this document: its live version and its draft, plus Rename. Moving to another file, and Apply all or Discard all for the Work, are in the Changes list (the dock's Changes tab, and the change list on the phone), where every draft file appears once in the same order, with the file you are reviewing opened in place instead of jumping to the top. Work files, the composer's draft strip and Next draft use that order too.
-- On the phone, a live document with a pending draft now has a Draft chip under the top bar that opens its review.
-- A refused Apply or Discard no longer always says to check your connection. A server refusal says "Couldn't apply this change." (or "this draft") followed by the reason the server gave, such as "This Work is archived and read-only."; an error with no reason says "Try again."; only a request that never arrived mentions the connection.
 
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
 - Model tool results are short text; the typed `result` is stored beside it, and the app reads only `result`. `read` and `write` return a status line plus `hash|text` blocks. `ls` returns the folder's URI, then one line per entry, with `(read-only)` and a non-text file's kind only when they apply. `work` returns one line per Work, `search` returns `hash|excerpt` around each match, and a `read` outline gives each heading's `#slug`. `verbose: true` on `ls`, `work` and `search` adds sizes, edit times, dates and whole blocks. A refusal reads as its message and code. In the typed result, `ls` entries carry `readonly` (was `editable`) and Works carry `writes` and `pendingChangeCount`.
@@ -292,8 +241,6 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
-
-- Undo and Redo in draft review preserve the original author of restored text, including after reload and when applying the draft.
 - Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
 - Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
 - Keep interrupted compaction metadata parseable across run-start and startup recovery.

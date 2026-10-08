@@ -104,12 +104,17 @@ through the Editor controller:
 - `view.apply(change)` / `view.discard(change)` — per-change commands
 - `view.locked` — the global disposition lock, disabling every row together
 
-Below the changes it lists the Work's other drafts to open (the Editor Work's,
-and the Chat Work's when it differs). A draft the server closed is not listed:
-it has left the Work's draft list, and no client mark hides it.
+The tab is `ReviewFiles`: every draft file of the Work once, in the shared
+review-file order, with the open file expanded in place (`OpenFileChanges`:
+its changes in document order, Applying, No changes left with Next draft, or
+formatting-only) and Apply all / Discard all as the Work's menu. When the
+Chat's Work differs, its files are a second, named section with its own menu.
+A draft the server closed is not listed: it has left the Work's draft list,
+and no client mark hides it.
 
-The review session owner is `useDraftReviewController` in the chat feature; the
-dock only renders review state and dispatches actions.
+The review session owner is `useDraftReviewController` in
+`features/draft-review`; the dock only renders review state and dispatches
+actions.
 
 ### Claim-based inline-review editor registration
 
@@ -135,10 +140,10 @@ flowchart LR
 DockShell -->|dock: view=changes| Changes[DockChangesView]
 DockShell -->|Work view=file| File[ContextViewerBareHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
-    Changes --> List[ChangeList of the open review]
-    List --> Row[ReviewChangeRow per change]
+    Changes --> Files[ReviewFiles: the Work's draft files and Apply all]
+    Files --> Open[OpenFileChanges for the open file]
+    Open --> Row[ReviewChangeRow per change]
     Row --> Verbs[Apply and Discard one change, when actionable]
-    Changes --> Other[DraftDocumentRow per other draft]
 ```
 
 `DockShell` is the single component both dock occupants (`ChatSurface`,

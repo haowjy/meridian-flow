@@ -96,11 +96,11 @@ export function DocumentIdentityBar({
   // live in this row (the review header is gone), and Rename moves into the
   // chip's menu. Before the body paints the live row is held as it was.
   const { controller } = useDraftReview();
-  const { openDockRow } = useAiDraftLauncher();
+  const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
   const reviewDraftId =
     review?.documentId === tab.documentId && review.shown ? review.draftId : null;
-  const openDraft = (row: ReviewFileTarget) => openDockRow(row, controller.workId);
+  const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.workId);
   const canMove = !readOnly && location.scheme !== "uploads";
   const showChip = canMove && !reviewDraftId;
 

@@ -108,13 +108,13 @@ function ReviewTop({
   onOpenList: () => void;
 }) {
   const { controller } = useDraftReview();
-  const { openDockRow } = useAiDraftLauncher();
+  const { openReviewFile } = useAiDraftLauncher();
   const header = useReviewHeader({
     documentId,
     draftId,
     onCloseDraftOnly,
     // The switcher lists this Work's drafts; each opens through the one launcher.
-    onOpenDraft: (row: ReviewFileTarget) => openDockRow(row, controller.workId),
+    onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
   return <MobileReviewHeader header={header} onOpenList={onOpenList} />;
 }
@@ -129,12 +129,12 @@ function ReviewBottom({
   onListOpenChange: (open: boolean) => void;
 }) {
   const { controller, groups } = useDraftReview();
-  const { openDockRow } = useAiDraftLauncher();
+  const { openReviewFile } = useAiDraftLauncher();
   const view = useReviewChanges(controller);
   const { files, rows, batch } = useReviewFileList({
     review: { controller, groups },
     view,
-    openDraft: openDockRow,
+    openDraft: openReviewFile,
   });
 
   return (
@@ -151,7 +151,7 @@ function ReviewBottom({
           documentId,
           controller.inlineReview?.completion?.documentName ?? null,
         )}
-        onOpenNext={(row) => openDockRow(row, controller.workId)}
+        onOpenNext={(row) => openReviewFile(row, controller.workId)}
         controller={controller}
       />
       <ReviewToast
