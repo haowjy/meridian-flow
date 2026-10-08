@@ -50,19 +50,22 @@ export function createCatalogRepairQueue(
   return {
     enqueue(request) {
       return new Promise<void>((resolve, reject) => {
-        const batch: PendingRepair = {
+        let batch: PendingRepair = {
           keys: new Set(request.scopes.map(catalogScopeKey)),
           requests: [request],
           waiters: [{ resolve, reject }],
         };
         // Only pending work can cover a newer commit. Running batches stay frozen.
         for (let index = 0; index < pending.length; ) {
-          const other = pending[index];
+          let other = pending[index];
           if (![...other.keys].some((key) => batch.keys.has(key))) {
             index++;
             continue;
           }
           pending.splice(index, 1);
+          // Append to the larger pending accumulator; ordinary bursts never
+          // copy their accumulated requests. Active batches are not in pending.
+          if (other.requests.length >= batch.requests.length) [batch, other] = [other, batch];
           for (const key of other.keys) batch.keys.add(key);
           batch.requests.push(...other.requests);
           batch.waiters.push(...other.waiters);
