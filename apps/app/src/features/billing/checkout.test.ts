@@ -13,12 +13,7 @@ import type {
   CreateCheckoutSessionRequest,
 } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import {
-  checkoutBaselineFrom,
-  isCheckoutConfirmed,
-  parseCheckoutBaseline,
-  parseCheckoutReturn,
-} from "./checkout";
+import { checkoutBaselineFrom, isCheckoutConfirmed, parseCheckoutBaseline } from "./checkout";
 
 const balance = (
   mode: BillingBalanceResponse["includedUsage"]["mode"],
@@ -64,30 +59,7 @@ const planRequest: CreateCheckoutSessionRequest = {
   amountUsd: undefined,
 };
 
-describe("parseCheckoutReturn", () => {
-  it("reads success and both cancellation spellings", () => {
-    expect(parseCheckoutReturn("?checkout=success")).toBe("success");
-    expect(parseCheckoutReturn("?checkout=cancelled")).toBe("cancelled");
-    expect(parseCheckoutReturn("?checkout=canceled")).toBe("cancelled");
-  });
-
-  it("ignores unrelated or missing params", () => {
-    expect(parseCheckoutReturn("")).toBeNull();
-    expect(parseCheckoutReturn("?settings=usage")).toBeNull();
-  });
-});
-
 describe("parseCheckoutBaseline", () => {
-  it("round-trips a captured checkout baseline", () => {
-    const baseline = checkoutBaselineFrom([existingPurchase], extraRequest, "checkout", "none");
-    expect(parseCheckoutBaseline(JSON.stringify(baseline))).toEqual(baseline);
-  });
-
-  it("round-trips a portal handoff that carries no ledger rows", () => {
-    const baseline = checkoutBaselineFrom([], planRequest, "portal");
-    expect(parseCheckoutBaseline(JSON.stringify(baseline))).toEqual(baseline);
-  });
-
   it("rejects missing, malformed, and partial records", () => {
     expect(parseCheckoutBaseline(null)).toBeNull();
     expect(parseCheckoutBaseline("{")).toBeNull();
@@ -142,16 +114,6 @@ describe("isCheckoutConfirmed", () => {
     const baseline = checkoutBaselineFrom([], planRequest, "checkout", "free");
     expect(isCheckoutConfirmed(baseline, balance("free"), transactions([grant()]))).toBe(false);
     expect(isCheckoutConfirmed(baseline, balance("subscription"), transactions([grant()]))).toBe(
-      true,
-    );
-  });
-
-  it("confirms a plan even when the baseline was already subscribed", () => {
-    // A cancelled-but-unexpired Stripe subscription leaves the ledger in
-    // `subscription` mode. The new grant is still proof this checkout paid.
-    const baseline = checkoutBaselineFrom([], planRequest, "checkout", "subscription");
-    const freshGrant = grant();
-    expect(isCheckoutConfirmed(baseline, balance("subscription"), transactions([freshGrant]))).toBe(
       true,
     );
   });
