@@ -8,7 +8,11 @@
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import {
+  currentDraftCommandRecords,
+  draftCommandFailure,
+  resetDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import {
   applied,
   change,
@@ -17,6 +21,7 @@ import {
   previewOf,
   renderReviewScopes,
   type ScopeProbe,
+  work,
 } from "@/test-support/draft-review-scope";
 
 const mocks = vi.hoisted(() => ({
@@ -177,6 +182,15 @@ describe("the room-opening read", () => {
   });
 });
 
+/** What the draft's own record holds, whichever draft the review is on. */
+const failureOf = (_probe: ScopeProbe, documentId: string) =>
+  draftCommandFailure(currentDraftCommandRecords(), {
+    projectId: "project-a",
+    workId: work.id,
+    documentId,
+    draftId: `draft-${documentId.slice(-1)}`,
+  }) ?? undefined;
+
 describe("a whole-draft Apply the server rejects after the review moved on", () => {
   it("keeps its failure on that draft's record and shows it where the draft is listed, without navigating back", async () => {
     mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
@@ -186,7 +200,7 @@ describe("a whole-draft Apply the server rejects after the review moved on", () 
     );
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
-      await vi.waitFor(() => expect(probe().header.switcher.rows).toHaveLength(2));
+      await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(2));
       let done: Promise<unknown> | undefined;
       // Apply draft opens the next draft at once; the request is still in flight.
       await act(async () => {
@@ -199,10 +213,8 @@ describe("a whole-draft Apply the server rejects after the review moved on", () 
       });
 
       expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-b");
-      expect(probe().header.switcher.failures?.get("document-a")).toEqual({
-        code: "apply-server-error",
-      });
-      expect(probe().header.switcher.failures?.has("document-b")).toBe(false);
+      expect(failureOf(probe(), "document-a")).toEqual({ code: "apply-server-error" });
+      expect(failureOf(probe(), "document-b")).toBeUndefined();
     });
   });
 
@@ -211,14 +223,12 @@ describe("a whole-draft Apply the server rejects after the review moved on", () 
     mocks.applyDraft.mockRejectedValue(new TypeError("Failed to fetch"));
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
-      await vi.waitFor(() => expect(probe().header.switcher.rows).toHaveLength(2));
+      await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(2));
       await act(async () => {
         await probe().editor.controller.apply("document-a", "draft-a");
         probe().editor.controller.enterInlineReview("document-b", "draft-b");
       });
-      expect(probe().header.switcher.failures?.get("document-a")).toEqual({
-        code: "apply-unknown",
-      });
+      expect(failureOf(probe(), "document-a")).toEqual({ code: "apply-unknown" });
     });
   });
 });

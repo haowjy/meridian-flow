@@ -16,12 +16,9 @@ import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import type { DockRow } from "@/features/chat/docked-drafts";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
-import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ReviewHandoverFrame } from "../dock/review-handover";
-import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
@@ -114,13 +111,8 @@ export function ContextViewer({
   const activeFileInWork =
     activeTab && activeTab.kind !== "new" && isWorkScopedProjectContextScheme(activeTab.scheme);
 
-  // Draft review state — the banner sits above the identity bar so review
-  // chrome is the first thing the writer sees when entering review mode.
+  // Draft review state: the review's controls live in the identity bar.
   const { controller } = useDraftReview();
-  const { openDockRow } = useAiDraftLauncher();
-  // The header's draft switcher opens another draft of this Work through the
-  // same launcher every Review entry uses.
-  const openDraft = (row: DockRow) => openDockRow(row, controller.workId);
   const activeReviewDraftId =
     activeTab && controller.inlineReview?.documentId === activeTab.documentId
       ? controller.inlineReview.draftId
@@ -161,21 +153,6 @@ export function ContextViewer({
         {/* A jump that could not find its passage says so here, over the page
             rather than in the layout. */}
         <PassageNotice documentId={activeTabId} />
-        {/* Review banner — above the identity bar so it's the first chrome
-            the writer sees when entering review mode. It appears with the
-            painted review body, never over the live text held until then. */}
-        {activeTab && activeReviewDraftId && controller.inlineReview?.shown ? (
-          <DraftReviewHeader
-            documentId={activeTab.documentId}
-            draftId={activeReviewDraftId}
-            onOpenDraft={openDraft}
-            onCloseDraftOnly={
-              activeTab.kind !== "new" && activeTab.draftOnly
-                ? () => onCloseTab(activeTab.documentId)
-                : undefined
-            }
-          />
-        ) : null}
         {archivedEditorWork && editorFrozen ? (
           <ArchivedWorkNotice
             projectId={projectId}
@@ -184,7 +161,8 @@ export function ContextViewer({
           />
         ) : null}
         {/* Identity bar — the top edge of the page every open document
-            shares. Keyed by document so edit state never crosses tabs. */}
+            shares, and the home of its review controls while it is under
+            review. Keyed by document so edit state never crosses tabs. */}
         {activeTab ? (
           <DocumentIdentityBar
             key={activeTab.documentId}
@@ -194,6 +172,11 @@ export function ContextViewer({
             readOnly={fileFrozen}
             onCommitted={onCommitted}
             onOpenExisting={onOpenExisting}
+            onCloseDraftOnly={
+              activeTab.kind !== "new" && activeTab.draftOnly
+                ? () => onCloseTab(activeTab.documentId)
+                : undefined
+            }
           />
         ) : null}
         {/* The TRACKED editor host stays mounted while ANY tracked tab is

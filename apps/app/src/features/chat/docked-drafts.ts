@@ -21,7 +21,7 @@ export type DockRow = {
 
 /**
  * Collapse work draft groups into dock rows. Each document contributes at most
- * one row for its active draft, sorted stably by document.
+ * one row for its active draft, in the one file order (`sortDraftFiles`).
  */
 export function dockRows(groups: ThreadDraftGroup[] | null | undefined): DockRow[] {
   if (!groups || groups.length === 0) return [];
@@ -37,7 +37,25 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined): DockRow
       isNewDocument: draft.isNewDocument === true,
     });
   }
-  return rows.sort((left, right) => documentSortKey(left).localeCompare(documentSortKey(right)));
+  return sortDraftFiles(rows);
+}
+
+/**
+ * The one order every list of draft files uses (the composer strip, the dock's
+ * Changes tab, Work Files, the phone's changes sheet, and "Next draft"): by the
+ * name each file is shown under, then by id. Drafts carry no creation time and
+ * an update time would reshuffle the list as the AI keeps writing, so a file
+ * keeps its place until its name changes.
+ */
+export function sortDraftFiles<
+  T extends { documentId: string; documentName: string | null; contextPath: string | null },
+>(files: readonly T[]): T[] {
+  const key = (file: T) =>
+    (file.documentName ?? documentBasename(file.contextPath) ?? file.documentId).toLowerCase();
+  return [...files].sort(
+    (left, right) =>
+      key(left).localeCompare(key(right)) || left.documentId.localeCompare(right.documentId),
+  );
 }
 
 /**
@@ -45,11 +63,22 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined): DockRow
  * document in the dock's order, wrapping to the first, and none when this is
  * the only one left (the review then returns to live).
  */
-export function draftAfter(rows: readonly DockRow[], documentId: string): DockRow | null {
+export function draftAfter(
+  rows: readonly DockRow[],
+  documentId: string,
+  /** The document's name once its draft has left the list: it keeps its place in the order. */
+  closedName: string | null = null,
+): DockRow | null {
   const others = rows.filter((row) => row.documentId !== documentId);
   if (others.length === 0) return null;
-  const at = rows.findIndex((row) => row.documentId === documentId);
-  const after = at < 0 ? [] : rows.slice(at + 1).filter((row) => row.documentId !== documentId);
+  let at = rows.findIndex((row) => row.documentId === documentId);
+  let ordered = rows;
+  if (at < 0 && closedName !== null) {
+    const closed = { documentId, documentName: closedName, contextPath: null };
+    ordered = sortDraftFiles([...rows, closed]) as readonly DockRow[];
+    at = ordered.findIndex((row) => row.documentId === documentId);
+  }
+  const after = at < 0 ? [] : ordered.slice(at + 1).filter((row) => row.documentId !== documentId);
   return after[0] ?? others[0];
 }
 
@@ -58,10 +87,6 @@ export function draftAfter(rows: readonly DockRow[], documentId: string): DockRo
  */
 export function hasDockChanges(groups: ThreadDraftGroup[] | null | undefined): boolean {
   return dockRows(groups).length > 0;
-}
-
-function documentSortKey(row: DockRow): string {
-  return (row.documentName ?? row.documentId).toLowerCase();
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   renderReviewScopes,
   type ScopeProbe,
 } from "@/test-support/draft-review-scope";
+import { dockRows } from "./docked-drafts";
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -67,8 +68,19 @@ beforeEach(() => {
 const elsewhere = (probe: ScopeProbe) =>
   probe.header.failedElsewhere.map((entry) => [entry.row.documentName, entry.failure.code]);
 
+/** Apply all, as the Changes list sends it: every draft of the Work, in the file order. */
+const applyAll = (probe: ScopeProbe) => {
+  void probe.editor.controller.disposeDrafts(
+    "apply",
+    dockRows(probe.editor.groups).map((row) => ({
+      documentId: row.documentId,
+      draftId: row.draft.draftId,
+    })),
+  );
+};
+
 async function ready(probe: () => ScopeProbe) {
-  await vi.waitFor(() => expect(probe().header.switcher.rows).toHaveLength(3));
+  await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(3));
 }
 
 describe("a whole-draft Apply the server refused", () => {
@@ -133,7 +145,7 @@ describe("Apply all", () => {
     await renderReviewScopes(
       async (probe) => {
         await ready(probe);
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() =>
           expect(elsewhere(probe())).toEqual([
             ["Chapter a", "apply-server-error"],
@@ -159,7 +171,7 @@ describe("Apply all", () => {
     await renderReviewScopes(
       async (probe) => {
         await ready(probe);
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() => expect(rejectApply).toBeTypeOf("function"));
         await probe().openDraft(ref("c"));
         await act(async () => probe().editor.controller.enterInlineReview("document-c", "draft-c"));
@@ -188,7 +200,7 @@ describe("Apply all", () => {
       async (probe) => {
         await ready(probe);
         await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() => expect(finishA).toBeTypeOf("function"));
         // Another draft is still being sent. The review says so, and is held on it: every
         // "the draft left the list" exit reads a pending completion as the writer's own.
@@ -220,7 +232,7 @@ describe("Apply all", () => {
       async (probe) => {
         await ready(probe);
         await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() =>
           expect(probe().header.commandError).toEqual({ code: "apply-server-error" }),
         );
@@ -238,7 +250,7 @@ describe("Apply all", () => {
     await renderReviewScopes(
       async (probe) => {
         await ready(probe);
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() =>
           expect(probe().header.commandError).toEqual({ code: "apply-server-error" }),
         );

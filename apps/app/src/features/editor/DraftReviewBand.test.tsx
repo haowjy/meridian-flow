@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The one-row review header: breadcrumb, draft switcher, stepper, Show
- * changes, Discard draft and Apply draft. Whole-draft commands move straight to
- * the next draft in the switcher, or back to live when none is left.
+ * The review controls in the identity row: the Draft chip with its menu,
+ * stepper, Show changes, Discard and Apply. Whole-draft commands move straight
+ * to the next draft in the menu, or back to live when none is left.
  */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
@@ -14,7 +14,7 @@ import { failDraftCommand, resetDraftCommandRecords } from "@/client/query/draft
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { DockRow } from "@/features/chat/docked-drafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { DraftReviewHeader } from "./DraftReviewHeader";
+import { DraftReviewBand, DraftReviewFailureNotices } from "./DraftReviewBand";
 
 const draft = (documentId: string, name: string, isNewDocument = false) =>
   ({
@@ -76,7 +76,7 @@ vi.mock("@/features/draft-review/useDraftChangeCounts", () => ({
 }));
 
 function render(
-  props: Partial<React.ComponentProps<typeof DraftReviewHeader>>,
+  props: Partial<React.ComponentProps<typeof DraftReviewBand>>,
   run: () => Promise<void>,
   documentId = "doc-12",
 ) {
@@ -85,11 +85,18 @@ function render(
     <I18nProvider i18n={i18n}>
       <QueryClientProvider client={new QueryClient()}>
         <TooltipProvider>
-          <DraftReviewHeader
+          <div className="flex">
+            <DraftReviewBand
+              documentId={documentId}
+              draftId={`draft-${documentId}`}
+              onOpenDraft={vi.fn()}
+              {...props}
+            />
+          </div>
+          <DraftReviewFailureNotices
             documentId={documentId}
             draftId={`draft-${documentId}`}
-            onOpenDraft={vi.fn()}
-            {...props}
+            onOpenDraft={props.onOpenDraft ?? vi.fn()}
           />
         </TooltipProvider>
       </QueryClientProvider>
@@ -100,7 +107,7 @@ function render(
 
 const byText = (text: string) =>
   Array.from(document.querySelectorAll<HTMLElement>("button, [role=menuitem]")).find(
-    (node) => node.textContent?.trim() === text,
+    (node) => (node.getAttribute("aria-label") ?? node.textContent)?.trim() === text,
   );
 
 async function openSwitcher() {
@@ -137,18 +144,33 @@ beforeEach(() => {
   }
 });
 
-describe("DraftReviewHeader", () => {
-  it("is one row: switcher, stepper, Show changes, Discard draft, Apply draft", async () => {
+describe("DraftReviewBand", () => {
+  it("is the Draft chip, stepper, Show changes, Discard and Apply, under their full names", async () => {
     await render({}, async () => {
       const text = document.body.textContent ?? "";
-      // The identity bar below already names the path; the header opens with the switcher.
-      expect(text).not.toContain("Manuscript");
-      expect(text).toContain("Chapter 12");
+      // The document's name is the breadcrumb's; the chip says only what this is.
+      expect(text).not.toContain("Chapter 12");
+      expect(byText("Draft version")?.textContent).toBe("Draft");
       expect(text).toContain("2 of 6");
-      expect(text).toContain("Show changes");
-      expect(byText("Discard draft")).toBeDefined();
-      expect(byText("Apply draft")).toBeDefined();
+      expect(document.querySelector("[role=switch]")?.getAttribute("aria-label")).toBe(
+        "Show changes",
+      );
+      expect(byText("Discard draft")?.textContent).toBe("Discard");
+      expect(byText("Apply draft")?.textContent).toBe("Apply");
       expect(document.querySelector("[aria-label='Next change']")).not.toBeNull();
+    });
+  });
+
+  it("carries Rename in the chip's menu only when the document can be renamed", async () => {
+    const onRename = vi.fn();
+    await render({ onRename }, async () => {
+      await openSwitcher();
+      await act(async () => byText("Rename")?.click());
+      expect(onRename).toHaveBeenCalledOnce();
+    });
+    await render({}, async () => {
+      await openSwitcher();
+      expect(byText("Rename")).toBeUndefined();
     });
   });
 
@@ -158,60 +180,36 @@ describe("DraftReviewHeader", () => {
         document.querySelector<HTMLButtonElement>("[aria-label='Next change']")?.click(),
       );
       expect(view.step).toHaveBeenCalledWith(1);
-      await act(async () => document.querySelector<HTMLButtonElement>("[role=switch]")?.click());
+      const toggle = document.querySelector<HTMLButtonElement>("[role=switch]");
+      expect(toggle?.getAttribute("aria-checked")).toBe("true");
+      await act(async () => toggle?.click());
       expect(controller.setMarksVisible).toHaveBeenCalledWith(false);
     });
   });
 
-  it("lists the Work's drafts with counts and a New document tag, checking the current one", async () => {
+  it("lists this document's versions only: live and its draft, with no other file", async () => {
     await render({}, async () => {
       await openSwitcher();
       const menu = document.querySelector("[role=menu]")?.textContent ?? "";
-      expect(menu).toContain("Chapter 13");
-      expect(menu).toContain("11 changes");
-      expect(menu).toContain("Interlude");
-      expect(menu).toContain("New document");
-      expect(menu).toContain("Show live version");
-      expect(menu).toContain("Apply all 3 drafts");
-      expect(menu).toContain("Discard all 3 drafts");
+      expect(menu).toContain("Live version");
+      expect(menu).toContain("Draft");
+      for (const gone of [
+        "Chapter 13",
+        "Interlude",
+        "11 changes",
+        "New document",
+        "Apply all",
+        "Discard all",
+      ]) {
+        expect(menu).not.toContain(gone);
+      }
     });
   });
 
-  it("opens another draft from the switcher through the launcher", async () => {
-    const onOpenDraft = vi.fn();
-    await render({ onOpenDraft }, async () => {
-      await openSwitcher();
-      await act(async () =>
-        Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]"))
-          .find((node) => node.textContent?.startsWith("Chapter 13"))
-          ?.click(),
-      );
-      expect(onOpenDraft).toHaveBeenCalledOnce();
-      expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-13");
-    });
-  });
-
-  it("applies or discards every draft of the Work from the switcher", async () => {
+  it("shows the live version from the menu, and closes review for a draft-only document", async () => {
     await render({}, async () => {
       await openSwitcher();
-      await act(async () => byText("Apply all 3 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith("apply", [
-        { documentId: "doc-12", draftId: "draft-doc-12" },
-        { documentId: "doc-13", draftId: "draft-doc-13" },
-        { documentId: "doc-int", draftId: "draft-doc-int" },
-      ]);
-    });
-    await render({}, async () => {
-      await openSwitcher();
-      await act(async () => byText("Discard all 3 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith("discard", expect.any(Array));
-    });
-  });
-
-  it("shows the live version from the switcher, and closes review for a draft-only document", async () => {
-    await render({}, async () => {
-      await openSwitcher();
-      await act(async () => byText("Show live version")?.click());
+      await act(async () => byText("Live version")?.click());
       expect(controller.exitInlineReview).toHaveBeenCalledOnce();
     });
     const close = vi.fn();
@@ -220,7 +218,7 @@ describe("DraftReviewHeader", () => {
       { onCloseDraftOnly: close },
       async () => {
         await openSwitcher();
-        expect(byText("Show live version")).toBeUndefined();
+        expect(byText("Live version")).toBeUndefined();
         await act(async () => byText("Close review")?.click());
         expect(close).toHaveBeenCalledOnce();
         expect(controller.exitInlineReview).not.toHaveBeenCalled();
@@ -311,13 +309,32 @@ describe("DraftReviewHeader", () => {
     try {
       await render({ onOpenDraft }, async () => {
         expect(document.body.textContent).toContain("No changes left");
-        expect(document.body.textContent).toContain("Chapter 12");
         expect(controller.exitInlineReview).not.toHaveBeenCalled();
         await act(async () => byText("Next draft")?.click());
         expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-13");
       });
     } finally {
       groups.unshift(...closed);
+    }
+  });
+
+  it("Next draft follows the file order from where the closed draft stood, not from the top", async () => {
+    // Chapter 13's draft is gone from the list: the next file after it is Interlude, not Chapter 12.
+    const closed = groups.splice(1, 1);
+    Object.assign(view, { items: [], finished: true });
+    controller.inlineReview = { completion: { phase: "closed", documentName: "Chapter 13" } };
+    const onOpenDraft = vi.fn();
+    try {
+      await render(
+        { onOpenDraft },
+        async () => {
+          await act(async () => byText("Next draft")?.click());
+          expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-int");
+        },
+        "doc-13",
+      );
+    } finally {
+      groups.splice(1, 0, ...closed);
     }
   });
 
@@ -382,24 +399,6 @@ describe("DraftReviewHeader", () => {
       expect(onOpenDraft).not.toHaveBeenCalled();
       await act(async () => byText("Open")?.click());
       expect(onOpenDraft).toHaveBeenCalledWith(expect.objectContaining({ documentId: "doc-13" }));
-    });
-  });
-
-  it("names a refused or unanswered Apply on the draft's row in the switcher, after the review moved on", async () => {
-    failDraftCommand(
-      { projectId: "p", workId: "w", documentId: "doc-13", draftId: "draft-doc-13" },
-      { code: "apply-unknown" },
-    );
-    await render({}, async () => {
-      await openSwitcher();
-      const row = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
-        (node) => node.textContent?.includes("Chapter 13"),
-      );
-      expect(row?.textContent).toContain("Couldn't confirm whether this applied");
-      const other = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
-        (node) => node.textContent?.includes("Interlude"),
-      );
-      expect(other?.textContent).not.toContain("Couldn't");
     });
   });
 });

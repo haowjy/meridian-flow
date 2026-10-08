@@ -211,6 +211,10 @@ msgstr ""
 msgid "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
 msgstr ""
 
+#: src/features/draft-review/ReviewFiles.tsx
+msgid "{count, plural, one {# draft to review} other {# drafts to review}}"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -227,9 +231,8 @@ msgstr ""
 msgid "{count, plural, one {Keep it for review} other {Keep them for review}}"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewStepper.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/draft-review/useReviewFileList.ts
 msgid "{count} changes"
 msgstr ""
 
@@ -350,9 +353,8 @@ msgstr ""
 msgid "<0>Handed off from </0><1/>"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewStepper.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/draft-review/useReviewFileList.ts
 msgid "1 change"
 msgstr ""
 
@@ -536,6 +538,10 @@ msgstr ""
 msgid "All chats"
 msgstr ""
 
+#: src/features/draft-review/ReviewFiles.tsx
+msgid "All drafts"
+msgstr ""
+
 #: src/features/project/work/useWorkChrome.tsx
 msgid "All Work"
 msgstr ""
@@ -567,6 +573,7 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeRow.tsx
+#: src/features/editor/DraftReviewBand.tsx
 msgid "Apply"
 msgstr ""
 
@@ -574,16 +581,16 @@ msgstr ""
 msgid "Apply all"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/draft-review/ReviewFiles.tsx
 msgid "Apply all {total} drafts"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/draft-review/ReviewFiles.tsx
 msgid "Apply all 1 draft"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/editor/DraftReviewBand.tsx
 msgid "Apply draft"
 msgstr ""
 
@@ -785,9 +792,14 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Changes in {name}"
+#. placeholder {0}: file.name
+#: src/features/draft-review/ReviewFiles.tsx
+msgid "Changes in {0}"
 msgstr ""
+
+#: src/features/project/dock/DockChangesView.tsx
+#~ msgid "Changes in {name}"
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Changing work"
@@ -1692,6 +1704,7 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewChangeBar.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/editor/DraftReviewBand.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
@@ -1701,11 +1714,11 @@ msgstr ""
 msgid "Discard all"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/draft-review/ReviewFiles.tsx
 msgid "Discard all {total} drafts"
 msgstr ""
 
-#: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/draft-review/ReviewFiles.tsx
 msgid "Discard all 1 draft"
 msgstr ""
 
@@ -1718,7 +1731,7 @@ msgid "Discard changes"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/editor/DraftReviewBand.tsx
 msgid "Discard draft"
 msgstr ""
 
@@ -1785,6 +1798,7 @@ msgid "Download image"
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr ""
 
@@ -1792,9 +1806,12 @@ msgstr ""
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgstr ""
 
-#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
+msgstr ""
+
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Draft version"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1815,8 +1832,8 @@ msgid "Drafting"
 msgstr "起草中"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "Drafts in this Work"
-msgstr ""
+#~ msgid "Drafts in this Work"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDrafts.tsx
 msgid "Drafts to review"
@@ -2370,6 +2387,10 @@ msgstr ""
 msgid "Live artifact view"
 msgstr ""
 
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Live version"
+msgstr ""
+
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
 msgstr ""
@@ -2634,7 +2655,6 @@ msgstr ""
 msgid "New chat"
 msgstr "新对话"
 
-#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "New document"
 msgstr ""
@@ -3235,6 +3255,7 @@ msgstr ""
 #~ msgid "Removed"
 #~ msgstr ""
 
+#: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/IdentityChips.tsx
@@ -3385,7 +3406,7 @@ msgstr ""
 msgid "Returned from the billing portal."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/draft-review/ReviewFiles.tsx
 msgid "Review"
 msgstr ""
 
@@ -3572,7 +3593,7 @@ msgid "Shared an attachment"
 msgstr "分享了附件"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/DraftReviewHeader.tsx
+#: src/features/editor/DraftReviewBand.tsx
 msgid "Show changes"
 msgstr ""
 
@@ -3586,8 +3607,8 @@ msgid "Show less"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "Show live version"
-msgstr ""
+#~ msgid "Show live version"
+#~ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
@@ -3798,8 +3819,8 @@ msgid "Switch chat, currently {title}"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "Switch draft, now {name}"
-msgstr ""
+#~ msgid "Switch draft, now {name}"
+#~ msgstr ""
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens or manage your account."
@@ -4172,7 +4193,7 @@ msgstr ""
 msgid "This document is still opening."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/draft-review/useReviewFileList.ts
 msgid "This draft"
 msgstr ""
 
@@ -4432,8 +4453,7 @@ msgid "Untitled chat"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
-#: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/draft-review/useReviewFileList.ts
 msgid "Untitled document"
 msgstr ""
 
@@ -4496,6 +4516,10 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "User"
+msgstr ""
+
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Versions of this document"
 msgstr ""
 
 #: src/features/project/shell/WorkspaceNavBody.tsx

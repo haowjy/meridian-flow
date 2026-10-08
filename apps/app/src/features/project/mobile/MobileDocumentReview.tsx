@@ -15,11 +15,14 @@
  */
 import { type ReactNode, useEffect, useState } from "react";
 
+import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import type { DockRow } from "@/features/chat/docked-drafts";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useReviewFileList } from "@/features/draft-review/useReviewFileList";
 import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
+import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
@@ -54,11 +57,36 @@ export function MobileDocumentReview({
             onCloseDraftOnly={onCloseDraftOnly}
             onOpenList={() => setListOpen(true)}
           />
-        ) : null}
+        ) : (
+          <LiveDraftEntry documentId={documentId} />
+        )}
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {draftId ? <ReviewBottom listOpen={listOpen} onListOpenChange={setListOpen} /> : null}
       </div>
     </MobileKeyboardAware>
+  );
+}
+
+/**
+ * The live document's way into its pending draft: the Draft chip in a row of
+ * the review header's own height and inset, so the chip stays where the
+ * reviewing one will be. Nothing is drawn for a document with no pending draft.
+ */
+function LiveDraftEntry({ documentId }: { documentId: string }) {
+  const { groupForDocument } = useDraftReview();
+  const group = groupForDocument(documentId);
+  if (!group || !pendingReviewDraft(group)) return null;
+  return (
+    <div
+      data-phone-draft-entry
+      className="flex min-h-12 shrink-0 items-center border-b border-border-subtle bg-dock-surface"
+      style={{
+        paddingLeft: "calc(0.25rem + env(safe-area-inset-left))",
+        paddingRight: "calc(0.25rem + env(safe-area-inset-right))",
+      }}
+    >
+      <DraftReviewChip documentId={documentId} touch />
+    </div>
   );
 }
 
@@ -92,8 +120,14 @@ function ReviewBottom({
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
 }) {
-  const { controller } = useDraftReview();
+  const { controller, groups } = useDraftReview();
+  const { openDockRow } = useAiDraftLauncher();
   const view = useReviewChanges(controller);
+  const { files, batch } = useReviewFileList({
+    review: { controller, groups },
+    view,
+    openDraft: openDockRow,
+  });
   const empty = view.items.length === 0;
   useEffect(() => {
     if (empty) onListOpenChange(false);
@@ -106,6 +140,8 @@ function ReviewBottom({
         open={listOpen}
         onOpenChange={onListOpenChange}
         view={view}
+        files={files}
+        batch={batch}
         controller={controller}
       />
       <ReviewToast

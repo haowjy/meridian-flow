@@ -4,7 +4,11 @@ import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import type { DockRow } from "@/features/chat/docked-drafts";
+import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
+import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "./account-feature-context";
@@ -34,6 +38,8 @@ export type DocumentIdentityBarProps = {
     ownership: IdentityCommitOwnership,
   ) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  /** Set for a draft-only document: its review closes the tab instead of returning to live. */
+  onCloseDraftOnly?: () => void;
 };
 
 export function DocumentIdentityBar({
@@ -43,6 +49,7 @@ export function DocumentIdentityBar({
   readOnly = false,
   onCommitted,
   onOpenExisting,
+  onCloseDraftOnly,
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
@@ -85,7 +92,17 @@ export function DocumentIdentityBar({
 
   // The chip always opens the one inline field when moving the document is
   // legal. Uploads aren't writing material, so those show no chip.
-  const showChip = !readOnly && location.scheme !== "uploads";
+  // While the document is under a painted review, its controls and Draft chip
+  // live in this row (the review header is gone), and Rename moves into the
+  // chip's menu. Before the body paints the live row is held as it was.
+  const { controller } = useDraftReview();
+  const { openDockRow } = useAiDraftLauncher();
+  const review = controller.inlineReview;
+  const reviewDraftId =
+    review?.documentId === tab.documentId && review.shown ? review.draftId : null;
+  const openDraft = (row: DockRow) => openDockRow(row, controller.workId);
+  const canMove = !readOnly && location.scheme !== "uploads";
+  const showChip = canMove && !reviewDraftId;
 
   return (
     <div className="@container shrink-0">
@@ -120,7 +137,7 @@ export function DocumentIdentityBar({
           />
         ) : (
           <>
-            <IdentityPath location={location} />
+            <IdentityPath location={location} reviewing={reviewDraftId !== null} />
             <LinkUpdateNote
               projectId={projectId}
               subject={{ kind: "file", id: tab.documentId }}
@@ -129,7 +146,20 @@ export function DocumentIdentityBar({
             />
           </>
         )}
-        <span className="min-w-1 flex-1" />
+        {reviewDraftId ? (
+          <DraftReviewBand
+            documentId={tab.documentId}
+            draftId={reviewDraftId}
+            onOpenDraft={openDraft}
+            onCloseDraftOnly={onCloseDraftOnly}
+            onRename={canMove ? () => setFieldOpen(true) : undefined}
+          />
+        ) : (
+          <>
+            <DraftReviewChip documentId={tab.documentId} />
+            <span className="min-w-1 flex-1" />
+          </>
+        )}
         {/* A refused rename stays visible while the repair field is closed, and reopens it. */}
         {repair?.kind === "set-location" && !fieldOpen ? (
           <button
@@ -143,7 +173,6 @@ export function DocumentIdentityBar({
             <NamespaceFailureMark failure="set-location" labelled />
           </button>
         ) : null}
-        <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
@@ -154,11 +183,24 @@ export function DocumentIdentityBar({
           }}
         />
       </div>
+      {reviewDraftId ? (
+        <DraftReviewFailureNotices
+          documentId={tab.documentId}
+          draftId={reviewDraftId}
+          onOpenDraft={openDraft}
+        />
+      ) : null}
     </div>
   );
 }
 
-function IdentityPath({ location }: { location: TabLocation }) {
+/**
+ * The breadcrumb. Folders fold into one `…` once the row is narrow; under
+ * review the row carries more, so it folds earlier (first of the review row's
+ * collapse steps, see `DraftReviewBand`). The file name always keeps its
+ * place and is the last thing to truncate.
+ */
+function IdentityPath({ location, reviewing }: { location: TabLocation; reviewing: boolean }) {
   const SchemeIcon = schemeIcon(location.scheme);
   const separator = (
     <span aria-hidden className="shrink-0 opacity-60">
@@ -166,6 +208,7 @@ function IdentityPath({ location }: { location: TabLocation }) {
     </span>
   );
   const lastFolderIndex = location.folders.length;
+  const fold = reviewing ? FOLD.review : FOLD.rest;
   const segments = (
     <>
       <span data-seg="0" className="flex shrink-0 items-center gap-1">
@@ -175,7 +218,7 @@ function IdentityPath({ location }: { location: TabLocation }) {
       {location.folders.length > 0 ? (
         <>
           {separator}
-          <span className="flex min-w-0 items-center gap-1 @max-md:hidden">
+          <span className={cn("flex min-w-0 items-center gap-1", fold.hideFolders)}>
             {location.folders.length > 1 ? (
               <>
                 <span aria-hidden data-seg="1">
@@ -188,7 +231,7 @@ function IdentityPath({ location }: { location: TabLocation }) {
               {location.folders[location.folders.length - 1]}
             </span>
           </span>
-          <span aria-hidden data-seg="1" className="hidden @max-md:inline">
+          <span aria-hidden data-seg="1" className={cn("hidden", fold.showEllipsis)}>
             …
           </span>
         </>
@@ -204,6 +247,12 @@ function IdentityPath({ location }: { location: TabLocation }) {
   );
   return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
 }
+
+/** Container widths at which folders fold into `…` (literal classes: Tailwind reads them at build). */
+const FOLD = {
+  rest: { hideFolders: "@max-md:hidden", showEllipsis: "@max-md:inline" },
+  review: { hideFolders: "@max-[48rem]:hidden", showEllipsis: "@max-[48rem]:inline" },
+} as const;
 
 /** Chip slot at the bar's right edge. */
 function IdentityChipSlot({

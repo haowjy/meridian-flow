@@ -93,10 +93,15 @@ const view = vi.hoisted(() => ({
   apply: vi.fn(async () => {}),
   discard: vi.fn(async () => {}),
 }));
-const launcher = vi.hoisted(() => ({ openDockRow: vi.fn() }));
+const launcher = vi.hoisted(() => ({ openDockRow: vi.fn(), openAiDraft: vi.fn() }));
 
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
-  useDraftReview: () => ({ controller, groups }),
+  useDraftReview: () => ({
+    controller,
+    groups,
+    groupForDocument: (documentId: string) =>
+      groups.find((group) => group.documentId === documentId) ?? null,
+  }),
 }));
 vi.mock("@/features/draft-review/useReviewChanges", () => ({ useReviewChanges: () => view }));
 vi.mock("@/features/draft-review/useDraftChangeCounts", () => ({
@@ -137,6 +142,7 @@ beforeEach(() => {
     view.apply,
     view.discard,
     launcher.openDockRow,
+    launcher.openAiDraft,
   ])
     fn.mockClear();
 });
@@ -211,7 +217,7 @@ describe("the phone review header", () => {
   it("shows the switcher, the stepper and the change count that opens the list", async () => {
     await render(async () => {
       expect(header()).not.toBeNull();
-      expect(header()?.textContent).toContain("Chapter 12");
+      expect(header()?.querySelector("[aria-label='Draft version']")).not.toBeNull();
       expect(header()?.textContent).toContain("3 changes");
       expect(named("Show the 3 changes")?.textContent).toBe("3");
       await act(async () => named("Next change")?.click());
@@ -231,13 +237,48 @@ describe("the phone review header", () => {
     await render(async () => expect(header()).toBeNull());
   });
 
-  it("keeps Apply draft, Discard draft, Show live version and Hide changes in the switcher menu", async () => {
+  it("offers the pending draft on the live document as the same Draft chip, and opens its review on tap", async () => {
+    controller.inlineReview = null;
+    await render(async () => {
+      const entry = document.querySelector("[data-phone-draft-entry]");
+      expect(entry).not.toBeNull();
+      expect(header()).toBeNull();
+      const chip = entry?.querySelector<HTMLElement>("[data-draft-review-chip]");
+      expect(chip?.textContent).toBe("Review draft");
+      await act(async () => chip?.click());
+      expect(launcher.openAiDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ workId: "w", documentId: "doc-12", draftId: "draft-doc-12" }),
+      );
+    });
+  });
+
+  it("shows no entry for a document with no pending draft, nor once its review has painted", async () => {
+    controller.inlineReview = null;
+    groups.splice(0, groups.length);
+    try {
+      await render(async () =>
+        expect(document.querySelector("[data-phone-draft-entry]")).toBeNull(),
+      );
+    } finally {
+      groups.push(draft("doc-12", "Chapter 12"), draft("doc-13", "Chapter 13"));
+    }
+    controller.inlineReview = { documentId: "doc-12", draftId: "draft-doc-12", shown: true };
+    await render(async () => {
+      expect(header()).not.toBeNull();
+      expect(document.querySelector("[data-phone-draft-entry]")).toBeNull();
+    });
+  });
+
+  it("keeps Apply draft, Discard draft, the live version and Hide changes in the Draft chip's menu", async () => {
     await render(async () => {
       await openSwitcher();
       expect(menuItem("Apply draft")).toBeDefined();
       expect(menuItem("Discard draft")).toBeDefined();
       expect(menuItem("Hide changes")).toBeDefined();
-      await act(async () => menuItem("Show live version")?.click());
+      // The menu is versions of this document: no other file, no Work-wide commands.
+      expect(menuItem("Chapter 13")).toBeUndefined();
+      expect(menuItem("Apply all")).toBeUndefined();
+      await act(async () => menuItem("Live version")?.click());
       expect(controller.exitInlineReview).toHaveBeenCalledOnce();
     });
   });
@@ -262,9 +303,21 @@ describe("the phone review header", () => {
     });
   });
 
-  it("applies and discards every draft of the Work from the menu", async () => {
+  it("lists every draft file once in the sheet, the open one expanded, and applies all from it", async () => {
     await render(async () => {
-      await openSwitcher();
+      await act(async () => named("Show the 3 changes")?.click());
+      const sheetText = sheet()?.textContent ?? "";
+      // The open file expands in place; the other is a row to open.
+      expect(sheet()?.querySelector("[data-review-file-open]")?.textContent).toContain(
+        "Chapter 12",
+      );
+      expect(sheetText).toContain("Chapter 13");
+      expect(sheetText).toContain("2 drafts to review");
+      await act(async () =>
+        named("All drafts")?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        ),
+      );
       await act(async () => menuItem("Apply all 2 drafts")?.click());
       expect(controller.disposeDrafts).toHaveBeenCalledWith("apply", [
         { documentId: "doc-12", draftId: "draft-doc-12" },
@@ -273,12 +326,27 @@ describe("the phone review header", () => {
     });
   });
 
+  it("opens another file from the sheet and closes the sheet", async () => {
+    await render(async () => {
+      await act(async () => named("Show the 3 changes")?.click());
+      const row = Array.from(sheet()?.querySelectorAll<HTMLElement>("button") ?? []).find((node) =>
+        node.textContent?.includes("Chapter 13"),
+      );
+      await act(async () => row?.click());
+      expect(launcher.openDockRow).toHaveBeenCalledWith(
+        expect.objectContaining({ documentId: "doc-13" }),
+        "w",
+      );
+      expect(sheet()).toBeNull();
+    });
+  });
+
   it("closes a new document's review instead of returning to live", async () => {
     const onCloseDraftOnly = vi.fn();
     await render(
       async () => {
         await openSwitcher();
-        expect(menuItem("Show live version")).toBeUndefined();
+        expect(menuItem("Live version")).toBeUndefined();
         await act(async () => menuItem("Close review")?.click());
         expect(onCloseDraftOnly).toHaveBeenCalledOnce();
         expect(controller.exitInlineReview).not.toHaveBeenCalled();
@@ -324,7 +392,7 @@ describe("the phone review header", () => {
     try {
       await render(async () => {
         expect(header()?.textContent).toContain("No changes left");
-        expect(header()?.textContent).toContain("Chapter 12");
+        expect(header()?.querySelector("[aria-label='Draft version']")).not.toBeNull();
         expect(controller.exitInlineReview).not.toHaveBeenCalled();
         await act(async () => named("Next draft")?.click());
         expect(launcher.openDockRow).toHaveBeenCalledWith(
