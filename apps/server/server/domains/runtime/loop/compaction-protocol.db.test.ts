@@ -592,11 +592,105 @@ else
       expect(compaction.status).toBe("error");
     });
 
-    it.each([
-      "second_overflow",
-    ])("uses rolling after provider overflow and retries the reply once (%s)", async (scenario) => {
-      const secondOverflow = scenario === "second_overflow";
-      let rig: Awaited<ReturnType<typeof fixture>>;
+    it("recovers through persisted warm-summary overflow without charging the failed response twice", async () => {
+      const gateway = scriptedGateway();
+      const original = gateway.stream;
+      let summaries = 0;
+      gateway.stream = async function* (request) {
+        const isSummary = request.messages.some((message) =>
+          message.content.some(
+            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+          ),
+        );
+        if (!isSummary) {
+          yield* original(request);
+          return;
+        }
+        summaries++;
+        yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
+        if (summaries === 1) {
+          yield {
+            type: "error",
+            code: "context_overflow",
+            message: "input length and max_tokens exceed context limit",
+            retryable: false,
+          };
+        } else {
+          yield {
+            type: "end",
+            result: {
+              content: [{ type: "text", text: "The story's earlier work is complete." }],
+              toolCalls: [],
+              finishReason: "end_turn",
+              usage: { inputTokens: 100, outputTokens: 10 },
+              model: "gpt-4.1-mini",
+              provider: "openai",
+            },
+          };
+        }
+      };
+      const rig = await fixture({ gateway });
+      const realSummarizer = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
+        modelRequestDebug: rig.deps.modelRequestDebug,
+        toolRegistry: rig.deps.toolRegistry,
+        config: { model: "gpt-4.1-mini" },
+      });
+      const summaryInputs: Parameters<typeof realSummarizer.summarize>[0][] = [];
+      rig.deps.summarizer = {
+        ...realSummarizer,
+        async summarize(input) {
+          summaryInputs.push(input);
+          return realSummarizer.summarize(input);
+        },
+      };
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe("error");
+      expect(summaries).toBe(1);
+      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ finishReason: "error" });
+      expect(BigInt(rows[0]?.millicredits ?? "0")).toBeGreaterThan(0n);
+      const firstDebits = await db.select().from(schema.creditTransactions);
+      expect(firstDebits.filter((debit) => debit.usageEventId === rows[0]?.id)).toHaveLength(1);
+      expect(
+        (await rig.repos.turns.listByThread(rig.threadId)).find(
+          (turn) => turn.role === "compaction",
+        ),
+      ).toMatchObject({
+        status: "error",
+        metadata: { reason: "request_too_large", phase: "summary", summarizer: { path: "branch" } },
+      });
+
+      // Only the persisted C history, not an explicit overflow flag, can select rolling here.
+      rig.setThreshold(2500);
+      const retry = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Try again after the rejected summary.",
+      });
+      expect((await retry.execute()).status).toBe("complete");
+      const compactions = (await rig.repos.turns.listByThread(rig.threadId)).filter(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compactions).toHaveLength(2);
+      expect(compactions[1]).toMatchObject({
+        status: "complete",
+        metadata: { summarizer: { path: "rolling" } },
+      });
+      expect(summaryInputs.map((input) => input.knownTooLarge)).toEqual([false, true]);
+      const retryDebits = await db.select().from(schema.creditTransactions);
+      expect(retryDebits.filter((debit) => debit.usageEventId === rows[0]?.id)).toHaveLength(1);
+    });
+
+    it("uses rolling after provider overflow and stops after a second reply overflow", async () => {
       const gateway = scriptedGateway();
       let calls = 0;
       let summaries = 0;
@@ -624,28 +718,14 @@ else
           return;
         }
         calls++;
-        if (calls === 1 || secondOverflow || (false && calls === 3)) {
-          yield {
-            type: "error",
-            code: "context_overflow",
-            message: "Provider window exceeded",
-            retryable: false,
-          };
-          return;
-        }
         yield {
-          type: "end",
-          result: {
-            content: [{ type: "text", text: "Continued after compaction." }],
-            toolCalls: [],
-            finishReason: "end_turn",
-            usage: { inputTokens: 100, outputTokens: 10 },
-            model: "gpt-4.1-mini",
-            provider: "openai",
-          },
+          type: "error",
+          code: "context_overflow",
+          message: "Provider window exceeded",
+          retryable: false,
         };
       };
-      rig = await fixture({ gateway });
+      const rig = await fixture({ gateway });
       rig.setThreshold(undefined);
       const real = createConversationSummarizer({
         gateway: rig.deps.gateway,
@@ -685,14 +765,12 @@ else
         status: "complete",
         metadata: { summarizer: { path: "rolling", segments: 1 } },
       });
-      expect(result.status).toBe(secondOverflow ? "error" : "complete");
-      if (secondOverflow) {
-        expect(b.error).toBe("This response failed.");
-        const events = await db
-          .select({ payload: schema.eventJournal.payload })
-          .from(schema.eventJournal);
-        expect(JSON.stringify(events)).toContain("context_window_exceeded");
-      }
+      expect(result.status).toBe("error");
+      expect(b.error).toBe("This response failed.");
+      const events = await db
+        .select({ payload: schema.eventJournal.payload })
+        .from(schema.eventJournal);
+      expect(JSON.stringify(events)).toContain("context_window_exceeded");
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
       expect(JSON.stringify(requests.at(-1))).toContain("The earlier work is complete.");
     });
