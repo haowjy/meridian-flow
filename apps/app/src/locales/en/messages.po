@@ -136,6 +136,12 @@ msgstr "{0} documents"
 msgid "{0} finished"
 msgstr "{0} finished"
 
+#. placeholder {0}: schemeLabel(tab.scheme)
+#. placeholder {1}: work.name
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "{0} for {1}"
+msgstr "{0} for {1}"
+
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/image-imports.ts
 msgid "{0} imported, but its link had moved on."
@@ -576,6 +582,11 @@ msgstr "auto-selected"
 msgid "Back"
 msgstr "Back"
 
+#. placeholder {0}: folder.name
+#: src/components/app/DrillInMenu.tsx
+msgid "Back from {0}"
+msgstr "Back from {0}"
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Back online (all changes saved)"
 msgstr "Back online (all changes saved)"
@@ -589,7 +600,7 @@ msgid "Back to chat"
 msgstr "Back to chat"
 
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Back to live"
 msgstr "Back to live"
 
@@ -860,6 +871,10 @@ msgstr "Close artifact preview"
 #: src/features/project/mobile/MobileChatSheetHeader.tsx
 msgid "Close chat"
 msgstr "Close chat"
+
+#: src/features/project/dock/DockHeader.tsx
+msgid "Close document"
+msgstr "Close document"
 
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Close review"
@@ -1233,11 +1248,11 @@ msgstr "Couldn't load Work."
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
@@ -1840,6 +1855,7 @@ msgid "Figure could not be loaded."
 msgstr "Figure could not be loaded."
 
 #: src/features/project/context/use-create-entry-form.ts
+#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
 msgstr "File name"
@@ -2619,6 +2635,10 @@ msgstr "Not reported"
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
 
+#: src/components/app/DrillInMenu.tsx
+msgid "Nothing here yet."
+msgstr "Nothing here yet."
+
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Nothing opened yet"
 msgstr "Nothing opened yet"
@@ -2716,7 +2736,7 @@ msgstr "Open existing"
 msgid "Open full screen"
 msgstr "Open full screen"
 
-#: src/features/project/dock/DockFileView.tsx
+#: src/features/project/dock/DockDocumentTitle.tsx
 msgid "Open in Editor"
 msgstr "Open in Editor"
 
@@ -3032,6 +3052,7 @@ msgstr "Removed"
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/IdentityChips.tsx
+#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
@@ -3135,7 +3156,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/ProjectCreationNotice.tsx
@@ -3249,7 +3270,6 @@ msgid "scene break"
 msgstr "scene break"
 
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/dock/dock-view-store.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
 msgstr "Scratch"
@@ -4071,11 +4091,11 @@ msgstr "Top up any time. Extra usage carries over month to month."
 msgid "Try again"
 msgstr "Try again"
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Try again, or close this tab. The draft stays in your list."
 msgstr "Try again, or close this tab. The draft stays in your list."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/ContextDocumentHost.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
 
@@ -4231,7 +4251,6 @@ msgid "Uploading elsewhere…"
 msgstr "Uploading elsewhere…"
 
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/dock/dock-view-store.ts
 msgid "Uploads"
 msgstr "Uploads"
 

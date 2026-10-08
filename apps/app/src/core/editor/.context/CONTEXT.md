@@ -250,6 +250,21 @@ lifetime.
   suspension. `suspend`/`resume`/`release` belong to the session alone. The
   negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
   anywhere in `apps/app/src` outside `local-presence.ts`.
+- **Two editors can share one session** (an Editor tab kept warm behind the screen,
+  and the dock's document). Presence is the session's, but each editor's cursor
+  plugin clears a caret it did not place whenever its own view updates unfocused,
+  so two bound editors ping-pong awareness writes and peers see the caret flap.
+  `useMountedEditor` therefore hands each editor `gateCaretPresence(session.presence,
+  () => surface.publishPresence)`: only its `cursor` writes through `caretProvider`
+  are arbitrated (pass while the editor is `active`, dropped otherwise). Every other
+  field, image-upload announcements and their clears included, passes through
+  ungated, because that work belongs to the session whether or not the view shows.
+  When an editor goes to the back it calls `retire()` once, which clears the caret
+  it still owns, meaning it is the session's current caret publisher
+  (`LocalPresence.caretPublisher`, one slot set by each accepted cursor write), never by
+  comparing cursor values, so retire-then-publish and publish-then-retire with equal
+  cursors both leave the front view's caret. Undo needs no such rule: stacks are per editor and both track every
+  local edit.
 - The account resource replica durably reserves metadata before exact content
   opening. Content opening awaits account authority readiness and initializes
   the reserved database before exposing an editable handle. A failure may leave

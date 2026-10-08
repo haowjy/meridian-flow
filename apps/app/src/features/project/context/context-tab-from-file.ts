@@ -17,7 +17,7 @@ import {
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
-import type { ContextTab } from "@/client/stores";
+import type { ContextTab, ServerContextTab } from "@/client/stores";
 
 /** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceWorkAuthority): string | undefined {
@@ -69,6 +69,16 @@ export function contextTabFromFile(
           mimeType: file.mimeType,
         }),
   };
+}
+
+/** The tab for a file the server holds; null for a document still local to this device. */
+export function serverTabFromFile(
+  scheme: ProjectContextTreeScheme,
+  file: CatalogFile,
+  workId?: string,
+): ServerContextTab | null {
+  const tab = contextTabFromFile(scheme, file, workId);
+  return tab.kind === "new" ? null : tab;
 }
 
 /** Where the writer sees a document: its own placement, then every folder move above it. */

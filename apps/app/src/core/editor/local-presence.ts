@@ -72,6 +72,11 @@ export type LocalPresenceFields = {
   setField: (field: string, value: unknown) => void;
   /** The same single write path, in the shape upstream plugins demand. */
   readonly caretProvider: CaretProvider;
+  /**
+   * Which editor wrote the caret now on the wire. One slot for the session, so
+   * views of one session can tell whose caret it is (see `gateCaretPresence`).
+   */
+  readonly caretPublisher: { current: object | null };
 };
 
 /** The whole of one client's presence, as its owner holds it. */
@@ -109,6 +114,7 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
   return {
     peers: awareness,
     setField,
+    caretPublisher: { current: null },
 
     caretProvider: {
       awareness: {
@@ -148,6 +154,68 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
     release() {
       suspensions = 0;
       desired = null;
+    },
+  };
+}
+
+/**
+ * One session can be edited from two views at once: an Editor tab kept warm
+ * behind the screen, and the dock's document. Both write the same `cursor`
+ * field, and the view that is not in front would clear the caret of the one
+ * that is (y-prosemirror clears a caret it did not just place whenever its
+ * own editor updates unfocused), so the two ping-pong awareness writes.
+ *
+ * So the caret, and only the caret, is arbitrated: this view's `cursor`
+ * writes through `caretProvider` pass while `publishing()` is true and are
+ * dropped otherwise. Every other field, the image-upload announcements
+ * included, is background work the session owns whether or not this view is
+ * visible, and passes through untouched, clears included.
+ *
+ * A view that goes to the back calls `retire()` once, which clears the caret
+ * only if this view is still the session's current caret publisher. Its last
+ * write, not the cursor's value, decides that: two views can hold equal
+ * cursors, and a back view must never clear the front one's, whichever of the
+ * two retires or publishes first.
+ */
+export function gateCaretPresence(
+  presence: LocalPresenceFields,
+  publishing: () => boolean,
+): { presence: LocalPresenceFields; retire: () => void } {
+  const wire = presence.caretProvider.awareness;
+  const publisher = presence.caretPublisher;
+  const self = {};
+  const setCaretField = (field: string, value: unknown): void => {
+    if (field !== "cursor") {
+      presence.setField(field, value);
+      return;
+    }
+    if (!publishing()) return;
+    publisher.current = self;
+    presence.setField(field, value);
+  };
+  return {
+    presence: {
+      peers: presence.peers,
+      setField: presence.setField,
+      caretPublisher: publisher,
+      caretProvider: {
+        awareness: {
+          clientID: wire.clientID,
+          get states() {
+            return wire.states;
+          },
+          getStates: () => wire.getStates(),
+          getLocalState: () => wire.getLocalState(),
+          setLocalStateField: setCaretField,
+          on: (name, handler) => wire.on(name, handler),
+          off: (name, handler) => wire.off(name, handler),
+        },
+      },
+    },
+    retire() {
+      if (publisher.current !== self) return;
+      publisher.current = null;
+      presence.setField("cursor", null);
     },
   };
 }
