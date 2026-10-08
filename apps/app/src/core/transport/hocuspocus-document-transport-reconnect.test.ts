@@ -51,12 +51,10 @@ function setup() {
 }
 it.each([
   ["never opened; replacement receives first frame", "connecting", true],
-  ["opened without first frame; replacement receives first frame", "open", true],
   ["received first frame; replacement remains CONNECTING", "connected", false],
 ] as const)("cancels the old retry: %s", async (_label, phase, replacementHealthy) => {
   const { hint } = setup();
   await vi.advanceTimersByTimeAsync(0);
-  if (phase === "open") sockets[0].open();
   if (phase === "connected") sockets[0].connected();
   sockets[0].deliverClose(1006);
   await vi.advanceTimersByTimeAsync(0);

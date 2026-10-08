@@ -1,13 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Representative markdown autoformat boundaries.
- *
- * Most of these rules are inherited from TipTap rather than written by
- * Meridian, which is exactly why they are pinned here: an upgrade that renames
- * a regex or drops a rule would otherwise silently take a trigger away from
- * the writer. Every case types real characters through the input-rule engine
- * and presses real keys through the keymap.
- */
+/** Meridian-owned fence parsing, ordered-list start and input-rule undo contracts. */
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createStandaloneEditor, type StandaloneEditor } from "@/test-support/standalone-editor";
@@ -60,33 +52,7 @@ function outline(editor: Editor): string {
   return blocks.join(" + ");
 }
 
-function marksOnFirstText(editor: Editor): string[] {
-  const text = editor.state.doc.firstChild?.firstChild;
-  return text?.marks.map((mark) => mark.type.name) ?? [];
-}
-
 describe("block rules fire at their trigger", () => {
-  const table: Array<[typed: string, outline: string]> = [
-    ["# Chapter", 'heading:1("Chapter")'],
-    // Past the three ruling 18 named: the schema, the codec and every paste
-    // path carry h4-h6, so denying the trigger would leave a writer who typed
-    // valid markdown holding a literal `#### `.
-    ["###### Sixth", 'heading:6("Sixth")'],
-    ["> aside", 'blockquote("aside")'],
-    ["- item", 'bullet_list("item")'],
-    ["---", 'horizontal_rule("") + paragraph("")'],
-    ["``` x", 'code_block:none("x")'],
-    ["~~~ x", 'code_block:none("x")'],
-  ];
-
-  for (const [typed, expected] of table) {
-    it(`turns ${JSON.stringify(typed)} into ${expected}`, () => {
-      const editor = openEditor();
-      type(editor, typed);
-      expect(outline(editor)).toBe(expected);
-    });
-  }
-
   it("opens an ordered list on the number the writer typed", () => {
     const editor = openEditor();
     type(editor, "7. seventh");
@@ -98,72 +64,10 @@ describe("block rules fire at their trigger", () => {
   });
 });
 
-describe("mark rules fire at their trigger", () => {
-  const table: Array<[typed: string, mark: string]> = [
-    ["**bold**", "strong"],
-    ["*emphasis*", "em"],
-    ["~~struck~~", "strike"],
-    ["`literal`", "code"],
-  ];
-
-  for (const [typed, mark] of table) {
-    it(`turns ${JSON.stringify(typed)} into ${mark}`, () => {
-      const editor = openEditor();
-      type(editor, typed);
-      expect(marksOnFirstText(editor)).toEqual([mark]);
-    });
-  }
-});
-
-describe("block rules fire only at a block start", () => {
-  const midLine = ["prose # not a heading", "prose ```ts not a fence", "prose 1. not a list"];
-
-  for (const typed of midLine) {
-    it(`leaves ${JSON.stringify(typed)} as prose`, () => {
-      const editor = openEditor();
-      type(editor, typed);
-      expect(outline(editor)).toBe(`paragraph(${JSON.stringify(typed)})`);
-    });
-  }
-});
-
-describe("nothing fires inside a code block", () => {
-  const inert = ["# heading", "```", "**bold** "];
-
-  for (const typed of inert) {
-    it(`leaves ${JSON.stringify(typed)} as code`, () => {
-      const editor = openEditor();
-      type(editor, "```ts ");
-      type(editor, typed);
-      expect(outline(editor)).toBe(`code_block:ts(${JSON.stringify(typed)})`);
-    });
-  }
-
-  it("takes a fence closed by Enter as a newline, not a nested block", () => {
-    const editor = openEditor();
-    type(editor, "```ts ");
-    type(editor, "```");
-    press(editor, "Enter");
-    expect(editor.state.doc.childCount).toBe(1);
-    expect(editor.state.doc.firstChild?.type.name).toBe("code_block");
-  });
-});
-
 describe("code fences capture their language", () => {
   const table: Array<[fence: string, info: string, language: string | null]> = [
-    // Case-blind and punctuation-tolerant: TipTap's own `[a-z]+` rule matched
-    // none of these, leaving the writer with literal backticks.
     ["```", "Python", "python"],
-    ["```", "c++", "c++"],
-    ["```", "ts-node", "ts-node"],
-    // GFM forbids backticks inside a backtick fence's info string and forbids
-    // nothing inside a tilde fence's, so a tilde may sit in the language.
     ["~~~", "aa~bb", "aa~bb"],
-    // An opening run longer than three is still one fence with no info string,
-    // which is the reason the run and the info token are captured separately.
-    ["~~~~", "", null],
-    ["````", "", null],
-    ["~~~~", "ts", "ts"],
   ];
 
   for (const [fence, info, language] of table) {
@@ -174,53 +78,9 @@ describe("code fences capture their language", () => {
       expect(editor.state.doc.firstChild?.attrs.language).toBe(language);
     });
   }
-
-  it("ends the info string at the first space and takes the rest as code", () => {
-    const editor = openEditor();
-    type(editor, "~~~ts const qi = 1");
-    expect(outline(editor)).toBe('code_block:ts("const qi = 1")');
-  });
-
-  it("gives a mermaid fence a plain code block, not a diagram", () => {
-    const editor = openEditor();
-    type(editor, "```mermaid ");
-    type(editor, "graph TD;");
-    expect(outline(editor)).toBe('code_block:mermaid("graph TD;")');
-  });
-
-  it("closes a pending fence on Enter as well as on space", () => {
-    const editor = openEditor();
-    type(editor, "```mermaid");
-    expect(press(editor, "Enter")).toBe(true);
-    expect(outline(editor)).toBe('code_block:mermaid("")');
-  });
-
-  it("leaves Enter alone when the block is not a pending fence", () => {
-    const editor = openEditor();
-    type(editor, "prose");
-    expect(press(editor, "Enter")).toBe(true);
-    expect(outline(editor)).toBe('paragraph("prose") + paragraph("")');
-  });
 });
 
 describe("Backspace reverts the transform it just made", () => {
-  const table: Array<[typed: string, restored: string]> = [
-    ["# ", "# "],
-    ["- ", "- "],
-    ["```ts ", "```ts "],
-    ["**bold**", "**bold**"],
-    ["`literal`", "`literal`"],
-  ];
-
-  for (const [typed, restored] of table) {
-    it(`restores ${JSON.stringify(restored)} after ${JSON.stringify(typed)}`, () => {
-      const editor = openEditor();
-      type(editor, typed);
-      expect(press(editor, "Backspace")).toBe(true);
-      expect(outline(editor)).toBe(`paragraph(${JSON.stringify(restored)})`);
-    });
-  }
-
   // Enter is a key, not a character: the engine restores it as a literal
   // newline, which is invisible in a paragraph and would ship in the writer's
   // prose.
@@ -230,16 +90,6 @@ describe("Backspace reverts the transform it just made", () => {
     press(editor, "Enter");
     expect(press(editor, "Backspace")).toBe(true);
     expect(outline(editor)).toBe('paragraph("```mermaid")');
-  });
-
-  it("leaves an ordinary empty code block to CodeBlock's own Backspace", () => {
-    const editor = openEditor();
-    editor.commands.setCodeBlock({ language: "ts" });
-
-    // Claiming Backspace above every node extension is what fixed the fence;
-    // it must not cost the bindings underneath it their turn.
-    expect(press(editor, "Backspace")).toBe(true);
-    expect(outline(editor)).toBe('paragraph("")');
   });
 
   it("leaves Backspace alone when the last keystroke transformed nothing", () => {

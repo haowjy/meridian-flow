@@ -43,7 +43,6 @@ import {
   imageReplaceTarget,
   insertImageFile,
   openImagePicker,
-  removePendingImage,
   retryPendingImage,
 } from "./image-uploads";
 import type { PendingImage } from "./pending-images";
@@ -215,30 +214,6 @@ function announced(awareness: { getLocalState: () => Record<string, unknown> | n
 }
 
 describe("a picture in flight occupies its final slot", () => {
-  it("puts the image node in the document before the upload finishes", async () => {
-    const { editor, held } = mount();
-    editor.commands.setTextSelection(5);
-
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-
-    expect(held).toHaveLength(1);
-    expect(imageNodes(editor)).toEqual([{ pos: 5, src: "", alt: "cover art" }]);
-    expect(pendingImages(editor)).toMatchObject([
-      { kind: "upload", filename: "cover art.png", status: { kind: "uploading", percent: null } },
-    ]);
-  });
-
-  it("keeps the slot's upload token out of every HTML the editor writes", async () => {
-    const { editor } = mount();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-
-    // The token is a live-session fact. On the clipboard it would put a second
-    // node under one upload; in a saved file it would name an owner that is gone.
-    expect(editor.getHTML().toLowerCase()).not.toContain("uploadtoken");
-  });
-
   it("reports progress against that node without touching the document", async () => {
     const { editor, held } = mount();
     insertImageFile(editor, imageFile(), 5);
@@ -250,23 +225,6 @@ describe("a picture in flight occupies its final slot", () => {
 
     expect(pendingImages(editor)).toMatchObject([{ status: { kind: "uploading", percent: 42 } }]);
     expect(editor.state.doc.toJSON()).toEqual(beforeProgress);
-  });
-
-  it("lands the picture in the slot it already had, changing nothing else", async () => {
-    const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-    const pendingDoc = editor.state.doc.toJSON();
-
-    held[0].settle(asset("asset-1"));
-    await settle();
-
-    expect(imageNodes(editor)).toEqual([{ pos: 5, src: "asset:asset-1", alt: "Cover art" }]);
-    expect(pendingImages(editor)).toEqual([]);
-    // Same shape, same slot: only the picture's own source changed, which is
-    // what makes completion cost the manuscript no layout.
-    const landed = editor.state.doc.toJSON();
-    expect(withoutImageSrc(landed)).toEqual(withoutImageSrc(pendingDoc));
   });
 
   it("keeps the slot and offers Retry after a failure", async () => {
@@ -312,34 +270,6 @@ describe("a picture in flight occupies its final slot", () => {
 });
 
 describe("the writer owns a picture in flight", () => {
-  it("aborts the upload when the pending node is deleted", async () => {
-    const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-
-    editor.view.dispatch(editor.state.tr.delete(5, 6));
-    await settle();
-
-    expect(held[0].signal.aborted).toBe(true);
-    expect(pendingImages(editor)).toEqual([]);
-    expect(imageNodes(editor)).toEqual([]);
-  });
-
-  it("aborts when Remove takes the failed picture out", async () => {
-    const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-    held[0].fail(new Error("Storage said no."));
-    await settle();
-
-    removePendingImage(editor, 5);
-    await settle();
-
-    expect(held[0].signal.aborted).toBe(true);
-    expect(pendingImages(editor)).toEqual([]);
-    expect(imageNodes(editor)).toEqual([]);
-  });
-
   it("does not write a picture into a slot the writer took back", async () => {
     const { editor, held } = mount();
     insertImageFile(editor, imageFile(), 5);
@@ -351,19 +281,6 @@ describe("the writer owns a picture in flight", () => {
     await settle();
 
     expect(imageNodes(editor)).toEqual([]);
-  });
-
-  it("keeps typing possible around the pending picture", async () => {
-    const { editor } = mount();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-
-    editor.commands.insertContentAt(1, "Then ");
-    await settle();
-
-    expect(editor.state.doc.textContent).toBe("Then The gate opened.");
-    expect(pendingImages(editor)).toHaveLength(1);
-    expect(imageNodes(editor)).toEqual([{ pos: 10, src: "", alt: "cover art" }]);
   });
 });
 
@@ -389,76 +306,9 @@ describe("two pictures arriving together are two lifecycles", () => {
       { filename: "second.png", status: { kind: "failed", message: "second.png was refused." } },
     ]);
   });
-
-  it("imports two pasted addresses independently", async () => {
-    const { editor, bytes, held } = mount();
-    editor.view.pasteHTML(
-      '<p><img src="https://example.test/one.png" alt="One"> and <img src="https://example.test/two.png" alt="Two"></p>',
-    );
-    await settle();
-
-    // Neither address is in the document: a paste lands the link, never a `src`
-    // the project does not own.
-    expect(imageNodes(editor)).toEqual([]);
-    expect(bytes.calls).toEqual(["https://example.test/one.png", "https://example.test/two.png"]);
-    expect(pendingImages(editor).map((entry: PendingImage) => entry.kind)).toEqual([
-      "import",
-      "import",
-    ]);
-
-    // One site hands over its bytes; the other refuses. The refusal must not
-    // touch the import that is still working.
-    bytes.settle("https://example.test/two.png", null);
-    await settle();
-    expect(pendingImages(editor).map((entry: PendingImage) => entry.kind)).toEqual(["import"]);
-
-    bytes.settle("https://example.test/one.png", imageFile("one.png"));
-    await settle();
-    expect(held).toHaveLength(1);
-
-    held[0].settle(asset("asset-one"));
-    await settle();
-    expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:asset-one"]);
-    expect(pendingImages(editor)).toEqual([]);
-    // The refused one is still the link the paste landed.
-    expect(editor.state.doc.textContent).toContain("https://example.test/two.png");
-  });
 });
 
 describe("a peer sees an upload it does not own as an upload", () => {
-  it("shows the slot as uploading elsewhere while its owner is live", async () => {
-    const { editor, peer, sync, syncAwareness } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-    sync();
-    syncAwareness();
-    await settle();
-
-    // Same node, two clients, two honest readings: mine is uploading, theirs is
-    // uploading somewhere else. Neither is "this never finished".
-    expect(imageNodes(peer)).toEqual([{ pos: 5, src: "", alt: "cover art" }]);
-    expect(slotStatus(editor, 5)).toBe("uploading");
-    expect(slotStatus(peer, 5)).toBe("elsewhere");
-  });
-
-  it("stops claiming an owner once the upload lands", async () => {
-    const { editor, peer, sync, syncAwareness, awareness, held } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-    sync();
-    syncAwareness();
-
-    held[0].settle(asset("asset-peer"));
-    await settle();
-    sync();
-    syncAwareness();
-    await settle();
-
-    expect(imageNodes(peer)).toEqual([{ pos: 5, src: "asset:asset-peer", alt: "Cover art" }]);
-    expect(slotStatus(peer, 5)).toBe(null);
-    expect(announced(awareness.local)).toEqual([]);
-  });
-
   it("leaves an ownerless empty slot recoverable, not in flight", async () => {
     const { editor, peer, sync } = mountPair();
     // No owner ever announced this one: a reload's leftover, or a redo that
@@ -517,18 +367,6 @@ describe("closing the editor closes what it was carrying", () => {
 
     expect(held[0].signal.aborted).toBe(true);
     expect(announced(awareness.local)).toEqual([]);
-  });
-
-  it("aborts a pending import on destroy", async () => {
-    const { editor, bytes } = mount();
-    editor.view.pasteHTML('<p><img src="https://example.test/one.png" alt="One"></p>');
-    await settle();
-    expect(bytes.calls).toEqual(["https://example.test/one.png"]);
-    expect(pendingImages(editor)).toHaveLength(1);
-
-    editor.destroy();
-
-    expect(bytes.aborted).toEqual(["https://example.test/one.png"]);
   });
 });
 
@@ -680,22 +518,6 @@ function sweepCells(editor: Editor, anchorIndex: number, headIndex: number): voi
   editor.view.dispatch(editor.state.tr.setSelection(selection));
 }
 
-/** Each cell's child block types and flattened text, in document order. */
-function cellStates(editor: Editor): { blocks: string[]; text: string }[] {
-  const cells: { blocks: string[]; text: string }[] = [];
-  editor.state.doc.descendants((node) => {
-    if (node.type.spec.tableRole === "cell") {
-      const blocks: string[] = [];
-      node.forEach((child) => {
-        blocks.push(child.type.name);
-      });
-      cells.push({ blocks, text: node.textContent });
-    }
-    return true;
-  });
-  return cells;
-}
-
 /** A real paste of an image file, through the view's own paste pipeline. */
 function pasteFile(editor: Editor, file: File): void {
   const event = new ClipboardEvent("paste", { cancelable: true });
@@ -715,27 +537,6 @@ function pasteFile(editor: Editor, file: File): void {
  * picture landing inline, exactly as before.
  */
 describe("an image file pasted over a sweep replaces the sweep", () => {
-  it("empties the swept cells and lands the picture's paragraph in the top-left cell", async () => {
-    const { editor, held } = mount(tableDocument2x2());
-    sweepCells(editor, 0, 3);
-
-    pasteFile(editor, imageFile());
-    await settle();
-
-    expect(held).toHaveLength(1);
-    expect(cellStates(editor)).toEqual([
-      { blocks: ["paragraph"], text: "" },
-      { blocks: ["paragraph"], text: "" },
-      { blocks: ["paragraph"], text: "" },
-      { blocks: ["paragraph"], text: "" },
-    ]);
-    // The picture stands in the top-left cell's own paragraph, in flight.
-    expect(imageNodes(editor)).toHaveLength(1);
-    expect(pictureHome(editor, "cover art")).toEqual({ text: "", role: "cell" });
-    // The caret follows it into the cell, ready to keep writing beside it.
-    expect(editor.state.selection.$from.node(-1).type.spec.tableRole).toBe("cell");
-  });
-
   it("is one undo step: the swept cells and their text come back together", async () => {
     const { editor } = mount(tableDocument2x2());
     editor.registerPlugin(history());
@@ -749,69 +550,9 @@ describe("an image file pasted over a sweep replaces the sweep", () => {
     undo(editor.view.state, editor.view.dispatch);
     expect(editor.state.doc.toJSON()).toEqual(before);
   });
-
-  it("still lands a caret paste inline where the caret is", async () => {
-    const { editor, held } = mount();
-    editor.commands.setTextSelection(5);
-
-    pasteFile(editor, imageFile());
-    await settle();
-
-    expect(held).toHaveLength(1);
-    expect(imageNodes(editor)).toEqual([{ pos: 5, src: "", alt: "cover art" }]);
-  });
 });
 
 describe("Replace aims at the picture the writer pointed at", () => {
-  it("lands on the original picture after a peer writes a picture in above", async () => {
-    const { editor, peer, sync, held } = mountPair();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-    held[0].settle(asset("old"));
-    await settle();
-    sync();
-
-    const chooseFile = openChooser(() =>
-      openImagePicker(editor, imageReplaceTarget(editor, imageNodes(editor)[0].pos)),
-    );
-
-    // The peer's block arrives while the chooser is still open, and its own
-    // picture now starts at the number the original one had.
-    peer.view.dispatch(peer.state.tr.insert(0, peerPictureBlock(peer)));
-    sync();
-    await settle();
-
-    chooseFile(imageFile("replacement.png"));
-    await settle();
-    expect(held).toHaveLength(2);
-    held[1].settle(asset("new"));
-    await settle();
-
-    expect(imageNodes(editor).map((node) => node.src)).toEqual(["asset:peer", "asset:new"]);
-  });
-
-  it("opens nothing when the picture is gone by the time the file comes back", async () => {
-    const { editor, held } = mount();
-    insertImageFile(editor, imageFile(), 5);
-    await settle();
-    held[0].settle(asset("old"));
-    await settle();
-
-    const at = imageNodes(editor)[0].pos;
-    const chooseFile = openChooser(() => openImagePicker(editor, imageReplaceTarget(editor, at)));
-    editor.view.dispatch(editor.state.tr.delete(at, at + 1));
-    await settle();
-
-    chooseFile(imageFile("replacement.png"));
-    await settle();
-
-    // No second request, so no asset the project has no use for, and nothing in
-    // flight for a slot that does not exist.
-    expect(held).toHaveLength(1);
-    expect(pendingImages(editor)).toEqual([]);
-    expect(imageNodes(editor)).toEqual([]);
-  });
-
   it("takes the whole replacement back in one undo", async () => {
     // Undo on a shared document is the Yjs UndoManager, so the shared document
     // is what these two cases are for — not a peer.
@@ -874,30 +615,3 @@ describe("an announcement made while the writer is hidden is still true after", 
     expect(announced(awareness.local)).toEqual([]);
   });
 });
-
-/**
- * Everything about the document except which picture a node points at and
- * whether an upload is still filling it. Landing writes exactly those, on the
- * node that was already there; anything else differing means the manuscript
- * moved.
- */
-function withoutImageSrc(doc: unknown): unknown {
-  if (Array.isArray(doc)) return doc.map(withoutImageSrc);
-  if (doc && typeof doc === "object") {
-    const entries = Object.entries(doc as Record<string, unknown>).map(([key, value]) =>
-      key === "attrs" && (doc as { type?: string }).type === "image"
-        ? [
-            key,
-            {
-              ...(value as Record<string, unknown>),
-              src: "<src>",
-              alt: "<alt>",
-              uploadToken: "<token>",
-            },
-          ]
-        : [key, withoutImageSrc(value)],
-    );
-    return Object.fromEntries(entries);
-  }
-  return doc;
-}

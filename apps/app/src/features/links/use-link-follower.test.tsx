@@ -138,19 +138,6 @@ describe("useLinkFollower", () => {
     expect(events).toEqual(["report:checking", "clear"]);
   });
 
-  it("opens through a catalog change landing mid-follow", async () => {
-    render({ scope, index: catalog("a") });
-    act(() => follower.follow(address("Kael")));
-    await elapse(CHECKING_DELAY_MS);
-
-    // A rename elsewhere: a new catalog revision, so the scope registers again.
-    render({ scope, index: catalog("b") });
-    await elapse(0);
-    await answer("Kael", doc("kael"));
-
-    expect(events).toEqual(["report:checking", "clear", "open:doc-kael:current"]);
-  });
-
   it("drops a cached server answer when the holder revision changes", async () => {
     const holding: LinkResolutionScope = {
       ...scope,

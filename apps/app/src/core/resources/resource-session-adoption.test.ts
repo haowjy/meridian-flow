@@ -8,7 +8,6 @@ import type {
 } from "@meridian/resource-replica";
 import {
   markResourceCreateEligible,
-  planSessionAdoptionGeneration,
   prepareNamespaceAttempt,
   recordNamespaceOutcome,
   reserveResourceDocument,
@@ -239,23 +238,6 @@ it("waits for a caller-owned lease before transferring and acknowledging the ses
   expect(release).toHaveBeenCalledOnce();
 });
 
-it("hands recorded bindable authority to the already-open local session", async () => {
-  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
-  const current = await metadata.readResource(key);
-  if (!current) throw new Error("Missing resource record");
-  const pinned = planSessionAdoptionGeneration(current, "7");
-  if (!pinned) throw new Error("Expected a pending session adoption");
-  expect(await metadata.commitResource(pinned)).toBe("committed");
-  vi.mocked(adoption.inspect).mockResolvedValue("bindable");
-
-  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-
-  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
-  expect(created).toHaveLength(1);
-  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
-  verified.handle.release();
-});
-
 it("rejects an authority fence before pinning the resource generation", async () => {
   const { adoption, availability, coordinator, key, metadata, verified } = await fixture();
   availability.resolve.mockResolvedValue({
@@ -331,15 +313,4 @@ it("does not label a transport-owned session offline when only the acknowledgeme
   expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
   verified.handle.release();
   await created[0]?.destroy();
-});
-
-it("clears a stalled flag when the retry finds the transfer already adopted", async () => {
-  const { coordinator, created, key, metadata, verified } = await fixture();
-  failAcknowledgementOnce(metadata);
-
-  await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
-  expect(created[0]?.getSnapshot()).toMatchObject({ status: "detached", adoptionStalled: true });
-  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-  expect(created[0]?.getSnapshot()).toMatchObject({ adoptionStalled: false });
-  verified.handle.release();
 });

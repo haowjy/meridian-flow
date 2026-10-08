@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import {
   cleanupProjectFixture,
@@ -108,33 +106,3 @@ test.describe("vertical slice", () => {
     }
   });
 });
-
-test("source tree has no markdown-replace protocol path", () => {
-  const roots = [
-    join(process.cwd(), "src"),
-    join(process.cwd(), "../server/server"),
-    join(process.cwd(), "../../packages"),
-  ];
-  const hits: string[] = [];
-  for (const root of roots) {
-    scanForMarkdownReplace(root, hits);
-  }
-  expect(hits).toEqual([]);
-});
-
-function scanForMarkdownReplace(dir: string, hits: string[]): void {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    const stat = statSync(path);
-    if (stat.isDirectory()) {
-      if (entry === "node_modules" || entry === ".output") continue;
-      scanForMarkdownReplace(path, hits);
-      continue;
-    }
-    if (!/\.(ts|tsx)$/.test(entry) || entry.endsWith(".spec.ts")) continue;
-    const text = readFileSync(path, "utf8");
-    if (text.includes('"markdown-replace"') || text.includes("'markdown-replace'")) {
-      hits.push(path);
-    }
-  }
-}

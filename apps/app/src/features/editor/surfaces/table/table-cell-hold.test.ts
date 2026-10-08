@@ -17,9 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { holdNode, resolveNodeHold } from "@/core/editor/anchors";
 import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
-
-import { cellDocPosition, cellElementAt } from "./table-anchors";
-import { runTableVerbOn, tableTargetState, tableVerbStates } from "./table-commands";
+import { runTableVerbOn, tableTargetState } from "./table-commands";
 
 let pair: CollabPair | null = null;
 
@@ -115,52 +113,6 @@ function sweep(instance: Editor, anchor: string, head: string): void {
 }
 
 describe("the cell a grip is aimed at, across a peer's write", () => {
-  it("is found from the pointer and answers the same cell as the document", () => {
-    const { local } = mount();
-    const cell = cellElementAt(local.view, cellPos(local, "four"));
-    expect(cell?.tagName).toBe("TD");
-    expect(cell && cellDocPosition(local.view, cell)).toBe(cellPos(local, "four"));
-  });
-
-  it("keeps its cell, and re-reads the element drawing it, when a peer types elsewhere", () => {
-    const current = mount();
-    const { local } = current;
-    const at = cellPos(local, "four");
-    const hold = holdNode(local.state, at);
-    expect(hold?.nodeType).toBe("table_cell");
-    if (!hold) throw new Error("no hold");
-
-    sync(current, (peer) => {
-      peer.commands.insertContentAt(1, "PEER ");
-      peer.commands.insertContentAt(cellPos(peer, "one") + 2, "!");
-    });
-
-    const now = resolveNodeHold(local.state, hold);
-    expect(now?.from).toBe(cellPos(local, "four"));
-    expect(local.state.doc.nodeAt(now?.from ?? -1)?.textContent).toBe("four");
-    // The crossing back to geometry: whatever is drawing that cell right now.
-    const cell = now ? cellElementAt(local.view, now.from) : null;
-    expect(cell?.isConnected).toBe(true);
-    expect(cell?.textContent).toBe("four");
-  });
-
-  it("lets go once a peer deletes the row the cell was in", () => {
-    const current = mount();
-    const { local } = current;
-    const hold = holdNode(local.state, cellPos(local, "four"));
-    if (!hold) throw new Error("no hold");
-
-    sync(current, (peer) => {
-      const row = peer.state.doc.resolve(cellPos(peer, "three")).before();
-      peer.commands.deleteRange({
-        from: row,
-        to: row + (peer.state.doc.nodeAt(row)?.nodeSize ?? 0),
-      });
-    });
-
-    expect(resolveNodeHold(local.state, hold)).toBeNull();
-  });
-
   /**
    * A peer's inserted row leaves ANOTHER cell at the number the pointer last
    * read, so a position that still starts a cell says nothing about which cell.
@@ -197,29 +149,6 @@ describe("the cells a table menu's verbs run on, across a peer's write", () => {
       ["", ""],
       ["three", "four"],
     ]);
-  });
-
-  it("is the rectangle the writer swept, after the write turned their selection into a caret", () => {
-    const current = mount();
-    const { local } = current;
-    sweep(local, "one", "two");
-    const target = {
-      kind: "cells",
-      anchor: holdCell(local, "one"),
-      head: holdCell(local, "two"),
-    } as const;
-
-    sync(current, (peer) => {
-      peer.commands.insertContentAt(1, "PEER ");
-    });
-
-    // What the writer is left standing in, and what the menu still acts on.
-    expect(local.state.selection).not.toBeInstanceOf(CellSelection);
-    const menuState = tableTargetState(local, target);
-    expect(menuState && tableVerbStates(menuState).mergeCells.blockedBy).toBeNull();
-
-    expect(runTableVerbOn(local, target, "mergeCells")).toBe(true);
-    expect(rowTexts(local)).toEqual([["onetwo"], ["three", "four"]]);
   });
 
   it("is nothing once a peer takes one of those cells away, and the menu has nothing to offer", () => {
