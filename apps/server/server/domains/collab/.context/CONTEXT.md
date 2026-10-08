@@ -355,3 +355,19 @@ requires the displayed live/draft revision tokens; missing or changed tokens
 return `stale` without modifying the draft. Discard still expands a requested
 operation to its entire server-vended class; Apply requires all class members.
 Whole-document Discard remains unfenced.
+
+### Review read efficiency
+
+Review classes are opaque `closure:v1:` SHA-256 membership tokens, not encoded
+operation lists. Dependency closure decodes each row once and indexes ranges
+per Yjs client; same-client prefix and overlapping-delete edges preserve the
+same connected components without pairwise row comparison. Block alignment
+peels matching ID prefixes and unambiguous suffixes before allocating an LCS
+matrix, retaining its duplicate-ID tie rule.
+
+Standalone live review reads capture revision, checkpoint and journal rows
+under the mutation lock, then replay into an owned private Y.Doc after commit.
+Command reads joined to an ambient transaction retain the caller's lock and
+revision fence. Callers destroy the returned document; no encoded snapshot
+round trip is needed. Draft lists bulk-resolve document paths with one document
+query and one shared folder graph, and expose persisted branch update times.

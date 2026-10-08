@@ -55,8 +55,8 @@ export function createWorkDraftReviewService(input: {
   model: YProsemirrorDocumentModel;
   agentEdit: ThreadPeerAgentEditCore;
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
-  resolveDocumentUri(documentId: string): Promise<string | null>;
-  readLiveReviewCut(documentId: string): Promise<{ state: Uint8Array; revision: string }>;
+  resolveDocumentUris(documentIds: readonly string[]): Promise<ReadonlyMap<string, string | null>>;
+  readLiveReviewCut(documentId: string): Promise<{ doc: Y.Doc; revision: string }>;
 }): CollabDrafts {
   async function resolveDraftOnlyDocumentIds(command: {
     projectId?: ProjectId;
@@ -84,8 +84,10 @@ export function createWorkDraftReviewService(input: {
   ): Promise<ReviewableDraft[]> {
     const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
     const drafts: ReviewableDraft[] = [];
-    for (const { branch, rows } of await input.workDraftPending.list(workId)) {
-      const uri = await input.resolveDocumentUri(branch.documentId);
+    const pending = await input.workDraftPending.list(workId);
+    const uris = await input.resolveDocumentUris(pending.map(({ branch }) => branch.documentId));
+    for (const { branch, rows } of pending) {
+      const uri = uris.get(branch.documentId) ?? null;
       drafts.push({
         draftId: branch.branchId,
         documentId: branch.documentId,
@@ -94,7 +96,7 @@ export function createWorkDraftReviewService(input: {
         lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
         wordsAdded: null,
         wordsRemoved: null,
-        updatedAt: new Date(),
+        updatedAt: branch.updatedAt,
         documentName: documentTitleFromUri(uri),
         contextPath: manuscriptContextPath(uri),
         ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
@@ -118,8 +120,7 @@ export function createWorkDraftReviewService(input: {
     draftId: string;
   }) {
     const liveState = await input.readLiveReviewCut(command.documentId);
-    const liveDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(liveDoc, liveState.state);
+    const liveDoc = liveState.doc;
     let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
     try {
       let branch: { branchId: string; generation: number; doc: Y.Doc };
@@ -330,10 +331,9 @@ export function createWorkDraftReviewService(input: {
   ) {
     return async (snapshot: BranchSnapshot, rows: BranchJournalRow[]) => {
       const liveCut = await input.readLiveReviewCut(command.documentId);
-      const liveDoc = createCollabYDoc({ gc: false });
+      const liveDoc = liveCut.doc;
       const draftDoc = createCollabYDoc({ gc: false });
       try {
-        Y.applyUpdate(liveDoc, liveCut.state);
         Y.applyUpdate(draftDoc, snapshot.state);
         const draftUpdates = reviewUpdates(rows);
         const draftRevisionToken = draftReviewRevision(snapshot.generation, draftDoc, rows);

@@ -1,5 +1,6 @@
 /** Unit coverage for server-vended Apply/Discard classes. */
 
+import { createHash } from "node:crypto";
 import type { ReviewHunk } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -112,8 +113,8 @@ describe("assignReviewClasses", () => {
       ),
     });
     expect(operations.map((operation) => operation.closureClassId)).toEqual([
-      "closure:1",
-      "closure:2",
+      expectedClass("1"),
+      expectedClass("2"),
     ]);
     base.destroy();
   });
@@ -125,7 +126,7 @@ describe("assignReviewClasses", () => {
     });
 
     expect(new Set(operations.map((operation) => operation.closureClassId))).toEqual(
-      new Set(["closure:a+b"]),
+      new Set([expectedClass("a", "b")]),
     );
     expect(operations.map((operation) => operation.sourceUpdateIds)).toEqual([[1], [2]]);
     expect(operations.map((operation) => operation.closureUpdateIds)).toEqual([
@@ -141,8 +142,8 @@ describe("assignReviewClasses", () => {
     });
 
     expect(operations.map((operation) => operation.closureClassId)).toEqual([
-      "closure:a",
-      "closure:b",
+      expectedClass("a"),
+      expectedClass("b"),
     ]);
   });
 
@@ -153,7 +154,7 @@ describe("assignReviewClasses", () => {
     });
 
     expect(new Set(operations.map((operation) => operation.closureClassId))).toEqual(
-      new Set(["closure:a+b"]),
+      new Set([expectedClass("a", "b")]),
     );
     expect(operations.map((operation) => operation.closureUpdateIds)).toEqual([
       [1, 2],
@@ -218,8 +219,8 @@ describe("assignReviewClasses", () => {
         updates: updates.map((update, index) => ({ id: index + 1, updateData: update })),
       });
       expect(operations.map((operation) => operation.closureClassId)).toEqual([
-        "closure:1+2",
-        "closure:1+2",
+        expectedClass("1", "2"),
+        expectedClass("1", "2"),
       ]);
     } finally {
       doc.destroy();
@@ -254,7 +255,7 @@ describe("assignReviewClasses", () => {
       });
 
       expect(new Set(operations.map((operation) => operation.closureClassId))).toEqual(
-        new Set(["closure:1+2+3"]),
+        new Set([expectedClass("1", "2", "3")]),
       );
     } finally {
       authority.destroy();
@@ -303,4 +304,35 @@ function editFromFreshPeer(authority: Y.Doc, mutate: (text: Y.Text) => void): Ui
   } finally {
     peer.destroy();
   }
+}
+
+it("closes 3,000 sequential Yjs rows within one second", () => {
+  const doc = new Y.Doc({ gc: false });
+  const updates: { id: number; updateData: Uint8Array }[] = [];
+  doc.on("update", (updateData) => updates.push({ id: updates.length + 1, updateData }));
+  const text = doc.getText("content");
+  for (let i = 0; i < 3000; i++) text.insert(text.length, "x");
+  const start = performance.now();
+  const result = assignReviewClasses({ operations: [op("first", [1])], hunks: [], updates });
+  expect(result[0].closureUpdateIds).toHaveLength(3000);
+  expect(performance.now() - start).toBeLessThan(1000);
+  doc.destroy();
+});
+
+it("uses bounded opaque class IDs stable under member ordering", () => {
+  const operations = Array.from({ length: 1000 }, (_, i) => op(`operation-${i}`, [i]));
+  const hunks = [
+    hunk(
+      "shared",
+      operations.map((op) => op.operationId),
+    ),
+  ];
+  const forward = assignReviewClasses({ operations, hunks });
+  const reversed = assignReviewClasses({ operations: [...operations].reverse(), hunks });
+  expect(forward[0].closureClassId).toMatch(/^closure:v1:[A-Za-z0-9_-]{43}$/);
+  expect(forward[0].closureClassId).toBe(reversed[0].closureClassId);
+});
+
+function expectedClass(...ids: string[]): string {
+  return `closure:v1:${createHash("sha256").update(JSON.stringify(ids)).digest("base64url")}`;
 }

@@ -2,7 +2,7 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { computeDraftReviewHunks } from "./draft-review-hunks.js";
+import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { computeDraftReviewOperations } from "./draft-review-operations.js";
 import {
   captureUpdate,
@@ -150,5 +150,31 @@ describe("draft review hunks", () => {
         (hunk) => hunk.kind === "text" && !hunk.deletedText && hunk.operationIds.length > 0,
       ),
     ).toBe(true);
+  });
+});
+
+describe("block alignment", () => {
+  it("aligns one changed ID in 8,000 blocks within half a second", () => {
+    const live = Array.from({ length: 8000 }, (_, i) => ({ id: String(i), text: "unchanged" }));
+    const draft = live.map((block) => ({ ...block }));
+    draft[4000].id = "changed";
+    const start = performance.now();
+    const result = alignBlocks(live, draft);
+    expect(result.filter((entry) => entry.kind !== "equal").map((entry) => entry.kind)).toEqual([
+      "delete",
+      "insert",
+    ]);
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+  it("retains the first duplicate surviving anchor under the LCS tie rule", () => {
+    const result = alignBlocks(
+      [{ id: "a" }, { id: "b" }],
+      [
+        { id: "b", text: "first" },
+        { id: "b", text: "last" },
+      ],
+    );
+    expect(result.map((entry) => entry.kind)).toEqual(["delete", "equal", "insert"]);
+    expect(result[1]).toMatchObject({ draft: { text: "first" } });
   });
 });
