@@ -370,7 +370,7 @@ describe("the phone review header", () => {
   it("shows a refused whole-draft command under the row, from the draft's own record", async () => {
     failDraftCommand(
       { projectId: "p", workId: "w", documentId: "doc-12", draftId: "draft-doc-12" },
-      "apply-failed",
+      { code: "apply-offline" },
     );
     await render(async () => {
       expect(header()?.textContent).toContain("Couldn't apply");

@@ -42,7 +42,7 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
       workId: controller.workId,
       documentId,
       draftId: draft.draftId,
-    }) === "review-failed";
+    })?.code === "review-failed";
 
   return (
     <button
@@ -73,7 +73,11 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
         aria-hidden
         className={cn("size-1.5 rounded-full", failed ? "bg-destructive" : "bg-primary")}
       />
-      {failed ? <ReviewMessageText code="review-failed" /> : <Trans>Review draft</Trans>}
+      {failed ? (
+        <ReviewMessageText failure={{ code: "review-failed" }} />
+      ) : (
+        <Trans>Review draft</Trans>
+      )}
     </button>
   );
 }

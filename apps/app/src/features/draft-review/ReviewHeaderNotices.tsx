@@ -10,7 +10,7 @@
  */
 import { Plural, Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
-import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
+import type { DraftCommandFailure } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
 import type { DockRow } from "@/features/chat/docked-drafts";
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
@@ -31,9 +31,9 @@ export function ReviewHeaderNotices({
   onShowLive,
   touch = false,
 }: {
-  commandError: DraftCommandFailureCode | null;
+  commandError: DraftCommandFailure | null;
   /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
-  failedElsewhere?: { row: DockRow; code: DraftCommandFailureCode }[];
+  failedElsewhere?: { row: DockRow; failure: DraftCommandFailure }[];
   finished: boolean;
   /** The draft is open and lists no change: what remains is handled by Apply draft or Discard draft. */
   unlisted?: boolean;
@@ -50,10 +50,10 @@ export function ReviewHeaderNotices({
     <>
       {commandError ? (
         <p className="px-4 pb-1.5 text-destructive" role="alert">
-          <ReviewMessageText code={commandError} />
+          <ReviewMessageText failure={commandError} />
         </p>
       ) : null}
-      {failedElsewhere.slice(0, MAX_NAMED_FAILURES).map(({ row, code }) => (
+      {failedElsewhere.slice(0, MAX_NAMED_FAILURES).map(({ row, failure }) => (
         <div
           key={row.documentId}
           className={cn(
@@ -65,7 +65,7 @@ export function ReviewHeaderNotices({
           <p className="min-w-0 flex-1">
             <span className="font-medium">{row.documentName ?? <Trans>Untitled</Trans>}</span>
             <br />
-            <ReviewMessageText code={code} />
+            <ReviewMessageText failure={failure} />
           </p>
           <Button size="xs" variant="outline" className={button} onClick={() => onOpenNext(row)}>
             <Trans>Open</Trans>

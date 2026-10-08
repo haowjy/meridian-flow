@@ -10,10 +10,11 @@ import {
 } from "@/client/query/change-command-record";
 import {
   beginDraftCommand,
-  type DraftCommandFailureCode,
+  type DraftCommandFailure,
   failDraftCommand,
   releaseDraftCommand,
 } from "@/client/query/draft-command-record";
+import { classifyDraftCommandRejection } from "@/client/query/draft-command-rejection";
 
 export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
@@ -85,9 +86,10 @@ export type DraftCommandOutcome =
   | { kind: "change-settled"; mode: "apply" | "discard" }
   /** One change's command did not land; the reason is held on the change. */
   | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
-  | { kind: "failed"; code: DraftCommandFailureCode };
+  | { kind: "failed"; failure: DraftCommandFailure };
 
-export type DraftBatchErrorCode = "apply-failed" | "apply-unknown" | "discard-offline";
+/** What a batch (Apply all, Discard all) says it left behind: the first failure it held. */
+export type DraftBatchError = DraftCommandFailure;
 
 export type ChangeApplyRequest = {
   operationIds: string[];
@@ -130,7 +132,7 @@ export type DraftReviewCommandPorts = {
     mode: "apply" | "discard",
   ) => void;
   batchStarted: (mode: "apply" | "discard") => void;
-  batchSettled: (error: DraftBatchErrorCode | null) => void;
+  batchSettled: (error: DraftBatchError | null) => void;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
@@ -212,7 +214,7 @@ export class DraftReviewSession {
       }
     } finally {
       this.disposition.release(reservation);
-      ports.batchSettled(batchErrorCode(mode, outcomes));
+      ports.batchSettled(batchErrorCode(outcomes));
     }
     return outcomes;
   }
@@ -243,9 +245,12 @@ export class DraftReviewSession {
           let response: { status: string } | "unknown";
           try {
             response = await send(ports, { operationIds: [...change.operationIds], ...tokens });
-          } catch {
-            failChangeCommand(draft, change, mode, "offline");
-            return { kind: "change-refused", mode, code: "offline" };
+          } catch (error) {
+            const rejection = classifyDraftCommandRejection(error);
+            const code = rejection.kind === "refused" ? "refused" : rejection.kind;
+            const reason = rejection.kind === "refused" ? rejection.reason : undefined;
+            failChangeCommand(draft, change, mode, code, reason);
+            return { kind: "change-refused", mode, code };
           }
           if (response === "unknown") {
             failChangeCommand(draft, change, mode, "unknown");
@@ -284,14 +289,15 @@ export class DraftReviewSession {
       let result: "applied" | "unknown";
       try {
         result = await ports.apply(selection);
-      } catch {
+      } catch (error) {
         // Held on the draft, not on the review: the writer may have moved on
         // to the next draft, and this one's row still has to say it was refused.
-        failDraftCommand(draft, "apply-failed");
-        return { kind: "failed", code: "apply-failed" };
+        const failure = commandFailure("apply", error);
+        failDraftCommand(draft, failure);
+        return { kind: "failed", failure };
       }
       if (result === "unknown") {
-        failDraftCommand(draft, "apply-unknown");
+        failDraftCommand(draft, { code: "apply-unknown" });
         return { kind: "apply-outcome-unknown" };
       }
       ports.draftApplied(selection);
@@ -315,9 +321,10 @@ export class DraftReviewSession {
       ports.draftDiscardStarted(selection);
       try {
         await ports.discard(selection);
-      } catch {
-        failDraftCommand(draft, "discard-offline");
-        return { kind: "failed", code: "discard-offline" };
+      } catch (error) {
+        const failure = commandFailure("discard", error);
+        failDraftCommand(draft, failure);
+        return { kind: "failed", failure };
       }
       releaseDraftCommand(draft);
       ports.draftDiscarded(selection);
@@ -345,16 +352,27 @@ export class DraftReviewSession {
   }
 }
 
-function batchErrorCode(
-  mode: "apply" | "discard",
-  outcomes: readonly DraftCommandOutcome[],
-): DraftBatchErrorCode | null {
-  if (outcomes.some((outcome) => outcome.kind === "failed")) {
-    return mode === "apply" ? "apply-failed" : "discard-offline";
-  }
+function batchErrorCode(outcomes: readonly DraftCommandOutcome[]): DraftBatchError | null {
+  for (const outcome of outcomes) if (outcome.kind === "failed") return outcome.failure;
   return outcomes.some((outcome) => outcome.kind === "apply-outcome-unknown")
-    ? "apply-unknown"
+    ? { code: "apply-unknown" }
     : null;
+}
+
+/** The failure a whole-draft Apply or Discard leaves, from the error its request threw. */
+function commandFailure(mode: "apply" | "discard", error: unknown): DraftCommandFailure {
+  const rejection = classifyDraftCommandRejection(error);
+  switch (rejection.kind) {
+    case "offline":
+      return { code: `${mode}-offline` };
+    case "server-error":
+      return { code: `${mode}-server-error` };
+    case "refused":
+      return {
+        code: `${mode}-refused`,
+        ...(rejection.reason ? { reason: rejection.reason } : {}),
+      };
+  }
 }
 
 export type DraftReviewSelection = {
@@ -403,7 +421,7 @@ export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "e
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
-  dockDispositionError: DraftBatchErrorCode | null;
+  dockDispositionError: DraftBatchError | null;
   /** The header's "Show changes": false hides every mark in the manuscript. */
   marksVisible: boolean;
   toast: ReviewToast | null;
@@ -434,7 +452,7 @@ export type DraftReviewAction =
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
   | { type: "batchStarted" }
-  | { type: "batchSettled"; error: DraftBatchErrorCode | null }
+  | { type: "batchSettled"; error: DraftBatchError | null }
   | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };

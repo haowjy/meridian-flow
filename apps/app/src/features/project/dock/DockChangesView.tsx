@@ -230,7 +230,7 @@ function DraftDocumentRow({
 }: {
   row: DockRow;
   /** A held failure on this row's draft, such as a Review that could not open. */
-  error: Parameters<typeof ReviewMessageText>[0]["code"] | null;
+  error: Parameters<typeof ReviewMessageText>[0]["failure"] | null;
   onDismissError: () => void;
   onReview: () => void;
 }) {
@@ -257,7 +257,10 @@ function DraftDocumentRow({
         </span>
       </button>
       {error ? (
-        <InlineErrorRow message={<ReviewMessageText code={error} />} onDismiss={onDismissError} />
+        <InlineErrorRow
+          message={<ReviewMessageText failure={error} />}
+          onDismiss={onDismissError}
+        />
       ) : null}
     </div>
   );

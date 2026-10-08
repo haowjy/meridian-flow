@@ -52,7 +52,7 @@ describe("WorkDrafts refused Discard", () => {
             documentId: "document-a",
             draftId: "draft-a",
           },
-          "discard-offline",
+          { code: "discard-offline" },
         ),
       );
       expect(document.querySelector("[role=alert]")?.textContent).toBe(

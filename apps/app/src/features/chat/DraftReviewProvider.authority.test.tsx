@@ -7,7 +7,7 @@
 
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpResponseError } from "@/client/api/http-client";
+import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import {
   applied,
@@ -199,7 +199,9 @@ describe("a whole-draft Apply the server rejects after the review moved on", () 
       });
 
       expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-b");
-      expect(probe().header.switcher.failures?.get("document-a")).toBe("apply-failed");
+      expect(probe().header.switcher.failures?.get("document-a")).toEqual({
+        code: "apply-server-error",
+      });
       expect(probe().header.switcher.failures?.has("document-b")).toBe(false);
     });
   });
@@ -214,7 +216,9 @@ describe("a whole-draft Apply the server rejects after the review moved on", () 
         await probe().editor.controller.apply("document-a", "draft-a");
         probe().editor.controller.enterInlineReview("document-b", "draft-b");
       });
-      expect(probe().header.switcher.failures?.get("document-a")).toBe("apply-unknown");
+      expect(probe().header.switcher.failures?.get("document-a")).toEqual({
+        code: "apply-unknown",
+      });
     });
   });
 });
@@ -243,7 +247,32 @@ describe("a per-change Apply that got no answer", () => {
         await probe().editor.controller.applyChange(change("2"));
       });
       const item = probe().header.view.items.find((entry) => entry.change.classId === "class-2");
-      expect(item?.failure).toMatchObject({ code: "offline" });
+      expect(item?.failure).toMatchObject({ code: "server-error" });
+    });
+  });
+
+  it("holds a typed server refusal with the server's reason, not as a connection failure", async () => {
+    mocks.applyDraftChanges.mockRejectedValue(
+      new MeridianApiError(
+        {
+          code: "work_archived",
+          message: "This Work is archived and read-only.",
+          source: "system",
+          retryable: false,
+        },
+        403,
+      ),
+    );
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await act(async () => {
+        await probe().editor.controller.applyChange(change("2"));
+      });
+      const item = probe().header.view.items.find((entry) => entry.change.classId === "class-2");
+      expect(item?.failure).toMatchObject({
+        code: "refused",
+        reason: "This Work is archived and read-only.",
+      });
     });
   });
 });

@@ -1158,6 +1158,22 @@ msgstr "Could not load files."
 msgid "Couldn't apply every change, so you're still in Draft."
 msgstr "Couldn't apply every change, so you're still in Draft."
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Couldn't apply this change."
+msgstr "Couldn't apply this change."
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Couldn't apply this change. Try again."
+msgstr "Couldn't apply this change. Try again."
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't apply this draft."
+msgstr "Couldn't apply this draft."
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't apply this draft. Try again."
+msgstr "Couldn't apply this draft. Try again."
+
 #: src/features/chat/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "Couldn't apply. Check your connection and try again."
@@ -1232,6 +1248,22 @@ msgstr "Couldn't delete this document. Try again."
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Couldn't delete this entry. Try again."
 msgstr "Couldn't delete this entry. Try again."
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Couldn't discard this change."
+msgstr "Couldn't discard this change."
+
+#: src/features/draft-review/ReviewChangeParts.tsx
+msgid "Couldn't discard this change. Try again."
+msgstr "Couldn't discard this change. Try again."
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't discard this draft."
+msgstr "Couldn't discard this draft."
+
+#: src/features/chat/ReviewMessageText.tsx
+msgid "Couldn't discard this draft. Try again."
+msgstr "Couldn't discard this draft. Try again."
 
 #: src/features/chat/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx

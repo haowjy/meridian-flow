@@ -46,8 +46,12 @@ type DraftRef = { projectId: string; workId: string; documentId: string; draftId
 
 /** Why a change command did not land; the copy lives in the render layer. */
 export type ChangeFailureCode =
-  /** The server refused the request or failed. */
+  /** The request never got an answer: the browser is offline or the connection dropped. */
   | "offline"
+  /** The server refused with a typed reason (`reason` on the record, as the server wrote it). */
+  | "refused"
+  /** The server answered with an error that gave no reason. */
+  | "server-error"
   /** An Apply got no answer: it may or may not have landed. Never read as a refusal. */
   | "unknown"
   /** The change was updated under the writer; the preview is re-read. */
@@ -59,13 +63,19 @@ export type ChangeFailureCode =
 
 type ChangeCommandRecord = ChangeRef &
   (
-    | { phase: "failed"; mode: ChangeCommandMode; code: ChangeFailureCode; at: number }
+    | {
+        phase: "failed";
+        mode: ChangeCommandMode;
+        code: ChangeFailureCode;
+        reason?: string;
+        at: number;
+      }
     | { phase: "confirmed"; mode: ChangeCommandMode; at: number }
   );
 
 export type ChangeCommandState =
   | { phase: "pending"; mode: ChangeCommandMode }
-  | { phase: "failed"; mode: ChangeCommandMode; code: ChangeFailureCode };
+  | { phase: "failed"; mode: ChangeCommandMode; code: ChangeFailureCode; reason?: string };
 
 type ChangeRecords = Readonly<Record<string, ChangeCommandRecord>>;
 
@@ -132,6 +142,7 @@ export function failChangeCommand(
   change: ChangeRef,
   mode: ChangeCommandMode,
   code: ChangeFailureCode,
+  reason?: string,
 ): void {
   setRecord(
     draft,
@@ -140,6 +151,7 @@ export function failChangeCommand(
       phase: "failed",
       mode,
       code,
+      ...(reason ? { reason } : {}),
       at,
       classId: change.classId,
       operationIds: change.operationIds,
@@ -321,7 +333,12 @@ export function changeCommandState(
   for (const record of candidates) {
     if (record.phase !== "failed") continue;
     if (record !== own && !record.operationIds.some((id) => ids.has(id))) continue;
-    return { phase: "failed", mode: record.mode, code: record.code };
+    return {
+      phase: "failed",
+      mode: record.mode,
+      code: record.code,
+      ...(record.reason ? { reason: record.reason } : {}),
+    };
   }
   return null;
 }
