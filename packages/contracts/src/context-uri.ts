@@ -37,12 +37,14 @@ export interface ContextSchemeCapabilities {
 export type ParsedContextAuthority =
   | { kind: "contextual" }
   | { kind: "none" }
+  | { kind: "lineage"; rootThreadRef: string }
   | { kind: "work"; workSlug: WorkSlug };
 
 /** Authority accepted by stable URI serialization. */
 export type CanonicalContextAuthority =
   | { kind: "contextual" }
   | { kind: "none" }
+  | { kind: "lineage"; rootThreadRef: string }
   | ResolvedWorkAuthority;
 
 export interface ParsedContextUri {
@@ -101,6 +103,12 @@ export function canonicalContextUri(
     throw new RangeError('Path segments beginning with "@" are reserved');
   }
   const normalizedPath = segments.join("/");
+  if (scheme !== "scratch" && "kind" in authority && authority.kind === "lineage") {
+    throw new RangeError("Only Scratch supports a chat qualifier");
+  }
+  if (scheme === "scratch" && normalizedPath && authorityQualifier(authority) === "@") {
+    throw new RangeError(missingScratchHandle);
+  }
   const qualifier = authorityQualifier(authority);
   if (qualifier)
     return normalizedPath
@@ -110,6 +118,11 @@ export function canonicalContextUri(
 }
 
 function authorityQualifier(authority: CanonicalContextAuthority): string | null {
+  if ("kind" in authority && authority.kind === "lineage") {
+    if (!/^c[1-9][0-9]*$/.test(authority.rootThreadRef))
+      throw new RangeError("Invalid first-chat handle");
+    return `@/${authority.rootThreadRef}`;
+  }
   if ("workSlug" in authority) return authority.workSlug ? `@${authority.workSlug}` : "@";
   return authority.kind === "none" ? "@" : null;
 }
@@ -222,6 +235,15 @@ function parseAuthorityPrefix(
     );
   }
   const qualifier = qualifiers[0] ?? "";
+  if (qualifier === "@" && scheme === "scratch" && segments.length) {
+    const rootThreadRef = segments.shift() ?? "";
+    if (!/^c[1-9][0-9]*$/.test(rootThreadRef))
+      return invalidContextUri(rawUri, missingScratchHandle);
+    return {
+      ok: true,
+      value: { authority: { kind: "lineage", rootThreadRef }, rawPath: segments.join("/") },
+    };
+  }
   if (qualifier === "@") {
     return { ok: true, value: { authority: { kind: "none" }, rawPath: segments.join("/") } };
   }
@@ -248,7 +270,13 @@ function formatParsedContextUri(
   authority: ParsedContextAuthority,
 ): string {
   const qualifier =
-    authority.kind === "work" ? `@${authority.workSlug}` : authority.kind === "none" ? "@" : null;
+    authority.kind === "lineage"
+      ? `@/${authority.rootThreadRef}`
+      : authority.kind === "work"
+        ? `@${authority.workSlug}`
+        : authority.kind === "none"
+          ? "@"
+          : null;
   if (qualifier) return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
   return path ? `${scheme}://${path}` : `${scheme}://`;
 }
@@ -272,3 +300,6 @@ export function documentTitleFromUri(uri: string | null | undefined): string | n
   if (!segment) return null;
   return segment.replace(/\.[^.]+$/, "") || null;
 }
+
+const missingScratchHandle =
+  "Scratch under @/ requires the first chat handle. Use scratch://x for this chat’s notes, or scratch://@/c12/x for a specific chat. List chats with ls scratch://@/.";

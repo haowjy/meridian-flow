@@ -157,11 +157,13 @@ function decodePath(path: string): string | null {
 
 function format(base: ParsedContextUri, path: string): string {
   const qualifier =
-    base.authority.kind === "work"
-      ? `@${base.authority.workSlug}`
-      : base.authority.kind === "none"
-        ? "@"
-        : "";
+    base.authority.kind === "lineage"
+      ? `@/${base.authority.rootThreadRef}`
+      : base.authority.kind === "work"
+        ? `@${base.authority.workSlug}`
+        : base.authority.kind === "none"
+          ? "@"
+          : "";
   return qualifier ? `${base.scheme}://${qualifier}/${path}` : `${base.scheme}://${path}`;
 }
 
