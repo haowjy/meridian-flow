@@ -7,6 +7,7 @@ import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
+import { ChatScratchButton } from "../chat/ChatScratchButton";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
@@ -205,9 +206,15 @@ function trailingAction(
   }
   if (props.activeScreen === "chat" && props.chatDisplay.kind !== "index") {
     return (
-      <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
-        <Sparkles className="size-5" aria-hidden />
-      </PhoneIconButton>
+      <>
+        <ChatScratchButton
+          projectId={props.projectId}
+          threadId={displayedChatThreadId(props.chatDisplay)}
+        />
+        <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
+          <Sparkles className="size-5" aria-hidden />
+        </PhoneIconButton>
+      </>
     );
   }
   // Same per-scheme policy as the desktop tree's `+`: Scratch and Uploads offer no creation.

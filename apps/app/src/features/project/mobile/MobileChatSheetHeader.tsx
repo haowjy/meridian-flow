@@ -17,6 +17,7 @@ import { DockViewSwitch, type DockViewSwitchProps } from "../dock/DockHeader";
 export type MobileChatSheetHeaderProps = DockViewSwitchProps & {
   onClose?: () => void;
   threadSelect?: ReactNode;
+  scratchMenu?: ReactNode;
 };
 
 export function MobileChatSheetHeader({
@@ -25,6 +26,7 @@ export function MobileChatSheetHeader({
   onSelectView,
   onClose,
   threadSelect,
+  scratchMenu,
 }: MobileChatSheetHeaderProps) {
   return (
     <header
@@ -38,6 +40,7 @@ export function MobileChatSheetHeader({
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>
+      {view === "chat" ? scratchMenu : null}
       <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
       {onClose ? (
         <div
