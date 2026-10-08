@@ -73,7 +73,8 @@ export function DockDocumentTitle({
   });
   const { catalog } = source;
   const current = catalog?.findDocument(tab.documentId) ?? null;
-  const openAt = useMemo(() => source.foldersOf(tab.path), [source, tab.path]);
+  const { foldersOf } = source;
+  const openAt = useMemo(() => foldersOf(tab.path), [foldersOf, tab.path]);
 
   const pick = (node: DrillNode) => {
     const next = source.tabFor(node.id);
