@@ -41,7 +41,7 @@ describe("buildDerivedPrimaryThreadRow", () => {
     expect(derived.spawnDepth).toBe(source.spawnDepth);
   });
 
-  it("handoff follows the same sibling rule as fork", () => {
+  it("handoff keeps sibling provenance but starts a fresh lineage", () => {
     const source = {
       parentThreadId: "parent-1" as ThreadId,
       rootThreadId: "root-1" as ThreadId,
@@ -54,7 +54,7 @@ describe("buildDerivedPrimaryThreadRow", () => {
       originType: "handoff",
     });
     expect(derived.parentThreadId).toBe(source.parentThreadId);
-    expect(derived.rootThreadId).toBe(source.rootThreadId);
+    expect(derived.rootThreadId).toBe(derived.id);
     expect(derived.spawnDepth).toBe(source.spawnDepth);
   });
 

@@ -1,5 +1,5 @@
 /** Stored link spelling and resolution must name the same document. */
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   documentAddressKey,
   documentPathKey,
@@ -15,10 +15,10 @@ it.each([
   ["manuscript://v/scenes/base.md", "manuscript://other/next.md", "../../other/next.md"],
   ["manuscript://x/base.md", "manuscript://x", "../x"],
   ["scratch://@revision/notes/base.md", "scratch://@revision/Gate.md", "../Gate.md"],
-  ["scratch://@/notes/base.md", "scratch://@/Gate.md", "../Gate.md"],
+  ["scratch://@/c12/notes/base.md", "scratch://@/c12/Gate.md", "../Gate.md"],
   ["manuscript://base.md", "kb://Gate.md", "kb://Gate.md"],
   ["scratch://@first/base.md", "scratch://@second/Gate.md", "scratch://@second/Gate.md"],
-  [null, "scratch://@/Lin Feng.md", "scratch://@/Lin Feng.md"],
+  [null, "scratch://@/c12/Lin Feng.md", "scratch://@/c12/Lin Feng.md"],
   [
     "manuscript://other/base.md",
     "manuscript://volume 1/100% ready#final?.md",
@@ -109,4 +109,30 @@ it.each([
   "manuscript://",
 ])("rejects non-address key %s", (uri) => {
   expect(() => documentAddressKey(uri)).toThrow(RangeError);
+});
+
+describe("lineage Scratch owner boundaries", () => {
+  it("resolves within a lineage and refuses traversal beyond its root", () => {
+    expect(resolveDocumentHref("../plan.md", "scratch://@/c12/notes/one.md")?.uri).toBe(
+      "scratch://@/c12/plan.md",
+    );
+    expect(resolveDocumentHref("../c40/plan.md", "scratch://@/c12/one.md")).toBeNull();
+    expect(resolveDocumentHref("scratch://@/plan.md", null)).toBeNull();
+    expect(resolveDocumentHref("scratch://@other/@/c12/plan.md", null)).toBeNull();
+  });
+  it("spells same-lineage links relatively, but cross-lineage and move-out links fully", () => {
+    expect(spellDocumentHref("scratch://@/c12/one.md", "scratch://@/c12/two.md")).toBe("two.md");
+    expect(spellDocumentHref("scratch://@/c12/one.md", "scratch://@/c40/two.md")).toBe(
+      "scratch://@/c40/two.md",
+    );
+    expect(
+      respellDocumentHref("./two.md", {
+        holderUri: "manuscript://one.md",
+        targetUri: "scratch://@/c12/two.md",
+      }),
+    ).toBe("scratch://@/c12/two.md");
+    expect(documentAddressKey("scratch://@/c12/two.md")).not.toBe(
+      documentAddressKey("scratch://@/c40/two.md"),
+    );
+  });
 });

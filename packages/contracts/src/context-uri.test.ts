@@ -118,7 +118,7 @@ describe("parseContextUri", () => {
     ["scratch://@revision-pass/", "scratch://@revision-pass/"],
     ["scratch://@revision-pass/notes/a.md", "scratch://@revision-pass/notes/a.md"],
     ["scratch://@/", "scratch://@/"],
-    ["scratch://@/notes/a.md", "scratch://@/notes/a.md"],
+    ["scratch://@/c12/notes/a.md", "scratch://@/c12/notes/a.md"],
   ])("round trips every Work-capable authority form: %s", (uri, normalized) => {
     const parsed = parseContextUri(uri);
     expect(parsed).toMatchObject({ ok: true, value: { normalized } });
@@ -143,11 +143,11 @@ describe("parseContextUri", () => {
   });
 
   it.each([
-    ["/notes.md", "scratch://@/notes.md"],
-    ["notes//draft.md", "scratch://@/notes/draft.md"],
-    ["./notes/./draft.md", "scratch://@/notes/draft.md"],
+    ["/notes.md", "scratch://@/c12/notes.md"],
+    ["notes//draft.md", "scratch://@/c12/notes/draft.md"],
+    ["./notes/./draft.md", "scratch://@/c12/notes/draft.md"],
   ])("normalizes serializer input %s and round trips", (path, expected) => {
-    const uri = canonicalContextUri("scratch", path, { kind: "none" });
+    const uri = canonicalContextUri("scratch", path, { kind: "lineage", rootThreadRef: "c12" });
     expect(uri).toBe(expected);
     expect(parseContextUri(uri)).toMatchObject({ ok: true, value: { normalized: uri } });
   });

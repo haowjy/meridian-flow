@@ -49,7 +49,7 @@ else
       expect(await persistedRoot(created.id)).toBe(created.id);
     });
 
-    it("a fork/handoff of an organic root shares that root and has no parent", async () => {
+    it("a handoff starts its own root and keeps its source turn", async () => {
       // The source (`ids.threadId`) is itself a root: null parent, self root.
       const { thread: derived } = await repos.threads.createDerivedPrimary({
         id: crypto.randomUUID() as never,
@@ -61,7 +61,8 @@ else
         originTurnId: originTurnId as never,
       });
       expect(derived.parentThreadId).toBeNull();
-      expect(await persistedRoot(derived.id)).toBe(ids.threadId);
+      expect(await persistedRoot(derived.id)).toBe(derived.id);
+      expect(derived.originTurnId).toBe(originTurnId);
     });
 
     it("persists a derived primary with the source's sibling lineage", async () => {

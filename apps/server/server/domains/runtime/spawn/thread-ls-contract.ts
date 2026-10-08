@@ -193,11 +193,16 @@ export function defineThreadLsContract(
       const child = await f.child();
       const grandchild = await f.child(child);
       const forkChild = await f.child(fork);
-      for (const target of [fork, handoff, child, grandchild, forkChild]) {
+      for (const target of [fork, child, grandchild, forkChild]) {
         expect(target.rootThreadId).toBe(f.root.id);
         expect(typeof (await f.read(f.root, { ref: target.ref }))).toBe("string");
         expect(typeof (await f.read(target, { ref: f.root.ref }))).toBe("string");
       }
+      expect(handoff.rootThreadId).toBe(handoff.id);
+      expect(await f.read(f.root, { ref: handoff.ref })).toMatchObject({
+        ok: false,
+        error: { code: "thread_not_connected" },
+      });
       const outsider = await f.repos.threads.create({
         projectId: f.root.projectId,
         userId: f.root.userId,
