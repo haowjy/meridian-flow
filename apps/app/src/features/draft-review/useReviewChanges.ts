@@ -12,38 +12,19 @@
  * preview this reads (`useDraftPreview`), and a change that failed is back with
  * its reason.
  */
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { useCallback, useMemo } from "react";
 
-import {
-  type ChangeCommandState,
-  changeCommandState,
-  hiddenOperationIds,
-  useChangeCommandRecords,
-} from "@/client/query/change-command-record";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
-import type { DraftCommandOutcome } from "./draft-review-session";
+import { selectionOf } from "./change-selection";
+import { type DraftChangesView, listablePreview, useChangeItems } from "./draft-changes";
+import type { DraftCommandOutcome, DraftReviewSelection } from "./draft-review-session";
 import { type ReviewChange, resolveFocusedChange, reviewChangesOfPreview } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
 
-export type ReviewChangeItem = {
-  change: ReviewChange;
-  failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
-};
-
-export type ReviewChangesView = {
-  /** The open review, if any. */
-  documentId: string | null;
-  draftId: string | null;
-  status: "idle" | "loading" | "ready" | "gone";
-  items: readonly ReviewChangeItem[];
-  focused: ReviewChange | null;
+/** The open review's model: a draft's changes plus the review's focus, stepping and completion. */
+export type ReviewChangesView = DraftChangesView & {
   /** The focused change's place among `items`, or -1. */
   focusedIndex: number;
-  /** A new document is applied whole: no per-change Apply. */
-  canApply: boolean;
-  /** Every Apply and Discard disables on this. */
-  locked: boolean;
   /**
    * The last change's command is in flight (`"apply"` or `"discard"`): the
    * change is gone from the list, but nothing is finished until the server
@@ -55,22 +36,12 @@ export type ReviewChangesView = {
    * (`draftClosed`) and nothing else, never how many changes the list shows.
    */
   finished: boolean;
-  /**
-   * The draft is still open, but its read lists no change and no command of
-   * ours is hiding one: what remains (formatting) has no per-change view.
-   * Apply draft and Discard draft are the way to finish it.
-   */
-  unlisted: boolean;
   focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
   step: (direction: 1 | -1) => void;
-  apply: (change: ReviewChange) => Promise<void>;
-  discard: (change: ReviewChange) => Promise<void>;
 };
 
-const NO_ITEMS: readonly ReviewChangeItem[] = [];
+const NO_ITEMS: ReviewChangesView["items"] = [];
 const NO_CHANGES: readonly ReviewChange[] = [];
-
-type ActivePreview = Extract<DraftPreviewResponse, { status: "active"; inlineModelPresent: true }>;
 
 /** The open review's draft and its changes, derived once per preview. */
 export function useOpenReviewChanges(
@@ -90,8 +61,7 @@ export function useOpenReviewChanges(
       enabled: inline !== null,
     },
   );
-  const active: ActivePreview | null =
-    preview?.status === "active" && preview.inlineModelPresent ? preview : null;
+  const active = listablePreview(preview);
   const changes = active ? reviewChangesOfPreview(active) : NO_CHANGES;
   return { inline, documentId, draftId, preview, active, changes };
 }
@@ -104,7 +74,6 @@ export function useReviewChanges(
     controller,
     options,
   );
-  const records = useChangeCommandRecords();
   const draftRef = useMemo(
     () =>
       documentId && draftId
@@ -112,14 +81,7 @@ export function useReviewChanges(
         : null,
     [controller.projectId, controller.workId, documentId, draftId],
   );
-  const items = useMemo<ReviewChangeItem[]>(
-    () =>
-      changes.map((change) => {
-        const state = draftRef ? changeCommandState(records, draftRef, change) : null;
-        return { change, failure: state?.phase === "failed" ? state : null };
-      }),
-    [changes, records, draftRef],
-  );
+  const { items, hiding } = useChangeItems(draftRef, changes);
 
   // The review owns the focus (class and operations); this only reads it.
   const focused = resolveFocusedChange(changes, controller.focus);
@@ -165,28 +127,31 @@ export function useReviewChanges(
   const run = useCallback(
     async (
       change: ReviewChange,
-      command: (change: ReviewChange) => Promise<DraftCommandOutcome>,
+      command: (
+        review: DraftReviewSelection,
+        selection: ReturnType<typeof selectionOf>,
+      ) => Promise<DraftCommandOutcome>,
     ) => {
       // Apply draft and Discard draft handle what has no per-change commands.
-      if (!change.actionable) return;
+      if (!change.actionable || !review) return;
       settleFocus(change);
-      const outcome = await command(change);
+      const outcome = await command(review, selectionOf([change]));
       // The change is back (or was updated): the writer returns to it, where its
       // reason is shown. Only in the review the command was sent from: the
       // writer may have opened another while it was in flight.
       if (outcome.kind === "change-refused" && outcome.code !== "gone") {
-        if (review) controller.focusReviewChange(review, change, { scroll: true });
+        controller.focusReviewChange(review, change, { scroll: true });
       }
     },
     [controller.focusReviewChange, review, settleFocus],
   );
   const apply = useCallback(
-    (change: ReviewChange) => run(change, controller.applyChange),
-    [controller.applyChange, run],
+    (change: ReviewChange) => run(change, controller.applyChanges),
+    [controller.applyChanges, run],
   );
   const discard = useCallback(
-    (change: ReviewChange) => run(change, controller.discardChange),
-    [controller.discardChange, run],
+    (change: ReviewChange) => run(change, controller.discardChanges),
+    [controller.discardChanges, run],
   );
 
   const completion = inline?.completion;
@@ -200,11 +165,7 @@ export function useReviewChanges(
         : "loading";
   const finished = completion?.phase === "closed";
   const unlisted =
-    !finished &&
-    status === "ready" &&
-    completing === null &&
-    items.length === 0 &&
-    (draftRef ? hiddenOperationIds(records, draftRef).size === 0 : true);
+    !finished && status === "ready" && completing === null && items.length === 0 && !hiding;
 
   return {
     documentId,

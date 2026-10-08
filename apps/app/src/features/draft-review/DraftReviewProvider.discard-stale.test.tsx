@@ -12,6 +12,7 @@ import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import {
   change,
   discarded,
+  draftA,
   listed,
   preview,
   previewOf,
@@ -63,7 +64,7 @@ describe("discarding one change", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(mocks.discardDraft).toHaveBeenCalledWith(
         "project-a",
@@ -98,7 +99,7 @@ describe("discarding one change", () => {
       await reviewOpened(probe);
       const reads = mocks.getDraftPreview.mock.calls.length;
       await act(async () => {
-        await probe().editor.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       await vi.waitFor(() =>
         expect(mocks.getDraftPreview.mock.calls.length).toBeGreaterThan(reads),
@@ -118,7 +119,7 @@ describe("discarding one change", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
       expect(probe().header.finished).toBe(false);
@@ -139,7 +140,7 @@ describe("discarding one change", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
     });

@@ -3,8 +3,8 @@
  * every surface (composer strip, editor header, Work Files) and every review
  * scope. A surface is disabled only by commands inside its own Work.
  *
- * - `pending`: an Apply or Discard is dispatched, whole-draft or one change
- *   (with its operation set). Every surface of that Work disables, and a second
+ * - `pending`: an Apply or Discard is dispatched, whole-draft or a selection of
+ *   changes (with its operation set). Every surface of that Work disables, and a second
  *   dispatch for the same draft, from any session, is refused instead of sent.
  *   This is the one command authority per draft; `change-command-record` only
  *   reads it.
@@ -59,11 +59,15 @@ export type DraftCommandFailure = { code: DraftCommandFailureCode } & Partial<Se
 
 export type ChangeCommandMode = "apply" | "discard";
 
-/** One change under review: a server closure class and every operation it holds. */
-export type ChangeRef = { classId: string; operationIds: readonly string[] };
+/**
+ * Changes under review that one command acts on: whole server closure classes
+ * and every operation they hold. One change is a selection of one class; the
+ * chat strip's Apply is a selection of several.
+ */
+export type ChangeSelection = { classIds: readonly string[]; operationIds: readonly string[] };
 
-/** A per-change command in flight, with the operation set it sends. */
-export type PendingChangeCommand = ChangeRef & { mode: ChangeCommandMode };
+/** A selection command in flight, with the operation set it sends. */
+export type PendingChangeCommand = ChangeSelection & { mode: ChangeCommandMode };
 
 type DraftCommandRecord =
   | { phase: "pending"; change?: PendingChangeCommand }
@@ -109,7 +113,7 @@ function recordFor(draft: DraftRef): DraftCommandRecord | undefined {
 
 /**
  * Claim the draft for one command: a whole-draft Apply or Discard, or, with
- * `change`, a per-change one. One command at a time per draft, whichever
+ * `change`, a selection's. One command at a time per draft, whichever
  * surface or session sends it; false when one is already in flight.
  */
 export function beginDraftCommand(draft: DraftRef, change?: PendingChangeCommand): boolean {
@@ -220,7 +224,7 @@ export function draftCommandFailure(
   return record?.phase === "failed" ? record.failure : null;
 }
 
-/** The per-change command in flight on this draft, if the claim is one. */
+/** The selection command in flight on this draft, if the claim is one. */
 export function pendingChangeCommand(
   records: DraftCommandRecords,
   draft: DraftRef,

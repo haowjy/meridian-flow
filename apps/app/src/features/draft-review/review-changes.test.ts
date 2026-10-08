@@ -137,44 +137,106 @@ describe("reviewChanges", () => {
     expect(merged.tone).toBe("merged");
   });
 
-  it("links the change to the latest AI operation's chat, else plain AI", () => {
-    const withThread = (
+  describe("who wrote a change", () => {
+    const written = (
       id: string,
       threadId: string | null,
       title: string | null,
       where: { actorTurnId?: string; actorToolCallId?: string } = {},
+      overrides: Partial<ReviewOperation> = {},
     ) =>
       ({
         ...op({ operationId: id, closureClassId: "c" }),
         actorThreadId: threadId,
         actorThreadTitle: title,
         ...where,
+        ...overrides,
       }) as ReviewOperation;
-    const [linked] = reviewChanges(
-      [
-        withThread("2", "t-old", "Old chat", { actorTurnId: "turn-1", actorToolCallId: "call-1" }),
-        withThread("9", "t-new", "Line edit", { actorTurnId: "turn-7", actorToolCallId: "call-3" }),
-      ],
-      [],
-    );
-    // The turn and tool call belong to the same latest operation as the chat.
-    expect(linked.attribution).toEqual({
-      kind: "chat",
-      threadId: "t-new",
-      title: "Line edit",
-      turnId: "turn-7",
-      toolCallId: "call-3",
+
+    it("links a single chat at its own turn and tool call, else plain AI", () => {
+      const [linked] = reviewChanges(
+        [written("2", "t-one", "Line edit", { actorTurnId: "turn-7", actorToolCallId: "call-3" })],
+        [],
+      );
+      expect(linked.attribution).toEqual({
+        kind: "chats",
+        chats: [{ threadId: "t-one", title: "Line edit", turnId: "turn-7", toolCallId: "call-3" }],
+      });
+      const [blank] = reviewChanges([written("5", "t-blank", "  ")], []);
+      expect(blank.attribution).toEqual({
+        kind: "chats",
+        chats: [{ threadId: "t-blank", title: null, turnId: null, toolCallId: null }],
+      });
+      const [unknown] = reviewChanges([op({ operationId: "3" })], []);
+      expect(unknown.attribution).toEqual({ kind: "ai" });
+      expect(unknown.threadIds).toEqual([]);
     });
-    const [blank] = reviewChanges([withThread("5", "t-blank", "  ")], []);
-    expect(blank.attribution).toEqual({
-      kind: "chat",
-      threadId: "t-blank",
-      title: null,
-      turnId: null,
-      toolCallId: null,
+
+    it("names every chat of the class, latest first, each at its own latest write", () => {
+      const [change] = reviewChanges(
+        [
+          written("3", "t-lore", "Lore pass", { actorTurnId: "turn-a", actorToolCallId: "call-a" }),
+          written("12", "t-pace", "Pacing pass", {
+            actorTurnId: "turn-b",
+            actorToolCallId: "call-b",
+          }),
+          // The same chat wrote twice: its later write is the one its link opens.
+          written("7", "t-lore", "Lore pass", { actorTurnId: "turn-c", actorToolCallId: "call-c" }),
+        ],
+        [],
+      );
+      expect(change.attribution).toEqual({
+        kind: "chats",
+        chats: [
+          { threadId: "t-pace", title: "Pacing pass", turnId: "turn-b", toolCallId: "call-b" },
+          { threadId: "t-lore", title: "Lore pass", turnId: "turn-c", toolCallId: "call-c" },
+        ],
+      });
+      expect(change.threadIds).toEqual(["t-pace", "t-lore"]);
     });
-    const [unknown] = reviewChanges([op({ operationId: "3" })], []);
-    expect(unknown.attribution).toEqual({ kind: "ai" });
+
+    it("orders chats by journal order, not by the order the server lists operations", () => {
+      const [change] = reviewChanges(
+        [written("10", "t-late", null), written("9", "t-early", null)],
+        [],
+      );
+      expect(change.threadIds).toEqual(["t-late", "t-early"]);
+    });
+
+    it("names only chats with a visible operation: writer edits and unthreaded writes name none", () => {
+      const [change] = reviewChanges(
+        [
+          written("4", "t-pace", "Pacing pass"),
+          written("6", null, null),
+          { ...op({ operationId: "writer:8", kind: "writer", closureClassId: "c" }) },
+        ],
+        [],
+      );
+      expect(change.threadIds).toEqual(["t-pace"]);
+      // The class's physical suppliers are not operations of it: they arrive as
+      // `closureUpdateIds` on the server and are never read here.
+      const [writerOnly] = reviewChanges(
+        [op({ operationId: "writer:2", kind: "writer", closureClassId: "w" })],
+        [],
+      );
+      expect(writerOnly.attribution).toEqual({ kind: "you" });
+      expect(writerOnly.threadIds).toEqual([]);
+    });
+
+    it("lists a chat's change under that chat only when one of its operations is visible in it", () => {
+      const changes = reviewChanges(
+        [
+          written("1", "t-pace", "Pacing pass", {}, { closureClassId: "c1" }),
+          written("2", "t-lore", "Lore pass", {}, { closureClassId: "c1" }),
+          written("3", "t-lore", "Lore pass", {}, { closureClassId: "c2" }),
+        ],
+        [],
+      );
+      const of = (threadId: string) =>
+        changes.filter((change) => change.threadIds.includes(threadId)).map((c) => c.classId);
+      expect(of("t-pace")).toEqual(["c1"]);
+      expect(of("t-lore")).toEqual(["c1", "c2"]);
+    });
   });
 
   it("describes a change with the writer's edits inside it once, not once per operation", () => {
@@ -212,6 +274,7 @@ describe("reviewChanges", () => {
       expect(classified.actionable).toBe(true);
       expect(loose).toMatchObject({
         attribution: { kind: "unattributed" },
+        threadIds: [],
         actionable: false,
         operationIds: [],
         tone: "unattributed",

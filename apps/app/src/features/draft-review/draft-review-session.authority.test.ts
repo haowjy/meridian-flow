@@ -20,8 +20,8 @@ import { type DraftReviewCommandPorts, DraftReviewSession } from "./draft-review
 const scope = { projectId: "p", workId: "w" };
 const selection = { documentId: "doc", draftId: "draft" };
 const draft = { ...scope, ...selection };
-const change = { classId: "class", operationIds: ["1", "2"] };
-const otherChange = { classId: "other", operationIds: ["3"] };
+const change = { classIds: ["class"], operationIds: ["1", "2"] };
+const otherChange = { classIds: ["other"], operationIds: ["3"] };
 const tokens = { liveRevisionToken: "live-1", draftRevisionToken: "draft-1" };
 const applied: DraftApplyChangesResponse = {
   status: "applied",
@@ -71,7 +71,7 @@ describe("one command per draft, whichever session sends it", () => {
 
   it("refuses a whole-draft Discard from the Chat while the Editor's per-change Apply is in flight", async () => {
     const { editor, chat, ports, answerChange } = twoSessions();
-    const pending = editor.applyChange(selection, change, tokens);
+    const pending = editor.applySelection(selection, change, tokens);
 
     expect(await chat.discardDraft(selection)).toEqual({ kind: "blocked" });
     expect(await chat.applyReviewedDraft(selection)).toEqual({ kind: "blocked" });
@@ -90,8 +90,10 @@ describe("one command per draft, whichever session sends it", () => {
     const { editor, chat, ports, answerApply } = twoSessions();
     const pending = chat.applyReviewedDraft(selection);
 
-    expect(await editor.applyChange(selection, change, tokens)).toEqual({ kind: "blocked" });
-    expect(await editor.discardChange(selection, otherChange, tokens)).toEqual({ kind: "blocked" });
+    expect(await editor.applySelection(selection, change, tokens)).toEqual({ kind: "blocked" });
+    expect(await editor.discardSelection(selection, otherChange, tokens)).toEqual({
+      kind: "blocked",
+    });
     expect(ports.applyChanges).not.toHaveBeenCalled();
     expect(ports.discard).not.toHaveBeenCalled();
 
@@ -101,7 +103,7 @@ describe("one command per draft, whichever session sends it", () => {
 
   it("holds the change's operation set on the draft's own record, and gives it back when done", async () => {
     const { editor, answerChange } = twoSessions();
-    const pending = editor.applyChange(selection, change, tokens);
+    const pending = editor.applySelection(selection, change, tokens);
     const held = currentChangeCommandRecords();
     expect(changeCommandState(held, draft, change)).toEqual({ phase: "pending", mode: "apply" });
     expect(Object.values(held.drafts)).toEqual([
@@ -114,7 +116,7 @@ describe("one command per draft, whichever session sends it", () => {
 
   it("leaves other drafts alone: only the draft with the command in flight is claimed", async () => {
     const { editor, chat, answerChange } = twoSessions();
-    const pending = editor.applyChange(selection, change, tokens);
+    const pending = editor.applySelection(selection, change, tokens);
     const other = { documentId: "doc-b", draftId: "draft-b" };
     // Another session's whole-draft command on a different draft is the Work-wide
     // lock's business (the controller disables every control), not the record's.

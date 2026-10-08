@@ -23,8 +23,8 @@ import {
 } from "./draft-command-record";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
-const one = { classId: "c1", operationIds: ["1"] };
-const two = { classId: "c2", operationIds: ["2", "3"] };
+const one = { classIds: ["c1"], operationIds: ["1"] };
+const two = { classIds: ["c2"], operationIds: ["2", "3"] };
 
 function preview(): DraftPreviewResponse {
   const op = (operationId: string, closureClassId: string) => ({
@@ -87,7 +87,7 @@ describe("change command record", () => {
     expect(changeCommandState(records, draft, two)).toEqual({ phase: "pending", mode: "discard" });
     // Found by a shared operation too, as the server may regroup the class.
     expect(
-      changeCommandState(records, draft, { classId: "c9", operationIds: ["3"] }),
+      changeCommandState(records, draft, { classIds: ["c9"], operationIds: ["3"] }),
     ).toMatchObject({ phase: "pending" });
   });
 
@@ -166,10 +166,62 @@ describe("change command record", () => {
     expect(changeCommandState(currentChangeCommandRecords(), other, one)).toBeNull();
   });
 
+  describe("a selection of several changes", () => {
+    const both = { classIds: ["c1", "c2"], operationIds: ["1", "2", "3"] };
+
+    it("holds one failure per selection, shown on the file and on each change it overlaps", () => {
+      failChangeCommand(draft, both, "apply", "stale");
+      failChangeCommand(draft, both, "apply", "offline");
+      const records = currentChangeCommandRecords();
+      expect(Object.keys(records.changes)).toHaveLength(1);
+      expect(changeCommandState(records, draft, both)).toMatchObject({ code: "offline" });
+      expect(changeCommandState(records, draft, one)).toMatchObject({ code: "offline" });
+      expect(changeCommandState(records, draft, two)).toMatchObject({ code: "offline" });
+      // Another draft, and a change the selection did not name, show nothing.
+      expect(changeCommandState(records, { ...draft, draftId: "y" }, both)).toBeNull();
+      expect(
+        changeCommandState(records, draft, { classIds: ["c9"], operationIds: ["9"] }),
+      ).toBeNull();
+    });
+
+    it("clears on the next action on one of its changes, and once a read lists none of them", async () => {
+      failChangeCommand(draft, both, "discard", "stale");
+      beginChangeCommand(draft, one, "apply");
+      expect(Object.keys(currentChangeCommandRecords().changes)).toEqual([]);
+      releaseDraftCommand(draft);
+
+      failChangeCommand(draft, both, "discard", "stale");
+      await readPreviewAfterChangeCommands(draft, async () => preview());
+      expect(changeCommandState(currentChangeCommandRecords(), draft, both)).not.toBeNull();
+      await readPreviewAfterChangeCommands(draft, async () =>
+        previewWithoutOperations(preview(), new Set(["1", "2", "3"])),
+      );
+      expect(changeCommandState(currentChangeCommandRecords(), draft, both)).toBeNull();
+    });
+
+    it("hides every operation of the selection while its claim is held, and a confirmation fences reads", async () => {
+      beginChangeCommand(draft, both, "apply");
+      expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual([
+        "1",
+        "2",
+        "3",
+      ]);
+      releaseDraftCommand(draft);
+      let finish!: (value: DraftPreviewResponse) => void;
+      const read = readPreviewAfterChangeCommands(
+        draft,
+        () => new Promise<DraftPreviewResponse>((resolve) => (finish = resolve)),
+      );
+      confirmChangeCommand(draft, both, "apply");
+      finish(preview());
+      expect(operationIds(await read)).toEqual([]);
+    });
+  });
+
   describe("a change the server regroups", () => {
-    const a = { classId: "closure:1", operationIds: ["1"] };
-    const b = { classId: "closure:1+2", operationIds: ["1", "2"] };
-    const c = { classId: "closure:1+2+3", operationIds: ["1", "2", "3"] };
+    const a = { classIds: ["closure:1"], operationIds: ["1"] };
+    const b = { classIds: ["closure:1+2"], operationIds: ["1", "2"] };
+    const c = { classIds: ["closure:1+2+3"], operationIds: ["1", "2", "3"] };
 
     it("retires the failure held under its old class when the writer acts again", () => {
       failChangeCommand(draft, a, "apply", "stale");
@@ -195,7 +247,12 @@ describe("change command record", () => {
 
     it("shows the newest of several failures that still apply, not the first held", () => {
       failChangeCommand(draft, a, "apply", "stale");
-      failChangeCommand(draft, { classId: "closure:2", operationIds: ["2"] }, "discard", "offline");
+      failChangeCommand(
+        draft,
+        { classIds: ["closure:2"], operationIds: ["2"] },
+        "discard",
+        "offline",
+      );
       expect(changeCommandState(currentChangeCommandRecords(), draft, b)).toMatchObject({
         mode: "discard",
         code: "offline",
@@ -203,7 +260,7 @@ describe("change command record", () => {
     });
 
     it("leaves the failures of unrelated changes alone", () => {
-      failChangeCommand(draft, { classId: "closure:9", operationIds: ["9"] }, "apply", "stale");
+      failChangeCommand(draft, { classIds: ["closure:9"], operationIds: ["9"] }, "apply", "stale");
       beginChangeCommand(draft, b, "discard");
       expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(1);
     });

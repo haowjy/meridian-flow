@@ -5,11 +5,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  changeCommandState,
+  currentChangeCommandRecords,
+} from "@/client/query/change-command-record";
+import {
   confirmDraftCommand,
   draftCommandFailure,
   resetDraftCommandRecords,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { DraftCommandOutcomeUnknownError } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
@@ -19,6 +24,8 @@ import type { OpenContextRoute } from "@/features/project/routing/ProjectNavigat
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import type { ProjectSearch } from "@/features/project/routing/project-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { DraftReviewBoundary, type DraftReviewContextValue } from "./DraftReviewProvider";
+import { type ChangeCommandRunner, useChangeCommandRunner } from "./useChangeCommandRunner";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
 /** Only the identity and archive state of a Work reach the controller. */
@@ -41,10 +48,12 @@ vi.mock("@/client/api/drafts-api", () => ({
 }));
 
 const applyMutate = vi.hoisted(() => vi.fn());
+const applyChangesMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/client/query/useDraftReviewMutations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/client/query/useDraftReviewMutations")>()),
   useApplyDraft: () => ({ mutateAsync: applyMutate }),
+  useApplyDraftChanges: () => ({ mutateAsync: applyChangesMutate }),
   useDiscardDraft: () => ({
     mutateAsync: () =>
       new Promise<void>((resolve, reject) => {
@@ -157,12 +166,14 @@ function Providers({
   children,
   open,
   isCurrent,
+  client,
 }: {
   children: ReactNode;
   open: OpenContextRoute;
   isCurrent?: () => boolean;
+  client?: QueryClient;
 }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <QueryClientProvider client={queryClient}>
       <ProjectNavigationProvider
@@ -450,5 +461,148 @@ describe("draft dispositions", () => {
         expect(controller?.isDisposing).toBe(false);
       },
     );
+  });
+});
+
+let runner: ChangeCommandRunner | null = null;
+
+function RunnerHost({ caller }: { caller: DraftReviewController }) {
+  runner = useChangeCommandRunner(caller);
+  return null;
+}
+
+/** A caller scope and a separate Editor scope over one Work, with the runner the caller's surfaces use. */
+function CaptureRunner() {
+  const caller = useDraftReviewController({ projectId: "project-a", work: workFixture("work-a") });
+  const editor = useDraftReviewController({ projectId: "project-a", work: workFixture("work-a") });
+  return (
+    <DraftReviewBoundary value={{ controller: editor } as DraftReviewContextValue}>
+      <RunnerHost caller={caller} />
+    </DraftReviewBoundary>
+  );
+}
+
+describe("a batch of change selections", () => {
+  const files = ["a", "b", "c"].map((id) => ({
+    draft: { documentId: `document-${id}`, draftId: `draft-${id}` },
+    selection: { classIds: [`class-${id}1`, `class-${id}2`], operationIds: [`${id}1`, `${id}2`] },
+  }));
+  const ref = (id: string) => ({
+    projectId: "project-a",
+    workId: "work-a",
+    documentId: `document-${id}`,
+    draftId: `draft-${id}`,
+  });
+  const operation = (id: string, classId: string) => ({
+    operationId: id,
+    closureClassId: classId,
+    kind: "agent",
+    contribution: "added",
+    classification: "addition",
+    hunkCount: 1,
+  });
+  const answered = { status: "applied", draftClosed: false };
+  let client: QueryClient;
+
+  async function runBatch() {
+    let outcomes: Awaited<ReturnType<ChangeCommandRunner["applyBatch"]>> = [];
+    await withReactRoot(
+      <Providers open={vi.fn<OpenContextRoute>()} client={client}>
+        <CaptureRunner />
+      </Providers>,
+      async () => {
+        await act(async () => {
+          outcomes = (await runner?.applyBatch(files)) ?? [];
+        });
+      },
+    );
+    return outcomes;
+  }
+
+  beforeEach(() => {
+    resetDraftCommandRecords();
+    applyChangesMutate.mockReset().mockResolvedValue(answered);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    for (const { draft } of files) {
+      const id = draft.draftId.slice(-1);
+      client.setQueryData(
+        projectQueryKeys.workDraftPreview("project-a", "work-a", draft.documentId, draft.draftId),
+        {
+          status: "active",
+          draftId: draft.draftId,
+          inlineModelPresent: true,
+          reviewRoomName: `room-${id}`,
+          liveRevisionToken: `live-${id}`,
+          draftRevisionToken: `draft-${id}`,
+          operations: [operation(`${id}1`, `class-${id}1`), operation(`${id}2`, `class-${id}2`)],
+          hunks: [],
+        },
+      );
+    }
+  });
+
+  it("sends one command per file with the union of its operations and that file's tokens", async () => {
+    const outcomes = await runBatch();
+    expect(outcomes.map(({ outcome }) => outcome.kind)).toEqual([
+      "change-settled",
+      "change-settled",
+      "change-settled",
+    ]);
+    expect(applyChangesMutate.mock.calls.map(([call]) => [call.draftId, call.request])).toEqual(
+      ["a", "b", "c"].map((id) => [
+        `draft-${id}`,
+        {
+          operationIds: [`${id}1`, `${id}2`],
+          liveRevisionToken: `live-${id}`,
+          draftRevisionToken: `draft-${id}`,
+        },
+      ]),
+    );
+  });
+
+  it("gives every file its turn when one is refused, and holds each outcome on its own file", async () => {
+    applyChangesMutate
+      .mockResolvedValueOnce({ status: "stale", draftId: "draft-a" })
+      .mockRejectedValueOnce(new DraftCommandOutcomeUnknownError())
+      .mockResolvedValueOnce(answered);
+    const outcomes = await runBatch();
+
+    expect(applyChangesMutate).toHaveBeenCalledTimes(3);
+    expect(outcomes.map(({ outcome }) => outcome)).toEqual([
+      { kind: "change-refused", mode: "apply", code: "stale" },
+      { kind: "change-refused", mode: "apply", code: "unknown" },
+      { kind: "change-settled", mode: "apply" },
+    ]);
+    const held = (id: string) =>
+      changeCommandState(
+        currentChangeCommandRecords(),
+        ref(id),
+        files["abc".indexOf(id)].selection,
+      );
+    expect(held("a")).toMatchObject({ phase: "failed", code: "stale" });
+    expect(held("b")).toMatchObject({ phase: "failed", code: "unknown" });
+    expect(held("c")).toBeNull();
+    // A file's failure does not show on another file's changes.
+    expect(
+      changeCommandState(currentChangeCommandRecords(), ref("a"), files[1].selection),
+    ).toBeNull();
+  });
+
+  it("keeps going after a rejection, and refuses a file with no preview without sending it", async () => {
+    client.removeQueries({
+      queryKey: projectQueryKeys.workDraftPreview("project-a", "work-a", "document-b", "draft-b"),
+    });
+    applyChangesMutate.mockRejectedValueOnce(new Error("offline"));
+    const outcomes = await runBatch();
+
+    expect(outcomes.map(({ outcome }) => outcome)).toEqual([
+      { kind: "change-refused", mode: "apply", code: "offline" },
+      { kind: "change-refused", mode: "apply", code: "stale" },
+      { kind: "change-settled", mode: "apply" },
+    ]);
+    expect(applyChangesMutate.mock.calls.map(([call]) => call.draftId)).toEqual([
+      "draft-a",
+      "draft-c",
+    ]);
   });
 });

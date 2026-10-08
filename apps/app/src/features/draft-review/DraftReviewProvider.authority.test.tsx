@@ -16,6 +16,7 @@ import {
 import {
   applied,
   change,
+  draftA,
   listed,
   preview,
   previewOf,
@@ -78,7 +79,7 @@ describe("one command authority per draft across the Editor and the Chat", () =>
       await reviewOpened(probe);
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = probe().editor.controller.applyChange(change("2"));
+        done = probe().editor.controller.applyChanges(draftA, change("2"));
       });
 
       expect(probe().chat.controller.isDisposing).toBe(true);
@@ -118,7 +119,7 @@ describe("one command authority per draft across the Editor and the Chat", () =>
 
       let outcome: unknown;
       await act(async () => {
-        outcome = await probe().editor.controller.applyChange(change("2"));
+        outcome = await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       expect(outcome).toEqual({ kind: "blocked" });
       expect(mocks.applyDraftChanges).not.toHaveBeenCalled();
@@ -151,7 +152,7 @@ describe("the room-opening read", () => {
 
       mocks.getDraftPreview.mockResolvedValue(previewOf("1"));
       await act(async () => {
-        await probe().editor.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       await vi.waitFor(() => expect(classIds(probe())).toEqual(["class-1"]));
 
@@ -239,7 +240,7 @@ describe("a per-change Apply that got no answer", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       await act(async () => undefined);
       // The refetch still lists the change: that is not proof the Apply failed.
@@ -254,7 +255,7 @@ describe("a per-change Apply that got no answer", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       const item = probe().header.view.items.find((entry) => entry.change.classId === "class-2");
       expect(item?.failure).toMatchObject({ code: "server-error" });
@@ -276,7 +277,7 @@ describe("a per-change Apply that got no answer", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       const item = probe().header.view.items.find((entry) => entry.change.classId === "class-2");
       expect(item?.failure).toMatchObject({

@@ -77,6 +77,8 @@ export type NavigationOptions = { replace: boolean };
 export type WorkDetailTarget = {
   kind: "work-detail";
   workId: ParsedRequestId;
+  /** The Work page's tab; absent opens its chats. */
+  view?: WorkView;
 };
 
 export type ContextRouteTarget = {

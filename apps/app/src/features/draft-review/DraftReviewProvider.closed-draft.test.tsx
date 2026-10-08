@@ -13,6 +13,7 @@ import {
   applied,
   change,
   discarded,
+  draftA,
   listed,
   preview,
   previewOf,
@@ -79,7 +80,7 @@ describe("a review whose last change closes the draft", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       await act(async () => undefined);
       expect(probe().editor.controller.inlineReview?.completion).toEqual({
@@ -98,7 +99,7 @@ describe("a review whose last change closes the draft", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       await act(async () => undefined);
       expect(probe().editor.controller.inlineReview?.completion).toMatchObject({
@@ -124,7 +125,7 @@ describe("the last change's command in flight", () => {
       await reviewOpened(probe);
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = probe().editor.controller.applyChange(change("2"));
+        done = probe().editor.controller.applyChanges(draftA, change("2"));
       });
       // The optimistic row is gone; nothing is finished.
       expect(classIds(probe())).toEqual([]);
@@ -152,7 +153,7 @@ describe("the last change's command in flight", () => {
       await reviewOpened(probe);
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = probe().editor.controller.discardChange(change("2"));
+        done = probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(probe().editor.controller.inlineReview?.completion).toEqual({
         phase: "pending",
@@ -176,7 +177,7 @@ describe("the last change's command in flight", () => {
       await reviewOpened(probe);
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = probe().editor.controller.discardChange(change("2"));
+        done = probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(probe().editor.controller.inlineReview?.completion?.phase).toBe("pending");
 
@@ -200,7 +201,7 @@ describe("the last change's command in flight", () => {
       await reviewOpened(probe);
       mocks.getDraftPreview.mockResolvedValue(previewOf("3"));
       await act(async () => {
-        await probe().editor.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       await vi.waitFor(() => expect(classIds(probe())).toEqual(["class-3"]));
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
@@ -213,7 +214,7 @@ describe("the last change's command in flight", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
       expect(probe().header.finished).toBe(false);
@@ -227,7 +228,7 @@ describe("the last change's command in flight", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.applyChange(change("2"));
+        await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
       expect(classIds(probe())).toEqual(["class-2"]);
@@ -241,11 +242,104 @@ describe("the last change's command in flight", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        void probe().editor.controller.discardChange(change("2"));
+        void probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
       expect(probe().header.completing).toBeNull();
       expect(classIds(probe())).toEqual(["class-1"]);
+    });
+  });
+});
+
+describe("a selection sent from the Chat's scope to the Editor's open review", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetDraftCommandRecords();
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+    mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
+  });
+
+  it("shows Applying at the click, then No changes left when the answer closes the draft", async () => {
+    const answer = heldCommand(mocks.applyDraftChanges);
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      let done: Promise<unknown> | undefined;
+      await act(async () => {
+        done = probe().chatRunner.applyBatch([{ draft: draftA, selection: change("2") }]);
+      });
+      // The review that owns the draft owns the pending state; the Chat's scope has none.
+      expect(probe().header.completing).toBe("apply");
+      expect(classIds(probe())).toEqual([]);
+      expect(probe().chat.controller.inlineReview).toBeNull();
+
+      await act(async () => {
+        answer(applied(true));
+        await done;
+      });
+      expect(probe().header.completing).toBeNull();
+      expect(probe().header.finished).toBe(true);
+      expect(probe().editor.controller.inlineReview?.completion).toMatchObject({
+        phase: "closed",
+      });
+    });
+  });
+
+  it("says Discarding at the click and carries on when the draft stays open", async () => {
+    const answer = heldCommand(mocks.discardDraft);
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      let done: Promise<unknown> | undefined;
+      await act(async () => {
+        done = probe().chatRunner.discardChanges(draftA, change("2"));
+      });
+      expect(probe().header.completing).toBe("discard");
+
+      mocks.getDraftPreview.mockResolvedValue(previewOf("3"));
+      await act(async () => {
+        answer(discarded(false));
+        await done;
+      });
+      await vi.waitFor(() => expect(classIds(probe())).toEqual(["class-3"]));
+      expect(probe().header.completing).toBeNull();
+      expect(probe().header.finished).toBe(false);
+      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+    });
+  });
+
+  it("brings the change back with its reason when the server refuses", async () => {
+    mocks.applyDraftChanges.mockResolvedValue({ status: "stale", draftId: "draft-a" });
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await act(async () => {
+        await probe().chatRunner.applyChanges(draftA, change("2"));
+      });
+      expect(probe().header.completing).toBeNull();
+      expect(classIds(probe())).toEqual(["class-2"]);
+      expect(probe().header.view.items[0]?.failure).toMatchObject({ code: "stale" });
+    });
+  });
+
+  it("leaves a review opened after the click alone when the answer arrives", async () => {
+    const answer = heldCommand(mocks.applyDraftChanges);
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [listed, { ...listed, draftId: "draft-b", documentId: "document-b" }],
+    });
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      let done: Promise<unknown> | undefined;
+      await act(async () => {
+        done = probe().chatRunner.applyChanges(draftA, change("2"));
+      });
+      await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
+      await act(async () => {
+        answer(applied(true));
+        await done;
+      });
+      expect(probe().editor.controller.inlineReview).toMatchObject({
+        documentId: "document-b",
+        draftId: "draft-b",
+      });
+      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
     });
   });
 });

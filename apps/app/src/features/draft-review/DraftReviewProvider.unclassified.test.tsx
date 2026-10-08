@@ -15,6 +15,7 @@ import {
   applied,
   change,
   discarded,
+  draftA,
   listed,
   operation,
   preview,
@@ -107,7 +108,7 @@ describe("an unclassified hunk beside a classified change", () => {
       await reviewOpened(probe);
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = probe().editor.controller.applyChange(change("1"));
+        done = probe().editor.controller.applyChanges(draftA, change("1"));
       });
       // The unclassified hunk is still there: nothing is being completed.
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
@@ -132,7 +133,7 @@ describe("an unclassified hunk beside a classified change", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        void probe().editor.controller.discardChange(change("1"));
+        void probe().editor.controller.discardChanges(draftA, change("1"));
       });
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
       expect(probe().header.completing).toBeNull();
@@ -174,7 +175,7 @@ describe("a draft whose only remaining difference is unrepresented", () => {
       await reviewOpened(probe);
       mocks.getDraftPreview.mockResolvedValue(previewOfFormattingOnly);
       await act(async () => {
-        await probe().editor.controller.applyChange(change("1"));
+        await probe().editor.controller.applyChanges(draftA, change("1"));
       });
       await vi.waitFor(() => expect(probe().header.unlisted).toBe(true));
       expect(probe().header.finished).toBe(false);
@@ -206,7 +207,7 @@ describe("a draft whose only remaining difference is unrepresented", () => {
       await reviewOpened(probe);
       mocks.getDraftPreview.mockResolvedValue(previewOfFormattingOnly);
       await act(async () => {
-        await probe().editor.controller.applyChange(change("1"));
+        await probe().editor.controller.applyChanges(draftA, change("1"));
       });
       await vi.waitFor(() => expect(probe().header.finished).toBe(true));
       expect(probe().header.unlisted).toBe(false);

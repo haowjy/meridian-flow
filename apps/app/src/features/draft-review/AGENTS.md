@@ -16,7 +16,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   operations grouped by `closureClassId`, in document order (by the earliest
   hunk each owns; the server's operations are not in reading order), each with
   its colour (`tone`), whether the writer's edits are inside it, whether it is a
-  merge the server flags (`mergeArtifact` on a hunk), and who made it (`change-attribution`).
+  merge the server flags (`mergeArtifact` on a hunk), and who made it (`change-attribution`: every chat with a visible
+  operation in the class, latest first, and `threadIds` for the chat strip).
 - **The focus is the review's, not a reader's.** `controller.focus` holds the
   focused change's class id and the operations it held (`inlineReview.focus`);
   `useReconcileReviewFocus`, mounted once by the scope owner, moves it onto the
@@ -29,16 +30,35 @@ consume them; none of it is chat rendering. Lifecycle contracts:
 - **One refresh owner.** `useReviewRefresh` (scope owner) watches the review room
   and the live document and re-reads the draft list and the preview once per
   settled burst; the manuscript's `useInlineReviewSync` only projects the result.
+  Any other mounted preview target is refreshed by `useDraftPreviews` itself, when
+  its draft's list row (`updatedAt`) changes: it invalidates that one preview key
+  and joins no room.
 - **`useReviewChanges(controller)`** reads the preview (`useDraftPreview`) and
   the change command records and returns the changes, the focused one, and
   `focus`, `step`, `apply`, `discard`. It takes the controller as an argument:
   the review lives in the **Editor** scope and the dock sits in the Chat's, so a
   surface outside the Editor passes `useEditorDraftReview().controller`.
+- **Any draft's change list, any draft's selection commands.**
+  `DocumentChangeRows` renders a `DraftChangesView` (`draft-changes`): the open
+  review's is `useReviewChanges`, any other draft's is `useDraftChanges(target,
+  { controller })` (preview via `useDraftPreviews`, no focus, no completion, never
+  joins a review room; for the Editor's open review it reads the Editor's model).
+  A command acts on a `ChangeSelection` (`{ classIds, operationIds }`; one change
+  is a selection of one class) of any draft of the controller's Work
+  (`controller.applyChanges(draft, selection)`), and completion (Applying, "No
+  changes left") runs only when the draft is that controller's open review.
+  Surfaces send through `useChangeCommandRunner(callerController)`, which routes
+  a draft that is the Editor's open review to the Editor's controller and any
+  other to the caller's, and runs a batch as one command per draft (every draft
+  gets its turn). That is not `disposeDrafts`, the whole-draft Apply all and
+  Discard all with their batch lifecycle.
 - **A refusal's words are chosen when shown.** A typed refusal is stored as the
   server's code and text (`serverCode`, `serverReason`); `RefusalReason` words the
   known codes in the language shown at that moment, and keeps the server's text
-  for any other code. A change's failure is found by one overlap-aware rule
-  (own class id or a shared operation, newest wins) for showing and retiring it.
+  for any other code. One failure is held per (draft, selection); it is found by one
+  overlap-aware rule (a shared class id or operation, newest wins) for showing it
+  on each overlapping change and on the file that sent the selection, and for
+  retiring it.
 - **Optimistic by record.** A change with an Apply or Discard in flight, or
   confirmed, is already gone from the preview these read
   (`client/query/change-command-record`). A failure brings it back with its
@@ -160,12 +180,15 @@ consume them; none of it is chat rendering. Lifecycle contracts:
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.
-- The chat link reads `actorThreadId` and `actorThreadTitle` from an operation
-  and names the chat as the chat list does (`displayThreadTitle`: "New chat"
-  when untitled); an operation the server cannot place in a chat reads "AI".
-  The link opens the chat where the write happened: it asks for a turn reveal
-  carrying `actorTurnId` and `actorToolCallId` (the chat's `conversation-reveal`
-  turn stage). Without a recorded turn it only opens the chat.
+- The chat links read `actorThreadId` and `actorThreadTitle` from the visible
+  operations of a change and name each chat as the chat list does
+  (`displayThreadTitle`: "New chat" when untitled); an operation the server
+  cannot place in a chat reads "AI". A change several chats wrote names all of
+  them, latest first ("Pacing pass and Lore pass"), each its own link. A link
+  opens its chat beside the change where that chat's latest write happened: it
+  asks for a turn reveal carrying that operation's `actorTurnId` and
+  `actorToolCallId` (the chat's `conversation-reveal` turn stage). Without a
+  recorded turn it only opens the chat.
 - A change's excerpt reads its text once: operations of one change that report
   the same or overlapping text (the writer's edit inside an AI insert repeats it)
   are joined without the repeats.

@@ -3,19 +3,16 @@
  * changes in document order, or the state that stands in for them (loading,
  * Applying or Discarding the last change, "No changes left" with the way on,
  * formatting-only). The dock's Changes tab and the phone's changes sheet both
- * render it, so the file's state reads the same in either list. `touch` raises
- * the rows and buttons to 44px.
+ * render it, so the file's state reads the same in either list; the rows
+ * themselves are `DocumentChangeRows`. `touch` raises the rows and buttons to 44px.
  */
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
-import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ReviewChangeRow } from "@/features/draft-review/ReviewChangeRow";
+import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import type { ReviewFileTarget } from "@/features/draft-review/review-files";
-import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
-import type { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
 
 export function OpenFileChanges({
   view,
@@ -25,7 +22,7 @@ export function OpenFileChanges({
   touch = false,
   onFocused,
 }: {
-  view: ReturnType<typeof useReviewChanges>;
+  view: ReviewChangesView;
   controller: Pick<DraftReviewController, "exitInlineReview">;
   next: ReviewFileTarget | null;
   onOpenNext: (row: ReviewFileTarget) => void;
@@ -34,52 +31,38 @@ export function OpenFileChanges({
   /** A change was tapped and focused in the manuscript (the phone closes its sheet). */
   onFocused?: () => void;
 }) {
-  const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
-  const arrived = useArrivedChanges(
-    changes,
-    view.status === "ready",
-    view.documentId && view.draftId ? `${view.documentId}:${view.draftId}` : null,
-  );
-
-  return view.status === "loading" ? (
-    <div className="flex flex-col gap-1.5 px-2 py-1" aria-busy>
-      <Skeleton className="h-4 w-full" />
-      <Skeleton className="h-4 w-4/5" />
-    </div>
-  ) : view.completing ? (
-    <ReviewCompleting mode={view.completing} />
-  ) : view.finished ? (
-    <ReviewDone
-      next={next}
-      onOpenNext={onOpenNext}
-      onBack={controller.exitInlineReview}
-      touch={touch}
-    />
-  ) : view.unlisted ? (
-    <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
-      <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
-    </p>
-  ) : (
-    <ul className="flex flex-col gap-0.5">
-      {view.items.map(({ change, failure }) => (
-        <ReviewChangeRow
+  const stateLine = () => {
+    if (view.completing) return <ReviewCompleting mode={view.completing} />;
+    if (view.finished) {
+      return (
+        <ReviewDone
+          next={next}
+          onOpenNext={onOpenNext}
+          onBack={controller.exitInlineReview}
           touch={touch}
-          key={change.classId}
-          change={change}
-          focused={view.focused?.classId === change.classId}
-          arrived={arrived.has(change.classId)}
-          disabled={view.locked}
-          canApply={view.canApply}
-          failure={failure}
-          onFocus={() => {
-            onFocused?.();
-            view.focus(change, { scroll: true });
-          }}
-          onApply={() => void view.apply(change)}
-          onDiscard={() => void view.discard(change)}
         />
-      ))}
-    </ul>
+      );
+    }
+    if (view.unlisted) {
+      return (
+        <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
+          <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
+        </p>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <DocumentChangeRows
+      view={view}
+      touch={touch}
+      standIn={view.status === "loading" ? null : stateLine()}
+      onSelect={(change) => {
+        onFocused?.();
+        view.focus(change, { scroll: true });
+      }}
+    />
   );
 }
 

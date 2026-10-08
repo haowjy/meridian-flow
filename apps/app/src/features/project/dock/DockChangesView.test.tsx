@@ -90,6 +90,7 @@ const change = (
   merged: false,
   change: { removed: null, added },
   attribution: { kind: "ai" },
+  threadIds: [],
   ...overrides,
 });
 

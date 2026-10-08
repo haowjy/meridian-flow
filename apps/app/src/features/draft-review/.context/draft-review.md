@@ -23,6 +23,11 @@ thread authority), then re-provides those values at sibling boundaries. The
 stable Chat surface and Chat context dock share the same Chat value; viewer and
 editor surfaces receive only the Editor value. A boundary never creates a
 controller, and the two scope owners are never nested.
+`ProjectView` also mounts a third scope, unconditionally, for the Work page's
+Work when neither the Editor nor the chat has it (`work: null` otherwise): its
+own local state owner, it lists and runs commands and never enters a review.
+`useWorkReviewScope(workId)` picks Editor, then chat, then the third. The command
+record stays the one authority across all three; there is no Work-page lock.
 
 Every disposition is serialized by the session's synchronous lock and, for the
 draft itself, by its one command record (`client/query/draft-command-record`,
@@ -38,11 +43,25 @@ second preview-settlement timer or local pending copy is needed.
 
 ### Per-change commands
 
-`DraftReviewSession.applyChange` and `discardChange` run one change. Each claims
+`DraftReviewSession.applySelection` and `discardSelection` run a selection of
+changes (`ChangeSelection`: whole closure classes and every operation they
+hold; one change is a selection of one class). The controller exposes them as
+`applyChanges(draft, selection)` and `discardChanges(draft, selection)` for any
+draft of its Work (`useSelectionCommands`): they read that draft's cached preview
+for the two revision tokens (with no active preview the selection is refused
+`stale` without sending) and run completion only when the draft is the
+controller's open review. `useChangeCommandRunner` is the transport surfaces use:
+the Editor's controller owns a draft it has open, so its pending state, answer
+and completion (and the last Discard's freeze of the finished text) stay with
+the review; every other draft runs in the caller's scope. A selection batch is
+one command per draft, each with its union and tokens; a refusal on one does not
+stop the next. Each claims
 the draft's **command claim** (`beginDraftCommand` with the change and its
 operation set: one command per draft, whichever session sends it) and a **change
 command record** (`client/query/change-command-record`, keyed by the draft and
-the change's class id, matched by shared operations) for what outlives the claim:
+the selection's class ids, matched by shared operations; one failure per
+(draft, selection), shown on every overlapping change and on the sending file)
+for what outlives the claim:
 
 - `pending`: the draft's own claim. The change is already gone from the preview
   every surface reads (`useDraftPreview` hides it), so its marks and rows leave

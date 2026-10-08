@@ -108,6 +108,7 @@ import { ProjectShell } from "./shell/ProjectShell";
 import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 import { WorkPaneController } from "./WorkPaneController";
+import { WorkReviewScopesProvider } from "./work/useWorkReviewScope";
 
 /** Minimum width (px) the main content column may shrink to on desktop. */
 const MAIN_MIN_WIDTH = 360;
@@ -504,20 +505,36 @@ function HydratedReviewControllers({
     stateOwner: editorReviewState,
     threadId: null,
   });
+  // The Work page's Work when neither the Editor nor the chat has it. Mounted
+  // always, so a Work page never mounts or unmounts a controller; with no Work
+  // it scopes nothing, and it never enters an inline review.
+  const routeWork =
+    props.activeScreen === "work" && props.routeWork.status === "present"
+      ? props.routeWork.work
+      : null;
+  const workReview = useDraftReviewScopeValue({
+    projectId: props.projectId,
+    work:
+      routeWork && routeWork.id !== props.editorWork?.id && routeWork.id !== props.chatWork?.id
+        ? routeWork
+        : null,
+  });
   const scopedProps = { ...props, chatReview, editorReview, mobileDocumentRoute };
   return (
-    <>
-      <EditorReviewAddressOwner
-        review={editorReview}
-        requestedDraftId={props.reviewDraftId}
-        activeScreen={props.activeScreen}
-        activeScheme={props.activeContextScheme}
-        activePath={props.activeContextPath}
-        activeDocumentId={props.reviewAddressDocumentId}
-        onSetDraftId={props.onSetEditorReviewDraftId}
-      />
-      {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
-    </>
+    <EditorReviewScope value={editorReview}>
+      <WorkReviewScopesProvider chat={chatReview} third={workReview}>
+        <EditorReviewAddressOwner
+          review={editorReview}
+          requestedDraftId={props.reviewDraftId}
+          activeScreen={props.activeScreen}
+          activeScheme={props.activeContextScheme}
+          activePath={props.activeContextPath}
+          activeDocumentId={props.reviewAddressDocumentId}
+          onSetDraftId={props.onSetEditorReviewDraftId}
+        />
+        {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
+      </WorkReviewScopesProvider>
+    </EditorReviewScope>
   );
 }
 
@@ -751,7 +768,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   ];
 
   return (
-    <EditorReviewScope value={props.editorReview}>
+    <>
       <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
         <ProjectShell
           layout={layout}
@@ -771,7 +788,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           </ProjectRouteBoundary>
         </ProjectShell>
       </TreeCreationProvider>
-    </EditorReviewScope>
+    </>
   );
 }
 

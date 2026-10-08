@@ -22,6 +22,7 @@ import {
   applied,
   change,
   discarded,
+  draftA,
   listed,
   previewOf,
   work,
@@ -163,7 +164,7 @@ describe("a last Discard", () => {
       await reviewOpened();
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = review?.controller.discardChange(change("2"));
+        done = review?.controller.discardChanges(draftA, change("2"));
       });
       // Pending: the live text stands in for the review, but nothing can be typed into it yet.
       expect(surfaces()).toEqual(["live"]);
@@ -185,7 +186,7 @@ describe("a last Discard", () => {
       await reviewOpened();
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = review?.controller.discardChange(change("2"));
+        done = review?.controller.discardChanges(draftA, change("2"));
       });
       expect(surfaces()).toEqual(["live"]);
 
@@ -206,7 +207,7 @@ describe("a last Discard", () => {
     await renderEditor(async () => {
       await reviewOpened();
       await act(async () => {
-        await review?.controller.discardChange(change("2"));
+        await review?.controller.discardChanges(draftA, change("2"));
       });
       await vi.waitFor(() => expect(surfaces()).toEqual(["review"]));
       expect(liveEditable()).toBe("false");
@@ -221,7 +222,7 @@ describe("a last Apply", () => {
       await reviewOpened();
       let done: Promise<unknown> | undefined;
       await act(async () => {
-        done = review?.controller.applyChange(change("2"));
+        done = review?.controller.applyChanges(draftA, change("2"));
       });
       expect(review?.controller.inlineReview?.completion).toMatchObject({ phase: "pending" });
       expect(surfaces()).toEqual(["review"]);
@@ -242,7 +243,7 @@ describe("a last Apply", () => {
       await reviewOpened();
       mocks.getDraftPreview.mockResolvedValue(previewOf("3"));
       await act(async () => {
-        await review?.controller.applyChange(change("2"));
+        await review?.controller.applyChanges(draftA, change("2"));
       });
       expect(surfaces()).toEqual(["review"]);
       expect(liveEditable()).toBe("false");

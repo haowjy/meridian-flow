@@ -1,8 +1,8 @@
 /** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
-import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import {
   type Dispatch,
@@ -14,7 +14,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { ChangeRef } from "@/client/query/change-command-record";
 import {
   clearDraftReviewLaunchFailure,
   draftCommandPendingIn,
@@ -48,12 +47,17 @@ import {
   inlineReviewFromState,
   type ReviewToast,
 } from "./draft-review-session";
-import { reviewChanges } from "./review-changes";
+import type { ReviewFocus } from "./review-changes";
+import {
+  listedDocumentName,
+  type SelectionCommand,
+  useSelectionCommands,
+} from "./useSelectionCommands";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
-export type ReviewChangeTarget = ChangeRef & { anchorOperationId: string };
+export type ReviewChangeTarget = ReviewFocus & { anchorOperationId: string };
 
 export type DraftReviewStateOwner = Readonly<{
   state: typeof EMPTY_DRAFT_REVIEW_STATE;
@@ -110,13 +114,13 @@ export type DraftReviewController = {
    * The change the writer is looking at in the open review, with the operations
    * it held, or null. Read it through `resolveFocusedChange`.
    */
-  focus: ChangeRef | null;
+  focus: ReviewFocus | null;
   /**
    * Record the change the focus is on without touching the manuscript: the
    * editor reporting a click, and the review keeping the focus current when the
    * server regroups the change. Ignored unless `review` is the open review.
    */
-  reportFocusedChange: (review: DraftReviewSelection, change: ChangeRef) => void;
+  reportFocusedChange: (review: DraftReviewSelection, change: ReviewFocus) => void;
   /**
    * Focus one change: in the manuscript and in every list. `scroll` brings it
    * into view. `review` is the review the caller meant: a caller that waited
@@ -127,9 +131,14 @@ export type DraftReviewController = {
     change: ReviewChangeTarget,
     options?: { scroll?: boolean },
   ) => void;
-  /** Apply or Discard one change of the open review. It leaves every surface at once. */
-  applyChange: (change: ChangeRef) => Promise<DraftCommandOutcome>;
-  discardChange: (change: ChangeRef) => Promise<DraftCommandOutcome>;
+  /**
+   * Apply or Discard a selection of changes of any draft of this Work. The
+   * changes leave every surface at once. Completion (`Applying`, "No changes
+   * left") runs only when the draft is this controller's open review; a
+   * caller never picks the controller itself (`useChangeCommandRunner`).
+   */
+  applyChanges: SelectionCommand;
+  discardChanges: SelectionCommand;
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
   dockDispositionError: DraftBatchError | null;
@@ -397,11 +406,11 @@ export function useDraftReviewController({
           },
         }),
       ),
-    changeConfirmed: ({ documentId, draftId }, change, mode) =>
+    changeConfirmed: ({ documentId, draftId }, selection, mode) =>
       settleConfirmedChange(
         queryClient,
         { projectId, workId, threadId, documentId, draftId },
-        change,
+        selection,
         mode,
       ),
     batchStarted: (mode) => {
@@ -524,7 +533,7 @@ export function useDraftReviewController({
     }
   }, []);
 
-  const reportFocusedChange = useCallback((review: DraftReviewSelection, change: ChangeRef) => {
+  const reportFocusedChange = useCallback((review: DraftReviewSelection, change: ReviewFocus) => {
     dispatch({
       type: "changeFocused",
       documentId: review.documentId,
@@ -563,103 +572,14 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  /** Run one change command against the open review, and say what happened. */
-  const runChangeCommand = useCallback(
-    async (
-      mode: "apply" | "discard",
-      change: ChangeRef,
-      command: (
-        inline: DraftReviewSelection,
-        previewTokens: { liveRevisionToken: string; draftRevisionToken: string } | null,
-      ) => Promise<DraftCommandOutcome>,
-    ): Promise<DraftCommandOutcome> => {
-      // The selection comes from state, not from the editor runtime: the
-      // command is server-backed, so a list row works with no manuscript mounted.
-      const current = stateRef.current;
-      const inline = current.surface.kind === "inline" ? current.surface : null;
-      // A change with no operation of its own (an unclassified hunk) has nothing to send.
-      if (!inline || change.operationIds.length === 0) return { kind: "blocked" };
-      const cached = queryClient.getQueryData<DraftPreviewResponse>(
-        projectQueryKeys.workDraftPreview(projectId, workId, inline.documentId, inline.draftId),
-      );
-      // Read before the command: it may be the one that takes the draft out of the list.
-      const documentName = listedDocumentName(queryClient, projectId, workId, inline.draftId);
-      // The last change handled: nothing is finished until the command's own
-      // answer says so (`settleAnsweredCommand`), but the writer's click shows
-      // at once as a pending completion. A last Discard leaves live as it is,
-      // so the finished text is already on screen: hold that inert at the
-      // click, since waiting would show the review room merging the server's
-      // reset (the discarded text doubled). A last Apply keeps the review
-      // room, marks gone, until the answer: live has no change in it until then.
-      const handlesLast =
-        cached?.status === "active" &&
-        reviewChanges(cached.operations, cached.hunks).every(
-          (candidate) => candidate.classId === change.classId,
-        );
-      if (handlesLast) {
-        dispatch({
-          type: "reviewCompleting",
-          documentId: inline.documentId,
-          draftId: inline.draftId,
-          mode,
-          documentName,
-        });
-      }
-      const outcome = await command(
-        { documentId: inline.documentId, draftId: inline.draftId },
-        cached?.status === "active"
-          ? {
-              liveRevisionToken: cached.liveRevisionToken,
-              draftRevisionToken: cached.draftRevisionToken,
-            }
-          : null,
-      );
-      if (!activeRef.current) return outcome;
-      if (handlesLast && outcome.kind !== "change-settled") {
-        // The command did not land (or the change was already gone): the
-        // change is back, and so is the review of it. A change that landed was
-        // answered by `settleAnsweredCommand`, closed or not.
-        dispatch({
-          type: "reviewReopened",
-          documentId: inline.documentId,
-          draftId: inline.draftId,
-        });
-      }
-      if (outcome.kind === "change-settled") {
-        dispatch({
-          type: "toast",
-          code: outcome.mode === "apply" ? "applied" : "discarded",
-          tone: "info",
-        });
-      } else if (outcome.kind === "change-refused" && outcome.code === "gone") {
-        dispatch({ type: "toast", code: "change-gone", tone: "error" });
-      }
-      return outcome;
-    },
-    [projectId, queryClient, workId],
-  );
-
-  const applyChange = useCallback(
-    (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand("apply", change, (selection, tokens) =>
-        // Without a preview there is nothing the writer saw to apply: treat it as an out-of-date change.
-        tokens
-          ? reviewSession.applyChange(selection, change, tokens)
-          : Promise.resolve({ kind: "change-refused", mode: "apply", code: "stale" }),
-      ),
-    [reviewSession, runChangeCommand],
-  );
-
-  const discardChange = useCallback(
-    (change: ChangeRef): Promise<DraftCommandOutcome> =>
-      runChangeCommand("discard", change, (selection, tokens) =>
-        // As with Apply: without a preview there is nothing the writer saw to discard.
-        tokens
-          ? reviewSession.discardChange(selection, change, tokens)
-          : Promise.resolve({ kind: "change-refused", mode: "discard", code: "stale" }),
-      ),
-    [reviewSession, runChangeCommand],
-  );
+  const { applyChanges, discardChanges } = useSelectionCommands({
+    projectId,
+    workId,
+    session: reviewSession,
+    stateRef,
+    activeRef,
+    dispatch,
+  });
 
   const apply = useCallback(
     (documentId: string, draftId: string): Promise<DraftCommandOutcome> =>
@@ -698,8 +618,8 @@ export function useDraftReviewController({
       focus: inlineReview?.focus ?? null,
       reportFocusedChange,
       focusReviewChange,
-      applyChange,
-      discardChange,
+      applyChanges,
+      discardChanges,
       toast: state.toast,
       dismissToast,
       dockDispositionError,
@@ -730,8 +650,8 @@ export function useDraftReviewController({
       inlineReview?.focus,
       reportFocusedChange,
       focusReviewChange,
-      applyChange,
-      discardChange,
+      applyChanges,
+      discardChanges,
       state.toast,
       dismissToast,
       dockDispositionError,
@@ -747,17 +667,4 @@ export function useDraftReviewController({
       disposeDrafts,
     ],
   );
-}
-
-/** The listed draft's document name, kept by a review that outlives the draft's place in the list. */
-function listedDocumentName(
-  queryClient: QueryClient,
-  projectId: string,
-  workId: string,
-  draftId: string,
-): string | null {
-  const listed = queryClient
-    .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
-    ?.find((item) => item.draftId === draftId);
-  return listed?.documentName ?? null;
 }

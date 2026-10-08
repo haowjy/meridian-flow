@@ -15,7 +15,14 @@ import {
   useDraftReview,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import type { DraftChangesView } from "@/features/draft-review/draft-changes";
 import type { ReviewFileTarget } from "@/features/draft-review/review-files";
+import {
+  type ChangeCommandRunner,
+  useChangeCommandRunner,
+} from "@/features/draft-review/useChangeCommandRunner";
+import { type DraftChangesTarget, useDraftChanges } from "@/features/draft-review/useDraftChanges";
+import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
 import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { withReactRoot } from "./react-dom-harness";
@@ -24,6 +31,14 @@ export const work = {
   id: "work-a",
   projectId: "project-a",
   name: "Work A",
+  archivedAt: null,
+} as Work;
+
+/** A Work neither the Editor nor the Chat has: the Work page's third scope. */
+export const workC = {
+  id: "work-c",
+  projectId: "project-a",
+  name: "Work C",
   archivedAt: null,
 } as Work;
 
@@ -60,7 +75,14 @@ export const preview = {
 /** A preview holding only these changes. */
 export const previewOf = (...ids: string[]) => ({ ...preview, operations: ids.map(operation) });
 
-export const change = (id: string) => ({ classId: `class-${id}`, operationIds: [id] });
+/** The reviewed draft's identity, as a command names it. */
+export const draftA = { documentId: "document-a", draftId: "draft-a" };
+
+/** A selection of these changes (one class each). */
+export const change = (...ids: string[]) => ({
+  classIds: ids.map((id) => `class-${id}`),
+  operationIds: ids,
+});
 
 export const applied = (draftClosed: boolean, id = "2") => ({
   status: "applied",
@@ -82,12 +104,21 @@ export type ScopeProbe = {
   editor: DraftReviewContextValue;
   /** The Chat's scope: the composer's whole-draft commands. */
   chat: DraftReviewContextValue;
+  /** The third scope: a Work no other scope has. It lists and runs commands, and never enters a review. */
+  third: DraftReviewContextValue;
   /** What the header, the dock's list and the editor's chrome read, for the reviewed draft. */
   header: ReviewHeaderModel;
   /** The writer opens another draft of the Work: the header then reads that one. */
   openDraft: (draft: ReviewedDraft) => Promise<void>;
   /** A surface mounts after the review is already open (the dock's tab, a sheet): its view of the Editor's review. */
   mountLateReader: () => Promise<() => ReviewChangesView>;
+  /** The transport as the Chat's scope uses it: the strip's and a Work row's way to send. */
+  chatRunner: ChangeCommandRunner;
+  /** A change list of any draft, read through the Chat's scope (an unopened draft's rows). */
+  mountDraftChanges: (
+    target: DraftChangesTarget,
+    scope?: "chat" | "third",
+  ) => Promise<() => DraftChangesView>;
 };
 
 export type ReviewedDraft = { documentId: string; draftId: string };
@@ -103,6 +134,17 @@ export function renderReviewScopes(
   const current: Partial<ScopeProbe> = {};
   let lateView: ReviewChangesView | null = null;
   let showLateReader: (() => void) | null = null;
+  let addChangeList: ((target: DraftChangesTarget, scope: "chat" | "third") => void) | null = null;
+  const changeLists = new Map<DraftChangesTarget, DraftChangesView>();
+  function ChangeList({ target, scope }: { target: DraftChangesTarget; scope: "chat" | "third" }) {
+    const controller = current[scope]?.controller as DraftReviewController;
+    changeLists.set(target, useDraftChanges(target, { controller }));
+    return null;
+  }
+  function RunnerProbe() {
+    current.chatRunner = useChangeCommandRunner(current.chat?.controller as DraftReviewController);
+    return null;
+  }
   function LateReader() {
     lateView = useReviewChanges(useDraftReview().controller);
     return null;
@@ -110,7 +152,11 @@ export function renderReviewScopes(
   function HeaderProbe() {
     const [reviewed, setReviewed] = useState(initialReviewed);
     const [lateMounted, setLateMounted] = useState(false);
+    const [lists, setLists] = useState<{ target: DraftChangesTarget; scope: "chat" | "third" }[]>(
+      [],
+    );
     showLateReader = () => setLateMounted(true);
+    addChangeList = (target, scope) => setLists((held) => [...held, { target, scope }]);
     current.header = useReviewHeader({ ...reviewed, onOpenDraft });
     current.openDraft = (draft) => act(async () => setReviewed(draft));
     current.mountLateReader = async () => {
@@ -120,13 +166,31 @@ export function renderReviewScopes(
         return lateView;
       };
     };
-    return lateMounted ? <LateReader /> : null;
+    current.mountDraftChanges = async (target, scope = "chat") => {
+      await act(async () => addChangeList?.(target, scope));
+      return () => {
+        const view = changeLists.get(target);
+        if (!view) throw new Error("The change list did not mount.");
+        return view;
+      };
+    };
+    return (
+      <>
+        <RunnerProbe />
+        {lateMounted ? <LateReader /> : null}
+        {lists.map(({ target, scope }) => (
+          <ChangeList key={target.draftId} target={target} scope={scope} />
+        ))}
+      </>
+    );
   }
   function Scopes(): ReactNode {
     const editor = useDraftReviewScopeValue({ projectId: "project-a", work });
     const chat = useDraftReviewScopeValue({ projectId: "project-a", work, threadId: "thread-a" });
+    const third = useDraftReviewScopeValue({ projectId: "project-a", work: workC });
     current.editor = editor;
     current.chat = chat;
+    current.third = third;
     return (
       <DraftReviewBoundary value={editor}>
         <HeaderProbe />
