@@ -191,7 +191,7 @@ export function createWriteReversalEndpoints(deps: {
   function localSession(id: string, threadId: string): ActorSession {
     const existing = localSessions.get(id);
     if (existing) return existing;
-    const session: ActorSession = { id, threadId, documents: new Map() };
+    const session: ActorSession = { id, threadId, documents: new Set() };
     localSessions.set(id, session);
     return session;
   }

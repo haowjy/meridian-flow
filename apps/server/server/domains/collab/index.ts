@@ -1,5 +1,6 @@
 /** Public barrel for collab domain contracts and composition factories. */
 
+export { createUnscopedAssetPathObserver } from "./adapters/agent-edit-observability.js";
 export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
@@ -22,6 +23,10 @@ export type {
   NamespaceChangeShape,
   WriteHandleHistory,
 } from "./domain/ports/agent-namespace-changes.js";
+export type {
+  AssetPathProject,
+  DocumentAssetPaths,
+} from "./domain/ports/document-asset-paths.js";
 export type {
   DocumentLinkMover,
   DocumentLinkRewriteClaim,

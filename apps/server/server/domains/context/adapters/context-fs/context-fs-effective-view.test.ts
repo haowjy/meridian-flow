@@ -46,6 +46,7 @@ describe("ContextFS drafted-source effective view", () => {
     });
 
     const fs = new ContextFS({
+      assetPaths: { within: (_project, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme,
@@ -123,6 +124,7 @@ describe("ContextFS drafted-source effective view", () => {
       [CREATED_DOC_ID, "createdhash|draft created needle bytes"],
     ]);
     const fs = new ContextFS({
+      assetPaths: { within: (_project, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",
@@ -190,6 +192,7 @@ describe("ContextFS drafted-source effective view", () => {
     });
 
     const fs = new ContextFS({
+      assetPaths: { within: (_project, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",

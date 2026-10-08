@@ -281,7 +281,7 @@ export function createWriteReversal(deps: {
 
     const reversal = await executePrepared({ ...input, plans: prepared.plans });
     if (!reversal.ok) return reversal.response;
-    if (reversal.sync) runtimeStore.markSynced(input.session, input.docId, input.runtime);
+    if (reversal.sync) runtimeStore.markSynced(input.session, input.docId);
     const sync = reversal.sync ?? { echo: [], reconciled: false };
     const result = formatReversalSuccess({
       direction: input.direction,
@@ -614,7 +614,7 @@ export function createWriteReversal(deps: {
               if (!projected || "status" in projected) {
                 throw new Error(`Committed reversal projection unavailable for ${input.docId}`);
               }
-              runtimeStore.markSynced(input.session, input.docId, input.runtime);
+              runtimeStore.markSynced(input.session, input.docId);
             } catch (cause) {
               await recoverDurableReversal(input, cause);
             }

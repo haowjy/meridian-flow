@@ -10,6 +10,7 @@ import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
   BranchPeerShadowAccess,
+  DocumentAssetPaths,
   DocumentCreationAggregate,
   DocumentSeedOrigin,
   MarkdownDocumentStore,
@@ -50,6 +51,7 @@ import { createContextFsTree, trackedSchemaForPersistedFiletype } from "./contex
 import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
+  assetPaths: Pick<DocumentAssetPaths, "within">;
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
@@ -114,6 +116,7 @@ export class ContextFS implements ContextSchemeAdapter {
   readonly name: string;
   readonly capabilities: SchemeCapabilities;
 
+  private readonly assetPaths: ContextFSDeps["assetPaths"];
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: ContextFSDeps["documentSync"];
@@ -126,6 +129,7 @@ export class ContextFS implements ContextSchemeAdapter {
   readonly tree: ContextTreeAdapter;
 
   constructor(deps: ContextFSDeps) {
+    this.assetPaths = deps.assetPaths;
     this.capabilities = schemeCapabilities(deps.scheme);
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
@@ -750,24 +754,34 @@ export class ContextFS implements ContextSchemeAdapter {
     const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
     const membership = await this.resolveVisibleMembership();
     const documents = await this.collectDocuments("", null, membership);
-    const hits: AdapterSearchHit[] = [];
-    for (const row of documents) {
-      if (prefix && row.path !== prefix && !row.path.startsWith(`${prefix}/`)) continue;
-      if (row.document.fileType !== null) continue;
-      const read = await this.searchableLines(row.document.id);
-      if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-      const match = matchDocument(read.value.entries, query, {
-        hashlines: read.value.hashlines,
-      });
-      if (!match) continue;
-      hits.push({
-        path: row.path,
-        documentId: row.document.id,
-        revision: read.value.revision,
-        ...match,
-      });
-    }
-    return Ok(hits);
+    const searchable = documents.filter(
+      ({ path, document }) =>
+        document.fileType === null && (!prefix || path === prefix || path.startsWith(`${prefix}/`)),
+    );
+    const first = searchable[0];
+    if (!first) return Ok([]);
+    // One source has one project association, including personal and Work sources.
+    return this.assetPaths.within(
+      { documentId: first.document.id, documentIds: searchable.map(({ document }) => document.id) },
+      async () => {
+        const hits: AdapterSearchHit[] = [];
+        for (const row of searchable) {
+          const read = await this.searchableLines(row.document.id);
+          if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
+          const match = matchDocument(read.value.entries, query, {
+            hashlines: read.value.hashlines,
+          });
+          if (!match) continue;
+          hits.push({
+            path: row.path,
+            documentId: row.document.id,
+            revision: read.value.revision,
+            ...match,
+          });
+        }
+        return Ok(hits);
+      },
+    );
   }
 
   private async collectDocuments(

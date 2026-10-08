@@ -21,7 +21,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import type { BranchJournalRow } from "./branch-push-contracts.js";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 import {
   type BranchReversalScope,
@@ -100,6 +100,7 @@ type ConcurrentUpdateOrigin =
   | { type: "agent"; actorTurnId: string };
 
 type ConcurrentAttributionBasis = {
+  baselineSnapshot: Y.Snapshot;
   baselineState: Uint8Array | null;
   currentUpstreamState?: Uint8Array;
   fallbackCurrentUpstream: Y.Doc;
@@ -131,14 +132,7 @@ export function createBranchAgentEditCoordinator(input: {
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  journalRows?: {
-    listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-    listConcurrentJournalRows(
-      branchId: string,
-      generation: number,
-      options: { afterJournalId?: number; documentId: DocumentId },
-    ): Promise<BranchJournalRow[]>;
-  };
+  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
@@ -249,6 +243,7 @@ export function createBranchAgentEditCoordinator(input: {
       attemptId,
     }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
+      const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
@@ -265,6 +260,7 @@ export function createBranchAgentEditCoordinator(input: {
             )
           : [];
         const partitioned = partitionConcurrentUpdates({
+          baselineSnapshot,
           baselineState,
           journalRows: [...concurrent.rows, ...liveRows],
           currentUpstreamState: concurrent.upstreamState,
@@ -694,62 +690,25 @@ async function concurrentUpstreamJournalRows(
     threadId: ThreadId;
     branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
-    journalRows?: {
-      listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-      listConcurrentJournalRows(
-        branchId: string,
-        generation: number,
-        options: { afterJournalId?: number; documentId: DocumentId },
-      ): Promise<BranchJournalRow[]>;
-    };
+    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
   },
   documentId: DocumentId,
   afterJournalId?: number,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
-  if (!input.journalRows || !input.branches.getBranch) return { rows: [] };
+  if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
   const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
   peer.doc.destroy();
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
   const upstreamBranchId = peerSnapshot?.upstreamBranchId;
   if (!upstreamBranchId) return { rows: [] };
-  if (typeof input.branchCoordinator.readBranch === "function") {
-    return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
-      const rows = await listConcurrentRows(journalRows, {
-        branchId: upstreamBranchId,
-        generation: snapshot.generation,
-        afterJournalId,
-        documentId,
-      });
-      return {
-        rows,
-        upstreamState: Y.encodeStateAsUpdate(doc),
-      };
-    });
-  }
-  const upstream = await input.branches.getBranch(upstreamBranchId);
-  if (!upstream) return { rows: [] };
-  const rows = await listConcurrentRows(journalRows, {
-    branchId: upstreamBranchId,
-    generation: upstream.generation,
-    afterJournalId,
-    documentId,
-  });
-  return { rows };
-}
-
-async function listConcurrentRows(
-  journalRows: NonNullable<Parameters<typeof concurrentUpstreamJournalRows>[0]["journalRows"]>,
-  input: {
-    branchId: string;
-    generation: number;
-    afterJournalId?: number;
-    documentId: DocumentId;
-  },
-): Promise<BranchJournalRow[]> {
-  return journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
-    afterJournalId: input.afterJournalId,
-    documentId: input.documentId,
+  return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
+    const rows = await journalRows.listConcurrentJournalRows(
+      upstreamBranchId,
+      snapshot.generation,
+      { afterJournalId, documentId },
+    );
+    return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
   });
 }
 
@@ -795,23 +754,30 @@ function partitionConcurrentUpdates(
 ): PartitionedConcurrentUpdate[] {
   const upstreamState =
     input.currentUpstreamState ?? Y.encodeStateAsUpdate(input.fallbackCurrentUpstream);
-  const coverage = partitionByBlockCoverage({
-    baselineState: input.baselineState,
-    upstreamState,
-    rows: input.journalRows.map((row) => ({
-      id: row.id,
-      source: row.source,
-      actorTurnId: actorTurnIdForJournalRow(row),
-      update: row.updateData,
-    })),
-    model: input.model,
-    codec: input.codec,
-  });
-
+  // A state vector alone misses delete-only edits. Capture structs and tombstones
+  // before journal reads yield, so both checks use the same baseline cut.
+  const rows = input.journalRows.filter(
+    (row) => !Y.snapshotContainsUpdate(input.baselineSnapshot, row.updateData),
+  );
+  if (rows.length === 0 && input.baselineState && bytesEqual(input.baselineState, upstreamState)) {
+    return [];
+  }
   const scratch = docFromState(input.baselineState);
   try {
+    const coverage = partitionByBlockCoverage({
+      baselineState: input.baselineState,
+      upstreamState,
+      rows: rows.map((row) => ({
+        source: row.source,
+        actorTurnId: actorTurnIdForJournalRow(row),
+        update: row.updateData,
+      })),
+      model: input.model,
+      codec: input.codec,
+    });
+
     const partitioned: PartitionedConcurrentUpdate[] = [];
-    for (const row of input.journalRows) {
+    for (const row of rows) {
       const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
       if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
       const actorTurnId = actorTurnIdForJournalRow(row);

@@ -450,7 +450,7 @@ describe("write tool dispatch", () => {
     let inlineApplications = 0;
     const rejectingModel = {
       ...model,
-      applyInlineReplacement(...args: Parameters<typeof model.applyInlineReplacement>) {
+      applyInlineReplacements(...args: Parameters<typeof model.applyInlineReplacements>) {
         inlineApplications += 1;
         if (inlineApplications === 2) {
           return {
@@ -459,7 +459,7 @@ describe("write tool dispatch", () => {
             message: "forced second-block rejection",
           };
         }
-        return model.applyInlineReplacement(...args);
+        return model.applyInlineReplacements(...args);
       },
     };
     const ctx = harness({ "chapter.md": "cat one\n\ncat two" }, { model: rejectingModel });

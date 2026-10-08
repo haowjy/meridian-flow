@@ -79,8 +79,9 @@ describe("write host reverse", () => {
       { command: "insert", file: "chapter.md", content: "Two." },
       { ...context, turnId: "turn-target" },
     );
+    // Edits only base text, so nothing it writes anchors on the target turn's.
     await scenario.ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Later." },
+      { command: "replace", file: "chapter.md", find: "Base.", content: "Base, revised." },
       { ...context, turnId: "turn-later" },
     );
 
@@ -94,7 +95,7 @@ describe("write host reverse", () => {
 
     expectOutcome(undo, "reconciled");
     expect(outcomeText(undo)).toContain("later edits were kept");
-    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "Later."]);
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base, revised."]);
   });
 
   it("undoes the whole thread", async () => {

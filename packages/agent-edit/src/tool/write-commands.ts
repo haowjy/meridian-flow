@@ -1,9 +1,7 @@
 // Mutating and query write command handlers.
 import * as Y from "yjs";
-
+import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
-import { applyEdits } from "../apply/tiers.js";
-import type { AppliedEditSummary } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -25,6 +23,7 @@ import {
 import type { ResponseCommitter } from "./response-committer.js";
 import {
   formatApplySuccess,
+  formatUnchangedSuccess,
   isDocumentEmpty,
   status,
   truncateCreateEcho,
@@ -107,7 +106,7 @@ export function createWriteCommands(deps: {
     for (const update of stagedUpdates) {
       Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
-    markSynced(session, address.documentId, runtime);
+    markSynced(session, address.documentId);
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok)
@@ -242,6 +241,38 @@ export function createWriteCommands(deps: {
         `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
       );
     }
+    let overwrite: Extract<ReturnType<typeof resolveWrite>, { ok: true }> | undefined;
+    if (overwriting && existingBlocks.length > 0) {
+      const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
+      const resolved = resolveWrite(
+        { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
+        empty
+          ? {
+              command: "remove",
+              documentAddress: address,
+              in: [1, existingBlocks.length],
+            }
+          : {
+              command: "replace",
+              documentAddress: address,
+              ...(copiedNodes
+                ? { blocks: copiedNodes }
+                : { content, parsedContent: parsed.parsed }),
+              in: [1, existingBlocks.length],
+            },
+      );
+      if (!resolved.ok) {
+        return errorResponse(
+          resolved.error.code,
+          resolved.error.message,
+          address.filePath,
+          documentBlocksDetail(resolved.error.details),
+        );
+      }
+      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+      if (resolved.edits.length === 0) return formatUnchangedSuccess();
+      overwrite = resolved;
+    }
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
@@ -256,49 +287,23 @@ export function createWriteCommands(deps: {
     let deletedHashes = new Set<string>();
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
-    if (overwriting && existingBlocks.length > 0) {
-      const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
-      const resolved = resolveWrite(
-        { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-        empty
-          ? {
-              command: "remove",
-              documentAddress: address,
-              in: [1, existingBlocks.length],
-            }
-          : {
-              command: "replace",
-              documentAddress: address,
-              ...(copiedNodes ? { blocks: copiedNodes } : { content }),
-              in: [1, existingBlocks.length],
-            },
-      );
-      if (!resolved.ok) {
-        return errorResponse(
-          resolved.error.code,
-          resolved.error.message,
-          address.filePath,
-          documentBlocksDetail(resolved.error.details),
-        );
-      }
-      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
-      semanticEditIr = resolved.ir;
+    if (overwrite) {
+      semanticEditIr = overwrite.ir;
       const applied = applyEdits(
         toDocHandle(runtime.doc),
         options.model,
         options.codec,
-        resolved.edits,
+        overwrite.edits,
         origin,
-        { ...(turnId ? { ownActorTurnId: turnId } : {}) },
       );
       if (!applied.ok) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
       }
-      writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preWriteSnapshot);
-      touchedHashes = new Set(applied.changedBlocks ?? []);
-      deletedHashes = new Set(applied.deletedBlocks ?? []);
-      insertedHashes = insertedBlockIds(applied.appliedEdits);
+      writeCertifiedProvenance(runtime, overwrite.ir, beforeVector, preWriteSnapshot);
+      touchedHashes = new Set(applied.changedBlocks);
+      deletedHashes = new Set(applied.deletedBlocks);
+      insertedHashes = applied.insertedBlocks;
     } else {
       runtime.doc.transact(() => {
         insertedHashes = options.model
@@ -341,15 +346,15 @@ export function createWriteCommands(deps: {
         });
         if (rejected) {
           restorePreWriteSnapshot(runtime, preWriteSnapshot);
-          markSynced(session, address.documentId, runtime);
+          markSynced(session, address.documentId);
           return rejected;
         }
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        markSynced(session, address.documentId, runtime);
+        markSynced(session, address.documentId);
         throw cause;
       }
-      markSynced(session, address.documentId, runtime);
+      markSynced(session, address.documentId);
       const summary = mutationCommit.summarizeMutationEcho({
         runtime,
         before,
@@ -460,7 +465,7 @@ export function createWriteCommands(deps: {
       });
     }
     const runtime = runtimeFor(session, address.documentId);
-    let synced = await requireSynced(session, address.documentId, command.command, runtime);
+    const synced = await requireSynced(session, address.documentId, command.command, runtime);
     if (!synced.ok) return synced.response;
     if (context.interactionContext) {
       const merged = await runtimeStore.syncLocalFromLive(
@@ -470,7 +475,6 @@ export function createWriteCommands(deps: {
         command.command,
       );
       if (!merged.ok) return merged.response;
-      synced = { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
     const from = command.command === "remove" ? undefined : command.from;
@@ -497,6 +501,7 @@ export function createWriteCommands(deps: {
       );
     }
     validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+    if (resolved.edits.length === 0) return formatUnchangedSuccess();
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const actor = mutationActor(session, address.documentId, context);
@@ -521,10 +526,6 @@ export function createWriteCommands(deps: {
       options.codec,
       resolved.edits,
       origin,
-      {
-        ...(turnId ? { ownActorTurnId: turnId } : {}),
-        syncStateVector: synced.stateVector,
-      },
     );
     if (!applied.ok) {
       restorePreWriteSnapshot(runtime, preOwnSnapshot);
@@ -533,7 +534,7 @@ export function createWriteCommands(deps: {
     writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
     const copied =
       from && copiedNodes
-        ? copySummary(from.path, insertedBlockIds(applied.appliedEdits), { edges: true })
+        ? copySummary(from.path, applied.insertedBlocks, { edges: true })
         : undefined;
     const copiedEcho = () =>
       copied
@@ -567,8 +568,8 @@ export function createWriteCommands(deps: {
           {
             runtime,
             before,
-            touchedHashes: new Set(applied.changedBlocks ?? []),
-            deletedHashes: new Set(applied.deletedBlocks ?? []),
+            touchedHashes: new Set(applied.changedBlocks),
+            deletedHashes: new Set(applied.deletedBlocks),
           },
           concurrent,
         );
@@ -597,8 +598,8 @@ export function createWriteCommands(deps: {
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
           createdDocumentBeforeCommit: false,
-          touchedHashes: new Set(applied.changedBlocks ?? []),
-          deletedHashes: new Set(applied.deletedBlocks ?? []),
+          touchedHashes: new Set(applied.changedBlocks),
+          deletedHashes: new Set(applied.deletedBlocks),
           preOwnSnapshot,
           semanticEditIr: resolved.ir,
           ...(copied ? { copied } : {}),
@@ -606,14 +607,14 @@ export function createWriteCommands(deps: {
         });
         if (rejected) {
           restorePreWriteSnapshot(runtime, preOwnSnapshot);
-          markSynced(session, address.documentId, runtime);
+          markSynced(session, address.documentId);
           return rejected;
         }
-        markSynced(session, address.documentId, runtime);
+        markSynced(session, address.documentId);
         return result;
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preOwnSnapshot);
-        markSynced(session, address.documentId, runtime);
+        markSynced(session, address.documentId);
         throw cause;
       }
     }
@@ -644,8 +645,8 @@ export function createWriteCommands(deps: {
         liveOrigin: mutationUpdateOrigin(actor),
         actor,
         before,
-        touchedHashes: new Set(applied.changedBlocks ?? []),
-        deletedHashes: new Set(applied.deletedBlocks ?? []),
+        touchedHashes: new Set(applied.changedBlocks),
+        deletedHashes: new Set(applied.deletedBlocks),
         ...(turnId ? { turnId } : {}),
         preOwnSnapshot,
         ...(interactionContext ? { interactionContext } : {}),
@@ -665,8 +666,8 @@ export function createWriteCommands(deps: {
         summary: mutationCommit.summarizeMutationEcho({
           runtime,
           before,
-          touchedHashes: new Set(applied.changedBlocks ?? []),
-          deletedHashes: new Set(applied.deletedBlocks ?? []),
+          touchedHashes: new Set(applied.changedBlocks),
+          deletedHashes: new Set(applied.deletedBlocks),
         }),
       };
     }
@@ -702,7 +703,7 @@ export function createWriteCommands(deps: {
         };
       } else {
         restorePreWriteSnapshot(input.runtime, input.preOwnSnapshot);
-        markSynced(session, input.docId, input.runtime);
+        markSynced(session, input.docId);
         throw cause;
       }
     }
@@ -799,11 +800,6 @@ export function createWriteCommands(deps: {
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
-
-/** Hashes of the blocks the edits inserted, in document order of insertion. */
-function insertedBlockIds(applied: readonly AppliedEditSummary[] | undefined): string[] {
-  return (applied ?? []).filter((edit) => edit.kind === "insert").flatMap((edit) => edit.blockIds);
-}
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
   const restored = new Y.Doc({ gc: false });

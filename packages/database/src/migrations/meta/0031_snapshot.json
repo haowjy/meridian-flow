@@ -1,5 +1,5 @@
 {
-  "id": "24ee6c74-4238-4a22-af4f-a08fc7f12bfe",
+  "id": "7087b9f2-1541-4a6d-a776-3b6125f008e8",
   "prevId": "dcb01017-9977-499e-ab5d-884eefefa0be",
   "version": "7",
   "dialect": "postgresql",
@@ -4613,6 +4613,22 @@
           "method": "btree",
           "with": {}
         },
+        "documents_context_images": {
+          "name": "documents_context_images",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"documents\".\"file_type\" = 'image' AND \"documents\".\"kind\" = 'content'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "documents_markdown_projection_fts": {
           "name": "documents_markdown_projection_fts",
           "columns": [
@@ -4888,6 +4904,37 @@
           ],
           "isUnique": true,
           "where": "\"folders\".\"parent_id\" IS NULL AND \"folders\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "folders_context_root": {
+          "name": "folders_context_root",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"folders\".\"parent_id\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "folders_parent": {
+          "name": "folders_parent",
+          "columns": [
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7021,8 +7068,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "edit_scope_id": {
-          "name": "edit_scope_id",
+        "authoring_response_id": {
+          "name": "authoring_response_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -7256,6 +7303,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "agent_edit_mutations_authoring_response_id_model_responses_id_fk": {
+          "name": "agent_edit_mutations_authoring_response_id_model_responses_id_fk",
+          "tableFrom": "agent_edit_mutations",
+          "tableTo": "model_responses",
+          "columnsFrom": [
+            "authoring_response_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7306,208 +7366,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_namespace_changes": {
-      "name": "agent_namespace_changes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigserial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "w_id": {
-          "name": "w_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "turn_id": {
-          "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "from_uri": {
-          "name": "from_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "to_uri": {
-          "name": "to_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "draft_branch_id": {
-          "name": "draft_branch_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "reversed_at": {
-          "name": "reversed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "agent_namespace_changes_document_thread_w_id": {
-          "name": "agent_namespace_changes_document_thread_w_id",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "w_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_namespace_changes_thread_turn": {
-          "name": "agent_namespace_changes_thread_turn",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "turn_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_namespace_changes_document_id_documents_id_fk": {
-          "name": "agent_namespace_changes_document_id_documents_id_fk",
-          "tableFrom": "agent_namespace_changes",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_namespace_changes_thread_id_threads_id_fk": {
-          "name": "agent_namespace_changes_thread_id_threads_id_fk",
-          "tableFrom": "agent_namespace_changes",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_namespace_changes_turn_id_turns_id_fk": {
-          "name": "agent_namespace_changes_turn_id_turns_id_fk",
-          "tableFrom": "agent_namespace_changes",
-          "tableTo": "turns",
-          "columnsFrom": [
-            "turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_namespace_changes_draft_branch_id_document_branches_id_fk": {
-          "name": "agent_namespace_changes_draft_branch_id_document_branches_id_fk",
-          "tableFrom": "agent_namespace_changes",
-          "tableTo": "document_branches",
-          "columnsFrom": [
-            "draft_branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "agent_namespace_changes_kind_valid": {
-          "name": "agent_namespace_changes_kind_valid",
-          "value": "\"agent_namespace_changes\".\"kind\" IN ('create', 'move', 'delete')"
-        },
-        "agent_namespace_changes_move_target": {
-          "name": "agent_namespace_changes_move_target",
-          "value": "(\"agent_namespace_changes\".\"kind\" = 'move') = (\"agent_namespace_changes\".\"to_uri\" IS NOT NULL)"
-        },
-        "agent_namespace_changes_status_valid": {
-          "name": "agent_namespace_changes_status_valid",
-          "value": "\"agent_namespace_changes\".\"status\" IN ('active', 'reversed')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.branch_push_outbox_updates": {
@@ -9353,8 +9211,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "edit_scope_id": {
-          "name": "edit_scope_id",
+        "authoring_response_id": {
+          "name": "authoring_response_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -9499,6 +9357,19 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
+        "document_yjs_reversals_authoring_response_id_model_responses_id_fk": {
+          "name": "document_yjs_reversals_authoring_response_id_model_responses_id_fk",
+          "tableFrom": "document_yjs_reversals",
+          "tableTo": "model_responses",
+          "columnsFrom": [
+            "authoring_response_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "document_yjs_reversals_reversed_by_user_id_users_id_fk": {
           "name": "document_yjs_reversals_reversed_by_user_id_users_id_fk",
           "tableFrom": "document_yjs_reversals",
@@ -9589,8 +9460,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "edit_scope_id": {
-          "name": "edit_scope_id",
+        "authoring_response_id": {
+          "name": "authoring_response_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -9709,6 +9580,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "document_yjs_updates_authoring_response_id_model_responses_id_fk": {
+          "name": "document_yjs_updates_authoring_response_id_model_responses_id_fk",
+          "tableFrom": "document_yjs_updates",
+          "tableTo": "model_responses",
+          "columnsFrom": [
+            "authoring_response_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "document_yjs_updates_reversal_actor_user_id_users_id_fk": {

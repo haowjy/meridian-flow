@@ -387,9 +387,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     recordTouchInBackground(deps, address.documentId, ctx);
-    // A write stages until the response commits.
-    const stagedWrite = ctx.responseId !== undefined;
-    if (!stagedWrite) {
+    // A write that changed nothing has nothing to stage or refresh. Reversals
+    // are handled above by the shared namespace/content reversal owner.
+    const unchanged = outcome.result.unchanged === true;
+    const stagedWrite = !unchanged && ctx.responseId !== undefined;
+    if (!stagedWrite && !unchanged) {
       await deps.documentSync.refreshDocumentProjection({
         documentId: address.documentId,
         threadId: ctx.threadId,
