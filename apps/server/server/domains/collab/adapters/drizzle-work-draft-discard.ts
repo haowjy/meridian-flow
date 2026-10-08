@@ -135,24 +135,17 @@ export function createDrizzleEmptyDraftSettlement(
                 branch.documentId !== command.documentId
               )
                 return { draftClosed: false } as const;
-              const rows = await journal.listReviewableJournalRows(
-                branch.branchId,
-                branch.generation,
-              );
               const draftDoc = createCollabYDoc({ gc: false });
               const frozenLive = createCollabYDoc({ gc: false });
               try {
                 Y.applyUpdate(draftDoc, branch.state);
                 Y.applyUpdate(frozenLive, Y.encodeStateAsUpdate(liveDoc));
-                if (!command.isEmpty(frozenLive, draftDoc, rows))
-                  return { draftClosed: false } as const;
+                if (!command.isEmpty(frozenLive, draftDoc)) return { draftClosed: false } as const;
                 const history = await journal.listJournalRowsForBranch({
                   branchId: branch.branchId,
                   generation: branch.generation,
                 });
-                const draftDisposition = history.some((row) => row.status === "pushed")
-                  ? ("applied" as const)
-                  : ("discarded" as const);
+                const draftDisposition = command.disposition(history);
                 const reset = await coordinator.resetFromDocIfUnchangedWithLease(lease, {
                   branchId: branch.branchId,
                   upstream: frozenLive,
