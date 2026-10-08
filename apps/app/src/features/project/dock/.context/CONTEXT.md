@@ -76,7 +76,8 @@ other bound. Undo stacks are per editor but both track every local edit (they sh
 y-prosemirror's sync origin), so Ctrl+Z in either view undoes the latest edit from
 either. Presence is the one thing that collided: each view's cursor plugin clears a
 caret it did not place, and two views ping-ponged awareness writes. Each editor's
-presence writes pass `gateLocalPresence`, which follows the editor's `active` flag.
+caret writes pass `gateCaretPresence`, which follows the editor's `active` flag (upload
+announcements are not gated).
 
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not

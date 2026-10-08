@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveDockView, useDockViewStore } from "./dock-view-store";
+import { useDockViewStore } from "./dock-view-store";
 
 const tab = (path: string, workId = "work-a") => ({
   kind: "viewer" as const,
@@ -15,19 +15,6 @@ const tab = (path: string, workId = "work-a") => ({
 afterEach(() => useDockViewStore.setState({ byScreen: {}, document: null }));
 
 describe("dock document slot", () => {
-  it("resolves each screen's views and default", () => {
-    expect(resolveDockView("work", undefined)).toEqual({
-      view: "chat",
-      views: ["chat", "changes"],
-      primaryView: "chat",
-    });
-    expect(resolveDockView("chat", "chat")).toEqual({
-      view: "context",
-      views: ["context", "changes"],
-      primaryView: "context",
-    });
-  });
-
   it("opens, replaces, and closes without disturbing the writer's view choice", () => {
     const store = useDockViewStore.getState();
     store.setDockView("work", "changes");
