@@ -608,7 +608,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       liveCoordinator,
       durableBranchJournalReadStore,
     ),
-
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       db,
       branchStore,

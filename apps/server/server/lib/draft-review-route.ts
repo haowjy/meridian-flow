@@ -12,6 +12,8 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import type { DraftReviewOperationInternal } from "../domains/collab/domain/draft-review-types.js";
+import type { DraftDiscardCommand } from "../domains/collab/index.js";
 import type { FileGrant, FileNeed } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
@@ -199,9 +201,7 @@ export async function handleDiscardWorkDraftRequest(
   );
 }
 
-function toWireReviewOperation(
-  operation: import("../domains/collab/domain/draft-review-types.js").DraftReviewOperationInternal,
-): ReviewOperation {
+function toWireReviewOperation(operation: DraftReviewOperationInternal): ReviewOperation {
   const {
     closureUpdateIds: _closureUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,
@@ -279,9 +279,7 @@ export function parseDraftDiscardSelection(input: {
   operationIds?: unknown;
   liveRevisionToken?: unknown;
   draftRevisionToken?: unknown;
-}):
-  | { status: "ready"; command: import("../domains/collab/contracts.js").DraftDiscardCommand }
-  | { status: "stale" } {
+}): { status: "ready"; command: DraftDiscardCommand } | { status: "stale" } {
   if (Object.hasOwn(input, "operationIds")) {
     if (
       !Array.isArray(input.operationIds) ||
