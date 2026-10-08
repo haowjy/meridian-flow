@@ -1777,6 +1777,10 @@ msgstr "Document"
 msgid "Document name and location"
 msgstr "Document name and location"
 
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Document version"
+msgstr "Document version"
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
 msgstr "Documents the AI reads in this chat appear here."
@@ -1811,8 +1815,8 @@ msgid "Draft review"
 msgstr "Draft review"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-msgid "Draft version"
-msgstr "Draft version"
+#~ msgid "Draft version"
+#~ msgstr "Draft version"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Drafted"
@@ -2382,6 +2386,10 @@ msgstr "list"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "litrpg"
 msgstr "litrpg"
+
+#: src/features/draft-review/DraftSwitcher.tsx
+msgid "Live"
+msgstr "Live"
 
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live artifact view"
@@ -3411,7 +3419,6 @@ msgid "Review"
 msgstr "Review"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewChip.tsx
 msgid "Review draft"
 msgstr "Review draft"
 

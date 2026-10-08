@@ -1,21 +1,19 @@
 /**
- * DraftReviewChip — the live document's entry into its pending draft: "Review
- * draft", on the identity row (desktop) and under the phone's top bar. It is the
- * pending state of the Draft chip (`DraftChip`); once the review paints, the
- * caller swaps it for the reviewing state (`DraftSwitcher`) in the same frame.
+ * DraftReviewChip — the live document's version chip when it has a pending
+ * draft: "Live" with the same version menu the review shows (`DraftSwitcher`),
+ * where picking Draft opens the review. On the identity row (desktop) and under
+ * the phone's top bar; once the review paints, the caller swaps in the
+ * reviewing chip in the same frame.
  *
  * Self-contained: resolves its own draft state from DraftReviewProvider
  * context, so a host just mounts it with the documentId. Renders nothing when
  * the document has no pending draft.
  */
-import { Trans } from "@lingui/react/macro";
 import { draftCommandFailure, useDraftCommandRecords } from "@/client/query/draft-command-record";
 import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
-import { DraftChipFace, draftChipHitClass } from "@/features/draft-review/DraftChip";
+import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
-import { cn } from "@/lib/utils";
 
 export type DraftReviewChipProps = {
   documentId: string;
@@ -42,11 +40,14 @@ export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipPr
     })?.code === "review-failed";
 
   return (
-    <button
-      type="button"
-      data-draft-review-chip
-      data-draft-review-chip-failed={failed ? "" : undefined}
-      onClick={() =>
+    <DraftSwitcher
+      showing="live"
+      draftOnly={false}
+      disabled={controller.isDisposing}
+      failed={failed}
+      touch={touch}
+      onShowLive={() => undefined}
+      onShowDraft={() =>
         group.contextPath &&
         openAiDraft({
           workId: controller.workId,
@@ -57,19 +58,6 @@ export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipPr
           isNewDocument: draft.isNewDocument === true,
         })
       }
-      disabled={controller.isDisposing}
-      className={cn(
-        draftChipHitClass(touch),
-        "motion-safe:animate-in motion-safe:fade-in motion-safe:duration-150 disabled:opacity-50",
-      )}
-    >
-      <DraftChipFace state={failed ? "failed" : "pending"} touch={touch}>
-        {failed ? (
-          <ReviewMessageText failure={{ code: "review-failed" }} />
-        ) : (
-          <Trans>Review draft</Trans>
-        )}
-      </DraftChipFace>
-    </button>
+    />
   );
 }

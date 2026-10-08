@@ -150,7 +150,7 @@ describe("DraftReviewBand", () => {
       const text = document.body.textContent ?? "";
       // The document's name is the breadcrumb's; the chip says only what this is.
       expect(text).not.toContain("Chapter 12");
-      expect(byText("Draft version")?.textContent).toBe("Draft");
+      expect(byText("Document version")?.textContent).toBe("Draft");
       expect(text).toContain("2 of 6");
       expect(document.querySelector("[role=switch]")?.getAttribute("aria-label")).toBe(
         "Show changes",

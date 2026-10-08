@@ -105,7 +105,15 @@ export function DocumentIdentityBar({
   const showChip = canMove && !reviewDraftId;
 
   return (
-    <div className="@container shrink-0">
+    <div
+      className={cn(
+        "@container shrink-0",
+        // Under review the row takes the reviewing tab's tone (ContextTabBar), so the
+        // tab and its row read as one draft surface.
+        // The rule is an inset shadow so it adds no height: the toolbar never shifts.
+        reviewDraftId && "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
+      )}
+    >
       {/* Fixed-height band, full pane width. The bar is navigation chrome
           like the tab strip above it — it spans edge to edge, NOT the prose
           column. Geometry contract lives in identity-bar-geometry.ts: same

@@ -217,7 +217,7 @@ describe("the phone review header", () => {
   it("shows the switcher, the stepper and the change count that opens the list", async () => {
     await render(async () => {
       expect(header()).not.toBeNull();
-      expect(header()?.querySelector("[aria-label='Draft version']")).not.toBeNull();
+      expect(header()?.querySelector("[aria-label='Document version']")).not.toBeNull();
       expect(header()?.textContent).toContain("3 changes");
       expect(named("Show the 3 changes")?.textContent).toBe("3");
       await act(async () => named("Next change")?.click());
@@ -237,15 +237,23 @@ describe("the phone review header", () => {
     await render(async () => expect(header()).toBeNull());
   });
 
-  it("offers the pending draft on the live document as the same Draft chip, and opens its review on tap", async () => {
+  it("offers the pending draft on the live document through the same version menu, and opens its review from it", async () => {
     controller.inlineReview = null;
     await render(async () => {
       const entry = document.querySelector("[data-phone-draft-entry]");
       expect(entry).not.toBeNull();
       expect(header()).toBeNull();
       const chip = entry?.querySelector<HTMLElement>("[data-draft-review-chip]");
-      expect(chip?.textContent).toBe("Review draft");
-      await act(async () => chip?.click());
+      // The live document shows the same version chip and menu the review does.
+      expect(chip?.textContent).toBe("Live");
+      expect(chip?.getAttribute("aria-label")).toBe("Document version");
+      await act(async () =>
+        chip?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+      );
+      const draftItem = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
+        (node) => node.textContent === "Draft",
+      );
+      await act(async () => draftItem?.click());
       expect(launcher.openAiDraft).toHaveBeenCalledWith(
         expect.objectContaining({ workId: "w", documentId: "doc-12", draftId: "draft-doc-12" }),
       );
@@ -392,7 +400,7 @@ describe("the phone review header", () => {
     try {
       await render(async () => {
         expect(header()?.textContent).toContain("No changes left");
-        expect(header()?.querySelector("[aria-label='Draft version']")).not.toBeNull();
+        expect(header()?.querySelector("[aria-label='Document version']")).not.toBeNull();
         expect(controller.exitInlineReview).not.toHaveBeenCalled();
         await act(async () => named("Next draft")?.click());
         expect(launcher.openDockRow).toHaveBeenCalledWith(

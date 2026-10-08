@@ -46,10 +46,12 @@ is one server closure class.
   file, the whole-draft commands that move on to it, the refusal line and "No
   changes left". The identity row's band and the phone's header
   (`features/project/mobile/MobileReviewHeader`) are two layouts over it.
-- **The Draft chip (`DraftChip`) is one control in two states.** "Review draft"
-  on a live document with a pending draft (`DraftReviewChip`: the identity row
-  on the desktop, a row under the top bar on the phone) and "Draft" with a
-  chevron while reviewing (`DraftSwitcher`). Its menu is the versions of THIS
+- **The version chip (`DraftChip`) is one control with one menu.** "Live" on a
+  live document with a pending draft (`DraftReviewChip`: the identity row on the
+  desktop, a row under the top bar on the phone) and "Draft" while reviewing;
+  both open the same `DraftSwitcher` menu with the showing version checked.
+  Under review the identity row takes the reviewing tab's tint (`dock-surface`),
+  so tab and row read as one draft surface. Its menu is the versions of THIS
   document: the live version and its draft (a document has one active draft
   per Work today, so those are the two; listing drafts of one document across
   Works needs an endpoint the server does not have), plus Rename, and on the
