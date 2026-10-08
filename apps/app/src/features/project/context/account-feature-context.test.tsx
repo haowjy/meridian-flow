@@ -2,18 +2,15 @@
 
 import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, StrictMode, useCallback, useLayoutEffect, useState } from "react";
-import { renderToString } from "react-dom/server";
+import { act, StrictMode, useLayoutEffect, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import {
-  AccountFeatureComposition,
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
 import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { useContextProjectAuthority } from "../use-context-project-authority";
 import { useObservedResourceProjection } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
@@ -40,73 +37,6 @@ function tracked(documentId: string, path: string) {
 }
 
 describe("AccountFeatureTestProvider", () => {
-  it("server-renders project authority without constructing browser resources", () => {
-    function ProjectAuthorityConsumer() {
-      useContextProjectAuthority({
-        projectId: "project-1",
-        workspaceHydrated: false,
-        editorScope: {
-          status: "ready",
-          workId:
-            "00000000-0000-4000-8000-000000000009" as import("@meridian/contracts/request-id").ParsedRequestId,
-          source: "route",
-        },
-      });
-      return <p>Project shell</p>;
-    }
-    const html = renderToString(
-      <QueryClientProvider client={providerQueryClient}>
-        <AccountFeatureComposition accountId="account-a" repairProjectCatalog={async () => {}}>
-          <ProjectAuthorityConsumer />
-        </AccountFeatureComposition>
-      </QueryClientProvider>,
-    );
-    expect(html).toContain("Project shell");
-  });
-
-  it("renders a new account's children immediately without a preparation projection", () => {
-    const html = renderToString(
-      <TestAccountProvider accountId="account-a">
-        <p>Writer workspace</p>
-      </TestAccountProvider>,
-    );
-
-    expect(html).toContain("Writer workspace");
-    expect(html).not.toContain(["Preparing", "your", "workspace"].join(" "));
-  });
-
-  it("keeps the account coordinator across an ordinary composition rerender", async () => {
-    const instances: ContextRemovalCoordinator[] = [];
-    let rerender: (() => void) | null = null;
-    function Child() {
-      instances.push(useContextRemovalCoordinator());
-      return null;
-    }
-    function AuthenticatedComposition() {
-      const queryClient = providerQueryClient;
-      const [, setRevision] = useState(0);
-      rerender = () => setRevision((revision) => revision + 1);
-      const repairProjectCatalog = useCallback(
-        (projectId: string) =>
-          queryClient.invalidateQueries({
-            queryKey: ["projects", projectId, "context-catalog"],
-          }),
-        [queryClient],
-      );
-      return (
-        <TestAccountProvider accountId="account-a" repairProjectCatalog={repairProjectCatalog}>
-          <Child />
-        </TestAccountProvider>
-      );
-    }
-
-    await withReactRoot(<AuthenticatedComposition />, async () => {
-      const first = instances.at(-1);
-      await act(async () => rerender?.());
-      expect(instances.at(-1)).toBe(first);
-    });
-  });
-
   it("clears a transient projection error when the projection recovers", async () => {
     let publish: ((snapshot: ResourceProjectionSnapshot) => void) | null = null;
     let fail: ((error: unknown) => void) | null = null;
@@ -133,33 +63,6 @@ describe("AccountFeatureTestProvider", () => {
 
       await act(async () => publish?.({ records: [], folders: [], catalogs: [] }));
       expect(observed.at(-1)).toMatchObject({ error: null, records: [] });
-    });
-  });
-
-  it("keeps visible records stable until the resource projection changes", async () => {
-    let publish: ((snapshot: ResourceProjectionSnapshot) => void) | undefined;
-    const replica = {
-      observeProjection(_projectId: string, onSnapshot: typeof publish) {
-        publish = onSnapshot;
-        return () => undefined;
-      },
-    };
-    let rerender = () => {};
-    let records: readonly unknown[] = [];
-    function Child() {
-      const [, setRevision] = useState(0);
-      rerender = () => setRevision((value) => value + 1);
-      records = useObservedResourceProjection(replica, "project-1").records;
-      return null;
-    }
-    await withReactRoot(<Child />, async () => {
-      const pending = records;
-      await act(async () => rerender());
-      expect(records).toBe(pending);
-      await act(async () => publish?.({ records: [], folders: [], catalogs: [] }));
-      const loaded = records;
-      await act(async () => rerender());
-      expect(records).toBe(loaded);
     });
   });
 

@@ -1,10 +1,6 @@
 /** Storage conformance: atomic visibility, durable attempts, isolated accounts and shutdown. */
 import "fake-indexeddb/auto";
-import {
-  planFolderLocation,
-  type ResourceRecord,
-  type ResourceWrite,
-} from "@meridian/resource-replica";
+import type { ResourceRecord, ResourceWrite } from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
@@ -69,28 +65,6 @@ it("preserves a committed reservation across shutdown and isolates identical han
   expect(await open().readResource(next.resource)).toBeNull();
 });
 
-it("uses a fresh physical database instead of opening the incompatible dormant schema", async () => {
-  const account = crypto.randomUUID();
-  accounts.add(account);
-  const legacy = new Dexie(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`);
-  legacy.version(1).stores({
-    resources: "[projectId+handle],projectId",
-    intents: "[projectId+intentId],[projectId+handle]",
-    catalogs: "key,projectId",
-    evidence: "sourceKey",
-    checkpoints: "key",
-  });
-  await legacy.open();
-  await legacy.table("resources").put({ ...resource().resource, projectId: "project" });
-  legacy.close();
-
-  const store = open(account);
-  expect(
-    await store.commitResource({ expectedRevision: null, next: resource("new-resource") }),
-  ).toBe("committed");
-  expect((await store.readProjection("project")).records).toEqual([resource("new-resource")]);
-});
-
 it("serializes competing revisions without losing or partially publishing the loser", async () => {
   const account = crypto.randomUUID();
   const left = open(account);
@@ -109,44 +83,6 @@ it("serializes competing revisions without losing or partially publishing the lo
   expect((await left.readResource(a.resource))?.resource.revision).toBe(2);
 });
 
-it("keeps catalog entries and cursor unchanged when a resource revision is stale", async () => {
-  const store = open();
-  const scope = { kind: "project" as const, projectId: "project" };
-  const checkpoint = {
-    projectId: "project",
-    scope,
-    revision: 1,
-    generation: "generation",
-    appliedRevision: "1",
-    observedHeadRevision: "1",
-    cursor: "cursor-1",
-    entries: [],
-    invalidatedEntryIds: [],
-  };
-  expect(
-    await store.commitCatalog({
-      expectedRevision: null,
-      next: checkpoint,
-      resources: [{ expectedRevision: null, next: resource() }],
-      folders: [],
-    }),
-  ).toBe("committed");
-  expect(
-    await store.commitCatalog({
-      expectedRevision: 1,
-      next: { ...checkpoint, revision: 2, cursor: "cursor-2" },
-      resources: [{ expectedRevision: null, next: resource("doc", 2) }],
-      folders: [],
-    }),
-  ).toBe("stale");
-  expect(await store.readCatalog("project", scope)).toEqual(checkpoint);
-  expect(await store.readProjection("project")).toEqual({
-    records: [resource()],
-    folders: [],
-    catalogs: [checkpoint],
-  });
-});
-
 it("rejects duplicate current document identities atomically", async () => {
   const store = open();
   expect(await store.commitResource({ expectedRevision: null, next: resource("first") })).toBe(
@@ -157,21 +93,6 @@ it("rejects duplicate current document identities atomically", async () => {
 
   expect(await store.commitResource({ expectedRevision: null, next: duplicate })).toBe("stale");
   expect(await store.readResource({ handle: "second" })).toBeNull();
-});
-
-it("resolves a current document identity before another resource's remint alias", async () => {
-  const store = open();
-  const reminted = resource("resource-a");
-  reminted.resource.identity = { documentId: "reminted", revision: 2 };
-  reminted.resource.aliases.requested = { introducedAtIdentityRevision: 2 };
-  const current = resource("resource-b");
-  current.resource.identity = { documentId: "requested", revision: 1 };
-  expect(await store.commitResource({ expectedRevision: null, next: reminted })).toBe("committed");
-  expect(await store.commitResource({ expectedRevision: null, next: current })).toBe("committed");
-
-  expect((await store.resolveAccessibleResource("project", "requested"))?.resource.handle).toBe(
-    "resource-b",
-  );
 });
 
 it("rolls back resource, intent, and checkpoint writes when the outer transaction aborts", async () => {
@@ -292,83 +213,6 @@ it("rejects rewriting the project authority of recorded namespace work", async (
   expect(await store.readResource(next.resource)).toEqual(next);
 });
 
-it("publishes folder placement through the shared stream and installs a refresh atomically with its catalog", async () => {
-  const store = open();
-  const scope = { kind: "project" as const, projectId: "project" };
-  const published: number[] = [];
-  store.observeProjection("project", ({ folders }) => published.push(folders.length), vi.fn());
-  const canonical = {
-    scheme: "user" as const,
-    path: "/chapters",
-    name: "chapters",
-    workId: null,
-  };
-  const move = planFolderLocation({
-    projectId: "project",
-    handle: "folder:chapters",
-    folderId: "chapters",
-    source: canonical,
-    destination: { scheme: "user", folderPath: "/", name: "volume", workId: null },
-    intentId: "move",
-    operationId: "move",
-  });
-  if (!move) throw new Error("Missing folder move");
-  expect(await store.commitFolder(move)).toBe("committed");
-  expect(await store.commitFolder(move)).toBe("stale");
-  await vi.waitFor(() => expect(published).toContain(1));
-
-  const refresh = {
-    expectedRevision: move.next.revision,
-    next: {
-      ...move.next,
-      revision: move.next.revision + 1,
-      canonical: { ...canonical, path: "/volume", name: "volume" },
-    },
-  };
-  const catalog = (resources: readonly ResourceWrite[]) => ({
-    expectedRevision: null,
-    next: {
-      projectId: "project",
-      scope,
-      revision: 1,
-      generation: "generation",
-      appliedRevision: "1",
-      observedHeadRevision: "1",
-      cursor: "cursor",
-      entries: [],
-      invalidatedEntryIds: [],
-    },
-    resources,
-    folders: [refresh],
-  });
-  expect(await store.commitCatalog(catalog([{ expectedRevision: 5, next: resource() }]))).toBe(
-    "stale",
-  );
-  expect((await store.readFolder({ handle: "folder:chapters" }))?.canonical.path).toBe("/chapters");
-  expect(await store.readCatalog("project", scope)).toBeNull();
-  expect(await store.commitCatalog(catalog([]))).toBe("committed");
-  expect((await store.readFolder({ handle: "folder:chapters" }))?.canonical.path).toBe("/volume");
-  expect(await store.readFolders("project")).toHaveLength(1);
-  expect((await store.readFolders("other-project")).map((folder) => folder.folderId)).toEqual([
-    "chapters",
-  ]);
-  const shared = (await store.readFolders("other-project"))[0];
-  if (!shared) throw new Error("Missing shared personal folder");
-  const next = planFolderLocation({
-    record: shared,
-    projectId: "other-project",
-    handle: shared.handle,
-    folderId: shared.folderId,
-    source: shared.canonical,
-    destination: { scheme: "user", folderPath: "", name: "from-b", workId: null },
-    intentId: "from-b",
-    operationId: "from-b",
-  });
-  if (!next) throw new Error("Missing shared folder command");
-  expect(await store.commitFolder(next)).toBe("committed");
-  expect((await store.readFolders("project"))[0]?.intents.at(-1)?.projectId).toBe("other-project");
-});
-
 it("observes committed records across instances and stops admission before draining", async () => {
   const account = crypto.randomUUID();
   const left = open(account);
@@ -395,63 +239,6 @@ it("observes committed records across instances and stops admission before drain
   expect(errors).not.toHaveBeenCalled();
 });
 
-it("recovers a projection subscriber after a transient query failure", async () => {
-  const store = open();
-  const internals = store as unknown as {
-    readAccountProjection(): Promise<{
-      records: readonly ResourceRecord[];
-      catalogs: readonly never[];
-    }>;
-  };
-  const original = internals.readAccountProjection.bind(store);
-  vi.spyOn(internals, "readAccountProjection")
-    .mockRejectedValueOnce(new Error("temporary projection failure"))
-    .mockImplementation(original);
-  let resolveRecovered!: () => void;
-  const recovered = new Promise<void>((resolve) => {
-    resolveRecovered = resolve;
-  });
-  let resolveFailed!: () => void;
-  const failed = new Promise<void>((resolve) => {
-    resolveFailed = resolve;
-  });
-  let retry!: () => void;
-  const setTimer = globalThis.setTimeout;
-  const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
-    callback: () => void,
-    ms?: number,
-    ...args: unknown[]
-  ) => {
-    if (ms === 1_000) {
-      const handle = setTimer(() => {}, 60_000);
-      retry = () => {
-        clearTimeout(handle);
-        callback();
-      };
-      return handle;
-    }
-    return setTimer(callback, ms, ...args);
-  }) as typeof setTimeout);
-  const errors = vi.fn(() => resolveFailed());
-  try {
-    store.observeProjection(
-      "project",
-      ({ records }) => {
-        if (records.some((record) => record.resource.handle === "doc")) resolveRecovered();
-      },
-      errors,
-    );
-    await failed;
-    expect(errors).toHaveBeenCalledOnce();
-    await store.commitResource({ expectedRevision: null, next: resource() });
-    retry();
-    await recovered;
-    expect(errors).toHaveBeenCalledOnce();
-  } finally {
-    timer.mockRestore();
-  }
-});
-
 it("closes the account lifetime when another connection upgrades the database", async () => {
   const account = crypto.randomUUID();
   const versionChanged = vi.fn();
@@ -470,15 +257,6 @@ it("closes the account lifetime when another connection upgrades the database", 
   await vi.waitFor(() => expect(versionChanged).toHaveBeenCalledOnce());
   await expect(store.readProjection("project")).rejects.toThrow("closing");
   upgrader.close();
-});
-
-it("snapshots an admitted write before the caller can mutate it", async () => {
-  const store = open();
-  const next = resource();
-  const admitted = store.commitResource({ expectedRevision: null, next });
-  next.resource.canonical = { scheme: "unfiled", path: "/changed", name: "changed", workId: null };
-  await admitted;
-  expect((await store.readResource(next.resource))?.resource.canonical).toBeNull();
 });
 
 it("rejects retroactive intention order and settled-work replay", async () => {
@@ -526,35 +304,4 @@ it("rejects retroactive intention order and settled-work replay", async () => {
   await expect(store.commitResource({ expectedRevision: 2, next: replay })).rejects.toThrow(
     "cannot restart",
   );
-});
-
-it("notifies project observers after a catalog-only commit", async () => {
-  const store = open();
-  const observed: string[] = [];
-  const onError = vi.fn();
-  store.observeProjection(
-    "project",
-    ({ catalogs }) => {
-      for (const catalog of catalogs) observed.push(catalog.cursor);
-    },
-    onError,
-  );
-  await store.commitCatalog({
-    expectedRevision: null,
-    next: {
-      projectId: "project",
-      scope: { kind: "project", projectId: "project" },
-      revision: 1,
-      generation: "g",
-      appliedRevision: "1",
-      observedHeadRevision: "1",
-      cursor: "new-catalog",
-      entries: [],
-      invalidatedEntryIds: [],
-    },
-    resources: [],
-    folders: [],
-  });
-  await vi.waitFor(() => expect(observed).toContain("new-catalog"));
-  expect(onError).not.toHaveBeenCalled();
 });

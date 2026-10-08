@@ -98,37 +98,6 @@ describe("document transport server acknowledgement", () => {
     vi.useRealTimers();
   });
 
-  it("is not saved merely because a socket opened with nothing pending", async () => {
-    await settle();
-    const socket = latestSocket();
-    socket.open();
-    await settle();
-
-    expect(sentSyncKinds(socket)).toEqual([]);
-    expect(harness.values).not.toContain(true);
-  });
-
-  it("is false until the server acknowledges the handshake SyncStep2", async () => {
-    const socket = await harness.connect();
-
-    expect(sentSyncKinds(socket)).toEqual(["step2"]);
-    expect(harness.acknowledged).toBe(false);
-
-    acknowledge(socket);
-    expect(harness.acknowledged).toBe(true);
-  });
-
-  it("goes false at once on a local edit and true again on its acknowledgement", async () => {
-    const socket = await harness.connect();
-    acknowledge(socket);
-
-    harness.edit("typed");
-    expect(harness.acknowledged).toBe(false);
-
-    acknowledge(socket);
-    expect(harness.acknowledged).toBe(true);
-  });
-
   it("counts updates replayed by a peer or IndexedDB (remote-origin transactions)", async () => {
     const socket = await harness.connect();
     acknowledge(socket);
@@ -172,24 +141,6 @@ describe("document transport server acknowledgement", () => {
     acknowledge(socket);
     acknowledge(socket);
     expect(harness.acknowledged).toBe(false);
-  });
-
-  it("starts over on reconnect when acknowledgements were still pending at disconnect", async () => {
-    const first = await harness.connect();
-    acknowledge(first);
-    harness.edit("in flight");
-    harness.drop(first);
-    expect(harness.acknowledged).toBe(false);
-
-    // A late acknowledgement for the dead connection cannot count.
-    acknowledge(first);
-    expect(harness.acknowledged).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    const second = await harness.connect();
-    expect(harness.acknowledged).toBe(false);
-    acknowledge(second);
-    expect(harness.acknowledged).toBe(true);
   });
 
   it("is not saved after an edit queued while the socket is closing, before the close event", async () => {

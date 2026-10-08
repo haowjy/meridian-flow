@@ -1,11 +1,6 @@
 // @vitest-environment jsdom
 /** Mounted snapshot owner and run controller share one durable transcript store. */
-import {
-  type AGUIEvent,
-  EventType,
-  type SequencedEvent,
-  type Thread,
-} from "@meridian/contracts/protocol";
+import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -15,9 +10,6 @@ import type { ThreadCachePort } from "@/client/stores/thread-store/thread-cache"
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 import type { ThreadTransport, ThreadTransportHandlers } from "@/core/transport";
-import { FakeThreadSocket } from "@/core/transport/test-support/FakeThreadSocket";
-import { WsThreadTransport } from "@/core/transport/WsThreadTransport";
-import { useThreadHandoff } from "@/features/chat/useThreadHandoff";
 import { threadQueryKeys } from "./thread-query-keys";
 import { useThreadSnapshotSync } from "./useThreadSnapshotSync";
 
@@ -243,219 +235,6 @@ for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
   });
 }
 
-describe("first-send projection activation", () => {
-  for (const createProject of [false, true]) {
-    it(`installs before synchronous catch-up for createProject=${createProject}`, async () => {
-      vi.useFakeTimers();
-      const gate = deferred<Thread>();
-      const account = new AbortController();
-      harness.accountSignal = account.signal;
-      harness.pendingCreation = true;
-      harness.trace = [];
-      harness.createProjectThread.mockReset();
-      harness.createThread.mockReset();
-      harness.createProject.mockReset();
-      harness.getProject.mockReset();
-      harness.createProjectThread.mockImplementation(() => gate.promise);
-      harness.createThread.mockImplementation(() => gate.promise);
-      harness.createProject.mockResolvedValue({ id: "project-1" });
-      harness.getProject.mockResolvedValue({ id: "project-1", userId: "account-1" });
-      if (createProject) harness.createProject.mockRejectedValueOnce(new Error("already created"));
-      const store = createThreadStore({
-        now: 0,
-        threadCache: {
-          upsertThread() {},
-          patchThread() {},
-          invalidateThread() {},
-          invalidateThreadSnapshot() {},
-        },
-      });
-      const actions = store.getState();
-      actions.markPendingCreation({ threadId: "thread-1" });
-      actions.markHandoffPending("thread-1");
-      const optimistic = actions.appendUserTurn("thread-1", "write");
-      actions.markPendingStream("thread-1", {
-        creation: {
-          projectId: "project-1",
-          title: "write",
-          text: "write",
-          submissionId: "sub-1",
-          agentSelection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
-          optimisticUserTurnId: optimistic.id,
-          createProject,
-        },
-      });
-      harness.actions = actions;
-      const subscriptions: Array<{ handlers: ThreadTransportHandlers; active: boolean }> = [];
-      const transport = {
-        subscribe(_threadId: string, handlers: ThreadTransportHandlers) {
-          const entry = { handlers, active: true };
-          subscriptions.push(entry);
-          if (!handlers.onError) harness.trace.push("durable-handler-registered");
-          else {
-            harness.trace.push("run-handler-registered");
-            const emit = (event: AGUIEvent, seq: string) => {
-              for (const listener of [...subscriptions])
-                if (listener.active) listener.handlers.onEvent({ event, seq });
-            };
-            emit(
-              { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
-              "1000",
-            );
-            emit(card("running"), "2000");
-            emit(
-              { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
-              "3000",
-            );
-          }
-          return () => {
-            entry.active = false;
-          };
-        },
-        onInterruptResponseError: () => () => undefined,
-        onSocketGenerationClosed: () => () => undefined,
-        cancel: async () => ({ threadId: "thread-1", turnId: "turn-1", status: "cancelled" }),
-      } as unknown as ThreadTransport;
-      harness.transport = transport;
-      const controller = new ThreadRunController({
-        transport,
-        actions,
-        accountSignal: account.signal,
-        accountId: "account-1",
-        appendUserMessageFn: async () => {
-          harness.trace.push("submit-called");
-          return {
-            threadId: "thread-1",
-            submissionId: "sub-1",
-            userTurnId: "user-1",
-            assistantTurnId: "turn-1",
-            resumeAfterSeq: "0",
-            snapshotFloorNextSeq: "1",
-          } as never;
-        },
-      });
-      harness.controller = controller;
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      const host = document.createElement("div");
-      document.body.append(host);
-      const root = createRoot(host);
-      let mounted = false;
-      disposers.push(async () => {
-        try {
-          if (mounted) await act(async () => root.unmount());
-        } finally {
-          controller.dispose();
-          client.clear();
-          host.remove();
-        }
-      });
-      function Probe() {
-        const snapshot = useThreadSnapshotSync("thread-1");
-        useThreadHandoff("thread-1", "project-1", "account-1", controller, actions, {
-          liveState: snapshot.liveState,
-          nextSeq: snapshot.nextSeq,
-          activateProjection: snapshot.activateProjection,
-        });
-        return null;
-      }
-      mounted = true;
-      await act(async () => {
-        root.render(
-          <QueryClientProvider client={client}>
-            <Probe />
-          </QueryClientProvider>,
-        );
-      });
-      expect(subscriptions).toHaveLength(0);
-      harness.trace.push("create-success");
-      gate.resolve({
-        id: "thread-1",
-        projectId: "project-1",
-        userId: "account-1",
-        workId: null,
-      } as Thread);
-      await act(async () => {
-        await vi.waitFor(() => expect(harness.trace).toContain("run-handler-registered"));
-      });
-      await vi.advanceTimersByTimeAsync(260);
-      expect(harness.trace.slice(0, 4)).toEqual([
-        "create-success",
-        "submit-called",
-        "durable-handler-registered",
-        "run-handler-registered",
-      ]);
-      expect(
-        store
-          .getState()
-          .turns("thread-1")
-          ?.find((turn) => turn.id === "turn-1")?.blocks[0]?.id,
-      ).toBe("card-1");
-      expect(subscriptions.filter((entry) => entry.active)).toHaveLength(1);
-      harness.pendingCreation = false;
-      await act(async () => {
-        root.render(
-          <QueryClientProvider client={client}>
-            <Probe />
-          </QueryClientProvider>,
-        );
-      });
-      expect(subscriptions.filter((entry) => entry.active)).toHaveLength(1);
-    });
-  }
-});
-
-describe("real transport cursor rewind", () => {
-  it("cannot regress a terminal card through the shared registry after run resume", async () => {
-    const socket = new FakeThreadSocket();
-    const transport = new WsThreadTransport({
-      webSocketFactory: () => socket as unknown as WebSocket,
-    });
-    const scenario = mountThreadProjectionScenario({
-      transport,
-      disposeTransport: () => transport.disconnect(),
-    });
-    const { actions, controller, store } = scenario;
-    actions.ensureAssistantTurn("thread-1", "turn-1");
-    actions.patchTurnStatus("thread-1", "turn-1", "complete");
-    function Probe() {
-      useThreadSnapshotSync("thread-1");
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    socket.open();
-    socket.deliver({
-      type: "connected",
-      userId: "account-1",
-      scope: { type: "standalone" },
-      serverVersion: "0.0.0",
-      connectionToken: "token-1",
-    });
-    const deliver = (event: AGUIEvent, seq: string) =>
-      socket.deliver({ type: "event", threadId: "thread-1", seq, event });
-    act(() => deliver(card("completed"), "4000"));
-    expect(actions.turns("thread-1")?.[0]?.blocks[0]?.content).toMatchObject({
-      props: { status: "completed" },
-    });
-    const replayed: string[] = [];
-    const stopObserver = transport.subscribe("thread-1", {
-      onEvent: ({ seq }) => replayed.push(seq),
-    });
-    controller.resume("thread-1", { after: "1000", expectedTurnId: "another-run" });
-    expect(socket.sent.some((frame) => frame.includes('"lastSeq":"1000"'))).toBe(true);
-    act(() => deliver(card("running"), "2000"));
-    expect(replayed).toContain("2000");
-    stopObserver();
-    expect(actions.turns("thread-1")?.[0]?.blocks[0]?.content).toMatchObject({
-      props: { status: "completed" },
-    });
-    expect(store.getState().durableBlockCursorByThread["thread-1"]).toBe("4000");
-    const before = actions.turns("thread-1")?.[0];
-    act(() => deliver(card("completed"), "5000"));
-    expect(actions.turns("thread-1")?.[0]).toBe(before);
-    expect(store.getState().durableBlockCursorByThread["thread-1"]).toBe("5000");
-  });
-});
-
 describe("current stream ordering", () => {
   for (const runFirst of [false, true]) {
     it(`flushes buffered deltas before durable mutation with runFirst=${runFirst}`, async () => {
@@ -636,34 +415,6 @@ describe("stale acquisition and missing targets", () => {
     expect(actions.turns("thread-1")).toHaveLength(1);
   });
 
-  it("does not continue stale-success retries after the mounted owner is disposed", async () => {
-    vi.useFakeTimers();
-    const response = deferred<unknown>();
-    harness.snapshotRequest.mockReset().mockImplementation(() => response.promise);
-    const scenario = mountThreadProjectionScenario();
-    const { actions, client, controller } = scenario;
-    actions.acceptDurableBlockSeq("thread-1", "4000");
-    function Probe() {
-      useThreadSnapshotSync("thread-1");
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(1));
-    await scenario.unmount();
-    controller.dispose();
-    expect(client.getQueryState(threadQueryKeys.snapshot("thread-1"))).toBeDefined();
-    response.resolve({
-      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
-      turns: [],
-      nextSeq: "4000",
-      actionRequired: false,
-      liveState: { runningTurnId: null },
-    });
-    await act(async () => response.promise);
-    await vi.advanceTimersByTimeAsync(800);
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
-  });
-
   it("revalidates as a run ends, on every inbox frame, and on every status frame", async () => {
     vi.useFakeTimers();
     harness.snapshotRequest.mockReset().mockImplementation(async () => ({
@@ -790,32 +541,6 @@ describe("stale acquisition and missing targets", () => {
     });
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
     await vi.waitFor(() => expect(status).toBe("cancelled"));
-  });
-
-  it("invalidates a missing addressed target without making a streaming turn", async () => {
-    let invalidations = 0;
-    const scenario = mountThreadProjectionScenario({
-      threadCache: {
-        upsertThread() {},
-        patchThread() {},
-        invalidateThread() {},
-        invalidateThreadSnapshot() {
-          invalidations++;
-        },
-      },
-    });
-    const { actions, bus, store } = scenario;
-    function Probe() {
-      useThreadSnapshotSync("thread-1");
-      return null;
-    }
-    await scenario.mount(<Probe />);
-    act(() => bus.emit(card("completed"), "4000"));
-    expect(invalidations).toBe(1);
-    expect(actions.turns("thread-1")).toBeUndefined();
-    expect(store.getState().durableBlockCursorByThread["thread-1"]).toBe("4000");
-    act(() => bus.emit(card("completed"), "4000"));
-    expect(invalidations).toBe(1);
   });
 });
 

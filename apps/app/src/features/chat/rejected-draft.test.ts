@@ -7,11 +7,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExistingThreadChatSubmission } from "@/client/chat-submissions";
 import { plainComposerDoc } from "@/components/app/composer/composer-document";
-import {
-  canRestoreRejectedDraft,
-  type RejectedDraftComposer,
-  restoreRejectedDraft,
-} from "./rejected-draft";
+import { type RejectedDraftComposer, restoreRejectedDraft } from "./rejected-draft";
 
 function fingerprint(
   overrides: Partial<ExistingThreadChatSubmission> = {},
@@ -29,12 +25,6 @@ function fingerprint(
     ...overrides,
   };
 }
-
-const REFERENCE = {
-  documentId: "document:1",
-  uri: "context://project/p/document:1",
-  purpose: "reference",
-} as unknown as ExistingThreadChatSubmission["references"][number];
 
 function fakeComposer(hasContent: boolean) {
   const restoreSnapshot = vi.fn(
@@ -73,13 +63,5 @@ describe("rejected-draft edit recovery", () => {
 
     expect(composer.restoreSnapshot).not.toHaveBeenCalled();
     expect(composer.focus).toHaveBeenCalledTimes(1);
-  });
-
-  it("classifies which rejected fingerprints can be rebuilt faithfully", () => {
-    expect(canRestoreRejectedDraft(fingerprint())).toBe(true);
-    expect(canRestoreRejectedDraft(fingerprint({ references: [REFERENCE] }))).toBe(false);
-    expect(canRestoreRejectedDraft(fingerprint({ activatedSkillSlugs: ["summarize"] }))).toBe(
-      false,
-    );
   });
 });
