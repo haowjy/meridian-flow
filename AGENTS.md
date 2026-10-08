@@ -44,9 +44,13 @@ Every project has one locked **No Work** row. Omitting a Work or sending
 explicit null binds the thread to that row. After creation, the writer may
 explicitly rebind the chat through one canonical operation; Work management
 and navigation never invoke it implicitly. The model can't rebind; see the
-[model's `work switch`][model-work-switch]. Work-capable URIs use `@/` for No Work authority and
-`@slug` for a named Work; internal IDs never appear in URI authority. The schema
-is `works` + `thread_works`.
+[model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
+No Work Uploads use `@/`. No Work Scratch belongs to the chat's lineage
+(first chat, forks and subagents) at `scratch://@/c12/`, using its first-chat
+handle. Handoffs start fresh lineages. Bare `scratch://` selects the chat's
+lineage or named Work. Internal IDs never appear in URI authority. The Work
+binding schema is `works` + `thread_works`; lineage notes use
+`context_sources.root_thread_id` with no first-chat deletion cascade.
 
 ## Agency
 
