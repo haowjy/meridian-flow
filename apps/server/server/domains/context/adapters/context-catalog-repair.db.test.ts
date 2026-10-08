@@ -120,7 +120,73 @@ if (!enabled || !url) {
       expect(roots.sort()).toEqual(Array.from({ length: 20 }, (_, i) => `root-${i}`).sort());
     });
 
-    it("logs exhausted Postgres lock timeouts at warn, not error", async () => {
+    it("coalesces post-draft refreshes with source repairs and publishes the newest generation", async () => {
+      let release!: () => void;
+      let entered!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let hold = false;
+      const delay = vi.fn(async () => {});
+      const catalog = createDrizzleContextCatalog(db, undefined, {
+        delay,
+        manifestMembership: {
+          async resolveManifestMembership() {
+            if (hold) {
+              entered();
+              await blocked;
+            }
+            return { documentId: documentId as never, members: [documentId] };
+          },
+        },
+      });
+      await catalog.snapshot(scope);
+      hold = true;
+      await runInDrizzleTransaction(db, () => catalog.refreshSources([sourceId]));
+      await started;
+      let draftRefreshes: Promise<void> | undefined;
+      let sourceGeneration = "";
+      try {
+        sourceGeneration = await runInDrizzleTransaction(db, async () => {
+          await currentDrizzleDb(db)
+            .update(documents)
+            .set({ name: "after-apply" })
+            .where(eq(documents.id, documentId));
+          return catalog.refreshSources([sourceId], ["moved-root"]);
+        });
+        draftRefreshes = Promise.all([
+          catalog.refreshProjectDocuments(projectId),
+          catalog.refreshProjectDocuments(projectId),
+        ]).then(() => {});
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(delay).toHaveBeenCalledTimes(1);
+      } finally {
+        hold = false;
+        release();
+        await draftRefreshes;
+        await processDetachedWork.drain();
+      }
+      expect(delay).toHaveBeenCalledTimes(2);
+      const entries = await db.select().from(contextCatalogEntries);
+      expect(entries).toContainEqual(
+        expect.objectContaining({
+          entry: expect.objectContaining({ kind: "file", name: "after-apply.md" }),
+        }),
+      );
+      const [head] = await db
+        .select()
+        .from(contextAvailabilityHeads)
+        .where(eq(contextAvailabilityHeads.authorityKey, `project:${projectId}`));
+      expect(head.generation).toBeGreaterThan(BigInt(sourceGeneration));
+    });
+
+    it.each([
+      "source",
+      "draft",
+    ] as const)("logs exhausted %s repair lock timeouts at warn, not error", async (entrypoint) => {
       const eventSink = createInMemoryEventSink();
       const catalog = createDrizzleContextCatalog(db, undefined, {
         eventSink,
@@ -150,8 +216,12 @@ if (!enabled || !url) {
       });
       await ready;
       try {
-        await runInDrizzleTransaction(db, () => catalog.refreshSources([sourceId]));
-        await processDetachedWork.drain();
+        if (entrypoint === "source") {
+          await runInDrizzleTransaction(db, () => catalog.refreshSources([sourceId]));
+          await processDetachedWork.drain();
+        } else {
+          await expect(catalog.refreshProjectDocuments(projectId)).resolves.toBeUndefined();
+        }
         expect(eventSink.events).toContainEqual(
           expect.objectContaining({ name: "DeferredRefreshFailure", level: "warn" }),
         );

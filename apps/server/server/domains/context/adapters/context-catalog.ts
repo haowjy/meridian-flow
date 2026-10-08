@@ -411,7 +411,7 @@ export function createDrizzleContextCatalog(
     const publications = new Map<
       string,
       {
-        generation: string;
+        generation: string | undefined;
         projectIds: string[];
         userIds: string[];
       }
@@ -433,7 +433,13 @@ export function createDrizzleContextCatalog(
           const key = `${kind}:${id}`;
           const previous = publications.get(key);
           // Generations order an authority, not a group of unrelated authorities.
-          if (!previous || BigInt(request.availabilityGeneration) > BigInt(previous.generation)) {
+          // A post-draft refresh reserves a fresh generation inside the repair.
+          if (
+            !previous ||
+            request.availabilityGeneration === undefined ||
+            (previous.generation !== undefined &&
+              BigInt(request.availabilityGeneration) > BigInt(previous.generation))
+          ) {
             publications.set(key, {
               generation: request.availabilityGeneration,
               projectIds: kind === "project" ? [id] : [],
@@ -448,10 +454,17 @@ export function createDrizzleContextCatalog(
       await retryRefresh(() =>
         runInDrizzleTransaction(db, async () => {
           await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+          const reservedPublications = [];
+          for (const publication of publications.values()) {
+            reservedPublications.push({
+              ...publication,
+              generation: publication.generation ?? (await availabilityMutations.reserve()),
+            });
+          }
           for (const [, { scope, roots }] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
             await refreshScope(scope, [...roots], commitId);
           }
-          for (const publication of publications.values()) {
+          for (const publication of reservedPublications) {
             await availabilityMutations.publishReserved(publication);
           }
         }),
@@ -462,12 +475,23 @@ export function createDrizzleContextCatalog(
           level: isLockTimeout(cause) ? "warn" : "error",
           source: "context-catalog",
           name: "DeferredRefreshFailure",
-          payload: { sourceIds: [...sourceIds], ...unknownToEventPayload(cause) },
+          payload: {
+            sourceIds: [...sourceIds],
+            scopeKeys: [...scopes.keys()],
+            ...unknownToEventPayload(cause),
+          },
         });
       }
       throw cause;
     }
   });
+  function enqueueRepair(request: CatalogRepairRequest): Promise<void> {
+    // Track at enqueue, not at the immediate: drains must include queued reruns.
+    return (options.backgroundTasks ?? processDetachedWork).track(
+      repairQueue.enqueue(request),
+      "context catalog repair",
+    );
+  }
   async function refreshScope(
     scope: CatalogScope,
     invalidatedRootIds: readonly string[] = [],
@@ -728,15 +752,11 @@ export function createDrizzleContextCatalog(
           userIds,
           sourceIds,
         };
-        // Track at enqueue, not at the immediate: drains must include queued reruns.
         const launchRepair = () => {
-          void (options.backgroundTasks ?? processDetachedWork).track(
-            repairQueue.enqueue(request).catch(() => undefined),
-            "context catalog repair",
-          );
+          void enqueueRepair(request).catch(() => undefined);
         };
         if (deferUntilDrizzleCommit(launchRepair)) return availabilityGeneration;
-        await repairQueue.enqueue(request);
+        await enqueueRepair(request);
         return availabilityGeneration;
       }
       const availabilityGeneration = await availabilityMutations.advance({ projectIds, userIds });
@@ -772,19 +792,15 @@ export function createDrizzleContextCatalog(
         await refreshScope(scope, [], commitId);
       }
     },
-    async refreshProjectDocuments(projectId) {
-      await retryRefresh(() =>
-        runInDrizzleTransaction(db, async () => {
-          await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
-          const generation = await availabilityMutations.reserve();
-          await refreshScope({ kind: "project", projectId });
-          await availabilityMutations.publishReserved({
-            generation,
-            projectIds: [projectId],
-            userIds: [],
-          });
-        }),
-      );
+    refreshProjectDocuments(projectId) {
+      // The queue reports failures; waitUntil must not reclassify contention as error.
+      return enqueueRepair({
+        scopes: [{ kind: "project", projectId }],
+        invalidatedRootIds: [],
+        projectIds: [projectId],
+        userIds: [],
+        sourceIds: [],
+      }).catch(() => undefined);
     },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();

@@ -4,7 +4,8 @@ import { type CatalogScope, catalogScopeKey } from "@meridian/contracts/protocol
 export type CatalogRepairRequest = {
   scopes: readonly CatalogScope[];
   invalidatedRootIds: readonly string[];
-  availabilityGeneration: string;
+  /** Source mutations reserve at commit; post-draft refreshes reserve during repair. */
+  availabilityGeneration?: string;
   projectIds: readonly string[];
   userIds: readonly string[];
   sourceIds: readonly string[];
