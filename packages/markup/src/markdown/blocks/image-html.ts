@@ -30,7 +30,8 @@ export type ImageHtmlAttributes = {
 
 /**
  * The picture as the wire spells it: the `asset:` ref resolved to the path this
- * project knows it by, and any other source left exactly as it stands.
+ * project knows it by, and any other source left exactly as it stands. A ref
+ * with no document behind it stays the ref: a picture never fails the document.
  *
  * Shared by the two places a picture is serialized — alone as a block, and
  * among the words of a paragraph — so both climb the same ladder.
@@ -39,7 +40,7 @@ export function imageWireAttributes(node: PMNode, ctx: SerializeContext): ImageH
   const src = String(node.attrs.src ?? "");
   const assetId = src.startsWith("asset:") ? src.slice("asset:".length) : null;
   return {
-    url: assetId ? ctx.assetPathResolver.pathForAsset(assetId) : src,
+    url: (assetId && ctx.assetPathResolver.pathForAsset(assetId)) || src,
     alt: attrStringOrNull(node.attrs.alt),
     title: attrStringOrNull(node.attrs.title),
     width: imageWidth(node.attrs.width),

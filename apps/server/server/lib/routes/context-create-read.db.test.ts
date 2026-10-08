@@ -3,6 +3,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleDocumentAssetPaths } from "../../domains/context/adapters/asset-path-resolver.js";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -67,6 +68,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture(options: { load?: boolean; store?: boolean } = {}) {
       const collab = createCollabDomain({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),

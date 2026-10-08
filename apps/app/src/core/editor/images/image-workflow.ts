@@ -95,9 +95,7 @@ export function createEditorAssetPathResolver(): MutableAssetPathResolver {
       idByPath.set(path, assetDocumentId);
     },
     pathForAsset(assetDocumentId) {
-      const path = pathById.get(assetDocumentId);
-      if (!path) throw new Error(`No project-relative path for asset:${assetDocumentId}`);
-      return path;
+      return pathById.get(assetDocumentId) ?? null;
     },
     assetForPath(path) {
       return idByPath.get(path) ?? null;
@@ -112,12 +110,11 @@ export function resolveAssetRefsForClipboard(
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
-      if (!src.startsWith("asset:")) return node;
-      return node.type.create(
-        { ...node.attrs, src: resolver.pathForAsset(src.slice("asset:".length)) },
-        null,
-        node.marks,
-      );
+      const path = src.startsWith("asset:")
+        ? resolver.pathForAsset(src.slice("asset:".length))
+        : null;
+      if (!path) return node;
+      return node.type.create({ ...node.attrs, src: path }, null, node.marks);
     }
     return node.copy(Fragment.fromArray(node.content.content.map(mapNode)));
   };

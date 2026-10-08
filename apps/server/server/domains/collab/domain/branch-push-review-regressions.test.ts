@@ -35,6 +35,7 @@ import type {
 import { BranchPushCommitConflictError, DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
 import { createBranchReviewOperations } from "./branch-review-operations.js";
+import { NO_DOCUMENT_ASSET_PATHS } from "./ports/document-asset-paths.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
 const MANIFEST_ID = "00000000-0000-4000-8000-000000000102" as DocumentId;
@@ -286,6 +287,7 @@ function serviceFixture(input: {
     stores,
     branchStore,
     service: createBranchPushService({
+      assetPaths: NO_DOCUMENT_ASSET_PATHS,
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore: stores,
