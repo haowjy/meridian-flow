@@ -210,3 +210,30 @@ spans or the hunk's owning operations. A single semantic deletion can contain
 both authors. This field carries no journal row identifiers. Block-display
 hunks keep their existing contract. Cumulative delete-set visibility is checked
 per Yjs struct, so old tombstones cannot hide a newly deleted neighboring region.
+
+### Writer Undo restoration attribution
+
+Browser Undo/Redo still allocates fresh writer clocks. Draft editors capture
+local `Item.redone` links before Yjs cleanup merges structs and append claims
+to `meridian_restoration_claims`, outside manuscript and Undo scope. The outer
+Yjs update encodes the current store from its before-state, so it carries both
+the text copies and the queued claim transaction. A following map-only frame
+is already contained. Claims travel through IndexedDB, local peers and offline
+full-state reconnect exactly like other Yjs structs; there is no stateless queue.
+
+The map is untrusted, never attribution authority. `writer-restoration.ts`
+certifies only novel claims and targets, retained deleted sources, matching
+content and length, and a target anchored at the exact source ID. Restored
+containers require certified parent-copy chains and matching source sibling
+slots; cross-parent text equality is never sufficient. A stale, displaced, mismatched or
+already-admitted claim grants nothing; its bytes are admitted as writer text.
+Branch admission persists certified `restorationAliases` in existing journal
+`update_meta` under the same snapshot/CAS lock. Contained updates never append
+again. Source authorship follows aliases transitively during cold journal replay;
+partial restores split target ranges at alias and source-operation boundaries
+so each stroke retains its owner. Reconnect frames assign only novel clocks;
+repeated source structs cannot overwrite earlier ownership. Physical
+writer rows still supply replay/closure, and the browser never uses AI clients.
+
+Writer rows do not invoke the older content-only restorative heuristic. Rendered
+text equality without a source-ID anchor cannot preserve AI authorship.

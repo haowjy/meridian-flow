@@ -25,6 +25,7 @@
  * this code path and pay no per-transaction cost.
  */
 
+import { captureUndoRestorationClaims } from "@meridian/prosemirror-schema";
 import { Extension } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
@@ -411,7 +412,10 @@ export function buildInlineReviewPlugin({
     },
     // Collaboration's view updates first (registered before review). Only then
     // can relative positions address the writer's newly allocated Yjs items.
-    view: () => ({ update: (view) => writerClient?.capture(view.state) }),
+    view: () => {
+      const detach = document && captureUndoRestorationClaims(document);
+      return { update: (view) => writerClient?.capture(view.state), destroy: () => detach?.() };
+    },
     props: {
       decorations(state) {
         const pluginState = draftInlineReviewPluginKey.getState(state);
