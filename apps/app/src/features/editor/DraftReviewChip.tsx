@@ -11,7 +11,7 @@
  */
 import { draftCommandFailure, useDraftCommandRecords } from "@/client/query/draft-command-record";
 import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 

@@ -22,9 +22,9 @@ import {
   useChangeCommandRecords,
 } from "@/client/query/change-command-record";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
-import type { DraftCommandOutcome } from "@/features/chat/draft-review-session";
-import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
+import type { DraftCommandOutcome } from "./draft-review-session";
 import { type ReviewChange, resolveFocusedChange, reviewChangesOfPreview } from "./review-changes";
+import type { DraftReviewController } from "./useDraftReviewController";
 
 export type ReviewChangeItem = {
   change: ReviewChange;

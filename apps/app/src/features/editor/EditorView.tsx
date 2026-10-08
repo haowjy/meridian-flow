@@ -50,7 +50,7 @@ import {
   useMountedEditor,
 } from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useLinkableDocuments } from "@/features/links";
 import {
   useAccountResourceProjection,

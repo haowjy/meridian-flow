@@ -17,10 +17,10 @@ import { useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDraftReview, useEditorDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, draftAfter } from "@/features/chat/docked-drafts";
+import { useDraftReview, useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewChangeRow } from "@/features/draft-review/ReviewChangeRow";
 import { ReviewFiles } from "@/features/draft-review/ReviewFiles";
+import { nextReviewFile, type ReviewFileTarget } from "@/features/draft-review/review-files";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useReviewFileList } from "@/features/draft-review/useReviewFileList";
@@ -83,7 +83,7 @@ export function DockChangesView({ className }: { className?: string }) {
             <OpenFileChanges
               view={view}
               controller={editor}
-              next={draftAfter(
+              next={nextReviewFile(
                 editorRows,
                 reviewed.documentId,
                 reviewed.completion?.documentName ?? null,
@@ -117,8 +117,8 @@ function OpenFileChanges({
 }: {
   view: ReturnType<typeof useReviewChanges>;
   controller: ReturnType<typeof useEditorDraftReview>["controller"];
-  next: DockRow | null;
-  onOpenNext: (row: DockRow) => void;
+  next: ReviewFileTarget | null;
+  onOpenNext: (row: ReviewFileTarget) => void;
 }) {
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
   const arrived = useArrivedChanges(
@@ -179,8 +179,8 @@ function ReviewDone({
   onOpenNext,
   onBack,
 }: {
-  next: DockRow | null;
-  onOpenNext: (row: DockRow) => void;
+  next: ReviewFileTarget | null;
+  onOpenNext: (row: ReviewFileTarget) => void;
   onBack: () => void;
 }) {
   return (

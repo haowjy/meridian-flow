@@ -22,10 +22,15 @@ import {
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { type DockRow, dockRowName, dockRows, sortDraftFiles } from "@/features/chat/docked-drafts";
-import { draftStats } from "@/features/chat/draft-stats";
-import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
+import { draftStats } from "./draft-stats";
 import type { ReviewFile, ReviewFilesBatch } from "./ReviewFiles";
+import {
+  type ReviewFileTarget,
+  reviewFileTargetName,
+  reviewFileTargets,
+  sortDraftFiles,
+} from "./review-files";
+import type { DraftReviewController } from "./useDraftReviewController";
 import type { ReviewChangesView } from "./useReviewChanges";
 
 type Scope = {
@@ -41,7 +46,7 @@ type ListedFile = {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
-  row: DockRow | null;
+  row: ReviewFileTarget | null;
 };
 
 export function useReviewFileList({
@@ -53,12 +58,12 @@ export function useReviewFileList({
   review: Scope;
   /** The review's changes, for the open file's count; null for a Work with no review open. */
   view: ReviewChangesView | null;
-  openDraft: (row: DockRow, workId: string) => void;
-}): { files: ReviewFile[]; rows: DockRow[]; batch: ReviewFilesBatch } {
+  openDraft: (row: ReviewFileTarget, workId: string) => void;
+}): { files: ReviewFile[]; rows: ReviewFileTarget[]; batch: ReviewFilesBatch } {
   const { controller } = review;
   const { projectId, workId, disposeDrafts, dispositionLocked } = controller;
   const commandRecords = useDraftCommandRecords();
-  const rows = useMemo(() => dockRows(review.groups), [review.groups]);
+  const rows = useMemo(() => reviewFileTargets(review.groups), [review.groups]);
   const reviewedDocumentId = controller.inlineReview?.documentId ?? null;
   const closedName = controller.inlineReview?.completion?.documentName ?? null;
 
@@ -89,7 +94,7 @@ export function useReviewFileList({
         return {
           key: `${workId}:${file.documentId}`,
           // Unnamed is null, not a phrase: the words are chosen when shown, in the language shown.
-          name: (file.row ? dockRowName(file.row, "") : file.documentName) || null,
+          name: (file.row ? reviewFileTargetName(file.row, "") : file.documentName) || null,
           held: file.row === null,
           open: file.documentId === reviewedDocumentId,
           isNewDocument: file.row?.isNewDocument === true,

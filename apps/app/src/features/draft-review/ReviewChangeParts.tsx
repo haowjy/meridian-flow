@@ -10,10 +10,10 @@ import { ArrowUpRight } from "lucide-react";
 import type { ChangeCommandMode, ChangeFailureCode } from "@/client/query/change-command-record";
 import type { ServerRefusal } from "@/client/query/draft-command-record";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
-import { RefusalReason } from "@/features/chat/ReviewMessageText";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import type { ChangeAttribution } from "./change-attribution";
+import { RefusalReason } from "./ReviewMessageText";
 import type { ReviewChange, ReviewChangeTone } from "./review-changes";
 
 const DOT_TONE: Record<ReviewChangeTone, string> = {

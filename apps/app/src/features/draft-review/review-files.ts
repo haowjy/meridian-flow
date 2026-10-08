@@ -4,7 +4,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { pendingReviewDraft, type ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 
 /** One document's active draft line in the dock. */
-export type DockRow = {
+export type ReviewFileTarget = {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
@@ -23,9 +23,11 @@ export type DockRow = {
  * Collapse work draft groups into dock rows. Each document contributes at most
  * one row for its active draft, in the one file order (`sortDraftFiles`).
  */
-export function dockRows(groups: ThreadDraftGroup[] | null | undefined): DockRow[] {
+export function reviewFileTargets(
+  groups: ThreadDraftGroup[] | null | undefined,
+): ReviewFileTarget[] {
   if (!groups || groups.length === 0) return [];
-  const rows: DockRow[] = [];
+  const rows: ReviewFileTarget[] = [];
   for (const group of groups) {
     const draft = pendingReviewDraft(group);
     if (!draft) continue;
@@ -63,19 +65,19 @@ export function sortDraftFiles<
  * document in the dock's order, wrapping to the first, and none when this is
  * the only one left (the review then returns to live).
  */
-export function draftAfter(
-  rows: readonly DockRow[],
+export function nextReviewFile(
+  rows: readonly ReviewFileTarget[],
   documentId: string,
   /** The document's name once its draft has left the list: it keeps its place in the order. */
   closedName: string | null = null,
-): DockRow | null {
+): ReviewFileTarget | null {
   const others = rows.filter((row) => row.documentId !== documentId);
   if (others.length === 0) return null;
   let at = rows.findIndex((row) => row.documentId === documentId);
   let ordered = rows;
   if (at < 0 && closedName !== null) {
     const closed = { documentId, documentName: closedName, contextPath: null };
-    ordered = sortDraftFiles([...rows, closed]) as readonly DockRow[];
+    ordered = sortDraftFiles([...rows, closed]) as readonly ReviewFileTarget[];
     at = ordered.findIndex((row) => row.documentId === documentId);
   }
   const after = at < 0 ? [] : ordered.slice(at + 1).filter((row) => row.documentId !== documentId);
@@ -85,8 +87,8 @@ export function draftAfter(
 /**
  * Whether the work-scoped Changes view has active work to show.
  */
-export function hasDockChanges(groups: ThreadDraftGroup[] | null | undefined): boolean {
-  return dockRows(groups).length > 0;
+export function hasReviewFiles(groups: ThreadDraftGroup[] | null | undefined): boolean {
+  return reviewFileTargets(groups).length > 0;
 }
 
 /**
@@ -106,7 +108,7 @@ export function documentBasename(contextPath: string | null | undefined): string
  * What a draft's document is called: its name, else (for a new document the AI
  * created unnamed) the basename of its path, then a defensive label.
  */
-export function dockRowName(row: DockRow, untitled: string): string {
+export function reviewFileTargetName(row: ReviewFileTarget, untitled: string): string {
   return (
     row.documentName ??
     (row.isNewDocument ? (documentBasename(row.contextPath) ?? untitled) : row.documentId)

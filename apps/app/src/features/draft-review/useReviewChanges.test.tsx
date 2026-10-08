@@ -17,9 +17,9 @@ import {
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { settleConfirmedChange } from "@/client/query/useDraftReviewMutations";
-import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { useArrivedChanges } from "./useArrivedChanges";
+import type { DraftReviewController } from "./useDraftReviewController";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 const getDraftPreview = vi.hoisted(() => vi.fn());

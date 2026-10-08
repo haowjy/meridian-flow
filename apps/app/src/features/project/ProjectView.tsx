@@ -41,17 +41,17 @@ import {
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
+import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
   EditorReviewScope,
   useDraftReviewScopeValue,
-} from "@/features/chat/DraftReviewProvider";
-import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
+} from "@/features/draft-review/DraftReviewProvider";
 import {
   type DraftReviewStateOwner,
   useDraftReviewStateOwner,
-} from "@/features/chat/useDraftReviewController";
+} from "@/features/draft-review/useDraftReviewController";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatIndexController } from "./ChatIndexController";
 import { ChatPaneController } from "./ChatPaneController";

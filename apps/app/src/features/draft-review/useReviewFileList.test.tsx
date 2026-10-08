@@ -15,8 +15,8 @@ import type { ReviewChangesView } from "./useReviewChanges";
 import { useReviewFileList } from "./useReviewFileList";
 
 const statsRendered = vi.hoisted(() => vi.fn());
-vi.mock("@/features/chat/draft-stats", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/features/chat/draft-stats")>()),
+vi.mock("./draft-stats", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./draft-stats")>()),
   DraftStatsLabel: () => {
     statsRendered();
     return null;

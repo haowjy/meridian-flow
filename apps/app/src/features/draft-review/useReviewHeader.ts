@@ -17,8 +17,8 @@ import {
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, dockRows, draftAfter } from "@/features/chat/docked-drafts";
+import { useDraftReview } from "./DraftReviewProvider";
+import { nextReviewFile, type ReviewFileTarget, reviewFileTargets } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 export type ReviewHeaderOptions = {
@@ -27,7 +27,7 @@ export type ReviewHeaderOptions = {
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
   /** Opens another draft of the Work in review (the editor's launcher). */
-  onOpenDraft: (row: DockRow) => void;
+  onOpenDraft: (row: ReviewFileTarget) => void;
 };
 
 export type ReviewHeaderModel = {
@@ -36,9 +36,9 @@ export type ReviewHeaderModel = {
   /** A draft-only document has no live version: its way out closes the tab. */
   draftOnly: boolean;
   /** Opens another draft of the Work in review (the editor's launcher). */
-  openDraft: (row: DockRow) => void;
+  openDraft: (row: ReviewFileTarget) => void;
   /** The next draft in the switcher, if the Work has one. */
-  next: DockRow | null;
+  next: ReviewFileTarget | null;
   locked: boolean;
   /** Nothing left to publish: the server closed the draft, so its commands go. */
   finished: boolean;
@@ -53,7 +53,7 @@ export type ReviewHeaderModel = {
    * draft and Apply all move on (or finish) while the command runs, so the
    * review the writer is in must still say which drafts did not apply.
    */
-  failedElsewhere: { row: DockRow; failure: DraftCommandFailure }[];
+  failedElsewhere: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
   showLive: () => void;
   applyDraft: () => void;
   discardDraft: () => void;
@@ -68,10 +68,10 @@ export type ReviewHeaderModel = {
  */
 export function useReviewFailures(
   { documentId, draftId }: { documentId: string; draftId: string },
-  listed?: readonly DockRow[],
+  listed?: readonly ReviewFileTarget[],
 ) {
   const { controller, groups } = useDraftReview();
-  const rows = useMemo(() => listed ?? dockRows(groups), [listed, groups]);
+  const rows = useMemo(() => listed ?? reviewFileTargets(groups), [listed, groups]);
   const commandRecords = useDraftCommandRecords();
   const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
     projectId: controller.projectId,
@@ -85,7 +85,7 @@ export function useReviewFailures(
     documentId,
     draftId,
   });
-  const failedElsewhere: { row: DockRow; failure: DraftCommandFailure }[] = [];
+  const failedElsewhere: { row: ReviewFileTarget; failure: DraftCommandFailure }[] = [];
   for (const row of rows) {
     const failure = draftCommandFailure(commandRecords, draftOf(row));
     if (!failure) continue;
@@ -102,9 +102,9 @@ export function useReviewHeader({
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, groups } = useDraftReview();
   const view = useReviewChanges(controller);
-  const rows = useMemo(() => dockRows(groups), [groups]);
+  const rows = useMemo(() => reviewFileTargets(groups), [groups]);
 
-  const next = draftAfter(
+  const next = nextReviewFile(
     rows,
     documentId,
     controller.inlineReview?.completion?.documentName ?? null,

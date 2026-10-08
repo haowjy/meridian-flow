@@ -21,8 +21,8 @@
 
 import { type ReactNode, useEffect } from "react";
 
-import { useDraftReview, useEditorDraftReview } from "@/features/chat/DraftReviewProvider";
-import { hasDockChanges } from "@/features/chat/docked-drafts";
+import { useDraftReview, useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { hasReviewFiles } from "@/features/draft-review/review-files";
 import { cn } from "@/lib/utils";
 
 import type { ScreenKey } from "../shell/screens";
@@ -53,8 +53,8 @@ export function DockShell({
   // open or its Work has drafts, even when the chat is in another Work.
   const editorReview = useEditorDraftReview();
   const hasChanges =
-    hasDockChanges(groups) ||
-    hasDockChanges(editorReview.groups) ||
+    hasReviewFiles(groups) ||
+    hasReviewFiles(editorReview.groups) ||
     editorReview.controller.inlineReview !== null;
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
   const { setView, file } = dockView;

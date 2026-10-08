@@ -6,21 +6,21 @@ import { I18nProvider } from "@lingui/react";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftDock, type DraftDockModel } from "./DraftDock";
-import type { DockRow } from "./docked-drafts";
 
-function row(documentId: string): DockRow {
+function row(documentId: string): ReviewFileTarget {
   return {
     documentId,
     documentName: `${documentId}.md`,
     contextPath: `/${documentId}.md`,
-    draft: { draftId: `draft-${documentId}` } as DockRow["draft"],
+    draft: { draftId: `draft-${documentId}` } as ReviewFileTarget["draft"],
     isNewDocument: true,
   };
 }
 
-function dockWith(rows: DockRow[], refused: Record<string, DraftCommandFailureCode>) {
+function dockWith(rows: ReviewFileTarget[], refused: Record<string, DraftCommandFailureCode>) {
   return {
     generating: false,
     rows,
@@ -32,7 +32,7 @@ function dockWith(rows: DockRow[], refused: Record<string, DraftCommandFailureCo
     mounted: true,
     isBusy: false,
     dispositionError: null,
-    rowError: (candidate: DockRow) => {
+    rowError: (candidate: ReviewFileTarget) => {
       const code = refused[candidate.documentId];
       return code ? { code } : null;
     },

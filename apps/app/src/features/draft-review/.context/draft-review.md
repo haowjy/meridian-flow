@@ -1,7 +1,8 @@
 # Draft review
 
-This page defines the chat-side review session, pending projection, freshness,
-and draft-only-tab contracts.
+This page defines the review session (controller, provider, command session), the
+pending projection, freshness, and draft-only-tab contracts. The code lives in
+`features/draft-review`; Chat consumes it.
 
 ## Architecture
 
@@ -88,10 +89,18 @@ equals live; the review room is a closed generation and its reset would otherwis
 show doubled text); a last Apply keeps the review editor until `closed`. After a
 reload the draft is not listed and the address falls back to live.
 
-Focus is controller state too (`inlineReview.focusedClassId`,
-`focusReviewChange`). `useInlineReviewFocus` (in `EditorView`) syncs it, Show
-changes (`marksVisible`) and the pulse on arrivals with the editor, and reports
-a click on a mark back. The stepper, the bar and the dock list read it from
+Focus is review state too: `inlineReview.focus` holds the focused change's class
+id with the operations it held, one value for the whole review. When the server
+regroups a class, `useReconcileReviewFocus` (mounted once, by the scope owner)
+moves it onto the change that shares an operation; readers (`useReviewChanges`,
+through `resolveFocusedChange`) are pure, so a surface mounted later agrees with
+one already showing the change. `focusReviewChange(review, change)` carries the
+review it was meant for and does nothing (state, editor runtime) when another
+review is open, so a command's late answer cannot move focus in a new document.
+`useInlineReviewFocus` (in `EditorView`) syncs it, Show changes (`marksVisible`)
+and the pulse on arrivals with the editor, and reports a click on a mark back
+(`reportFocusedChange`, which compares the change the active mark belongs to,
+not only the mark). The stepper, the bar and the dock list read it from
 `useReviewChanges`.
 
 An archived Work's drafts are frozen (D30): the server refuses Apply and
@@ -241,9 +250,12 @@ branch. Per-change commands are scoped by the preview the writer saw.
 
 ## Draft review freshness
 
-`DraftReviewProvider` owns the client cache freshness contract for mounted inline
-reviews. When an inline review has a mounted review `DocumentSession`, any Yjs
-update in that branch room invalidates both:
+`useReviewRefresh` (mounted by the scope owner, `DraftReviewProvider`) is the one
+owner of the client cache freshness contract for the open review. It watches the
+review's branch room and the live document the reviewed draft is measured against
+(the active editor's retained live session, published by the host), whether or
+not a manuscript is mounted. After a settle window of 500 ms (and at least every
+2 s while updates never pause) it invalidates both:
 
 - the active draft preview query, so the editor rail/hunks re-derive from the
   latest server review model; and
@@ -251,14 +263,11 @@ update in that branch room invalidates both:
   without closing and reopening review.
 
 This subscription is a freshness seam only. The TipTap/Yjs session remains the
-single document-sync path; the provider never interprets update contents or builds
-a second draft model.
-
-`useInlineReviewSync` also re-reads the preview 500 ms after an update to the
-retained live session, which is how a second tab sees another tab's per-change
-Apply or Discard. `useDraftPreview` returns a stable `refetch`: the sync effect
-lists it as a dependency, so a new function on each render re-subscribed inside
-the debounce and its cleanup dropped the pending re-read.
+single document-sync path; the refresh never interprets update contents or builds
+a second draft model. The live session is how a second tab sees another tab's
+per-change Apply or Discard. `useInlineReviewSync` has no timer and no
+subscription of its own: it only projects the preview this refreshes into the
+plugin, so one local edit is one read.
 
 Preview refresh remains presentation freshness for whole-draft Apply, which
 sends no revision token or operation set; the server branch is its command
@@ -276,7 +285,7 @@ per-document client "has changes to review" derivation. `pendingReviewDraft`
 selects its newest draft, while `activeWorkDraftGroups` projects all pending
 groups once for composer surfaces. The dock's pending rows, the identity bar's
 `DraftReviewChip` (self-contained; hides itself during that document's inline
-review so it never coexists with `DraftReviewHeader`), and the mode selector's
+review so it never coexists with the review header), and the mode selector's
 fast-path count all derive from this filter. Never grow a second client
 is-pending derivation.
 
@@ -288,7 +297,7 @@ dock showed no reviewable change but the mode-switch dialog raw-counted one
 manifest journal row.
 
 Pending membership and presentation order are separate contracts.
-`dockRows` builds its own list sorted by `documentName ?? documentId` for the
+`reviewFileTargets` (`review-files.ts`) builds its own list sorted by `documentName ?? documentId` for the
 DraftDock and the Changes view; it must not reorder the shared projection.
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents

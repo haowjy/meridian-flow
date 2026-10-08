@@ -17,7 +17,7 @@ import {
   getInlineReviewPluginState,
   isUnattributedHunkKey,
 } from "@/core/editor/extensions/inline-review";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 

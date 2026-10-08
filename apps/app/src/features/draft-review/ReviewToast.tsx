@@ -5,9 +5,8 @@
  */
 import { Trans } from "@lingui/react/macro";
 import { useEffect } from "react";
-
-import type { ReviewToast as ReviewToastValue } from "@/features/chat/draft-review-session";
 import { cn } from "@/lib/utils";
+import type { ReviewToast as ReviewToastValue } from "./draft-review-session";
 
 const VISIBLE_MS = 3500;
 

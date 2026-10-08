@@ -11,9 +11,8 @@
  * never by a reader.
  */
 import { useEffect } from "react";
-
-import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
 import { resolveFocusedChange } from "./review-changes";
+import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useReviewChanges";
 
 export function useReconcileReviewFocus(controller: DraftReviewController): void {
