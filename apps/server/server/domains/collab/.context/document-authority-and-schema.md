@@ -52,7 +52,9 @@ reads need neither another image-tree load nor another project lookup.
 Wrappers name every method, so a new method does not compile until its scope is
 decided. A nested `within` for the same project reuses the enclosing scope only
 while that operation is still running; a timer that inherited a settled scope
-loads fresh. The snapshot is taken before the operation's lock, so a move that
+loads fresh. Effective Markdown and hashline reads load before branch locks;
+Apply resolves branch identities and paths first, then revalidates all branch
+snapshots under their locks. The snapshot precedes locks, so a move that
 lands in between, or one the operation makes itself, shows only in the next
 scope.
 
