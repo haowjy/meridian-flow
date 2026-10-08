@@ -596,7 +596,7 @@ export class DocumentSession {
           run: () =>
             removeAwarenessStates(
               this.awareness,
-              [this.document.clientID],
+              [this.awareness.clientID],
               "document-session-destroy",
             ),
         },

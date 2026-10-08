@@ -43,7 +43,12 @@ replay or reverse a review class, including invisible suppliers and reversal row
 `closureUpdateIds` is the shared physical set for per-change Apply and Discard.
 Classes union visible hunks, shared physical rows, Yjs origin/rightOrigin/parent
 references, delete-set overlaps, and same-client clock-prefix edges. Even unrelated
-visible edits can be inseparable when one Yjs client supplied both. Neither identity is wire data, and callers must not substitute one for the
+visible edits can be inseparable when one Yjs client supplied both. Draft review
+editors rotate the writer client before an edit in a different closure class or
+a disjoint untouched location. Continuous typing and edits within one class
+keep their client; a pause alone never rotates. Writer room admissions retain
+transaction deltas, not state-vector diffs (which echo cumulative deletions).
+Rotation does not remove genuine structural dependencies or split retained rows. Neither identity is wire data, and callers must not substitute one for the
 other just because both are represented by numbers at runtime.
 
 Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second

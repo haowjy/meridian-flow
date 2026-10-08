@@ -297,7 +297,14 @@ export function createHocuspocusDocumentTransport({
     publish({ kind: "connected" });
   }
 
+  let observedClientID = document.clientID;
   function handleDocumentUpdate(_update: Uint8Array, origin: unknown): void {
+    if (observedClientID !== document.clientID) {
+      observedClientID = document.clientID;
+      if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
+        notifyYjsRoomAttached(roomName, observedClientID);
+      }
+    }
     if (origin !== provider) localEditsPending = true;
   }
 

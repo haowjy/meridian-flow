@@ -68,6 +68,8 @@ export type CaretProvider = { readonly awareness: CaretAwareness };
 export type LocalPresenceFields = {
   /** Read peers from here. It cannot write a local field; `setField` does that. */
   readonly peers: PeerAwareness;
+  /** Follow a draft content-client rotation without leaving a ghost cursor. */
+  adoptDocumentClient: () => void;
   /** Publish one field of this client's presence. Accepted while suspended. */
   setField: (field: string, value: unknown) => void;
   /** The same single write path, in the shape upstream plugins demand. */
@@ -109,10 +111,25 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
   return {
     peers: awareness,
     setField,
+    adoptDocumentClient() {
+      const next = awareness.doc.clientID;
+      if (next === awareness.clientID) return;
+      const fields = awareness.getLocalState();
+      // Publish removal under the old identity before advertising the new one.
+      // A suspended owner keeps desired fields untouched and stays invisible.
+      awareness.setLocalState(null);
+      awareness.clientID = next;
+      // Seed clock zero as Awareness' constructor does; a remote peer only
+      // accepts the first non-null state when its clock is greater than zero.
+      awareness.setLocalState(null);
+      awareness.setLocalState(fields);
+    },
 
     caretProvider: {
       awareness: {
-        clientID: awareness.clientID,
+        get clientID() {
+          return awareness.clientID;
+        },
         // A getter rather than the Map itself: `states` is Awareness' own
         // property, and a copy taken here would stop tracking who is present.
         get states() {

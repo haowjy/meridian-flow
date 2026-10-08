@@ -36,6 +36,60 @@ function hunk(id: string, operationIds: string[]): DraftReviewHunkInternal {
 }
 
 describe("assignReviewClasses", () => {
+  it.each([
+    false,
+    true,
+  ])("fresh writer clients separate only independent locations (inside AI: %s)", (insideAi) => {
+    const base = textDoc("Alpha remains. Beta remains. Gamma remains.");
+    const draft = new Y.Doc({ gc: false });
+    Y.applyUpdate(draft, Y.encodeStateAsUpdate(base));
+    const updates: Array<{ id: number; updateData: Uint8Array }> = [];
+    const record = (id: number, client: number, edit: () => void) => {
+      draft.clientID = client;
+      const listener = (updateData: Uint8Array) => updates.push({ id, updateData });
+      draft.on("update", listener);
+      edit();
+      draft.off("update", listener);
+    };
+    const text = draft.getText("chapter");
+    record(1, 50001, () => text.insert(5, " green serpent"));
+    record(2, 50002, () => text.insert(text.toString().indexOf("serpent") + 2, "WRITERBIT"));
+    record(3, 50003, () =>
+      text.insert(text.toString().indexOf(insideAi ? "green" : "Beta") + 2, "GOLDPLAIN"),
+    );
+    const operations = assignReviewClasses({
+      operations: [op("ai", [1]), op("writer-a", [2]), op("writer-b", [3])],
+      hunks: [],
+      updates,
+    });
+    expect(operations[0]?.closureClassId).toBe(operations[1]?.closureClassId);
+    if (insideAi) {
+      expect(operations[2]?.closureClassId).toBe(operations[0]?.closureClassId);
+    } else {
+      expect(operations[2]?.closureClassId).not.toBe(operations[0]?.closureClassId);
+      const published = new Y.Doc({ gc: false });
+      Y.applyUpdate(published, Y.encodeStateAsUpdate(base));
+      const selected = operations[0]?.closureUpdateIds ?? [];
+      for (const update of updates.filter((row) => selected.some((id) => id === row.id)))
+        Y.applyUpdate(published, update.updateData);
+      expect(published.getText("chapter").toString()).toContain("WRITERBIT");
+      expect(published.getText("chapter").toString()).not.toContain("GOLDPLAIN");
+      expect(published.store.pendingStructs).toBeNull();
+      const independent = new Y.Doc({ gc: false });
+      Y.applyUpdate(independent, Y.encodeStateAsUpdate(base));
+      const elsewhere = updates[2];
+      if (!elsewhere) throw new Error("missing writer delta");
+      Y.applyUpdate(independent, elsewhere.updateData);
+      expect(independent.getText("chapter").toString()).toContain("GOLDPLAIN");
+      expect(independent.getText("chapter").toString()).not.toContain("WRITERBIT");
+      expect(independent.store.pendingStructs).toBeNull();
+      independent.destroy();
+      published.destroy();
+    }
+    draft.destroy();
+    base.destroy();
+  });
+
   it("does not join independent delta edits through tombstones already present on live", () => {
     const base = textDoc("Old base text. Alpha. Beta.");
     base.getText("chapter").delete(0, 14);

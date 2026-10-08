@@ -117,6 +117,14 @@ is one server closure class.
   preview is prefetched (`useReviewHeader`) while the writer is still in this one; the review
   room is still discovered with a fresh read, because a draft's room can change when it is
   disposed.
+- **Writer typing has draft-only client boundaries** (`core/editor/extensions/inline-review/writer-client`).
+  The next content edit rotates the Yjs client when it touches a different
+  server closure class or a disjoint untouched site. Edits in one class and
+  contiguous typing keep their client. A pause or caret move alone never
+  rotates. Relative anchors classify edits even with marks hidden. Awareness
+  migrates with the client without remounting the editor or resetting Undo.
+  Genuine structural dependencies still join changes. Browser Undo attribution
+  is not repaired: restored AI bytes still belong to the writer on cold replay.
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.
