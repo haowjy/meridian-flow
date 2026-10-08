@@ -289,6 +289,8 @@
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
 
 ### Fixed
+
+- Undo and Redo in draft review preserve the original author of restored text, including after reload and when applying the draft.
 - Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
 - Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
 - Keep interrupted compaction metadata parseable across run-start and startup recovery.

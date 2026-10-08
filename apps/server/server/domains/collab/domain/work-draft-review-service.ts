@@ -485,6 +485,7 @@ function reviewUpdates(rows: readonly BranchJournalRow[]) {
     actorTurnId: row.turnId,
     actorUserId: row.actorUserId,
     updateData: row.updateData,
+    updateMeta: row.updateMeta,
     updateKind: row.status === "rollback_pending" ? ("rollback_pending" as const) : row.source,
   }));
 }

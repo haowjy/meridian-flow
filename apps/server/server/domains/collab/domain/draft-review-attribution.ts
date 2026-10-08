@@ -1,4 +1,5 @@
 /** Replays draft history into an attribution index, preserving explicit coverage failure. */
+import { restorationAliasesFromMetadata } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   asPhysicalSourceUpdateIds,
@@ -17,6 +18,7 @@ export type IndexedDraftUpdate = {
   actorUserId?: string | null;
   updateData: Uint8Array;
   updateKind?: string | null;
+  updateMeta?: unknown;
 };
 
 export type DraftOperationContributionFlags = { inserted: boolean; deleted: boolean };
@@ -118,19 +120,34 @@ export function indexDraftUpdates(input: {
       }));
       const deletedContent = deletedContentForRanges(replayDoc, beforeVisibility);
 
+      const certifiedAliases = restorationAliasesFromMetadata(update.updateMeta);
+      const beforeState = Y.decodeStateVector(Y.encodeStateVector(replayDoc));
       const introducedRanges = decoded.structs
         .map((struct) => {
           const id = structId(struct);
           const length = structLength(struct);
-          return id && length > 0 ? ({ ...id, length } satisfies ClockRange) : null;
+          if (!id) return null;
+          // Reconnect frames repeat old structs. Only novel clocks acquire the
+          // current row’s owner; inherited bytes retain their earlier source.
+          const clock = Math.max(id.clock, beforeState.get(id.client) ?? 0);
+          const novelLength = id.clock + length - clock;
+          return novelLength > 0
+            ? ({ client: id.client, clock, length: novelLength } satisfies ClockRange)
+            : null;
         })
-        .filter((range): range is ClockRange => range !== null);
+        .filter((range): range is ClockRange => range !== null)
+        .flatMap((range) => splitAtAliasBoundaries(range, certifiedAliases, introduced));
 
       Y.applyUpdate(replayDoc, update.updateData, { origin: { type: "branch-review" } });
 
+      for (const alias of certifiedAliases) {
+        aliases.push(alias);
+        clearDeletedRange(deleted, replayDoc, aliases, alias.source);
+      }
+
       for (const { range, visible: wasVisible } of beforeVisibility) {
         const isVisible = isRangeEffectivelyVisible(replayDoc, range);
-        if (!wasVisible && !isVisible) {
+        if (!update.actorUserId && !wasVisible && !isVisible) {
           const target = findAliasTarget(introducedRanges, range.length);
           if (target) {
             aliases.push({ source: range, target });
@@ -156,15 +173,16 @@ export function indexDraftUpdates(input: {
         restoredOperationIds,
         reversedOperationIdsByOperationId,
       });
-      const contentRestorativeRow = identityRestorativeRow
-        ? null
-        : contentRestorativeUndoMatch({
-            beforeVisibility,
-            introducedStructs: decoded.structs,
-            deletedOperationIds,
-            reversedOperationIdsByOperationId,
-            deletedContentByOperationId,
-          });
+      const contentRestorativeRow =
+        identityRestorativeRow || update.actorUserId
+          ? null
+          : contentRestorativeUndoMatch({
+              beforeVisibility,
+              introducedStructs: decoded.structs,
+              deletedOperationIds,
+              reversedOperationIdsByOperationId,
+              deletedContentByOperationId,
+            });
       const isPureRestorativeRow = identityRestorativeRow || contentRestorativeRow !== null;
 
       for (const deletedOperationId of deletedOperationIds) {
@@ -867,4 +885,33 @@ function structId(struct: unknown): YId | null {
 
 function structLength(struct: unknown): number {
   return Number((struct as { length?: number }).length ?? 0);
+}
+
+function splitAtAliasBoundaries(
+  range: ClockRange,
+  aliases: readonly RangeAlias[],
+  introduced: RangeLookup,
+): ClockRange[] {
+  const boundaries = new Set([range.clock, range.clock + range.length]);
+  for (const alias of aliases) {
+    if (alias.target.client !== range.client) continue;
+    const sourceBoundaries = (introduced.get(alias.source.client) ?? []).flatMap((assignment) =>
+      [assignment.start, assignment.end]
+        .filter(
+          (clock) => clock > alias.source.clock && clock < alias.source.clock + alias.source.length,
+        )
+        .map((clock) => alias.target.clock + clock - alias.source.clock),
+    );
+    for (const clock of [
+      alias.target.clock,
+      alias.target.clock + alias.target.length,
+      ...sourceBoundaries,
+    ]) {
+      if (clock > range.clock && clock < range.clock + range.length) boundaries.add(clock);
+    }
+  }
+  const clocks = [...boundaries].sort((a, b) => a - b);
+  return clocks
+    .slice(0, -1)
+    .map((clock, index) => ({ client: range.client, clock, length: clocks[index + 1] - clock }));
 }

@@ -224,3 +224,13 @@ locked set. It keeps its own root transaction, not the runtime inbox owner.
 
 The change-trail scheduler count is dispatched outbox rows, not reconciliation
 transitions or settlement-recovery attempts. Other lanes report candidate counts.
+
+## Undo-restored publication ownership
+
+`branch-trail-projection.ts` retains physical replay for structural replacement
+operations, but computes owner sets from the net live-to-draft hunks through the
+same clock attribution index used by review (`draftOperationIdsByChangedBlock`).
+Canceled writer delete/restore strokes therefore do not add a shared writer
+owner to an AI-only publication. Certified restoration aliases are replayed from
+journal metadata; physical writer update rows are not relabeled or removed.
+Apply's trail and receipt use the originating AI turn, including on cold replay.

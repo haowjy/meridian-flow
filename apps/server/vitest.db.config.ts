@@ -16,6 +16,7 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[])
   : [];
 const expectedSuites = [
+  "apps/server/server/domains/collab/undo-attribution.db.test.ts",
   "apps/server/server/domains/collab/partial-apply.db.test.ts",
   "apps/server/server/domains/collab/review-disposition.db.test.ts",
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
