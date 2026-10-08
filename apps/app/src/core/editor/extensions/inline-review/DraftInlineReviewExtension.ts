@@ -24,21 +24,25 @@
  * The extension is only installed in review mode — live editors never load
  * this code path and pay no per-transaction cost.
  */
+
 import { Extension } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-
+import type * as Y from "yjs";
 import { escapeCssIdent } from "@/lib/css-selector";
-
 import { isRemoteDocumentRebuild } from "../../anchors";
 import { buildDecorations, inlineReviewClassNames, resolverFromState } from "./decorations";
 import type { InlineReviewModel } from "./model";
 import type { RemovalHandlers } from "./removal-widget";
+import { reviewWriterClient } from "./writer-client";
 
 export interface DraftInlineReviewOptions {
   /** Optional initial model — usually the plugin starts empty and receives the model via command. */
   initialModel: InlineReviewModel | null;
+  /** Draft document whose content client rotates across independent changes. */
+  document?: Y.Doc;
+  adoptDocumentClient?: () => void;
   /** Whether marks start visible. Toggle later with `setInlineReviewMarksVisible`. */
   marksVisible: boolean;
 }
@@ -104,8 +108,8 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
   },
 
   addProseMirrorPlugins() {
-    const { initialModel, marksVisible } = this.options;
-    return [buildInlineReviewPlugin({ initialModel, marksVisible })];
+    const { initialModel, marksVisible, document, adoptDocumentClient } = this.options;
+    return [buildInlineReviewPlugin({ initialModel, marksVisible, document, adoptDocumentClient })];
   },
 
   addCommands() {
@@ -184,6 +188,9 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
 
 interface PluginContext {
   initialModel: InlineReviewModel | null;
+  /** Draft document whose content client rotates across independent changes. */
+  document?: Y.Doc;
+  adoptDocumentClient?: () => void;
   marksVisible: boolean;
 }
 
@@ -295,7 +302,13 @@ function withOptimisticWriterRanges(decorations: DecorationSet, tr: Transaction)
   return next;
 }
 
-export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginContext) {
+export function buildInlineReviewPlugin({
+  initialModel,
+  marksVisible,
+  document,
+  adoptDocumentClient,
+}: PluginContext) {
+  const writerClient = document ? reviewWriterClient(document, adoptDocumentClient) : null;
   return new Plugin<InlineReviewPluginState>({
     key: draftInlineReviewPluginKey,
     state: {
@@ -311,7 +324,10 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         };
         return { ...initial, decorations: paint(initialModel, initial, state) };
       },
-      apply(tr, previous, _oldState, newState) {
+      apply(tr, previous, oldState, newState) {
+        // Accepted PM content transactions precede the binding's Yjs write in
+        // view.update. Rotate here, never inside an active Yjs transaction.
+        writerClient?.apply(tr, oldState, previous.model, newState);
         const meta = tr.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
         // A remote y-sync transaction is the moment the y-prosemirror binding
         // populates or updates its mapping. Re-resolve from RelativePositions
@@ -393,6 +409,9 @@ export function buildInlineReviewPlugin({ initialModel, marksVisible }: PluginCo
         return next;
       },
     },
+    // Collaboration's view updates first (registered before review). Only then
+    // can relative positions address the writer's newly allocated Yjs items.
+    view: () => ({ update: (view) => writerClient?.capture(view.state) }),
     props: {
       decorations(state) {
         const pluginState = draftInlineReviewPluginKey.getState(state);
