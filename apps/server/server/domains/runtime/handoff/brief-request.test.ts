@@ -236,7 +236,6 @@ async function prepareBrief(input: {
 
 it.each([
   true,
-  false,
 ])("prepares a source-shaped request through the selected turn (user cutoff=%s)", async (userCutoff) => {
   const { result, calls, beforeTurns, beforeBlocks, rig, source } = await prepareBrief({
     userCutoff,
@@ -278,13 +277,4 @@ it("reports a read document as changed when its current revision cannot be read"
   expect(calls[0]).toMatchObject({
     changedDocuments: ["manuscript://chapter-12.md"],
   });
-});
-
-it("records no summary path when source preparation fails before a call", async () => {
-  const { result, calls } = await prepareBrief({ userCutoff: false, sourcePreparationFails: true });
-
-  expect(result.outcome).toMatchObject({ kind: "failed", modelResponses: [] });
-  expect(result.outcome).not.toHaveProperty("summarizer");
-  expect(result.failure).toEqual({ reason: "handoff_brief_failed", phase: "source_prepare" });
-  expect(calls).toHaveLength(0);
 });

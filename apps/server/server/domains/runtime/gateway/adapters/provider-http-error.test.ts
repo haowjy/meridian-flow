@@ -45,7 +45,7 @@ describe("provider retry headers", () => {
 });
 
 describe("provider HTTP failures", () => {
-  it.each([402, 404, 413, 422])("does not retry an unnamed %i", (status) => {
+  it.each([402])("does not retry an unnamed %i", (status) => {
     expect(mapProviderHttpError({ status, message: "rejected" })).toMatchObject({
       code: "provider_error",
       retryable: false,

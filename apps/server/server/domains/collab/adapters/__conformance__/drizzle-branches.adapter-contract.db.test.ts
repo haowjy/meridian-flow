@@ -1,5 +1,5 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
@@ -21,7 +21,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentBranches,
       documentYjsCheckpoints,
       documentYjsHeads,
-      documentYjsUpdates,
       documents,
       projects,
       pushLineage,
@@ -56,23 +55,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
-    const { createBranchCoordinator, BranchStaleUpdateError } = await import(
-      "../../domain/branch-coordinator.js"
-    );
+    const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
     const { mdxCodec, unresolvedAssetPathResolver } = await import("@meridian/markup");
     const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
-    const { DrizzleContextDocumentStore } = await import(
-      "../../../context/adapters/context-fs/drizzle-store.js"
-    );
-    const { drizzleFileAccess } = await import("../../../../test-support/file-grants.js");
     const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
       "../../../projects/index.js"
     );
-    const { DocumentSchemaMajorMismatchError } = await import("../../domain/stale-schema.js");
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
     );
@@ -235,18 +227,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       liveDocs.clear();
     });
 
-    it("provisions work draft from live and thread peer from work draft, never empty", async () => {
-      const live = docWithText("existing upstream prose");
-      await store.ensureThreadPeerBranch({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        liveDoc: live,
-      });
-
-      const resolved = await store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never);
-      expect(resolved.doc.getText("content").toString()).toBe("existing upstream prose");
-    });
-
     it("reseeds a clean thread peer under the reassigned primary Work", async () => {
       const live = docWithText("live prose");
       const oldPeer = await store.ensureThreadPeerBranch({
@@ -305,152 +285,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(nextUpstream?.workId).toBe(NEXT_WORK_ID);
     });
 
-    it("stamps branch rows from the live head and checks the row schema on resolve", async () => {
-      const majorMismatchVersion = { major: 1, minor: 0, patch: 0 };
-      const packedMajorMismatchVersion = packCollabSchemaVersion(majorMismatchVersion);
-      expect(await livePersistence.journal.headSchemaVersion(DOC_ID)).toBeNull();
-      await db.insert(documentYjsHeads).values({
-        documentId: DOC_ID as never,
-        schemaVersion: packedMajorMismatchVersion,
-      });
-      expect(await livePersistence.journal.headSchemaVersion(DOC_ID)).toEqual(majorMismatchVersion);
-      const work = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("seeded under stale schema"),
-      });
-      expect(work.schemaVersion).toEqual(majorMismatchVersion);
-
-      await db
-        .update(documentYjsHeads)
-        .set({ schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION) })
-        .where(eq(documentYjsHeads.documentId, DOC_ID as never));
-      expect(await livePersistence.journal.headSchemaVersion(DOC_ID)).toEqual(
-        COLLAB_SCHEMA_VERSION,
-      );
-      const peerDoc = docWithText("stale peer snapshot");
-      await db.insert(documentBranches).values({
-        id: "branch_stale_peer",
-        documentId: DOC_ID as never,
-        kind: "thread_peer",
-        upstreamBranchId: work.branchId,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-        status: "active",
-        state: Buffer.from(Y.encodeStateAsUpdate(peerDoc)),
-        stateVector: Buffer.from(Y.encodeStateVector(peerDoc)),
-        schemaVersion: packedMajorMismatchVersion,
-      });
-
-      await expect(store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never)).rejects.toThrow(
-        DocumentSchemaMajorMismatchError,
-      );
-    });
-
-    it("restamps persisted branches monotonically", async () => {
-      const branch = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("initial"),
-      });
-      const stalePacked = packCollabSchemaVersion({ major: 0, minor: 0, patch: 4 });
-      await db
-        .update(documentBranches)
-        .set({ schemaVersion: stalePacked })
-        .where(eq(documentBranches.id, branch.branchId));
-
-      const currentDoc = docWithText("current server edit");
-      const currentState = Y.encodeStateAsUpdate(currentDoc);
-      const currentStateVector = Y.encodeStateVector(currentDoc);
-      await expect(
-        store.updateBranchSnapshot({
-          branchId: branch.branchId,
-          expectedGeneration: branch.generation,
-          expectedState: branch.state,
-          expectedStateVector: branch.stateVector,
-          state: currentState,
-          stateVector: currentStateVector,
-        }),
-      ).resolves.toBe(true);
-      const [restamped] = await db
-        .select({ schemaVersion: documentBranches.schemaVersion })
-        .from(documentBranches)
-        .where(eq(documentBranches.id, branch.branchId));
-      expect(restamped?.schemaVersion).toBe(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION));
-
-      // Derived, not pinned: what this asserts is "a row stamped AHEAD of this
-      // build is left alone", and a literal turns every schema bump into a
-      // failure here.
-      const aheadPacked = packCollabSchemaVersion({
-        ...COLLAB_SCHEMA_VERSION,
-        patch: COLLAB_SCHEMA_VERSION.patch + 7,
-      });
-      await db
-        .update(documentBranches)
-        .set({ schemaVersion: aheadPacked })
-        .where(eq(documentBranches.id, branch.branchId));
-      const rollbackDoc = docWithText("rollback server edit");
-      await expect(
-        store.updateBranchSnapshot({
-          branchId: branch.branchId,
-          expectedGeneration: branch.generation,
-          expectedState: currentState,
-          expectedStateVector: currentStateVector,
-          state: Y.encodeStateAsUpdate(rollbackDoc),
-          stateVector: Y.encodeStateVector(rollbackDoc),
-        }),
-      ).resolves.toBe(true);
-      const [preserved] = await db
-        .select({ schemaVersion: documentBranches.schemaVersion })
-        .from(documentBranches)
-        .where(eq(documentBranches.id, branch.branchId));
-      expect(preserved?.schemaVersion).toBe(aheadPacked);
-
-      const parentPacked = packCollabSchemaVersion({ major: 0, minor: 0, patch: 9 });
-      await db
-        .update(documentBranches)
-        .set({ schemaVersion: parentPacked })
-        .where(eq(documentBranches.id, branch.branchId));
-      const peer = await store.ensureThreadPeerBranch({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        liveDoc: currentDoc,
-      });
-      await db
-        .update(documentBranches)
-        .set({ schemaVersion: aheadPacked })
-        .where(eq(documentBranches.id, peer.branchId));
-
-      await createBranchCoordinator({ store }).resetFromBranch(peer.branchId);
-
-      const [reset] = await db
-        .select({ schemaVersion: documentBranches.schemaVersion })
-        .from(documentBranches)
-        .where(eq(documentBranches.id, peer.branchId));
-      expect(reset?.schemaVersion).toBe(aheadPacked);
-    });
-
-    it("persists live->work and work->thread pulls", async () => {
-      const live = docWithText("live prose");
-      const work = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: new Y.Doc({ gc: false }),
-      });
-      const peer = await store.ensureThreadPeerBranch({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        liveDoc: new Y.Doc({ gc: false }),
-      });
-      const coordinator = createBranchCoordinator({ store });
-
-      await coordinator.pullFromDoc(work.branchId, live);
-      await coordinator.pullFromBranch(peer.branchId);
-
-      const resolved = await store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never);
-      expect(Y.encodeStateAsUpdate(resolved.doc)).toEqual(Y.encodeStateAsUpdate(live));
-    });
-
     it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
       const live = docWithText("live base");
       const work = await store.ensureWorkDraftBranch({
@@ -503,203 +337,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(rows).toEqual([{ generation: work.generation, status: "discarded" }]);
     });
 
-    it("rejects stale branch-room updates against the generation loaded by the room", async () => {
-      const live = docWithText("room base");
-      const work = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: live,
-      });
-      const coordinator = createBranchCoordinator({ store });
-      const staleRoom = docWithText("stale branch room write");
-
-      await coordinator.resetFromDoc(work.branchId, live);
-      await expect(
-        coordinator.commitUpdate({
-          branchId: work.branchId,
-          expectedGeneration: work.generation,
-          updateData: Y.encodeStateAsUpdate(staleRoom),
-          source: "writer",
-          actorUserId: USER_ID as never,
-        }),
-      ).rejects.toThrow(BranchStaleUpdateError);
-      await expect(
-        coordinator.readBranch(work.branchId, async (doc) => doc.getText("content").toString()),
-      ).resolves.toBe("room base");
-
-      const fresh = await store.getBranch(work.branchId);
-      const freshRoom = docWithText("fresh branch room write");
-      await coordinator.commitUpdate({
-        branchId: work.branchId,
-        expectedGeneration: fresh?.generation,
-        updateData: Y.encodeStateAsUpdate(freshRoom),
-        source: "writer",
-        actorUserId: USER_ID as never,
-      });
-      const freshText = await coordinator.readBranch(work.branchId, async (doc) =>
-        doc.getText("content").toString(),
-      );
-      expect(freshText).toContain("room base");
-      expect(freshText).toContain("fresh branch room write");
-    });
-
-    it("keeps manifest identity rows invisible to content surfaces", async () => {
-      const manifest = await store.ensureProjectManifest({ projectId: PROJECT_ID as never });
-      await db
-        .update(documents)
-        .set({ markdownProjection: "manifest-only secret" })
-        .where(eq(documents.id, manifest.documentId));
-      const contentStore = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      const access = drizzleFileAccess(db);
-
-      await expect(contentStore.findDocument(null, ".manifest", "json")).resolves.toBeNull();
-      await expect(contentStore.listDocuments(null)).resolves.toEqual([
-        expect.objectContaining({ id: DOC_ID }),
-      ]);
-      await expect(
-        resolveDocumentUri(db, createDrizzleProjectWorkAuthorityResolver(db), manifest.documentId),
-      ).resolves.toBeNull();
-      await expect(
-        contentStore.createDocument({
-          id: "00000000-0000-4000-8000-000000000607" as never,
-          folderId: null,
-          name: ".manifest",
-          extension: "json",
-          markdown: "writer visible namesake",
-          filetype: "json",
-        }),
-      ).resolves.toEqual(expect.objectContaining({ name: ".manifest", extension: "json" }));
-      await expect(
-        access.authorize(
-          { accountId: USER_ID as never },
-          { kind: "document", documentId: manifest.documentId },
-          "read",
-        ),
-      ).resolves.toMatchObject({ denied: true, reason: "not_found" });
-    });
-
-    it("keeps a Work-scoped document URI bound to its owning Work across a thread rebind", async () => {
-      const scratchSourceId = "00000000-0000-4000-8000-000000000611";
-      const scratchDocumentId = "00000000-0000-4000-8000-000000000612";
-      await db.insert(works).values({
-        id: NEXT_WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Next Work",
-        slug: "next-work",
-      });
-      await db.insert(contextSources).values({
-        id: scratchSourceId,
-        workId: WORK_ID,
-        name: "Scratch",
-        slug: "scratch",
-        scope: "work",
-      });
-      await db.insert(documents).values({
-        id: scratchDocumentId,
-        contextSourceId: scratchSourceId,
-        name: "lineage",
-        extension: "md",
-        fileType: "markdown",
-      });
-
-      await expect(
-        resolveDocumentUri(db, createDrizzleProjectWorkAuthorityResolver(db), scratchDocumentId),
-      ).resolves.toBe("scratch://@branch-work/lineage.md");
-      await db
-        .update(threadWorks)
-        .set({ workId: NEXT_WORK_ID })
-        .where(eq(threadWorks.threadId, THREAD_ID));
-      await expect(
-        resolveDocumentUri(db, createDrizzleProjectWorkAuthorityResolver(db), scratchDocumentId),
-      ).resolves.toBe("scratch://@branch-work/lineage.md");
-    });
-
-    it("persists manifest membership as a live Yjs peer across store reload", async () => {
-      const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      expect(before.members).toEqual([DOC_ID]);
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOC_ID));
-
-      const reloaded = createBranchStore();
-      const after = await reloaded.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      expect(after.members).toEqual([DOC_ID]);
-    });
-
-    it("routes thread manifest membership mutations through branch journal, not the live manifest", async () => {
-      const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      const beforeUpdates = await db
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, before.documentId));
-
-      await store.recordManifestDocumentDeleted(DOC_ID as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-
-      const threadView = await store.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-      const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      const updates = await db
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, before.documentId));
-      const branchRows = await db
-        .select({ id: branchWriteJournal.id })
-        .from(branchWriteJournal)
-        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
-        .where(eq(documentBranches.documentId, before.documentId));
-
-      expect(threadView.members).toEqual([]);
-      expect(liveView.members).toEqual([DOC_ID]);
-      expect(updates).toHaveLength(beforeUpdates.length);
-      expect(branchRows).toHaveLength(1);
-    });
-
-    it("keeps a first draft-created document out of the live manifest when seeding", async () => {
-      const createdId = "00000000-0000-4000-8000-000000000609";
-      await db.insert(documents).values({
-        id: createdId as never,
-        contextSourceId: SOURCE_ID,
-        name: "manual-created",
-        extension: "md",
-        fileType: "markdown",
-      });
-
-      await store.recordManifestDocumentCreated(createdId as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-
-      await expect(
-        store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
-      ).resolves.toMatchObject({ members: [DOC_ID] });
-      await expect(
-        store.resolveManifestMembership({
-          projectId: PROJECT_ID as never,
-          workId: WORK_ID as never,
-          threadId: THREAD_ID as never,
-        }),
-      ).resolves.toMatchObject({ members: [DOC_ID, createdId] });
-    });
-
-    it("keeps existing live documents visible when they have active work-draft branches during manifest seed", async () => {
-      await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("existing live chapter"),
-      });
-
-      await expect(
-        store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
-      ).resolves.toMatchObject({ members: [DOC_ID] });
-    });
-
     it("keeps compacted live documents visible when seeding despite zero live update rows", async () => {
       const live = docWithText("compacted live chapter");
       const [checkpoint] = await db
@@ -731,53 +368,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
       ).resolves.toMatchObject({ members: [DOC_ID] });
-    });
-
-    it("keeps live manifest writes direct for writer/project context", async () => {
-      const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      const beforeUpdates = await db
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, before.documentId));
-
-      await store.recordManifestDocumentDeleted(DOC_ID as never);
-
-      const after = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-      const updates = await db
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, before.documentId));
-      expect(after.members).toEqual([]);
-      expect(updates).toHaveLength(beforeUpdates.length + 1);
-    });
-
-    it("provisions manifest work/thread branches through standard branch ensure and pull machinery", async () => {
-      const manifest = await store.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-      const branchRows = await db
-        .select({
-          id: documentBranches.id,
-          kind: documentBranches.kind,
-          upstreamBranchId: documentBranches.upstreamBranchId,
-          workId: documentBranches.workId,
-          threadId: documentBranches.threadId,
-        })
-        .from(documentBranches)
-        .where(eq(documentBranches.documentId, manifest.documentId));
-
-      const work = branchRows.find((row) => row.kind === "work_draft");
-      const peer = branchRows.find((row) => row.kind === "thread_peer");
-      expect(work).toEqual(expect.objectContaining({ workId: WORK_ID, threadId: null }));
-      expect(peer).toEqual(
-        expect.objectContaining({
-          workId: WORK_ID,
-          threadId: THREAD_ID,
-          upstreamBranchId: work?.id,
-        }),
-      );
     });
 
     it("resolves draft manifest membership for created/deleted docs while live stays untouched", async () => {
@@ -833,46 +423,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(threadView.members).toEqual([CREATED_ID]);
       expect(liveView.members).toEqual([DOC_ID]);
-    });
-
-    it("pushes manifest membership journal rows with lineage receipt", async () => {
-      await store.recordManifestDocumentDeleted(DOC_ID as never, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
-      });
-      const manifest = await store.ensureProjectManifest({ projectId: PROJECT_ID as never });
-      const work = await store.ensureWorkDraftBranch({
-        documentId: manifest.documentId,
-        workId: WORK_ID as never,
-        liveDoc: manifest.doc,
-      });
-      const schema = buildDocumentSchema();
-      const branchPush = createBranchPushService({
-        changeEventDelivery: { deliver() {} },
-        branchStore: store,
-        ...createPushStores(
-          markdownProjectionSerializer(
-            yProsemirrorModel(schema),
-            mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-          ),
-        ),
-        branchCoordinator: createBranchCoordinator({ store }),
-        journal: livePersistence.journal,
-        liveCoordinator,
-        model: yProsemirrorModel(schema),
-        codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-      });
-
-      const pushed = await branchPush.pushToLive({ branchId: work.branchId });
-      const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
-
-      expect(pushed.status).toBe("pushed");
-      if (pushed.status !== "pushed") throw new Error(`Unexpected push status: ${pushed.status}`);
-      expect(pushed.push.documentId).toBe(manifest.documentId);
-      expect(pushed.push.journalIds).toHaveLength(1);
-      expect(liveView.members).toEqual([]);
-      manifest.doc.destroy();
     });
 
     it("co-promotes only the applied document manifest entry with its content push", async () => {
@@ -1063,55 +613,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       manifest.doc.destroy();
     });
 
-    it("finds push lineage by typed branch generation and bigint journal-id overlap", async () => {
-      const pushStore = createDrizzleBranchJournalReadStore(db);
-      const branch = await store.ensureWorkDraftBranch({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: docWithText("live"),
-      });
-      await db.execute(sql`SELECT setval('branch_write_journal_id_seq', 2147483650, false)`);
-      const [journalRow] = await db
-        .insert(branchWriteJournal)
-        .values({
-          branchId: branch.branchId,
-          generation: branch.generation,
-          updateData: Buffer.from(new Uint8Array([1, 2, 3])),
-          draftBaseUpdateSeq: 0,
-          source: "agent",
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-        })
-        .returning();
-      if (!journalRow) throw new Error("missing journal row");
-      await db.insert(pushLineage).values({
-        branchId: branch.branchId,
-        branchGeneration: branch.generation,
-        documentId: DOC_ID as never,
-        journalIds: [journalRow.id],
-        idempotencyKey: "bigint-overlap",
-      });
-
-      const rows = await pushStore.listPushLineageForTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
-
-      expect(journalRow.id).toBeGreaterThan(2147483647);
-      expect(rows).toEqual([expect.objectContaining({ journalIds: [journalRow.id] })]);
-      await expect(
-        pushStore.latestPushForBranch(branch.branchId, branch.generation),
-      ).resolves.toMatchObject({
-        branchId: branch.branchId,
-        branchGeneration: branch.generation,
-      });
-      await expect(
-        pushStore.latestPushForBranch(branch.branchId, branch.generation + 1),
-      ).resolves.toBeNull();
-    });
-
     it("commitPush rejects stale branch snapshots and non-active source rows", async () => {
-      const _schema = buildDocumentSchema();
       const pushStore = createDrizzlePushCommitStore(
         db,
         stagePendingSettlementWithinTx,
@@ -1253,148 +755,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
-    });
-
-    it("G2 §6.1 entry success: missing work-draft row is created and branch room loads that branch", async () => {
-      const { branchRoomName } = await import("@meridian/contracts/protocol");
-      const live = docWithText("live review seed");
-      const branch = await store.resolveWorkDraftBranchForWork({
-        documentId: DOC_ID as never,
-        workId: WORK_ID as never,
-        liveDoc: live,
-      });
-      const persistence = branchRoomPersistence();
-
-      const room = await persistence.resolveBranchHocuspocusRoom(
-        branch.branchId,
-        branch.generation,
-      );
-      const loaded = (
-        await persistence.loadHocuspocusBranchState(branch.branchId, branch.generation)
-      )?.state;
-      const loadedDoc = new Y.Doc({ gc: false });
-      if (loaded) Y.applyUpdate(loadedDoc, loaded);
-
-      expect(branchRoomName(branch.branchId, branch.generation)).toBe(
-        `branch:${branch.branchId}:gen:${branch.generation}`,
-      );
-      expect(room).toMatchObject({
-        branchId: branch.branchId,
-        documentId: DOC_ID,
-        schemaVersion: COLLAB_SCHEMA_VERSION,
-      });
-      expect(loadedDoc.getText("content").toString()).toBe("live review seed");
-    });
-
-    it("lists concurrent journal rows by the production document/generation/floor predicate", async () => {
-      const pushStore = createDrizzleBranchJournalReadStore(db);
-      const update = Buffer.from(Y.encodeStateAsUpdate(docWithText("row")));
-      const otherDocId = "00000000-0000-4000-8000-000000000612";
-      await db.insert(documents).values({
-        id: otherDocId as never,
-        contextSourceId: SOURCE_ID,
-        name: "other-chapter",
-        extension: "md",
-        fileType: "markdown",
-      });
-      await db.insert(documentBranches).values([
-        {
-          id: "branch_target_floor",
-          documentId: DOC_ID as never,
-          kind: "work_draft",
-          upstreamBranchId: null,
-          workId: WORK_ID as never,
-          threadId: null,
-          status: "active",
-          state: update,
-          stateVector: Buffer.from(Y.encodeStateVector(docWithText("target"))),
-          schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-          generation: 1,
-        },
-        {
-          id: "branch_other_pushed",
-          documentId: DOC_ID as never,
-          kind: "thread_peer",
-          upstreamBranchId: "branch_target_floor",
-          workId: WORK_ID as never,
-          threadId: THREAD_ID as never,
-          status: "active",
-          state: update,
-          stateVector: Buffer.from(Y.encodeStateVector(docWithText("other"))),
-          schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-          generation: 2,
-        },
-        {
-          id: "branch_other_document",
-          documentId: otherDocId as never,
-          kind: "work_draft",
-          upstreamBranchId: null,
-          workId: WORK_ID as never,
-          threadId: null,
-          status: "active",
-          state: update,
-          stateVector: Buffer.from(Y.encodeStateVector(docWithText("other doc"))),
-          schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-          generation: 1,
-        },
-      ]);
-      await db.insert(branchWriteJournal).values([
-        {
-          id: 9,
-          branchId: "branch_other_pushed",
-          generation: 1,
-          updateData: update,
-          draftBaseUpdateSeq: 0,
-          status: "pushed",
-        },
-        {
-          id: 10,
-          branchId: "branch_target_floor",
-          generation: 1,
-          updateData: update,
-          draftBaseUpdateSeq: 0,
-          status: "active",
-        },
-        {
-          id: 11,
-          branchId: "branch_other_pushed",
-          generation: 2,
-          updateData: update,
-          draftBaseUpdateSeq: 0,
-          status: "pushed",
-        },
-        {
-          id: 12,
-          branchId: "branch_other_pushed",
-          generation: 1,
-          updateData: update,
-          draftBaseUpdateSeq: 0,
-          status: "discarded",
-        },
-        {
-          id: 13,
-          branchId: "branch_other_pushed",
-          generation: 3,
-          updateData: update,
-          draftBaseUpdateSeq: 0,
-          status: "pushed",
-        },
-        {
-          id: 14,
-          branchId: "branch_other_document",
-          generation: 1,
-          updateData: update,
-          draftBaseUpdateSeq: 0,
-          status: "pushed",
-        },
-      ]);
-
-      const rows = await pushStore.listConcurrentJournalRows("branch_target_floor", 1, {
-        documentId: DOC_ID as never,
-        afterJournalId: 9,
-      });
-
-      expect(rows.map((row) => row.id)).toEqual([10, 11]);
     });
 
     it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {

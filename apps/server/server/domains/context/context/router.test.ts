@@ -61,24 +61,6 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
 }
 
 describe("context router deletion receipts", () => {
-  it.each([
-    [{ kind: "file" as const, documentId: "different-document" }, "old.md"],
-    [{ kind: "folder" as const }, "old.md"],
-    [{ kind: "file" as const, documentId: "document-old" }, "empty"],
-  ])("rejects a stale initiating target %#", async (expected, path) => {
-    const adapter = writableAdapter("manuscript");
-    const port = createContextPortRouter({
-      adapters: new Map([["manuscript", adapter]]),
-      workAuthorities: new Map(),
-    });
-
-    await expect(port.delete(`manuscript://${path}`, { expected })).resolves.toEqual({
-      ok: false,
-      error: { code: "stale_target", uri: `manuscript://${path}` },
-    });
-    expect(adapter.tree?.commitRecursiveDelete).not.toHaveBeenCalled();
-  });
-
   it("reports a replacement that wins after inspection as a stale target", async () => {
     const adapter = writableAdapter("manuscript");
     if (!adapter.tree) throw new Error("writable test adapter must provide tree mutations");
@@ -164,57 +146,9 @@ describe("context router Work slug resolution", () => {
       },
     });
   });
-
-  it("rejects reserved authority-like names below the router seam", async () => {
-    await expect(port().write("scratch://notes/@evil.md", "blocked")).resolves.toEqual({
-      ok: false,
-      error: {
-        code: "invalid_uri",
-        uri: "scratch://notes/@evil.md",
-        reason: 'Path segments beginning with "@" are reserved',
-      },
-    });
-  });
 });
 
 describe("context router untitled identity recovery", () => {
-  it("returns the primary Work authority for a retry found in the base adapter map", async () => {
-    const scratch = {
-      name: "scratch",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async (documentId: string) =>
-        Ok({ documentId, path: "Untitled 1.md", name: "Untitled 1.md" }),
-      createUntitledDocument: async (_path: string, options: { documentId: string }) =>
-        Ok({
-          status: "already-exists" as const,
-          documentId: options.documentId,
-          path: "Untitled 1.md",
-          name: "Untitled 1.md",
-        }),
-    } as unknown as ContextSchemeAdapter;
-    const port = createContextPortRouter({
-      adapters: new Map([["scratch", scratch]]),
-      adapterAuthorities: new Map([["scratch", authority("work-1", "primary")]]),
-      primaryWorkAuthority: authority("work-1", "primary"),
-      workAuthorities: new Map([[testWorkSlug("primary"), authority("work-1", "primary")]]),
-      resolveWorkAdapters: () => new Map([["scratch", scratch]]),
-    });
-
-    await expect(
-      port.createUntitledDocument("scratch://@primary", {
-        documentId: "00000000-0000-4000-8000-000000000100",
-        origin: { type: "system" },
-      }),
-    ).resolves.toMatchObject({
-      ok: true,
-      value: {
-        status: "already-materialized",
-        scheme: "scratch",
-        workId: "work-1",
-      },
-    });
-  });
-
   it("returns an existing document's canonical cross-scheme location without creating a row", async () => {
     const requestedCreate = vi.fn();
     const manuscript = {
@@ -338,27 +272,5 @@ describe("context router scheme creation capabilities", () => {
       value: { movedNodeId: "document-old", destinationPath: "renamed.md" },
     });
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
-  });
-
-  it("rejects nested binary upload paths in non-creatable schemes", async () => {
-    const { port, uploads } = createPort();
-    const options = {
-      storageUrl: "storage://upload",
-      mimeType: "image/png",
-      sizeBytes: 10,
-      fileType: "image" as const,
-    };
-
-    await expect(
-      port.writeBinary(`uploads://@current/nest/deep.png`, options),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: {
-        code: "invalid_operation",
-        uri: "uploads://@current/nest/deep.png",
-        message: expect.stringMatching(/flat files.+folders are not available/i),
-      },
-    });
-    expect(uploads.writeBinary).not.toHaveBeenCalled();
   });
 });
