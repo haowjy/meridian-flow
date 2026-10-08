@@ -438,7 +438,6 @@ function ActiveSessionEditorView({
   const { controller } = useDraftReview();
   const inReview = identity.surface === "review";
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
-  const liveReviewSession = inReview ? liveSession : null;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -603,7 +602,6 @@ function ActiveSessionEditorView({
 
   useInlineReviewSync({
     editor,
-    liveSession: liveReviewSession,
     projectId: projectId ?? null,
     workId: reviewWorkId,
     documentId,

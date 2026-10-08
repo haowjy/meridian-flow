@@ -10,7 +10,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -24,9 +23,9 @@ import {
 import { type ContextTab, getContextTabs } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { useReconcileReviewFocus } from "@/features/draft-review/useReconcileReviewFocus";
+import { useReviewRefresh } from "@/features/draft-review/useReviewRefresh";
 import {
   useContextRemovalCoordinator,
-  useLiveDocumentSessionRegistry,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import {
@@ -51,7 +50,6 @@ export type DraftReviewContextValue = {
 };
 
 const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
-let reviewProjectionOwnerSequence = 0;
 
 export function DraftReviewBoundary({
   value,
@@ -105,10 +103,6 @@ export function useDraftReviewScopeValue({
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const contextRemoval = useContextRemovalCoordinator();
-  const registry = useLiveDocumentSessionRegistry();
-  const reviewProjectionOwner = useRef(
-    `draft-review-projection:${++reviewProjectionOwnerSequence}`,
-  );
   const effectiveProjectId = projectId ?? "";
   // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
@@ -255,51 +249,16 @@ export function useDraftReviewScopeValue({
     workId,
   ]);
 
-  useEffect(() => {
-    const inlineDocumentId = controller.inlineReview?.documentId;
-    const inlineDraftId = controller.inlineReview?.draftId;
-    const roomKey = controller.reviewRoomName;
-    if (!projectId || !workId || !inlineDocumentId || !inlineDraftId || !roomKey) return;
-    registry.retainBranchRooms(reviewProjectionOwner.current, [roomKey]);
-    let session: DocumentSession;
-    try {
-      session = registry.getBranchRoom(roomKey);
-    } catch (error) {
-      registry.releaseBranchRooms(reviewProjectionOwner.current);
-      throw error;
-    }
-    let timer: number | null = null;
-    const invalidateMountedDraft = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        timer = null;
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDrafts(projectId, workId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftPreview(
-            projectId,
-            workId,
-            inlineDocumentId,
-            inlineDraftId,
-          ),
-        });
-      }, 50);
-    };
-    session.document.on("update", invalidateMountedDraft);
-    return () => {
-      if (timer != null) window.clearTimeout(timer);
-      session.document.off("update", invalidateMountedDraft);
-      registry.releaseBranchRooms(reviewProjectionOwner.current);
-    };
-  }, [
-    controller.inlineReview?.documentId,
-    controller.inlineReview?.draftId,
-    controller.reviewRoomName,
+  useReviewRefresh({
     projectId,
-    queryClient,
     workId,
-  ]);
+    review: controller.inlineReview,
+    roomName: controller.reviewRoomName,
+    liveSession:
+      activeEditorProjection?.documentId === controller.inlineReview?.documentId
+        ? (activeEditorProjection?.session ?? null)
+        : null,
+  });
 
   useEffect(() => {
     if (!threadId || !activeEditorProjection || activeEditorProjection.inReview) return;
