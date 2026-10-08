@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - Development: `pnpm test:all` runs unit and managed PostgreSQL tests together; its DB guard checks nested tests and rejects unit-only runs.
-- Development: DB fixture resets send their ordered deletes in one round trip, preserving transaction rollback and FK locking.
+- Development: DB fixture resets send their ordered deletes in one round trip, preserving transaction rollback and FK locking. DB suites own their connections; DB and pure contract/codec workers reuse module caches.
 - Development: prune duplicate frontend, runtime, collaboration, package and tooling tests; keep recovery, authorization, billing, concurrent edits and persisted atomicity contracts. Shutdown fixtures report startup failures and await process cleanup. Keep focused stalled-stdout and paid-summary recovery regressions. Drop weaker stream-order, missing-hash and cleanup-ref duplicates.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
