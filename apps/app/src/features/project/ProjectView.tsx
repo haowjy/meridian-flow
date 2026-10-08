@@ -177,13 +177,11 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
-  const enterWork = useDockViewStore((state) => state.enterWork);
-  const leaveWork = useDockViewStore((state) => state.leaveWork);
+  const syncDockDocumentScope = useDockViewStore((state) => state.syncDocumentScope);
   useLayoutEffect(() => {
     const workId = props.activeScreen === "work" ? routeWorkId(props.routeWork) : null;
-    if (workId) enterWork(workId);
-    else leaveWork();
-  }, [props.activeScreen, props.routeWork, enterWork, leaveWork]);
+    syncDockDocumentScope(props.activeScreen, workId);
+  }, [props.activeScreen, props.routeWork, syncDockDocumentScope]);
   const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
@@ -574,7 +572,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
   useDockReveal((view) => {
     setDockCollapsed(false);
-    setDockView(props.activeScreen, view);
+    if (view === "chat") setDockView(props.activeScreen, view);
   });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
@@ -633,6 +631,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           <ContextSidebar
             threadId={displayedChatThreadId(props.chatDisplay)}
             projectId={props.projectId}
+            visible={isOpen("context-rail")}
             onClose={close("context-rail")}
           />
         </DraftReviewBoundary>

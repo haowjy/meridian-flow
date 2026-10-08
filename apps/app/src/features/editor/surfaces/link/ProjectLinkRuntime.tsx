@@ -101,7 +101,8 @@ export function ProjectLinkRuntime({
     [surface],
   );
   // Inactive or project-less is scope null: the follower aborts and dismisses on its own.
-  const follower = useLinkFollower({ scope, index, resolution, open, reporter });
+  // `active` also clears a follow still pending when its editor goes to the back.
+  const follower = useLinkFollower({ scope, index, resolution, open, reporter, active });
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;

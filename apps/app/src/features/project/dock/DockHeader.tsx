@@ -10,6 +10,11 @@
  * cannot select anything. The left slot truncates before the switch or close
  * ever compress.
  *
+ * While the dock holds a document, the header is the document's: its title
+ * chip and menu take the left slot, the view switch steps aside, and a Close
+ * document button sits before the collapse toggle. Closing returns to the view
+ * the writer last chose.
+ *
  * Desktop-only: the phone chat sheet supplies its own header
  * (`mobile/MobileChatSheetHeader.tsx`), built from `MobileTopBar`'s
  * status-bar-aware chrome instead of branching this one. `DockShell` takes
@@ -23,17 +28,25 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PanelRightClose, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
-import type { DockView } from "./dock-view-store";
+import { DockDocumentTitle } from "./DockDocumentTitle";
+import type { DockDocument, DockView } from "./dock-view-store";
 import { useDockViewStore } from "./dock-view-store";
 
-export type DockHeaderSlotArgs = {
+export type DockViewSwitchProps = {
   view: DockView;
   views: readonly DockView[];
   onSelectView: (view: DockView) => void;
+};
+
+export type DockHeaderSlotArgs = DockViewSwitchProps & {
+  projectId: string;
+  /** The document that replaces the views while the dock shows one. */
+  document: DockDocument | null;
 };
 
 export type DockHeaderProps = DockHeaderSlotArgs & {
@@ -43,13 +56,16 @@ export type DockHeaderProps = DockHeaderSlotArgs & {
 };
 
 export function DockHeader({
+  projectId,
   view,
   views,
   onSelectView,
+  document: dockDocument,
   onClose,
   threadSelect,
   threadId,
 }: DockHeaderProps) {
+  const closeDocument = useDockViewStore((state) => state.closeDocument);
   const activity = useThreadActivity({
     threadId: threadId ?? "",
     seed: null,
@@ -60,18 +76,33 @@ export function DockHeader({
           inside, and clipping here shears the trigger's hover pill (it
           bleeds left of the slot). */}
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
-        {view === "chat" ? threadSelect : null}
-        {view === "chat" && threadId ? (
-          <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
-        ) : null}
+        {dockDocument ? (
+          <DockDocumentTitle projectId={projectId} document={dockDocument} />
+        ) : (
+          <>
+            {view === "chat" ? threadSelect : null}
+            {view === "chat" && threadId ? (
+              <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
+            ) : null}
+          </>
+        )}
       </div>
-      <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
-      {onClose ? (
+      {dockDocument ? null : (
+        <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
+      )}
+      {onClose || dockDocument ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.
-        <div className="flex shrink-0 items-center px-2">
-          <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
+        <div className="flex shrink-0 items-center gap-0.5 px-2">
+          {dockDocument ? (
+            <IconButton size="sm" tooltip={t`Close document`} onClick={closeDocument}>
+              <X className="size-4" aria-hidden />
+            </IconButton>
+          ) : null}
+          {onClose ? (
+            <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
+          ) : null}
         </div>
       ) : null}
     </header>
@@ -79,9 +110,7 @@ export function DockHeader({
 }
 
 /** The segmented view switch, shared by the desktop header and the phone chat sheet header. */
-export function DockViewSwitch({ view, views, onSelectView }: DockHeaderSlotArgs) {
-  const file = useDockViewStore((state) => state.workFile);
-  const closeFile = useDockViewStore((state) => state.closeWorkFile);
+export function DockViewSwitch({ view, views, onSelectView }: DockViewSwitchProps) {
   if (views.length <= 1) return null;
   return (
     <SegmentedTabs
@@ -90,16 +119,7 @@ export function DockViewSwitch({ view, views, onSelectView }: DockHeaderSlotArgs
       onChange={onSelectView}
       options={views.map((segment) => ({
         value: segment,
-        label:
-          segment === "file" && file ? (
-            <span className="block max-w-36 truncate">{file.tab.name}</span>
-          ) : (
-            <DockViewLabel view={segment} />
-          ),
-        closeAction:
-          segment === "file" && file
-            ? { icon: <X className="size-3.5" aria-hidden />, onClose: closeFile }
-            : undefined,
+        label: <DockViewLabel view={segment} />,
       }))}
     />
   );
@@ -113,7 +133,5 @@ function DockViewLabel({ view }: { view: DockView }) {
       return <Trans>Context</Trans>;
     case "changes":
       return <Trans>Changes</Trans>;
-    case "file":
-      return null;
   }
 }

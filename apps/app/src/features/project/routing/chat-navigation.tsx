@@ -55,6 +55,9 @@ export function displayedChatThreadId(display: ChatDisplay): string | null {
   return display.kind === "index" ? null : display.threadId;
 }
 
+/** What a dock reveal brings forward: the chat, or the document the dock already holds. */
+export type DockReveal = "chat" | "document";
+
 export type ChatNavigation = {
   /** What the Chat screen or the dock currently shows. */
   display: ChatDisplay;
@@ -66,14 +69,14 @@ export type ChatNavigation = {
   /** The Chat screen's index; in the dock, an empty composer. */
   openNewChat: (workId?: string) => Promise<void>;
   openChatIndex: () => Promise<void>;
-  /** Reveal the dock with the requested Work occupant view. */
-  revealDock: (view: "chat" | "file") => void;
+  /** Open the dock, showing the chat or the document it holds. */
+  revealDock: (view: DockReveal) => void;
   /** A just-sent new chat becomes the chat on screen. */
   acceptCreatedChat: (threadId: string) => void;
   /** A deleted chat stops being current. */
   forgetChat: (threadId: string) => void;
   /** The shell's way to show the dock's chat. The latest registration wins. */
-  registerDockReveal: (reveal: (view: "chat" | "file") => void) => () => void;
+  registerDockReveal: (reveal: (view: DockReveal) => void) => () => void;
   /**
    * One-shot New chat focus intent for the pinned empty composer. Non-null
    * exactly once per `openNewChat` call, until the composer that focused
@@ -154,7 +157,7 @@ export function useProjectChatNavigation({
     const commands = {
       openChat,
       openChatIndex,
-      revealDock: (view: "chat" | "file") => channels.dockReveal.request(view),
+      revealDock: (view: DockReveal) => channels.dockReveal.request(view),
       showChatScreen,
       openNewChat: async (workId?: string) => {
         if (onChatScreen()) return openChatIndex();
@@ -236,12 +239,12 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
  * time, so a registration is already live before any command can fire it.
  */
 function createChannel() {
-  const handlers: Array<(view: "chat" | "file") => void> = [];
+  const handlers: Array<(view: DockReveal) => void> = [];
   return {
-    request(view: "chat" | "file") {
+    request(view: DockReveal) {
       handlers.at(-1)?.(view);
     },
-    register(handler: (view: "chat" | "file") => void) {
+    register(handler: (view: DockReveal) => void) {
       handlers.push(handler);
       return () => {
         const index = handlers.lastIndexOf(handler);
@@ -275,7 +278,7 @@ export function useChatNavigation(): ChatNavigation {
 }
 
 /** Registers the shell's dock reveal for as long as the shell is mounted. */
-export function useDockReveal(reveal: (view: "chat" | "file") => void) {
+export function useDockReveal(reveal: (view: DockReveal) => void) {
   const { registerDockReveal } = useChatNavigation();
   const latest = useRef(reveal);
   latest.current = reveal;

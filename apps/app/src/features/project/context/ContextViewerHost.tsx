@@ -3,9 +3,11 @@
  *
  * Fetches the active file through `useProjectContextRead` (the signed-URL
  * read route), chooses the matching viewer body for its kind, and composes the
- * shared `ReadOnlyViewerFrame` at the host boundary. Desktop exports the
- * headered host; phone documents use the bare host because their top-bar
- * breadcrumb already owns filename chrome.
+ * shared `ReadOnlyViewerFrame` at the host boundary. The Editor uses the
+ * headered host; phone documents and the dock's document use the bare host
+ * because their own chrome (top-bar breadcrumb, title chip) already names the
+ * file. Only images, PDFs and binaries land here from the dock; a text file
+ * mounts the editor.
  */
 
 import { Trans } from "@lingui/react/macro";
@@ -25,15 +27,11 @@ export type ContextViewerHostProps = {
   projectId: string;
   editorWorkId: string | null;
   tab: Extract<ContextTab, { kind: "viewer" }>;
-  header?: ReadOnlyViewerHeader;
 };
 
 export function ContextViewerHost(props: ContextViewerHostProps) {
   return (
-    <ContextViewerContent
-      {...props}
-      header={props.header ?? { name: props.tab.name, path: props.tab.path }}
-    />
+    <ContextViewerContent {...props} header={{ name: props.tab.name, path: props.tab.path }} />
   );
 }
 
@@ -74,7 +72,7 @@ function ContextViewerContent({
   }
 
   // Tracked-classified viewer tabs use the same read-only text preview in the
-  // dock and Editor hosts. Collaborative editing remains in the tracked editor
+  // Editor host. Collaborative editing remains in the tracked editor
   // mount and does not render through this component.
   const kind = previewKind(tab, read.data);
   const emptyMessage =
