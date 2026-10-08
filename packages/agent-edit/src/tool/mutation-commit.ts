@@ -25,7 +25,7 @@ import type {
   JournalCommitKind,
   UpdateJournal,
 } from "../ports/update-journal.js";
-import { applyYjsUpdateIfEffective, effectiveYjsUpdate } from "../yjs-update.js";
+import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
@@ -605,8 +605,20 @@ async function concurrentUpdatesSince(
   try {
     Y.applyUpdate(probe, Y.encodeStateAsUpdate(baselineDoc));
     const updates: ConcurrentUpdate[] = [];
+    let changed = false;
+    probe.on("afterTransaction", (transaction: Y.Transaction) => {
+      // State vectors alone miss delete-only updates. Transaction evidence records
+      // newly integrated structs and newly deleted ranges without encoding the probe.
+      changed ||=
+        transaction.deleteSet.clients.size > 0 ||
+        [...transaction.afterState].some(
+          ([client, clock]) => clock !== transaction.beforeState.get(client),
+        );
+    });
     for (const row of await journaledUpdatesIn(journal, docId, doc, liveJournalSeq)) {
-      if (applyYjsUpdateIfEffective(probe, row.update)) updates.push(row);
+      changed = false;
+      Y.applyUpdate(probe, row.update);
+      if (changed) updates.push(row);
     }
     // Only what no row accounts for, so a skipped own row isn't counted again here.
     const rest = Y.encodeStateAsUpdate(doc, Y.encodeStateVector(probe));

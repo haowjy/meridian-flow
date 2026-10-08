@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Attribute concurrent edits incrementally, including delete-only updates, without cloning each journal row.
+
 - Settle links before model move, Undo/Redo, and reply rollback transactions.
 
 - Removed unused namespace API exports and redundant Restore identity output.

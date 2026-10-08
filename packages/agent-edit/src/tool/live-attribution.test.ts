@@ -5,6 +5,11 @@ import type { JournalReadOptions } from "../ports/update-journal.js";
 import { expectOutcome, humanText } from "./test-support/assertions.js";
 import { context, harness } from "./test-support/write-tool-harness.js";
 
+vi.mock("yjs", async (importOriginal) => {
+  const actual = await importOriginal<typeof Y>();
+  return { ...actual, encodeStateAsUpdate: vi.fn(actual.encodeStateAsUpdate) };
+});
+
 type Harness = ReturnType<typeof harness>;
 
 async function writerTypes(ctx: Harness, blockIndex: number, text: string): Promise<number> {
@@ -92,5 +97,51 @@ describe("reversal rows", () => {
     expect(undoRow?.meta).toMatchObject({ origin: "system", actorTurnId: "turn-a-undo" });
     expect(saved.documents[0]?.concurrentEdits?.human ?? []).toEqual([]);
     expect(saved.documents[0]?.concurrentEdits?.agent).toHaveLength(1);
+  });
+});
+
+describe("concurrent attribution workload", () => {
+  it("attributes concurrent inserts and delete-only rows without serializing the document per row", async () => {
+    async function saveWithRows(count: number) {
+      const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma.\n\nDelta." });
+      await ctx.core.read({ file: "chapter.md" }, context);
+      const responseId = `response-workload-${count}`;
+      await ctx.core.write(
+        { command: "replace", file: "chapter.md", find: "Alpha.", content: "Alpha model." },
+        { ...context, turnId: "turn-workload", responseId },
+      );
+      const live = ctx.liveDoc("chapter.md");
+      for (let i = 0; i < count; i += 1) await writerTypes(ctx, 1, `writer${i} `);
+      const beforeDelete = Y.encodeStateVector(live);
+      humanText(live, 2, { from: 0, to: 3 }, "");
+      expect(Y.encodeStateVector(live)).toEqual(beforeDelete);
+      await ctx.journal.append("chapter.md", Y.encodeStateAsUpdate(live, beforeDelete), {
+        origin: "human:deleter",
+        seq: 0,
+      });
+      const beforeAgent = Y.encodeStateVector(live);
+      humanText(live, 3, { from: 0, to: 0 }, "Agent ");
+      await ctx.journal.append("chapter.md", Y.encodeStateAsUpdate(live, beforeAgent), {
+        origin: "agent:other",
+        actorTurnId: "other-turn",
+        seq: 0,
+      });
+      const encode = vi.mocked(Y.encodeStateAsUpdate);
+      encode.mockClear();
+      try {
+        const saved = await ctx.core.commitResponse(responseId);
+        const serializations = encode.mock.calls.length;
+        const attribution = saved.documents[0]?.concurrentEdits;
+        expect(attribution?.human).toHaveLength(2);
+        expect(attribution?.agent).toHaveLength(1);
+        return serializations;
+      } finally {
+        encode.mockClear();
+      }
+    }
+    const one = await saveWithRows(1);
+    const twenty = await saveWithRows(20);
+    // Bounded whole-state work: the growing journal must be applied incrementally.
+    expect(twenty - one).toBeLessThan(10);
   });
 });
