@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-
-import { createAssetPathResolver } from "./asset-path-resolver.js";
-import { docFrom, paragraph, parsedDoc, schema } from "./codec-test-support.js";
+import {
+  createAssetPathResolver,
+  docFrom,
+  paragraph,
+  parsedDoc,
+  schema,
+} from "./codec-test-support.js";
 import { markdownCodec } from "./index.js";
 
 describe("asset path resolution", () => {
