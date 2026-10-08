@@ -1,8 +1,10 @@
 /**
- * DraftSwitcher — the Draft chip with its menu: which version of THIS document
+ * DraftSwitcher — the version chip with its menu: which version of THIS document
  * is showing. The versions are the live document and its pending draft
- * (a document has one active draft per Work, so today that is two). Picking Live
- * leaves the review; the draft is the one already open. Moving between files is
+ * (a document has one active draft per Work, so today that is two). The same
+ * chip and menu show on the live document (`showing="live"`, picking Draft
+ * opens the review) and in review (picking Live leaves it), so the control the
+ * writer used to get in is the one they use to get out. Moving between files is
  * not here: it belongs to the Changes list (`ReviewFiles`), which also holds
  * the Work-wide Apply all and Discard all.
  *
@@ -16,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, Loader2 } from "lucide-react";
-import { useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,13 +27,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
+import { cn } from "@/lib/utils";
 import { DraftChipFace, draftChipHitClass } from "./DraftChip";
 
 export type DraftSwitcherProps = {
+  /** The version on screen; its menu item is checked and the chip names it. */
+  showing?: "live" | "draft";
   /** A draft-only document has no live version: it offers Close review instead. */
   draftOnly: boolean;
   disabled: boolean;
   onShowLive: () => void;
+  /** Opens the draft's review (live only). */
+  onShowDraft?: () => void;
+  /** The last attempt to open the review failed: the chip says so and Draft retries. */
+  failed?: boolean;
   /** A phone's header: the trigger is a 44px target and its menu fits the screen. */
   touch?: boolean;
   /** Whole-draft commands for this document, offered in the menu (phone). Absent once nothing is left to publish. */
@@ -48,9 +58,12 @@ export type DraftSwitcherProps = {
 };
 
 export function DraftSwitcher({
+  showing = "draft",
   draftOnly,
   disabled,
   onShowLive,
+  onShowDraft,
+  failed = false,
   touch = false,
   draftCommands,
   marks,
@@ -63,9 +76,25 @@ export function DraftSwitcher({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label={t`Draft version`} className={draftChipHitClass(touch)}>
-        <DraftChipFace state="reviewing" menu touch={touch}>
-          <Trans>Draft</Trans>
+      <DropdownMenuTrigger
+        aria-label={t`Document version`}
+        disabled={disabled && showing === "live"}
+        data-draft-review-chip={showing === "live" ? "" : undefined}
+        data-draft-review-chip-failed={failed ? "" : undefined}
+        className={cn(draftChipHitClass(touch), "disabled:opacity-50")}
+      >
+        <DraftChipFace
+          state={failed ? "failed" : showing === "live" ? "pending" : "reviewing"}
+          menu
+          touch={touch}
+        >
+          {failed ? (
+            <ReviewMessageText failure={{ code: "review-failed" }} />
+          ) : showing === "live" ? (
+            <Trans>Live</Trans>
+          ) : (
+            <Trans>Draft</Trans>
+          )}
         </DraftChipFace>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -82,14 +111,13 @@ export function DraftSwitcher({
           <Trans>Versions of this document</Trans>
         </DropdownMenuLabel>
         {draftOnly ? null : (
-          <DropdownMenuItem onSelect={onShowLive} className="pl-7">
+          <VersionItem current={showing === "live"} onSelect={onShowLive}>
             <Trans>Live version</Trans>
-          </DropdownMenuItem>
+          </VersionItem>
         )}
-        <DropdownMenuItem aria-current="true" className="gap-2 font-medium">
-          <Check aria-hidden className="size-3.5 text-primary" />
+        <VersionItem current={showing === "draft"} onSelect={onShowDraft}>
           <Trans>Draft</Trans>
-        </DropdownMenuItem>
+        </VersionItem>
         {draftCommands || marks ? <DropdownMenuSeparator /> : null}
         {draftCommands ? (
           <>
@@ -134,5 +162,26 @@ export function DraftSwitcher({
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function VersionItem({
+  current,
+  onSelect,
+  children,
+}: {
+  current: boolean;
+  onSelect?: () => void;
+  children: ReactNode;
+}) {
+  return current ? (
+    <DropdownMenuItem aria-current="true" className="gap-2 font-medium">
+      <Check aria-hidden className="size-3.5 text-primary" />
+      {children}
+    </DropdownMenuItem>
+  ) : (
+    <DropdownMenuItem onSelect={onSelect} className="pl-7">
+      {children}
+    </DropdownMenuItem>
   );
 }

@@ -103,7 +103,8 @@ describe("DraftSwitcher", () => {
         expect(onChange).toHaveBeenCalledWith(false);
         await open();
         await act(async () => item("Rename")?.click());
-        expect(onRename).toHaveBeenCalledOnce();
+        // Rename runs from the menu's close-focus callback, after Radix finishes closing.
+        await vi.waitFor(() => expect(onRename).toHaveBeenCalledOnce());
       },
     );
   });
