@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Removed unused namespace API exports and redundant Restore identity output.
+
 - Concurrent attribution requires its existing read baseline; removed unreachable fallback.
 
 - Mixed and content-only Undo use the same write selector.
@@ -30,8 +32,6 @@
 
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
-
-## [Unreleased]
 
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
 - Model tool results are short text; the typed `result` is stored beside it, and the app reads only `result`. `read` and `write` return a status line plus `hash|text` blocks. `ls` returns the folder's URI, then one line per entry, with `(read-only)` and a non-text file's kind only when they apply. `work` returns one line per Work, `search` returns `hash|excerpt` around each match, and a `read` outline gives each heading's `#slug`. `verbose: true` on `ls`, `work` and `search` adds sizes, edit times, dates and whole blocks. A refusal reads as its message and code. In the typed result, `ls` entries carry `readonly` (was `editable`) and Works carry `writes` and `pendingChangeCount`.

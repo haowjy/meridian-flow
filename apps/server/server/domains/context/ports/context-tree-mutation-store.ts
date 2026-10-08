@@ -101,7 +101,6 @@ export type ContextTreeDeleteCommand = {
 export type ContextTreeRestoreCommand = { sourceId: string; documentId: string };
 
 export interface ContextTreeRestoreResult {
-  restoredDocumentId: string;
   availabilityGeneration: string;
 }
 

@@ -11,7 +11,7 @@ import { type RestoreDeleteOutcome, restoreAgentDelete } from "@/client/api/rest
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { threadQueryKeys } from "./thread-query-keys";
 
-export type RestoreDeleteInput = { turnId: string; documentId: string; wId: number };
+type RestoreDeleteInput = { turnId: string; documentId: string; wId: number };
 export type RestoreDeleteFailure = RestoreDeleteOutcome | { status: "request_failed" };
 type Surface = "tool" | "receipt";
 type RestoreRecord =

@@ -18,11 +18,11 @@ import {
   type WriteHandleHistory,
 } from "../../domains/collab/index.js";
 
-export type ReversalStep =
+type ReversalStep =
   | { kind: "content"; handles: string[] }
   | { kind: "namespace"; change: NamespaceChangeRecord };
 
-export type ReversalWalk =
+type ReversalWalk =
   | { ok: true; steps: ReversalStep[] }
   | { ok: false; status: "invalid_write" | "cant_undo_dependent"; message: string };
 

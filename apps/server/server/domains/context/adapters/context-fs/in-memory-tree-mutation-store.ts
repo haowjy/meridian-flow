@@ -626,7 +626,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       this.markMutatorWrite();
       this.backing.availabilityGeneration.value += 1n;
       return Ok({
-        restoredDocumentId: doc.id,
         availabilityGeneration: String(this.backing.availabilityGeneration.value),
       });
     });

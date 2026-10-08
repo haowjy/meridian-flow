@@ -58,7 +58,6 @@ export {
 export type {
   DocumentCommandName,
   DocumentVersion,
-  NamespaceCommandName,
   ReadCommand,
   ReadToolInput,
   WriteCommand,

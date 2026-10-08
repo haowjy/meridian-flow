@@ -728,7 +728,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       );
       // Link redirects held back while their target was deleted can apply again.
       runAfterDrizzleCommit(this.kickLinkUpdates);
-      return Ok({ restoredDocumentId: command.documentId, availabilityGeneration });
+      return Ok({ availabilityGeneration });
     });
   }
 }

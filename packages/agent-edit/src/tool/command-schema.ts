@@ -364,7 +364,6 @@ export type WriteCommandName = WriteCommand["command"];
 export type ReadToolInput = z.output<typeof ReadToolInputSchema>;
 export type WriteToolInput = z.output<typeof WriteToolInputSchema>;
 /** `write`'s commands the host runs itself: they move or delete a whole document. */
-export type NamespaceCommandName = Extract<WriteToolInput["command"], "move" | "delete">;
 
 /** Every operation a `read` or `write` result reports. */
 export type DocumentCommandName = "read" | WriteToolInput["command"];

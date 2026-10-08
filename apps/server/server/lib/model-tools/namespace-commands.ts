@@ -100,7 +100,7 @@ function workName(slug: string | null): string {
  * A draft-mode Work holds every change to the project's files, but a draft
  * can't hold a move or delete yet, so the change isn't made.
  */
-export function draftRefusal(
+function draftRefusal(
   command: DocumentCommandName,
   doing: string,
   destinations: readonly FileDestination[],

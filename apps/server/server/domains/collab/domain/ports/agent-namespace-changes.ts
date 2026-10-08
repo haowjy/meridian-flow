@@ -17,7 +17,7 @@ export type NamespaceChangeOwner = {
   draftBranchId: string | null;
 };
 
-export type NamespaceChangeStatus = "active" | "reversed";
+type NamespaceChangeStatus = "active" | "reversed";
 
 /** A recorded change, as undo and redo plan it. */
 export type NamespaceChangeRecord = NamespaceChangeShape & {

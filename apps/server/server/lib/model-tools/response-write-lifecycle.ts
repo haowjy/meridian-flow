@@ -40,7 +40,7 @@ type StagedCreateCleanup = {
  * A move or delete committed when the tool was called (D66), reversed if its
  * reply rolls back. `port` writes live, the version the change landed in.
  */
-export type StagedNamespaceChange = {
+type StagedNamespaceChange = {
   responseId: string;
   port: ContextPort;
   change: NamespaceChangeRecord;

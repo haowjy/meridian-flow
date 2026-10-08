@@ -47,7 +47,7 @@ type Direction = ReversalInput["command"];
 type ContentOutcome = (WriteOutcome & { isError: false }) | WriteToolErrorOutput;
 
 /** The engine's half: where a path is, and an undo or redo of the document's content writes. */
-export interface ContentReversal {
+interface ContentReversal {
   resolve(path: string): Promise<ResolvedDocumentAddress | WriteToolErrorOutput>;
   /** Exactly `handles`, or the model's own selector when omitted. */
   run(address: ResolvedDocumentAddress, handles?: readonly string[]): Promise<ContentOutcome>;

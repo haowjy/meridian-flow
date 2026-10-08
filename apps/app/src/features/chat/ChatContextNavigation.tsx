@@ -18,7 +18,7 @@ export type CanOpenContextUri = (uri: string) => boolean;
  * Opens a document by id, wherever it is now; `uri` is where the transcript
  * saw it, the fallback when the id leads nowhere.
  */
-export type OpenContextDocument = (documentId: string, uri: string) => void;
+type OpenContextDocument = (documentId: string, uri: string) => void;
 
 const ChatContextNavigationContext = createContext<OpenContextUri | null>(null);
 const ChatContextRoutabilityContext = createContext<CanOpenContextUri | null>(null);

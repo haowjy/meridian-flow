@@ -32,7 +32,7 @@ import type { ToolView } from "./group-delivery-segments";
 import { sourcePath, stringInput, toolInputObject } from "./tool-command";
 
 /** The write handle a finished move or delete names: the document and its `w<n>`. */
-export function namespaceChangeHandle(tool: ToolView): { documentId: string; wId: number } | null {
+function namespaceChangeHandle(tool: ToolView): { documentId: string; wId: number } | null {
   const documentId = tool.metadata?.documentId;
   const handle = writeHandleId(tool.result);
   const wId = handle?.match(/^w(\d+)$/)?.[1];
