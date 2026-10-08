@@ -8,7 +8,7 @@
  * cannot drift between them. Work-wide Apply all and Discard all belong to the
  * Changes list (`ReviewFiles`), not here.
  */
-import { useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 
 import {
@@ -132,11 +132,16 @@ export function useReviewHeader({
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId }, rows);
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
-  /** Run a whole-draft command, then move to the next draft (or live) without waiting on it. */
+  /**
+   * Run a whole-draft command, then move to the next draft (or live) without
+   * waiting on it. Offline the command is refused before it is sent, so the
+   * writer stays on this draft, where the refusal shows.
+   */
   const dispose = (command: () => Promise<unknown>) => {
     if (locked) return;
+    const sending = onlineManager.isOnline();
     void command();
-    if (next) onOpenDraft(next);
+    if (next && sending) onOpenDraft(next);
   };
   return {
     controller,
