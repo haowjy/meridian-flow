@@ -1,6 +1,10 @@
-/** A client joining a pending summary must accept the live compaction phase. */
+/** Thread socket decoding contracts for live state and context catalog wakes. */
 import { expect, it } from "vitest";
-import { parseWsServerMessage } from "./ws-protocol.js";
+import {
+  encodeWsServerMessage,
+  parseWsServerMessage,
+  type WsServerMessage,
+} from "./ws-protocol.js";
 
 it("decodes a subscription while the thread is compacting", () => {
   expect(
@@ -20,4 +24,14 @@ it("decodes a subscription while the thread is compacting", () => {
       }),
     ),
   ).not.toBeNull();
+});
+
+it("decodes an encoded lineage catalog wake hint", () => {
+  const hint: WsServerMessage = {
+    type: "context-catalog-hint",
+    scope: { kind: "lineage", projectId: "project", rootThreadId: "root-thread" },
+    headRevision: "7",
+  };
+
+  expect(parseWsServerMessage(encodeWsServerMessage(hint))).toEqual(hint);
 });
