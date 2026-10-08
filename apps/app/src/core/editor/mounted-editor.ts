@@ -22,7 +22,7 @@ import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import type { WikilinkPasteCatalog } from "./links";
-import { gateLocalPresence } from "./local-presence";
+import { gateCaretPresence } from "./local-presence";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
@@ -63,9 +63,8 @@ export type EditorSurfaceOptions = {
    */
   editorProps: NonNullable<EditorOptions["editorProps"]>;
   /**
-   * Whether this editor may write the client's local presence. A view kept
-   * warm behind another one of the same session must not (see
-   * `gateLocalPresence`).
+   * Whether this editor may publish the client's caret. A view kept warm
+   * behind another one of the same session must not (see `gateCaretPresence`).
    */
   publishPresence: boolean;
 };
@@ -139,13 +138,14 @@ export function useMountedEditor({
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
   const [construction] = useState(() => {
+    const caretGate = gateCaretPresence(session.presence, () => publishPresenceRef.current);
     const editorConfig = createEditorConfig({
       document: session.document,
       // The session owns whether this client is visible (inline review suspends
       // it), so it owns every local awareness field the editor publishes — the
-      // caret's included. Gated, because another view of this session may be
-      // the one in front.
-      presence: gateLocalPresence(session.presence, () => publishPresenceRef.current),
+      // caret's included. Its caret is arbitrated, because another view of
+      // this session may be the one in front.
+      presence: caretGate.presence,
       schemaType: identity.schemaType,
       assetRenderContext: { projectId: identity.projectId },
       showCollaborationDecorations: identity.collaborationDecorations,
@@ -159,6 +159,7 @@ export function useMountedEditor({
       wikilinkPaste: { catalog: () => wikilinkPasteCatalogRef.current?.() ?? null },
     });
     return {
+      caretGate,
       editorConfig,
       initialOptions: {
         ...editorConfig,
@@ -183,6 +184,11 @@ export function useMountedEditor({
   );
 
   const [editor, setEditor] = useState<Editor | null>(null);
+
+  // Going to the back takes the caret off the wire, once, on this editor's say.
+  useEffect(() => {
+    if (!surface.publishPresence) construction.caretGate.retire();
+  }, [construction, surface.publishPresence]);
 
   useEffect(() => {
     // TipTap's useEditor defers construction into its own passive effect when

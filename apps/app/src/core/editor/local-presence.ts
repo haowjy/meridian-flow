@@ -157,48 +157,56 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
  * behind the screen, and the dock's document. Both write the same `cursor`
  * field, and the view that is not in front would clear the caret of the one
  * that is (y-prosemirror clears a caret it did not just place whenever its
- * own editor updates unfocused).
+ * own editor updates unfocused), so the two ping-pong awareness writes.
  *
- * So a view's writes go through this gate. While `publishing()` is true they
- * pass. While it is false they are dropped, except that a view may still
- * retire a value it left on the wire (the blur that arrives after the view
- * went to the back), and only while that value is still the one on the wire,
- * so it never clears the front view's caret.
+ * So the caret, and only the caret, is arbitrated: this view's `cursor`
+ * writes through `caretProvider` pass while `publishing()` is true and are
+ * dropped otherwise. Every other field, the image-upload announcements
+ * included, is background work the session owns whether or not this view is
+ * visible, and passes through untouched, clears included.
+ *
+ * A view that goes to the back calls `retire()` once, which clears the caret
+ * it left on the wire if it still owns it (its last accepted write was a
+ * caret). Ownership is that fact, not the cursor's value: two views can hold
+ * equal cursors and a back view must still never clear the front one's.
  */
-export function gateLocalPresence(
+export function gateCaretPresence(
   presence: LocalPresenceFields,
   publishing: () => boolean,
-): LocalPresenceFields {
+): { presence: LocalPresenceFields; retire: () => void } {
   const wire = presence.caretProvider.awareness;
-  /** What this view last put on the wire per field, until it clears it. */
-  const left = new Map<string, string>();
-  const setField = (field: string, value: unknown): void => {
-    if (publishing()) {
-      if (value == null) left.delete(field);
-      else left.set(field, JSON.stringify(value));
+  let ownsCaret = false;
+  const setCaretField = (field: string, value: unknown): void => {
+    if (field !== "cursor") {
       presence.setField(field, value);
       return;
     }
-    const mine = left.get(field);
-    if (value != null || mine === undefined) return;
-    left.delete(field);
-    if (JSON.stringify(wire.getLocalState()?.[field]) === mine) presence.setField(field, null);
+    if (!publishing()) return;
+    ownsCaret = value != null;
+    presence.setField(field, value);
   };
   return {
-    peers: presence.peers,
-    setField,
-    caretProvider: {
-      awareness: {
-        clientID: wire.clientID,
-        get states() {
-          return wire.states;
+    presence: {
+      peers: presence.peers,
+      setField: presence.setField,
+      caretProvider: {
+        awareness: {
+          clientID: wire.clientID,
+          get states() {
+            return wire.states;
+          },
+          getStates: () => wire.getStates(),
+          getLocalState: () => wire.getLocalState(),
+          setLocalStateField: setCaretField,
+          on: (name, handler) => wire.on(name, handler),
+          off: (name, handler) => wire.off(name, handler),
         },
-        getStates: () => wire.getStates(),
-        getLocalState: () => wire.getLocalState(),
-        setLocalStateField: setField,
-        on: (name, handler) => wire.on(name, handler),
-        off: (name, handler) => wire.off(name, handler),
       },
+    },
+    retire() {
+      if (!ownsCaret) return;
+      ownsCaret = false;
+      presence.setField("cursor", null);
     },
   };
 }

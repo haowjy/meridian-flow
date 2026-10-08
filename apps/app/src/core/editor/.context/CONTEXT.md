@@ -252,13 +252,17 @@ lifetime.
   anywhere in `apps/app/src` outside `local-presence.ts`.
 - **Two editors can share one session** (an Editor tab kept warm behind the screen,
   and the dock's document). Presence is the session's, but each editor's cursor
-  plugin clears a caret it did not place whenever its own view updates unfocused, so
-  two bound editors ping-pong awareness writes and peers see the caret flap.
-  `useMountedEditor` therefore hands each editor `gateLocalPresence(session.presence,
-  () => surface.publishPresence)`: writes pass only while the editor is `active`
-  (`EditorView` passes its `active`), and a back editor may still retire a value it
-  left on the wire, but only while that value is still the one there. Undo needs no
-  such rule: stacks are per editor and both track every local edit.
+  plugin clears a caret it did not place whenever its own view updates unfocused,
+  so two bound editors ping-pong awareness writes and peers see the caret flap.
+  `useMountedEditor` therefore hands each editor `gateCaretPresence(session.presence,
+  () => surface.publishPresence)`: only its `cursor` writes through `caretProvider`
+  are arbitrated (pass while the editor is `active`, dropped otherwise). Every other
+  field, image-upload announcements and their clears included, passes through
+  ungated, because that work belongs to the session whether or not the view shows.
+  When an editor goes to the back it calls `retire()` once, which clears the caret
+  it owns (its last accepted write was a caret), by ownership and never by comparing
+  cursor values. Undo needs no such rule: stacks are per editor and both track every
+  local edit.
 - The account resource replica durably reserves metadata before exact content
   opening. Content opening awaits account authority readiness and initializes
   the reserved database before exposing an editable handle. A failure may leave

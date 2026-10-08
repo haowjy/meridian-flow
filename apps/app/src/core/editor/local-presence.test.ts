@@ -1,47 +1,63 @@
-/** Two views of one session share its presence: only the one in front may speak. */
+/** Two views of one session share its presence: only the one in front may show a caret. */
 
 import { describe, expect, it } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { createLocalPresence, gateLocalPresence } from "./local-presence";
+import { createLocalPresence, gateCaretPresence } from "./local-presence";
 
 function twoViews() {
   const awareness = new Awareness(new Y.Doc());
   const presence = createLocalPresence(awareness);
   let front: "tab" | "dock" = "tab";
-  const tab = gateLocalPresence(presence, () => front === "tab");
-  const dock = gateLocalPresence(presence, () => front === "dock");
+  const tab = gateCaretPresence(presence, () => front === "tab");
+  const dock = gateCaretPresence(presence, () => front === "dock");
+  const caret = (view: typeof tab, value: unknown) =>
+    view.presence.caretProvider.awareness.setLocalStateField("cursor", value);
   return {
     tab,
     dock,
-    cursor: () => awareness.getLocalState()?.cursor,
+    caret,
+    state: () => awareness.getLocalState(),
     bring: (view: "tab" | "dock") => {
       front = view;
     },
   };
 }
 
-describe("gateLocalPresence", () => {
-  it("drops a back view's writes, so it cannot clear the front view's caret", () => {
-    const { tab, dock, cursor, bring } = twoViews();
-    tab.setField("cursor", { anchor: 1 });
+describe("gateCaretPresence", () => {
+  it("drops a back view's caret writes, so it cannot clear the front view's", () => {
+    const { tab, dock, caret, state, bring } = twoViews();
+    caret(tab, { anchor: 1 });
+    tab.retire();
     bring("dock");
-    dock.setField("cursor", { anchor: 7 });
+    caret(dock, { anchor: 7 });
 
     // y-prosemirror clears a caret it believes is its own whenever its editor updates unfocused.
-    tab.setField("cursor", null);
-    tab.setField("cursor", { anchor: 3 });
+    caret(tab, null);
+    caret(tab, { anchor: 3 });
 
-    expect(cursor()).toEqual({ anchor: 7 });
+    expect(state()?.cursor).toEqual({ anchor: 7 });
   });
 
-  it("lets a view retire the caret it left behind when it goes to the back", () => {
-    const { tab, cursor, bring } = twoViews();
-    tab.setField("cursor", { anchor: 4 });
+  it("retires the caret a view left behind exactly once, even when the front view holds an equal one", () => {
+    const { tab, dock, caret, state, bring } = twoViews();
+    caret(tab, { anchor: 4, head: 4 });
+    bring("dock");
+    tab.retire();
+    expect(state()?.cursor).toBeNull();
+
+    caret(dock, { anchor: 4, head: 4 });
+    tab.retire();
+    expect(state()?.cursor).toEqual({ anchor: 4, head: 4 });
+  });
+
+  it("lets an upload announcement clear while its view is in the back", () => {
+    const { tab, bring, state } = twoViews();
+    tab.presence.setField("imageUploads", ["token"]);
     bring("dock");
 
-    tab.setField("cursor", null);
+    tab.presence.setField("imageUploads", []);
 
-    expect(cursor()).toBeNull();
+    expect(state()?.imageUploads).toEqual([]);
   });
 });
