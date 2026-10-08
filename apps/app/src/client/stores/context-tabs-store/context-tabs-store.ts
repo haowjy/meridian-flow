@@ -21,7 +21,6 @@ export {
   isEditorTab,
   type ProjectTabsSlice,
   type ServerContextTab,
-  viewerTabForCatalogFile,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {

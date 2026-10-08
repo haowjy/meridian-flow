@@ -18,6 +18,7 @@ import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import {
   chatSurfaceThreadId,
+  type DockReveal,
   displayedChatThreadId,
   useChatNavigation,
   useDockReveal,
@@ -50,8 +51,8 @@ export function MobileProject(props: MobileProjectProps) {
   const [chatOpen, setChatOpen] = useState(
     () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  const openChatSheet = (view: "chat" | "file" = "chat") => {
-    setDockView(props.activeScreen, view);
+  const openChatSheet = (view: DockReveal = "chat") => {
+    if (view === "chat") setDockView(props.activeScreen, view);
     setChatOpen(true);
   };
   useDockReveal((view) => openChatSheet(view));

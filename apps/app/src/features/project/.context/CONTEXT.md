@@ -156,13 +156,11 @@ jade action. Both shells share this route-owned module. At phone geometry, text
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
 
-The Work dock has one transient read-only file slot for Scratch and Uploads. Its
-session-only `workFile` state carries `{ workId, tab }`; opening a second file
-replaces the first. `DockShell` keeps the Chat occupant mounted and inert behind
-the viewer, and the contained dock switch can return to Chat or close the file.
-`viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
-Scratch and Uploads. The Files tab shows Drafts and Scratch only; Work Uploads
-have no Files tab surface (composer attachments still land there, see
+The dock holds one transient document for Work and Chat (see
+[`dock/.context/CONTEXT.md`](../dock/.context/CONTEXT.md)): a Work's Files row opens
+a Scratch note there in the standard editor, editable, with the Editor's saving,
+offline and archived-Work behaviour. The Files tab shows Drafts and Scratch only;
+Work Uploads have no Files tab surface (composer attachments still land there, see
 [TODO](TODO)). A "Drafts to review" row launches review through the same
 `useAiDraftLauncher` handoff as the other review launchers, not a plain
 document open. Files search uses one name matcher across drafts and Scratch;
@@ -173,11 +171,8 @@ landing note keeps its row.
 `ProjectView` clears the slot when its Work changes or the Work destination
 leaves. It reconciles against the route screen and Work identity, including
 unresolved client-addressed creation routes, so the collection and other screens
-cannot inherit a prior Work's file.
-The viewer uses `ContextViewerBareHost` because dock header chrome names the file
-and provides Open in Editor; text content, images, and PDFs stay constrained to
-the dock body. Open in Editor clears the slot before routing through
-`openWorkContext`.
+cannot inherit a prior Work's note. On the phone, and on the Editor screen, a
+Files row opens the document in the Editor instead.
 
 The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a

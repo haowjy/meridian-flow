@@ -21,10 +21,12 @@ export type ContextSidebarProps = {
   threadId: string | null;
   /** Active project; powers the Results section (project-scoped, not thread-scoped). */
   projectId: string | null;
+  /** Whether the rail's dock is open; a collapsed dock's document editor stands down. */
+  visible: boolean;
   onClose: () => void;
 };
 
-export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarProps) {
+export function ContextSidebar({ threadId, projectId, visible, onClose }: ContextSidebarProps) {
   const recent = useThreadRecentDocuments(threadId);
   // Results live at the project scope (artifact persistence outlives any
   // single chat), so the rail tracks `projectId` independently of the
@@ -38,6 +40,7 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
         projectId={projectId ?? ""}
         placement="dock"
         screen="chat"
+        visible={visible}
         renderHeader={(args) => <DockHeader {...args} onClose={onClose} />}
       >
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
