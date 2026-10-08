@@ -39,15 +39,27 @@ describe("gateCaretPresence", () => {
     expect(state()?.cursor).toEqual({ anchor: 7 });
   });
 
-  it("retires the caret a view left behind exactly once, even when the front view holds an equal one", () => {
+  it("retires its caret when no one else has published, and not after the front view's equal one", () => {
     const { tab, dock, caret, state, bring } = twoViews();
     caret(tab, { anchor: 4, head: 4 });
     bring("dock");
     tab.retire();
     expect(state()?.cursor).toBeNull();
 
+    // Retire first, then the dock publishes an equal cursor: a second retire is a no-op.
     caret(dock, { anchor: 4, head: 4 });
     tab.retire();
+    expect(state()?.cursor).toEqual({ anchor: 4, head: 4 });
+  });
+
+  it("does not let a late retire clear an equal caret the front view published first", () => {
+    const { tab, dock, caret, state, bring } = twoViews();
+    caret(tab, { anchor: 4, head: 4 });
+    bring("dock");
+    caret(dock, { anchor: 4, head: 4 });
+
+    tab.retire();
+
     expect(state()?.cursor).toEqual({ anchor: 4, head: 4 });
   });
 
