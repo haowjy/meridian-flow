@@ -53,8 +53,7 @@ function preview(
     status: "active",
     draftId: "draft",
     reviewRoomName: "room",
-    live: "",
-    preview: "",
+
     liveRevisionToken: "l",
     draftRevisionToken: "t",
     inlineModelPresent: true,

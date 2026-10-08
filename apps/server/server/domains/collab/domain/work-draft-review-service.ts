@@ -31,7 +31,6 @@ import type {
   WorkDraftEmptySettlement,
 } from "./ports/application-branch-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
-import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export type DraftReviewDiagnostics = {
@@ -53,7 +52,6 @@ export function createWorkDraftReviewService(input: {
   branchPush: BranchPushService;
   branchReview: BranchReviewService;
   workDraftPending: WorkDraftPending;
-  documents: Pick<MarkdownDocumentEngine, "serializeDocument">;
   model: YProsemirrorDocumentModel;
   agentEdit: ThreadPeerAgentEditCore;
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
@@ -194,8 +192,6 @@ export function createWorkDraftReviewService(input: {
           status: "active" as const,
           draftId: command.draftId,
           reviewRoomName: branchRoomName(branch.branchId, branch.generation),
-          live: await input.documents.serializeDocument(command.documentId, liveDoc),
-          markdown: await input.documents.serializeDocument(command.documentId, branch.doc),
           isNewDocument: await isDraftOnlyManifestDocument(command),
           liveRevisionToken: liveState.revision,
           draftRevisionToken: draftReviewRevision(branch.generation, branch.doc, rows),
@@ -493,11 +489,6 @@ export function createWorkDraftReviewService(input: {
         return discardWorkDraft(command);
       },
     },
-    draftSessionStats: {
-      async listActiveDraftsByWork(command) {
-        return listReviewableWorkDraftBranches(command.workId);
-      },
-    },
   };
 }
 
@@ -514,7 +505,6 @@ function reviewUpdates(rows: readonly BranchJournalRow[]) {
     actorUserId: row.actorUserId,
     updateData: row.updateData,
     updateMeta: row.updateMeta,
-    updateKind: row.status === "rollback_pending" ? ("rollback_pending" as const) : row.source,
   }));
 }
 

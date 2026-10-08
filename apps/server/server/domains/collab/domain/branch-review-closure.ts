@@ -1,8 +1,8 @@
 /** Builds server-authoritative dependency-closed Apply/Discard classes. */
 
+import type { ReviewHunk } from "@meridian/contracts/drafts";
 import {
   asPhysicalSourceUpdateIds,
-  type DraftReviewHunkInternal,
   type DraftReviewOperationInternal,
   type PhysicalSourceUpdateIds,
 } from "./draft-review-types.js";
@@ -24,7 +24,7 @@ type DependencyUpdate = { id: number; updateData: Uint8Array | Buffer };
  */
 export function assignReviewClasses(input: {
   operations: readonly Omit<DraftReviewOperationInternal, "closureClassId">[];
-  hunks: readonly DraftReviewHunkInternal[];
+  hunks: readonly ReviewHunk[];
   updates?: readonly DependencyUpdate[];
   baseDeletedRanges?: readonly ClockRange[];
 }): DraftReviewOperationInternal[] {

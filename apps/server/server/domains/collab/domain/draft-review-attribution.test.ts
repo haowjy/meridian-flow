@@ -291,7 +291,6 @@ describe("draft review attribution", () => {
       ),
     ).toEqual(paragraphs);
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["175"], ["176"], ["177"]]);
-    expect(result.wordDelta).toEqual({ wordsAdded: 0, wordsRemoved: 6 });
   });
 
   it("preserves the full diff union across mixed insertions and cumulative removals", () => {

@@ -1,10 +1,11 @@
 /** Replays draft history into an attribution index, preserving explicit coverage failure. */
+
+import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
 import { restorationAliasesFromMetadata } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   asPhysicalSourceUpdateIds,
   asSourceUpdateIds,
-  type DraftReviewDeletedSpanInternal,
   type PhysicalSourceUpdateId,
   type PhysicalSourceUpdateIds,
   type SourceUpdateIds,
@@ -17,7 +18,6 @@ export type IndexedDraftUpdate = {
   actorTurnId: string | null;
   actorUserId?: string | null;
   updateData: Uint8Array;
-  updateKind?: string | null;
   updateMeta?: unknown;
 };
 
@@ -32,7 +32,7 @@ export type DraftUpdateAttributionIndex = {
     complete: boolean;
     operationIds: string[];
     insertedAttribution: OperationClockRange[];
-    deletedSpans: DraftReviewDeletedSpanInternal[];
+    deletedSpans: ReviewDeletedSpan[];
   };
   hasInterleavedEdits(insertedRanges: readonly ClockRange[]): boolean;
   operationContributionsForRanges(input: {
@@ -273,9 +273,9 @@ export function indexDraftUpdates(input: {
 
   function deletedSpansForRanges(deletedRanges: readonly ClockRange[]): {
     complete: boolean;
-    spans: DraftReviewDeletedSpanInternal[];
+    spans: ReviewDeletedSpan[];
   } {
-    const spans: DraftReviewDeletedSpanInternal[] = [];
+    const spans: ReviewDeletedSpan[] = [];
     let offset = 0;
     for (const range of deletedRanges) {
       const boundaries = new Set([range.clock, range.clock + range.length]);

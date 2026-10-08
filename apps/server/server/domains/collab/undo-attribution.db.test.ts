@@ -98,7 +98,7 @@ it("Undo survives reload and retry, and Apply credits only the AI turn", async (
     if (preview.status !== "active") throw new Error("missing cold preview");
     expect(preview.operations).toHaveLength(1);
     expect(preview.operations[0]).toMatchObject({ kind: "agent", actorTurnId: TURN_ID });
-    expect(preview.markdown).toContain("serpent");
+    expect(await reloaded.draftMarkdown(branch.branchId)).toContain("serpent");
     const applied = await reloaded.collab.draftReview.applyWorkDraftChanges({
       ...command,
       operationIds: preview.operations.map((operation) => operation.operationId),

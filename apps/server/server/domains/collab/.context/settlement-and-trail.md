@@ -99,7 +99,7 @@
   `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.
   Preview operations and revision tokens do not constrain this whole-document command.
-- **Per-change Apply is preview-scoped**: `DraftApplyChangesRequest` names a
+- **Per-change Apply and Discard are preview-scoped**: `DraftApplyChangesRequest` names a
   nonempty set of operation IDs plus both opaque revision tokens. Under the shared
   branch critical section, recompute the comparison against a durable live cut
   and require complete classes. Refuse `stale`, `gone`, `draft_only`, or
@@ -108,7 +108,10 @@
   The live token includes authority identity, generation, and next admission
   sequence captured with journal bytes under the document mutation lock. Recheck
   that token inside durable push commit under the same lock, so an admission
-  after selection cannot sneak into a successful stale Apply. The draft token
+  after selection cannot sneak into a successful stale Apply or Discard. Discard
+  expands a nonempty selection to its complete class; missing tokens refuse
+  `stale`. An absent selection alone chooses whole Discard; present malformed
+  or empty selections are HTTP 400, never whole Discard. The draft token
   hashes generation, delete-set-aware Yjs content revision, and reviewable row
   identities/status. Branch-state CAS and selected-row settlement predicates fence
   cross-process draft arrivals; retries recompute selection and tokens.
@@ -117,6 +120,13 @@
   idempotence, retaining each selected row's original agent turn or writer user.
   Success is returned only after the existing settlement completion fence, not
   after a durable outbox handoff. Per-change Undo is not implemented.
+  After disposition has committed, the application service owns terminal cleanup
+  and its disposition policy. Cleanup failure is diagnosed and leaves
+  `draftClosed: false`; it cannot reject an already committed command. The
+  initial disposition and generation cleanup are still separate transactions.
+  Preview carries anchored hunks, operations, room identity and revisions only,
+  not whole-document Markdown. Presentation types come from the public contract;
+  internal operations add branded source and physical journal IDs.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;

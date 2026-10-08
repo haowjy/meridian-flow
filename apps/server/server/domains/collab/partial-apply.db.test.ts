@@ -92,6 +92,7 @@ describe("per-change Apply (postgres)", () => {
     if (preview.status !== "active") throw new Error("missing preview");
     expect(preview.operations).toHaveLength(3);
     expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(1);
+    const expectedDraft = await fixture.draftMarkdown(branch.branchId);
     const later = preview.operations.at(-1);
     if (!later) throw new Error("missing later operation");
     const refused = await fixture.collab.draftReview.applyWorkDraftChanges({
@@ -108,7 +109,7 @@ describe("per-change Apply (postgres)", () => {
       draftRevisionToken: preview.draftRevisionToken,
     });
     expect(result).toMatchObject({ status: "applied", draftClosed: true });
-    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(preview.markdown);
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(expectedDraft);
     expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toEqual([]);
   });
 
@@ -301,9 +302,11 @@ describe("per-change Apply (postgres)", () => {
     };
     const preview = await fixture.collab.draftReview.preview(command);
     if (preview.status !== "active") throw new Error("missing pending preview");
-    expect(preview.markdown).toContain("Pending proposal");
-    expect(preview.markdown).toContain(source === "writer" ? "Live writer" : "Live agent");
-    expect(preview.live).not.toContain("Pending proposal");
+    expect(await fixture.draftMarkdown(branch.branchId)).toContain("Pending proposal");
+    expect(await fixture.draftMarkdown(branch.branchId)).toContain(
+      source === "writer" ? "Live writer" : "Live agent",
+    );
+    expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("Pending proposal");
     expect(preview.operations.flatMap((op) => op.sourceUpdateIds)).toContain(pendingId);
     expect(await journalStatuses(branch.branchId)).toContainEqual({
       id: pendingId,
@@ -572,7 +575,7 @@ describe("per-change Apply (postgres)", () => {
     });
     const after = await fixture.collab.draftReview.preview(command);
     if (after.status !== "active") throw new Error("missing preview");
-    expect(after.markdown).toBe("Alpha base.\n");
+    expect(await fixture.draftMarkdown(branch.branchId)).toBe("Alpha base.\n");
     expect(after.operations).toEqual([]);
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha base.\n");
   });
@@ -678,7 +681,7 @@ describe("per-change Apply (postgres)", () => {
     });
     const after = await fixture.collab.draftReview.preview(command);
     if (after.status !== "active") throw new Error("missing preview");
-    expect(after.markdown).toBe("Alpha base.\n\nBeta base.\n");
+    expect(await fixture.draftMarkdown(branch.branchId)).toBe("Alpha base.\n\nBeta base.\n");
     expect(after.operations).toEqual([]);
   });
 

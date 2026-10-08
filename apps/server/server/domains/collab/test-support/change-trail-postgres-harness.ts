@@ -615,7 +615,6 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     branchPush: realBranchPush,
     branchReview,
     workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
-    documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
     resolveDocumentUri,
@@ -1758,6 +1757,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       branchStore,
       branchCoordinator,
       realBranchPush,
+      draftMarkdown: (branchId: string) =>
+        branchCoordinator.readBranch(branchId, async (doc) => serializeMarkdown(doc)),
       trailDelivery,
       hocuspocus,
       model,
