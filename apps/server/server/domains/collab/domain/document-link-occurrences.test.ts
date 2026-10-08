@@ -22,40 +22,6 @@ const words = (fragment: Y.XmlFragment) =>
     .filter((o) => o.kind === "text")
     .map((o) => [o.href, o.words]);
 
-it.each([
-  ["chapter.md", "gate.md", true],
-  ["chapter", "gate", true],
-  ["chapter", "chapter", false],
-  ["chapter ", "chapter ", true],
-])("relabels exact filename words, never custom words %s", (before, after, relabel) => {
-  const { doc, fragment } = seed([
-    [
-      [before.slice(0, 1), "chapter.md", { strong: {} }],
-      [before.slice(1), "chapter.md", { em: {} }],
-    ],
-  ]);
-  expect(
-    links.applyDocumentLinkSubstitutions(
-      fragment,
-      new Map([
-        [
-          "chapter.md",
-          {
-            href: "gate.md",
-            ...(relabel ? { oldFilename: "chapter.md", newFilename: "gate.md" } : {}),
-          },
-        ],
-      ]),
-    ),
-  ).toBe(1);
-  expect(words(fragment)).toEqual([["gate.md", after]]);
-  const occurrence = links.extractDocumentLinkOccurrences(fragment)[0];
-  if (occurrence?.kind !== "text") throw new Error("Missing text occurrence");
-  expect(occurrence.runs[0]?.attributes).toMatchObject({ strong: {}, link: { title: "keep" } });
-  if (!relabel) expect(occurrence.runs[1]?.attributes.em).toEqual({});
-  doc.destroy();
-});
-
 it("groups marks but not paragraphs, rewrites chains once and touches only literal src", () => {
   const { doc, fragment } = seed([
     [

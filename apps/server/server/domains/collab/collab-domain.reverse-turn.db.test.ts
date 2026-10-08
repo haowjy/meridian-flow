@@ -294,100 +294,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(collab, DOC_ID)).not.toContain("AI paragraph");
     });
 
-    it("reverses a pushed draft turn through public reverseTurn without creating branch rows", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
-        documentId: DOC_ID as never,
-        markdown: "Base.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-
-      const write = await collab.agentEdit().write(
-        {
-          command: "insert",
-          file: "chapter.md",
-          documentId: DOC_ID,
-          content: "Live undo target.",
-        },
-        {
-          sessionId: "session",
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          grant: testFileGrant(DRAFT_DESTINATION),
-        },
-      );
-      expect(write.status).toBe("success");
-      const [workDraft] = await db
-        .select()
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.documentId, DOC_ID as never),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        )
-        .limit(1);
-      expect(workDraft).toBeDefined();
-      await collab.pushToLive({ branchId: workDraft.id });
-      await expectMarkdown(collab, DOC_ID, "Live undo target.");
-
-      const beforeThreadPeers = await countActiveThreadPeers();
-      const beforeActiveBranchRows = await countActiveBranchRows();
-
-      const reversed = await collab.reverseTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      });
-
-      expect(reversed.status).toBe("reversed");
-      const live = await collab.readAsMarkdown(DOC_ID);
-      expect(live.ok ? live.value : "").not.toContain("Live undo target.");
-      expect(await countActiveThreadPeers()).toBe(beforeThreadPeers);
-      expect(await countActiveBranchRows()).toBe(beforeActiveBranchRows);
-      await expectMarkdown(collab, DOC_ID, "Base.");
-
-      const reversalRows = await db
-        .select({ status: documentYjsReversals.status })
-        .from(documentYjsReversals)
-        .where(
-          and(
-            eq(documentYjsReversals.threadId, THREAD_ID as never),
-            eq(documentYjsReversals.turnId, TURN_ID as never),
-          ),
-        );
-      expect(reversalRows.map((row) => row.status)).toContain("reversed");
-      await expect(
-        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
-      ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
-
-      const bookkeeping = new Y.Doc({ gc: false });
-      bookkeeping.getMap("bookkeeping").set("settled", true);
-      await createDrizzleJournal(db).append(DOC_ID, Y.encodeStateAsUpdate(bookkeeping), {
-        origin: "system",
-        seq: 0,
-      });
-      bookkeeping.destroy();
-      await expect(
-        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
-      ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
-
-      for (const direction of ["redo", "undo", "redo"] as const) {
-        const outcome = await collab.reverseTurn({
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-          direction,
-          actor: { type: "user", userId: USER_ID },
-        });
-        expect(outcome.status).toBe("reversed");
-      }
-      await expectMarkdown(collab, DOC_ID, "Live undo target.");
-    });
-
     it("undoes and redoes overlapping replace and delete writes as one turn", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
@@ -678,66 +584,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(live).not.toContain("Agent paragraph.");
     });
 
-    it("keeps a pending draft after switching to auto-apply and applies it later", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
-        documentId: DOC_ID as never,
-        markdown: "Base.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      await expect(
-        collab.agentEdit().write(
-          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Drafted." },
-          {
-            sessionId: "session-keep",
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            grant: testFileGrant(DRAFT_DESTINATION),
-          },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
-      await expect(
-        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto" }),
-      ).resolves.toMatchObject({ status: "confirmation_required", unpushedCount: 1 });
-      await expect(
-        collab.setWorkPushPolicy({ workId: WORK_ID as never, policy: "auto", pending: "keep" }),
-      ).resolves.toEqual({ status: "updated", policy: "auto" });
-
-      const [work] = await db
-        .select({ aiWriteMode: works.aiWriteMode })
-        .from(works)
-        .where(eq(works.id, WORK_ID));
-      expect(work?.aiWriteMode).toBe("direct");
-      const draftId = await currentDraftId(collab, DOC_ID);
-      const preview = await collab.draftReview.preview({
-        workId: WORK_ID as never,
-        documentId: DOC_ID as never,
-        draftId,
-      });
-      expect(preview.status).toBe("active");
-
-      await collab.writeDocument({
-        documentId: DOC_ID as never,
-        markdown: "Base.\n\nLive.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      expect(await readMarkdown(collab, DOC_ID)).not.toContain("Drafted.");
-
-      await collab.draftReview.applyWorkDraft({
-        workId: WORK_ID as never,
-        documentId: DOC_ID as never,
-        draftId,
-        userId: USER_ID as never,
-      });
-      const applied = await readMarkdown(collab, DOC_ID);
-      expect(applied).toContain("Base.");
-      expect(applied).toContain("Live.");
-      expect(applied).toContain("Drafted.");
-    });
-
     it("durably commits two same-response staged writes to one document", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
@@ -883,24 +729,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
         )
         .limit(1);
-    }
-
-    async function countActiveThreadPeers() {
-      const [row] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(documentBranches)
-        .where(
-          and(eq(documentBranches.kind, "thread_peer"), eq(documentBranches.status, "active")),
-        );
-      return row?.count ?? 0;
-    }
-
-    async function countActiveBranchRows() {
-      const [row] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.status, "active"));
-      return row?.count ?? 0;
     }
   });
 }

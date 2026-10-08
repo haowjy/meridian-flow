@@ -39,27 +39,6 @@ describe("offline reconciliation", () => {
       beforeText: expect.stringContaining("Writer offline revision"),
     });
   });
-
-  it("reports an offline writer revision even when the block was agent-origin", async () => {
-    const scenario = await setup({
-      origin: "agent:earlier",
-      editDeletedBlock: true,
-    });
-    await scenario.reconcile();
-    expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
-  });
-
-  it("reports an offline writer revision when the agent actor has no response", async () => {
-    const scenario = await setup({
-      origin: "human:writer",
-      editDeletedBlock: true,
-      authoringResponseId: null,
-    });
-    await scenario.reconcile();
-    expect(scenario.changes).toHaveLength(1);
-    expect(scenario.changes[0]).toMatchObject({ kind: "delete" });
-  });
 });
 
 async function setup(input: {

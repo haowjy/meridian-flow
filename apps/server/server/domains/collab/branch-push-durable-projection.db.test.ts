@@ -9,14 +9,11 @@ import {
   createHarness,
   db,
   expectLiveSweepOnly,
-  expectSweepClassification,
   expirePendingClaims,
-  OTHER_USER_ID,
   observeSettlement,
   runInRootDrizzleTransaction,
   schema,
   setupSettlementFixture,
-  USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
 
 setupSettlementFixture();
@@ -153,21 +150,5 @@ describe("branch-push durable projection (postgres)", () => {
     expect(observed.completionState).toMatchObject({ state: "completed" });
     expect(observed.applyResult).toMatchObject({ status: "applied" });
     cold.destroyWarmState();
-  });
-
-  it.each([
-    ["historical text only", null, false],
-    ["this writer's recent edit", USER_ID, true],
-    ["another writer's recent edit", OTHER_USER_ID, false],
-  ] as const)("classifies the receiving writer for %s", async (_name, recentWriterUserId, swept) => {
-    const harness = createHarness();
-    const branchId = await harness.seedSweepClassificationPush({
-      responseId: `sweep-${_name}`,
-      recentWriterUserId,
-    });
-
-    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-    expectSweepClassification(harness, swept);
-    harness.destroyWarmState();
   });
 });

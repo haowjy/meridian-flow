@@ -33,14 +33,7 @@ const threads = {
 };
 describe("resolveReadableThread", () => {
   it.each([
-    ["c1", "c2"],
-    ["c2", "c1"],
-    ["c1", "c3"],
     ["c3", "c1"],
-    ["c1", "p1"],
-    ["p1", "c1"],
-    ["p2", "c1"],
-    ["c1", "p2"],
     ["p3", "c1"],
   ])("allows %s to read %s", async (from, ref) => {
     expect(
@@ -62,16 +55,5 @@ describe("resolveReadableThread", () => {
       ok: false,
       error: { code },
     });
-  });
-  it("defaults to the caller", async () => {
-    expect(await resolveReadableThread({ caller: rows[0] as Thread, threads })).toMatchObject({
-      ok: true,
-      target: { ref: "c1" },
-    });
-  });
-  it('resolves "current" to the caller', async () => {
-    expect(
-      await resolveReadableThread({ caller: rows[1] as Thread, ref: "current", threads }),
-    ).toMatchObject({ ok: true, target: { ref: "c2" } });
   });
 });

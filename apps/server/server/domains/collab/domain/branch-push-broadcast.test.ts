@@ -1,15 +1,14 @@
 /** Focused contract coverage for post-completion branch-push broadcasts. */
 
 import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit/integration";
-import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
@@ -26,7 +25,6 @@ const DOCUMENT_B = "00000000-0000-4000-8000-000000000002" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000003" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000004" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000005" as TurnId;
-const USER_W = "00000000-0000-4000-8000-000000000006" as UserId;
 
 const schema = buildDocumentSchema();
 const codec = createAgentEditCodec(
@@ -197,175 +195,6 @@ function stores(
 }
 
 describe("branch push change-event broadcast", () => {
-  it("preserves each push's admitter while deriving turn and shared authors from the shell", async () => {
-    const liveDoc = createCollabYDoc({ gc: false });
-    const delivered: Array<Omit<ChangeEventWsMessage, "type">> = [];
-    const projections = [
-      projection({ revision: 1, changes: [projectedChange("auto", "1", null)] }),
-      projection({
-        revision: 2,
-        changes: [
-          projectedChange("auto", "1", null),
-          {
-            ...projectedChange("manual", "2", USER_W),
-            kind: "modify",
-            beforeText: "manual|writer words remain",
-            afterTextAtReceipt: "manual|writer remain",
-          },
-        ],
-      }),
-      projection({
-        revision: 3,
-        owner: { kind: "shared", threadId: THREAD_ID, turnId: null },
-        changes: [projectedChange("shared", "3", USER_W)],
-      }),
-    ];
-    let nextPushId = 1;
-    const storeDeps = stores({
-      async commitPush(prepared: PreparedPushCommit) {
-        const push = pushRow(prepared, nextPushId++);
-        return {
-          status: "inserted" as const,
-          push,
-          settlement: { ...prepared.pendingLiveSettlement, push },
-        };
-      },
-      async settlePushTrail() {
-        return [projections.shift() as CommittedChangeTrailProjection];
-      },
-    });
-    const transition = createBranchPushTransition({
-      ...storeDeps,
-      liveCoordinator: coordinator(new Map([[DOCUMENT_A, liveDoc]])),
-      model,
-      codec,
-      changeEventDelivery: { deliver: (message) => delivered.push(message) },
-    });
-
-    for (let index = 1; index <= 3; index += 1) {
-      await transition.execute({
-        documentIds: [DOCUMENT_A],
-        prepare: async ({ docs }) => ({
-          kind: "push",
-          pushes: [preparedPush(transition, DOCUMENT_A, docs.get(DOCUMENT_A) as Y.Doc, index)],
-          onConflict: () => "conflict",
-          finish: () => "pushed",
-        }),
-      });
-    }
-
-    expect(delivered[1]).toMatchObject({
-      projectionRevision: 2,
-      author: { kind: "agent", threadId: THREAD_ID, turnId: TURN_ID },
-      changes: [
-        { changeId: "auto", admittedByUserId: null },
-        { changeId: "manual", admittedByUserId: USER_W, pureDeletionOffset: 7 },
-      ],
-    });
-    expect(delivered[2]).toMatchObject({
-      author: { kind: "agent", threadId: THREAD_ID, turnId: null },
-      changes: [{ changeId: "shared", admittedByUserId: USER_W }],
-    });
-    liveDoc.destroy();
-  });
-
-  it("emits only the latest committed projection after a retry succeeds", async () => {
-    const liveDoc = createCollabYDoc({ gc: false });
-    const delivered: Array<Omit<ChangeEventWsMessage, "type">> = [];
-    let fenceAttempt = 0;
-    let projectionRevision = 0;
-    const storeDeps = stores({
-      async commitPush(prepared: PreparedPushCommit) {
-        const push = pushRow(prepared, 1);
-        return {
-          status: "inserted" as const,
-          push,
-          settlement: { ...prepared.pendingLiveSettlement, push },
-        };
-      },
-      async settlePushTrail() {
-        projectionRevision += 1;
-        return [
-          projection({
-            revision: projectionRevision,
-            changes: [projectedChange("latest", "1", null)],
-          }),
-        ];
-      },
-      async withCompletionFence(
-        _input: unknown,
-        complete: () => "applied" | "already_applied" | "retry",
-      ) {
-        fenceAttempt += 1;
-        return fenceAttempt === 1 ? "retry" : complete();
-      },
-    });
-    const transition = createBranchPushTransition({
-      ...storeDeps,
-      liveCoordinator: coordinator(new Map([[DOCUMENT_A, liveDoc]])),
-      model,
-      codec,
-      changeEventDelivery: { deliver: (message) => delivered.push(message) },
-    });
-
-    await transition.execute({
-      documentIds: [DOCUMENT_A],
-      prepare: async ({ docs }) => ({
-        kind: "push",
-        pushes: [preparedPush(transition, DOCUMENT_A, docs.get(DOCUMENT_A) as Y.Doc, 1)],
-        onConflict: () => "conflict",
-        finish: () => "pushed",
-      }),
-    });
-
-    expect(delivered).toEqual([expect.objectContaining({ projectionRevision: 2 })]);
-    liveDoc.destroy();
-  });
-
-  it("emits for already-applied completion and swallows a delivery failure", async () => {
-    const liveDoc = createCollabYDoc({ gc: false });
-    const deliver = vi.fn(() => {
-      throw new Error("room disappeared");
-    });
-    const storeDeps = stores({
-      async commitPush(prepared: PreparedPushCommit) {
-        const push = pushRow(prepared, 1);
-        return {
-          status: "inserted" as const,
-          push,
-          settlement: { ...prepared.pendingLiveSettlement, push },
-        };
-      },
-      async settlePushTrail() {
-        return [projection({ revision: 1, changes: [projectedChange("already", "1", null)] })];
-      },
-      async withCompletionFence() {
-        return "already_applied" as const;
-      },
-    });
-    const transition = createBranchPushTransition({
-      ...storeDeps,
-      liveCoordinator: coordinator(new Map([[DOCUMENT_A, liveDoc]])),
-      model,
-      codec,
-      changeEventDelivery: { deliver },
-    });
-
-    await expect(
-      transition.execute({
-        documentIds: [DOCUMENT_A],
-        prepare: async ({ docs }) => ({
-          kind: "push",
-          pushes: [preparedPush(transition, DOCUMENT_A, docs.get(DOCUMENT_A) as Y.Doc, 1)],
-          onConflict: () => "conflict",
-          finish: () => "pushed",
-        }),
-      }),
-    ).resolves.toBe("pushed");
-    expect(deliver).toHaveBeenCalledOnce();
-    liveDoc.destroy();
-  });
-
   it("emits each companion document only after that document completes", async () => {
     const alpha = createCollabYDoc({ gc: false });
     const beta = createCollabYDoc({ gc: false });

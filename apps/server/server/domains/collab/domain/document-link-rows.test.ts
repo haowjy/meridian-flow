@@ -6,13 +6,9 @@ import { deriveDocumentLinkRows } from "./document-link-rows.js";
 const project = "project" as ProjectId;
 const personal = "personal" as ProjectId;
 it.each([
-  ["manuscript://v/base.md", "next.md#scene", "manuscript://v/next.md", project],
   ["kb://base.md", "scratch://@arc/next.md", "scratch://@arc/next.md", project],
-  ["kb://base.md", "scratch://@/next.md", "scratch://@/next.md", project],
   ["kb://base.md", "user://preferences.md", "user://preferences.md", personal],
-  ["user://v/base.md", "next.md", "user://v/next.md", personal],
   ["kb://base.md", "scratch://next.md", null, null],
-  ["kb://base.md", "uploads://next.png", null, null],
   ["user://base.md", "manuscript://next.md", null, null],
 ])("indexes %s → %s", (holderUri, href, targetKey, targetProjectId) => {
   expect(

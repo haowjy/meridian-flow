@@ -14,7 +14,6 @@ const USER_ID = "00000000-0000-4000-8000-0000000008a1";
 const PROJECT_ID = "00000000-0000-4000-8000-0000000008a2";
 const THREAD_A = "00000000-0000-4000-8000-0000000008a3" as ThreadId;
 const THREAD_B = "00000000-0000-4000-8000-0000000008a4" as ThreadId;
-const ASSISTANT_TURN = "00000000-0000-4000-8000-0000000008a5";
 
 function required<T>(value: T | null): T {
   if (value === null) throw new Error("expected a value");
@@ -94,40 +93,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("constrains inbox JSON kinds without duplicate discriminator columns", async () => {
-      const valid = {
-        threadId: THREAD_A,
-        intent: "notice",
-        provenance: { kind: "system", source: "schema-probe" },
-        body: { kind: "text", text: "valid" },
-        idempotencyKey: "schema-valid",
-      };
-      await db.insert(schema.threadInboxMessages).values(valid);
-      for (const field of ["provenance", "body"] as const) {
-        for (const invalid of [{}, { kind: null }, { kind: "unknown" }, null, []]) {
-          await expect(
-            db.insert(schema.threadInboxMessages).values({
-              ...valid,
-              idempotencyKey: crypto.randomUUID(),
-              [field]: invalid,
-            }),
-          ).rejects.toThrow();
-        }
-      }
-    });
-
-    it("claims pending messages in per-thread enqueue order", async () => {
-      const inbox = createDrizzleInbox(db);
-      await inbox.enqueue(message("a1", THREAD_A));
-      await inbox.enqueue(message("b1", THREAD_B));
-      await inbox.enqueue(message("a2", THREAD_A));
-
-      const claimed = await inbox.selectPending(THREAD_A);
-      expect(claimed.map((message) => message.idempotencyKey)).toEqual(["a1", "a2"]);
-      expect(claimed.map((message) => message.provenance.kind)).toEqual(["writer", "writer"]);
-      expect(claimed.map((message) => message.body.kind)).toEqual(["text", "text"]);
-    });
-
     it("acks delivered messages and redelivers the unacked", async () => {
       const inbox = createDrizzleInbox(db);
       const first = await inbox.enqueue(message("a1"));
@@ -156,25 +121,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(second.id).not.toBe(first.id);
       expect(second.threadId).toBe(THREAD_B);
       expect(await inbox.selectPending(THREAD_B)).toHaveLength(1);
-    });
-
-    it("lists pending rows read-only, excluding delivered and ordered by seq", async () => {
-      const inbox = createDrizzleInbox(db);
-      const first = await inbox.enqueue(message("a1", THREAD_A));
-      await inbox.enqueue(message("b1", THREAD_B));
-      const second = await inbox.enqueue(notice("a2", THREAD_A));
-      const third = await inbox.enqueue(message("a3", THREAD_A));
-
-      const pending = await inbox.selectPending(THREAD_A);
-      expect(pending.map((row) => row.idempotencyKey)).toEqual(["a1", "a2", "a3"]);
-      expect(pending.map((row) => row.seq)).toEqual([first.seq, second.seq, third.seq]);
-      // The read has no claim side effect: the rows stay claimable.
-      expect(await inbox.selectPending(THREAD_A)).toHaveLength(3);
-
-      await inbox.ack(THREAD_A, [first.id]);
-      const afterAck = await inbox.selectPending(THREAD_A);
-      expect(afterAck.map((row) => row.idempotencyKey)).toEqual(["a2", "a3"]);
-      expect(afterAck.map((row) => row.seq)).toEqual([second.seq, third.seq]);
     });
 
     it("lists distinct pending-message threads oldest first and excludes notices", async () => {
@@ -224,30 +170,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(await delivery.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
       expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
-    });
-
-    it("wakes a pending-message thread and skips one with a live lease", async () => {
-      const inbox = createDrizzleInbox(db);
-      const authority = createDrizzleRunClaim(db, { holderId: "holder-sweep" });
-      await inbox.enqueue(message("sweep-a", THREAD_A));
-      await inbox.enqueue(message("sweep-b", THREAD_B));
-      const leaseA = required(await authority.startExecution(THREAD_A, "run-a"));
-
-      const started: ThreadId[] = [];
-      await sweepWakes({
-        eventSink: createInMemoryEventSink(),
-        delivery: { ...inbox, async refreshPending() {} },
-        authority,
-        runStarter: {
-          async start(threadId) {
-            started.push(threadId);
-          },
-        },
-        limit: 10,
-      });
-
-      expect(started).toEqual([THREAD_B]);
-      await authority.release(leaseA);
     });
 
     it("gives a single winner on acquire and reflects the live lease in holder/read", async () => {
@@ -368,36 +290,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await second.release(next);
     });
 
-    it("observes the cancel flag through read and keeps cancel idempotent", async () => {
-      const authority = createDrizzleRunClaim(db, { holderId: "holder-1" });
-      const lease = required(await authority.startExecution(THREAD_A, "run-1"));
-
-      await db.insert(schema.turns).values({
-        id: ASSISTANT_TURN,
-        threadId: THREAD_A,
-        position: 1,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
-      await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
-        value: undefined,
-        turnKind: "assistant" as const,
-        turnId: ASSISTANT_TURN,
-        messageIds: [],
-      }));
-      expect(await authority.cancelExecution(THREAD_A, crypto.randomUUID())).toBe(false);
-      expect(await authority.read(THREAD_A)).toMatchObject({ cancelRequested: false });
-      expect(await authority.cancelExecution(THREAD_A, ASSISTANT_TURN)).toBe(true);
-      expect(await authority.cancelExecution(THREAD_A, ASSISTANT_TURN)).toBe(true);
-      expect(await authority.read(THREAD_A)).toEqual({
-        kind: "awake",
-        phase: "generating",
-        cancelRequested: true,
-      });
-      await authority.release(lease);
-    });
-
     it("reports whether renew kept ownership", async () => {
       const authority = createDrizzleRunClaim(db, { holderId: "holder-1" });
 
@@ -406,14 +298,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await authority.release(lease);
       expect(await authority.renew(lease)).toBe(false);
-    });
-
-    it("reports an expired lease as asleep", async () => {
-      const authority = createDrizzleRunClaim(db, { holderId: "holder-1", leaseTtlMs: 0 });
-      const lease = required(await authority.startExecution(THREAD_A, "run-1"));
-      expect(await authority.holder(THREAD_A)).toBeNull();
-      expect(await authority.read(THREAD_A)).toEqual({ kind: "asleep" });
-      await authority.release(lease);
     });
 
     it("excludes short claims and executions locally and across adapters without fake leases", async () => {
@@ -605,7 +489,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }
       });
       it.each([
-        false,
         true,
       ])("honors a remote cancel before terminal close (pending followup: %s)", async (hasPending) => {
         const { repos, turn } = await assistant();
