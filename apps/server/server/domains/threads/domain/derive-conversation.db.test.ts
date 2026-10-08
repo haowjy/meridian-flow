@@ -278,7 +278,7 @@ else
       );
     });
 
-    it("reuses repeated client IDs by the existing fork row", async () => {
+    it("reuses repeated client IDs by the existing fork row, including after its source is trashed", async () => {
       const fixture = await setupSource();
       const secondTurn = await repos.turns.create({
         threadId: fixture.source.id,
@@ -340,6 +340,18 @@ else
         name: "DerivedThreadConflictError",
         message: "The requested derivation ID is already in use",
       });
+
+      await db
+        .update(schema.threads)
+        .set({ createdByUserId: fixture.source.userId })
+        .where(eq(schema.threads.id, id));
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, fixture.source.id));
+      await expect(
+        createFork(fixture.source, fixture.deps, { id, originTurnId: fixture.firstTurn.id }),
+      ).resolves.toMatchObject({ thread: { id }, created: false });
     });
 
     it("returns the row when competing sources hit the same ID insert", async () => {
@@ -389,23 +401,6 @@ else
       expect(results.map((result) => result.thread.id)).toEqual([id, id]);
       expect(results.filter((result) => result.created)).toHaveLength(1);
       expect(results.filter((result) => !result.created)).toHaveLength(1);
-    });
-
-    it("returns an existing fork after its source is trashed", async () => {
-      const fixture = await setupSource();
-      const id = crypto.randomUUID();
-      const created = await createFork(fixture.source, fixture.deps, {
-        id,
-        originTurnId: fixture.firstTurn.id,
-      });
-      await db
-        .update(schema.threads)
-        .set({ deletedAt: new Date() })
-        .where(eq(schema.threads.id, fixture.source.id));
-
-      await expect(
-        createFork(fixture.source, fixture.deps, { id, originTurnId: fixture.firstTurn.id }),
-      ).resolves.toMatchObject({ thread: { id: created.thread.id }, created: false });
     });
 
     it("forks a fork at an inherited turn with the grandsource's exact prefix", async () => {

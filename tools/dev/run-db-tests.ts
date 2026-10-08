@@ -48,8 +48,15 @@ async function main(): Promise<void> {
   if (local && mainDatabaseName) {
     databaseUrl = managedTestDatabaseUrl(sourceDatabaseUrl, mainDatabaseName);
   }
-  const testArgs = process.argv.slice(2);
+  const testArgs = process.argv
+    .slice(2)
+    .map((arg) => arg.replace(/^--reporters(?==|$)/u, "--reporter"));
   if (testArgs[0] === "--") testArgs.shift();
+  const allSuites = testArgs[0] === "--all";
+  if (allSuites) {
+    testArgs.shift();
+    if (testArgs[0] === "--") testArgs.shift();
+  }
   const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
   if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
     throw new Error(
@@ -83,7 +90,19 @@ async function main(): Promise<void> {
 
     const testExit = await run(
       repoRoot,
-      ["exec", "vitest", "run", "--config", "apps/server/vitest.db.config.ts", ...testArgs],
+      [
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        allSuites ? "vitest.config.mts" : "apps/server/vitest.db.config.ts",
+        ...testArgs,
+        // CLI reporters replace configured reporters, so the execution guard is unconditional.
+        ...(testArgs.some((arg) => arg === "--reporter" || arg.startsWith("--reporter="))
+          ? []
+          : ["--reporter=default"]),
+        `--reporter=${join(repoRoot, "tools/ci/db-test-reporter.ts")}`,
+      ],
       databaseUrl,
       workerDatabaseUrls.length > 0
         ? {

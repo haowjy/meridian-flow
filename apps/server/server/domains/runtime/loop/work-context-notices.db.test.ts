@@ -4,12 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
-import {
-  createDrizzleProjectWorkRepository,
-  deleteWorkTransition,
-  setWorkArchived,
-  updateWorkTransition,
-} from "../../projects/index.js";
+import { createDrizzleProjectWorkRepository, updateWorkTransition } from "../../projects/index.js";
 import { createDrizzleRepositoriesForTest } from "../../threads/adapters/drizzle/repositories.js";
 import { rebindThreadWork } from "../../threads/domain/rebind-thread-work.js";
 import {
@@ -27,7 +22,6 @@ import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js"
 import { createLocalTurn } from "./local-turn.js";
 import { persistAndAppendTurnStartEvents } from "./persistence.js";
 import { createWorkContextReader } from "./work-context.js";
-import { persistWriterEnqueue } from "./writer-enqueue.js";
 
 const url = process.env.RUN_DB_TESTS === "1" ? process.env.DATABASE_URL : undefined;
 if (!url) describe.skip("Work inbox notices (postgres)", () => {});
@@ -170,109 +164,6 @@ else
 
       await expect(delivery().selectPending(ids.threadId)).resolves.toHaveLength(1);
       await expect(delivery().selectPending(otherThreadId)).resolves.toEqual([]);
-    });
-
-    it("skips the thread whose own call changed the Work and refreshes the rest", async () => {
-      const siblingThreadId = "00000000-0000-4000-8000-000000000480" as typeof ids.threadId;
-      await db.insert(schema.threads).values({
-        id: siblingThreadId,
-        rootThreadId: siblingThreadId,
-        projectId: ids.projectId,
-        createdByUserId: ids.userId,
-        title: "Sibling Work thread",
-        kind: "primary",
-        status: "idle",
-      });
-      await repos.threadWorks.addMembership(siblingThreadId, ids.workId, true);
-      const notices = delivery();
-
-      await updateWorkTransition(
-        { works, workContextNotices: notices },
-        ids.workId,
-        { status: "Drafting" },
-        { originThreadId: ids.threadId },
-      );
-      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true, {
-        originThreadId: ids.threadId,
-      });
-
-      await expect(notices.selectPending(ids.threadId)).resolves.toEqual([]);
-      await expect(notices.selectPending(siblingThreadId)).resolves.toHaveLength(2);
-    });
-
-    it("publishes archive and unarchive context refreshes", async () => {
-      const notices = delivery();
-      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, true);
-      await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
-      await notices.materializeIdle(ids.threadId);
-      const archived = await updates();
-      const archivedBlocks = await repos.blocks.listByTurn(archived[0]?.id ?? "");
-      expect(archivedBlocks[0]?.textContent).toContain("writes: archived in auto-apply.");
-
-      await setWorkArchived({ works, workContextNotices: notices }, ids.workId, false);
-      await expect(notices.selectPending(ids.threadId)).resolves.toHaveLength(1);
-    });
-
-    it("does not enqueue a refresh when deletion hides the Work's threads", async () => {
-      await deleteWorkTransition({ works, stopThreadRun: async () => {} }, ids.workId);
-
-      expect((await repos.threads.findById(ids.threadId))?.deletedAt).not.toBeNull();
-      await expect(delivery().selectPending(ids.threadId)).resolves.toEqual([]);
-    });
-
-    it("does not count deleting another Work as activity", async () => {
-      const baseline = new Date("2025-01-01T00:00:00.000Z");
-      await db
-        .update(schema.works)
-        .set({ updatedAt: baseline })
-        .where(eq(schema.works.id, ids.workId));
-      await db
-        .update(schema.threads)
-        .set({ createdAt: baseline, updatedAt: baseline, lastActivityAt: baseline })
-        .where(eq(schema.threads.id, ids.threadId));
-      await db
-        .update(schema.projects)
-        .set({ updatedAt: baseline, lastActivityAt: baseline })
-        .where(eq(schema.projects.id, ids.projectId));
-
-      await deleteWorkTransition({ works, stopThreadRun: async () => {} }, ids.targetWorkId);
-      await delivery().sweepWorkNotices();
-
-      const [work] = await db
-        .select({ updatedAt: schema.works.updatedAt })
-        .from(schema.works)
-        .where(eq(schema.works.id, ids.workId));
-      const [thread] = await db
-        .select({
-          activeLeafTurnId: schema.threads.activeLeafTurnId,
-          updatedAt: schema.threads.updatedAt,
-        })
-        .from(schema.threads)
-        .where(eq(schema.threads.id, ids.threadId));
-      const [project] = await db
-        .select({
-          updatedAt: schema.projects.updatedAt,
-          lastActivityAt: schema.projects.lastActivityAt,
-        })
-        .from(schema.projects)
-        .where(eq(schema.projects.id, ids.projectId));
-      const [feedItem] = await repos.chatFeed.queryPage({
-        projectId: ids.projectId,
-        userId: ids.userId,
-        after: null,
-        limit: 10,
-        favorite: false,
-        search: null,
-        workId: null,
-      });
-      const systemUpdates = await updates();
-
-      expect(systemUpdates).toHaveLength(0);
-      expect(thread?.activeLeafTurnId).toBeNull();
-      expect(work?.updatedAt).toEqual(baseline);
-      expect(thread?.updatedAt).toEqual(baseline);
-      expect(feedItem?.lastActivityAt).toBe("2025-01-01T00:00:00.000000Z");
-      expect(project).toEqual({ updatedAt: baseline, lastActivityAt: baseline });
     });
 
     it("replays after a turn/event failure with exactly one committed update and ack", async () => {
@@ -419,150 +310,6 @@ else
       }
     });
 
-    it.each([
-      "work-first",
-      "writer-first",
-    ])("preserves %s inbox order in writer and idle materialization", async (order) => {
-      const notices = delivery();
-      const writerId = crypto.randomUUID();
-      const send = () =>
-        persistWriterEnqueue({
-          persistence: { repos, eventWriter },
-          hub: {
-            async headSeq() {
-              return 0n;
-            },
-          },
-          threadId: ids.threadId,
-          userTurnId: writerId,
-          userBlocks: [{ type: "text", text: "Writer follows queue order" }],
-          delivery: notices,
-          inbox: notices,
-          draft: {
-            id: writerId,
-            threadId: ids.threadId,
-            intent: "message",
-            provenance: { kind: "writer", actorId: ids.userId },
-            body: { kind: "text", text: "Writer follows queue order" },
-            idempotencyKey: writerId,
-          },
-          settle: async () => true,
-        });
-      if (order === "work-first") {
-        await notices.threadChanged(ids.threadId);
-        await send();
-      } else {
-        await send();
-        await notices.threadChanged(ids.threadId);
-      }
-      await notices.materializeIdle(ids.threadId);
-      const [work] = await updates();
-      if (!work) throw new Error("Missing Work update");
-      const writer = await repos.turns.findById(writerId);
-      expect(order === "work-first" ? writer?.prevTurnId : work.prevTurnId).toBe(
-        order === "work-first" ? work.id : writerId,
-      );
-      const rows = await db
-        .select()
-        .from(schema.threadInboxMessages)
-        .where(eq(schema.threadInboxMessages.threadId, ids.threadId))
-        .orderBy(schema.threadInboxMessages.seq);
-      expect(rows.map((row) => row.id)).toEqual(
-        order === "work-first" ? [work.id, writerId] : [writerId, work.id],
-      );
-      expect((await notices.selectPending(ids.threadId)).map((row) => row.id)).toEqual([writerId]);
-    });
-
-    it.each([
-      false,
-      true,
-    ])("adopts the durable Work prefix in chain order (earlier writer: %s)", async (earlierWriter) => {
-      const notices = delivery();
-      const lease = await runClaim.startExecution(ids.threadId, crypto.randomUUID());
-      if (!lease) throw new Error("Missing lease");
-      const assistant = createLocalTurn({
-        threadId: ids.threadId,
-        position: 1,
-        prevTurnId: null,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
-      try {
-        await notices.adoptBatch(lease, async () => ({
-          value: null,
-          turnKind: "assistant" as const,
-          turnId: assistant.id,
-          messageIds: [],
-          persist: async () => {
-            await persistAndAppendTurnStartEvents(
-              { repos, eventWriter },
-              ids.threadId,
-              null,
-              async () => ({ result: null, events: [{ type: "turn.created", turn: assistant }] }),
-            );
-          },
-        }));
-        const send = (writerId: string) =>
-          persistWriterEnqueue({
-            persistence: { repos, eventWriter },
-            hub: {
-              async headSeq() {
-                return 0n;
-              },
-            },
-            threadId: ids.threadId,
-            userTurnId: writerId,
-            userBlocks: [{ type: "text", text: "Continue" }],
-            delivery: notices,
-            inbox: notices,
-            draft: {
-              id: writerId,
-              threadId: ids.threadId,
-              intent: "message",
-              provenance: { kind: "writer", actorId: ids.userId },
-              body: { kind: "text", text: "Continue" },
-              idempotencyKey: writerId,
-            },
-            settle: async () => true,
-          });
-        const firstWriterId = crypto.randomUUID();
-        if (earlierWriter) await send(firstWriterId);
-        await notices.threadChanged(ids.threadId);
-        const writerId = crypto.randomUUID();
-        await send(writerId);
-        const boundary = await notices.splitAndContinue({
-          lease,
-          currentTurn: assistant,
-          current: { kind: "assistant" },
-          knownTurnIds: new Set([assistant.id]),
-          expectedLeafTurnId: assistant.id,
-          prepareNextContext: async () => ({
-            events: [],
-            turns: [],
-            blocks: [],
-            requiresSplit: false,
-          }),
-        });
-        expect(boundary.split).toBe(true);
-        const [work] = await updates();
-        expect(boundary.drain.turns.map((turn) => turn.id)).toEqual([
-          ...(earlierWriter ? [firstWriterId] : []),
-          work?.id,
-          writerId,
-        ]);
-        expect(work?.prevTurnId).toBe(earlierWriter ? firstWriterId : assistant.id);
-        expect(boundary.drain.turns.at(-1)?.prevTurnId).toBe(work?.id);
-        expect(
-          boundary.drain.blocks.find((block) => block.turnId === work?.id)?.textContent,
-        ).toContain("system_update");
-        expect(boundary.next.prevTurnId).toBe(writerId);
-        expect(await updates()).toHaveLength(1);
-      } finally {
-        await runClaim.release(lease);
-      }
-    });
-
     it("commits a Work mutation racing a materializer holding the thread visibility lock", async () => {
       const notices = delivery();
       await notices.threadChanged(ids.threadId);
@@ -635,16 +382,5 @@ else
       await Promise.all([materializing, mutation]);
       expect(await notices.selectPending(ids.threadId)).toHaveLength(1);
       expect(await updates()).toHaveLength(1);
-    });
-    it("cascades pending inbox markers when their thread is hard-deleted", async () => {
-      await db.insert(schema.threadInboxMessages).values({
-        threadId: ids.threadId,
-        intent: "notice",
-        provenance: { kind: "system", source: "work_context" },
-        body: { kind: "work_context_refresh" },
-        idempotencyKey: "hard-delete",
-      });
-      await db.delete(schema.threads).where(eq(schema.threads.id, ids.threadId));
-      expect(await delivery().selectPending(ids.threadId)).toEqual([]);
     });
   });

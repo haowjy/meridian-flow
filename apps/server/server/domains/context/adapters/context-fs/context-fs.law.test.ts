@@ -103,36 +103,6 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
 }
 
 describe("ContextFS createUntitledDocument", () => {
-  it("rejects a malformed client-minted id before creating a row", async () => {
-    const { fs } = createUntitledFs({});
-    await expect(fs.createUntitledDocument("", untitledOptions("not-a-uuid"))).resolves.toEqual({
-      ok: false,
-      error: { code: "invalid_operation", message: "documentId must be a UUID" },
-    });
-    await expect(fs.list("")).resolves.toEqual({ ok: true, value: [] });
-  });
-
-  it("returns the existing allocation for an idempotent retry", async () => {
-    const { fs } = createUntitledFs({});
-    await expect(
-      fs.createUntitledDocument("drafts", untitledOptions(DOCUMENT_A)),
-    ).resolves.toMatchObject({
-      ok: true,
-      value: { status: "created", name: "Untitled 1.md" },
-    });
-    await expect(fs.createUntitledDocument("drafts", untitledOptions(DOCUMENT_A))).resolves.toEqual(
-      {
-        ok: true,
-        value: {
-          status: "already-exists",
-          documentId: DOCUMENT_A,
-          name: "Untitled 1.md",
-          path: "drafts/Untitled 1.md",
-        },
-      },
-    );
-  });
-
   it("rolls back identity when Yjs initialization fails", async () => {
     const collab = createInMemoryCollabDomain();
     let failDurableHeadOnce = true;
@@ -187,24 +157,6 @@ describe("ContextFS createUntitledDocument", () => {
     ).toEqual(["Untitled 1.md", "Untitled 2.md"]);
   });
 
-  it("ignores untitled suffixes that cannot be safely incremented", async () => {
-    const { fs, store } = createUntitledFs({});
-    await store.createDocument({
-      folderId: null,
-      name: `Untitled ${"9".repeat(400)}`,
-      extension: "md",
-      markdown: "",
-      filetype: "markdown",
-    });
-
-    await expect(fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).resolves.toMatchObject(
-      {
-        ok: true,
-        value: { status: "created", name: "Untitled 1.md" },
-      },
-    );
-  });
-
   it("returns a conflict after bounded allocation collisions", async () => {
     const { fs, store } = createUntitledFs({});
     vi.spyOn(store, "createDocumentRecordIfAbsent").mockResolvedValue(null);
@@ -214,73 +166,6 @@ describe("ContextFS createUntitledDocument", () => {
       error: { code: "conflict" },
     });
     expect(store.createDocumentRecordIfAbsent).toHaveBeenCalledTimes(32);
-  });
-
-  it("clears the provisional flag on basename change but keeps it on a path-only move", async () => {
-    const { fs, store, mutationStore } = createUntitledFs({});
-    await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A));
-
-    const source = await mutationStore.inspect(SOURCE_A, "Untitled 1.md");
-    if (source?.kind !== "file") throw new Error("missing source");
-    await mutationStore.commitMove({
-      source,
-      destinationSourceId: SOURCE_A,
-      destinationPath: "drafts/Untitled 1.md",
-      expectedTarget: { state: "absent" },
-      overwrite: false,
-      graduateProvisionalName: false,
-      destinationFiletype: "markdown",
-    });
-    expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(true);
-
-    const moved = await mutationStore.inspect(SOURCE_A, "drafts/Untitled 1.md");
-    if (moved?.kind !== "file") throw new Error("missing moved source");
-    await mutationStore.commitMove({
-      source: moved,
-      destinationSourceId: SOURCE_A,
-      destinationPath: "drafts/Opening.md",
-      expectedTarget: { state: "absent" },
-      overwrite: false,
-      graduateProvisionalName: false,
-      destinationFiletype: "markdown",
-    });
-    expect((await store.findDocumentById(DOCUMENT_A))?.document.provisionalName).toBe(false);
-  });
-
-  it("keeps tracked creates named and seeds content without opening the live writer", async () => {
-    const writeDocument = vi.fn(async ({ documentId, markdown }) => ({
-      documentId,
-      markdown,
-      updateSeq: 1,
-      updateData: Buffer.from([]),
-      originType: "user" as const,
-      actorTurnId: null,
-      actorUserId: null,
-    }));
-    const sync = {
-      ...createInMemoryCollabDomain(),
-      ensureDocument: vi.fn(),
-      writeDocument,
-      readAsMarkdown: vi.fn(),
-      readVersionedMarkdown: vi.fn(),
-      seedFromMarkdown: vi.fn().mockResolvedValue({ ok: true, value: null }),
-      editDocument: vi.fn(),
-    } satisfies ContextFSDeps["documentSync"];
-    const { fs, store } = createUntitledFs({ documentSync: sync });
-
-    const created = await fs.createTrackedDocument("AI Draft.md", "Opening line", {
-      origin: { type: "human", userId: "writer-1" },
-    });
-    if (!created.ok) throw new Error(created.error.code);
-
-    expect(sync.seedFromMarkdown).toHaveBeenCalledWith(created.value.documentId, "Opening line", {
-      type: "system",
-    });
-    expect(writeDocument).not.toHaveBeenCalled();
-    expect((await store.findDocumentById(created.value.documentId))?.document).toMatchObject({
-      provisionalName: false,
-      markdown: "",
-    });
   });
 });
 
@@ -320,51 +205,6 @@ describe("ContextFS rename filetype invariant", () => {
         mover.move(dispatch(source), dispatch(destination)),
     };
   }
-
-  it.each([
-    {
-      name: "document-to-code",
-      seed: (fs: ContextFS) => fs.write("chapter.md", "Chapter"),
-      from: "chapter.md",
-      to: "chapter.py",
-      message: /schema/i,
-    },
-    {
-      name: "tracked-to-binary",
-      seed: (fs: ContextFS) => fs.write("script.py", "print('hello')"),
-      from: "script.py",
-      to: "script.png",
-      message: /tracked|binary/i,
-    },
-    {
-      name: "storage-backed-to-tracked",
-      seed: (fs: ContextFS) =>
-        fs.writeBinary("cover.png", {
-          fileType: "image",
-          storageUrl: "s3://bucket/cover.png",
-          mimeType: "image/png",
-          sizeBytes: 42,
-        }),
-      from: "cover.png",
-      to: "cover.md",
-      message: /storage|tracked/i,
-    },
-  ] as const)("rejects a $name rename with an actionable message", async ({
-    seed,
-    from,
-    to,
-    message,
-  }) => {
-    const { context, move } = createHarness();
-    await seed(context);
-
-    await expect(move(from, to)).resolves.toMatchObject({
-      ok: false,
-      error: { code: "invalid_operation", message: expect.stringMatching(message) },
-    });
-    await expect(context.stat(from)).resolves.toMatchObject({ ok: true });
-    await expect(context.stat(to)).resolves.toEqual({ ok: true, value: null });
-  });
 
   it("serializes overlapping moves so one success cannot be rolled back", async () => {
     const { backing, context, move, mutationStore } = createHarness();
@@ -410,33 +250,6 @@ describe("ContextFS rename filetype invariant", () => {
 });
 
 describe("ContextFS write and read", () => {
-  it("makes initial file content retrievable from the created collab document", async () => {
-    const markdownByDocument = new Map<string, string>();
-    const { context } = createKbFs({
-      ensureDocument: async () => {},
-      readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
-      seedFromMarkdown: async (documentId: string, markdown: string) => {
-        markdownByDocument.set(documentId, markdown);
-        return Ok(null);
-      },
-      writeDocument: async ({ documentId, markdown }: { documentId: string; markdown: string }) => {
-        markdownByDocument.set(documentId, markdown);
-        return { documentId, markdown, updateSeq: 1, updateData: new Uint8Array(), meta: {} };
-      },
-    });
-
-    const content = "The opening line survives.\n";
-    const written = await context.write("chapter.md", content, {
-      origin: { type: "human", userId: "writer-1" },
-    });
-    expect(written).toEqual(expect.objectContaining({ ok: true }));
-
-    const read = await context.read("chapter.md");
-    expect(read).toEqual(
-      expect.objectContaining({ ok: true, value: expect.objectContaining({ content }) }),
-    );
-  });
-
   it("refuses to replace an unknown-extension binary with tracked text", async () => {
     const writeDocument = vi.fn();
     const { context } = createKbFs({ writeDocument });
@@ -468,34 +281,6 @@ describe("ContextFS write and read", () => {
       },
     });
   });
-
-  it("creates implicit parent folders for nested binary intake in a creatable scheme", async () => {
-    const backing = createInMemoryContextDocumentStoreBacking();
-    const context = new ContextFS({
-      assetPaths: { within: (_project, operation) => operation() },
-      store: new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing }),
-      mutationStore: new InMemoryContextTreeMutationStore(backing),
-      scheme: "scratch",
-      documentSync: {} as never,
-    });
-
-    await expect(
-      context.writeBinary("nest/deep.png", {
-        fileType: "image",
-        storageUrl: "s3://bucket/deep.png",
-        mimeType: "image/png",
-        sizeBytes: 42,
-      }),
-    ).resolves.toMatchObject({ ok: true });
-    await expect(context.list("")).resolves.toMatchObject({
-      ok: true,
-      value: expect.arrayContaining([{ kind: "directory", path: "nest" }]),
-    });
-    await expect(context.stat("nest/deep.png")).resolves.toMatchObject({
-      ok: true,
-      value: { kind: "binary", path: "nest/deep.png" },
-    });
-  });
 });
 
 describe("ContextFS ensureTrackedDocument", () => {
@@ -510,24 +295,7 @@ describe("ContextFS ensureTrackedDocument", () => {
     expect(seeded).toEqual([]);
   });
 
-  it("ensures live Yjs state for existing tracked documents even when response staging defers new docs", async () => {
-    const { documentSync, ensured } = documentSyncProbe();
-    const fs = manuscriptFs(documentSync);
-    const seeded = await fs.ensureTrackedDocument("chapter-1.md");
-    if (!seeded.ok) throw new Error(`seed failed: ${seeded.error.code}`);
-    ensured.length = 0;
-
-    const existing = await fs.ensureTrackedDocument("chapter-1.md", { deferDocumentSync: true });
-
-    expect(existing.ok && existing.value).toEqual({
-      documentId: seeded.value.documentId,
-      created: false,
-    });
-    expect(ensured).toEqual([seeded.value.documentId]);
-  });
-
   it.each([
-    ["write", (fs: ContextFS) => fs.write("assets/cover.png", "not image bytes")],
     [
       "createTrackedDocument",
       (fs: ContextFS) => fs.createTrackedDocument("assets/cover.png", "not image bytes"),

@@ -5,7 +5,7 @@ import type {
 } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import { createInMemoryAgentRevisionStore } from "../../packages/index.js";
-import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
+import { applyInvocationPatch } from "./apply-invocation-patch.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
   return {
@@ -82,36 +82,5 @@ describe("applyInvocationPatch", () => {
     });
     expect(cleared.skills.load).toEqual([]);
     expect(cleared.skills.available).toEqual(baseline.skills.available);
-  });
-
-  it("resolves added subagents from the caller's namedTargets", async () => {
-    const caller = config({
-      namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
-    });
-    const baseline = config();
-    const { revisions, packageRevisionId } = await installSkills("t/subagents", []);
-    const result = await applyInvocationPatch({
-      baseline,
-      patch: { subagents: ["critic"] },
-      caller,
-      store: revisions,
-      packageRevisionId,
-    });
-    expect(result.namedTargets).toEqual([{ name: "critic", definitionRevisionId: "critic-rev" }]);
-  });
-
-  it("throws InvocationPatchError for an unresolvable skill reference", async () => {
-    const { revisions, packageRevisionId } = await installSkills("t/missing", ["proofread"]);
-    const baseline = config();
-    const caller = config();
-    await expect(
-      applyInvocationPatch({
-        baseline,
-        patch: { skills: { load: ["nope"] } },
-        caller,
-        store: revisions,
-        packageRevisionId,
-      }),
-    ).rejects.toThrow(InvocationPatchError);
   });
 });

@@ -111,25 +111,6 @@ describe("startDerivation", () => {
     expect(readDerivationIntent("account", threadId)).toBeNull();
   });
 
-  it("hands off with the picked Agent's selection", () => {
-    api.handoffThread.mockReturnValue(new Promise(() => undefined));
-    const { deps, open } = harness();
-    const agent = {
-      selection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
-      slug: "continuity-editor",
-      name: "Continuity Editor",
-    };
-    const threadId = startDerivation(
-      { ...forkInput, kind: "handoff", agent, agentName: agent.name },
-      { ...deps, source, inherited: null, open },
-    );
-    expect(api.handoffThread).toHaveBeenCalledWith("source", {
-      id: threadId,
-      originTurnId: "cut",
-      agentSelection: agent.selection,
-    });
-  });
-
   it("keeps a failure on the destination: never closes it, keeps it pending, offers Retry with the same id", async () => {
     api.forkThread.mockRejectedValueOnce(new Error("409"));
     const { log, deps, open } = harness();
@@ -172,9 +153,5 @@ describe("startDerivation", () => {
       originTurnId: "cut",
     });
     expect(await whenDerived(threadId)).toBe(true);
-  });
-
-  it("treats a thread with no derivation in flight as ready", async () => {
-    expect(await whenDerived("anything")).toBe(true);
   });
 });

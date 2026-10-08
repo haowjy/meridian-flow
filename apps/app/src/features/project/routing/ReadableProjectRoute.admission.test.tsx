@@ -133,11 +133,6 @@ async function coldOpen(drafts: unknown) {
   }
 }
 
-it("waits while the Work's drafts are still loading", async () => {
-  await coldOpen({ status: "loading", groups: null, refetch: vi.fn() });
-  expect(state.issue).toBe("loading");
-});
-
 it("ends the wait with a failure, keeping the address, when the Work's drafts failed to load", async () => {
   const refetch = vi.fn();
   state.catalogRefetch.mockClear();

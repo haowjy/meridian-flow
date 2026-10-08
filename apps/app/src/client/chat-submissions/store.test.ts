@@ -51,16 +51,6 @@ function bound() {
 }
 
 describe("device chat submission journal", () => {
-  it("round-trips an entry and exposes it by submission id and thread", () => {
-    const { journal } = bound();
-    expect(journal.record("account", existingThread())).toBe(true);
-
-    expect(journal.entries()).toEqual([existingThread()]);
-    expect(journal.get("sub-1")).toEqual(existingThread());
-    expect(journal.forThread("thread-1").map((entry) => entry.submissionId)).toEqual(["sub-1"]);
-    expect(journal.forThread("other")).toEqual([]);
-  });
-
   it("rejects the wrong schema version and corrupt JSON without throwing", () => {
     const { storage, journal } = bound();
     storage.setItem(

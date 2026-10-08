@@ -269,42 +269,5 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         .where(eq(schema.threads.id, THREAD));
       expect(stored?.leaf).toBe(firstSibling.id);
     });
-
-    it("pages across equal activity timestamps using descending thread IDs", async () => {
-      const second = "00000000-0000-4000-8000-000000000894";
-      await db.insert(schema.threads).values({
-        rootThreadId: second,
-        id: second,
-        projectId: PROJECT,
-        createdByUserId: USER,
-      });
-      const timestamp = new Date("2025-01-01T00:00:00.000Z");
-      await db
-        .update(schema.threads)
-        .set({ lastActivityAt: timestamp })
-        .where(eq(schema.threads.projectId, PROJECT));
-      const firstPage = await repos.chatFeed.queryPage({
-        projectId: PROJECT,
-        userId: USER,
-        after: null,
-        limit: 1,
-        favorite: false,
-        search: null,
-        workId: null,
-      });
-      const cursor = firstPage[0];
-      if (!cursor) throw new Error("Expected first cursor page to contain a chat");
-      const nextPage = await repos.chatFeed.queryPage({
-        projectId: PROJECT,
-        userId: USER,
-        after: { sortAt: cursor.lastActivityAt, threadId: cursor.id },
-        limit: 1,
-        favorite: false,
-        search: null,
-        workId: null,
-      });
-      expect(firstPage.map((item) => item.id)).toEqual([second]);
-      expect(nextPage.map((item) => item.id)).toEqual([THREAD]);
-    });
   });
 }

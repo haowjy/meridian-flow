@@ -176,6 +176,7 @@ pnpm typecheck
 pnpm test
 pnpm check          # static/unit gates + DB suites when local Postgres is reachable
 pnpm test:db        # force the managed Postgres-backed suite
+pnpm test:all       # unit + managed DB suites in one Vitest run (requires Postgres)
 ```
 
 ## Dev server

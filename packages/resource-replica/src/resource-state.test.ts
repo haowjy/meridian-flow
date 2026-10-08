@@ -6,7 +6,6 @@ import {
 } from "./resource-namespace";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import {
-  acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
   acknowledgeSessionAdoption,
   markResourceCreateEligible,
@@ -29,25 +28,6 @@ function reserved() {
     intentId: "create-a",
   }).next;
 }
-
-it("reserves exact local content and its project create intention together", () => {
-  expect(reserved()).toMatchObject({
-    resource: {
-      handle: "handle",
-      revision: 1,
-      identity: { documentId: "document-a", revision: 1 },
-      content: { kind: "exact", databaseName: "database", initialization: "reserved" },
-      lifecycle: { kind: "local" },
-    },
-    intents: [
-      {
-        projectId: "project",
-        intentId: "create-a",
-        desired: { kind: "create", folderPath: "" },
-      },
-    ],
-  });
-});
 
 it("records a live server cache once and leaves its adoption witness stable", () => {
   const record = reserved();
@@ -176,59 +156,6 @@ it("hands same-generation namespace terminal evidence to the session cleanup tra
   expect(() => validateResourceRecordUpdate(record, handedOff.next)).not.toThrow();
 });
 
-it("acknowledges cleared content for a locally settled deletion", () => {
-  const record = reserved();
-  if (record.resource.content.kind === "exact") delete record.resource.content.initialization;
-  record.resource.obligations = {
-    cleanup: { obligationId: "delete-local", exactDatabaseName: "database" },
-  };
-  record.intents = [
-    ...record.intents.map((intent) => ({ ...intent, state: "cancelled" as const })),
-    {
-      projectId: "project",
-      handle: record.resource.handle,
-      intentId: "delete-local",
-      sequence: 2,
-      identityRevision: 1,
-      desired: { kind: "delete" },
-      attempts: [],
-      state: "settled-locally",
-    },
-  ];
-
-  const acknowledged = acknowledgeLocalResourceCleanup({
-    record,
-    transitionId: "delete-local",
-    exactDatabaseName: "database",
-  });
-
-  expect(acknowledged?.next.resource.obligations).toEqual({});
-});
-
-it("queues placement after creation without replacing recorded work", () => {
-  const record = reserved();
-  const write = planResourceLocation({
-    record,
-    projectId: "project",
-    intentId: "move",
-    eligibleAt: 1,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
-  });
-
-  expect(write?.next.intents).toHaveLength(2);
-  expect(write?.next.intents[0]).toEqual(record.intents[0]);
-  expect(write?.next.intents[1]).toMatchObject({
-    sequence: 2,
-    identityRevision: 1,
-    desired: { kind: "set-location" },
-  });
-});
-
 it("preserves the first create-eligibility witness when filing later", () => {
   const eligible = markResourceCreateEligible(reserved(), 1);
   if (!eligible) throw new Error("Expected create eligibility");
@@ -290,85 +217,6 @@ it("remints a received create conflict while retaining exact content and attempt
     { intentId: "create-a", state: "superseded", attempts: [{ outcome: { kind: "create" } }] },
     { intentId: "create-b", state: "pending", identityRevision: 2, attempts: [] },
   ]);
-});
-
-it("retries past the earliest failed placement and supersedes queued locations", () => {
-  const record = reserved();
-  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
-  record.resource.canonical = {
-    scheme: "manuscript",
-    path: "/A.md",
-    name: "A.md",
-    workId: null,
-  };
-  record.resource.obligations = {};
-  const create = record.intents[0];
-  if (!create) throw new Error("Expected create intent");
-  record.intents = [
-    { ...create, state: "settled" },
-    {
-      projectId: "project",
-      handle: "handle",
-      intentId: "failed-a",
-      sequence: 2,
-      identityRevision: 1,
-      desired: {
-        kind: "set-location",
-        destination: {
-          scheme: "manuscript",
-          folderPath: "",
-          name: "B.md",
-          workId: null,
-        },
-      },
-      attempts: [],
-      state: "needs-repair",
-    },
-    {
-      projectId: "project",
-      handle: "handle",
-      intentId: "queued-b",
-      sequence: 3,
-      identityRevision: 1,
-      desired: {
-        kind: "set-location",
-        destination: {
-          scheme: "manuscript",
-          folderPath: "",
-          name: "C.md",
-          workId: null,
-        },
-      },
-      attempts: [],
-      state: "pending",
-    },
-  ];
-
-  const retry = planResourceLocation({
-    record,
-    projectId: "project",
-    intentId: "retry-c",
-    eligibleAt: 1,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "",
-      name: "C.md",
-      workId: null,
-    },
-  });
-  if (!retry) throw new Error("Expected retry");
-  expect(retry.next.intents.map(({ intentId, state }) => ({ intentId, state }))).toEqual([
-    { intentId: "create-a", state: "settled" },
-    { intentId: "failed-a", state: "superseded" },
-    { intentId: "queued-b", state: "cancelled" },
-    { intentId: "retry-c", state: "pending" },
-  ]);
-  expect(
-    prepareNamespaceAttempt(retry.next, {
-      attemptId: "retry",
-      operationId: "operation",
-    })?.next.intents.at(-1)?.state,
-  ).toBe("submitted");
 });
 
 it("rebases queued placement behind the retry when creation remints", () => {

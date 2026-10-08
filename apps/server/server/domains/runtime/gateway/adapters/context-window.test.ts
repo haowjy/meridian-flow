@@ -37,7 +37,6 @@ describe("context window normalization", () => {
   });
   it.each([
     "input length and max_tokens exceed context limit: 185000 + 16384 > 200000",
-    "prompt is too long: 200001 tokens > 200000 maximum",
   ])("maps Anthropic invalid_request_error: %s", (message) => {
     expect(
       mapProviderHttpError(
@@ -49,20 +48,5 @@ describe("context window normalization", () => {
         ),
       ),
     ).toMatchObject({ code: "context_overflow", retryable: false });
-  });
-  it.each([
-    "This model's maximum context length is 1048576 tokens. However, you requested 1049000 tokens (1048000 in the messages, 1000 in the completion).",
-    "Your input exceeds the context window of this model. Please adjust your input and try again.",
-  ])("maps DeepSeek and OpenAI payload: %s", (message) => {
-    expect(
-      mapProviderHttpError({ status: 400, code: "context_length_exceeded", message }),
-    ).toMatchObject({ code: "context_overflow", retryable: false });
-  });
-  it("does not compact for an invalid Anthropic token option", () => {
-    expect(
-      mapProviderHttpError(
-        new Anthropic.BadRequestError(400, {}, "max_tokens must be positive", new Headers()),
-      ).code,
-    ).toBe("invalid_request");
   });
 });

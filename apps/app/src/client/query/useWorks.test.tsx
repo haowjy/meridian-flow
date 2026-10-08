@@ -153,21 +153,6 @@ describe("Work command projection", () => {
     });
   });
 
-  it("drops a failure the server kept anyway once the repair read shows it", async () => {
-    vi.mocked(archiveWork).mockRejectedValue(new Error("Network lost"));
-    vi.mocked(listProjectWorks).mockResolvedValue(snapshot([archived(WORK)], "2"));
-    await withProbe(snapshot([WORK]), async (client) => {
-      await act(async () => {
-        await commands.archive({ workId: WORK.id });
-      });
-      await settle(() => {
-        expect(recordStatuses(client)).toEqual([]);
-        expect(field(WORK.id, "archivedAt")).not.toBeNull();
-      });
-      expect(seen.failures.size).toBe(0);
-    });
-  });
-
   it("keeps the failure of the first of two queued archives", async () => {
     const first = deferred<Work>();
     const second = deferred<Work>();

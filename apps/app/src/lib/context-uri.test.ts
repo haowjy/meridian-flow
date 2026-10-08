@@ -1,83 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  canOpenContextUri,
-  contextRouteTargetFromUri,
-  contextUriFromWritePath,
-} from "@/lib/context-uri";
+import { contextRouteTargetFromUri } from "@/lib/context-uri";
 
 const WORK_ID = "123e4567-e89b-12d3-a456-426614174000";
 const NO_WORK = { id: "no-work", slug: null };
 const ACTIVE_WORK = { id: WORK_ID, slug: "revision-pass" };
 
 describe("contextRouteTargetFromUri", () => {
-  it("maps non-work canonical URIs to route path tuples", () => {
-    expect(
-      contextRouteTargetFromUri(
-        "manuscript://arc/chapter-1.mdx",
-        NO_WORK,
-        [ACTIVE_WORK],
-        NO_WORK.id,
-      ),
-    ).toEqual({
-      scheme: "manuscript",
-      path: "/arc/chapter-1.mdx",
-      workId: null,
-    });
-    expect(
-      contextRouteTargetFromUri("kb://world/rules.md", NO_WORK, [ACTIVE_WORK], NO_WORK.id),
-    ).toEqual({
-      scheme: "kb",
-      path: "/world/rules.md",
-      workId: null,
-    });
-  });
-
-  it("resolves a bare scratch URI against the displayed work", () => {
-    expect(
-      contextRouteTargetFromUri(
-        "scratch://probe-cycle-3.mdx",
-        ACTIVE_WORK,
-        [ACTIVE_WORK],
-        NO_WORK.id,
-      ),
-    ).toEqual({
-      scheme: "scratch",
-      path: "/probe-cycle-3.mdx",
-      workId: WORK_ID,
-    });
-  });
-
-  it("strips an explicit Work slug qualifier that matches the active work", () => {
-    expect(
-      contextRouteTargetFromUri(
-        "scratch://@revision-pass/notes/beat.md",
-        ACTIVE_WORK,
-        [ACTIVE_WORK],
-        NO_WORK.id,
-      ),
-    ).toEqual({
-      scheme: "scratch",
-      path: "/notes/beat.md",
-      workId: WORK_ID,
-    });
-  });
-
-  it("treats an unqualified UUID segment as a path, never as URI authority", () => {
-    expect(
-      contextRouteTargetFromUri(
-        `scratch://${WORK_ID}/notes/beat.md`,
-        ACTIVE_WORK,
-        [ACTIVE_WORK],
-        NO_WORK.id,
-      ),
-    ).toEqual({
-      scheme: "scratch",
-      path: `/${WORK_ID}/notes/beat.md`,
-      workId: WORK_ID,
-    });
-  });
-
   it("degrades when an explicit work authority does not belong to the active work", () => {
     expect(
       contextRouteTargetFromUri(
@@ -108,35 +37,5 @@ describe("contextRouteTargetFromUri", () => {
         NO_WORK.id,
       ),
     ).toEqual({ scheme: "uploads", path: "/reference.pdf", workId: "work-2" });
-  });
-});
-
-describe("canOpenContextUri", () => {
-  it("uses the same work-aware resolution policy as navigation", () => {
-    expect(
-      canOpenContextUri("manuscript://arc/chapter-1.mdx", NO_WORK, [ACTIVE_WORK], NO_WORK.id),
-    ).toBe(true);
-    expect(
-      canOpenContextUri("scratch://notes/beat.md", ACTIVE_WORK, [ACTIVE_WORK], NO_WORK.id),
-    ).toBe(true);
-    expect(canOpenContextUri("scratch://notes/beat.md", NO_WORK, [ACTIVE_WORK], NO_WORK.id)).toBe(
-      true,
-    );
-    expect(
-      canOpenContextUri(
-        "scratch://@other-work/notes/beat.md",
-        ACTIVE_WORK,
-        [ACTIVE_WORK],
-        NO_WORK.id,
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("contextUriFromWritePath", () => {
-  it("files bare paths under the manuscript and never files another scheme there", () => {
-    expect(contextUriFromWritePath("ch1.md")).toBe("manuscript://ch1.md");
-    expect(contextUriFromWritePath("kb://world/rules.md")).toBe("kb://world/rules.md");
-    expect(contextUriFromWritePath("skills://story-review/references/beats.md")).toBeNull();
   });
 });

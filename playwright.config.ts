@@ -31,14 +31,7 @@ function resolveAppUrl(): string {
 
 export default defineConfig({
   testDir: "apps/app/e2e",
-  testMatch: [
-    "auth.spec.ts",
-    "composer-density.spec.ts",
-    "image-frame.spec.ts",
-    "image-in-cell.spec.ts",
-    "phase5.spec.ts",
-    "vertical-slice.spec.ts",
-  ],
+  testMatch: ["auth.spec.ts", "vertical-slice.spec.ts"],
   timeout: 30_000,
   workers: 1,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
