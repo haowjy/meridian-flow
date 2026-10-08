@@ -4,7 +4,7 @@ import type { DraftApplyChangesResponse, DraftDiscardResponse } from "@meridian/
 import {
   beginChangeCommand,
   type ChangeFailureCode,
-  type ChangeRef,
+  type ChangeSelection,
   failChangeCommand,
   releaseChangeCommand,
 } from "@/client/query/change-command-record";
@@ -15,6 +15,7 @@ import {
   releaseDraftCommand,
 } from "@/client/query/draft-command-record";
 import { classifyDraftCommandRejection } from "@/client/query/draft-command-rejection";
+import type { ReviewFocus } from "./review-changes";
 
 export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
@@ -23,7 +24,7 @@ export type DraftDispositionTarget =
       kind: "apply-change" | "discard-change";
       documentId: string;
       draftId: string;
-      classId: string;
+      classIds: readonly string[];
     }
   | { kind: "batch"; mode: "apply" | "discard"; count: number };
 
@@ -82,9 +83,9 @@ export type DraftCommandOutcome =
   | { kind: "applied" }
   | { kind: "apply-outcome-unknown" }
   | { kind: "discarded" }
-  /** One change was applied or discarded; the rest of the draft is untouched. */
+  /** A selection of changes was applied or discarded; the rest of the draft is untouched. */
   | { kind: "change-settled"; mode: "apply" | "discard" }
-  /** One change's command did not land; the reason is held on the change. */
+  /** A selection's command did not land; the reason is held on its changes. */
   | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
   | { kind: "failed"; failure: DraftCommandFailure };
 
@@ -125,10 +126,10 @@ export type DraftReviewCommandPorts = {
     selection: DraftReviewSelection,
     request: ChangeApplyRequest,
   ) => Promise<DraftApplyChangesResponse | "unknown">;
-  /** The server confirmed one change: drop it from the cached preview and refresh around it. */
+  /** The server confirmed a selection: drop its changes from the cached preview and refresh around them. */
   changeConfirmed: (
     selection: DraftReviewSelection,
-    change: ChangeRef,
+    changes: ChangeSelection,
     mode: "apply" | "discard",
   ) => void;
   batchStarted: (mode: "apply" | "discard") => void;
@@ -155,33 +156,34 @@ export class DraftReviewSession {
   }
 
   /**
-   * Apply one change (a complete server closure class) to live. The change
-   * leaves every surface at once; a refusal or a lost request brings it back
-   * with the reason held on it (`change-command-record`).
+   * Apply a selection of changes (complete server closure classes) of one draft
+   * to live. The changes leave every surface at once; a refusal or a lost
+   * request brings them back with the reason held on them
+   * (`change-command-record`).
    */
-  applyChange(
-    selection: DraftReviewSelection,
-    change: ChangeRef,
+  applySelection(
+    draft: DraftReviewSelection,
+    changes: ChangeSelection,
     tokens: ChangeTokens,
   ): Promise<DraftCommandOutcome> {
-    return this.changeCommand("apply", selection, change, tokens, (ports, request) =>
-      ports.applyChanges(selection, request),
+    return this.changeCommand("apply", draft, changes, tokens, (ports, request) =>
+      ports.applyChanges(draft, request),
     );
   }
 
   /**
-   * Discard one change: its operations go in a selective Discard, the draft's
-   * text returns to live's. Fenced by the same tokens as Apply, and answered the
-   * same way: `stale` brings the change back; it never reads as a discarded or
-   * closed draft.
+   * Discard a selection of changes: their operations go in a selective Discard,
+   * the draft's text returns to live's. Fenced by the same tokens as Apply, and
+   * answered the same way: `stale` brings the changes back; it never reads as a
+   * discarded or closed draft.
    */
-  discardChange(
-    selection: DraftReviewSelection,
-    change: ChangeRef,
+  discardSelection(
+    draft: DraftReviewSelection,
+    changes: ChangeSelection,
     tokens: ChangeTokens,
   ): Promise<DraftCommandOutcome> {
-    return this.changeCommand("discard", selection, change, tokens, (ports, request) =>
-      ports.discardChanges(selection, request),
+    return this.changeCommand("discard", draft, changes, tokens, (ports, request) =>
+      ports.discardChanges(draft, request),
     );
   }
 
@@ -220,7 +222,7 @@ export class DraftReviewSession {
   }
 
   /**
-   * One change's Apply or Discard. Both are answered by the same statuses
+   * A selection's Apply or Discard. Both are answered by the same statuses
    * (`applied` or `discarded` confirms, `gone` drops the change with a word,
    * anything else brings it back with its reason), and a request that got no
    * answer is held as `unknown` for both: it may have landed, so it is never
@@ -229,7 +231,7 @@ export class DraftReviewSession {
   private changeCommand(
     mode: "apply" | "discard",
     selection: DraftReviewSelection,
-    change: ChangeRef,
+    change: ChangeSelection,
     tokens: ChangeTokens,
     send: (
       ports: DraftReviewCommandPorts,
@@ -237,7 +239,7 @@ export class DraftReviewSession {
     ) => Promise<{ status: string } | "unknown">,
   ): Promise<DraftCommandOutcome> {
     return this.withReservation(
-      { kind: `${mode}-change`, ...selection, classId: change.classId },
+      { kind: `${mode}-change`, ...selection, classIds: change.classIds },
       async (_reservation, ports) => {
         const draft = { ...ports.scope, ...selection };
         if (!beginChangeCommand(draft, change, mode)) return { kind: "blocked" };
@@ -398,7 +400,7 @@ export type InlineDraftReview = {
    * (`resolveFocusedChange`). One value for the whole review, kept current by
    * `useReconcileReviewFocus`; surfaces only read it.
    */
-  focus?: ChangeRef | null;
+  focus?: ReviewFocus | null;
   /**
    * The writer handled the last change. The one completion state every
    * surface reads (header, list, editor); it comes from the command's own
@@ -447,7 +449,7 @@ export type DraftReviewAction =
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
   | { type: "applySucceeded"; documentId: string; draftId: string }
-  | { type: "changeFocused"; documentId: string; draftId: string; focus: ChangeRef | null }
+  | { type: "changeFocused"; documentId: string; draftId: string; focus: ReviewFocus | null }
   | {
       type: "reviewCompleting";
       documentId: string;
@@ -583,7 +585,7 @@ export function inlineReviewFromState(state: DraftReviewState): InlineDraftRevie
   return state.surface.kind === "inline" ? state.surface : null;
 }
 
-function sameFocus(left: ChangeRef | null, right: ChangeRef | null): boolean {
+function sameFocus(left: ReviewFocus | null, right: ReviewFocus | null): boolean {
   if (left === right) return true;
   if (!left || !right || left.classId !== right.classId) return false;
   return (

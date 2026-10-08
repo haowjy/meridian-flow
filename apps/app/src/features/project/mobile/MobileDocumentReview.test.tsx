@@ -53,6 +53,7 @@ const change = (classId: string, overrides: Partial<ReviewChange> = {}): ReviewC
     merged: false,
     change: { removed: "his", added: `edit ${classId}` },
     attribution: { kind: "ai" },
+    threadIds: [],
     ...overrides,
   }) as ReviewChange;
 

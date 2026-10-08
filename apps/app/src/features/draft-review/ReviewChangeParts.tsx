@@ -3,6 +3,7 @@
  * who made it, and why a command on it did not land. The row, the bar and the
  * phone's sheet are made of these, so a change reads the same everywhere.
  */
+import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
@@ -13,7 +14,7 @@ import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
-import type { ChangeAttribution } from "./change-attribution";
+import type { ChangeAttribution, ChangeChat } from "./change-attribution";
 import { RefusalReason } from "./ReviewMessageText";
 import type { ReviewChange, ReviewChangeTone } from "./review-changes";
 
@@ -44,8 +45,10 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
 }
 
 /**
- * "You", a link that opens the chat that wrote the change, or plain "AI" when
- * the preview cannot say which chat. The link never also acts on the change.
+ * "You", a link to each chat that wrote the change ("Pacing pass and Lore
+ * pass"), or plain "AI" when the preview cannot say which chat. A link opens
+ * its chat beside the change at the turn that wrote it and never also acts on
+ * the change; the names wrap on the row when there are many.
  */
 export function ChangeAuthor({
   attribution,
@@ -81,8 +84,46 @@ export function ChangeAuthor({
       </span>
     );
   }
-  // The chat's name as the chat list shows it, so the link names what it opens.
-  const title = displayThreadTitle(attribution.title);
+  // The names as the chat list shows them, so each link names what it opens.
+  const parts = new Intl.ListFormat(i18n.locale || undefined, {
+    style: "long",
+    type: "conjunction",
+  }).formatToParts(attribution.chats.map((chat) => displayThreadTitle(chat.title)));
+  let next = 0;
+  return (
+    <span
+      className={cn(
+        "inline-flex min-w-0 max-w-[60%] flex-wrap items-baseline text-caption text-muted-foreground",
+        className,
+      )}
+    >
+      {parts.map((part, index) => {
+        if (part.type === "literal") {
+          // pre keeps the separator's spaces, which a flex item would drop.
+          return (
+            <span key={index} className="whitespace-pre">
+              {part.value}
+            </span>
+          );
+        }
+        const chat = attribution.chats[next++];
+        return (
+          <ChatLink key={chat.threadId} chat={chat} name={part.value} onOpenThread={openThread} />
+        );
+      })}
+    </span>
+  );
+}
+
+function ChatLink({
+  chat,
+  name,
+  onOpenThread,
+}: {
+  chat: ChangeChat;
+  name: string;
+  onOpenThread: (threadId: string) => void;
+}) {
   return (
     <button
       type="button"
@@ -91,23 +132,20 @@ export function ChangeAuthor({
         event.stopPropagation();
         // Open the chat where the write happened. Without a recorded turn
         // (older data) it is the chat at its usual position.
-        if (attribution.turnId) {
+        if (chat.turnId) {
           requestConversationReveal({
             kind: "turn",
-            threadId: attribution.threadId,
-            turnId: attribution.turnId,
-            ...(attribution.toolCallId ? { toolCallId: attribution.toolCallId } : {}),
+            threadId: chat.threadId,
+            turnId: chat.turnId,
+            ...(chat.toolCallId ? { toolCallId: chat.toolCallId } : {}),
           });
         } else {
-          openThread(attribution.threadId);
+          onOpenThread(chat.threadId);
         }
       }}
-      className={cn(
-        "focus-ring inline-flex min-w-0 max-w-32 items-center gap-0.5 rounded-sm text-caption text-primary hover:underline",
-        className,
-      )}
+      className="focus-ring inline-flex min-w-0 max-w-32 items-center gap-0.5 self-stretch rounded-sm text-primary hover:underline"
     >
-      <span className="truncate">{title}</span>
+      <span className="truncate">{name}</span>
       <ArrowUpRight aria-hidden className="size-3 shrink-0" />
     </button>
   );

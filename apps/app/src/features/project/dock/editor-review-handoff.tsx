@@ -19,6 +19,7 @@ import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import { FocusOpenedReview, type ReviewFocusRequest } from "./FocusOpenedReview";
 import { ReviewHandoverContext, useReviewHandoverOwner } from "./review-handover";
 
 export type AiDraftLaunchTarget = {
@@ -28,6 +29,12 @@ export type AiDraftLaunchTarget = {
   contextPath: string;
   documentName?: string;
   isNewDocument?: boolean;
+  /**
+   * Operations of the change to focus once this review has painted (the
+   * strip's Review, a Work page change row). When none is in the review any
+   * more, it opens at the top.
+   */
+  focusOperationIds?: readonly string[];
 };
 
 type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
@@ -205,6 +212,8 @@ export function EditorReviewIntentClaimant({
   const handoff = useContext(EditorReviewIntentContext);
   const intent = handoff?.intent ?? null;
   const review = useDraftReview();
+  const [focus, setFocus] = useState<ReviewFocusRequest | null>(null);
+  const focusDone = useCallback(() => setFocus(null), []);
 
   useEffect(() => {
     if (!intent) return;
@@ -214,8 +223,21 @@ export function EditorReviewIntentClaimant({
     const group = review.groupForDocument(intent.documentId);
     if (group?.draft.draftId !== intent.draftId) return;
     review.controller.enterInlineReview(intent.documentId, intent.draftId);
+    // The latest launch decides the focus: one without it clears an older request.
+    setFocus(
+      intent.focusOperationIds?.length
+        ? {
+            sequence: intent.sequence,
+            documentId: intent.documentId,
+            draftId: intent.draftId,
+            operationIds: intent.focusOperationIds,
+          }
+        : null,
+    );
     handoff?.claim(intent.sequence);
   }, [activeScheme, editorWorkId, handoff, intent, review]);
 
-  return null;
+  return focus ? (
+    <FocusOpenedReview key={focus.sequence} request={focus} onDone={focusDone} />
+  ) : null;
 }

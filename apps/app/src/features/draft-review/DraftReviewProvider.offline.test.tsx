@@ -14,6 +14,7 @@ import {
   applied,
   change,
   discarded,
+  draftA,
   listed,
   preview,
   renderReviewScopes,
@@ -80,7 +81,7 @@ describe("a command sent while the browser is offline", () => {
       onlineManager.setOnline(false);
       let outcome: unknown;
       await act(async () => {
-        outcome = await probe().editor.controller.applyChange(change("2"));
+        outcome = await probe().editor.controller.applyChanges(draftA, change("2"));
       });
       expect(outcome).toEqual({ kind: "change-refused", mode: "apply", code: "offline" });
       expect(classIds(probe())).toEqual(["class-1", "class-2"]);
@@ -97,7 +98,7 @@ describe("a command sent while the browser is offline", () => {
       onlineManager.setOnline(false);
       let outcome: unknown;
       await act(async () => {
-        outcome = await probe().editor.controller.discardChange(change("2"));
+        outcome = await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code: "offline" });
       expect(failureOf(probe(), "class-2")).toMatchObject({ code: "offline", mode: "discard" });
@@ -153,15 +154,15 @@ describe("a command whose answer was lost", () => {
   const lost = () => new TypeError("Failed to fetch");
 
   it.each([
-    ["Apply", "apply", () => mocks.applyDraftChanges, "applyChange"],
-    ["Discard", "discard", () => mocks.discardDraft, "discardChange"],
+    ["Apply", "apply", () => mocks.applyDraftChanges, "applyChanges"],
+    ["Discard", "discard", () => mocks.discardDraft, "discardChanges"],
   ] as const)("holds a lost %s of one change as unknown, never as a refusal", async (_name, mode, api, command) => {
     api().mockRejectedValue(lost());
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       let outcome: unknown;
       await act(async () => {
-        outcome = await probe().editor.controller[command](change("2"));
+        outcome = await probe().editor.controller[command](draftA, change("2"));
       });
       expect(outcome).toEqual({ kind: "change-refused", mode, code: "unknown" });
       expect(classIds(probe())).toEqual(["class-1", "class-2"]);
@@ -174,7 +175,7 @@ describe("a command whose answer was lost", () => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await act(async () => {
-        await probe().editor.controller.discardChange(change("2"));
+        await probe().editor.controller.discardChanges(draftA, change("2"));
       });
       expect(failureOf(probe(), "class-2")).toMatchObject({
         code: "server-error",

@@ -105,6 +105,18 @@ export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
   groups: ThreadDraftGroup[] | null;
 };
 
+/** The one Work draft-list query, shared by every reader so the list is fetched once. */
+export function workDraftsQueryOptions(projectId: string, workId: string) {
+  return {
+    queryKey: projectQueryKeys.workDrafts(projectId, workId),
+    queryFn: () =>
+      readDraftsAfterCommands({ projectId, workId }, () =>
+        listWorkDrafts(projectId, workId).then((response) => response.drafts),
+      ),
+    staleTime: 15_000,
+  };
+}
+
 export function useWorkDrafts(
   projectId: string | null,
   workId: string | null,
@@ -114,12 +126,7 @@ export function useWorkDrafts(
   const enabled = callerEnabled && Boolean(projectId) && Boolean(workId);
   const result = unwrapListQuery(
     useQuery({
-      queryKey: projectQueryKeys.workDrafts(projectId ?? "", workId ?? ""),
-      queryFn: () =>
-        readDraftsAfterCommands({ projectId: projectId as string, workId: workId as string }, () =>
-          listWorkDrafts(projectId as string, workId as string).then((response) => response.drafts),
-        ),
-      staleTime: 15_000,
+      ...workDraftsQueryOptions(projectId ?? "", workId ?? ""),
       enabled,
     }),
   );

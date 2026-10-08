@@ -15,6 +15,7 @@ import {
   peekConversationReveal,
 } from "@/test-support/conversation-reveal";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import type { ChangeChat } from "./change-attribution";
 import { ReviewChangeBar } from "./ReviewChangeBar";
 import { ReviewChangeRow } from "./ReviewChangeRow";
 import { ReviewStepper } from "./ReviewStepper";
@@ -34,8 +35,23 @@ function change(overrides: Partial<ReviewChange> = {}): ReviewChange {
     merged: false,
     change: { removed: "his", added: "one withered" },
     attribution: { kind: "ai" },
+    threadIds: [],
     ...overrides,
   };
+}
+
+/** A change written by chats, latest first; each is a link to its own turn. */
+function chats(
+  ...written: Partial<ChangeChat>[]
+): Extract<ReviewChange["attribution"], { kind: "chats" }> {
+  const [first, ...rest] = written.map((chat) => ({
+    threadId: "t-1",
+    title: null,
+    turnId: null,
+    toolCallId: null,
+    ...chat,
+  }));
+  return { kind: "chats", chats: [first, ...rest] };
 }
 
 function render(node: React.ReactNode, run: () => Promise<void>, openThread = vi.fn()) {
@@ -159,13 +175,7 @@ describe("ReviewChangeRow", () => {
   it("opens the chat that wrote it without acting on the change", async () => {
     const props = rowProps({
       change: change({
-        attribution: {
-          kind: "chat",
-          threadId: "t-9",
-          title: "Line edit",
-          turnId: null,
-          toolCallId: null,
-        },
+        attribution: chats({ threadId: "t-9", title: "Line edit", turnId: null, toolCallId: null }),
       }),
     });
     const openThread = vi.fn();
@@ -188,13 +198,12 @@ describe("ReviewChangeRow", () => {
   it("opens the chat at the turn and tool call that wrote the change", async () => {
     const props = rowProps({
       change: change({
-        attribution: {
-          kind: "chat",
+        attribution: chats({
           threadId: "t-9",
           title: "Line edit",
           turnId: "turn-4",
           toolCallId: "call-2",
-        },
+        }),
       }),
     });
     const openThread = vi.fn();
@@ -221,10 +230,75 @@ describe("ReviewChangeRow", () => {
     );
   });
 
+  it("names every chat of a shared change, each a link to its own turn", async () => {
+    const props = rowProps({
+      change: change({
+        attribution: chats(
+          { threadId: "t-1", title: "Pacing pass", turnId: "turn-9", toolCallId: "call-4" },
+          { threadId: "t-2", title: "Lore pass", turnId: "turn-3", toolCallId: null },
+        ),
+      }),
+    });
+    const openThread = vi.fn();
+    await render(
+      <ul>
+        <ReviewChangeRow {...props} />
+      </ul>,
+      async () => {
+        const links = Array.from(document.querySelectorAll("button")).filter((b) =>
+          /Pacing pass|Lore pass/.test(b.textContent ?? ""),
+        );
+        expect(links.map((link) => link.textContent)).toEqual(["Pacing pass", "Lore pass"]);
+        expect(document.querySelector("li")?.textContent).toContain("Pacing pass and Lore pass");
+        await act(async () => links[1].click());
+        expect(peekConversationReveal()).toEqual({
+          kind: "turn",
+          threadId: "t-2",
+          turnId: "turn-3",
+        });
+        abandonConversationReveal();
+        await act(async () => links[0].click());
+        expect(peekConversationReveal()).toEqual({
+          kind: "turn",
+          threadId: "t-1",
+          turnId: "turn-9",
+          toolCallId: "call-4",
+        });
+        abandonConversationReveal();
+        expect(openThread).not.toHaveBeenCalled();
+        expect(props.onFocus).not.toHaveBeenCalled();
+      },
+      openThread,
+    );
+  });
+
+  it("lists three chats with commas and one conjunction, no decorative separators", async () => {
+    await render(
+      <ul>
+        <ReviewChangeRow
+          {...rowProps({
+            change: change({
+              attribution: chats(
+                { threadId: "t-1", title: "Pacing pass" },
+                { threadId: "t-2", title: "Lore pass" },
+                { threadId: "t-3", title: "Draft notes" },
+              ),
+            }),
+          })}
+        />
+      </ul>,
+      async () => {
+        const text = document.querySelector("li")?.textContent ?? "";
+        expect(text).toMatch(/Pacing pass, Lore pass,? and Draft notes/);
+        expect(text).not.toMatch(/[·•—|]/);
+      },
+    );
+  });
+
   it("calls an untitled chat what the chat list calls it, and still opens it", async () => {
     const props = rowProps({
       change: change({
-        attribution: { kind: "chat", threadId: "t-3", title: null, turnId: null, toolCallId: null },
+        attribution: chats({ threadId: "t-3", title: null, turnId: null, toolCallId: null }),
       }),
     });
     const openThread = vi.fn();
@@ -430,13 +504,7 @@ describe("ReviewChangeBar", () => {
       <ReviewChangeBar
         {...barProps({
           change: change({
-            attribution: {
-              kind: "chat",
-              threadId: "t-3",
-              title: null,
-              turnId: null,
-              toolCallId: null,
-            },
+            attribution: chats({ threadId: "t-3", title: null, turnId: null, toolCallId: null }),
           }),
         })}
       />,
@@ -468,13 +536,12 @@ describe("ReviewChangeBar", () => {
       <ReviewChangeBar
         {...barProps({
           change: change({
-            attribution: {
-              kind: "chat",
+            attribution: chats({
               threadId: "t-1",
               title: "Pacing",
               turnId: null,
               toolCallId: null,
-            },
+            }),
           }),
         })}
       />,

@@ -111,3 +111,9 @@ while the hold lasts, and `useReviewHandoverRelease` (called by
 `EditorReviewAddressOwner`, which stays mounted) ends it when the target paints
 or fails or the route goes elsewhere. Keep navigation (tabs, sidebar) outside
 the frame. See `features/draft-review/AGENTS.md`.
+
+A launch may name `focusOperationIds`. The claimant that enters the review
+mounts `FocusOpenedReview`, which focuses and scrolls to the change holding
+them once, when that very review has painted and its preview has loaded. A
+review being left that is still painted is never focused, and ids no longer in
+the preview open the review at the top.

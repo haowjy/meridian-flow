@@ -18,7 +18,7 @@ import { type DraftReviewCommandPorts, DraftReviewSession } from "./draft-review
 const scope = { projectId: "p", workId: "w" };
 const selection = { documentId: "doc", draftId: "draft" };
 const draft = { ...scope, ...selection };
-const change = { classId: "closure:1+2", operationIds: ["1", "2"] };
+const change = { classIds: ["closure:1+2"], operationIds: ["1", "2"] };
 const tokens = { liveRevisionToken: "live-1", draftRevisionToken: "draft-1" };
 
 type Answer = DraftApplyChangesResponse | "unknown" | Error;
@@ -65,7 +65,7 @@ describe("applying one change", () => {
       operationIds: ["1", "2"],
       closureClassIds: ["closure:1+2"],
     });
-    const outcome = await session.applyChange(selection, change, tokens);
+    const outcome = await session.applySelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-settled", mode: "apply" });
     expect(ports.applyChanges).toHaveBeenCalledWith(selection, {
       operationIds: ["1", "2"],
@@ -79,7 +79,7 @@ describe("applying one change", () => {
     const { session } = harness(
       () => new Promise<DraftApplyChangesResponse>((resolve) => (answer = resolve)),
     );
-    const pending = session.applyChange(selection, change, tokens);
+    const pending = session.applySelection(selection, change, tokens);
     const held = await records();
     expect([...hiddenOperationIds(held, draft)]).toEqual(["1", "2"]);
     expect(changeCommandState(held, draft, change)).toEqual({ phase: "pending", mode: "apply" });
@@ -97,10 +97,14 @@ describe("applying one change", () => {
     const { session, ports } = harness(
       () => new Promise<DraftApplyChangesResponse>((resolve) => (answer = resolve)),
     );
-    const first = session.applyChange(selection, change, tokens);
-    expect(await session.applyChange(selection, change, tokens)).toEqual({ kind: "blocked" });
+    const first = session.applySelection(selection, change, tokens);
+    expect(await session.applySelection(selection, change, tokens)).toEqual({ kind: "blocked" });
     expect(
-      await session.discardChange(selection, { classId: "other", operationIds: ["9"] }, tokens),
+      await session.discardSelection(
+        selection,
+        { classIds: ["other"], operationIds: ["9"] },
+        tokens,
+      ),
     ).toEqual({ kind: "blocked" });
     expect(await session.applyReviewedDraft(selection)).toEqual({ kind: "blocked" });
     expect(ports.applyChanges).toHaveBeenCalledTimes(1);
@@ -113,7 +117,8 @@ describe("applying one change", () => {
     await first;
     // Released: the next change can go.
     expect(
-      (await session.discardChange(selection, { classId: "o", operationIds: ["9"] }, tokens)).kind,
+      (await session.discardSelection(selection, { classIds: ["o"], operationIds: ["9"] }, tokens))
+        .kind,
     ).toBe("change-settled");
   });
 
@@ -123,7 +128,7 @@ describe("applying one change", () => {
     ["draft_only", "draft-only"],
   ] as const)("a %s refusal brings the change back with its reason", async (status, code) => {
     const { session, ports } = harness({ status, draftId: "draft" });
-    const outcome = await session.applyChange(selection, change, tokens);
+    const outcome = await session.applySelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "apply", code });
     expect(ports.changeConfirmed).not.toHaveBeenCalled();
     const held = await records();
@@ -137,14 +142,14 @@ describe("applying one change", () => {
 
   it("a change the server no longer has leaves, and says so", async () => {
     const { session, ports } = harness({ status: "gone", draftId: "draft" });
-    const outcome = await session.applyChange(selection, change, tokens);
+    const outcome = await session.applySelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "apply", code: "gone" });
     expect(ports.changeConfirmed).toHaveBeenCalledWith(selection, change, "apply");
   });
 
   it("a request that got no answer is held on the change as unknown, never as a refusal", async () => {
     const { session, ports } = harness("unknown");
-    const outcome = await session.applyChange(selection, change, tokens);
+    const outcome = await session.applySelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "apply", code: "unknown" });
     expect(ports.changeConfirmed).not.toHaveBeenCalled();
     expect(changeCommandState(await records(), draft, change)).toEqual({
@@ -156,7 +161,7 @@ describe("applying one change", () => {
 
   it("a request the server refused brings the change back as an offline failure", async () => {
     const { session, ports } = harness(new Error("refused"));
-    const outcome = await session.applyChange(selection, change, tokens);
+    const outcome = await session.applySelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "apply", code: "offline" });
     expect(ports.changeConfirmed).not.toHaveBeenCalled();
     expect(changeCommandState(await records(), draft, change)).toEqual({
@@ -168,15 +173,15 @@ describe("applying one change", () => {
 
   it("the failure follows the change when the server regroups it", async () => {
     const { session } = harness({ status: "stale", draftId: "draft" });
-    await session.applyChange(selection, change, tokens);
+    await session.applySelection(selection, change, tokens);
     // After the refetch the class has a new id but shares an operation.
-    const regrouped = { classId: "closure:2+3", operationIds: ["2", "3"] };
+    const regrouped = { classIds: ["closure:2+3"], operationIds: ["2", "3"] };
     expect(changeCommandState(await records(), draft, regrouped)).toMatchObject({
       phase: "failed",
       code: "stale",
     });
     expect(
-      changeCommandState(await records(), draft, { classId: "x", operationIds: ["7"] }),
+      changeCommandState(await records(), draft, { classIds: ["x"], operationIds: ["7"] }),
     ).toBeNull();
   });
 });
@@ -189,7 +194,7 @@ describe("discarding one change", () => {
 
   it("sends every operation of the change, including the writer's edits inside it, with the tokens the writer saw", async () => {
     const { session, ports } = harness("unknown");
-    const outcome = await session.discardChange(selection, change, tokens);
+    const outcome = await session.discardSelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-settled", mode: "discard" });
     expect(ports.discardChanges).toHaveBeenCalledWith(selection, {
       operationIds: ["1", "2"],
@@ -206,7 +211,7 @@ describe("discarding one change", () => {
   ] as const)("a %s refusal brings the change back with its reason, never as a discard", async (status, code) => {
     const { session, ports } = harness("unknown");
     ports.discardChanges.mockResolvedValueOnce({ status, draftId: "draft", draftClosed: true });
-    const outcome = await session.discardChange(selection, change, tokens);
+    const outcome = await session.discardSelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code });
     expect(ports.changeConfirmed).not.toHaveBeenCalled();
     const held = await records();
@@ -221,7 +226,7 @@ describe("discarding one change", () => {
   it("a change the server no longer has leaves, and says so", async () => {
     const { session, ports } = harness("unknown");
     ports.discardChanges.mockResolvedValueOnce({ status: "gone", draftId: "draft" });
-    expect(await session.discardChange(selection, change, tokens)).toEqual({
+    expect(await session.discardSelection(selection, change, tokens)).toEqual({
       kind: "change-refused",
       mode: "discard",
       code: "gone",
@@ -232,7 +237,7 @@ describe("discarding one change", () => {
   it("a Discard that got no answer is held on the change as unknown, as an Apply's is", async () => {
     const { session, ports } = harness("unknown");
     ports.discardChanges.mockResolvedValueOnce("unknown");
-    const outcome = await session.discardChange(selection, change, tokens);
+    const outcome = await session.discardSelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code: "unknown" });
     expect(ports.changeConfirmed).not.toHaveBeenCalled();
     expect(changeCommandState(await records(), draft, change)).toEqual({
@@ -245,7 +250,7 @@ describe("discarding one change", () => {
   it("a Discard the server refused brings the change back as an offline failure", async () => {
     const { session, ports } = harness("unknown");
     ports.discardChanges.mockRejectedValueOnce(new Error("refused"));
-    const outcome = await session.discardChange(selection, change, tokens);
+    const outcome = await session.discardSelection(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code: "offline" });
     expect(changeCommandState(await records(), draft, change)).toEqual({
       phase: "failed",

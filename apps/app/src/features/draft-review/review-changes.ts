@@ -12,9 +12,12 @@
  * Pure data, no React.
  */
 import type { DraftPreviewResponse, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
-import type { ChangeRef } from "@/client/query/draft-command-record";
 import { unattributedHunkKey } from "@/core/editor/extensions/inline-review";
-import { type ChangeAttribution, changeAttribution } from "./change-attribution";
+import {
+  attributionThreadIds,
+  type ChangeAttribution,
+  changeAttribution,
+} from "./change-attribution";
 import {
   changeTextForHunks,
   type OperationChangeText,
@@ -26,6 +29,9 @@ import {
  * split by author, or a difference the server could not attribute at all.
  */
 export type ReviewChangeTone = "ai" | "writer" | "removal" | "merged" | "unattributed";
+
+/** The change the review's focus names: its class and the operations it held when last seen. */
+export type ReviewFocus = { classId: string; operationIds: readonly string[] };
 
 export interface ReviewChange {
   /** Stable identity: the server's closure class id. */
@@ -47,6 +53,11 @@ export interface ReviewChange {
   merged: boolean;
   change: OperationChangeText;
   attribution: ChangeAttribution;
+  /**
+   * Every chat with a visible agent operation in this change, latest first. A
+   * change is a chat's when its id is here; the chat strip filters on it.
+   */
+  threadIds: string[];
   /**
    * Apply and Discard act on this change. False for an unclassified hunk with
    * no operation, and for every member of a class the server flags
@@ -152,7 +163,7 @@ export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewC
  */
 export function resolveFocusedChange(
   changes: readonly ReviewChange[],
-  focus: ChangeRef | null,
+  focus: ReviewFocus | null,
 ): ReviewChange | null {
   if (!focus) return null;
   const exact = changes.find((change) => change.classId === focus.classId);
@@ -176,6 +187,7 @@ function describeUnattributed(hunk: ReviewHunk): ReviewChange {
     merged: false,
     change: changeTextForHunks([hunk]),
     attribution: { kind: "unattributed" },
+    threadIds: [],
     actionable: false,
   };
 }
@@ -199,6 +211,7 @@ function describeChange(
         (firstHunk.get(a.operationId) ?? Number.POSITIVE_INFINITY) -
         (firstHunk.get(b.operationId) ?? Number.POSITIVE_INFINITY),
     )[0]?.operationId ?? operationIds[0];
+  const attribution = changeAttribution(classOps);
   return {
     classId,
     operations: classOps,
@@ -216,7 +229,8 @@ function describeChange(
     includesWriterEdits,
     merged,
     change: changeTextForHunks(classHunks, classOps),
-    attribution: changeAttribution(classOps),
+    attribution,
+    threadIds: attributionThreadIds(attribution),
   };
 }
 

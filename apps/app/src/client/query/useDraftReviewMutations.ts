@@ -21,7 +21,7 @@ import { applyDraft, applyDraftChanges, discardDraft } from "@/client/api/drafts
 import { httpErrorStatus } from "@/client/api/http-client";
 import {
   type ChangeCommandMode,
-  type ChangeRef,
+  type ChangeSelection,
   confirmChangeCommand,
   previewWithoutOperations,
 } from "./change-command-record";
@@ -230,16 +230,17 @@ export function useApplyDraftChanges() {
 }
 
 /**
- * The server confirmed one change (applied, or discarded): it leaves the cached
- * preview now, and preview reads already in flight can no longer bring it back.
+ * The server confirmed a selection (applied, or discarded): its changes leave
+ * the cached preview now, and preview reads already in flight can no longer
+ * bring them back.
  */
 export function settleConfirmedChange(
   queryClient: QueryClient,
   draft: DraftReviewMutationBase,
-  change: ChangeRef,
+  selection: ChangeSelection,
   mode: ChangeCommandMode,
 ): void {
-  const hidden = new Set(change.operationIds);
+  const hidden = new Set(selection.operationIds);
   queryClient.setQueryData<DraftPreviewResponse>(
     projectQueryKeys.workDraftPreview(
       draft.projectId,
@@ -249,5 +250,5 @@ export function settleConfirmedChange(
     ),
     (preview) => (preview ? previewWithoutOperations(preview, hidden) : preview),
   );
-  confirmChangeCommand(draft, change, mode);
+  confirmChangeCommand(draft, selection, mode);
 }

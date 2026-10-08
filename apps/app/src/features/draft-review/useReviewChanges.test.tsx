@@ -18,6 +18,7 @@ import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { settleConfirmedChange } from "@/client/query/useDraftReviewMutations";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { selectionOf } from "./change-selection";
 import { useArrivedChanges } from "./useArrivedChanges";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
@@ -81,8 +82,8 @@ function fakeController(overrides: Partial<DraftReviewController> = {}) {
     focus: null,
     dispositionLocked: false,
     focusReviewChange: vi.fn(),
-    applyChange: vi.fn(async () => ({ kind: "change-settled", mode: "apply" })),
-    discardChange: vi.fn(async () => ({ kind: "change-settled", mode: "discard" })),
+    applyChanges: vi.fn(async () => ({ kind: "change-settled", mode: "apply" })),
+    discardChanges: vi.fn(async () => ({ kind: "change-settled", mode: "discard" })),
     ...overrides,
   } as unknown as DraftReviewController;
 }
@@ -157,11 +158,11 @@ describe("useReviewChanges", () => {
     await mount(fakeController(), async () => {
       const second = latest.items[1].change;
       await act(async () => {
-        beginChangeCommand(draft, second, "apply");
+        beginChangeCommand(draft, selectionOf([second]), "apply");
       });
       expect(classIds()).toEqual(["c1", "c3"]);
       await act(async () => {
-        failChangeCommand(draft, second, "apply", "offline");
+        failChangeCommand(draft, selectionOf([second]), "apply", "offline");
         releaseChangeCommand(draft);
       });
       expect(classIds()).toEqual(["c1", "c2", "c3"]);
@@ -182,8 +183,8 @@ describe("useReviewChanges", () => {
       });
       // ...the writer applies a change and the server confirms...
       await act(async () => {
-        beginChangeCommand(draft, target, "apply");
-        settleConfirmedChange(client, draft, target, "apply");
+        beginChangeCommand(draft, selectionOf([target]), "apply");
+        settleConfirmedChange(client, draft, selectionOf([target]), "apply");
       });
       expect(classIds()).toEqual(["c2", "c3"]);
       // ...then the read from before the click resolves with the change still in it.
@@ -285,7 +286,7 @@ describe("useReviewChanges", () => {
       await act(async () => {
         await latest.apply(target);
       });
-      expect(controller.applyChange).toHaveBeenCalledWith(target);
+      expect(controller.applyChanges).toHaveBeenCalledWith(inReview, selectionOf([target]));
       expect(controller.focusReviewChange).toHaveBeenCalledWith(
         inReview,
         expect.objectContaining({ classId: "c3" }),
@@ -294,7 +295,7 @@ describe("useReviewChanges", () => {
     });
     const refused = fakeController({
       focus: { classId: "c2", operationIds: ["2"] },
-      applyChange: vi.fn(async () => ({ kind: "change-refused", mode: "apply", code: "stale" })),
+      applyChanges: vi.fn(async () => ({ kind: "change-refused", mode: "apply", code: "stale" })),
     } as unknown as Partial<DraftReviewController>);
     await mount(refused, async () => {
       const target = latest.items[1].change;
@@ -326,7 +327,7 @@ describe("useReviewChanges", () => {
         inline({ phase: "pending", mode: "apply", documentName: "Chapter 12" }),
         async () => {
           await act(async () => {
-            beginChangeCommand(draft, latest.items[0].change, "apply");
+            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "apply");
           });
           expect(classIds()).toEqual([]);
           expect(latest.completing).toBe("apply");
@@ -341,7 +342,7 @@ describe("useReviewChanges", () => {
         inline(),
         async () => {
           await act(async () => {
-            beginChangeCommand(draft, latest.items[0].change, "discard");
+            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard");
           });
           expect(classIds()).toEqual([]);
           expect(latest.completing).toBeNull();
@@ -379,7 +380,7 @@ describe("useReviewChanges", () => {
         inline(),
         async () => {
           await act(async () => {
-            beginChangeCommand(draft, latest.items[0].change, "discard");
+            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard");
           });
           expect(latest.unlisted).toBe(false);
         },

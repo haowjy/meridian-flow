@@ -43,6 +43,7 @@ const change: ReviewChange = {
   merged: false,
   change: { removed: null, added: "one withered" },
   attribution: { kind: "ai" },
+  threadIds: [],
 };
 const view = {
   items: [{ change, failure: null }],

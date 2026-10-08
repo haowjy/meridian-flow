@@ -1,17 +1,21 @@
 /**
- * What the writer sees of each change under review (a server closure class),
- * shared by every surface that shows it: the manuscript's marks and bar, the
- * change list, the stepper, the header counts. Sits beside
+ * What the writer sees of the changes under review (server closure classes),
+ * shared by every surface that shows them: the manuscript's marks and bar, the
+ * change list, the stepper, the header counts, the chat strip and the Work
+ * page's rows. Sits beside
  * `draft-command-record`, which is the one command authority per draft.
  *
- * - `pending`: an Apply or Discard of this change is dispatched. It is not
+ * - `pending`: an Apply or Discard of this selection is dispatched. It is not
  *   stored here: it is the draft's own pending claim (`beginDraftCommand`,
- *   carrying the change's operation set), so a whole-draft command, or a
- *   command from another session, cannot be sent beside it. The change leaves
+ *   carrying the selection's operation set), so a whole-draft command, or a
+ *   command from another session, cannot be sent beside it. The changes leave
  *   every surface at once (the writer sees the result of the click).
- * - `failed`: the command did not land. The change comes back, showing why on
- *   its own bar and row. It clears on the next action on that change, and when
- *   a later preview no longer lists any of its operations.
+ * - `failed`: the command did not land. The changes come back, showing why on
+ *   their own bars and rows, and on the file whose selection it was. One
+ *   failure is held per (draft, selection) and projected to every change whose
+ *   operations overlap the selection. It clears on the next action on an
+ *   overlapping change, and when a later preview no longer lists any of its
+ *   operations.
  * - `confirmed`: the server confirmed the command. Preview reads that started
  *   before the confirmation can no longer bring the change back (a read in
  *   flight from before the click resolves with the change still in it), so the
@@ -31,7 +35,7 @@ import { create } from "zustand";
 import {
   beginDraftCommand,
   type ChangeCommandMode,
-  type ChangeRef,
+  type ChangeSelection,
   currentDraftCommandRecords,
   type DraftCommandRecords,
   onDraftCommandRecordsReset,
@@ -41,7 +45,7 @@ import {
   useDraftCommandRecords,
 } from "./draft-command-record";
 
-export type { ChangeCommandMode, ChangeRef };
+export type { ChangeCommandMode, ChangeSelection };
 
 type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
 
@@ -62,7 +66,7 @@ export type ChangeFailureCode =
   /** A new document's changes cannot be applied one by one. */
   | "draft-only";
 
-type ChangeCommandRecord = ChangeRef &
+type ChangeCommandRecord = ChangeSelection &
   (
     | ({
         phase: "failed";
@@ -98,17 +102,18 @@ function draftPrefix(draft: DraftRef): string {
   return `${draft.projectId}\u0000${draft.workId}\u0000${draft.documentId}\u0000${draft.draftId}\u0000`;
 }
 
-function recordKey(draft: DraftRef, classId: string): string {
-  return `${draftPrefix(draft)}${classId}`;
+/** A selection's identity in the record: its classes, in a fixed order. */
+function recordKey(draft: DraftRef, selection: ChangeSelection): string {
+  return `${draftPrefix(draft)}${[...selection.classIds].sort().join("\u0001")}`;
 }
 
 function setRecord(
   draft: DraftRef,
-  change: ChangeRef,
+  selection: ChangeSelection,
   record: ((clock: number) => ChangeCommandRecord) | null,
   advance = false,
 ): void {
-  const key = recordKey(draft, change.classId);
+  const key = recordKey(draft, selection);
   useChangeCommandStore.setState((state) => {
     const { [key]: _prior, ...rest } = state.records;
     const clock = advance ? state.clock + 1 : state.clock;
@@ -116,19 +121,23 @@ function setRecord(
   });
 }
 
-/** Claim the draft for one command on this change; false when any command is in flight on the draft. */
+/** Claim the draft for one command on this selection; false when any command is in flight on the draft. */
 export function beginChangeCommand(
   draft: DraftRef,
-  change: ChangeRef,
+  selection: ChangeSelection,
   mode: ChangeCommandMode,
 ): boolean {
   if (
-    !beginDraftCommand(draft, { classId: change.classId, operationIds: change.operationIds, mode })
+    !beginDraftCommand(draft, {
+      classIds: selection.classIds,
+      operationIds: selection.operationIds,
+      mode,
+    })
   ) {
     return false;
   }
-  // The claim is the next action on the change: a failure it held is stale now.
-  clearChangeFailure(draft, change);
+  // The claim is the next action on these changes: a failure they held is stale now.
+  clearChangeFailure(draft, selection);
   return true;
 }
 
@@ -139,14 +148,14 @@ export function releaseChangeCommand(draft: DraftRef): void {
 
 export function failChangeCommand(
   draft: DraftRef,
-  change: ChangeRef,
+  selection: ChangeSelection,
   mode: ChangeCommandMode,
   code: ChangeFailureCode,
   refusal?: ServerRefusal,
 ): void {
   setRecord(
     draft,
-    change,
+    selection,
     (at) => ({
       phase: "failed",
       mode,
@@ -154,8 +163,8 @@ export function failChangeCommand(
       ...(refusal ? { serverCode: refusal.serverCode } : {}),
       ...(refusal?.serverReason ? { serverReason: refusal.serverReason } : {}),
       at,
-      classId: change.classId,
-      operationIds: change.operationIds,
+      classIds: selection.classIds,
+      operationIds: selection.operationIds,
     }),
     true,
   );
@@ -163,18 +172,18 @@ export function failChangeCommand(
 
 export function confirmChangeCommand(
   draft: DraftRef,
-  change: ChangeRef,
+  selection: ChangeSelection,
   mode: ChangeCommandMode,
 ): void {
   setRecord(
     draft,
-    change,
+    selection,
     (at) => ({
       phase: "confirmed",
       mode,
       at,
-      classId: change.classId,
-      operationIds: change.operationIds,
+      classIds: selection.classIds,
+      operationIds: selection.operationIds,
     }),
     true,
   );
@@ -183,31 +192,40 @@ export function confirmChangeCommand(
 
 type FailedRecord = Extract<ChangeCommandRecord, { phase: "failed" }>;
 
+/** The two selections name a class or an operation in common (the server may have regrouped since). */
+function overlaps(left: ChangeSelection, right: ChangeSelection): boolean {
+  const classIds = new Set(right.classIds);
+  const operationIds = new Set(right.operationIds);
+  return (
+    left.classIds.some((id) => classIds.has(id)) ||
+    left.operationIds.some((id) => operationIds.has(id))
+  );
+}
+
 /**
- * The failures held for this change: under its own class id, or under any
- * class that shares one of its operations (the server regrouped it since). The
- * one rule for finding a change's failure, to show it and to retire it.
+ * The failures held for this selection: under one of its class ids, or under
+ * any selection that shares one of its operations (the server regrouped it
+ * since). The one rule for finding a change's or a file's failure, to show it
+ * and to retire it.
  */
-function failuresOfChange(
+function failuresOfSelection(
   records: ChangeRecords,
   draft: DraftRef,
-  change: ChangeRef,
+  selection: ChangeSelection,
 ): { key: string; record: FailedRecord }[] {
   const prefix = draftPrefix(draft);
-  const ids = new Set(change.operationIds);
   const held: { key: string; record: FailedRecord }[] = [];
   for (const [key, record] of Object.entries(records)) {
-    if (record.phase !== "failed" || !key.startsWith(prefix)) continue;
-    if (record.classId === change.classId || record.operationIds.some((id) => ids.has(id))) {
+    if (record.phase === "failed" && key.startsWith(prefix) && overlaps(record, selection)) {
       held.push({ key, record });
     }
   }
   return held;
 }
 
-/** Drop the failures held for a change (the next action on it, a dismissal); never touches a claim. */
-export function clearChangeFailure(draft: DraftRef, change: ChangeRef): void {
-  const held = failuresOfChange(useChangeCommandStore.getState().records, draft, change);
+/** Drop the failures held for a selection (the next action on it, a dismissal); never touches a claim. */
+export function clearChangeFailure(draft: DraftRef, selection: ChangeSelection): void {
+  const held = failuresOfSelection(useChangeCommandStore.getState().records, draft, selection);
   if (held.length === 0) return;
   const dropped = new Set(held.map(({ key }) => key));
   useChangeCommandStore.setState((state) => ({
@@ -343,22 +361,22 @@ export function hiddenOperationIds(
   return hidden;
 }
 
-/** What a change's command record says: its claim, else its latest failure (`failuresOfChange`). */
+/**
+ * What the command records say of a selection: its claim, else its latest
+ * failure (`failuresOfSelection`). A change asks with its own class; a file
+ * (strip, Work row) asks with the selection it sent.
+ */
 export function changeCommandState(
   records: ChangeCommandRecords,
   draft: DraftRef,
-  change: ChangeRef,
+  selection: ChangeSelection,
 ): ChangeCommandState | null {
   const pending = pendingChangeCommand(records.drafts, draft);
-  if (
-    pending &&
-    (pending.classId === change.classId ||
-      pending.operationIds.some((id) => change.operationIds.includes(id)))
-  ) {
+  if (pending && overlaps(pending, selection)) {
     return { phase: "pending", mode: pending.mode };
   }
   // Several can apply after regrouping; the writer's latest action is the one that counts.
-  const latest = failuresOfChange(records.changes, draft, change).reduce<FailedRecord | null>(
+  const latest = failuresOfSelection(records.changes, draft, selection).reduce<FailedRecord | null>(
     (newest, { record }) => (newest && newest.at > record.at ? newest : record),
     null,
   );

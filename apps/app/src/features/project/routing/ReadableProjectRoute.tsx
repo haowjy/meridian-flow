@@ -74,6 +74,7 @@ import {
   projectSearchEquals,
   type RouteWorkResolution,
   routeWorkIssue,
+  type WorkDetailTarget,
 } from "./project-route";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
@@ -439,9 +440,17 @@ export function ReadableProjectRoute({
       ...address,
       destination: next,
       draftId: undefined,
-      workView: next.kind === "work" ? address.workView : undefined,
+      workView: undefined,
       worksView: undefined,
       results: false,
+    };
+  }
+  // A Work opens on its chats unless the target names Files: one address, so
+  // one transition and one history entry, whatever screen it leaves.
+  function workAddress(target: WorkDetailTarget): ProjectAddress {
+    return {
+      ...toDestination({ kind: "work", workId: target.workId }),
+      workView: target.view === "files" ? "files" : undefined,
     };
   }
   const contextDestination = useCallback(
@@ -667,10 +676,8 @@ export function ReadableProjectRoute({
   );
 
   const routeCommands: ProjectRouteCommands = {
-    openWork: (target, options) =>
-      go(toDestination({ kind: "work", workId: target.workId }), options),
-    workHref: (target) =>
-      projectAddressHref(toDestination({ kind: "work", workId: target.workId })),
+    openWork: (target, options) => go(workAddress(target), options),
+    workHref: (target) => projectAddressHref(workAddress(target)),
     workView: address.workView ?? "chats",
     setWorkView: (view) =>
       go({ ...address, workView: view === "files" ? "files" : undefined }, { replace: true }),
