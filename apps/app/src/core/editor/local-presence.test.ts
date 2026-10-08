@@ -29,7 +29,7 @@ describe("gateLocalPresence", () => {
     dock.setField("cursor", { anchor: 7 });
 
     // y-prosemirror clears a caret it believes is its own whenever its editor updates unfocused.
-    tab.caretProvider.awareness.setLocalStateField("cursor", null);
+    tab.setField("cursor", null);
     tab.setField("cursor", { anchor: 3 });
 
     expect(cursor()).toEqual({ anchor: 7 });

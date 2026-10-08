@@ -112,8 +112,9 @@ steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
 and the phone chat sheet's `MobileChatSheetHeader`) is a contained segmented
 track (a recessed ink-mix well) whose active segment surfaces paper
 (`bg-background`) — the paper stays inside the track's boundary, so the dock
-still reads as one chrome surface. Any other `bg-background` or `bg-card` in
-the dock is a bug (the dock is a sidebar).
+still reads as one chrome surface. The document's editor shell takes the slot's
+material too (`editorClassName="bg-transparent"`). Any other `bg-background` or
+`bg-card` in the dock is a bug (the dock is a sidebar).
 
 ### Changes view: controller seam
 
