@@ -121,10 +121,14 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     expect(codec.serialize([pending])).toBe(`${wire}\n`);
     expect(parsedDoc(codec, wire).toJSON()).toEqual(docFrom([pending]).toJSON());
   });
+});
 
-  // A width this package could not write back the same way is not a width. The
-  // tag stays the text it already was rather than becoming a picture at a size
-  // the document never said.
+// A width this package could not write back the same way is not a width. The
+// tag stays the text it already was rather than becoming a picture at a size
+// the document never said. Both dialects hand their attributes to one shared
+// reader, so the refusals run once, through the Markdown raw-HTML parser.
+describe("image attribute refusals", () => {
+  const codec = markdownCodec({ schema, assetPathResolver });
   it.each([
     'width="12.5"',
     'width="0"',

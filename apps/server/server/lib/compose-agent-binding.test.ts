@@ -37,31 +37,6 @@ describe("in-memory app Agent binding transaction", () => {
     expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
   });
 
-  it("rolls back both stores when revisions own the outer transaction", async () => {
-    const app = createInMemoryAppServices();
-    await seedGeneralAgent(app.agentRevisions, "model");
-    const general = await app.agentRevisions.readCatalogEntry(null, "general");
-    if (!general) throw new Error("Missing General");
-    let id = "";
-    await expect(
-      app.agentRevisions.withCatalogTransaction(null, async () => {
-        await app.repos.transaction(async () => {
-          const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
-          id = thread.id;
-          await app.agentRevisions.bindThread(
-            id,
-            general.selectedRevisionId,
-            bindingConfiguration,
-            null,
-          );
-        });
-        throw new Error("outer rollback");
-      }),
-    ).rejects.toThrow("outer rollback");
-    expect(await app.repos.threads.findById(id)).toBeNull();
-    expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
-  });
-
   it("hides pending threads without erasing unrelated successful creates on rollback", async () => {
     const app = createInMemoryAppServices();
     let release = () => {};

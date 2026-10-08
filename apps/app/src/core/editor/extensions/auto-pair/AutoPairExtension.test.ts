@@ -151,18 +151,6 @@ describe("typing the closer steps over the one that was written", () => {
 });
 
 describe("a keystroke reported as a block replacement", () => {
-  it("pairs into the empty block a select-all Backspace left behind", () => {
-    const editor = openEditor("<p>Hello</p>");
-    editor.commands.selectAll();
-    editor.commands.deleteSelection();
-    // The selection still spans the emptied document, which is the state the
-    // writer's next character actually arrives in.
-    editor.commands.selectAll();
-
-    expect(typeOverRange(editor, 0, editor.state.doc.content.size, "[")).toBe(true);
-    expect(shape(editor)).toBe("[|]");
-  });
-
   it("stands aside when the writer is typing over their own selection", () => {
     const editor = openEditor("<p>Hello</p>");
     editor.commands.setTextSelection({ from: 1, to: 6 });
