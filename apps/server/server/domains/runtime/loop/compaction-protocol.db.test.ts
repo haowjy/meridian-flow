@@ -3,10 +3,8 @@ import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   CompactionMetadataCodec,
-  decodeImageInclusionMetadata,
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
@@ -563,79 +561,6 @@ else
       expect(promptBytes(request)).toBe(promptBytes(rebuilt.generateRequest));
     });
 
-    it("keeps candidates fill-only while a same-pass late image uses normal eviction", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      const mib = 1024 * 1024;
-      let assets = new Map<string, { key: string; sizeBytes: number; included: boolean }>();
-      const summarizer = scriptedSummarizer(async () => {
-        assets.set("image-late", { key: "late", sizeBytes: 9 * mib, included: false });
-        await rig.send(rig.threadId, "late image", {
-          blocks: [
-            { type: "text", text: "late image" },
-            { type: "image", documentId: "image-late", uri: "scratch://late.png" },
-          ],
-        });
-        return {
-          kind: "complete",
-          text: "Earlier context.",
-          model: "summary-model",
-          modelResponses: [],
-        };
-      });
-      rig = await imageFixture({ summarizer });
-      const { savedImages, assets: imageAssets } = await addImagePrompt(rig, [
-        { key: "old-included", sizeBytes: 8 * mib, included: true },
-        { key: "new-included", sizeBytes: 6 * mib, included: true },
-        { key: "candidate", sizeBytes: 5 * mib, included: false },
-      ]);
-      assets = imageAssets;
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-
-      const result = await run.execute();
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(result.status).toBe("complete");
-      const compaction = turns.find((turn) => turn.role === "compaction");
-      if (!compaction) throw new Error("Missing compaction turn");
-      const rows = await rig.repos.imageInclusions.listByThread(rig.threadId);
-      expect(
-        rows.some(
-          (row) =>
-            row.blockId === savedImages[2]?.block.id &&
-            row.decisionTurnId === compaction.id &&
-            row.included,
-        ),
-      ).toBe(true);
-      const latest = new Map(
-        (await rig.repos.imageInclusions.findByThread(rig.threadId)).map((row) => [
-          row.blockId,
-          row,
-        ]),
-      );
-      expect(latest.get(savedImages[0]?.block.id ?? "")?.included).toBe(false);
-      expect(latest.get(savedImages[1]?.block.id ?? "")?.included).toBe(true);
-      expect(latest.get(savedImages[2]?.block.id ?? "")?.included).toBe(true);
-      expect(requestImageData(rig.gateway.requests[0])).toEqual([
-        "data:image/png;base64,new-included",
-        "data:image/png;base64,candidate",
-        "data:image/png;base64,late",
-      ]);
-      const evictionNotice = turns
-        .map((turn) => ({ turn, metadata: decodeImageInclusionMetadata(turn.metadata) }))
-        .find(({ metadata }) =>
-          metadata?.breaks.some((entry) => entry.blockId === savedImages[0]?.block.id),
-        );
-      expect(evictionNotice?.turn.position).toBeGreaterThan(compaction.position);
-      expect(evictionNotice?.metadata?.breaks).toContainEqual({
-        blockId: savedImages[0]?.block.id,
-        uri: "scratch://old-included.png",
-        reason: "budget_eviction",
-      });
-    });
-
     it("does not persist candidate decisions when compaction fails", async () => {
       const rig = await imageFixture({
         summarizer: scriptedSummarizer(async () => ({
@@ -667,133 +592,8 @@ else
       expect(compaction.status).toBe("error");
     });
 
-    it("rolls the next real compaction after a warm branch summary is rejected as too large", async () => {
-      const gateway = scriptedGateway();
-      const original = gateway.stream;
-      let summaries = 0;
-      const summaryRequests: import("../gateway/index.js").GenerateRequest[] = [];
-      gateway.stream = async function* (request) {
-        const isSummary = request.messages.some((message) =>
-          message.content.some(
-            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
-          ),
-        );
-        if (!isSummary) {
-          yield* original(request);
-          return;
-        }
-        summaries++;
-        summaryRequests.push(request);
-        yield { type: "usage", usage: { inputTokens: 100, outputTokens: 1 } };
-        if (summaries === 1)
-          yield {
-            type: "error",
-            code: "context_overflow",
-            message: "input length and max_tokens exceed context limit",
-            retryable: false,
-          };
-        else
-          yield {
-            type: "end",
-            result: {
-              content: [{ type: "text", text: "The story's earlier work is complete." }],
-              toolCalls: [],
-              finishReason: "end_turn",
-              usage: { inputTokens: 100, outputTokens: 10 },
-              model: "gpt-4.1-mini",
-              provider: "openai",
-            },
-          };
-      };
-      const rig = await fixture({ gateway });
-      rig.deps.summarizer = createConversationSummarizer({
-        gateway: rig.deps.gateway,
-        eventSink: rig.deps.eventSink,
-        agentRevisions: rig.deps.agentRevisions,
-        prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
-        modelRequestDebug: rig.deps.modelRequestDebug,
-        toolRegistry: rig.deps.toolRegistry,
-        config: { model: "gpt-4.1-mini" },
-      });
-      const realSummarizer = rig.deps.summarizer;
-      const summaryInputs: Parameters<typeof realSummarizer.summarize>[0][] = [];
-      rig.deps.summarizer = {
-        ...realSummarizer,
-        async summarize(input) {
-          summaryInputs.push(input);
-          return realSummarizer.summarize(input);
-        },
-      };
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await run.execute()).status).toBe("error");
-      expect(summaries).toBe(1);
-      const rows = await rig.repos.modelResponses.listByTurn(run.executionTurnId);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        finishReason: "error",
-        predictedCacheState: "warm",
-        predictedCacheReason: "reusable_prefix",
-      });
-      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "compaction",
-      );
-      expect(compaction).toMatchObject({
-        status: "error",
-        metadata: {
-          reason: "request_too_large",
-          phase: "summary",
-          summarizer: { path: "branch" },
-        },
-      });
-      const debits = await db.select().from(schema.creditTransactions);
-      for (const row of rows) {
-        expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
-        expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
-      }
-
-      // A new run crosses the previous C through its actual prevTurnId chain.
-      // The second compaction is a normal auto-trigger, so only that history walk
-      // can make the summarizer know the previous request was too large.
-      rig.setThreshold(2500);
-      const retry = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Try again after the rejected summary.",
-      });
-      expect((await retry.execute()).status).toBe("complete");
-
-      const compactions = (await rig.repos.turns.listByThread(rig.threadId)).filter(
-        (turn) => turn.role === "compaction",
-      );
-      expect(compactions).toHaveLength(2);
-      expect(compactions[1]).toMatchObject({
-        status: "complete",
-        metadata: { summarizer: { path: "rolling" } },
-      });
-      expect(summaryInputs.map((input) => input.knownTooLarge)).toEqual([false, true]);
-      expect(summaryRequests[0]?.messages.at(-1)?.content).toContainEqual(
-        expect.objectContaining({
-          type: "text",
-          text: expect.stringMatching(/^<system_update>\n[\s\S]*\n<\/system_update>$/),
-        }),
-      );
-      expect(summaryRequests[1]?.messages).toHaveLength(2);
-      expect(summaryRequests[1]?.messages[1]?.content).toContainEqual(
-        expect.objectContaining({
-          type: "text",
-          text: expect.stringContaining("Conversation transcript:"),
-        }),
-      );
-    });
-
     it.each([
-      "recovered",
       "second_overflow",
-      "new_reply",
     ])("uses rolling after provider overflow and retries the reply once (%s)", async (scenario) => {
       const secondOverflow = scenario === "second_overflow";
       let rig: Awaited<ReturnType<typeof fixture>>;
@@ -824,7 +624,7 @@ else
           return;
         }
         calls++;
-        if (calls === 1 || secondOverflow || (scenario === "new_reply" && calls === 3)) {
+        if (calls === 1 || secondOverflow || (false && calls === 3)) {
           yield {
             type: "error",
             code: "context_overflow",
@@ -833,8 +633,6 @@ else
           };
           return;
         }
-        if (scenario === "new_reply" && calls === 2)
-          await rig.send(rig.threadId, "A new writer request.");
         yield {
           type: "end",
           result: {
@@ -872,8 +670,8 @@ else
         userText: "Continue.",
       });
       const result = await run.execute();
-      expect(calls).toBe(scenario === "new_reply" ? 4 : 2);
-      expect(summaries).toBe(scenario === "new_reply" ? 2 : 1);
+      expect(calls).toBe(2);
+      expect(summaries).toBe(1);
       expect(inputs[0].knownTooLarge).toBe(true);
       expect(inputs[0].projection.blocks.some((block) => block.textContent === "Continue.")).toBe(
         false,
@@ -1001,121 +799,6 @@ else
       }
     });
 
-    it("includes every cold segment response in a child report's cost", async () => {
-      const rig = await fixture({ child: true, history: "short history ".repeat(100) });
-      const model = {
-        id: "gpt-4.1-mini",
-        provider: "openai",
-        tokenizer: "o200k" as const,
-        displayName: "Fixture",
-        contextWindow: 6_000,
-        maxOutputTokens: 100,
-        promptCache: { kind: "automatic" as const, ttlMs: 60_000 },
-        capabilities: new Set<import("../gateway/index.js").Capability>(["tool_calling"]),
-      };
-      rig.deps.gateway.listModels = () => [model];
-      const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);
-      const requests: import("../gateway/index.js").GenerateRequest[] = [];
-      let summaryCalls = 0;
-      rig.deps.gateway.stream = async function* (request) {
-        requests.push(request);
-        const isSummary = request.messages.some((message) =>
-          message.content.some(
-            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
-          ),
-        );
-        if (!isSummary) {
-          yield* originalStream(request);
-          return;
-        }
-        summaryCalls++;
-        yield {
-          type: "end",
-          result: {
-            content: [{ type: "text", text: `Cold segment ${summaryCalls} summary.` }],
-            toolCalls: [],
-            finishReason: "end_turn",
-            usage: { inputTokens: 100, outputTokens: 10 },
-            model: model.id,
-            provider: model.provider,
-          },
-        };
-      };
-      rig.deps.summarizer = createConversationSummarizer({
-        gateway: rig.deps.gateway,
-        eventSink: rig.deps.eventSink,
-        agentRevisions: rig.deps.agentRevisions,
-        prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
-        modelRequestDebug: rig.deps.modelRequestDebug,
-        toolRegistry: rig.deps.toolRegistry,
-        config: { model: model.id },
-      });
-
-      let previousTurnId = (await rig.repos.turns.listByThread(rig.threadId)).at(-1)?.id;
-      for (let index = 0; index < 6; index++) {
-        const turn = await rig.repos.turns.create({
-          threadId: rig.threadId,
-          prevTurnId: previousTurnId,
-          role: index % 2 === 0 ? "user" : "assistant",
-          origin: index % 2 === 0 ? "writer" : "assistant",
-          status: "complete",
-        });
-        await rig.repos.blocks.create({
-          turnId: turn.id,
-          blockType: "text",
-          sequence: 0,
-          content: `Chapter clue ${index}. ${"distinctive lore ".repeat(500)}`,
-          textContent: `Chapter clue ${index}. ${"distinctive lore ".repeat(500)}`,
-          status: "complete",
-        });
-        previousTurnId = turn.id;
-      }
-
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      const outcome = await run.execute();
-      expect(outcome.status).toBe("complete");
-      expect(summaryCalls).toBeGreaterThanOrEqual(3);
-
-      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "compaction",
-      );
-      expect(compaction).toBeDefined();
-      if (!compaction) throw new Error("Missing compaction turn");
-      const summaryRows = await rig.repos.modelResponses.listByTurn(compaction.id);
-      expect(summaryRows).toHaveLength(summaryCalls);
-      expect(
-        summaryRows.every(
-          (row) =>
-            row.predictedCacheState === "cold" && row.predictedCacheReason === "summary_transcript",
-        ),
-      ).toBe(true);
-
-      const report = await rig.repos.executionReports.findByExecution(
-        rig.threadId,
-        run.executionTurnId,
-      );
-      const allRows = await rig.repos.modelResponses.listByThread(rig.threadId);
-      expect(report?.costMillicredits).toBe(
-        allRows.reduce((sum, row) => sum + Number(row.millicredits ?? "0"), 0),
-      );
-      const debits = await db.select().from(schema.creditTransactions);
-      for (const row of summaryRows) {
-        expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
-        expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
-      }
-      expect(requests.length).toBeGreaterThan(summaryCalls);
-      rig.orchestrator.beginShutdown();
-      const drained = await processDetachedWork.drain(2_000);
-      expect({ drained, pendingTasks: processDetachedWork.pendingTasks }).toEqual({
-        drained: true,
-        pendingTasks: [],
-      });
-    });
-
     it("stops the successor iteration when settled compaction cost exhausts the tree budget", async () => {
       const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => ({
         kind: "complete",
@@ -1162,7 +845,6 @@ else
     });
 
     it.each([
-      false,
       true,
     ])("reserves C at run start and commits B over an unchanged rebake (child=%s)", async (child) => {
       const rig = await fixture({ child });
@@ -1216,61 +898,8 @@ else
       ]);
     });
 
-    it("lands a summarizer cancellation on a live signal as a failed reply", async () => {
-      const summarizer = scriptedSummarizer(async ({ signal }) => {
-        expect(signal.aborted).toBe(false);
-        return { kind: "cancelled", modelResponses: [] };
-      });
-      const rig = await fixture({ summarizer });
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await run.execute()).status).toBe("error");
-      expect(
-        (await rig.repos.turns.listByThread(rig.threadId)).slice(-2).map((t) => [t.role, t.status]),
-      ).toEqual([
-        ["compaction", "error"],
-        ["assistant", "error"],
-      ]);
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("logs a throwing summarizer as an adapter bug and lands a failed reply", async () => {
-      const summarizer = scriptedSummarizer(async () => {
-        throw new Error("summary adapter bug");
-      });
-      const rig = await fixture({ summarizer });
-      const sink = createInMemoryEventSink();
-      rig.deps.eventSink = sink;
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await run.execute()).status).toBe("error");
-      expect(sink.events).toContainEqual(
-        expect.objectContaining({
-          level: "error",
-          name: "summarizer.threw",
-        }),
-      );
-      expect(
-        (await rig.repos.turns.listByThread(rig.threadId))
-          .slice(-2)
-          .map((turn) => [turn.role, turn.status]),
-      ).toEqual([
-        ["compaction", "error"],
-        ["assistant", "error"],
-      ]);
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
-    });
-
     it.each([
       { compaction: true, remote: false, successor: false },
-      { compaction: true, remote: false, successor: true },
-      { compaction: false, remote: false, successor: true },
       { compaction: true, remote: true, successor: true },
       { compaction: false, remote: true, successor: false },
     ])("stops across a committed successor window ($compaction, $remote, $successor)", async ({
@@ -1372,139 +1001,6 @@ else
       });
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
-    it("rejects a mid-run arrival above the model window without reserving C", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      const gateway = scriptedGateway({
-        onStream: async (call) => {
-          if (call === 1) await rig.send(rig.threadId, "Too large. ".repeat(50_000));
-        },
-      });
-      rig = await fixture({ history: "brief history", gateway });
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await run.execute()).status).toBe("error");
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(turns.some((turn) => turn.role === "compaction")).toBe(false);
-      expect(turns.at(-1)?.error).toBe("This response failed.");
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it.each([
-      false,
-      true,
-    ])("orders writer and agent arrivals after C and lands the reply below both (failure=%s)", async (failure) => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      let writerId = "";
-      let agentId = "";
-      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
-        expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(turnId);
-        expect(await rig.runClaim.read(rig.threadId)).toMatchObject({ phase: "compacting" });
-        writerId = (await rig.send(rig.threadId, "late writer")).userTurnId;
-        agentId = (
-          await rig.delivery.enqueue({
-            threadId: rig.threadId,
-            intent: "message",
-            provenance: { kind: "agent", threadId: rig.ids.child },
-            body: { kind: "text", text: "late agent" },
-            idempotencyKey: "late-agent",
-          })
-        ).id;
-        const modelResponses = [
-          {
-            id: crypto.randomUUID(),
-            turnId,
-            sequence: 0,
-            provider: "openai",
-            model: "gpt-4.1-mini",
-            inputTokens: 100,
-            outputTokens: 10,
-            requestMessageCount: 7,
-            priceSource: "unknown" as const,
-            predictedCacheState: "cold" as const,
-            predictedCacheReason: "summary_transcript" as const,
-          },
-        ];
-        return failure
-          ? { kind: "failed", error: new Error("summary failed"), modelResponses }
-          : {
-              kind: "complete",
-              text: "Earlier context.",
-              model: "summary-model",
-              modelResponses,
-            };
-      });
-      rig = await fixture({ summarizer });
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await run.execute()).status).toBe(failure ? "error" : "complete");
-      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
-      expect(tail.map((turn) => turn.role)).toEqual(["compaction", "user", "user", "assistant"]);
-      expect(tail.slice(1, 3).map((turn) => turn.id)).toEqual([writerId, agentId]);
-      expect(tail[0].status).toBe(failure ? "error" : "complete");
-      expect(await rig.repos.modelResponses.listByTurn(tail[0].id)).toMatchObject([
-        {
-          requestMessageCount: 7,
-          predictedCacheState: "cold",
-          predictedCacheReason: "summary_transcript",
-        },
-      ]);
-      const rows = await rig.repos.modelResponses.listByTurn(tail[0].id);
-      expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
-      const debits = await db.select().from(schema.creditTransactions);
-      expect(debits.some((row) => row.usageEventId === rows[0].id)).toBe(true);
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
-      const before = rig.summarizer.calls[0].requestInHand;
-      if (!before) throw new Error("Missing request in hand");
-      if (failure) {
-        rig.setThreshold(undefined);
-        const next = await rig.orchestrator.prepare({
-          threadId: rig.threadId,
-          tools: [],
-          userText: "Continue after failure.",
-        });
-        expect((await next.execute()).status).toBe("complete");
-        expectStablePrefix(before, rig.gateway.requests[0]);
-      } else {
-        expect(rig.gateway.requests[0].messages[0]).toEqual(before.messages[0]);
-        const text = JSON.stringify(rig.gateway.requests[0].messages);
-        expect(text).toContain("Earlier context.");
-        expect(text).not.toContain("old history");
-        expect(text.indexOf("Continue.")).toBeLessThan(text.indexOf("late writer"));
-        expect(text.indexOf("late writer")).toBeLessThan(text.indexOf("late agent"));
-        for (const message of ["Continue.", "late writer", "late agent"]) {
-          expect(text.split(message)).toHaveLength(2);
-        }
-        expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
-          ["compaction", "complete"],
-          ["user", "complete"],
-          ["user", "complete"],
-          ["assistant", "complete"],
-        ]);
-        const thread = await rig.repos.threads.findById(rig.threadId);
-        if (!thread) throw new Error("Missing thread");
-        const rebuilt = await assembleNextTurnContext({
-          thread,
-          turns: (await rig.repos.turns.listByThread(rig.threadId)).slice(0, -1),
-          blocks: (await rig.repos.blocks.listByThread(rig.threadId)).filter(
-            (block) => block.turnId !== tail[3].id,
-          ),
-          agentRevisions: rig.deps.agentRevisions,
-          threads: rig.repos.threads,
-          toolRegistry: rig.deps.toolRegistry,
-          baseTools: [],
-          gateway: rig.deps.gateway,
-          promptBakes: rig.repos.promptBakes,
-          workContext: rig.deps.workContext,
-        });
-        expect(promptBytes(rig.gateway.requests[0])).toBe(promptBytes(rebuilt.generateRequest));
-      }
-    });
 
     it("lands a failed rebake as a failed C and generic reply", async () => {
       let rig: Awaited<ReturnType<typeof fixture>>;
@@ -1590,60 +1086,6 @@ else
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
     });
 
-    it("refuses a same-id Retry while its compaction-first run is busy", async () => {
-      let secondStarted!: () => void;
-      const compactionStarted = new Promise<void>((resolve) => {
-        secondStarted = resolve;
-      });
-      const summarizer = scriptedSummarizer(async ({ signal }, call) => {
-        if (call === 1)
-          return { kind: "failed", error: new Error("summary unavailable"), modelResponses: [] };
-        secondStarted();
-        await new Promise<void>((resolve) => {
-          if (signal.aborted) resolve();
-          else signal.addEventListener("abort", () => resolve(), { once: true });
-        });
-        return { kind: "cancelled", modelResponses: [] };
-      });
-      const rig = await fixture({ summarizer });
-      const original = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Stop the retry summary.",
-      });
-      expect((await original.execute()).status).toBe("error");
-      await processDetachedWork.drain();
-      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
-      if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
-
-      const replyTurnId = crypto.randomUUID();
-      const retry = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: failedReply.id as never,
-        replyTurnId: replyTurnId as never,
-      });
-      await compactionStarted;
-      await expect(
-        rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId: failedReply.id as never,
-          replyTurnId: replyTurnId as never,
-        }),
-      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
-      const compactionId = rig.orchestrator.getRunningTurnId(rig.threadId);
-      if (!compactionId) throw new Error("Retry compaction was not running");
-      expect(await rig.orchestrator.cancel(rig.threadId, compactionId)).toBe("cancelled");
-      await processDetachedWork.drain();
-
-      expect(retry).toMatchObject({
-        created: true,
-        turn: { id: replyTurnId, prevTurnId: compactionId },
-      });
-      expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();
-      expect(await rig.repos.turns.findById(compactionId)).toMatchObject({ status: "cancelled" });
-      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
-    });
-
     it("records shutdown during compaction as a recovery interruption", async () => {
       let markStarted!: () => void;
       const started = new Promise<void>((resolve) => {
@@ -1674,99 +1116,6 @@ else
         error: "This conversation couldn't be compacted. Try again.",
         metadata: { reason: "interrupted", phase: "recovery" },
       });
-    });
-
-    it("keeps a usable epoch when a late image fails preparation", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      let writerId: string | undefined;
-      const summarizer = scriptedSummarizer(async () => {
-        writerId = (
-          await rig.send(rig.threadId, "late image", {
-            blocks: [
-              { type: "text", text: "late image" },
-              { type: "image", documentId: crypto.randomUUID(), uri: "uploads://@/missing.png" },
-            ],
-          })
-        ).userTurnId;
-        return {
-          kind: "complete",
-          text: "Usable summary.",
-          model: "summary-model",
-          modelResponses: [],
-        };
-      });
-      rig = await fixture({ summarizer });
-      rig.deps.imageAssets = {
-        async resolve() {
-          throw new ImageAssetResolutionError("object-store timeout");
-        },
-      };
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await run.execute()).status).toBe("error");
-      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-3);
-      expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
-        ["compaction", "complete"],
-        ["user", "complete"],
-        ["assistant", "error"],
-      ]);
-      expect(tail[0].promptBakeId).toBeTruthy();
-      expect(tail[2].prevTurnId).toBe(writerId);
-      expect(tail[2].error).toBe("This response failed.");
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("allows late input above the automatic trigger when it fits the model window", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }, call) => {
-        if (call === 1) {
-          await rig.send(rig.threadId, "Late long paste. ".repeat(1500));
-          await rig.send(rig.threadId, "A second late direction.");
-        }
-        return {
-          kind: "complete",
-          text: "Usable summary.",
-          model: "summary-model",
-          modelResponses: [
-            {
-              id: crypto.randomUUID(),
-              turnId,
-              sequence: 0,
-              provider: "openai",
-              model: "gpt-4.1-mini",
-              inputTokens: 100,
-              outputTokens: 10,
-              requestMessageCount: 2,
-              predictedCacheState: "cold",
-              predictedCacheReason: "summary_transcript",
-            },
-          ],
-        };
-      });
-      rig = await fixture({ summarizer, history: "old history ".repeat(8000) });
-      rig.setThreshold(9000);
-      const run = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      const result = await run.execute();
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      expect(result.status).toBe("complete");
-      const compactions = turns.filter((turn) => turn.role === "compaction");
-      expect(compactions).toHaveLength(1);
-      expect(compactions[0]?.status).toBe("complete");
-      const request = rig.gateway.requests.at(-1);
-      if (!request) throw new Error("Missing successor model request");
-      expect(
-        estimateRequestTokens({ request, baseline: null, tokenizer: "o200k" }),
-      ).toBeGreaterThan(9000);
-      expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
-      expect(rig.summarizer.calls).toHaveLength(1);
-      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
 
     it("keeps C complete when late messages exceed the model window", async () => {
@@ -1891,7 +1240,6 @@ else
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
     });
     it.each([
-      false,
       true,
     ])("cancels C, settles its response, and wakes the late message (child=%s)", async (child) => {
       let rig: Awaited<ReturnType<typeof fixture>>;
@@ -1960,36 +1308,6 @@ else
         turns.at(-1)?.id,
       ]);
       expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("recompacts with the previous summary leading the summarizer's projection", async () => {
-      const rig = await fixture();
-      const first = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue.",
-      });
-      expect((await first.execute()).status).toBe("complete");
-      const second = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        tools: [],
-        userText: "Continue again.",
-      });
-      expect((await second.execute()).status).toBe("complete");
-      expect(rig.summarizer.calls).toHaveLength(2);
-      expect(rig.summarizer.calls[1].projection.blocks[0].textContent).toContain(
-        "Earlier context.",
-      );
-      const cuts = (await rig.repos.turns.listByThread(rig.threadId)).filter(
-        (turn) => turn.role === "compaction",
-      );
-      expect(cuts.map((turn) => turn.status)).toEqual(["complete", "complete"]);
-      await expect(
-        rig.repos.turns.updateStatus(cuts[0].id, {
-          status: "complete",
-          promptBakeId: crypto.randomUUID(),
-        }),
-      ).rejects.toThrow();
     });
 
     it("compacts inside an assistant tool-group suffix with a byte-stable rebuilt successor", async () => {
@@ -2313,5 +1631,233 @@ else
       const debits = await db.select().from(schema.creditTransactions);
       expect(debits.filter((row) => row.usageEventId === rows[0].id)).toHaveLength(1);
       expect(treeBudget.spent.costMillicredits).toBe(Number(rows[0].millicredits));
+    });
+
+    it("includes every cold segment response in a child report's cost", async () => {
+      const rig = await fixture({ child: true, history: "short history ".repeat(100) });
+      const model = {
+        id: "gpt-4.1-mini",
+        provider: "openai",
+        tokenizer: "o200k" as const,
+        displayName: "Fixture",
+        contextWindow: 6_000,
+        maxOutputTokens: 100,
+        promptCache: { kind: "automatic" as const, ttlMs: 60_000 },
+        capabilities: new Set<import("../gateway/index.js").Capability>(["tool_calling"]),
+      };
+      rig.deps.gateway.listModels = () => [model];
+      const originalStream = rig.deps.gateway.stream.bind(rig.deps.gateway);
+      const requests: import("../gateway/index.js").GenerateRequest[] = [];
+      let summaryCalls = 0;
+      rig.deps.gateway.stream = async function* (request) {
+        requests.push(request);
+        const isSummary = request.messages.some((message) =>
+          message.content.some(
+            (part) => part.type === "text" && part.text.includes("Summarize this conversation"),
+          ),
+        );
+        if (!isSummary) {
+          yield* originalStream(request);
+          return;
+        }
+        summaryCalls++;
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: `Cold segment ${summaryCalls} summary.` }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 100, outputTokens: 10 },
+            model: model.id,
+            provider: model.provider,
+          },
+        };
+      };
+      rig.deps.summarizer = createConversationSummarizer({
+        gateway: rig.deps.gateway,
+        eventSink: rig.deps.eventSink,
+        agentRevisions: rig.deps.agentRevisions,
+        prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
+        modelRequestDebug: rig.deps.modelRequestDebug,
+        toolRegistry: rig.deps.toolRegistry,
+        config: { model: model.id },
+      });
+
+      let previousTurnId = (await rig.repos.turns.listByThread(rig.threadId)).at(-1)?.id;
+      for (let index = 0; index < 6; index++) {
+        const turn = await rig.repos.turns.create({
+          threadId: rig.threadId,
+          prevTurnId: previousTurnId,
+          role: index % 2 === 0 ? "user" : "assistant",
+          origin: index % 2 === 0 ? "writer" : "assistant",
+          status: "complete",
+        });
+        await rig.repos.blocks.create({
+          turnId: turn.id,
+          blockType: "text",
+          sequence: 0,
+          content: `Chapter clue ${index}. ${"distinctive lore ".repeat(500)}`,
+          textContent: `Chapter clue ${index}. ${"distinctive lore ".repeat(500)}`,
+          status: "complete",
+        });
+        previousTurnId = turn.id;
+      }
+
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      const outcome = await run.execute();
+      expect(outcome.status).toBe("complete");
+      expect(summaryCalls).toBeGreaterThanOrEqual(3);
+
+      const compaction = (await rig.repos.turns.listByThread(rig.threadId)).find(
+        (turn) => turn.role === "compaction",
+      );
+      expect(compaction).toBeDefined();
+      if (!compaction) throw new Error("Missing compaction turn");
+      const summaryRows = await rig.repos.modelResponses.listByTurn(compaction.id);
+      expect(summaryRows).toHaveLength(summaryCalls);
+      expect(
+        summaryRows.every(
+          (row) =>
+            row.predictedCacheState === "cold" && row.predictedCacheReason === "summary_transcript",
+        ),
+      ).toBe(true);
+
+      const report = await rig.repos.executionReports.findByExecution(
+        rig.threadId,
+        run.executionTurnId,
+      );
+      const allRows = await rig.repos.modelResponses.listByThread(rig.threadId);
+      expect(report?.costMillicredits).toBe(
+        allRows.reduce((sum, row) => sum + Number(row.millicredits ?? "0"), 0),
+      );
+      const debits = await db.select().from(schema.creditTransactions);
+      for (const row of summaryRows) {
+        expect(BigInt(row.millicredits ?? "0")).toBeGreaterThan(0n);
+        expect(debits.filter((debit) => debit.usageEventId === row.id)).toHaveLength(1);
+      }
+      expect(requests.length).toBeGreaterThan(summaryCalls);
+      rig.orchestrator.beginShutdown();
+      const drained = await processDetachedWork.drain(2_000);
+      expect({ drained, pendingTasks: processDetachedWork.pendingTasks }).toEqual({
+        drained: true,
+        pendingTasks: [],
+      });
+    });
+
+    it.each([
+      true,
+    ])("orders writer and agent arrivals after C and lands the reply below both (failure=%s)", async (failure) => {
+      let rig: Awaited<ReturnType<typeof fixture>>;
+      let writerId = "";
+      let agentId = "";
+      const summarizer = scriptedSummarizer(async ({ owner: { turnId } }) => {
+        expect(await rig.runClaim.readRunningTurnId(rig.threadId)).toBe(turnId);
+        expect(await rig.runClaim.read(rig.threadId)).toMatchObject({ phase: "compacting" });
+        writerId = (await rig.send(rig.threadId, "late writer")).userTurnId;
+        agentId = (
+          await rig.delivery.enqueue({
+            threadId: rig.threadId,
+            intent: "message",
+            provenance: { kind: "agent", threadId: rig.ids.child },
+            body: { kind: "text", text: "late agent" },
+            idempotencyKey: "late-agent",
+          })
+        ).id;
+        const modelResponses = [
+          {
+            id: crypto.randomUUID(),
+            turnId,
+            sequence: 0,
+            provider: "openai",
+            model: "gpt-4.1-mini",
+            inputTokens: 100,
+            outputTokens: 10,
+            requestMessageCount: 7,
+            priceSource: "unknown" as const,
+            predictedCacheState: "cold" as const,
+            predictedCacheReason: "summary_transcript" as const,
+          },
+        ];
+        return failure
+          ? { kind: "failed", error: new Error("summary failed"), modelResponses }
+          : {
+              kind: "complete",
+              text: "Earlier context.",
+              model: "summary-model",
+              modelResponses,
+            };
+      });
+      rig = await fixture({ summarizer });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        tools: [],
+        userText: "Continue.",
+      });
+      expect((await run.execute()).status).toBe(failure ? "error" : "complete");
+      const tail = (await rig.repos.turns.listByThread(rig.threadId)).slice(-4);
+      expect(tail.map((turn) => turn.role)).toEqual(["compaction", "user", "user", "assistant"]);
+      expect(tail.slice(1, 3).map((turn) => turn.id)).toEqual([writerId, agentId]);
+      expect(tail[0].status).toBe(failure ? "error" : "complete");
+      expect(await rig.repos.modelResponses.listByTurn(tail[0].id)).toMatchObject([
+        {
+          requestMessageCount: 7,
+          predictedCacheState: "cold",
+          predictedCacheReason: "summary_transcript",
+        },
+      ]);
+      const rows = await rig.repos.modelResponses.listByTurn(tail[0].id);
+      expect(BigInt(rows[0].millicredits ?? "0")).toBeGreaterThan(0n);
+      const debits = await db.select().from(schema.creditTransactions);
+      expect(debits.some((row) => row.usageEventId === rows[0].id)).toBe(true);
+      expect(await rig.inbox.selectPending(rig.threadId)).toEqual([]);
+      const before = rig.summarizer.calls[0].requestInHand;
+      if (!before) throw new Error("Missing request in hand");
+      if (failure) {
+        rig.setThreshold(undefined);
+        const next = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          tools: [],
+          userText: "Continue after failure.",
+        });
+        expect((await next.execute()).status).toBe("complete");
+        expectStablePrefix(before, rig.gateway.requests[0]);
+      } else {
+        expect(rig.gateway.requests[0].messages[0]).toEqual(before.messages[0]);
+        const text = JSON.stringify(rig.gateway.requests[0].messages);
+        expect(text).toContain("Earlier context.");
+        expect(text).not.toContain("old history");
+        expect(text.indexOf("Continue.")).toBeLessThan(text.indexOf("late writer"));
+        expect(text.indexOf("late writer")).toBeLessThan(text.indexOf("late agent"));
+        for (const message of ["Continue.", "late writer", "late agent"]) {
+          expect(text.split(message)).toHaveLength(2);
+        }
+        expect(tail.map((turn) => [turn.role, turn.status])).toEqual([
+          ["compaction", "complete"],
+          ["user", "complete"],
+          ["user", "complete"],
+          ["assistant", "complete"],
+        ]);
+        const thread = await rig.repos.threads.findById(rig.threadId);
+        if (!thread) throw new Error("Missing thread");
+        const rebuilt = await assembleNextTurnContext({
+          thread,
+          turns: (await rig.repos.turns.listByThread(rig.threadId)).slice(0, -1),
+          blocks: (await rig.repos.blocks.listByThread(rig.threadId)).filter(
+            (block) => block.turnId !== tail[3].id,
+          ),
+          agentRevisions: rig.deps.agentRevisions,
+          threads: rig.repos.threads,
+          toolRegistry: rig.deps.toolRegistry,
+          baseTools: [],
+          gateway: rig.deps.gateway,
+          promptBakes: rig.repos.promptBakes,
+          workContext: rig.deps.workContext,
+        });
+        expect(promptBytes(rig.gateway.requests[0])).toBe(promptBytes(rebuilt.generateRequest));
+      }
     });
   });

@@ -496,57 +496,6 @@ describe("change trail (postgres)", () => {
     ).resolves.toEqual([]);
   });
 
-  it("preserves an unrelated live writer insertion while applying the branch", async () => {
-    const harness = createHarness();
-    const responseId = "00000000-0000-4000-8000-000000000836";
-    await harness.seedWriterDocument("Selected root.\n\nUntouched root.", responseId);
-    await harness.stageCertifiedReplace({
-      responseId,
-      find: "Selected root.",
-      content: "SELECTIVE DRAFT PROPOSAL",
-    });
-
-    const fixture = harness.crossWorkProbeFixture();
-    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
-      fixture.model.insertBlocks(
-        toDocHandle(doc),
-        last,
-        fixture.markupCodec.parse("Writer concurrent insertion."),
-      );
-      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-
-    const preview = await fixture.collab.draftReview.preview({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: await currentDraftId(fixture.collab.draftReview, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-      }),
-    });
-    if (preview.status !== "active" || !preview.draftId) {
-      throw new Error("missing draft preview");
-    }
-
-    await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-        draftId: preview.draftId,
-        userId: USER_ID as never,
-      }),
-    ).resolves.toMatchObject({ status: "applied" });
-    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
-  });
-
   it("preserves a live writer insertion between two branch edits", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000837";

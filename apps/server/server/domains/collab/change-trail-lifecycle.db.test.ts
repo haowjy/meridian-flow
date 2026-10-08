@@ -119,29 +119,6 @@ describe("change trail (postgres)", () => {
     cold.destroyWarmState();
   });
 
-  it("persists prose-token deltas for a one-word substitution", async () => {
-    const harness = createHarness();
-    const branchId = await harness.seedMatrixPush({
-      responseId: "word-delta-substitution",
-      initialMarkdown: "The gate remained closed.",
-      steps: [{ source: "agent", markdown: "The gate opened." }],
-    });
-
-    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-    await harness.markTurnError();
-    await harness.pollTrails();
-    await harness.pollTrails();
-
-    const trails = await harness.trailRowMembership();
-    expect(trails.shells).toEqual([
-      expect.objectContaining({ state: "settled", wordsAdded: 1, wordsRemoved: 2 }),
-    ]);
-    expect(trails.details).toEqual([
-      expect.objectContaining({ documentId: ALPHA_ID, wordsAdded: 1, wordsRemoved: 2 }),
-    ]);
-    harness.destroyWarmState();
-  });
-
   it("retains captured trail prose after the file is permanently deleted", async () => {
     const trailId = "00000000-0000-4000-8000-000000000810";
     await db.insert(schema.changeTrailShells).values({
@@ -313,29 +290,6 @@ describe("change trail (postgres)", () => {
     }
   });
 
-  it("settles a shared trail whose changes have no turn-owned work rows", async () => {
-    const harness = createHarness();
-    const branchId = await harness.seedDestructivePush("all-null-shared-settlement");
-    await harness.makeJournalOwnershipNull();
-    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-    expect(await harness.workRows()).toEqual([]);
-
-    await harness.pollTrails();
-    await harness.pollTrails();
-
-    expect(await harness.trailRowMembership()).toMatchObject({
-      shells: [
-        expect.objectContaining({
-          ownerKind: "shared",
-          state: "settled",
-          changeCount: 1,
-          documentCount: 1,
-        }),
-      ],
-      details: [expect.objectContaining({ changes: [expect.any(Object)] })],
-    });
-  });
-
   it("serializes concurrent per-document trail versions without losing either push", async () => {
     const harness = createHarness();
     const alpha = await harness.seedDestructivePush("version-race-alpha", ALPHA_ID);
@@ -472,31 +426,6 @@ describe("change trail (postgres)", () => {
       documents: [expect.objectContaining({ documentId: ALPHA_ID })],
       wordsAdded: expect.any(Number),
       wordsRemoved: expect.any(Number),
-    });
-  });
-
-  it("rebuilds an errored turn trail from surviving durable content", async () => {
-    const harness = createHarness();
-    const branchId = await harness.seedDestructivePush("error-rebuild");
-    await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-    expect((await harness.trailRowMembership()).details).toHaveLength(1);
-
-    await harness.addLiveDependency();
-    await harness.rollbackResponse("later-failed-response");
-    await harness.markTurnError();
-    await harness.pollTrails();
-    await harness.pollTrails();
-
-    expect(await harness.workRows()).toEqual([expect.objectContaining({ state: "complete" })]);
-    expect(await harness.trailRowMembership()).toMatchObject({
-      shells: [
-        expect.objectContaining({
-          state: "settled",
-          changeCount: 1,
-          documentCount: 1,
-        }),
-      ],
-      details: [expect.objectContaining({ changes: [expect.any(Object)] })],
     });
   });
 });

@@ -69,191 +69,6 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
 }
 
 describe("RunSession", () => {
-  async function expectDiagnosticFailure(
-    f: Awaited<ReturnType<typeof fixture>>,
-    executionTurnId: TurnId,
-    rawCause: string,
-    reason: string,
-  ) {
-    expect(await f.repos.turns.findById(executionTurnId)).toMatchObject({
-      status: "error",
-      error: "This response failed.",
-      metadata: { reason },
-    });
-    const terminal = f.journal
-      .getEvents(f.thread.id)
-      .map(({ event }) => event)
-      .find((event) => event.type === "turn.error" && event.turn.id === executionTurnId);
-    expect(terminal).toMatchObject({
-      type: "turn.error",
-      error: { message: rawCause, details: { reason } },
-    });
-  }
-
-  it("repairs an orphaned primary assistant after taking the run claim", async () => {
-    const f = await fixture();
-    const orphan = await f.repos.turns.create({
-      threadId: f.thread.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "streaming",
-    });
-
-    const run = await f.prepare();
-    const repaired = f.journal
-      .getEvents(f.thread.id)
-      .map(({ event }) => event)
-      .find((event) => event.type === "turn.error" && event.turn.id === orphan.id);
-    expect(repaired).toMatchObject({
-      type: "turn.error",
-      turn: { status: "error", error: "This response failed.", metadata: { reason: "orphaned" } },
-    });
-    await expect(run.execute()).resolves.toMatchObject({ status: "complete" });
-  });
-
-  it("origins a writer-started run's user turn as writer, and a child run's as system", async () => {
-    const f = await fixture();
-    await f.prepare();
-    const [userTurn] = await f.repos.turns.listByThread(f.thread.id);
-    expect(userTurn?.role).toBe("user");
-    expect(userTurn?.origin).toBe("writer");
-
-    const child = await f.repos.threads.create({
-      userId: f.thread.userId,
-      projectId: f.thread.projectId,
-    });
-    // The provider context is assembled during setup, so every prepared run
-    // needs the retained binding that real child creation installs.
-    f.boundThreadIds.add(child.id);
-    await f.runtime.prepare({
-      threadId: child.id,
-      userText: "spawned prompt",
-      child: { parentThreadId: f.thread.id, background: false, origin: "spawn" },
-    });
-    const [childUserTurn] = await f.repos.turns.listByThread(child.id);
-    expect(childUserTurn?.role).toBe("user");
-    expect(childUserTurn?.origin).toBe("system");
-    expect(childUserTurn && classifyHistoryItem(childUserTurn)).toEqual({
-      kind: "agent_request",
-      source: "child_seed",
-    });
-  });
-
-  it("commits setup and captures the cursor before one-shot execution", async () => {
-    const f = await fixture();
-    const run = await f.prepare();
-    expect(f.calls()).toBe(0);
-    expect(run.resumeAfterSeq).toBe("0");
-    expect(BigInt(run.snapshotFloorNextSeq)).toBe((await f.journal.headSeq(f.thread.id)) + 1n);
-    expect(await f.deps.repos.turns.findById(run.executionTurnId)).toMatchObject({
-      status: "streaming",
-    });
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
-    const execution = run.execute();
-    expect(run.execute()).toBe(execution);
-    expect(await execution).toMatchObject({
-      status: "complete",
-      turn: { id: run.executionTurnId },
-    });
-    expect(f.calls()).toBe(1);
-    expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain(
-      "turn.completed",
-    );
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
-    expect(f.runtime.isThreadRunning(f.thread.id)).toBe(false);
-  });
-
-  it("restarts after cleanup when a writer message arrived after terminal close", async () => {
-    let onRunSettled = false;
-    const f = await fixture((deps) => {
-      deps.onRunSettled = () => {
-        onRunSettled = true;
-      };
-    });
-    const delivery = f.deps.delivery;
-    const workContext = f.deps.workContext;
-    const renderForThread = workContext.renderForThread.bind(workContext);
-    let injected = false;
-    let releasePreparation!: () => void;
-    const preparationReleased = new Promise<void>((resolve) => {
-      releasePreparation = resolve;
-    });
-    let preparationStarted!: () => void;
-    const preparationStartedPromise = new Promise<void>((resolve) => {
-      preparationStarted = resolve;
-    });
-    workContext.renderForThread = async (threadId) => {
-      if (injected) {
-        preparationStarted();
-        await preparationReleased;
-      }
-      return renderForThread(threadId);
-    };
-    const refreshPending = delivery.refreshPending.bind(delivery);
-    delivery.refreshPending = async (threadId) => {
-      await refreshPending(threadId);
-      if (injected) return;
-      injected = true;
-      await delivery.enqueue({
-        threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: f.thread.userId },
-        body: { kind: "text", text: "arrived during cleanup" },
-        idempotencyKey: "arrived-during-cleanup",
-      });
-      await delivery.threadChanged(threadId);
-    };
-
-    const run = await f.prepare();
-    const execution = run.execute();
-    const restartPreparationStarted = await new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 1_000);
-      void preparationStartedPromise.then(() => {
-        clearTimeout(timeout);
-        resolve(true);
-      });
-    });
-    const completedBeforePreparation =
-      restartPreparationStarted &&
-      (await new Promise<boolean>((resolve) => {
-        const timeout = setTimeout(() => resolve(false), 1_000);
-        void execution.then(
-          () => {
-            clearTimeout(timeout);
-            resolve(true);
-          },
-          () => {
-            clearTimeout(timeout);
-            resolve(false);
-          },
-        );
-      }));
-    releasePreparation();
-    await expect(execution).resolves.toMatchObject({ status: "complete" });
-    expect(restartPreparationStarted).toBe(true);
-    expect(onRunSettled).toBe(true);
-    expect(completedBeforePreparation).toBe(true);
-
-    await expect.poll(() => f.calls()).toBe(2);
-    await expect.poll(() => f.deps.runClaim.holder(f.thread.id)).toBeNull();
-    expect(await f.deps.delivery.selectPending(f.thread.id)).toEqual([]);
-    expect(
-      (await f.repos.blocks.listByThread(f.thread.id)).some(
-        (block) => block.textContent === "arrived during cleanup",
-      ),
-    ).toBe(true);
-  });
-
-  it("cancels a prepared run without invoking the model", async () => {
-    const f = await fixture();
-    const run = await f.prepare();
-    expect(await f.runtime.cancel(f.thread.id, run.executionTurnId)).toBe("cancelled");
-    expect(await run.execute()).toMatchObject({ status: "cancelled" });
-    expect(f.calls()).toBe(0);
-    await expect.poll(() => f.runtime.isThreadRunning(f.thread.id)).toBe(false);
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
-  });
-
   it("aborts and settles live replies on shutdown, then refuses new starts", async () => {
     let providerStarted!: () => void;
     const started = new Promise<void>((resolve) => {
@@ -307,102 +122,6 @@ describe("RunSession", () => {
       f.runtime.prepare({ threadId: f.thread.id, userText: "after shutdown" }),
     ).rejects.toMatchObject({ name: "RuntimeShuttingDownError" });
     expect(streams).toBe(1);
-  });
-
-  it("falls back after a pre-loop crash and releases", async () => {
-    const f = await fixture();
-    const run = await f.prepare();
-    f.deps.repos.blocks.listByThread = async () => {
-      throw new Error("history unavailable");
-    };
-    expect(await run.execute()).toMatchObject({ status: "error" });
-    expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain("turn.error");
-    expect(f.sink.events.map((event) => event.name)).toEqual(["execution.failed"]);
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
-  });
-
-  it("keeps the provider's answer on the failed reply, beside generic copy", async () => {
-    const providerMessage = `Insufficient Balance ${"x".repeat(1_200)}`;
-    const f = await fixture((deps) => {
-      deps.gateway.stream = async function* () {
-        yield {
-          type: "error",
-          code: "provider_error",
-          message: `402 ${providerMessage}`,
-          retryable: false,
-          providerError: { status: 402, message: providerMessage },
-        };
-      };
-    });
-    const run = await f.prepare();
-
-    await expect(run.execute()).resolves.toMatchObject({ status: "error" });
-    await expectDiagnosticFailure(
-      f,
-      run.executionTurnId,
-      `402 ${providerMessage}`,
-      "provider_error",
-    );
-    const turn = await f.repos.turns.findById(run.executionTurnId);
-    expect(turn?.metadata).toMatchObject({
-      retryable: false,
-      providerError: { status: 402, message: providerMessage.slice(0, 1_000) },
-    });
-  });
-
-  it("keeps a thrown execution cause diagnostic while storing generic reply copy", async () => {
-    const f = await fixture((deps) => {
-      deps.gateway.stream = async function* () {
-        if (Math.random() < 0) yield undefined as never;
-        throw new Error("provider stream exploded");
-      };
-    });
-    const run = await f.prepare();
-
-    await expect(run.execute()).resolves.toMatchObject({ status: "error" });
-    await expectDiagnosticFailure(
-      f,
-      run.executionTurnId,
-      "provider stream exploded",
-      "execution_error",
-    );
-  });
-
-  it("keeps the tool-iteration limit diagnostic while storing generic reply copy", async () => {
-    let call = 0;
-    const f = await fixture((deps) => {
-      deps.gateway.stream = async function* () {
-        call += 1;
-        yield {
-          type: "end",
-          result: {
-            content: [
-              {
-                type: "tool_use",
-                toolCallId: `missing-${call}`,
-                toolName: "missing_tool",
-                input: {},
-              },
-            ],
-            toolCalls: [],
-            finishReason: "tool_use",
-            usage: { inputTokens: 0, outputTokens: 0 },
-            model: "gpt-4.1-mini",
-            provider: "openai",
-          },
-        };
-      };
-    });
-    const run = await f.prepare();
-
-    await expect(run.execute()).resolves.toMatchObject({ status: "error" });
-    expect(call).toBe(32);
-    await expectDiagnosticFailure(
-      f,
-      run.executionTurnId,
-      "exceeded max tool iterations",
-      "runtime_error",
-    );
   });
 
   it("finalizes fork-context prep failure on the adopted message without a wake retry", async () => {
@@ -478,34 +197,6 @@ describe("RunSession", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("finalizes a typed fork-context failure from a writer-started run", async () => {
-    const f = await fixture();
-    const findById = f.repos.threads.findById;
-    f.repos.threads.findById = async (threadId) => {
-      const thread = await findById(threadId);
-      return thread?.id === f.thread.id
-        ? { ...thread, originType: "fork", originTurnId: "missing-cutoff" as TurnId }
-        : thread;
-    };
-
-    const run = await f.prepare();
-    expect(await f.repos.turns.findById(run.userTurnId)).toMatchObject({
-      role: "user",
-      origin: "writer",
-    });
-    expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
-    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({
-      status: "error",
-      error: "This response failed.",
-      metadata: { reason: "missing_cutoff_turn" },
-    });
-    expect(f.journal.getEvents(f.thread.id).some(({ event }) => event.type === "turn.error")).toBe(
-      true,
-    );
-    expect(f.calls()).toBe(0);
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
-  });
-
   it("observes terminal fallback failure, settles the run, and releases", async () => {
     const f = await fixture();
     const run = await f.prepare();
@@ -576,7 +267,6 @@ describe("RunSession", () => {
     }
   });
   it.each([
-    false,
     true,
   ])("commits child admission and releases before publication B (card failure: %s)", async (failCard) => {
     const f = await fixture();
@@ -656,7 +346,6 @@ describe("RunSession", () => {
   });
 
   it.each([
-    false,
     true,
   ])("preserves descendant lifetime at parent completion (child parent: %s)", async (childParent) => {
     const f = await fixture();

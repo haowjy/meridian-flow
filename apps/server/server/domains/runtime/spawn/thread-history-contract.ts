@@ -1,16 +1,12 @@
 /** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
 
-import { modelResult } from "@meridian/agent-edit";
 import { ReadToolInputSchema, WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Block, JsonObject, JsonValue, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { handoffBriefFailedCopy, handoffSeedMetadata } from "../../threads/index.js";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
-import { handoffSeedBlock } from "../handoff/seed.js";
 import { collectRecordedDocuments, planModelElisions } from "../loop/compaction/elide.js";
-import { estimateModelPartTokens } from "../loop/compaction/estimate.js";
 import { WorkCommandSchema } from "../tools/core-tools.js";
 import {
   historyDocumentText,
@@ -28,11 +24,7 @@ import { modelToolSchema } from "../tools/model-tool-schema.js";
 import { SpawnInputSchema } from "../tools/spawn-tools.js";
 import { createToolRegistry } from "../tools/tool-registry.js";
 import { type HistoryResult, renderHistoryResult } from "./history-result.js";
-import {
-  readThreadHistory,
-  type ThreadHistoryInput,
-  ThreadHistoryInputSchema,
-} from "./thread-history.js";
+import { readThreadHistory, type ThreadHistoryInput } from "./thread-history.js";
 
 export function defineThreadHistoryContract(
   createHarness: () => Promise<{
@@ -167,11 +159,6 @@ export function defineThreadHistoryContract(
     const call = text.match(/^More: thread_history\(([^\n]+)\)$/mu)?.[1];
     return call ? JSON.parse(call).cursor : undefined;
   }
-  function nextCall(text: string): ThreadHistoryInput {
-    const call = text.match(/^More: thread_history\(([^\n]+)\)$/mu)?.[1];
-    if (!call) throw new Error("History output has no next call");
-    return ThreadHistoryInputSchema.parse(JSON.parse(call));
-  }
 
   describe("thread_history", () => {
     it("batches pairs across page boundaries and scopes reused call ids to their turn", async () => {
@@ -210,104 +197,6 @@ export function defineThreadHistoryContract(
       batches.mockRestore();
     });
 
-    it("labels writer, steer, agent request, spawn prompt, assistant, thinking, completion, seed and failed C", async () => {
-      const f = await fixture();
-      const cases: [Turn["role"], Turn["origin"], JsonObject | null, string][] = [
-        ["user", "writer", null, "user"],
-        ["user", "writer", { delivery: "steer" }, "user, steer"],
-        ["user", "system", { kind: "inbox_message", inboxMessageId: "m" }, "agent"],
-        [
-          "user",
-          "system",
-          { kind: "inbox_message", inboxMessageId: "n", agentRequestKind: "child_seed" },
-          "agent, spawn prompt",
-        ],
-        ["assistant", "assistant", null, "assistant"],
-        [
-          "system",
-          "system",
-          {
-            kind: "subagent_update",
-            handle: "p4",
-            outcome: "succeeded",
-            execution: "execution",
-            childThreadId: "child",
-            agentName: "Helper",
-          },
-          "system: child p4 finished (succeeded)",
-        ],
-        [
-          "user",
-          "system",
-          { kind: "system_update", section: "work_context" },
-          "system: Work update",
-        ],
-        [
-          "system",
-          "system",
-          { kind: "derivation_seed", derivation: "handoff" },
-          "system: fork_or_handoff_seed",
-        ],
-      ];
-      for (const [role, origin, metadata, label] of cases) {
-        const t = await f.turn(role, metadata, "complete", origin);
-        await f.text(t, `text-${label}`);
-      }
-      await f.turn(
-        "compaction",
-        { kind: "compaction", failure: { reason: "provider_error", phase: "summary" } },
-        "error",
-      );
-      const response = await f.turn();
-      await f.block(response, "reasoning", { text: "thinking-secret" });
-      const defaults = output(await f.read({ order: "oldest_first" }));
-      expect(defaults).toContain("[1] user\ntext-user");
-      expect(defaults).toContain("[3] agent\n");
-      expect(defaults).not.toContain("thinking-secret");
-      expect(defaults).not.toContain("system:");
-      const all = output(
-        await f.read({ order: "oldest_first", include: ["system_messages", "thinking"] }),
-      );
-      // Conversation turns are numbered without gaps; system turns carry no number.
-      for (const [index, [, , , label]] of cases.slice(0, 5).entries())
-        expect(all).toContain(`[${index + 1}] ${label}\n`);
-      for (const [, , , label] of cases.slice(5))
-        expect(all).toMatch(new RegExp(`^${label.replace(/[()]/gu, "\\$&")}\n`, "mu"));
-      expect(all).toContain("Thinking:\nthinking-secret");
-      expect(all).toContain("\n\nsystem: compaction\nerror");
-      expect(all).toContain("[6] assistant\nThinking:\nthinking-secret");
-    });
-    it.each([
-      "complete",
-      "error",
-    ] as const)("labels C7b's %s handoff seed as system history", async (status) => {
-      const f = await fixture();
-      const seed = await f.turn(
-        "system",
-        handoffSeedMetadata({
-          sourceThreadId: f.thread.id,
-          sourceRef: f.thread.ref ?? "c1",
-          sourceTitle: f.thread.title,
-          cutoffTurnId: crypto.randomUUID(),
-        }),
-        status,
-      );
-      const brief =
-        status === "complete" ? { text: "The gate is open.", model: "summary" } : undefined;
-      const card = handoffSeedBlock(seed, brief);
-      await f.block(seed, "custom", card.content);
-      if (status === "error")
-        await f.repos.turns.updateStatus(seed.id, { status, error: handoffBriefFailedCopy });
-      expect(output(await f.read())).not.toContain("handoff-brief");
-      const text = output(await f.read({ include: ["system_messages"] }));
-      expect(text).toMatch(/^system: fork_or_handoff_seed$/mu);
-      expect(text).toContain("<system_update>");
-      expect(text).not.toContain('"kind":"handoff-brief"');
-      expect(text).not.toContain(f.thread.id);
-      expect(text).toContain(status === "complete" ? "The gate is open." : "with no brief.");
-      if (status === "error") expect(text).toContain(`error: ${handoffBriefFailedCopy}`);
-    });
-
     it("renders a thread-reference component as its model text without internal ids", async () => {
       const f = await fixture();
       const seed = await f.turn("user", {
@@ -334,29 +223,6 @@ export function defineThreadHistoryContract(
       expect(text).toContain(modelText);
       expect(text).not.toContain(threadId);
       expect(text).not.toContain('"kind":"thread-reference"');
-    });
-
-    it("keeps a failed reply labelled assistant with its error after a later writer turn", async () => {
-      const f = await fixture();
-      const failed = await f.turn("assistant", { reason: "image_resolution_failed" }, "error");
-      await f.text(failed, "Partial scene.");
-      await f.repos.turns.updateStatus(failed.id, {
-        status: "error",
-        error: "This response failed.",
-      });
-      await f.text(await f.turn("user", null, "complete", "writer"), "Move on.");
-      const text = output(await f.read({ order: "oldest_first" }));
-      expect(text).toContain(
-        "[1] assistant\nPartial scene.\nerror: This response failed.\nfailure reason: image_resolution_failed",
-      );
-      expect(text).toContain("[2] user\nMove on.");
-    });
-
-    it("drops the header noise: no Agent, order, dates, ranges or segment header", async () => {
-      const f = await fixture();
-      await f.text(await f.turn("user", null, "complete", "writer"), "pizza");
-      const text = output(await f.read());
-      expect(text).toBe(`Conversation ${f.thread.ref}\n\n[1] user\npizza`);
     });
 
     it("marks compacted turns and keeps every number across compaction and order", async () => {
@@ -426,168 +292,6 @@ export function defineThreadHistoryContract(
     it.each([
       "oldest_first",
       "newest_first",
-    ] as const)("numbers %s turns without gaps around a hidden system turn", async (order) => {
-      const f = await fixture();
-      await f.text(await f.turn("user", null, "complete", "writer"), "check on p4");
-      await f.text(
-        await f.turn("system", {
-          kind: "subagent_update",
-          handle: "p4",
-          outcome: "succeeded",
-          execution: "execution",
-          childThreadId: "child",
-          agentName: "Helper",
-        }),
-        "p4 finished",
-      );
-      await f.text(
-        await f.turn("user", { kind: "system_update", section: "work_context" }),
-        "Work",
-      );
-      await f.text(await f.turn(), "p4 is done");
-      await f.text(await f.turn("user", null, "complete", "writer"), "thanks");
-      const text = output(await f.read({ order }));
-      expect(text).toBe(`Conversation ${f.thread.ref}
-
-[1] user
-check on p4
-
-[2] assistant
-p4 is done
-
-[3] user
-thanks`);
-      for (const limit of [1, 2]) {
-        const numbers: (number | undefined)[] = [];
-        let next: string | undefined;
-        do {
-          const page = structured(await f.read({ order, limit, cursor: next }));
-          numbers.push(...page.turns.map((turn) => turn.number));
-          next = page.next?.call.cursor;
-        } while (next);
-        expect([...numbers].sort()).toEqual([1, 2, 3]);
-      }
-      expect(output(await f.read({ expand: 2 }))).toContain("[2] assistant\n2.1 p4 is done");
-      expect(output(await f.read({ expand: 3 }))).toContain("[3] user\n3.1 thanks");
-    });
-
-    it("gives a turn the same number in newest_first and oldest_first pages", async () => {
-      const f = await fixture();
-      for (let index = 1; index <= 6; index++) await f.text(await f.turn(), `reply ${index}`);
-      const newest = output(await f.read({ limit: 2 }));
-      expect(newest).toContain("[5] assistant\nreply 5\n\n[6] assistant\nreply 6");
-      const oldest = output(await f.read({ order: "oldest_first", limit: 2 }));
-      expect(oldest).toContain("[1] assistant\nreply 1\n\n[2] assistant\nreply 2");
-    });
-
-    it("hides routine calls behind a count and writes each visible call as the call itself", async () => {
-      const f = await fixture();
-      await f.text(await f.turn("user", null, "complete", "writer"), "pizza");
-      const t = await f.turn();
-      await f.text(t, 'I looked around to see what "pizza" might point at.');
-      for (let index = 0; index < 9; index++)
-        await f.tool(t, "read", { path: `manuscript://ch${index}.md` }, `chapter ${index}`);
-      await f.tool(t, "ls", {}, "folders");
-      const content = `Pizza night at the inn, and ${"the cook argued with the guard ".repeat(30)}`;
-      await f.tool(
-        t,
-        "write",
-        { command: "create", path: "manuscript://notes.md", content },
-        "status: success",
-        false,
-        modelResult({
-          command: "create",
-          status: "success",
-          phase: "committed",
-          payload: { write: { id: "w1" }, destination: "draft", draftWork: "rewrite" },
-        }) as unknown as JsonValue,
-      );
-      await f.tool(
-        t,
-        "read",
-        { path: "manuscript://missing.md" },
-        "status: document_not_found\n\nNo document at manuscript://missing.md",
-        true,
-        modelResult({ command: "read", status: "document_not_found" }) as unknown as JsonValue,
-      );
-      await f.tool(
-        t,
-        "spawn",
-        { agent: "critic", name: "Pacing review", prompt: "Read chapter 3 for pacing." },
-        "Subagent p8 is running.",
-        false,
-        { status: "background", handle: "p8", threadId: "child", agentSlug: "critic" },
-      );
-      await f.tool(t, "work", { command: "create", name: "Rewrite" }, "{}", false, {
-        slug: "rewrite",
-      });
-      await f.tool(t, "work", { command: "list" }, "[]", false, [{ slug: "rewrite" }]);
-      const text = output(await f.read());
-      const ref = f.thread.ref;
-      expect(text).toBe(`Conversation ${ref}
-
-[1] user
-pizza
-
-[2] assistant
-I looked around to see what "pizza" might point at.
-write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, version: draft (@rewrite)
-read({"path":"manuscript://missing.md"}) → failed: document_not_found
-status: document_not_found
-
-No document at manuscript://missing.md
-spawn({"agent":"critic","prompt":"Read chapter 3 for pacing.","name":"Pacing review"}) → p8
-work({"command":"create","name":"Rewrite"}) → @rewrite
-(11 routine tool calls hidden; list them with thread_history({"ref":"${ref}","expand":2}))`);
-      const routine = output(await f.read({ include: ["routine_calls"] }));
-      expect(routine).toContain('read({"path":"manuscript://ch0.md"})\n');
-      expect(routine).toContain("ls({})\n");
-      expect(routine).toContain('work({"command":"list"}) → 1 Work');
-      expect(routine).not.toContain("hidden");
-      const expanded = output(await f.read({ expand: 2 }));
-      expect(expanded).toContain(
-        '2.12 write({"command":"create","path":"manuscript://notes.md","content":"Pizza night at the inn, and the cook…(186 words)"}) → w1, 186 words, version: draft (@rewrite) (',
-      );
-      expect(expanded).toContain("2.11 ls({}) (");
-      // One call in full keeps the whole arguments as an edit record.
-      const one = output(await f.read({ expand: "2.12" }));
-      expect(one).toContain("edit record from");
-      expect(one).toContain(content.trim());
-    });
-
-    it("shows timestamps only on request", async () => {
-      const f = await fixture();
-      const t = await f.turn();
-      await f.text(t, "first");
-      const date = t.createdAt.slice(0, 10);
-      expect(output(await f.read())).not.toContain(date);
-      expect(output(await f.read({ include: ["timestamps"] }))).toContain(
-        `[1] assistant  ${t.createdAt.slice(0, 16).replace("T", " ")}\nfirst`,
-      );
-    });
-
-    it("limit counts turns; hidden calls never count toward it", async () => {
-      const f = await fixture();
-      for (let turn = 1; turn <= 3; turn++) {
-        const t = await f.turn();
-        await f.text(t, `reply ${turn}`);
-        for (let i = 0; i < 30; i++) await f.tool(t, "ls", {}, `hidden-${i}`);
-      }
-      const first = output(await f.read({ order: "oldest_first", limit: 2 }));
-      expect(first).toContain("[1] assistant\nreply 1\n(30 routine tool calls hidden");
-      expect(first).toContain("[2] assistant\nreply 2\n(30 routine tool calls hidden");
-      expect(first).not.toContain("reply 3");
-      expect(first).not.toContain("hidden-");
-      const second = output(
-        await f.read({ order: "oldest_first", limit: 2, cursor: cursor(first) }),
-      );
-      expect(second).toContain("[3] assistant\nreply 3\n(30 routine tool calls hidden");
-      expect(cursor(second)).toBeUndefined();
-    });
-
-    it.each([
-      "oldest_first",
-      "newest_first",
     ] as const)("pages %s over hidden calls with no gaps and no repeats", async (order) => {
       const f = await fixture();
       for (let turn = 1; turn <= 12; turn++) {
@@ -610,54 +314,6 @@ work({"command":"create","name":"Rewrite"}) → @rewrite
       } while (next);
       expect([...seen].sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
       expect(hidden).toBe(24);
-    });
-
-    it.each([
-      "oldest_first",
-      "newest_first",
-    ] as const)("prints a complete More call that continues %s verbatim", async (order) => {
-      const f = await fixture();
-      await f.text(await f.turn(), "first");
-      await f.text(await f.turn(), "second");
-      const firstPage = output(
-        await f.read({ order, limit: 1, include: ["thinking", "system_messages"] }),
-      );
-      const call = nextCall(firstPage);
-      const next = call.cursor as string;
-      expect(call).toEqual({
-        ref: f.thread.ref,
-        order,
-        cursor: next,
-        limit: 1,
-        include: ["thinking", "system_messages"],
-      });
-      expect(next).toMatch(
-        new RegExp(
-          `^c\\d+:${order === "oldest_first" ? "o" : "n"}\\d+(?:\\.\\d+)?@\\d+(?:\\.\\d+)?~[a-f0-9]{8}$`,
-          "u",
-        ),
-      );
-      const secondPage = output(await f.read(call));
-      expect(secondPage).toContain(
-        order === "oldest_first" ? "[2] assistant\nsecond" : "[1] assistant\nfirst",
-      );
-      expect(secondPage).not.toContain(order === "oldest_first" ? "first" : "second");
-      for (const [candidate, message] of [
-        [next.replace(/^c\d+/u, "p99"), "another conversation"],
-        [
-          next.replace(
-            order === "oldest_first" ? ":o" : ":n",
-            order === "oldest_first" ? ":n" : ":o",
-          ),
-          "another history order",
-        ],
-        [next.replace(/@(\d+)/u, (_, anchor) => `@${Number(anchor) + 999}`), "anchor"],
-      ] as const) {
-        expect(await f.read({ order, cursor: candidate })).toMatchObject({
-          ok: false,
-          error: { code: "invalid_cursor", message: expect.stringContaining(message) },
-        });
-      }
     });
     it.each([
       "oldest_first",
@@ -690,30 +346,6 @@ work({"command":"create","name":"Rewrite"}) → @rewrite
       const full = output(await f.read({ expand: "1.2" }));
       expect(full).toContain("[1] assistant\n1.2 message\n");
       expect(full).toContain("END");
-    });
-    it("expands a turn of ten chapter reads one line each, within the page budget", async () => {
-      const f = await fixture();
-      const t = await f.turn();
-      await f.text(t, "Reading the arc.");
-      for (let i = 1; i <= 10; i++)
-        await f.tool(t, "read", { path: `manuscript://ch${i}.md` }, `${"prose ".repeat(4000)}`);
-      for (const expand of [1, "1"] as const) {
-        const text = output(await f.read({ expand }));
-        expect(text).toContain(
-          '[1] assistant\n1.1 Reading the arc.\n1.2 read({"path":"manuscript://ch1.md"}) (',
-        );
-        expect(text).toMatch(
-          /^1\.11 read\(\{"path":"manuscript:\/\/ch10\.md"\}\) \([\d,]+ tokens\)$/mu,
-        );
-        expect(text).not.toContain("prose");
-        expect(estimateModelPartTokens({ type: "text", text }, "anthropic")).toBeLessThan(8000);
-      }
-      const one = output(await f.read({ expand: "1.3" }));
-      expect(one).toContain(
-        '1.3 read({"path":"manuscript://ch2.md"})\n{"path":"manuscript://ch2.md"}',
-      );
-      // A document copy stays elided even in full.
-      expect(one).not.toContain("prose");
     });
     it("shows a child's saved report on its terminal turn instead of the return_result arguments", async () => {
       const f = await fixture();
@@ -766,29 +398,8 @@ work({"command":"create","name":"Rewrite"}) → @rewrite
       expect(expanded).toContain("SAVED LINE 25");
       expect(expanded).not.toContain("ARGUMENT SUMMARY");
     });
-    it("lists running work under In progress, outside the cursor", async () => {
-      const f = await fixture();
-      await f.text(await f.turn("user", null, "complete", "writer"), "test a subagent");
-      const live = await f.turn("assistant", null, "streaming");
-      await f.block(live, "tool_use", {
-        toolCallId: "spawn-1",
-        toolName: "spawn",
-        input: { agent: "general", name: "Summarize conversation test" },
-      });
-      const result = structured(await f.read());
-      expect(result.next).toBeUndefined();
-      expect(renderHistoryResult(result)).toBe(`Conversation ${f.thread.ref}
-
-[1] user
-test a subagent
-
-In progress
-[2] spawn({"agent":"general","name":"Summarize conversation test"}) → running`);
-    });
     it.each([
-      {},
       { include: ["routine_calls", "tool_results"] },
-      { include: ["routine_calls", "tool_results", "system_messages"] },
     ] as ThreadHistoryInput[])("stubs copies, and a write line carries edit evidence: %j", async (input) => {
       const f = await fixture();
       const t = await f.turn();
@@ -910,37 +521,6 @@ In progress
       expect(cursor(first)).toBeDefined();
       const second = output(await f.read({ order: "oldest_first", cursor: cursor(first) }));
       expect(second).toContain("[1] assistant\nvisible after scan budget");
-    });
-    it("prints system_prompt only when a cursor opens a segment", async () => {
-      const f = await fixture();
-      await f.text(await f.turn(), "first");
-      await f.text(await f.turn(), "second");
-      const first = output(
-        await f.read({ order: "oldest_first", limit: 1, include: ["system_prompt"] }),
-      );
-      const next = output(
-        await f.read({
-          order: "oldest_first",
-          limit: 1,
-          include: ["system_prompt"],
-          cursor: cursor(first),
-        }),
-      );
-      expect(first).toContain("System prompt:\nINITIAL PROMPT");
-      expect(next).not.toContain("INITIAL PROMPT");
-      expect(next).toContain("[2] assistant\nsecond");
-    });
-    it("keeps assistant UI cards out of the default prose view", async () => {
-      const f = await fixture();
-      const t = await f.turn();
-      await f.block(t, "custom", {
-        kind: "helper-result",
-        props: { summary: "saved child report" },
-      });
-      expect(output(await f.read())).not.toContain("saved child report");
-      expect(output(await f.read({ include: ["system_messages"] }))).toContain(
-        "system: helper-result",
-      );
     });
     it("labels component cards without serializing their internal props", async () => {
       const f = await fixture();

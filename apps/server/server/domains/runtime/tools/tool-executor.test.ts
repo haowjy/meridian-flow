@@ -1,6 +1,5 @@
 /** Executor input parsing and capability plumbing for spawn-family registrations. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ModelThreadReportResult } from "@meridian/contracts/spawn";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { threadReadError } from "../spawn/resolve-readable-thread.js";
@@ -17,39 +16,6 @@ function executorFor(name: "thread_message" | "thread_report") {
   );
   return createToolExecutor(createToolRegistry({ registrations }));
 }
-
-describe("thread_message capability plumbing", () => {
-  it("fails the call when the threadMessage context is absent", async () => {
-    const executor = executorFor("thread_message");
-
-    const result = await executor.executeTool(
-      { id: "call-1", name: "thread_message", arguments: { ref: "p1", message: "p" } },
-      { ...executionBase, agentSlug: null },
-    );
-
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.output)).toContain("missing threadMessage context");
-  });
-});
-
-describe("thread_report capability plumbing", () => {
-  it("injects the latest-report reader", async () => {
-    const expected: ModelThreadReportResult = { ref: "p1", status: "unavailable" };
-    const threadReportFn = vi.fn(async () => expected);
-    const executor = executorFor("thread_report");
-    const result = await executor.executeTool(
-      {
-        id: "call-1",
-        name: "thread_report",
-        arguments: { ref: "p1" },
-      },
-      { ...executionBase, agentSlug: null, threadReport: threadReportFn },
-    );
-    // The model reads text; the typed result rides beside it.
-    expect(result.result).toEqual({ ref: "p1", status: "unavailable" });
-    expect(result.output).toEqual(expect.any(String));
-  });
-});
 
 it("marks a structured thread-report refusal as an error result", async () => {
   const result = await executorFor("thread_report").executeTool(

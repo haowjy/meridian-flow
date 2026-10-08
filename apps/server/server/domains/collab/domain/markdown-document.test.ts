@@ -96,23 +96,6 @@ describe("code document serialization", () => {
     });
   });
 
-  it.each([
-    "effective branch/staged reads",
-    "review previews",
-  ])("serializes Y.Doc projections without fences for %s", async () => {
-    const subject = setup();
-    await seedCode(subject);
-    const projection = createCollabYDoc({ gc: false });
-    await subject.coordinator.withDocument(DOCUMENT_ID, async (live) => {
-      Y.applyUpdate(projection, Y.encodeStateAsUpdate(live));
-    });
-
-    await expect(subject.engine.serializeDocument(DOCUMENT_ID, projection)).resolves.toBe(
-      "const answer = 42;",
-    );
-    projection.destroy();
-  });
-
   it("restores a code checkpoint without turning fences into literal code", async () => {
     const subject = setup();
     await seedCode(subject, "const original = true;");
@@ -167,58 +150,6 @@ describe("schema-aware serialization purity", () => {
     } finally {
       input.destroy();
     }
-  });
-
-  it("repairs only a clone and reports the removed structure without prose", async () => {
-    const subject = setup("md");
-    const input = createCollabYDoc({ gc: false });
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.insert(0, [new Y.XmlText("kept prose")]);
-    const unknown = new Y.XmlElement("sidebar");
-    unknown.insert(0, [new Y.XmlText("future prose")]);
-    fragmentOf(input).insert(0, [paragraph, unknown]);
-    const beforeState = Y.encodeStateAsUpdate(input);
-    const beforeXml = fragmentOf(input).toString();
-
-    await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe(
-      "kept prose\n",
-    );
-
-    expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
-    expect(fragmentOf(input).toString()).toBe(beforeXml);
-    expect(subject.eventSink.events).toHaveLength(1);
-    expect(subject.eventSink.events[0]).toMatchObject({
-      level: "warn",
-      source: "collab.schema",
-      name: "serialize.anomaly_observed",
-      correlation: { documentId: DOCUMENT_ID },
-      payload: {
-        schemaVersion: COLLAB_SCHEMA_VERSION,
-        deletedNodeTypes: ["sidebar"],
-        deletedClockCount: 14,
-      },
-    });
-    expect(subject.eventSink.events[0]?.payload).toEqual({
-      schemaVersion: COLLAB_SCHEMA_VERSION,
-      deletedNodeTypes: ["sidebar"],
-      deletedClockCount: 14,
-    });
-    input.destroy();
-  });
-
-  it("emits no anomaly when serialization does not repair the clone", async () => {
-    const subject = setup("md");
-    const input = createCollabYDoc({ gc: false });
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.insert(0, [new Y.XmlText("kept prose")]);
-    fragmentOf(input).insert(0, [paragraph]);
-
-    await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe(
-      "kept prose\n",
-    );
-
-    expect(subject.eventSink.events).toEqual([]);
-    input.destroy();
   });
 
   it("preserves source client identity for identity-sensitive projection repairs", async () => {

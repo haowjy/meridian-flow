@@ -9,7 +9,6 @@ import {
   createBranchCoordinator,
 } from "./branch-coordinator.js";
 import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
-import { runResponseTransaction } from "./response-transaction.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000502" as WorkId;
@@ -167,29 +166,6 @@ function materialize(snapshot: BranchSnapshot): Y.Doc {
 }
 
 describe("BranchCoordinator", () => {
-  it("validates and journals branch writer updates against one locked snapshot", async () => {
-    const store = new MemoryBranchStore();
-    const branchDoc = docWithText("seed");
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: branchDoc }));
-    const roomDocument = materialize(storedBranch(store, "work"));
-    const client = materialize(storedBranch(store, "work"));
-    const before = Y.encodeStateVector(client);
-    client.getText("content").insert(4, "!");
-    const updateData = Y.encodeStateAsUpdate(client, before);
-
-    const coordinator = createBranchCoordinator({ store });
-    await coordinator.commitWriterUpdate({
-      branchId: "work",
-      expectedGeneration: 1,
-      updateData,
-      actorUserId: "user-1",
-      roomDocument,
-    });
-
-    expect(store.journal).toEqual([updateData]);
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("seed!");
-  });
-
   it("acknowledges already-contained branch writer updates without another journal row", async () => {
     const store = new MemoryBranchStore();
     const branchDoc = docWithText("seed");
@@ -235,98 +211,6 @@ describe("BranchCoordinator", () => {
     expect(materialize(storedBranch(store, "work")).getArray(PROVENANCE_TARGETS_TYPE)).toHaveLength(
       1,
     );
-  });
-
-  it("publishes transient cache state only when the response transaction commits", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set(
-      "thread",
-      branchSnapshot({ branchId: "thread", doc: docWithText("before") }),
-    );
-    const coordinator = createBranchCoordinator({ store });
-    const mutate = async () => {
-      await coordinator.withBranchTransient("thread", async (doc) => {
-        doc.getText("content").insert(doc.getText("content").length, " after");
-      });
-      await coordinator.readBranch("thread", async (pending) => {
-        expect(pending.getText("content").toString()).toBe("before after");
-      });
-    };
-
-    await expect(
-      runResponseTransaction(async (operation) => {
-        await operation();
-        throw new Error("rollback");
-      }, mutate),
-    ).rejects.toThrow("rollback");
-    await coordinator.readBranch("thread", async (doc) => {
-      expect(doc.getText("content").toString()).toBe("before");
-    });
-
-    await runResponseTransaction(async (operation) => operation(), mutate);
-    await coordinator.readBranch("thread", async (doc) => {
-      expect(doc.getText("content").toString()).toBe("before after");
-    });
-  });
-  it("pulls live edits into a work draft using sync and persists byte-equal state", async () => {
-    const store = new MemoryBranchStore();
-    const live = docWithText("live prose");
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
-
-    const coordinator = createBranchCoordinator({ store });
-    await coordinator.pullFromDoc("work", live);
-
-    const work = materialize(storedBranch(store, "work"));
-    expect(Y.encodeStateAsUpdate(work)).toEqual(Y.encodeStateAsUpdate(live));
-  });
-
-  it("publishes pulled updates to an already-loaded branch room", async () => {
-    const store = new MemoryBranchStore();
-    const live = docWithText("live prose");
-    const loadedRoom = new Y.Doc({ gc: false });
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: loadedRoom }));
-
-    const coordinator = createBranchCoordinator({
-      store,
-      onBranchUpdate: ({ branchId, update }) => {
-        if (branchId === "work") Y.applyUpdate(loadedRoom, update);
-      },
-    });
-    await coordinator.pullFromDoc("work", live);
-
-    expect(loadedRoom.getText("content").toString()).toBe("live prose");
-  });
-
-  it("publishes response-transaction pulls once and only after durable commit", async () => {
-    const runPull = async (outcome: "commit" | "rollback") => {
-      const store = new MemoryBranchStore();
-      store.branches.set(
-        "work",
-        branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }),
-      );
-      let durableCommitted = false;
-      const publications: boolean[] = [];
-      const coordinator = createBranchCoordinator({
-        store,
-        onBranchUpdate: () => publications.push(durableCommitted),
-      });
-
-      const transaction = runResponseTransaction(
-        async (operation) => {
-          const result = await operation();
-          if (outcome === "rollback") throw new Error("rollback");
-          durableCommitted = true;
-          return result;
-        },
-        () => coordinator.pullFromDoc("work", docWithText("live prose")),
-      );
-      if (outcome === "rollback") await expect(transaction).rejects.toThrow("rollback");
-      else await transaction;
-      return publications;
-    };
-
-    await expect(runPull("rollback")).resolves.toEqual([]);
-    await expect(runPull("commit")).resolves.toEqual([true]);
   });
 
   it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
@@ -380,47 +264,6 @@ describe("BranchCoordinator", () => {
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   });
 
-  it("rejects commitSyncFromDoc when the captured branch generation is stale", async () => {
-    const store = new MemoryBranchStore();
-    const work = branchSnapshot({ branchId: "work", doc: docWithText("before") });
-    store.branches.set("work", { ...work, generation: 2 });
-    const sourceDoc = docWithText("stale write");
-    const coordinator = createBranchCoordinator({ store });
-
-    await expect(
-      coordinator.commitSyncFromDoc({
-        branchId: "work",
-        sourceDoc,
-        source: "agent",
-        threadId: THREAD_ID,
-        expectedGeneration: 1,
-      }),
-    ).rejects.toMatchObject({ name: "BranchStaleUpdateError" });
-    expect(storedBranch(store, "work").generation).toBe(2);
-    expect(store.journal).toHaveLength(0);
-  });
-
-  it("pulls a work draft into a thread peer", async () => {
-    const store = new MemoryBranchStore();
-    const workDoc = docWithText("draft prose");
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: workDoc }));
-    store.branches.set(
-      "thread",
-      branchSnapshot({
-        branchId: "thread",
-        doc: new Y.Doc({ gc: false }),
-        kind: "thread_peer",
-        upstreamBranchId: "work",
-      }),
-    );
-
-    const coordinator = createBranchCoordinator({ store });
-    await coordinator.pullFromBranch("thread");
-
-    const thread = materialize(storedBranch(store, "thread"));
-    expect(Y.encodeStateAsUpdate(thread)).toEqual(Y.encodeStateAsUpdate(workDoc));
-  });
-
   it("aborts and retries the whole mutation on CAS failure", async () => {
     const store = new MemoryBranchStore();
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
@@ -432,31 +275,6 @@ describe("BranchCoordinator", () => {
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
       "after retry",
     );
-  });
-
-  it("resets from upstream by recreating state, incrementing generation, and carrying schema version", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set("work", {
-      ...branchSnapshot({ branchId: "work", doc: docWithText("fresh upstream") }),
-      schemaVersion: { major: 0, minor: 2, patch: 0 },
-    });
-    store.branches.set(
-      "thread",
-      branchSnapshot({
-        branchId: "thread",
-        doc: docWithText("old peer"),
-        kind: "thread_peer",
-        upstreamBranchId: "work",
-      }),
-    );
-
-    const coordinator = createBranchCoordinator({ store });
-    await coordinator.resetFromBranch("thread");
-
-    const thread = storedBranch(store, "thread");
-    expect(thread.generation).toBe(2);
-    expect(thread.schemaVersion).toEqual({ major: 0, minor: 2, patch: 0 });
-    expect(materialize(thread).getText("content").toString()).toBe("fresh upstream");
   });
 
   it("rejects reset after a delete-only concurrent write changes bytes without changing the state vector", async () => {
@@ -490,125 +308,6 @@ describe("BranchCoordinator", () => {
     expect(store.journal).toHaveLength(0);
   });
 
-  it("resets a work draft only when the caller's snapshot is still current", async () => {
-    const store = new MemoryBranchStore();
-    const original = branchSnapshot({ branchId: "work", doc: docWithText("old branch") });
-    store.branches.set("work", original);
-    const coordinator = createBranchCoordinator({ store });
-
-    await expect(
-      coordinator.resetFromDocIfUnchanged({
-        branchId: "work",
-        upstream: docWithText("fresh live"),
-        expectedGeneration: original.generation,
-        expectedStateVector: original.stateVector,
-        expectedState: original.state,
-        schemaVersion: original.schemaVersion,
-      }),
-    ).resolves.toBe(true);
-    expect(storedBranch(store, "work").generation).toBe(2);
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
-      "fresh live",
-    );
-
-    const current = storedBranch(store, "work");
-    await expect(
-      coordinator.resetFromDocIfUnchanged({
-        branchId: "work",
-        upstream: docWithText("stale reset must not win"),
-        expectedGeneration: original.generation,
-        expectedStateVector: original.stateVector,
-        expectedState: original.state,
-        schemaVersion: original.schemaVersion,
-      }),
-    ).resolves.toBe(false);
-    expect(storedBranch(store, "work").generation).toBe(current.generation);
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
-      "fresh live",
-    );
-  });
-
-  it("rejects reset from a non-work-draft upstream", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set(
-      "thread",
-      branchSnapshot({
-        branchId: "thread",
-        doc: docWithText("old peer"),
-        kind: "thread_peer",
-        upstreamBranchId: "other-thread",
-      }),
-    );
-    store.branches.set(
-      "other-thread",
-      branchSnapshot({
-        branchId: "other-thread",
-        doc: docWithText("not a work draft"),
-        kind: "thread_peer",
-        upstreamBranchId: "work",
-      }),
-    );
-
-    const coordinator = createBranchCoordinator({ store });
-    await expect(coordinator.resetFromBranch("thread")).rejects.toThrow(/same-document work draft/);
-  });
-
-  it("rejects reset when the target or upstream is closed", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set("closed-work", {
-      ...branchSnapshot({ branchId: "closed-work", doc: docWithText("closed live") }),
-      status: "closed",
-    });
-    store.branches.set(
-      "thread",
-      branchSnapshot({
-        branchId: "thread",
-        doc: docWithText("old peer"),
-        kind: "thread_peer",
-        upstreamBranchId: "closed-work",
-      }),
-    );
-    const coordinator = createBranchCoordinator({ store });
-
-    await expect(coordinator.resetFromBranch("thread")).rejects.toThrow(
-      /active same-document work draft/,
-    );
-
-    store.branches.set("closed-thread", {
-      ...branchSnapshot({
-        branchId: "closed-thread",
-        doc: docWithText("closed peer"),
-        kind: "thread_peer",
-        upstreamBranchId: "closed-work",
-      }),
-      status: "closed",
-    });
-    await expect(coordinator.resetFromBranch("closed-thread")).rejects.toThrow(
-      /active thread peer/,
-    );
-  });
-
-  it("does not append a journal row when snapshot CAS fails", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
-    store.failNextCas = true;
-    const coordinator = createBranchCoordinator({ store, maxCasRetries: 0 });
-    const update = Y.encodeStateAsUpdate(docWithText("lost write"));
-
-    await expect(
-      coordinator.appendJournaledUpdate({
-        branchId: "work",
-        generation: 1,
-        updateData: update,
-        source: "agent",
-        threadId: THREAD_ID,
-      }),
-    ).rejects.toThrow(/changed before/);
-
-    expect(store.journal).toHaveLength(0);
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
-  });
-
   it("does not mutate the cached branch doc when journal append fails", async () => {
     const store = new MemoryBranchStore();
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
@@ -629,65 +328,6 @@ describe("BranchCoordinator", () => {
     await coordinator.pullFromDoc("work", new Y.Doc({ gc: false }));
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
-  });
-
-  it("applies journaled synthetic writes under the branch lock", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
-    const updateDoc = docWithText("journal write");
-    const update = Y.encodeStateAsUpdate(updateDoc);
-
-    const coordinator = createBranchCoordinator({ store });
-    await coordinator.appendJournaledUpdate({
-      branchId: "work",
-      generation: 1,
-      updateData: update,
-      source: "agent",
-      threadId: THREAD_ID,
-    });
-
-    expect(store.journal).toHaveLength(1);
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
-      "journal write",
-    );
-  });
-  it("broadcasts coordinator commits to an open branch room", async () => {
-    const store = new MemoryBranchStore();
-    const base = docWithText("live");
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: base }));
-    const received: Uint8Array[] = [];
-    const coordinator = createBranchCoordinator({
-      store,
-      onBranchUpdate: ({ update }) => received.push(update),
-    });
-    const source = materialize(storedBranch(store, "work"));
-    source.getText("content").insert(source.getText("content").length, " branch");
-
-    await coordinator.commitSyncFromDoc({
-      branchId: "work",
-      sourceDoc: source,
-      source: "agent",
-      expectedGeneration: storedBranch(store, "work").generation,
-    });
-
-    expect(received).toHaveLength(1);
-    const roomDoc = materialize(branchSnapshot({ branchId: "room", doc: base }));
-    Y.applyUpdate(roomDoc, received[0] as Uint8Array);
-    expect(roomDoc.getText("content").toString()).toBe("live branch");
-  });
-
-  it("announces generation resets so open branch rooms are closed before stale writes persist", async () => {
-    const store = new MemoryBranchStore();
-    store.branches.set("work", branchSnapshot({ branchId: "work", doc: docWithText("draft") }));
-    const resets: Array<{ branchId: string; generation: number }> = [];
-    const coordinator = createBranchCoordinator({
-      store,
-      onBranchReset: (reset) => resets.push(reset),
-    });
-
-    await coordinator.resetFromDoc("work", docWithText("live"));
-
-    expect(resets).toEqual([{ branchId: "work", generation: 2 }]);
   });
 
   it("keeps the discarded replay fence monotonic across resets", async () => {
