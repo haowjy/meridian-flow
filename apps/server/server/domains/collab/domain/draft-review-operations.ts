@@ -99,24 +99,22 @@ function groupOperationsForHunks(
     }))
       mergeContribution(contributionByOperationId, operationId, contribution);
   }
-  const hunks = attributedHunks.map(
-    (hunk) =>
-      ({
-        ...hunk.review,
-        operationIds: [...hunk.operationIds].sort(operationSort),
-        ...(!hunk.complete ? { unclassified: true } : {}),
-        ...(attribution.hasInterleavedEdits(hunk.raw.insertedRanges)
-          ? { mergeArtifact: true }
-          : {}),
-        ...(hunk.review.kind === "text"
-          ? {
-              ...(!hunk.complete ? { insertedText: hunk.raw.insertedText } : {}),
-              ...(hunk.raw.deletedText ? { deletedSpans: hunk.deletedSpans } : {}),
-              spans: hunkSpans(hunk.insertedAttribution),
-            }
-          : {}),
-      }) as ReviewHunk,
-  );
+  const hunks = attributedHunks.map((hunk) => {
+    const attributionFields = {
+      operationIds: [...hunk.operationIds].sort(operationSort),
+      ...(!hunk.complete ? { unclassified: true } : {}),
+      ...(attribution.hasInterleavedEdits(hunk.raw.insertedRanges) ? { mergeArtifact: true } : {}),
+    };
+    if (hunk.review.kind === "block")
+      return { ...hunk.review, ...attributionFields } satisfies ReviewHunk;
+    return {
+      ...hunk.review,
+      ...attributionFields,
+      ...(!hunk.complete ? { insertedText: hunk.raw.insertedText } : {}),
+      ...(hunk.raw.deletedText ? { deletedSpans: hunk.deletedSpans } : {}),
+      spans: hunkSpans(hunk.insertedAttribution),
+    } satisfies ReviewHunk;
+  });
 
   const hunkCounts = new Map<string, number>();
   for (const hunk of hunks) {
