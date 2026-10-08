@@ -200,40 +200,43 @@ export function buildInlineReviewModel(input: {
 }
 
 /**
- * Kind of the first-listed operation for a hunk drives its highlight color.
- * When a hunk belongs to multiple operations (coalescence), agent kind wins
- * only if every contributing operation is agent — any writer contribution
- * paints the writer color so the writer instantly sees "I touched this."
+ * How a hunk's marks are drawn: an author's colour, or `neutral` when no
+ * author can be named. A merge artifact (concurrent edits the CRDT combined)
+ * and an unclassified hunk (no operation owns it) are neutral whatever their
+ * operations say, so text and block rendering share this one decision.
+ * Otherwise a hunk with a writer contribution paints the writer colour (the
+ * writer instantly sees "I touched this"), and any other known operation
+ * paints the AI's. A hunk whose operations are all unknown reads as the AI's,
+ * so the change is still seen.
  */
-export function hunkKind(
+export type ReviewTone = InlineReviewOperationKind | "neutral";
+
+export function hunkTone(
   hunk: ResolvedReviewHunk,
   operationsById: ReadonlyMap<string, ReviewOperation>,
-): InlineReviewOperationKind {
-  let sawWriter = false;
-  let sawAgent = false;
+): ReviewTone {
+  if (hunk.mergeArtifact === true || hunk.unclassified === true) return "neutral";
   for (const opId of hunk.operationIds) {
-    const op = operationsById.get(opId);
-    if (!op) continue;
-    if (op.kind === "writer") sawWriter = true;
-    else sawAgent = true;
+    if (operationsById.get(opId)?.kind === "writer") return "writer";
   }
-  if (sawWriter) return "writer";
-  if (sawAgent) return "agent";
-  // Fall back to agent — treats unknown attribution as AI to preserve the
-  // "green = something changed here" reading rather than showing nothing.
   return "agent";
 }
+
+/** Who a removed stretch is drawn as: an author, or `unattributed` when the server could not say. */
+export type RemovalKind = InlineReviewOperationKind | "unattributed";
 
 /**
  * Who removed the live block a block hunk shows struck. The preview carries no
  * per-removal author for blocks, only the hunk's owning operations, so the
  * removal is the writer's when every owning operation is the writer's and the
- * AI's otherwise. (Text hunks say who removed each stretch: `deletedSpans`.)
+ * AI's otherwise; unattributed when the hunk is neutral. (Text hunks say who
+ * removed each stretch: `deletedSpans`.)
  */
 export function blockRemovalKind(
   hunk: ResolvedBlockReviewHunk,
   operationsById: ReadonlyMap<string, ReviewOperation>,
-): InlineReviewOperationKind {
+): RemovalKind {
+  if (hunkTone(hunk, operationsById) === "neutral") return "unattributed";
   let sawWriter = false;
   for (const opId of hunk.operationIds) {
     const op = operationsById.get(opId);

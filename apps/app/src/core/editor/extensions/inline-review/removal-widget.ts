@@ -8,7 +8,8 @@
  * widget DOM (`createRemovalElement`). `decorations.ts` decides where each
  * plan lands; the extension supplies the click handlers.
  */
-import type { InlineReviewOperationKind } from "./model";
+import { plural, t } from "@lingui/core/macro";
+import type { RemovalKind } from "./model";
 
 /** A removal longer than this many characters folds to a one-line label until clicked. */
 export const REMOVAL_COLLAPSE_CHARS = 200;
@@ -16,6 +17,8 @@ export const REMOVAL_COLLAPSE_CHARS = 200;
 export const REMOVAL_CLASS = "meridian-review-removal";
 export const REMOVAL_BLOCK_CLASS = "meridian-review-removal-block";
 export const REMOVAL_WRITER_CLASS = "meridian-review-removal-writer";
+/** Every removed stretch is unattributed: the fold wears no author's colour. */
+export const REMOVAL_UNATTRIBUTED_CLASS = "meridian-review-removal-unattributed";
 export const REMOVAL_TOGGLE_CLASS = "meridian-review-removal-toggle";
 /** The removal sits before punctuation or a line end, so it keeps no air after it. */
 export const REMOVAL_TIGHT_CLASS = "meridian-review-removal-tight";
@@ -26,7 +29,7 @@ export const REMOVAL_TEXT_UNATTRIBUTED_CLASS = "meridian-review-removal-text-una
 /** A stretch of removed text and who took it out; `unattributed` when the server could not say. */
 export interface RemovalSegment {
   text: string;
-  kind: InlineReviewOperationKind | "unattributed";
+  kind: RemovalKind;
 }
 
 /** One removal widget: the live text one or more adjacent hunks took out at a single position. */
@@ -38,8 +41,11 @@ export interface RemovalPlan {
   block: boolean;
   /** Followed by punctuation or the end of the line: no gap after the struck text. */
   tight: boolean;
-  /** The writer's only when every segment is; colours the fold, since the text carries its own. */
-  kind: InlineReviewOperationKind;
+  /**
+   * The writer's only when every segment is, unattributed only when every
+   * segment is, the AI's otherwise; colours the fold, since the text carries its own.
+   */
+  kind: RemovalKind;
   /** Each paragraph is its removed stretches in order, each in its author's colour. */
   paragraphs: RemovalSegment[][];
   hunkIds: string[];
@@ -101,10 +107,10 @@ function paragraphText(paragraph: readonly RemovalSegment[]): string {
   return paragraph.map((segment) => segment.text).join("");
 }
 
-function planKind(paragraphs: readonly RemovalSegment[][]): InlineReviewOperationKind {
-  return paragraphs.every((paragraph) => paragraph.every((segment) => segment.kind === "writer"))
-    ? "writer"
-    : "agent";
+function planKind(paragraphs: readonly RemovalSegment[][]): RemovalKind {
+  const every = (kind: RemovalKind) =>
+    paragraphs.every((paragraph) => paragraph.every((segment) => segment.kind === kind));
+  return every("writer") ? "writer" : every("unattributed") ? "unattributed" : "agent";
 }
 
 function removalIdentity(
@@ -124,14 +130,18 @@ export function isCollapsible(plan: RemovalPlan): boolean {
   return removalCharCount(plan) > REMOVAL_COLLAPSE_CHARS;
 }
 
-/** "1 paragraph removed", "3 paragraphs removed", or "42 words removed" for a long span inside one. */
+/**
+ * "1 paragraph removed", "3 paragraphs removed", or "42 words removed" for a long
+ * span inside one, in the active locale. Called when the widget is drawn, so the
+ * plan stays free of copy.
+ */
 export function removalLabel(plan: RemovalPlan): string {
   if (plan.block) {
     const count = plan.paragraphs.length;
-    return `${count} ${count === 1 ? "paragraph" : "paragraphs"} removed`;
+    return plural(count, { one: "# paragraph removed", other: "# paragraphs removed" });
   }
   const words = plan.paragraphs.map(paragraphText).join(" ").split(/\s+/).filter(Boolean).length;
-  return `${words} ${words === 1 ? "word" : "words"} removed`;
+  return plural(words, { one: "# word removed", other: "# words removed" });
 }
 
 export interface RemovalHandlers {
@@ -175,6 +185,7 @@ export function createRemovalElement(
     plan.block ? REMOVAL_BLOCK_CLASS : "",
     plan.tight && !plan.block ? REMOVAL_TIGHT_CLASS : "",
     plan.kind === "writer" ? REMOVAL_WRITER_CLASS : "",
+    plan.kind === "unattributed" ? REMOVAL_UNATTRIBUTED_CLASS : "",
     options.focused ? "meridian-review-emphasized" : "",
     options.pulsed ? "meridian-review-arrived" : "",
   ]
@@ -189,7 +200,7 @@ export function createRemovalElement(
     toggle.type = "button";
     toggle.className = REMOVAL_TOGGLE_CLASS;
     toggle.setAttribute("aria-expanded", folded ? "false" : "true");
-    toggle.textContent = folded ? removalLabel(plan) : "Hide removed text";
+    toggle.textContent = folded ? removalLabel(plan) : t`Hide removed text`;
     root.append(toggle);
     if (options.refocusToggle) queueMicrotask(() => toggle.focus());
   }

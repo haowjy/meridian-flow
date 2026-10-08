@@ -11,6 +11,7 @@
  * it, struck through like suggestion mode. It is DOM only: the editor document
  * never contains it.
  */
+import { i18n } from "@lingui/core";
 import type { ReviewOperation } from "@meridian/contracts/drafts";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
@@ -23,13 +24,13 @@ import {
 import {
   blockRemovalKind,
   changeOperationIds,
-  hunkKind,
+  hunkTone,
   type InlineReviewModel,
-  type InlineReviewOperationKind,
   indexOperations,
   type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
   type ResolvedTextReviewHunk,
+  type ReviewTone,
 } from "./model";
 import {
   createBarSlotElement,
@@ -37,6 +38,7 @@ import {
   planRemovals,
   type RemovalHandlers,
   type RemovalInput,
+  type RemovalPlan,
   type RemovalSegment,
 } from "./removal-widget";
 
@@ -77,40 +79,60 @@ export interface ReviewPaintState {
   barSlot: boolean;
 }
 
+/** One tinted range of a hunk: a text insertion, one author's span of it, or a whole inserted block. */
+interface MarkGeometry {
+  from: number;
+  to: number;
+  tone: ReviewTone;
+  /** A decoration over exactly one top-level node, not inline text. */
+  node: boolean;
+  /** Written on the DOM so a click or the stepper finds the change. */
+  operationAttr: string;
+  /** The operation a span belongs to, when it is painted for one author inside a larger hunk. */
+  spanOperationId: string | null;
+}
+
+interface HunkGeometry {
+  hunkId: string;
+  operationIds: readonly string[];
+  /** Where the hunk ends, for placing the focused change's bar after it. */
+  end: number;
+  marks: MarkGeometry[];
+}
+
 /**
- * Build a fresh `DecorationSet` from the resolved model. When an anchor no
- * longer resolves (the underlying Yjs items were deleted, or the mapping is
- * mid-rebuild), the hunk is silently dropped for this pass — the next model
+ * A model resolved against one document: every position, tone and removal plan
+ * the painter needs, and nothing that depends on which change is focused,
+ * pulsing or unfolded. Resolving costs a relative-position lookup per anchor;
+ * painting from it does not, so a focus step repaints without re-resolving.
+ * Valid for exactly the `model` and `doc` it was built from.
+ */
+export interface ReviewGeometry {
+  readonly model: InlineReviewModel;
+  readonly doc: PMNode;
+  readonly hunks: readonly HunkGeometry[];
+  readonly removals: readonly RemovalPlan[];
+}
+
+/**
+ * Resolve the model's anchors in `resolver.doc`. When an anchor no longer
+ * resolves (the underlying Yjs items were deleted, or the mapping is
+ * mid-rebuild), the hunk is silently dropped for this pass: the next model
  * refresh will produce anchors that resolve, or the plugin will just render
  * fewer decorations until then. Never throws.
  */
-export function buildDecorations(
-  model: InlineReviewModel | null,
-  paint: ReviewPaintState,
+export function resolveGeometry(
+  model: InlineReviewModel,
   resolver: DecorationResolver,
-  handlersFor: (view: EditorView) => RemovalHandlers,
-): DecorationSet {
-  if (!model || model.hunks.length === 0) return DecorationSet.empty;
-
+): ReviewGeometry {
   const operationsById = indexOperations(model.operations);
-  const focusedIds = changeOperationIds(model.operations, paint.activeOperationId);
-  const isFocused = (ids: readonly string[]) => ids.some((id) => focusedIds.has(id));
-  const isPulsed = (ids: readonly string[]) => ids.some((id) => paint.pulsedOperationIds.has(id));
-  const decorations: Decoration[] = [];
+  const hunks: HunkGeometry[] = [];
   const removals: RemovalInput[] = [];
-  /** Where the focused change ends: the bar's block goes after the paragraph holding this. */
-  let focusedEnd: number | null = null;
 
   for (const hunk of model.hunks) {
-    const focused = isFocused(hunk.operationIds);
-    const pulsed = isPulsed(hunk.operationIds);
-
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
-    if (focused) {
-      const endPos = resolveAnchor(hunk.relEnd, resolver);
-      focusedEnd = Math.max(focusedEnd ?? startPos, startPos, endPos ?? startPos);
-    }
+    const endPos = resolveAnchor(hunk.relEnd, resolver);
 
     const removed = removedSegments(hunk, operationsById);
     if (removed.length > 0) {
@@ -124,84 +146,63 @@ export function buildDecorations(
       });
     }
 
-    if (hunk.kind === "block") {
-      decorations.push(
-        ...blockHunkDecorations(hunk, focused, pulsed, startPos, operationsById, resolver),
-      );
-      continue;
-    }
+    hunks.push({
+      hunkId: hunk.hunkId,
+      operationIds: hunk.operationIds,
+      end: Math.max(startPos, endPos ?? startPos),
+      marks:
+        endPos == null || endPos <= startPos
+          ? []
+          : hunk.kind === "block"
+            ? blockMarks(hunk, startPos, endPos, operationsById, resolver)
+            : textMarks(hunk, startPos, endPos, operationsById, resolver),
+    });
+  }
 
-    const endPos = resolveAnchor(hunk.relEnd, resolver);
-    if (endPos == null || endPos <= startPos) continue;
+  return { model, doc: resolver.doc, hunks, removals: planRemovals(removals) };
+}
 
-    // Insertion range — one decoration per span so nested authorship (a
-    // writer edit inside an AI insertion) paints in each owner's color.
-    // Fall back to whole-hunk coloring when spans are missing or every span
-    // anchor failed to decode.
-    if (hunk.mergeArtifact === true || hunk.unclassified === true) {
-      // A merge artifact, or a hunk nobody can be named for, is neutral, not
-      // authored: paint the whole range with the merged seam and skip the hued
-      // per-span split.
+/**
+ * Paint resolved geometry: the focused change emphasised, the arrived change
+ * pulsing, long removals folded or open, and the bar's block after the focused
+ * change. Pure over `geometry` and `paint`.
+ */
+export function paintDecorations(
+  geometry: ReviewGeometry,
+  paint: ReviewPaintState,
+  handlersFor: (view: EditorView) => RemovalHandlers,
+): DecorationSet {
+  const { model, doc } = geometry;
+  if (geometry.hunks.length === 0 && geometry.removals.length === 0) return DecorationSet.empty;
+  const focusedIds = changeOperationIds(model.operations, paint.activeOperationId);
+  const isFocused = (ids: readonly string[]) => ids.some((id) => focusedIds.has(id));
+  const isPulsed = (ids: readonly string[]) => ids.some((id) => paint.pulsedOperationIds.has(id));
+  const decorations: Decoration[] = [];
+  /** Where the focused change ends: the bar's block goes after the paragraph holding this. */
+  let focusedEnd: number | null = null;
+
+  for (const hunk of geometry.hunks) {
+    const hunkFocused = isFocused(hunk.operationIds);
+    const pulsed = isPulsed(hunk.operationIds);
+    if (hunkFocused) focusedEnd = Math.max(focusedEnd ?? hunk.end, hunk.end);
+    for (const mark of hunk.marks) {
+      const focused =
+        hunkFocused || (mark.spanOperationId !== null && focusedIds.has(mark.spanOperationId));
+      const attrs = {
+        class: markClassName(mark, focused, pulsed),
+        [HUNK_ATTR]: hunk.hunkId,
+        [OPERATION_ATTR]: mark.operationAttr,
+      };
+      const spec = { [HUNK_ATTR]: hunk.hunkId, [OPERATION_ATTR]: mark.operationAttr };
       decorations.push(
-        Decoration.inline(
-          startPos,
-          endPos,
-          {
-            class: classNames(MERGED_CLASS, focused && EMPHASIS_CLASS, pulsed && ARRIVED_CLASS),
-            [HUNK_ATTR]: hunk.hunkId,
-            [OPERATION_ATTR]: hunk.operationIds.join(" "),
-          },
-          {
-            [HUNK_ATTR]: hunk.hunkId,
-            [OPERATION_ATTR]: hunk.operationIds.join(" "),
-          },
-        ),
+        mark.node
+          ? Decoration.node(mark.from, mark.to, attrs, spec)
+          : Decoration.inline(mark.from, mark.to, attrs, spec),
       );
-    } else {
-      const spanRanges = resolveSpanRanges(hunk, resolver);
-      if (spanRanges.length > 0) {
-        for (const span of spanRanges) {
-          const spanOp = operationsById.get(span.operationId);
-          const kind: InlineReviewOperationKind = spanOp?.kind === "writer" ? "writer" : "agent";
-          const spanFocused = focused || focusedIds.has(span.operationId);
-          decorations.push(
-            Decoration.inline(
-              span.from,
-              span.to,
-              {
-                class: insertionClassName(kind, spanFocused, pulsed),
-                [HUNK_ATTR]: hunk.hunkId,
-                [OPERATION_ATTR]: span.operationId,
-              },
-              {
-                [HUNK_ATTR]: hunk.hunkId,
-                [OPERATION_ATTR]: span.operationId,
-              },
-            ),
-          );
-        }
-      } else {
-        const kind = hunkKind(hunk, operationsById);
-        decorations.push(
-          Decoration.inline(
-            startPos,
-            endPos,
-            {
-              class: insertionClassName(kind, focused, pulsed),
-              [HUNK_ATTR]: hunk.hunkId,
-              [OPERATION_ATTR]: hunk.operationIds.join(" "),
-            },
-            {
-              [HUNK_ATTR]: hunk.hunkId,
-              [OPERATION_ATTR]: hunk.operationIds.join(" "),
-            },
-          ),
-        );
-      }
     }
   }
 
-  for (const plan of planRemovals(removals)) {
+  for (const plan of geometry.removals) {
     const focused = isFocused(plan.operationIds);
     const pulsed = isPulsed(plan.operationIds);
     const expanded = paint.expandedRemovals.has(plan.identity);
@@ -219,7 +220,8 @@ export function buildDecorations(
             operationAttr: OPERATION_ATTR,
           }),
         {
-          key: `removal:${plan.identity}:${plan.kind}${plan.tight ? ":tight" : ""}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}`,
+          // The locale is part of the key: the fold's label is copy, redrawn when it changes.
+          key: `removal:${plan.identity}:${plan.kind}${plan.tight ? ":tight" : ""}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.
@@ -232,7 +234,7 @@ export function buildDecorations(
   if (paint.barSlot && focusedEnd !== null) {
     decorations.push(
       Decoration.widget(
-        slotPosition(resolver.doc, focusedEnd),
+        slotPosition(doc, focusedEnd),
         (view) => createBarSlotElement(view.dom.ownerDocument),
         {
           // One slot per focused change, so the bar's DOM survives refetches.
@@ -245,7 +247,21 @@ export function buildDecorations(
     );
   }
 
-  return DecorationSet.create(resolver.doc, decorations);
+  return DecorationSet.create(doc, decorations);
+}
+
+/**
+ * Build a `DecorationSet` straight from the model: resolve, then paint. The
+ * plugin keeps the geometry between paints; this is for callers that paint once.
+ */
+export function buildDecorations(
+  model: InlineReviewModel | null,
+  paint: ReviewPaintState,
+  resolver: DecorationResolver,
+  handlersFor: (view: EditorView) => RemovalHandlers,
+): DecorationSet {
+  if (!model || model.hunks.length === 0) return DecorationSet.empty;
+  return paintDecorations(resolveGeometry(model, resolver), paint, handlersFor);
 }
 
 /** After the paragraph a position is in, or the position itself when it is already between blocks. */
@@ -294,46 +310,67 @@ function isBlockPosition(doc: PMNode, position: number): boolean {
 }
 
 /**
- * Decorations for a whole-block replace hunk. The inserted draft block gets a
- * `Decoration.node` (the anchor spans exactly that node), painting the same
- * insert tint family as text hunks at node granularity. A deleted live block
- * is a removal widget, planned by the caller.
+ * The inserted draft block of a whole-block replace hunk: one node decoration
+ * (the anchor spans exactly that node), painting the same tint family as text
+ * hunks at node granularity. A deleted live block is a removal, planned
+ * separately. Falls back to an inline decoration over the same range when the
+ * doc shifted under us (mid-sync): a tinted range beats an invisible hunk.
  */
-function blockHunkDecorations(
+function blockMarks(
   hunk: ResolvedBlockReviewHunk,
-  focused: boolean,
-  pulsed: boolean,
   startPos: number,
+  endPos: number,
   operationsById: ReadonlyMap<string, ReviewOperation>,
   resolver: DecorationResolver,
-): Decoration[] {
-  const decorations: Decoration[] = [];
-  const dataAttrs = {
-    [HUNK_ATTR]: hunk.hunkId,
-    [OPERATION_ATTR]: hunk.operationIds.join(" "),
-  };
+): MarkGeometry[] {
+  if (!hunk.insertedBlock) return [];
+  const node = resolver.doc.nodeAt(startPos);
+  return [
+    {
+      from: startPos,
+      to: endPos,
+      tone: hunkTone(hunk, operationsById),
+      // The server anchors block hunks from before to after one top-level node.
+      node: node != null && startPos + node.nodeSize === endPos,
+      operationAttr: hunk.operationIds.join(" "),
+      spanOperationId: null,
+    },
+  ];
+}
 
-  if (hunk.insertedBlock) {
-    const endPos = resolveAnchor(hunk.relEnd, resolver);
-    if (endPos != null && endPos > startPos) {
-      const kind = hunkKind(hunk, operationsById);
-      const attrs = {
-        class: `${insertionClassName(kind, focused, pulsed)} ${BLOCK_CLASS}`,
-        ...dataAttrs,
-      };
-      const node = resolver.doc.nodeAt(startPos);
-      // The server anchors block hunks from before to after one top-level
-      // node, so an exact node match is the expected case. Fall back to an
-      // inline decoration over the same range when the doc shifted under us
-      // (mid-sync) — a tinted range beats an invisible hunk.
-      if (node != null && startPos + node.nodeSize === endPos) {
-        decorations.push(Decoration.node(startPos, endPos, attrs, dataAttrs));
-      } else {
-        decorations.push(Decoration.inline(startPos, endPos, attrs, dataAttrs));
-      }
-    }
-  }
-  return decorations;
+/**
+ * The insertion marks of a text hunk. A neutral hunk is one seam over its whole
+ * range; otherwise one mark per span, so nested authorship (a writer edit
+ * inside an AI insertion) paints in each owner's colour, falling back to the
+ * whole hunk when spans are missing or none of their anchors resolve.
+ */
+function textMarks(
+  hunk: ResolvedTextReviewHunk,
+  startPos: number,
+  endPos: number,
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+  resolver: DecorationResolver,
+): MarkGeometry[] {
+  const tone = hunkTone(hunk, operationsById);
+  const whole: MarkGeometry = {
+    from: startPos,
+    to: endPos,
+    tone,
+    node: false,
+    operationAttr: hunk.operationIds.join(" "),
+    spanOperationId: null,
+  };
+  if (tone === "neutral") return [whole];
+  const spanRanges = resolveSpanRanges(hunk, resolver);
+  if (spanRanges.length === 0) return [whole];
+  return spanRanges.map((span) => ({
+    from: span.from,
+    to: span.to,
+    tone: operationsById.get(span.operationId)?.kind === "writer" ? "writer" : "agent",
+    node: false,
+    operationAttr: span.operationId,
+    spanOperationId: span.operationId,
+  }));
 }
 
 interface ResolvedSpanRange {
@@ -401,13 +438,15 @@ function resolveAnchor(anchor: Y.RelativePosition, resolver: DecorationResolver)
   return resolveRelativePosition(resolver, anchor);
 }
 
-function insertionClassName(
-  kind: InlineReviewOperationKind,
-  focused: boolean,
-  pulsed: boolean,
-): string {
-  const base = kind === "writer" ? WRITER_CLASS : ADDED_CLASS;
-  return classNames(base, focused && EMPHASIS_CLASS, pulsed && ARRIVED_CLASS);
+function markClassName(mark: MarkGeometry, focused: boolean, pulsed: boolean): string {
+  const base =
+    mark.tone === "neutral" ? MERGED_CLASS : mark.tone === "writer" ? WRITER_CLASS : ADDED_CLASS;
+  return classNames(
+    base,
+    mark.node && BLOCK_CLASS,
+    focused && EMPHASIS_CLASS,
+    pulsed && ARRIVED_CLASS,
+  );
 }
 
 function classNames(...values: Array<string | false | undefined>): string {
