@@ -25,6 +25,7 @@ import { createProjectRepositoryForTest as createDrizzleProjectRepository } from
 import { createDetachedWorkTracker } from "../../runtime/detached-work.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { createDocumentAddressResolver } from "../document-address.js";
+import { createDrizzleDocumentAssetPaths } from "./asset-path-resolver.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { ContextFS } from "./context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "./context-fs/drizzle-store.js";
@@ -530,6 +531,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: failingCatalog,
       });
       const context = new ContextFS({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
         scheme: "manuscript",
@@ -572,6 +574,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         failingCatalog,
       );
       const context = new ContextFS({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
         scheme: "kb",

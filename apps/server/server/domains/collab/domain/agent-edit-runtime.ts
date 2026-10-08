@@ -10,13 +10,14 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { TurnId } from "@meridian/contracts/runtime";
-import { type AssetPathResolver, mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
+import { scopeMarkdownEngineAssetPaths } from "./asset-path-scope.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
 import { documentRevision } from "./document-revision.js";
 import {
@@ -24,6 +25,7 @@ import {
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
+import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
@@ -53,18 +55,14 @@ export function createAgentEditRuntime(input: {
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
-  /**
-   * Project asset index for `asset:<documentId>` ↔ project-relative path
-   * translation. Compositions with no asset namespace (in-memory, tests) leave
-   * it out and get the resolver that refuses to serialize an asset ref.
-   */
-  assetPathResolver?: AssetPathResolver;
+  /** Image paths for `asset:<documentId>` ↔ path translation, loaded per operation. */
+  assetPaths: DocumentAssetPaths;
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 }) {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({
     schema,
-    assetPathResolver: input.assetPathResolver ?? unresolvedAssetPathResolver,
+    assetPathResolver: input.assetPaths.resolver,
   });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
@@ -84,40 +82,45 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     }),
   );
-  const markdownDocuments = createMarkdownDocumentEngine({
-    codec: markupCodec,
-    schema,
-    model,
-    journal: input.journal,
-    coordinator: input.coordinator,
-    lifecycle: input.lifecycle,
-    initialDocumentSeeds: input.initialDocumentSeeds,
-    deferUntilCommit: input.deferUntilCommit,
-    metaForOrigin,
-    afterWrite: input.runDocumentWriteHook,
-    identityPreservingWrite: ({ documentId, markdown, actor }) =>
-      liveUtilityCore.write(
-        {
-          command: "create",
-          file: "document.md",
-          documentId,
-          content: markdown,
-          overwrite: true,
-        },
-        {
-          actor,
-          sessionId:
-            actor.kind === "human"
-              ? actor.userId
-              : actor.kind === "agent"
-                ? actor.turnId
-                : `system:${actor.origin}`,
-          ...(actor.kind === "agent" || actor.kind === "human" ? { threadId: actor.threadId } : {}),
-        },
-      ),
-    resolveFiletype: input.resolveDocumentFiletype,
-    observeSerializationAnomaly: input.observeSerializationAnomaly,
-  });
+  const markdownDocuments = scopeMarkdownEngineAssetPaths(
+    createMarkdownDocumentEngine({
+      codec: markupCodec,
+      schema,
+      model,
+      journal: input.journal,
+      coordinator: input.coordinator,
+      lifecycle: input.lifecycle,
+      initialDocumentSeeds: input.initialDocumentSeeds,
+      deferUntilCommit: input.deferUntilCommit,
+      metaForOrigin,
+      afterWrite: input.runDocumentWriteHook,
+      identityPreservingWrite: ({ documentId, markdown, actor }) =>
+        liveUtilityCore.write(
+          {
+            command: "create",
+            file: "document.md",
+            documentId,
+            content: markdown,
+            overwrite: true,
+          },
+          {
+            actor,
+            sessionId:
+              actor.kind === "human"
+                ? actor.userId
+                : actor.kind === "agent"
+                  ? actor.turnId
+                  : `system:${actor.origin}`,
+            ...(actor.kind === "agent" || actor.kind === "human"
+              ? { threadId: actor.threadId }
+              : {}),
+          },
+        ),
+      resolveFiletype: input.resolveDocumentFiletype,
+      observeSerializationAnomaly: input.observeSerializationAnomaly,
+    }),
+    input.assetPaths,
+  );
   return {
     codec,
     liveUtilityCore,

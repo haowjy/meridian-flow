@@ -58,6 +58,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     liveCoordinator: input.liveCoordinator,
     model: input.model,
     codec: attributionCodec,
+    assetPaths: input.assetPaths,
     changeEventDelivery: input.changeEventDelivery,
     writerIngressBarrier: input.writerIngressBarrier,
     sweepProjectionDiagnostics: input.sweepProjectionDiagnostics,
@@ -248,27 +249,44 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Promise<T> {
     const retryBranchId = branchIds[0];
     if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-      try {
-        return await criticalSections.withBranches(branchIds, async (lease) => {
-          const branches = await Promise.all(
-            branchIds.map(async (branchId) =>
-              assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId),
-            ),
-          );
-          return run(branches, lease);
-        });
-      } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries) {
-            throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
+    const documentIds = await Promise.all(
+      branchIds.map(
+        async (branchId) =>
+          assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId)
+            .documentId,
+      ),
+    );
+    // Paths are independent of branch state. Load before either content or
+    // companion-manifest locks, then revalidate every branch under its lock.
+    return input.assetPaths.within(
+      { documentId: documentIds[0] as string, documentIds },
+      async () => {
+        for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+          try {
+            return await criticalSections.withBranches(branchIds, async (lease) => {
+              const branches = await Promise.all(
+                branchIds.map(async (branchId) =>
+                  assertActiveWorkDraftBranch(
+                    await input.branchStore.getBranch(branchId),
+                    branchId,
+                  ),
+                ),
+              );
+              return run(branches, lease);
+            });
+          } catch (cause) {
+            if (cause instanceof BranchPushCommitConflictError) {
+              if (attempt >= maxCasRetries) {
+                throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
+              }
+              continue;
+            }
+            throw cause;
           }
-          continue;
         }
-        throw cause;
-      }
-    }
-    throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
+        throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
+      },
+    );
   }
 
   async function resetAutoBranchIfDrained(
