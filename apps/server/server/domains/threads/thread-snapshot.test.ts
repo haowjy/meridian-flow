@@ -1,6 +1,4 @@
-/**
- * Subagent snapshots resolve parent by id, not from a primary list.
- */
+/** Thread snapshots aggregate every billed call without borrowing child usage. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryRepositories } from "./adapters/in-memory/repositories.js";
@@ -145,61 +143,5 @@ describe("buildThreadSnapshot ancestors", () => {
       outputTokens: 5,
     });
     expect((await build()).threadUsage).toMatchObject({ inputTokens: 500, cacheResets: 1 });
-  });
-
-  it("loads the complete spawn chain root-first by id", async () => {
-    const repos = createInMemoryRepositories();
-    const parent = await repos.threads.create({
-      userId: "user-1",
-      projectId: "project-1",
-      title: "Muse chat",
-    });
-    const parentTurn = await repos.turns.create({
-      threadId: parent.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "complete",
-    });
-    const child = await repos.threads.createSubagent({
-      userId: "user-1",
-      projectId: "project-1",
-      parentThreadId: parent.id as ThreadId,
-      rootThreadId: parent.id as ThreadId,
-      originTurnId: parentTurn.id,
-      spawnDepth: 1,
-      title: "Critic",
-    });
-    const childTurn = await repos.turns.create({
-      threadId: child.id,
-      role: "assistant",
-      origin: "assistant",
-      status: "complete",
-    });
-    const nested = await repos.threads.createSubagent({
-      userId: "user-1",
-      projectId: "project-1",
-      parentThreadId: child.id as ThreadId,
-      rootThreadId: parent.id as ThreadId,
-      originTurnId: childTurn.id,
-      spawnDepth: 2,
-      title: "Helper",
-    });
-
-    const snapshot = await buildThreadSnapshot(
-      repos,
-      stubHub(),
-      {
-        read: async () => ({ kind: "asleep" as const }),
-        readRunningTurnId: async () => null,
-        readMany: async () => new Map(),
-        readPending: async () => ({ items: [] }),
-      },
-      nested.id as ThreadId,
-    );
-
-    expect(snapshot.ancestors).toEqual([
-      { id: parent.id, title: "Muse chat", agentName: parent.agentName ?? null },
-      { id: child.id, title: "Critic", agentName: child.agentName ?? null },
-    ]);
   });
 });

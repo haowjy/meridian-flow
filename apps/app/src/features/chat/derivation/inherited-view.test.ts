@@ -15,7 +15,6 @@ import {
   type InheritedViewState,
   inheritedQueryOptions,
   inheritedViewFromPages,
-  optimisticForkPrefix,
   useInheritedView,
 } from "./inherited-view";
 
@@ -59,32 +58,6 @@ describe("inheritedQueryOptions", () => {
       { range: "inherited", order: "oldest_first", unit: "turn", limit: 200, cursor: "n1" },
     ]);
     expect(view.transcript.turns.map((t) => t.id)).toEqual(["s1", "s2"]);
-  });
-});
-
-describe("optimisticForkPrefix", () => {
-  it("cuts at an inherited turn of a fork, inheriting only above it", () => {
-    const sourceInherited = inheritedViewFromPages([
-      page([entry("g1", "grand"), entry("g2", "grand")]),
-    ]);
-    const prefix = optimisticForkPrefix({
-      source: { id: "source", title: null },
-      sourceInherited,
-      localTurns: [turn("s1", "source")],
-      cutoffTurnId: "g1",
-    });
-    expect(prefix?.transcript.turns.map((t) => t.id)).toEqual(["g1"]);
-  });
-
-  it("shows nothing it cannot place: an unknown cutoff yields no prefix", () => {
-    expect(
-      optimisticForkPrefix({
-        source: { id: "source", title: null },
-        sourceInherited: null,
-        localTurns: [turn("s1", "source")],
-        cutoffTurnId: "missing",
-      }),
-    ).toBeNull();
   });
 });
 

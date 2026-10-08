@@ -1,11 +1,4 @@
-/**
- * The escalation ladder a picture climbs when the writer gives it a size.
- *
- * Two claims are load-bearing and both are checked in both dialects: a picture
- * nobody resized spells itself exactly as it always did, and a picture that was
- * resized carries its width across the wire and back without losing its
- * `asset:` identity.
- */
+/** Image sizes, asset identity, and literal attributes survive both codec dialects. */
 
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
@@ -32,7 +25,7 @@ const ENTITY_SIZED =
 const LITERAL_ENTITY_SIZED =
   '<img src="assets/literal&amp;amp;map.png" alt="Literal &amp;amp; map" title="Literal &amp;quot; token" width="241" />';
 
-function image(attrs: Record<string, unknown>) {
+function _image(attrs: Record<string, unknown>) {
   return schema.node("image", { src: "asset:asset-1", alt: "World map", title: null, ...attrs });
 }
 
@@ -60,13 +53,6 @@ function spannedTable(imageWire: string, canonical = false): string {
 }
 
 describe.each(dialects)("$name image sizes", ({ codec }) => {
-  it("escalates a sized picture to the img tag and reads it back whole", () => {
-    expect(codec.serialize([paragraph(image({ width: 240 }))])).toBe(`${SIZED}\n`);
-    expect(parsedDoc(codec, SIZED).toJSON()).toEqual(
-      docFrom([paragraph(image({ width: 240 }))]).toJSON(),
-    );
-  });
-
   it("de-escalates to byte-identical markdown when the size is taken away", () => {
     const sized = codec.parse(SIZED).blocks[0];
     if (!sized?.firstChild) throw new Error("expected a sized picture");

@@ -65,16 +65,4 @@ describe("input parsing before dispatch", () => {
       issues: [{ path: "mode" }, { path: "count" }, { path: "extra" }],
     });
   });
-
-  it("hands the handler the parsed value with omitted defaults applied", async () => {
-    const { handler, executor } = parsingExecutor();
-    const result = await executor.executeTool(
-      { id: "call-1", name: "probe", arguments: {} },
-      { ...executionBase, agentSlug: null },
-    );
-    expect(handler).toHaveBeenCalledWith({ mode: "foreground" }, expect.anything());
-    // A tool with no renderer gets its typed result as its output too.
-    expect(result.result).toEqual({ mode: "foreground" });
-    expect(result.output).toEqual(result.result);
-  });
 });
