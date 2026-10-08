@@ -95,6 +95,11 @@ async function main(): Promise<void> {
         "--config",
         allSuites ? "vitest.config.mts" : "apps/server/vitest.db.config.ts",
         ...testArgs,
+        // CLI reporters replace configured reporters, so the execution guard is unconditional.
+        ...(testArgs.some((arg) => arg === "--reporter" || arg.startsWith("--reporter="))
+          ? []
+          : ["--reporter=default"]),
+        `--reporter=${join(repoRoot, "tools/ci/db-test-reporter.ts")}`,
       ],
       databaseUrl,
       workerDatabaseUrls.length > 0
