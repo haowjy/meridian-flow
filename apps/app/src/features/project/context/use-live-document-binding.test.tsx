@@ -34,7 +34,7 @@ function Host({ expose }: { expose(binding: LiveDocumentHostBinding): void }) {
   const binding = useLiveDocumentBinding({
     projectId: "project-a",
     documentId: "document-a",
-    owner: "desktop-server-tab",
+    owner: "desktop-document-host",
   });
   useEffect(() => expose(binding), [binding, expose]);
   return null;

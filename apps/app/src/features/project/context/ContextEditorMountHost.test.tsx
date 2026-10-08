@@ -24,7 +24,7 @@ vi.mock("./account-feature-context", () => ({
   }),
 }));
 
-import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./ContextEditorMountHost";
+import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
 
 function session(): DocumentSession {
   return {
