@@ -11,18 +11,14 @@
  * open.
  */
 import { Trans } from "@lingui/react/macro";
-import { FileCheck2, Loader2 } from "lucide-react";
-import { useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { FileCheck2 } from "lucide-react";
 import { useDraftReview, useEditorDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, draftAfter } from "@/features/chat/docked-drafts";
-import { ReviewChangeRow } from "@/features/draft-review/ReviewChangeRow";
+import { draftAfter } from "@/features/chat/docked-drafts";
 import { ReviewFiles } from "@/features/draft-review/ReviewFiles";
-import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useReviewFileList } from "@/features/draft-review/useReviewFileList";
 import { cn } from "@/lib/utils";
+import { OpenFileChanges } from "./OpenFileChanges";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 export function DockChangesView({ className }: { className?: string }) {
@@ -77,99 +73,6 @@ export function DockChangesView({ className }: { className?: string }) {
           />
         ) : null}
       </ReviewFiles>
-    </div>
-  );
-}
-
-/** The open file's body under its heading: its changes in document order, or the state that stands in for them. */
-function OpenFileChanges({
-  view,
-  controller,
-  next,
-  onOpenNext,
-}: {
-  view: ReturnType<typeof useReviewChanges>;
-  controller: ReturnType<typeof useEditorDraftReview>["controller"];
-  next: DockRow | null;
-  onOpenNext: (row: DockRow) => void;
-}) {
-  const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
-  const arrived = useArrivedChanges(
-    changes,
-    view.status === "ready",
-    view.documentId && view.draftId ? `${view.documentId}:${view.draftId}` : null,
-  );
-
-  return view.status === "loading" ? (
-    <div className="flex flex-col gap-1.5 px-2 py-1" aria-busy>
-      <Skeleton className="h-4 w-full" />
-      <Skeleton className="h-4 w-4/5" />
-    </div>
-  ) : view.completing ? (
-    <ReviewCompleting mode={view.completing} />
-  ) : view.finished ? (
-    <ReviewDone next={next} onOpenNext={onOpenNext} onBack={controller.exitInlineReview} />
-  ) : view.unlisted ? (
-    <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
-      <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
-    </p>
-  ) : (
-    <ul className="flex flex-col gap-0.5">
-      {view.items.map(({ change, failure }) => (
-        <ReviewChangeRow
-          key={change.classId}
-          change={change}
-          focused={view.focused?.classId === change.classId}
-          arrived={arrived.has(change.classId)}
-          disabled={view.locked}
-          canApply={view.canApply}
-          failure={failure}
-          onFocus={() => view.focus(change, { scroll: true })}
-          onApply={() => void view.apply(change)}
-          onDiscard={() => void view.discard(change)}
-        />
-      ))}
-    </ul>
-  );
-}
-
-/** The last change's command is in flight: what the writer did shows, and nothing says it is finished. */
-function ReviewCompleting({ mode }: { mode: "apply" | "discard" }) {
-  return (
-    <p
-      className="flex items-center gap-2 px-2 py-2 text-caption text-muted-foreground"
-      role="status"
-      aria-busy
-    >
-      <Loader2 className="size-3 animate-spin" aria-hidden />
-      {mode === "apply" ? <Trans>Applying</Trans> : <Trans>Discarding</Trans>}
-    </p>
-  );
-}
-
-function ReviewDone({
-  next,
-  onOpenNext,
-  onBack,
-}: {
-  next: DockRow | null;
-  onOpenNext: (row: DockRow) => void;
-  onBack: () => void;
-}) {
-  return (
-    <div className="flex flex-col items-start gap-2 px-2 py-2">
-      <p className="text-caption text-muted-foreground">
-        <Trans>No changes left</Trans>
-      </p>
-      {next ? (
-        <Button size="xs" onClick={() => onOpenNext(next)}>
-          <Trans>Next draft</Trans>
-        </Button>
-      ) : (
-        <Button size="xs" variant="outline" onClick={onBack}>
-          <Trans>Back to live</Trans>
-        </Button>
-      )}
     </div>
   );
 }

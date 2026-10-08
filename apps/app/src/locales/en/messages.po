@@ -599,7 +599,7 @@ msgid "Apply draft or Discard draft handles this."
 msgstr "Apply draft or Discard draft handles this."
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Applying"
 msgstr "Applying"
 
@@ -657,7 +657,7 @@ msgstr "Back to chat"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Back to live"
 msgstr "Back to live"
 
@@ -1744,7 +1744,7 @@ msgid "Discarded"
 msgstr "Discarded"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Discarding"
 msgstr "Discarding"
 
@@ -2075,7 +2075,7 @@ msgstr "Form payload is malformed."
 msgid "Formatting changes remain"
 msgstr "Formatting changes remain"
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr "Formatting changes remain. Apply draft or Discard draft finishes them."
 
@@ -2696,7 +2696,7 @@ msgid "Next change"
 msgstr "Next change"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Next draft"
 msgstr "Next draft"
 
@@ -2719,7 +2719,7 @@ msgid "No billing activity yet."
 msgstr "No billing activity yet."
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "No changes left"
 msgstr "No changes left"
 
@@ -3628,6 +3628,10 @@ msgstr "Show the {count} changes"
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Show the 1 change"
 msgstr "Show the 1 change"
+
+#: src/features/project/mobile/MobileReviewHeader.tsx
+msgid "Show the draft files"
+msgstr "Show the draft files"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Show the whole brief"

@@ -17,7 +17,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import type { DockRow } from "@/features/chat/docked-drafts";
+import { type DockRow, draftAfter } from "@/features/chat/docked-drafts";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useReviewFileList } from "@/features/draft-review/useReviewFileList";
@@ -61,7 +61,13 @@ export function MobileDocumentReview({
           <LiveDraftEntry documentId={documentId} />
         )}
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-        {draftId ? <ReviewBottom listOpen={listOpen} onListOpenChange={setListOpen} /> : null}
+        {draftId ? (
+          <ReviewBottom
+            documentId={documentId}
+            listOpen={listOpen}
+            onListOpenChange={setListOpen}
+          />
+        ) : null}
       </div>
     </MobileKeyboardAware>
   );
@@ -114,24 +120,22 @@ function ReviewTop({
 }
 
 function ReviewBottom({
+  documentId,
   listOpen,
   onListOpenChange,
 }: {
+  documentId: string;
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
 }) {
   const { controller, groups } = useDraftReview();
   const { openDockRow } = useAiDraftLauncher();
   const view = useReviewChanges(controller);
-  const { files, batch } = useReviewFileList({
+  const { files, rows, batch } = useReviewFileList({
     review: { controller, groups },
     view,
     openDraft: openDockRow,
   });
-  const empty = view.items.length === 0;
-  useEffect(() => {
-    if (empty) onListOpenChange(false);
-  }, [empty, onListOpenChange]);
 
   return (
     <>
@@ -142,6 +146,12 @@ function ReviewBottom({
         view={view}
         files={files}
         batch={batch}
+        next={draftAfter(
+          rows,
+          documentId,
+          controller.inlineReview?.completion?.documentName ?? null,
+        )}
+        onOpenNext={(row) => openDockRow(row, controller.workId)}
         controller={controller}
       />
       <ReviewToast

@@ -599,7 +599,7 @@ msgid "Apply draft or Discard draft handles this."
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Applying"
 msgstr ""
 
@@ -657,7 +657,7 @@ msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Back to live"
 msgstr ""
 
@@ -1744,7 +1744,7 @@ msgid "Discarded"
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Discarding"
 msgstr ""
 
@@ -2075,7 +2075,7 @@ msgstr ""
 msgid "Formatting changes remain"
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr ""
 
@@ -2696,7 +2696,7 @@ msgid "Next change"
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Next draft"
 msgstr ""
 
@@ -2719,7 +2719,7 @@ msgid "No billing activity yet."
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "No changes left"
 msgstr ""
 
@@ -3627,6 +3627,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Show the 1 change"
+msgstr ""
+
+#: src/features/project/mobile/MobileReviewHeader.tsx
+msgid "Show the draft files"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
