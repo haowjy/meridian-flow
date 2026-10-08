@@ -42,11 +42,6 @@ matches the text a writer sees.
 
 ## Deferred — reopen when earned
 
-- **One block LCS.** `src/apply/echo.ts` `bodyLcs` and
-  `src/resolver/block-alignment.ts` `alignBlocks` both align block lists;
-  `alignBlocks` trims head and tail and caps its table. Route echo through
-  `alignBlocks` (generic over equality) when echo next changes.
-
 - **Collapse `text` into `textRanges`.** With no direct-text tier, a
   single-match `text` edit equals a one-range `textRanges` edit with the same
   IR. Collapsing would delete `preflightTextEdit` and the `text` kind, but
