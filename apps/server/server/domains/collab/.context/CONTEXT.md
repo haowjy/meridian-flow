@@ -306,14 +306,6 @@ present on the current live cut are excluded from this edge. Same-chat writes
 without a runtime rebuild still join through their same-client clock prefix;
 fresh-client-per-write ownership belongs to the thread-peer pool.
 
-This makes classes coarser than the writer's view of a change, and that is the
-correct result for today's bytes: an AI write's journal row is a state-vector
-update that repeats every inherited deletion, so two independent replaces share
-a deletion and one class; and a pooled thread peer keeps one Yjs client across
-writes (a `read` rebuilds it), so one chat's writes also chain by clock. Never
-weaken the closure to split them; fix the producer instead (per-write deletion
-encoding, a fresh client per AI write).
-
 ### Surviving-text review anchors
 
 Within aligned blocks, pin common live/draft Yjs text identities before semantic

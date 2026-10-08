@@ -13,6 +13,10 @@ editor UI or transport-shell policy.
   Document Apply publishes its whole current branch. Per-change Apply and Discard
   share server-vended dependency-closed classes, never client-reconstructed turns.
   Per-change Apply fences both preview revisions; document Apply remains unfenced.
+- Independent deleting edits from separate chats stay separate: forward writes
+  and Work publication journal transaction deltas, not cumulative state-vector
+  tombstones. Keep genuine dependency closure, including retained cumulative rows
+  and same-client clock prefixes; fresh-client-per-write is a separate change.
 - Each live document has a durable authority head whose identity, generation,
   and admission sequence fence every connection and mutation.
 - `@meridian/agent-edit` owns schema-safe mutation and reversal planning. This
