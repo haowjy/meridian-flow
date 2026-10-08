@@ -9,7 +9,7 @@ import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type { CollabDrafts } from "../contracts.js";
+import type { CollabDrafts, DraftDiscardCommand } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type {
@@ -25,16 +25,21 @@ import type { ReviewableDraft } from "./branch-review.js";
 import { documentEffectsEqual } from "./document-effect.js";
 import { documentRevision } from "./document-revision.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
-import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type {
   ApplicationBranchStore,
   WorkDraftDiscard,
   WorkDraftEmptySettlement,
 } from "./ports/application-branch-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
+import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export type DraftReviewDiagnostics = {
+  dispositionMaintenanceFailed(detail: {
+    documentId: string;
+    draftId: string;
+    cause: unknown;
+  }): void;
   unattributedHunks(detail: { documentId: string; draftId: string; hunkIds: string[] }): void;
 };
 
@@ -289,13 +294,33 @@ export function createWorkDraftReviewService(input: {
     return { status: "applied" as const, draftId: command.draftId };
   }
 
-  function settleEmptyDraft(command: { workId: WorkId; documentId: DocumentId; draftId: string }) {
-    return input.settleEmptyDraft({
-      workId: command.workId,
-      documentId: command.documentId,
-      branchId: command.draftId,
-      isEmpty: documentEffectsEqual,
-    });
+  /** The disposition is durable before optional generation cleanup begins. */
+  async function completeDisposition(command: {
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+  }) {
+    try {
+      return await input.settleEmptyDraft({
+        workId: command.workId,
+        documentId: command.documentId,
+        branchId: command.draftId,
+        isEmpty: documentEffectsEqual,
+        disposition: (rows) =>
+          rows.some((row) => row.status === "pushed") ? "applied" : "discarded",
+      });
+    } catch (cause) {
+      // Neither cleanup nor diagnostic delivery can turn a durable disposition
+      // into a rejection that invites the writer to retry it.
+      try {
+        input.diagnostics.dispositionMaintenanceFailed({
+          documentId: command.documentId,
+          draftId: command.draftId,
+          cause,
+        });
+      } catch {}
+      return { draftClosed: false } as const;
+    }
   }
 
   function reviewSelection(
@@ -389,7 +414,7 @@ export function createWorkDraftReviewService(input: {
         draftId: command.draftId,
         operationIds: appliedOperations,
         closureClassIds: appliedClasses,
-        ...(await settleEmptyDraft(command)),
+        ...(await completeDisposition(command)),
       };
     } catch (cause) {
       if (cause instanceof DraftChangeRefusal)
@@ -398,22 +423,25 @@ export function createWorkDraftReviewService(input: {
     }
   }
 
-  async function discardWorkDraft(command: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-    userId?: UserId;
-    threadId?: string;
-    operationIds?: string[];
-    liveRevisionToken?: string;
-    draftRevisionToken?: string;
-  }) {
+  async function discardWorkDraft(
+    command: DraftDiscardCommand & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      documentId: DocumentId;
+      draftId: string;
+      userId?: UserId;
+      threadId?: string;
+    },
+  ) {
     const projectId = command.projectId;
     const branch = await resolveActiveWorkDraft(command);
     if (!branch) return { status: "discarded" as const, draftId: command.draftId };
 
-    if (command.operationIds && command.operationIds.length > 0) {
+    if (command.operationIds !== undefined) {
+      if (!command.operationIds.length)
+        return { status: "gone" as const, draftId: command.draftId };
+      if (!command.liveRevisionToken || !command.draftRevisionToken)
+        return { status: "stale" as const, draftId: command.draftId };
       try {
         await input.branchReview.discardSelected({
           branchId: branch.branchId,
@@ -423,7 +451,7 @@ export function createWorkDraftReviewService(input: {
         return {
           status: "discarded" as const,
           draftId: command.draftId,
-          ...(await settleEmptyDraft(command)),
+          ...(await completeDisposition(command)),
         };
       } catch (cause) {
         if (cause instanceof DraftChangeRefusal)
