@@ -1,4 +1,4 @@
-// Behavioral coverage for tier routing, update replay fidelity, and echo.
+// Behavioral coverage for inline replacement, update replay fidelity, and echo.
 
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -9,13 +9,13 @@ import { createAgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
+import { applyEdits } from "./apply-edits.js";
 import {
   applyConcurrentUpdates,
   computeEcho,
   snapshotBlocks,
   truncateSerializedBlock,
 } from "./echo.js";
-import { applyEdits } from "./tiers.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
@@ -25,8 +25,8 @@ const codec = createAgentEditCodec(
 const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 
-describe("applyEdits tier routing", () => {
-  it("routes mark-boundary-crossing text edits to Tier 2", () => {
+describe("applyEdits inline replacement", () => {
+  it("replaces text across mark boundaries", () => {
     const doc = createDoc("A **bold** plain");
     const [block] = baseModel.getBlocks(doc);
 
@@ -39,7 +39,6 @@ describe("applyEdits tier routing", () => {
     );
 
     expectOk(result);
-    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
     expect(baseModel.getText(block)).toBe("A bolXlain");
     expectNoOrphanedElements(doc);
   });
@@ -48,21 +47,19 @@ describe("applyEdits tier routing", () => {
 describe("applyEdits update fidelity", () => {
   it.each([
     [
-      "Tier 2 text",
+      "text",
       "Alpha sword.",
       "Alpha blade.",
       (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "blade"),
-      2,
     ],
     [
-      "Tier 2 formatting",
+      "formatting",
       "Alpha sword.",
       "Alpha **blade**.",
       (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "**blade**"),
-      2,
     ],
     [
-      "Tier 3 insert",
+      "insert",
       "Alpha\n\nBeta",
       "Alpha\n\nInserted\n\nBeta",
       (doc: Y.Doc): ResolvedEdit => ({
@@ -72,10 +69,9 @@ describe("applyEdits update fidelity", () => {
         after: toRef(baseModel.getBlocks(doc)[0]),
         newText: "Inserted",
       }),
-      3,
     ],
     [
-      "Tier 3 delete",
+      "delete",
       "Alpha\n\nBeta",
       "Alpha",
       (doc: Y.Doc): ResolvedEdit => ({
@@ -84,11 +80,10 @@ describe("applyEdits update fidelity", () => {
         kind: "delete",
         block: toRef(baseModel.getBlocks(doc)[1]),
       }),
-      3,
     ],
   ] satisfies Array<
-    [string, string, string, (doc: Y.Doc) => ResolvedEdit, number]
-  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, expected, makeEdit, tier) => {
+    [string, string, string, (doc: Y.Doc) => ResolvedEdit]
+  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, expected, makeEdit) => {
     const doc = createDoc(markdown, 1);
     doc.clientID = 2;
     const fresh = cloneDoc(doc, 9);
@@ -97,7 +92,6 @@ describe("applyEdits update fidelity", () => {
     const result = applyEdits(doc, baseModel, codec, makeEdit(doc), origin);
 
     expectOk(result);
-    expect(result.ok && result.appliedEdits?.[0]?.tier).toBe(tier);
     const update = Y.encodeStateAsUpdate(doc, prevVector);
     Y.applyUpdate(fresh, update);
     expect(documentJson(fresh)).toEqual(documentJson(doc));
@@ -395,7 +389,7 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
 });
 
 describe("computeEcho", () => {
-  it("deduplicates overlapping windows in document order before tiering", () => {
+  it("deduplicates overlapping windows in document order before rendering", () => {
     const before = [
       block("A", "ctx0"),
       block("B", "old1"),

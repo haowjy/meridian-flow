@@ -104,7 +104,7 @@ dependency leaks.
 Structural model port for what "block" means to the editing core. The kernel
 sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
 objects. The seam carries block lookup/identity, visible-content CRDT lineage,
-text inspection, plain-text (undo repair) and Tier 3
+text inspection, plain-text (undo repair) and structural
 mutation verbs, a nonempty inline-run count for undo repair, adapter-owned `applyInlineReplacements` and
 same-type `applyBlockReplacement`, and batch projection/serialization
 (`projectBlocks`, `serializeBlockLines`, `serializeBlockBodies`). v1 is

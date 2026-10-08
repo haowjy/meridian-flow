@@ -76,7 +76,7 @@ matches the text a writer sees.
 - **OSS packaging.** (Issue #84.) `yjs` as a peer dep (today a direct dep); engine
   source importing no Yjs.
 
-- **Tier-2 surgical formatting.** Replace the `updateYFragment` reconcile with a
+- **Surgical formatting.** Replace the `updateYFragment` reconcile with a
   mark-aware sequence diff (parse → plain-text edit + `format` range diff, tree
   fallback for inline non-text nodes). Token-aligned, not minimal-edit-distance
   (minimal ≠ intent). Narrow payoff now that matched blocks already diff in

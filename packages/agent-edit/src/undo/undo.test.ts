@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { applyEdits } from "../apply/tiers.js";
+import { applyEdits } from "../apply/apply-edits.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";

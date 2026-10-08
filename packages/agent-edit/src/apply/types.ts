@@ -48,8 +48,6 @@ export type EditResolutionErrorCode =
 
 export type ApplyErrorCode = EditResolutionErrorCode | "partial_failure" | "internal_error";
 
-export type ApplyTier = 1 | 2 | 3;
-
 export interface AgentOrigin {
   type: "agent";
   actorTurnId: string;
@@ -91,7 +89,6 @@ export interface ApplyEditsOptions {
 
 export interface AppliedEditSummary {
   kind: ResolvedEdit["kind"];
-  tier: ApplyTier;
   blockIds: string[];
 }
 
