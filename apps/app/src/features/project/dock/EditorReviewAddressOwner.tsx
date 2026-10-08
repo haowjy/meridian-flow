@@ -1,7 +1,7 @@
 /** Owns inline-review restoration and the draft identity on an Editor address. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
-import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
+import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import type { ScreenKey } from "../shell/screens";
 import { useOpenEditorReview, usePendingEditorReviewDraftId } from "./editor-review-handoff";
 import { useReviewHandoverRelease } from "./review-handover";

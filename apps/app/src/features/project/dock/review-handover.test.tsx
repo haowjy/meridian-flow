@@ -20,7 +20,7 @@ import {
   DraftReviewBoundary,
   useDraftReview,
   useDraftReviewScopeValue,
-} from "@/features/chat/DraftReviewProvider";
+} from "@/features/draft-review/DraftReviewProvider";
 import { listed, preview, work } from "@/test-support/draft-review-scope";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";

@@ -28,7 +28,7 @@ const review = vi.hoisted(() => ({
   room: "review-room-a" as string | null,
   publish: vi.fn(),
 }));
-vi.mock("@/features/chat/DraftReviewProvider", () => ({
+vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {
       workId: "work-a",

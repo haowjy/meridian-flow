@@ -25,13 +25,13 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { DockRow } from "@/features/chat/docked-drafts";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
   ReviewFailureNotices,
   ReviewStateInline,
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { useReviewFailures, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +41,7 @@ export type DraftReviewBandProps = {
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
   /** Opens another draft of the Work in review (the editor's launcher). */
-  onOpenDraft: (row: DockRow) => void;
+  onOpenDraft: (row: ReviewFileTarget) => void;
   /** Opens the identity row's rename field; absent when the document cannot be renamed. */
   onRename?: () => void;
 };
@@ -178,7 +178,7 @@ export function DraftReviewFailureNotices({
 }: {
   documentId: string;
   draftId: string;
-  onOpenDraft: (row: DockRow) => void;
+  onOpenDraft: (row: ReviewFileTarget) => void;
 }) {
   const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId });
   if (!commandError && failedElsewhere.length === 0) return null;

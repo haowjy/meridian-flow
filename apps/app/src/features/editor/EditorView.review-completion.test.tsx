@@ -17,7 +17,7 @@ import {
   DraftReviewBoundary,
   useDraftReview,
   useDraftReviewScopeValue,
-} from "@/features/chat/DraftReviewProvider";
+} from "@/features/draft-review/DraftReviewProvider";
 import {
   applied,
   change,

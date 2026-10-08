@@ -9,7 +9,7 @@
  */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 
 import { getDraftPreview } from "@/client/api/drafts-api";
 import {
@@ -20,12 +20,7 @@ import {
 } from "./change-command-record";
 import { projectQueryKeys } from "./project-query-keys";
 
-export type DraftPreviewState = {
-  preview: DraftPreviewResponse | null;
-  isFetching: boolean;
-  isError: boolean;
-  refetch: () => void;
-};
+export type DraftPreviewState = { preview: DraftPreviewResponse | null };
 
 type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
 
@@ -44,6 +39,28 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
       ),
     staleTime: 15_000,
   };
+}
+
+const withoutHidden = new WeakMap<
+  DraftPreviewResponse,
+  { hiddenKey: string; preview: DraftPreviewResponse }
+>();
+
+/**
+ * The read minus the hidden operations, one object for every reader of it: a
+ * reader's own copy would be a new preview each, and everything derived from a
+ * preview (the changes list) would be derived once per reader.
+ */
+function previewWithoutHidden(
+  data: DraftPreviewResponse,
+  hidden: ReadonlySet<string>,
+  hiddenKey: string,
+): DraftPreviewResponse {
+  const held = withoutHidden.get(data);
+  if (held?.hiddenKey === hiddenKey) return held.preview;
+  const preview = previewWithoutOperations(data, hidden);
+  withoutHidden.set(data, { hiddenKey, preview });
+  return preview;
 }
 
 export function useDraftPreview(
@@ -66,7 +83,7 @@ export function useDraftPreview(
     documentId: documentId ?? "",
     draftId: draftId ?? "",
   };
-  const { data, isError, isFetching, refetch } = useQuery({
+  const { data } = useQuery({
     ...draftPreviewQueryOptions(draft),
     enabled,
   });
@@ -77,15 +94,9 @@ export function useDraftPreview(
   const hidden = hiddenOperationIds(records, draft);
   const hiddenKey = [...hidden].sort().join(",");
   const preview = useMemo(
-    () => (data ? previewWithoutOperations(data, hidden) : null),
+    () => (data ? previewWithoutHidden(data, hidden, hiddenKey) : null),
     [data, hiddenKey],
   );
 
-  // Stable: a debounced re-read waits on this identity (`useInlineReviewSync`),
-  // and a new function each render would drop the read it was waiting to send.
-  const refetchPreview = useCallback(() => {
-    void refetch();
-  }, [refetch]);
-
-  return { preview, isError, isFetching, refetch: refetchPreview };
+  return { preview };
 }

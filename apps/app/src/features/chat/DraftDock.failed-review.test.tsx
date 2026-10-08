@@ -5,11 +5,14 @@ import { I18nProvider } from "@lingui/react";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import {
+  DraftReviewBoundary,
+  type DraftReviewContextValue,
+} from "@/features/draft-review/DraftReviewProvider";
 import { EditorReviewHandoffProvider } from "@/features/project/dock/editor-review-handoff";
 import type { OpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftDock, useDraftDock } from "./DraftDock";
-import { DraftReviewBoundary, type DraftReviewContextValue } from "./DraftReviewProvider";
 
 const review = {
   controller: {

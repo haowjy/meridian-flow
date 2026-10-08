@@ -14,11 +14,9 @@
  * never a dead control. The yield re-arms the next time review opens.
  */
 import { useCallback, useEffect, useState } from "react";
-
+import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { type DesktopProjectSlotId, NO_COLLAPSED_SLOTS } from "@/features/project/layout";
 import type { ScreenKey } from "@/features/project/shell/screens";
-
-import type { DraftReviewContextValue } from "./DraftReviewProvider";
 
 const RAIL_YIELDED: readonly DesktopProjectSlotId[] = ["rail-l"];
 

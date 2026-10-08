@@ -17,7 +17,7 @@ import {
   getInlineReviewPluginState,
   isUnattributedHunkKey,
 } from "@/core/editor/extensions/inline-review";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 
@@ -38,7 +38,7 @@ export function useInlineReviewFocus({
     controller.inlineReview?.documentId === documentId &&
     controller.inlineReview.draftId === draftId;
   const view = useReviewChanges(controller, { enabled: inThisReview });
-  const { reportFocusedClass, marksVisible } = controller;
+  const { reportFocusedChange, marksVisible } = controller;
 
   const live = editor && !editor.isDestroyed && enabled ? editor : null;
   const reviewing = live !== null && getInlineReviewPluginState(live.state) !== null;
@@ -58,28 +58,39 @@ export function useInlineReviewFocus({
     live.commands.setInlineReviewActiveOperation(anchor);
   }, [live, reviewing, anchor]);
 
-  // A click on a mark focuses its change.
+  // A click on a mark focuses its change. Reports the change the active mark
+  // belongs to now, not only a new active mark: the server regrouping a class
+  // moves the mark's change without moving the mark.
   useEffect(() => {
     if (!live || !reviewing || !draftId) return;
-    let reported: string | null = null;
+    let reportedOperationId: string | null = null;
+    let reportedModel: unknown = null;
     const onTransaction = () => {
       const state = getInlineReviewPluginState(live.state);
       const operationId = state?.activeOperationId ?? null;
-      if (operationId === reported) return;
-      reported = operationId;
+      const model = state?.model ?? null;
+      if (operationId === reportedOperationId && model === reportedModel) return;
+      reportedOperationId = operationId;
+      reportedModel = model;
       if (!operationId) return;
       // An unclassified hunk has no operation: its key is also its change's id.
       const classId = isUnattributedHunkKey(operationId)
         ? operationId
-        : state?.model?.operations.find((operation) => operation.operationId === operationId)
+        : model?.operations.find((operation) => operation.operationId === operationId)
             ?.closureClassId;
-      if (classId) reportFocusedClass(documentId, draftId, classId);
+      if (!classId) return;
+      const operationIds = isUnattributedHunkKey(operationId)
+        ? []
+        : (model?.operations ?? [])
+            .filter((operation) => operation.closureClassId === classId)
+            .map((operation) => operation.operationId);
+      reportFocusedChange({ documentId, draftId }, { classId, operationIds });
     };
     live.on("transaction", onTransaction);
     return () => {
       live.off("transaction", onTransaction);
     };
-  }, [live, reviewing, documentId, draftId, reportFocusedClass]);
+  }, [live, reviewing, documentId, draftId, reportFocusedChange]);
 
   // Changes that arrive while the writer reviews pulse once.
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);

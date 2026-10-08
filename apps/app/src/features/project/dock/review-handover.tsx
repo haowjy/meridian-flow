@@ -43,7 +43,10 @@ import {
   useState,
 } from "react";
 
-import { type DraftReviewContextValue, useDraftReview } from "@/features/chat/DraftReviewProvider";
+import {
+  type DraftReviewContextValue,
+  useDraftReview,
+} from "@/features/draft-review/DraftReviewProvider";
 
 /** The longest a held review stays if the one being opened never paints. */
 const HANDOVER_MAX_MS = 10_000;

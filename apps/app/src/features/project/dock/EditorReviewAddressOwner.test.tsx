@@ -2,7 +2,7 @@
 /** Address ownership keeps inline review and Editor history on one document. */
 import { act, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
+import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";

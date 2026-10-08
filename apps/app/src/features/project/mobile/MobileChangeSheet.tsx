@@ -15,7 +15,6 @@ import { useMemo } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
 import { ReviewChangeRow } from "@/features/draft-review/ReviewChangeRow";
 import {
   type ReviewFile,
@@ -24,6 +23,7 @@ import {
 } from "@/features/draft-review/ReviewFiles";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
+import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
 import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
 
 export function MobileChangeSheet({

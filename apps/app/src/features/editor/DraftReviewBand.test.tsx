@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { failDraftCommand, resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { DockRow } from "@/features/chat/docked-drafts";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftReviewBand, DraftReviewFailureNotices } from "./DraftReviewBand";
 
@@ -67,13 +67,10 @@ const view = vi.hoisted(() => ({
   completing: null as null | "apply" | "discard",
   step: vi.fn(),
 }));
-vi.mock("@/features/chat/DraftReviewProvider", () => ({
+vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({ controller, groups }),
 }));
 vi.mock("@/features/draft-review/useReviewChanges", () => ({ useReviewChanges: () => view }));
-vi.mock("@/features/draft-review/useDraftChangeCounts", () => ({
-  useDraftChangeCounts: () => new Map([["doc-13", 11]]),
-}));
 
 function render(
   props: Partial<React.ComponentProps<typeof DraftReviewBand>>,
@@ -235,7 +232,7 @@ describe("DraftReviewBand", () => {
     await render({ onOpenDraft }, async () => {
       await act(async () => byText("Apply draft")?.click());
       expect(controller.apply).toHaveBeenCalledWith("doc-12", "draft-doc-12");
-      expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-13");
+      expect((onOpenDraft.mock.calls[0][0] as ReviewFileTarget).documentId).toBe("doc-13");
     });
   });
 
@@ -281,7 +278,7 @@ describe("DraftReviewBand", () => {
       expect(document.body.textContent).toContain("No changes left");
       expect(onOpenDraft).not.toHaveBeenCalled();
       await act(async () => byText("Next draft")?.click());
-      expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-13");
+      expect((onOpenDraft.mock.calls[0][0] as ReviewFileTarget).documentId).toBe("doc-13");
       // Nothing is left to publish: the draft's own commands go with the changes.
       expect(byText("Apply draft")).toBeUndefined();
       expect(byText("Discard draft")).toBeUndefined();
@@ -314,7 +311,7 @@ describe("DraftReviewBand", () => {
         expect(document.body.textContent).toContain("No changes left");
         expect(controller.exitInlineReview).not.toHaveBeenCalled();
         await act(async () => byText("Next draft")?.click());
-        expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-13");
+        expect((onOpenDraft.mock.calls[0][0] as ReviewFileTarget).documentId).toBe("doc-13");
       });
     } finally {
       groups.unshift(...closed);
@@ -332,7 +329,7 @@ describe("DraftReviewBand", () => {
         { onOpenDraft },
         async () => {
           await act(async () => byText("Next draft")?.click());
-          expect((onOpenDraft.mock.calls[0][0] as DockRow).documentId).toBe("doc-int");
+          expect((onOpenDraft.mock.calls[0][0] as ReviewFileTarget).documentId).toBe("doc-int");
         },
         "doc-13",
       );

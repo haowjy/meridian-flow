@@ -60,7 +60,7 @@ vi.mock("@/client/query/useContextCatalog", () => ({
 vi.mock("@/features/change-trail/trail-detail-query", () => ({
   usePrefetchTrailDetails: () => {},
 }));
-vi.mock("@/features/chat/DraftReviewProvider", () => ({
+vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({ controller }),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({

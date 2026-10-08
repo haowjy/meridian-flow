@@ -27,9 +27,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { cn } from "@/lib/utils";
 import { DraftChipFace, draftChipHitClass } from "./DraftChip";
+import { ReviewMessageText } from "./ReviewMessageText";
 
 export type DraftSwitcherProps = {
   /** The version on screen; its menu item is checked and the chip names it. */
