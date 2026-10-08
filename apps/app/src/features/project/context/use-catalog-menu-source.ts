@@ -28,8 +28,6 @@ export type CatalogMenuSource = {
   hasNotes: boolean;
   /** The folders, outermost first, that hold the note at `path` in the owner's own Scratch. */
   foldersOf(path: string): DrillNode[];
-  /** The id the menu highlights for a document. */
-  rowIdFor(documentId: string): string | null;
   /** The tab a picked note opens as. */
   tabFor(rowId: string): ServerContextTab | null;
 };
@@ -125,7 +123,6 @@ export function useCatalogMenuSource({
     catalog,
     hasNotes: (catalog?.files().length ?? 0) > 0 || earlierHasNotes,
     foldersOf,
-    rowIdFor: (documentId) => catalog?.findDocument(documentId)?.entryId ?? null,
     tabFor,
   };
 }
