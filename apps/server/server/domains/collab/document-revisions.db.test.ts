@@ -291,18 +291,31 @@ describe("document revisions (postgres and collab)", () => {
       return original(...args);
     };
     const older = f.branchPulls.flushLivePull(ALPHA_ID);
-    await captured.promise;
-    await f.writerDelete();
-    f.branchPulls.scheduleLivePull(ALPHA_ID);
-    const joined = f.branchPulls.flushLivePull(ALPHA_ID);
-    release.resolve();
-    await Promise.all([older, joined]);
-    const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
-    draft.doc.destroy();
-    await f.branchPulls.flushLivePull(ALPHA_ID);
-    expect(blocks).toBe(1);
-    expect(await f.current()).not.toBe(before);
+    const started = [older];
+    try {
+      await Promise.race([
+        captured.promise,
+        older.then(() => {
+          throw new Error("Older pull completed without reaching its snapshot latch");
+        }),
+      ]);
+      await f.writerDelete();
+      f.branchPulls.scheduleLivePull(ALPHA_ID);
+      const joined = f.branchPulls.flushLivePull(ALPHA_ID);
+      started.push(joined);
+      release.resolve();
+      await Promise.all(started);
+      const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+      const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
+      draft.doc.destroy();
+      await f.branchPulls.flushLivePull(ALPHA_ID);
+      expect(blocks).toBe(1);
+      expect(await f.current()).not.toBe(before);
+    } finally {
+      // A failed writer/assertion must not leave a root transaction paused across suite cleanup.
+      release.resolve();
+      await Promise.allSettled(started);
+    }
   });
 
   it("concurrent live pulls for more documents than pooled connections all finish", async () => {
