@@ -55,6 +55,20 @@ interaction, but a simple max-id floor is unsound because journal-id order is
 not push order. The unbounded pushed-row scan is the same hole. Tracked at the
 query site in `branch-pulls.ts`.
 
+## Thread-peer pull cost on every drafted write
+
+Profile before changing. `threadPeerContext` in
+`domain/thread-peer-core-pool.ts` calls `pullThreadPeer`
+(`domain/branch-pulls.ts`) on each drafted call outside an open response
+document. The pull encodes a full live snapshot, then reads the whole branch
+for the attribution baseline. Span runs on 2026-10-08 (500-document seed)
+measured 96–131 ms for a first write and 90–162 ms for later writes. Cost grows
+with retained Yjs bytes, not with the number of documents in the Work. Likely
+direction: reuse coherent captured live and peer state, and coalesce redundant
+root pulls. Keep the pull-time baseline and the final fence intact. Evidence:
+`experiments/draft-write-perf.md` and `experiments/spans-tables.md` in the
+docs repo's `model-tool-surface` work item.
+
 ## Thread-peer vs Work-draft generation split
 
 Thread-peer branches and Work-draft branches have independent generation
