@@ -224,6 +224,10 @@ msgstr ""
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr ""
 
+#: src/core/editor/extensions/inline-review/removal-widget.ts
+msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
+msgstr ""
+
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{count, plural, one {Apply it now} other {Apply them now}}"
 msgstr ""
@@ -326,6 +330,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewFiles.tsx
 msgid "{total, plural, one {# draft to review} other {# drafts to review}}"
+msgstr ""
+
+#: src/core/editor/extensions/inline-review/removal-widget.ts
+msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
@@ -606,7 +614,7 @@ msgid "Apply draft or Discard draft handles this."
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Applying"
 msgstr ""
 
@@ -664,7 +672,7 @@ msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Back to live"
 msgstr ""
 
@@ -1733,7 +1741,7 @@ msgid "Discarded"
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Discarding"
 msgstr ""
 
@@ -2056,7 +2064,7 @@ msgstr ""
 msgid "Formatting changes remain"
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr ""
 
@@ -2152,6 +2160,10 @@ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Hide changes"
+msgstr ""
+
+#: src/core/editor/extensions/inline-review/removal-widget.ts
+msgid "Hide removed text"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -2669,7 +2681,7 @@ msgid "Next change"
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Next draft"
 msgstr ""
 
@@ -2692,7 +2704,7 @@ msgid "No billing activity yet."
 msgstr ""
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/OpenFileChanges.tsx
 msgid "No changes left"
 msgstr ""
 
@@ -3588,6 +3600,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Show the 1 change"
+msgstr ""
+
+#: src/features/project/mobile/MobileReviewHeader.tsx
+msgid "Show the draft files"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
