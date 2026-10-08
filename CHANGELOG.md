@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A blocked Redo no longer hides valid Undo on a partially reversed turn.
+
 - Undo availability respects later namespace moves; tools, turns, and receipts share collab-owned reversal rules.
 
 - Content-only Undo/Redo skips mixed-history and draft reconstruction when no namespace writes exist.

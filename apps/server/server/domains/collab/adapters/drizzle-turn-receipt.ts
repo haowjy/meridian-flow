@@ -47,11 +47,26 @@ export function createDrizzleTurnReceiptStore(
 ): TurnReceiptStateStore {
   return {
     async getTurnReceiptChip(threadId, turnId) {
-      const candidates = [
+      const contentStates = [
         ...(await liveStates(db, threadId, turnId)),
         ...(await branchStates(db, threadId, turnId)),
-        ...(await namespaceStates(namespaceChanges, threadId, turnId)),
       ];
+      // A partially reversed turn still undoes its active work. A blocker of
+      // Redo cannot veto that action, including across different documents/scopes.
+      const undoStates = [
+        ...contentStates.filter(
+          (state) =>
+            state === "live-active" || state === "branch-active" || state === "cant_undo_dependent",
+        ),
+        ...(await namespaceStates(namespaceChanges, threadId, turnId, "undo")),
+      ];
+      const candidates =
+        undoStates.length > 0
+          ? undoStates
+          : [
+              ...contentStates,
+              ...(await namespaceStates(namespaceChanges, threadId, turnId, "redo")),
+            ];
       const state = selectTurnReceiptState(candidates);
       return state
         ? ({ state, control: controlForTurnReceiptState(state) } satisfies TurnReceiptChip)
@@ -104,30 +119,23 @@ async function namespaceStates(
   changes: Pick<NamespaceChanges, "forTurn" | "history">,
   threadId: ThreadId,
   turnId: TurnId,
+  direction: "undo" | "redo",
 ): Promise<TurnReceiptState[]> {
-  const states: TurnReceiptState[] = [];
-  for (const direction of ["undo", "redo"] as const) {
-    const selected = await changes.forTurn(
-      threadId,
-      turnId,
-      direction === "undo" ? "active" : "reversed",
-    );
-    if (selected.length === 0) continue;
-    const eligible = await turnNamespaceEligibility(changes, {
-      threadId,
-      turnId,
-      direction,
-      changes: selected,
-    });
-    states.push(
-      eligible.ok
-        ? direction === "undo"
-          ? "live-active"
-          : "live-reversed"
-        : "cant_undo_dependent",
-    );
-  }
-  return states;
+  const selected = await changes.forTurn(
+    threadId,
+    turnId,
+    direction === "undo" ? "active" : "reversed",
+  );
+  if (selected.length === 0) return [];
+  const eligible = await turnNamespaceEligibility(changes, {
+    threadId,
+    turnId,
+    direction,
+    changes: selected,
+  });
+  return [
+    eligible.ok ? (direction === "undo" ? "live-active" : "live-reversed") : "cant_undo_dependent",
+  ];
 }
 
 async function branchStates(

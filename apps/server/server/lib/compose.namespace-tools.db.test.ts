@@ -655,6 +655,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await receipt(laterTurn)).toMatchObject({ control: "view_change" });
     });
 
+    it("keeps a mixed turn's valid Undo when only its Redo has a dependency", async () => {
+      const { runtime, script } = await start();
+      const laterTurn = randomUUID();
+      await db.insert(schema.turns).values({
+        id: laterTurn,
+        parentTurnId: THREAD.turnId,
+        threadId: THREAD.threadId,
+        position: 2,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await script.reply(async (call) => {
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      });
+      const later = runtimes.script(runtime, { ...THREAD, turnId: laterTurn });
+      await later.reply(async (call) => {
+        await call("write", {
+          command: "move",
+          from: { path: RENAMED },
+          path: "manuscript://third.md",
+        });
+        await call("write", {
+          command: "move",
+          from: { path: HOLDER },
+          path: "manuscript://holder-moved.md",
+        });
+      });
+      await later.reply(async (call) => {
+        await call("write", { command: "undo", path: "manuscript://third.md" });
+        await call("write", { command: "undo", path: RENAMED });
+      });
+      const receipt = () =>
+        runtime.app.documentSync.getTurnReceiptChip(THREAD.threadId as never, laterTurn as never);
+      expect(await receipt()).toEqual({ state: "live-active", control: "undo" });
+      expect(
+        await runtime.app.documentSync.reverseThreadContext({
+          threadId: THREAD.threadId as never,
+          turnId: laterTurn as never,
+          userId: USER_ID as never,
+          direction: "undo",
+          scope: "turn",
+          selection: laterTurn,
+        }),
+      ).toMatchObject({ status: "reversed" });
+      expect(await script.text(HOLDER)).toContain("One");
+      expect(await receipt()).toEqual({ state: "cant_undo_dependent", control: "view_change" });
+    });
+
     it("the writer's turn undo names a taken path, then puts back the turn's move and delete, and redo makes them again", async () => {
       const { runtime, script } = await start();
       await script.reply(async (call) => {
