@@ -100,6 +100,7 @@ export interface ResponseStageUpdateInput {
   writeId?: string;
   writeOrdinal?: number;
   durableWriteId?: string;
+  toolCallId?: string;
   ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
   touchedHashes: ReadonlySet<string>;
@@ -1004,6 +1005,7 @@ export function createResponseCommitter(deps: {
           input.durableWriteId ??
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
+        ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
         ...(input.semanticEditIr ? { semanticEditIr: input.semanticEditIr } : {}),
         ...mutationMode(interactionContext),
       },

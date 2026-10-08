@@ -1,0 +1,1 @@
+ALTER TABLE "branch_write_journal" ADD COLUMN "tool_call_id" text;

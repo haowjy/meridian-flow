@@ -111,6 +111,8 @@ export const branchWriteJournal = pgTable(
       .references(() => documentBranches.id, { onDelete: "cascade" }),
     generation: integer("generation").notNull(),
     wId: integer("w_id"),
+    /** The model's tool call that made this write; the chat transcript row to jump to. */
+    toolCallId: text("tool_call_id"),
     source: text("source").$type<BranchWriteJournalSource>().notNull().default("agent"),
     threadId: uuid("thread_id")
       .$type<ThreadId>()

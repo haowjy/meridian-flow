@@ -67,6 +67,7 @@ export type AppendBranchJournalInput = {
   updateData: Uint8Array;
   source: "agent" | "writer";
   wId?: number | null;
+  toolCallId?: string | null;
   threadId?: ThreadId | null;
   turnId?: string | null;
   actorUserId?: string | null;

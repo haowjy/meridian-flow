@@ -58,6 +58,8 @@ export interface ReviewOperation {
   /** Originating chat and its title at preview time. Agent operations only. */
   actorThreadId?: string;
   actorThreadTitle?: string;
+  /** The tool call in that chat's turn that made the write. Absent for older writes. */
+  actorToolCallId?: string;
   /**
    * Server-vended closure-class id. Every operation in one journal-backed
    * dependency-closed review class carries the same id; the review surface renders

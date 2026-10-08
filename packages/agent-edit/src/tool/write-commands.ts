@@ -338,6 +338,7 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
+          ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
           ensureDocumentBeforeCommit: true,
           createdDocumentBeforeCommit: context.createdDocument === true,
           touchedHashes,
@@ -402,6 +403,7 @@ export function createWriteCommands(deps: {
               ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
+              ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
               ...(semanticEditIr ? { semanticEditIr } : {}),
               ...mutationMode(context.interactionContext),
             },
@@ -600,6 +602,7 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
+          ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
           createdDocumentBeforeCommit: false,
           touchedHashes: new Set(applied.changedBlocks),
           deletedHashes: new Set(applied.deletedBlocks),
@@ -641,6 +644,7 @@ export function createWriteCommands(deps: {
               ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
+              ...(writeIdentity.toolCallId ? { toolCallId: writeIdentity.toolCallId } : {}),
               ...mutationMode(interactionContext),
             },
           },
@@ -748,7 +752,7 @@ export function createWriteCommands(deps: {
     session: ActorSession,
     context: WriteContext,
     commandToolUseId?: string,
-  ): Promise<{ durableId: string; ordinal: number; handle: string }> {
+  ): Promise<{ durableId: string; ordinal: number; handle: string; toolCallId?: string }> {
     const ordinal = await reversalStore.reserveWriteOrdinal(
       docId,
       session.threadId,
@@ -758,7 +762,13 @@ export function createWriteCommands(deps: {
       scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??
       `${session.threadId}:${docId}:write-${ordinal}`;
-    return { durableId, ordinal, handle: writeHandle(ordinal) };
+    const toolCallId = commandToolUseId ?? context.tool_use_id;
+    return {
+      durableId,
+      ordinal,
+      handle: writeHandle(ordinal),
+      ...(toolCallId ? { toolCallId } : {}),
+    };
   }
 
   function nextTurnId(session: ActorSession, docId: string, context: WriteContext): string {
