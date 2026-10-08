@@ -54,6 +54,29 @@ import { projectQueryKeys } from "./project-query-keys";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
 
 /** The catalog listing a scheme's documents for this owner; null when a Work-scoped scheme has none. */
+/**
+ * The catalog an aggregate view (the link index) reads a scheme from. Scratch
+ * reads with the lineage when there is one; Uploads always reads with the Work
+ * row, so a lineage scope still has a scope, and a catalog, for every scheme.
+ */
+export function aggregateCatalogScope(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  owners: {
+    workId?: string | null;
+    rootThreadId?: string | null;
+    uploadsWorkId?: string | null;
+  },
+): CatalogScope | null {
+  return contextCatalogScope(
+    projectId,
+    scheme,
+    scheme === "uploads" && owners.uploadsWorkId
+      ? { workId: owners.uploadsWorkId }
+      : contextOwner(owners.workId, owners.rootThreadId),
+  );
+}
+
 export function contextCatalogScope(
   projectId: string,
   scheme: ProjectContextTreeScheme,
@@ -469,20 +492,33 @@ type CatalogViewResult = {
 export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   projectId: string,
   schemes: readonly S[],
-  options: { enabled?: boolean } & ContextOwner,
+  options: {
+    enabled?: boolean;
+    /**
+     * An aggregate scope (the link index) can hold a lineage's Scratch and a
+     * Work's Uploads together. Each document and request still has one owner;
+     * Uploads reads with this Work where `owner` names a lineage.
+     */
+    uploadsWorkId?: string | null;
+  } & ContextOwner,
 ): Record<S, CatalogViewResult> {
   const projectPending = useIsProjectPendingCreation(projectId);
   const enabled = (options.enabled ?? true) && !projectPending;
-  const { workId, rootThreadId } = options;
+  const { workId, rootThreadId, uploadsWorkId } = options;
+  const scopeFor = useCallback(
+    (scheme: ProjectContextTreeScheme) =>
+      aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
+    [projectId, workId, rootThreadId, uploadsWorkId],
+  );
   const scopes = useMemo(() => {
     const result: CatalogScope[] = [];
     for (const scheme of schemes) {
-      const scope = contextCatalogScope(projectId, scheme, contextOwner(workId, rootThreadId));
+      const scope = scopeFor(scheme);
       if (scope && !result.some((existing) => sameCatalogProjectionScope(existing, scope)))
         result.push(scope);
     }
     return result;
-  }, [projectId, schemes, workId, rootThreadId]);
+  }, [schemes, scopeFor]);
   const resources = useOptionalAccountResourceReplica();
   const { records, folders, snapshot, error } = useAccountResourceProjection(projectId);
   const combine = useCallback(
@@ -503,11 +539,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
           ? projectResourceCatalogView(projectId, scope, view, records, folders)
           : null;
         for (const scheme of schemes) {
-          const requested = contextCatalogScope(
-            projectId,
-            scheme,
-            contextOwner(workId, rootThreadId),
-          );
+          const requested = scopeFor(scheme);
           if (!requested || !sameCatalogProjectionScope(requested, scope)) continue;
           results[scheme] = {
             catalog: projected
@@ -532,18 +564,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
       }
       return results;
     },
-    [
-      projectId,
-      schemes,
-      workId,
-      rootThreadId,
-      scopes,
-      resources,
-      records,
-      folders,
-      snapshot,
-      error,
-    ],
+    [projectId, schemes, scopeFor, scopes, resources, records, folders, snapshot, error],
   );
   return useQueries({
     queries: scopes.map((scope) => ({

@@ -77,6 +77,8 @@ export function useLinkableDocuments({
   } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
     enabled: scopes !== null,
     ...contextOwner(catalogWorkId, catalogRootThreadId),
+    // A lineage's Scratch and the Work row's Uploads are separate owners of one index.
+    uploadsWorkId: catalogWorkId,
   });
 
   return useMemo(() => {
