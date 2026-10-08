@@ -132,7 +132,7 @@ function textOrderRepairs(input: {
     const currentText = currentBlocks.get(hash);
     const repairedBlock = repairedBlocks.get(hash);
     if (targetText === undefined || currentText === undefined || !repairedBlock) continue;
-    if (input.model.inlineRuns(repairedBlock).length > 1) continue;
+    if (input.model.inlineRunCount(repairedBlock) > 1) continue;
 
     const edit = simpleReplacement(baseText, targetText);
     if (!edit || edit.inserted.length === 0 || edit.deleted.length === 0) continue;

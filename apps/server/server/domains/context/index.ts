@@ -1,7 +1,4 @@
-export {
-  createDrizzleAssetPathResolver,
-  type MutableAssetPathResolver,
-} from "./adapters/asset-path-resolver.js";
+export { createDrizzleDocumentAssetPaths } from "./adapters/asset-path-resolver.js";
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";

@@ -171,12 +171,12 @@ accidental UUID interpolation fails loudly.
   edits` reports `human` vs `agent` categories; no individual actor names.
 
 - **Cross-block `find`** (find string containing `\n\n`) supported via
-  structural lowering in the resolver. Routes to Tier 2+3.
+  structural lowering in the resolver. Applies inline, whole-block, or structural edits.
 
 ## Testing
 
 Package tests cover block-hash stability, markup round-trip, resolver with
-cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
+cross-block find, edit apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
 drift invariants, and availability), response
 commit/recovery, and create lifecycle.
@@ -191,4 +191,4 @@ idempotency id in mutation metadata; `w<N>` is the model-facing range key.
 Undo/redo use the same versioned result envelope as writes, with typed reversal
 metadata and block records.
 
-Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`since` + `to`; `from` always names a source), the last N writes (`last`; for redo, the N handles undone most recently), or all (`all`). Group atomicity and dependency closure can widen a selection; results list the handles actually reversed (`reversal.writes`). Undo plans a selection at once; redo plans one undo group at a time, oldest undo first, and keeps going for `since`/`to`, `last`, `all` and turn selections. A reversal is `reconciled` only when its result differs from the text just before the reversed writes (undo) or the reversed undo (redo); a sweep alone doesn't make it reconciled. The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.
+Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`since` + `to`; `from` always names a source), the last N writes (`last`; for redo, the N handles undone most recently), or all (`all`). Group atomicity and dependency closure can widen a selection; results list the handles actually reversed (`reversal.writes`). One dependency rule, `undo/journal-dependencies.ts`, decides both what `planUndo` offers (the receipt chip) and what the host's persisted undo accepts: a later row depends on a write when it anchors on, parents into or deletes what the write inserted, or anchors on what it deleted. An insertion inside agent text therefore blocks undo. Undo plans a selection at once; redo plans one undo group at a time, oldest undo first, and keeps going for `since`/`to`, `last`, `all` and turn selections. A reversal is `reconciled` only when its result differs from the text just before the reversed writes (undo) or the reversed undo (redo); a sweep alone doesn't make it reconciled. The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.

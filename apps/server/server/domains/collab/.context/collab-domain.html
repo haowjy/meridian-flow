@@ -1063,9 +1063,10 @@ graph.
     and discard so lock order stays global); the branch store, coordinator and
     pull service.</li>
   <li><strong>Runtime.</strong> <code>createAgentEditRuntime</code> builds the
-    markup codec exactly once with the injected asset path resolver, the
-    schema-aware markdown engine, and the live utility core. A second
-    <code>mdxCodec(...)</code> elsewhere would lose the asset index.</li>
+    markup codec exactly once with the injected
+    <code>DocumentAssetPaths</code> resolver, the schema-aware markdown engine,
+    and the live utility core, each wrapped in its image path scope. A second
+    <code>mdxCodec(...)</code> elsewhere would lose the image paths.</li>
   <li><strong>Settlement and push.</strong> Pending-settlement store,
     push-commit store, change-trail writer, writer-ingress binding (bound to the
     Hocuspocus persistence barrier once that exists), push service, review

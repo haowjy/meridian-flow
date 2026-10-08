@@ -34,9 +34,9 @@ import {
   createDocumentAddressResolver,
   createDocumentLinkResolver,
   createDocumentRevisions,
-  createDrizzleAssetPathResolver,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
+  createDrizzleDocumentAssetPaths,
   createDrizzleDocumentLinkHistory,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
@@ -499,7 +499,7 @@ export async function createProductionAppPorts(input: {
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
-  const assetPathResolver = await createDrizzleAssetPathResolver(db);
+  const assetPaths = createDrizzleDocumentAssetPaths(db, eventSink);
   const agentRevisions = createDrizzleAgentRevisionStore(db);
   const chainDeps = {
     threads: threadRepos.threads,
@@ -516,7 +516,7 @@ export async function createProductionAppPorts(input: {
   const documentSync = createCollabDomain({
     db,
     fileAccess,
-    assetPathResolver,
+    assetPaths,
     eventSink,
     notices,
     workAuthorityResolver,
@@ -559,6 +559,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
   });
   contextPorts = createProductionUnifiedContextPortFactory({
+    assetPaths,
     db,
     documentSync,
     manifestMembership: documentSync,
@@ -575,15 +576,13 @@ export async function createProductionAppPorts(input: {
   });
   const uploadIdentity = createDrizzleUploadIdentityPort(db);
   // Upload creates the asset as a context document, so the service needs the
-  // context ports; it feeds each new path straight back into the resolver the
-  // codec reads.
+  // context ports.
   const figureAssets = createFigureAssetService({
     objectStore,
     documents: createDrizzleFigureDocumentRepository({ db }),
     contextPorts,
     signedUrlExpiresAt: () => new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     eventSink,
-    assetPaths: assetPathResolver,
   });
   await seedGeneralAgent(agentRevisions, defaultModel);
   const marsPackageFetcher = createGitHubMarsPackageFetcher({

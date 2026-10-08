@@ -3,6 +3,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -42,6 +43,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createBoundCollab() {
       const collab = createCollabDomain({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),

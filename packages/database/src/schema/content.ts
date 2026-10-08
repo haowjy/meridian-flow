@@ -228,6 +228,9 @@ export const folders = pgTable(
     uniqueIndex("folders_context_root_name_active")
       .on(table.contextSourceId, table.name)
       .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL`),
+    // Image path lookups walk deleted folders too, so the active-only indexes miss them.
+    index("folders_context_root").on(table.contextSourceId).where(sql`${table.parentId} IS NULL`),
+    index("folders_parent").on(table.parentId),
   ],
 );
 
@@ -281,6 +284,10 @@ export const documents = pgTable(
     uniqueIndex("documents_manifest_context_active")
       .on(table.contextSourceId)
       .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manifest'`),
+    // Image path lookups, deleted images included.
+    index("documents_context_images")
+      .on(table.contextSourceId)
+      .where(sql`${table.fileType} = 'image' AND ${table.kind} = 'content'`),
     index("documents_markdown_projection_fts").using(
       "gin",
       sql`to_tsvector('simple', ${table.markdownProjection})`,
