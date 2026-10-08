@@ -15,6 +15,7 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
+import { indexDraftUpdates } from "./draft-review-attribution.js";
 import {
   type ClockRange,
   computeDraftReviewOperations,
@@ -94,6 +95,31 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     hunks: visible.hunks,
     wordDelta: sumDraftWordDelta(visibleRawHunks.map(hunkDisplayText)),
   };
+}
+
+/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
+export function draftOperationIdsByChangedBlock(
+  input: DraftReviewHunkInput,
+): Map<string, string[]> {
+  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
+  const rawHunks = diffAlignedBlocks(
+    alignBlocks(
+      describeBlocks(input.liveDoc, input.model),
+      describeBlocks(input.draftDoc, input.model),
+    ),
+    input.draftDoc,
+  );
+  const result = new Map<string, string[]>();
+  for (const hunk of rawHunks) {
+    const owners = attribution.attributeRanges({
+      insertedRanges: hunkInsertedRanges(hunk),
+      deletedRanges: hunkDeletedRanges(hunk),
+    });
+    result.set(hunk.blockKey, [
+      ...new Set([...(result.get(hunk.blockKey) ?? []), ...owners.operationIds]),
+    ]);
+  }
+  return result;
 }
 
 function blockContentShapesMatch(

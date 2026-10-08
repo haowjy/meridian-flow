@@ -11,6 +11,7 @@ import type {
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
+import { draftOperationIdsByChangedBlock } from "./draft-review-hunks.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -62,25 +63,6 @@ export function journalAttributionByChangedBlock(input: {
       const after = canonicalSnapshot(input.model, scratch);
       const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
       const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
-      const owner =
-        row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
-      for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
-        const prior = beforeByIdentity.get(identity);
-        const next = afterByIdentity.get(identity);
-        if (prior?.serialized === next?.serialized) continue;
-        const blockId = next?.hash ?? prior?.hash;
-        if (!blockId) continue;
-        const owners = ownersByBlock.get(blockId) ?? [];
-        if (
-          !owners.some(
-            (existing) =>
-              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
-          )
-        ) {
-          owners.push(owner);
-          ownersByBlock.set(blockId, owners);
-        }
-      }
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
       const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
       if (deleted.length > 0 || inserted.length > 0) {
@@ -95,6 +77,36 @@ export function journalAttributionByChangedBlock(input: {
           journalRowIndex,
         });
       }
+    }
+    const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
+    const operationIdsByBlock = draftOperationIdsByChangedBlock({
+      liveDoc: input.liveDoc,
+      draftDoc: scratch,
+      model: input.model,
+      draftUpdates: input.rows.map((row) => ({
+        id: row.id,
+        actorTurnId: row.turnId,
+        actorUserId: row.actorUserId,
+        updateData: row.updateData,
+        updateMeta: row.updateMeta,
+        updateKind: row.source,
+      })),
+    });
+    for (const [blockId, operationIds] of operationIdsByBlock) {
+      const owners: Array<{ threadId: ThreadId; turnId: TurnId } | null> = [];
+      for (const operationId of operationIds) {
+        const row = rowsById.get(operationId);
+        const owner =
+          row?.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
+        if (
+          !owners.some(
+            (existing) =>
+              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
+          )
+        )
+          owners.push(owner);
+      }
+      ownersByBlock.set(blockId, owners.length > 0 ? owners : [null]);
     }
     const operations: typeof journalOperations = [];
     for (let index = 0; index < journalOperations.length; index += 1) {

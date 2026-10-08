@@ -125,8 +125,11 @@ is one server closure class.
   contiguous typing keep their client. A pause or caret move alone never
   rotates. Relative anchors classify edits even with marks hidden. Awareness
   migrates with the client without remounting the editor or resetting Undo.
-  Genuine structural dependencies still join changes. Browser Undo attribution
-  is not repaired: restored AI bytes still belong to the writer on cold replay.
+  Genuine structural dependencies still join changes. Undo/Redo capture source-ID
+  restoration claims in a separate Y.Map, alongside the physical writer copies.
+  Only server-certified journal aliases preserve the source author in preview
+  and Apply; ordinary retyping stays the writer’s. Claims survive offline sync
+  and reload through normal Yjs persistence, not a browser-only colour overlay.
 - There is no per-change Undo. The toast says what happened and nothing more.
 - Per-change Apply is hidden for a new document (`isNewDocument`); it is applied
   whole with Apply draft.
