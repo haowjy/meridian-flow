@@ -48,7 +48,9 @@ async function main(): Promise<void> {
   if (local && mainDatabaseName) {
     databaseUrl = managedTestDatabaseUrl(sourceDatabaseUrl, mainDatabaseName);
   }
-  const testArgs = process.argv.slice(2);
+  const testArgs = process.argv
+    .slice(2)
+    .map((arg) => arg.replace(/^--reporters(?==|$)/u, "--reporter"));
   if (testArgs[0] === "--") testArgs.shift();
   const allSuites = testArgs[0] === "--all";
   if (allSuites) {
