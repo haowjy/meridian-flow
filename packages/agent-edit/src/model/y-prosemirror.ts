@@ -121,17 +121,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
-      return applyInlineReplacement(
-        unwrapDoc(doc),
-        unwrapBlock(block),
-        span,
-        replacementMarkup,
-        codec,
-        schema,
-      );
-    },
-
     applyInlineReplacements(doc, block, replacements, codec) {
       return applyInlineReplacements(
         unwrapDoc(doc),
@@ -289,52 +278,6 @@ function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): voi
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
 }
 
-export function applyInlineReplacement(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  span: Span,
-  replacementMarkup: string,
-  codec: AgentEditCodec,
-  schema: Schema,
-): InlineReplacementResult {
-  const element = unwrapBlock(toRef(block));
-  const current = toProsemirrorBlock(doc, element, schema);
-  const blockType = element.nodeName;
-  if (current.type.name !== blockType) {
-    return blockTypeMismatch(blockType, current.type.name);
-  }
-
-  let parsed: ParsedContent;
-  try {
-    parsed = replacementMarkup.length === 0 ? { blocks: [] } : codec.parse(replacementMarkup);
-  } catch (cause) {
-    return parseFailure(cause);
-  }
-
-  const inline = inlineReplacement(parsed);
-  if (!inline.ok) return inline;
-  if (!canReplaceInline(current)) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edits with formatting are not supported for ${current.type.name} blocks`,
-    };
-  }
-  // Flat offsets skip atoms, so a block holding a picture or a break is only
-  // ever replaced whole, through a block edit; here offsets are PM positions.
-  if (!hasFlatInlineContent(current)) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edits require flat inline content in ${current.type.name} blocks`,
-    };
-  }
-  const transform = new Transform(current);
-  transform.replaceWith(span.from, span.to, Fragment.from(inline.nodes));
-  writePmBlock(doc, element, transform.doc);
-  return { ok: true };
-}
-
 export function applyInlineReplacements(
   doc: Y.Doc,
   block: Y.XmlElement | BlockRef,
@@ -350,7 +293,7 @@ export function applyInlineReplacements(
     return {
       ok: false,
       code: "invalid_write",
-      message: `Multi-range text edits require flat inline content in ${current.type.name} blocks`,
+      message: `Text edits require flat inline content in ${current.type.name} blocks`,
     };
   }
 

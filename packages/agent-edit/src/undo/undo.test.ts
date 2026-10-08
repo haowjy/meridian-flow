@@ -201,7 +201,14 @@ function applyAgentText(
     ctx.doc,
     model,
     codec,
-    { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(block), span, newText },
+    {
+      documentId: DOC_ID,
+      file: FILE,
+      kind: "textRanges",
+      block: toRef(block),
+      replacements: [{ span, newText }],
+      output: newText,
+    },
     threadOrigin(ctx, threadId),
   );
   expectOk(result);
@@ -266,7 +273,14 @@ function textEdit(
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {
-  return { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(element), span, newText };
+  return {
+    documentId: DOC_ID,
+    file: FILE,
+    kind: "textRanges",
+    block: toRef(element),
+    replacements: [{ span, newText }],
+    output: newText,
+  };
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {

@@ -30,8 +30,12 @@ describe("resolveWrite", () => {
     );
 
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({ kind: "text", span: { start: 2, end: 7 }, newText: "blade" });
-    expect(edits[0].kind === "text" ? edits[0].block : null).toBe(blocks[1]);
+    expect(edits[0]).toMatchObject({
+      kind: "textRanges",
+      replacements: [{ span: { start: 2, end: 7 }, newText: "blade" }],
+      output: "blade",
+    });
+    expect(edits[0].kind === "textRanges" ? edits[0].block : null).toBe(blocks[1]);
   });
 
   it("records a whole-scope replace as fresh only when it rewrote every block", () => {
@@ -109,7 +113,11 @@ describe("resolveWrite", () => {
     const edits = expectOk(resolve(doc, { command: "replace", content: "tea", find: "café" }));
 
     expect(edits).toHaveLength(1);
-    expect(edits[0]).toMatchObject({ kind: "text", span: { start: 0, end: 5 }, newText: "tea" });
+    expect(edits[0]).toMatchObject({
+      kind: "textRanges",
+      replacements: [{ span: { start: 0, end: 5 }, newText: "tea" }],
+      output: "tea",
+    });
   });
 
   it("scopes find-based writes to the around window", () => {
@@ -122,7 +130,7 @@ describe("resolveWrite", () => {
     );
 
     expect(replace).toHaveLength(1);
-    expect(replace[0]).toMatchObject({ kind: "text", block: blocks[4] });
+    expect(replace[0]).toMatchObject({ kind: "textRanges", block: blocks[4] });
   });
 
   it("returns representative resolution errors", () => {

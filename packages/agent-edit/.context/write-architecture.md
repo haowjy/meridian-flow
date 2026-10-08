@@ -25,7 +25,7 @@ restoration. A whole-scope zero-continuation edit uses the distinct
 out-of-scope sources, missing/overlapping output claims, restoration without a
 retained certificate, and UTF-16 surrogate splits before mutation.
 
-Plain same-block find-all emits one `textRanges` edit with exact, ordered match
+Plain same-block find (one or all matches) emits one `textRanges` edit with exact, ordered match
 spans. The adapter adds those replacements back-to-front to one ProseMirror
 `Transform` and projects each exact step inside one Yjs transaction. Unmatched
 gaps therefore keep their CRDT items; the semantic IR partitions the replacement
@@ -35,8 +35,7 @@ the whole IR and the provenance writer excludes those runs from its insertion
 stream. Any non-retained continuation or restoration run in the same IR still
 receives its provenance fact; fresh payloads remain agent-born by normal
 insertion attribution.
-Single-match output retains the existing `text` shape. Formatted
-and cross-block finds keep the serialized-markdown reconciliation path.
+Formatted and cross-block finds keep the serialized-markdown reconciliation path.
 
 A scope rewrite (`replace` over `in`, a formatted or cross-block find, and
 `create { overwrite: true }`) goes through `replaceScope`, which aligns the
@@ -48,21 +47,21 @@ attributes included. Only unpaired blocks are inserted or deleted, so a new
 paragraph never takes over an edited one's element and comments. A write that resolves to no edits (a document's own export written back, or a
 find replaced with itself) returns `unchanged` before a write handle is
 reserved, so it journals nothing and leaves nothing to undo.
-Flat `text` offsets exclude atoms (pictures, hard breaks), so `text` edits
+Flat inline offsets exclude atoms (pictures, hard breaks), so `textRanges` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 
 ### Tiered apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
 references, parses content, computes offsets, and validates the semantic IR.
 Phase 2 (inside `doc.transact()`) applies pre-computed operations. Every agent
-text edit lowers through ProseMirror (`applyInlineReplacement`), the single
+text edit lowers through ProseMirror (`applyInlineReplacements`), the single
 certification seam; there is no direct-text tier. `applyTextEdit` remains as the
 model's plain-text verb for undo repair and trims unchanged edge text before
 touching Yjs.
 
 | Tier | Kind | Mechanism |
 |---|---|---|
-| 2 | `text`, `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
+| 2 | `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
 | 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
