@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Namespace journal migration follows the merged image-path indexes as 0032.
+
 - A blocked Redo no longer hides valid Undo on a partially reversed turn.
 
 - Undo availability respects later namespace moves; tools, turns, and receipts share collab-owned reversal rules.

@@ -225,6 +225,13 @@
       "when": 1791401810720,
       "tag": "0031_image_path_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791488016664,
+      "tag": "0032_agent_namespace_changes",
+      "breakpoints": true
     }
   ]
 }
