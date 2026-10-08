@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Mixed and content-only Undo use the same write selector.
+
 - Restore targets the clicked delete, shares refusal state, and drops stale errors after retry, redo, or account changes.
 
 - Move, delete and Restore refusals keep their cause and recovery instruction in model results and chat rows.

@@ -8,11 +8,15 @@
  */
 import type {
   AgentEditResultV1,
-  ReversalSelection,
   WriteOutcome,
   WriteToolInput,
 } from "@meridian/agent-edit/integration";
-import { modelResult, splitDocumentFile, writeHandle } from "@meridian/agent-edit/integration";
+import {
+  commandSelection,
+  modelResult,
+  splitDocumentFile,
+  writeHandle,
+} from "@meridian/agent-edit/integration";
 import {
   type ChangeClaimed,
   liveAfter,
@@ -51,15 +55,6 @@ export interface ContentReversal {
 
 /** Where the document is as the walk goes: live at `uri`, or deleted from it. */
 type Location = { live: boolean; uri: string };
-
-/** The model's selector, as the engine reads it. */
-function modelSelection(input: ReversalInput): ReversalSelection {
-  if (input.all) return { kind: "all" };
-  if (input.last !== undefined) return { kind: "last", count: input.last };
-  if (input.to === undefined) return { kind: "latest" };
-  if (input.since === undefined) return { kind: "single", to: input.to };
-  return { kind: "range", since: input.since, to: input.to };
-}
 
 function changeRefusal(
   direction: Direction,
@@ -122,7 +117,7 @@ export async function runReversal(
   }
   const walk = planReversalWalk({
     direction,
-    selection: modelSelection(input),
+    selection: commandSelection(input),
     history,
     live: start.live,
     path: input.path,

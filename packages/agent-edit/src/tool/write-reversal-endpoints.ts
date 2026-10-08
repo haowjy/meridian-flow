@@ -202,7 +202,7 @@ export function createWriteReversalEndpoints(deps: {
  * selector rule. Handles the host chose replace the command's selector.
  */
 export function commandSelection(
-  command: UndoCommand | RedoCommand,
+  command: Pick<UndoCommand | RedoCommand, "all" | "last" | "to" | "since">,
   context: Pick<WriteContext, "reversalHandles"> = {},
 ): ReversalSelection {
   if (context.reversalHandles) return { kind: "handles", ids: context.reversalHandles };
