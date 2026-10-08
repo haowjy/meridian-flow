@@ -4,7 +4,7 @@
  * A new attempt or confirmed restoration retires the previous outcome.
  */
 import type { ListTurnLiveLineageResponse } from "@meridian/contracts/protocol";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 
 import { type RestoreDeleteOutcome, restoreAgentDelete } from "@/client/api/restore-delete-api";
@@ -41,11 +41,6 @@ export function useRestoreDeleteMutation(
   useEffect(() => {
     if (!active && record?.phase === "failed") queryClient.setQueryData(recordKey, null);
   }, [active, record, queryClient, recordKey]);
-  useEffect(() => {
-    const clear = () => queryClient.removeQueries({ queryKey: recordKey, exact: true });
-    accountSignal?.addEventListener("abort", clear, { once: true });
-    return () => accountSignal?.removeEventListener("abort", clear);
-  }, [accountSignal, queryClient, recordKey]);
 
   const mutation = useMutation<RestoreDeleteOutcome, Error, RestoreDeleteInput>({
     mutationFn: (input) => restoreAgentDelete(threadId, input),
@@ -94,8 +89,30 @@ export function useRestoreDeleteMutation(
         queryClient.getQueryData<RestoreRecord>(recordKey)?.phase === "pending"
       )
         return;
+      scopeRestoreCommands(queryClient, accountSignal);
       setRecord({ phase: "pending" });
       mutation.mutate(input);
     },
   };
+}
+
+const accountsSeen = new WeakMap<QueryClient, WeakSet<AbortSignal>>();
+
+/** Command lifetime outlives its surfaces: account cleanup must do so too. */
+function scopeRestoreCommands(client: QueryClient, accountSignal: AbortSignal | null): void {
+  if (!accountSignal) return;
+  let seen = accountsSeen.get(client);
+  if (!seen) {
+    seen = new WeakSet();
+    accountsSeen.set(client, seen);
+  }
+  if (seen.has(accountSignal)) return;
+  seen.add(accountSignal);
+  accountSignal.addEventListener(
+    "abort",
+    () => {
+      client.removeQueries({ queryKey: ["restore-delete-command"] });
+    },
+    { once: true },
+  );
 }

@@ -12,6 +12,12 @@ import { NamespaceChangeLine } from "./NamespaceChangeRow";
 import { toolView } from "./report-test-fixtures";
 import { ToolRow } from "./ToolRow";
 
+const account = vi.hoisted(() => ({ epoch: new AbortController() }));
+vi.mock("@/features/project/context/account-feature-context", async (original) => ({
+  ...(await original<typeof import("@/features/project/context/account-feature-context")>()),
+  useOptionalAccountEpochSignal: () => account.epoch.signal,
+}));
+
 const THREAD = "thread-1";
 const TURN = "turn-1";
 const DOCUMENT = "doc-2";
@@ -96,6 +102,7 @@ describe("a delete row's Restore", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
+    account.epoch = new AbortController();
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -103,6 +110,7 @@ describe("a delete row's Restore", () => {
   });
   afterEach(async () => {
     await act(async () => root.unmount());
+    account.epoch.abort();
     queryClient.clear();
     vi.unstubAllGlobals();
     document.body.innerHTML = "";
@@ -197,6 +205,31 @@ describe("a delete row's Restore", () => {
     await vi.waitFor(() => expect(restoreButton("receipt")).not.toBeNull());
     expect(host.querySelector("[data-restore-note]")).toBeNull();
     expect(host.textContent).not.toContain("Folder missing");
+  });
+
+  it("retires a pending record when its account closes after both surfaces unmount", async () => {
+    let finish!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const server = serve({
+      status: 409,
+      body: { status: "location_taken", uri: "manuscript://ch2.md" },
+      restores: false,
+      wait,
+    });
+    await renderRow();
+    await act(async () => restoreButton("receipt")?.click());
+    await vi.waitFor(() => expect(server.restoreRequests).toHaveLength(1));
+    await act(async () => root.render(null));
+    await act(async () => {
+      account.epoch.abort();
+      finish();
+    });
+    account.epoch = new AbortController();
+    await renderRow();
+    expect(host.textContent).not.toContain("Restoring");
+    expect(host.querySelector("[data-restore-note]")).toBeNull();
   });
 
   it("restores the document and the row says so", async () => {
