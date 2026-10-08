@@ -20,6 +20,7 @@ const group = (
       contextPath: null,
       status: "active",
       lastActorTurnId: null,
+      actorThreads: [],
       updatedAt,
       wordsAdded: 3,
       wordsRemoved: 0,

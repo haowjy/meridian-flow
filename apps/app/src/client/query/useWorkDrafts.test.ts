@@ -11,6 +11,7 @@ function item(draftId: string, updatedAt: string): ThreadDraftListItem {
     contextPath: "chapters/one.md",
     status: "active",
     lastActorTurnId: null,
+    actorThreads: [],
     updatedAt,
     wordsAdded: 1,
     wordsRemoved: 0,

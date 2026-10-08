@@ -245,6 +245,7 @@ function serializeThreadDraft(
     contextPath: string | null;
     status: "active";
     lastActorTurnId: string | null;
+    actorThreads: ThreadDraftListItem["actorThreads"];
     updatedAt: Date;
     wordsAdded?: number | null;
     wordsRemoved?: number | null;
@@ -261,6 +262,7 @@ function serializeThreadDraft(
     contextPath: draft.contextPath,
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
+    actorThreads: draft.actorThreads,
     updatedAt: draft.updatedAt.toISOString(),
     proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
     wordsAdded: draft.wordsAdded ?? null,

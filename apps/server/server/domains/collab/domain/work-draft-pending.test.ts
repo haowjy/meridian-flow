@@ -35,6 +35,7 @@ describe("pending Work drafts", () => {
       {
         branch: content,
         rows: rows.get("content"),
+        actorThreadIds: [],
         manifestEntry: {
           branchId: manifest.branchId,
           documentId: content.documentId,

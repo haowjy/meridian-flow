@@ -34,6 +34,115 @@ function createReviewHarness(options?: Parameters<typeof createHarness>[0]) {
 }
 
 describe("per-change Apply (postgres)", () => {
+  it("lists writing chats by their latest pending row, excluding writer and threadless rows", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.\n\nGamma base.", "writing-chats");
+    const fixture = harness.crossWorkProbeFixture();
+    const otherThreadId = await seedOtherChat();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await stageText(fixture, branch.branchId, 0, " First", "agent");
+    await stageText(
+      fixture,
+      branch.branchId,
+      1,
+      " Second",
+      "agent",
+      undefined,
+      undefined,
+      otherThreadId,
+    );
+    const latestId = await stageText(fixture, branch.branchId, 0, " Latest", "agent");
+    await db
+      .update(schema.branchWriteJournal)
+      .set({ status: "rollback_pending" })
+      .where(eq(schema.branchWriteJournal.id, latestId));
+    await stageText(
+      fixture,
+      branch.branchId,
+      2,
+      " Writer",
+      "writer",
+      undefined,
+      undefined,
+      otherThreadId,
+    );
+    await stageText(
+      fixture,
+      branch.branchId,
+      2,
+      " Unattributed",
+      "agent",
+      undefined,
+      undefined,
+      null,
+    );
+    const drafts = await fixture.collab.draftReview.list({ workId: WORK_ID });
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toHaveProperty("actorThreads", [
+      { threadId: THREAD_ID, title: "Thread" },
+      { threadId: otherThreadId, title: "Other chat" },
+    ]);
+  });
+
+  it.each([
+    "apply",
+    "discard",
+  ] as const)("per-change %s removes only the settled chat from the draft list", async (action) => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.\n\nBeta base.\n\nGamma base.", "settled-chat");
+    const fixture = harness.crossWorkProbeFixture();
+    const otherThreadId = await seedOtherChat();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const firstId = await stageText(fixture, branch.branchId, 0, " First", "agent");
+    await stageText(
+      fixture,
+      branch.branchId,
+      1,
+      " Second",
+      "agent",
+      undefined,
+      undefined,
+      otherThreadId,
+    );
+    await stageText(fixture, branch.branchId, 2, " Writer", "writer");
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const before = await fixture.collab.draftReview.list({ workId: WORK_ID });
+    expect(before[0]).toHaveProperty("actorThreads", [
+      { threadId: otherThreadId, title: "Other chat" },
+      { threadId: THREAD_ID, title: "Thread" },
+    ]);
+    const preview = await fixture.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw new Error("missing preview");
+    const first = preview.operations.find((op) => op.sourceUpdateIds.includes(firstId as never));
+    if (!first) throw new Error("missing first operation");
+    const request = {
+      ...command,
+      operationIds: [first.operationId],
+      liveRevisionToken: preview.liveRevisionToken,
+      draftRevisionToken: preview.draftRevisionToken,
+    };
+    const result =
+      action === "apply"
+        ? await fixture.collab.draftReview.applyWorkDraftChanges(request)
+        : await fixture.collab.draftReview.discardWorkDraft(request);
+    expect(result).toMatchObject({
+      status: action === "apply" ? "applied" : "discarded",
+      draftClosed: false,
+    });
+    const after = await fixture.collab.draftReview.list({ workId: WORK_ID });
+    expect(after).toHaveLength(1);
+    expect(after[0]).toHaveProperty("actorThreads", [
+      { threadId: otherThreadId, title: "Other chat" },
+    ]);
+  });
+
   it("includes cumulative earlier deletions in the class before applying a later insertion", async () => {
     const harness = createReviewHarness();
     await harness.seedWriterDocument(
@@ -813,6 +922,7 @@ async function stageText(
   source: "agent" | "writer",
   clientId?: number,
   toolCallId?: string,
+  threadId: typeof THREAD_ID | null = THREAD_ID,
 ): Promise<number> {
   const staged = await fixture.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
     const clone = createCollabYDoc({ gc: false });
@@ -831,7 +941,7 @@ async function stageText(
       expectedGeneration: staged.generation,
       source,
       actorUserId: source === "writer" ? USER_ID : null,
-      threadId: THREAD_ID,
+      threadId,
       turnId: source === "agent" ? TURN_ID : null,
       wId: null,
       toolCallId: toolCallId ?? null,
@@ -860,4 +970,18 @@ async function journalStatuses(branchId: string) {
 
 function occurrences(value: string, fragment: string): number {
   return value.split(fragment).length - 1;
+}
+
+async function seedOtherChat() {
+  const threadId = randomUUID() as typeof THREAD_ID;
+  await db.insert(schema.threads).values({
+    id: threadId,
+    rootThreadId: threadId,
+    projectId: PROJECT_ID,
+    createdByUserId: USER_ID,
+    title: "Other chat",
+    kind: "primary",
+    status: "idle",
+  });
+  return threadId;
 }

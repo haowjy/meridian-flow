@@ -2,7 +2,12 @@
 
 The review wire shape is intentionally JSON-natural and UI-oriented:
 
-- List rows describe reviewable Work draft cards.
+- `ThreadDraftListItem` rows describe reviewable Work draft cards. Required
+  `actorThreads` lists chats with pending agent journal writes, latest journal
+  id per chat first, with current titles (or null). These are candidates: a
+  chat's writes may have been overwritten; previews confirm visible changes.
+  Writer and threadless rows are excluded; applied/discarded journal rows no
+  longer contribute.
 - Preview responses include required `draftId`, generation-fenced
   `reviewRoomName`, live markdown, branch markdown, review operations, and
   hunks. Agent operations carry `actorThreadId` and `actorThreadTitle` (the

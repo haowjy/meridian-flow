@@ -7,6 +7,8 @@ export interface ThreadDraftListItem {
   contextPath: string | null;
   status: "active";
   lastActorTurnId: string | null;
+  /** Chats with pending agent writes in this draft, latest first. Candidates: a chat's writes may be overwritten. */
+  actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;
   proposedOperationCount?: number | null;
   wordsAdded: number | null;

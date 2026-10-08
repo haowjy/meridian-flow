@@ -35,6 +35,7 @@ const group = (documentId: string, name: string): ThreadDraftGroup =>
       contextPath: `/${name}.md`,
       status: "active",
       lastActorTurnId: null,
+      actorThreads: [],
       updatedAt: "2026-01-01T00:00:00Z",
       wordsAdded: 4,
       wordsRemoved: 0,

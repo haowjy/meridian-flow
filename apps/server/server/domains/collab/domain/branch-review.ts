@@ -1,6 +1,6 @@
 /** Branch-backed review wire types for work-draft cards. */
 
-import type { ReviewHunk } from "@meridian/contracts/drafts";
+import type { ReviewHunk, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { DocumentId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { DraftReviewOperationInternal } from "./draft-review-types.js";
 
@@ -10,6 +10,7 @@ export type ReviewableDraft = {
   workId: WorkId;
   status: "active";
   lastActorTurnId: TurnId | null;
+  actorThreads: ThreadDraftListItem["actorThreads"];
   updatedAt: Date;
   documentName: string | null;
   contextPath: string | null;

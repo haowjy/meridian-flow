@@ -1,7 +1,6 @@
 /** Draft review service boundaries: command completion versus maintenance, and bulk draft listing. */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
-import * as Y from "yjs";
 import { cloneDoc, createDoc, model } from "./draft-review-test-fixture.js";
 import { createWorkDraftReviewService } from "./work-draft-review-service.js";
 
@@ -86,16 +85,21 @@ it("returns review metadata without serializing whole documents", async () => {
   live.destroy();
 });
 
-it("lists draft paths through one bulk port with persisted timestamps", async () => {
+it("lists paths and writing chat titles through bulk ports with persisted timestamps", async () => {
   const updatedAt = new Date("2026-01-02T03:04:05Z");
   const workId = "work" as WorkId;
   const ids = ["a", "b"] as DocumentId[];
+  const resolveThreadTitles = vi.fn(
+    async (_threadIds: readonly string[]) => new Map([["chat", "Pacing pass"]]),
+  );
   const input = {
+    resolveThreadTitles,
     workDraftPending: {
       list: async () =>
         ids.map((documentId) => ({
           branch: { branchId: documentId, documentId, workId, generation: 1, updatedAt },
           rows: [],
+          actorThreadIds: ["chat", "untitled"],
         })),
     },
     resolveDocumentUri: async () => {
@@ -107,6 +111,13 @@ it("lists draft paths through one bulk port with persisted timestamps", async ()
     },
   } as unknown as Parameters<typeof createWorkDraftReviewService>[0];
   const drafts = await createWorkDraftReviewService(input).draftReview.list({ workId });
+  expect(resolveThreadTitles).toHaveBeenCalledExactlyOnceWith(["chat", "untitled"]);
+  expect(drafts.map((draft) => draft.actorThreads)).toEqual(
+    ids.map(() => [
+      { threadId: "chat", title: "Pacing pass" },
+      { threadId: "untitled", title: null },
+    ]),
+  );
   expect(drafts.map((draft) => draft.updatedAt)).toEqual([updatedAt, updatedAt]);
   expect(drafts.map((draft) => draft.contextPath)).toEqual(["/folder/a.md", "/folder/b.md"]);
 });

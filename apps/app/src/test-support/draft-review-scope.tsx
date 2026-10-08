@@ -33,6 +33,7 @@ export const listed = {
   documentName: "Chapter 12",
   status: "active",
   lastActorTurnId: "turn-1",
+  actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
 
