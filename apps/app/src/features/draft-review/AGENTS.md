@@ -198,7 +198,9 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   refuse with `DraftCommandNotSentError` when `onlineManager` says the browser
   is offline: the change comes back as `offline` ("Couldn't apply/discard. Check
   your connection and try again.") and a whole-draft command is held on its
-  draft (`apply-offline`, `discard-offline`). TanStack's
+  draft (`apply-offline`, `discard-offline`). Apply draft and Discard draft
+  move to the next draft only when the command is sent: an offline click
+  keeps the writer on the draft, where its refusal shows. TanStack's
   default would pause the mutation and fire it on reconnect with the change
   gone from the screen meanwhile. Nothing fires when the network returns; the
   writer acts again.
