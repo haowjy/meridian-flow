@@ -795,23 +795,36 @@ function partitionConcurrentUpdates(
 ): PartitionedConcurrentUpdate[] {
   const upstreamState =
     input.currentUpstreamState ?? Y.encodeStateAsUpdate(input.fallbackCurrentUpstream);
-  const coverage = partitionByBlockCoverage({
-    baselineState: input.baselineState,
-    upstreamState,
-    rows: input.journalRows.map((row) => ({
-      id: row.id,
-      source: row.source,
-      actorTurnId: actorTurnIdForJournalRow(row),
-      update: row.updateData,
-    })),
-    model: input.model,
-    codec: input.codec,
-  });
-
   const scratch = docFromState(input.baselineState);
   try {
+    // A state vector alone misses delete-only edits. The snapshot includes both
+    // the integrated structs and tombstones; covered rows cannot change attribution.
+    const baseline = Y.snapshot(scratch);
+    const rows = input.journalRows.filter(
+      (row) => !Y.snapshotContainsUpdate(baseline, row.updateData),
+    );
+    if (
+      rows.length === 0 &&
+      input.baselineState &&
+      bytesEqual(input.baselineState, upstreamState)
+    ) {
+      return [];
+    }
+    const coverage = partitionByBlockCoverage({
+      baselineState: input.baselineState,
+      upstreamState,
+      rows: rows.map((row) => ({
+        id: row.id,
+        source: row.source,
+        actorTurnId: actorTurnIdForJournalRow(row),
+        update: row.updateData,
+      })),
+      model: input.model,
+      codec: input.codec,
+    });
+
     const partitioned: PartitionedConcurrentUpdate[] = [];
-    for (const row of input.journalRows) {
+    for (const row of rows) {
       const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
       if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
       const actorTurnId = actorTurnIdForJournalRow(row);

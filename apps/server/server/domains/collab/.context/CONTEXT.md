@@ -122,6 +122,17 @@ that safe:
   (`updateBranchSnapshot`) without it, because replication creates no
   reviewable edit.
 
+## Concurrent branch attribution
+
+Each preflight and final recheck uses its own upstream cut. Before replay,
+exclude journal updates contained in the baseline Yjs snapshot (struct clocks
+**and** delete set). Equal state vectors alone do not establish equality:
+delete-only writer edits must still be attributed. An identical encoded
+baseline/upstream skips block projection only when no novel journal rows remain,
+including live rows not yet pulled into the draft. Never advance the journal
+floor to a global maximum: it is a provisional, commit-bound attribution cursor,
+not proof that every earlier row was visible in the baseline.
+
 ## Composition root
 
 `composition.ts` is wiring-only: adapter and service instantiation,

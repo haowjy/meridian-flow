@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft writes skip attribution replay for history already in the document. Concurrent writer edits still appear in save receipts.
+
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
 - A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.
