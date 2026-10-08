@@ -8,7 +8,7 @@ import {
   BETA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   resetDatabase,
   schema,
   THREAD_ID,
@@ -22,8 +22,9 @@ if (!enabled || !process.env.DATABASE_URL) {
 }
 
 describe("change trail (postgres)", () => {
-  beforeEach(resetDatabase);
-  afterAll(closeDatabase);
+  const db = createTestDatabase();
+  beforeEach(() => resetDatabase(db));
+  afterAll(() => closeDatabase(db));
 
   it("S10 settles multiple durable writes after the turn errors into one reachable trail", async () => {
     let committed = 0;
@@ -35,7 +36,7 @@ describe("change trail (postgres)", () => {
     const durableWritesCommitted = new Promise<void>((resolve) => {
       allCommitted = resolve;
     });
-    const warm = createHarness({
+    const warm = createHarness(db, {
       async afterDurableCommit() {
         committed += 1;
         if (committed === 2) allCommitted();
@@ -62,7 +63,7 @@ describe("change trail (postgres)", () => {
     ]);
     warm.destroyWarmState();
 
-    const cold = createHarness();
+    const cold = createHarness(db);
     await cold.pollTrails();
     await cold.pollTrails();
     const trails = await cold.trailRowMembership();
@@ -227,7 +228,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("settles turn work that no push completes through a durable no-op", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     await harness.seedDestructivePush("unpushed-settlement");
 
     await harness.pollTrails();
@@ -262,7 +263,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("does not synthesize a shared trail from mixed journal ownership", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const branchId = await harness.seedDestructivePush("shared-settlement");
     await harness.makeJournalOwnershipMixed();
     await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
@@ -291,7 +292,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("serializes concurrent per-document trail versions without losing either push", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const alpha = await harness.seedDestructivePush("version-race-alpha", ALPHA_ID);
     const beta = await harness.seedDestructivePush("version-race-beta", BETA_ID);
 
@@ -314,7 +315,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("serializes shared recording against terminal reconciliation", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const first = await harness.seedDestructivePush("shared-record-reconcile-first", ALPHA_ID);
     await harness.makeJournalOwnershipNull();
     await harness.push(first);
@@ -337,7 +338,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("uses one sorted lock order for combined shared and turn reconciliation", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const branchId = await harness.seedDestructivePush("combined-lock-order");
     await harness.makeJournalOwnershipMixed();
     await harness.push(branchId);
@@ -355,7 +356,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("reopens and re-settles a settled trail when branch work is redone", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const branchId = await harness.seedDestructivePush("redo-after-settled");
 
     await harness.pollTrails();

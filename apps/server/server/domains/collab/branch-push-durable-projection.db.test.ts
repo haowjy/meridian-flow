@@ -1,31 +1,35 @@
 /** PostgreSQL canonical replay, trail projection and sweep attribution proofs. */
 
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import type { TrailChangeV1 } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
+  closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   expectLiveSweepOnly,
   expirePendingClaims,
   observeSettlement,
+  resetSettlementFixture,
   runInRootDrizzleTransaction,
   schema,
-  setupSettlementFixture,
 } from "./test-support/branch-push-settlement-fixture.js";
 
-setupSettlementFixture();
 describe("branch-push durable projection (postgres)", () => {
+  const db = createTestDatabase();
+  beforeEach(() => resetSettlementFixture(db));
+  afterAll(() => closeDatabase(db));
+
   it("replays the canonical whole branch when an active edit depends on a discarded row", async () => {
-    const warm = createHarness();
+    const warm = createHarness(db);
     const branchId = await warm.seedDiscardedDependencyPush();
     await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
     await expect(warm.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
     warm.destroyWarmState();
 
-    const cold = createHarness();
+    const cold = createHarness(db);
     await expect(cold.liveMarkdown(ALPHA_ID)).resolves.toBe("Dependency base. survivor\n");
     expect(
       await db
@@ -38,7 +42,7 @@ describe("branch-push durable projection (postgres)", () => {
 
   it("recovery refines the trail version already settled for the same joined revision", async () => {
     let faulted = false;
-    const harness = createHarness({
+    const harness = createHarness(db, {
       afterDurableCommit: async ({ appendWriterPrefix }) => {
         await appendWriterPrefix(ALPHA_ID, "Joined writer: ");
       },
@@ -55,8 +59,8 @@ describe("branch-push durable projection (postgres)", () => {
     const [before] = await db.select().from(schema.changeTrailShells);
     expect(before?.version).toBe(2);
 
-    await expirePendingClaims();
-    const cold = createHarness();
+    await expirePendingClaims(db);
+    const cold = createHarness(db);
     await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
     const [after] = await db.select().from(schema.changeTrailShells);
     expect(after?.version).toBe(before?.version);
@@ -67,7 +71,7 @@ describe("branch-push durable projection (postgres)", () => {
   it("restores a folded-away provisional contribution after a post-cut writer admission", async () => {
     const trailPersistence = createDrizzleChangeTrailAggregateWriter(db);
     let pushId: string | null = null;
-    const harness = createHarness({
+    const harness = createHarness(db, {
       afterDurableCommit: async ({ appendWriterPrefix }) => {
         const [detail] = await db.select().from(schema.changeTrailDocumentDetails);
         const [shell] = await db.select().from(schema.changeTrailShells);
@@ -130,7 +134,7 @@ describe("branch-push durable projection (postgres)", () => {
   });
 
   it("sweep elevation recovers without the safety attribution manifest", async () => {
-    const owner = createHarness({
+    const owner = createHarness(db, {
       afterDurableCommit: async () => {
         await db
           .update(schema.documentYjsCheckpoints)
@@ -142,11 +146,11 @@ describe("branch-push durable projection (postgres)", () => {
     const branchId = await owner.seedDestructivePush("missing-manifest");
     await expect(owner.push(branchId)).rejects.toThrow("death after manifest loss");
     owner.destroyWarmState();
-    await expirePendingClaims();
-    const cold = createHarness();
+    await expirePendingClaims(db);
+    const cold = createHarness(db);
     await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
     await expectLiveSweepOnly(cold);
-    const observed = await observeSettlement(cold);
+    const observed = await observeSettlement(db, cold);
     expect(observed.completionState).toMatchObject({ state: "completed" });
     expect(observed.applyResult).toMatchObject({ status: "applied" });
     cold.destroyWarmState();
