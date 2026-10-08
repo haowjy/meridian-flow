@@ -7,11 +7,9 @@ export {
 } from "./DraftInlineReviewExtension";
 export { inlineReviewClassNames } from "./decorations";
 export {
-  blockRemovalKind,
   buildInlineReviewModel,
   changeOperationIds,
   decodeAnchor,
-  hunkKind,
   type InlineReviewModel,
   type InlineReviewOperationKind,
   indexOperations,

@@ -617,6 +617,11 @@
   color: var(--color-review-writer-removed-foreground);
 }
 
+/* Every stretch unattributed: the fold's label wears the same neutral as its text. */
+.meridian-editor .ProseMirror .meridian-review-removal-unattributed {
+  color: var(--color-muted-foreground);
+}
+
 /* Colour is per stretch: one removal can hold the AI's words and the writer's. */
 .meridian-editor .ProseMirror .meridian-review-removal-text-writer {
   color: var(--color-review-writer-removed-foreground);
@@ -712,6 +717,14 @@
   background: var(--color-review-writer-tint);
 }
 
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal-unattributed
+  .meridian-review-removal-toggle {
+  border-color: var(--color-review-merged-border);
+  background: var(--color-review-merged-tint);
+}
+
 .meridian-editor .ProseMirror .meridian-review-removal-toggle::before {
   content: "";
   width: 0.4em;
@@ -785,6 +798,22 @@
   box-shadow:
     0 0 0 3px var(--color-review-writer-emphasis),
     0 0 0 5px var(--color-review-writer-ring);
+}
+
+.meridian-editor .ProseMirror .meridian-review-block.meridian-review-merged {
+  border-bottom: 0;
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 0 0 3px var(--color-review-merged-tint),
+    0 0 0 4px var(--color-review-merged-border);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-block.meridian-review-merged.meridian-review-emphasized {
+  box-shadow:
+    0 0 0 3px var(--color-review-merged-emphasis),
+    0 0 0 5px var(--color-review-merged-ring);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -5,9 +5,11 @@
  * collaborative TipTap editor so anchors resolve exactly as they do in review.
  */
 
+import { i18n } from "@lingui/core";
 import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as Y from "yjs";
 
 import {
   createReviewEditor,
@@ -23,6 +25,21 @@ import {
 import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
 import { type InlineReviewModel, unattributedHunkKey } from "./model";
 import { REMOVAL_COLLAPSE_CHARS } from "./removal-widget";
+
+/** Every anchor the editor resolves goes through here; counted to prove what a repaint does not redo. */
+const resolutions = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@tiptap/y-tiptap", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tiptap/y-tiptap")>();
+  return {
+    ...actual,
+    relativePositionToAbsolutePosition: (
+      ...args: Parameters<typeof actual.relativePositionToAbsolutePosition>
+    ) => {
+      resolutions.count += 1;
+      return actual.relativePositionToAbsolutePosition(...args);
+    },
+  };
+});
 
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -174,6 +191,84 @@ describe("insertion marks", () => {
   });
 });
 
+describe("block insertions", () => {
+  /** A hunk over the whole top-level paragraph that starts at `needle`, the way the server anchors one. */
+  function blockInsertion(
+    editor: Editor,
+    needle: string,
+    hunkId: string,
+    operationIds: string[],
+    flags: { unclassified?: boolean; mergeArtifact?: boolean } = {},
+  ): InlineReviewModel["hunks"][number] {
+    const start = posOf(editor, needle) - 1;
+    const node = editor.state.doc.nodeAt(start);
+    return {
+      kind: "block",
+      hunkId,
+      operationIds,
+      relStart: rel(editor, start),
+      relEnd: rel(editor, start + (node?.nodeSize ?? 0)),
+      insertedBlock: { type: "paragraph", display: needle },
+      ...flags,
+    };
+  }
+
+  it("paints an AI block green and a writer block gold", () => {
+    const { editor } = createReviewEditor(["Before.", "Agent block.", "Writer block."]);
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent"), operation("w1", "writer")],
+        [
+          blockInsertion(editor, "Agent block", "b1", ["a1"]),
+          blockInsertion(editor, "Writer block", "b2", ["w1"]),
+        ],
+      ),
+    );
+    expect(marked(editor, "meridian-review-block.meridian-review-added")).toEqual(["Agent block."]);
+    expect(marked(editor, "meridian-review-writer")).toEqual(["Writer block."]);
+  });
+
+  it("paints an unclassified block neutral, not as the AI's", () => {
+    const { editor } = createReviewEditor(["Before.", "Loose block."]);
+    const key = unattributedHunkKey("b-loose");
+    setModel(
+      editor,
+      model([], [blockInsertion(editor, "Loose block", "b-loose", [key], { unclassified: true })]),
+    );
+    expect(marked(editor, "meridian-review-merged")).toEqual(["Loose block."]);
+    expect(marked(editor, "meridian-review-added")).toEqual([]);
+    expect(marked(editor, "meridian-review-block")).toEqual(["Loose block."]);
+  });
+
+  it("paints a merge-artifact block neutral, whoever owns it", () => {
+    const { editor } = createReviewEditor(["Before.", "Merged block."]);
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent", "closure:m"), operation("w1", "writer", "closure:m")],
+        [blockInsertion(editor, "Merged block", "b1", ["a1", "w1"], { mergeArtifact: true })],
+      ),
+    );
+    expect(marked(editor, "meridian-review-merged")).toEqual(["Merged block."]);
+    expect(marked(editor, "meridian-review-added")).toEqual([]);
+    expect(marked(editor, "meridian-review-writer")).toEqual([]);
+  });
+
+  it("emphasizes a focused neutral block", () => {
+    const { editor } = createReviewEditor(["Before.", "Loose block."]);
+    const key = unattributedHunkKey("b-loose");
+    setModel(
+      editor,
+      model([], [blockInsertion(editor, "Loose block", "b-loose", [key], { unclassified: true })]),
+    );
+    editor.commands.setInlineReviewActiveOperation(key);
+    expect(marked(editor, "meridian-review-merged.meridian-review-emphasized")).toEqual([
+      "Loose block.",
+    ]);
+  });
+});
+
 describe("removals", () => {
   it("shows AI-removed live text struck inline, outside the document", () => {
     const { editor, doc } = createReviewEditor(["Elder Mo raised one withered hand."]);
@@ -258,6 +353,87 @@ describe("removals", () => {
     );
     expect(marked(editor, "meridian-review-merged")).toEqual(["one withered"]);
     expect(marked(editor, "meridian-review-added")).toEqual([]);
+  });
+
+  it("strikes an unclassified block removal in no author's colour", () => {
+    const { editor } = createReviewEditor(["Before.", "After."]);
+    const after = posOf(editor, "After") - 1;
+    const key = unattributedHunkKey("b-loose");
+    setModel(
+      editor,
+      model(
+        [],
+        [
+          {
+            kind: "block",
+            hunkId: "b-loose",
+            operationIds: [key],
+            unclassified: true,
+            relStart: rel(editor, after),
+            relEnd: rel(editor, after),
+            deletedBlock: { type: "paragraph", display: "A gone paragraph." },
+          },
+        ],
+      ),
+    );
+    const del = removals(editor)[0]?.querySelector("del");
+    expect(del?.textContent).toBe("A gone paragraph.");
+    expect(del?.classList.contains("meridian-review-removal-text-unattributed")).toBe(true);
+  });
+
+  it("folds an entirely unattributed removal under a neutral label, not the AI's", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    const between = posOf(editor, "Keep two") - 1;
+    const key = unattributedHunkKey("h-loose");
+    setModel(
+      editor,
+      model(
+        [],
+        [
+          textHunk(
+            editor,
+            "h-loose",
+            [key],
+            { from: between, to: between },
+            {
+              deletedText: "q".repeat(REMOVAL_COLLAPSE_CHARS + 10),
+              deletedSpans: [],
+              unclassified: true,
+            },
+          ),
+        ],
+      ),
+    );
+    const [folded] = removals(editor);
+    expect(folded?.querySelector("button")).not.toBeNull();
+    expect(folded?.classList.contains("meridian-review-removal-unattributed")).toBe(true);
+    // Opening it keeps the root neutral, matching the text it reveals.
+    folded?.querySelector("button")?.click();
+    expect(removals(editor)[0]?.classList.contains("meridian-review-removal-unattributed")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the AI's colour on a fold that mixes unattributed text with the AI's", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    const between = posOf(editor, "Keep two") - 1;
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent")],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["a1"],
+            { from: between, to: between },
+            { deletedText: "x".repeat(REMOVAL_COLLAPSE_CHARS + 10) },
+          ),
+        ],
+      ),
+    );
+    const [folded] = removals(editor);
+    expect(folded?.classList.contains("meridian-review-removal-unattributed")).toBe(false);
   });
 
   it("strikes the writer's removal of live text in gold", () => {
@@ -833,5 +1009,133 @@ describe("the bar's block", () => {
     const paragraphs = [...editor.view.dom.querySelectorAll("p")];
     expect(slot?.previousElementSibling).toBe(paragraphs[1]);
     expect(slots(editor)).toHaveLength(1);
+  });
+});
+
+describe("repainting without re-resolving", () => {
+  function threeHunks(editor: Editor): InlineReviewModel {
+    const first = posOf(editor, "alpha");
+    const second = posOf(editor, "beta");
+    const third = posOf(editor, "gamma");
+    const hunk = (id: string, op: string, from: number, to: number, extra = {}) =>
+      textHunk(editor, id, [op], { from, to }, { spans: [span(editor, op, from, to)], ...extra });
+    return model(
+      [
+        operation("a1", "agent", "c1"),
+        operation("a2", "agent", "c2"),
+        operation("a3", "agent", "c3"),
+      ],
+      [
+        hunk("h1", "a1", first, first + 5),
+        hunk("h2", "a2", second, second + 4),
+        hunk("h3", "a3", third, third + 5, { deletedText: "old" }),
+      ],
+    );
+  }
+
+  it("steps focus, pulses, folds and shows marks again without resolving an anchor", () => {
+    const { editor } = createReviewEditor(["alpha beta gamma."]);
+    setModel(editor, threeHunks(editor));
+    const settled = resolutions.count;
+    expect(settled).toBeGreaterThan(0);
+
+    editor.commands.setInlineReviewActiveOperation("a2");
+    expect(marked(editor, "meridian-review-emphasized")).toEqual(["beta"]);
+    editor.commands.setInlineReviewActiveOperation("a3");
+    expect(marked(editor, "meridian-review-emphasized").sort()).toEqual(["gamma", "old"]);
+    editor.commands.setInlineReviewPulse(["a1"]);
+    expect(marked(editor, "meridian-review-arrived")).toEqual(["alpha"]);
+    editor.commands.setInlineReviewBarSlot(true);
+    editor.commands.setInlineReviewMarksVisible(false);
+    editor.commands.setInlineReviewMarksVisible(true);
+    expect(marked(editor, "meridian-review-added")).toEqual(["alpha", "beta", "gamma"]);
+
+    expect(resolutions.count).toBe(settled);
+  });
+
+  it("resolves again for a new model", () => {
+    const { editor } = createReviewEditor(["alpha beta gamma."]);
+    setModel(editor, threeHunks(editor));
+    const settled = resolutions.count;
+    setModel(editor, threeHunks(editor));
+    expect(resolutions.count).toBeGreaterThan(settled);
+  });
+
+  it("re-anchors after the writer types, so a focus step marks the right words", () => {
+    const { editor } = createReviewEditor(["alpha beta gamma."]);
+    setModel(editor, threeHunks(editor));
+    const settled = resolutions.count;
+    editor.chain().setTextSelection(1).insertContent("Well, ").run();
+    editor.commands.setInlineReviewActiveOperation("a2");
+    expect(resolutions.count).toBeGreaterThan(settled);
+    expect(marked(editor, "meridian-review-emphasized")).toEqual(["beta"]);
+    expect(editor.getText()).toBe("Well, alpha beta gamma.");
+  });
+
+  it("re-anchors after a remote edit moves the words", () => {
+    const { editor, doc } = createReviewEditor(["alpha beta gamma."]);
+    setModel(editor, threeHunks(editor));
+    const settled = resolutions.count;
+    const text = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
+    doc.transact(() => (text.get(0) as Y.XmlText).insert(0, "Remote "), "remote");
+    expect(resolutions.count).toBeGreaterThan(settled);
+    editor.commands.setInlineReviewActiveOperation("a2");
+    expect(marked(editor, "meridian-review-emphasized")).toEqual(["beta"]);
+  });
+});
+
+describe("removal copy", () => {
+  const folded = (editor: Editor) => removals(editor)[0]?.querySelector("button");
+
+  function longRemoval(editor: Editor, paragraphs: number): void {
+    const between = posOf(editor, "Keep two") - 1;
+    const long = "The courtyard held its breath while the elders conferred. ".repeat(4);
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent")],
+        Array.from({ length: paragraphs }, (_, i) =>
+          textHunk(editor, `h${i}`, ["a1"], { from: between, to: between }, { deletedText: long }),
+        ),
+      ),
+    );
+  }
+
+  afterEach(() => i18n.activate("en"));
+
+  it("counts paragraphs and words with the plural of the language", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    longRemoval(editor, 1);
+    expect(folded(editor)?.textContent).toBe("1 paragraph removed");
+    longRemoval(editor, 3);
+    expect(folded(editor)?.textContent).toBe("3 paragraphs removed");
+    // A long span inside one paragraph counts words.
+    const { editor: inline } = createReviewEditor(["Alpha beta."]);
+    const at = posOf(inline, "beta");
+    setModel(
+      inline,
+      model(
+        [operation("a1", "agent")],
+        [textHunk(inline, "h1", ["a1"], { from: at, to: at }, { deletedText: "w ".repeat(150) })],
+      ),
+    );
+    expect(folded(inline)?.textContent).toBe("150 words removed");
+  });
+
+  it("redraws the fold when the language changes, without resolving an anchor again", () => {
+    // The test setup swaps the Lingui macros for English joiners, so what is
+    // observable here is the redraw; the catalogs carry the translations.
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    longRemoval(editor, 3);
+    folded(editor)?.click();
+    expect(folded(editor)?.textContent).toBe("Hide removed text");
+    folded(editor)?.click();
+    const settled = resolutions.count;
+    const before = folded(editor);
+    i18n.load("tt", {});
+    i18n.activate("tt");
+    expect(folded(editor)).not.toBe(before);
+    expect(folded(editor)?.textContent).toBe("3 paragraphs removed");
+    expect(resolutions.count).toBe(settled);
   });
 });
