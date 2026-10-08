@@ -72,6 +72,11 @@ export type LocalPresenceFields = {
   setField: (field: string, value: unknown) => void;
   /** The same single write path, in the shape upstream plugins demand. */
   readonly caretProvider: CaretProvider;
+  /**
+   * Which editor wrote the caret now on the wire. One slot for the session, so
+   * views of one session can tell whose caret it is (see `gateCaretPresence`).
+   */
+  readonly caretPublisher: { current: object | null };
 };
 
 /** The whole of one client's presence, as its owner holds it. */
@@ -109,6 +114,7 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
   return {
     peers: awareness,
     setField,
+    caretPublisher: { current: null },
 
     caretProvider: {
       awareness: {
@@ -166,29 +172,32 @@ export function createLocalPresence(awareness: Awareness): LocalPresence {
  * visible, and passes through untouched, clears included.
  *
  * A view that goes to the back calls `retire()` once, which clears the caret
- * it left on the wire if it still owns it (its last accepted write was a
- * caret). Ownership is that fact, not the cursor's value: two views can hold
- * equal cursors and a back view must still never clear the front one's.
+ * only if this view is still the session's current caret publisher. Its last
+ * write, not the cursor's value, decides that: two views can hold equal
+ * cursors, and a back view must never clear the front one's, whichever of the
+ * two retires or publishes first.
  */
 export function gateCaretPresence(
   presence: LocalPresenceFields,
   publishing: () => boolean,
 ): { presence: LocalPresenceFields; retire: () => void } {
   const wire = presence.caretProvider.awareness;
-  let ownsCaret = false;
+  const publisher = presence.caretPublisher;
+  const self = {};
   const setCaretField = (field: string, value: unknown): void => {
     if (field !== "cursor") {
       presence.setField(field, value);
       return;
     }
     if (!publishing()) return;
-    ownsCaret = value != null;
+    publisher.current = self;
     presence.setField(field, value);
   };
   return {
     presence: {
       peers: presence.peers,
       setField: presence.setField,
+      caretPublisher: publisher,
       caretProvider: {
         awareness: {
           clientID: wire.clientID,
@@ -204,8 +213,8 @@ export function gateCaretPresence(
       },
     },
     retire() {
-      if (!ownsCaret) return;
-      ownsCaret = false;
+      if (publisher.current !== self) return;
+      publisher.current = null;
       presence.setField("cursor", null);
     },
   };
