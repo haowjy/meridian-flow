@@ -34,6 +34,7 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
           .limit(1);
         if (!project) return null;
         const workScoped = isWorkScopedProjectContextScheme(input.scheme);
+        if (input.rootThreadId && (input.workId || input.scheme !== "scratch")) return null;
         if (!workScoped && input.workId !== null) return null;
         // Liveness facts (live source, live project, live work) are the same ones
         // recent-documents' visibleIdentity filters on and project-context-availability
@@ -47,19 +48,25 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
             and(
               eq(contextSources.slug, input.scheme),
               isNull(contextSources.deletedAt),
-              workScoped
+              input.rootThreadId
                 ? and(
-                    eq(works.projectId, input.projectId),
-                    isNull(works.deletedAt),
-                    input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
-                  )
-                : and(
-                    isNull(contextSources.workId),
+                    eq(contextSources.rootThreadId, input.rootThreadId),
+                    eq(contextSources.projectId, input.projectId),
                     isNull(projects.deletedAt),
-                    input.scheme === "user"
-                      ? and(eq(projects.userId, input.userId), eq(projects.isPersonal, true))
-                      : eq(projects.id, input.projectId),
-                  ),
+                  )
+                : workScoped
+                  ? and(
+                      eq(works.projectId, input.projectId),
+                      isNull(works.deletedAt),
+                      input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
+                    )
+                  : and(
+                      isNull(contextSources.workId),
+                      isNull(projects.deletedAt),
+                      input.scheme === "user"
+                        ? and(eq(projects.userId, input.userId), eq(projects.isPersonal, true))
+                        : eq(projects.id, input.projectId),
+                    ),
             ),
           )
           .limit(1);

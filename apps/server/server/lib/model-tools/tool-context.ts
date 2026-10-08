@@ -163,7 +163,10 @@ export async function resolveContextPort(
   responseId?: string,
   version?: DocumentVersion,
 ): Promise<ResolvedModelContextPort | ToolErrorOutput> {
-  const resolution = await resolveThreadContext(deps, threadId);
+  const resolution = await resolveThreadContext(
+    { ...deps, scratchLineages: deps.contextPorts.lineages },
+    threadId,
+  );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
   return {
     resolution,

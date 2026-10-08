@@ -17,6 +17,7 @@ import {
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
+import { reconcileLineageScratch } from "../../../context/index.js";
 import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
@@ -327,6 +328,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         await projectionMutation.publishWorks([id]);
         await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
+        await reconcileLineageScratch(db, lockedTree.threadIds);
         return { before, after, threadIds: deletedThreadIds };
       });
     },
@@ -356,6 +358,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             liveThreadIds: lockedTree.liveThreadIds,
             at: restoredAt,
           });
+          await reconcileLineageScratch(db, lockedTree.threadIds);
           await projectionMutation.publishWorks([row.id]);
           await deps.fileAccessChanges.publish({ workId: id });
           return { before: existing, after: mapWork(row), changed: true };

@@ -8,7 +8,7 @@ const personal = "personal" as ProjectId;
 it.each([
   ["manuscript://v/base.md", "next.md#scene", "manuscript://v/next.md", project],
   ["kb://base.md", "scratch://@arc/next.md", "scratch://@arc/next.md", project],
-  ["kb://base.md", "scratch://@/next.md", "scratch://@/next.md", project],
+  ["kb://base.md", "scratch://@/c12/next.md", "scratch://@/c12/next.md", project],
   ["kb://base.md", "user://preferences.md", "user://preferences.md", personal],
   ["user://v/base.md", "next.md", "user://v/next.md", personal],
   ["kb://base.md", "scratch://next.md", null, null],

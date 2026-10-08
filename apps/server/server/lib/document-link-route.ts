@@ -23,6 +23,7 @@ export async function handleDocumentLinkResolveRequest(
     projectId: string;
     userId: UserId;
     workId?: string | null;
+    rootThreadId?: string | null;
     target: DocumentLinkTarget;
     holder?: ResolveDocumentLinkRequest["holder"];
   },
@@ -32,6 +33,7 @@ export async function handleDocumentLinkResolveRequest(
     projectId: input.projectId,
     userId: input.userId,
     workId: input.workId,
+    rootThreadId: input.rootThreadId,
     target: input.target,
     holder: input.holder,
   });
@@ -61,8 +63,13 @@ export function parseDocumentLinkResolveBody(body: unknown): ResolveDocumentLink
       invalidBody();
     holder = { documentId: holderRecord.documentId, href: holderRecord.href };
   }
+  const rootThreadId = record?.rootThreadId;
+  if (rootThreadId != null && (typeof rootThreadId !== "string" || !parseRequestId(rootThreadId)))
+    invalidBody();
+  const lineage = typeof rootThreadId === "string" ? { rootThreadId } : {};
   const workId = record?.workId;
   if (workId !== undefined && workId !== null && typeof workId !== "string") invalidBody();
+  if (rootThreadId != null && workId != null) invalidBody();
   const parsedWorkId = typeof workId === "string" ? parseRequestId(workId) : workId;
   if (typeof workId === "string" && !parsedWorkId) invalidBody();
 
@@ -71,6 +78,7 @@ export function parseDocumentLinkResolveBody(body: unknown): ResolveDocumentLink
       if (!validTargetPart(target?.uri)) invalidBody();
       return {
         ...(holder ? { holder } : {}),
+        ...lineage,
         workId: parsedWorkId,
         target: { kind, uri: target.uri },
       };
@@ -78,6 +86,7 @@ export function parseDocumentLinkResolveBody(body: unknown): ResolveDocumentLink
       if (!validTargetPart(target?.path) || !validTargetPart(target?.baseUri)) invalidBody();
       return {
         ...(holder ? { holder } : {}),
+        ...lineage,
         workId: parsedWorkId,
         target: { kind, path: target.path, baseUri: target.baseUri },
       };

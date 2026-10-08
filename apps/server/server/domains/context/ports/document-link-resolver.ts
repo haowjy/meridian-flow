@@ -14,6 +14,7 @@ export interface ResolveDocumentLinkInput {
   projectId: string;
   userId: string;
   workId?: string | null;
+  rootThreadId?: string | null;
   target: DocumentLinkTarget;
   holder?: { documentId: string; href: string };
 }

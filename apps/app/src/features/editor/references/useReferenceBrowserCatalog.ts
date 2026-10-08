@@ -1,3 +1,4 @@
+import type { CatalogScope } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   catalogViewFromCheckpoint,
@@ -48,7 +49,7 @@ export function useReferenceBrowserCatalog(
         ? (() => {
             let snapshot = projection.snapshot;
             let projectionError = projection.error;
-            const read = (scope: (typeof scopes)[number]) => {
+            const read = (scope: CatalogScope) => {
               const checkpoint = snapshot?.catalogs.find(
                 (candidate) =>
                   candidate.projectId === projectId &&

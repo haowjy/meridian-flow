@@ -23,8 +23,10 @@ export function createDocumentLinkResolver({
   catalog,
   workAuthorityResolver,
   history,
+  lineages,
 }: {
   catalog: ContextCatalog;
+  lineages?: import("./scratch-owner.js").ScratchLineages;
   history?: DocumentLinkHistory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
@@ -44,7 +46,17 @@ export function createDocumentLinkResolver({
     let scope: CatalogScope | null;
     if (scheme === "user") scope = { kind: "user", userId: input.userId };
     else if (isProjectScopedScheme(scheme)) scope = { kind: "project", projectId: input.projectId };
-    else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
+    else if (scheme === "scratch" && authority.kind === "lineage") {
+      const lineage = await lineages?.byRef(input.projectId, authority.rootThreadRef);
+      scope = lineage
+        ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
+        : null;
+    } else if (scheme === "scratch" && authority.kind === "contextual" && input.rootThreadId) {
+      const lineage = await lineages?.byId(input.projectId, input.rootThreadId);
+      scope = lineage
+        ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
+        : null;
+    } else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
     else if (authority.kind === "work") {
       const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
       scope = work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
@@ -94,6 +106,7 @@ function resolvedLink(file: CatalogFileEntry): ResolvedDocumentLink | null {
     scheme: parsed.value.scheme,
     path: parsed.value.path,
     uri: file.uri,
+    ...(file.scope.kind === "lineage" ? { rootThreadId: file.scope.rootThreadId } : {}),
     workId: file.scope.kind === "work" ? file.scope.workId : null,
   };
 }

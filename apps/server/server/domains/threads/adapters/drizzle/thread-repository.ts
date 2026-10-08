@@ -17,6 +17,7 @@ import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { lockThreadAndWorks, lockThreadForMutation } from "../../../../shared/thread-work-lock.js";
+import { reconcileLineageScratch } from "../../../context/index.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -564,6 +565,7 @@ export function createDrizzleThreadRepository(
           ),
         )
         .returning(threadColumns);
+      await reconcileLineageScratch(db, [id]);
       if (!row) throw new Error(`Thread trash transition requires a changed locked row: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })

@@ -78,6 +78,8 @@ export function catalogEntryLocation(
       throw new Error("Catalog file URI has invalid User authority");
     return { scheme, path: displayedPath(path), name: entry.name, workId: null };
   }
+  if (view.scope.kind === "lineage")
+    throw new Error("Chat-owned resource locations require the chat routing client");
   if (!isWorkScopedProjectContextScheme(scheme))
     throw new Error("Catalog file URI is not Work scoped");
   if (authority.kind === "none") {

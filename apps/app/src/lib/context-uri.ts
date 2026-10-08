@@ -59,6 +59,8 @@ export function contextRouteTargetFromUri(
   if (parsed.authority.kind === "contextual") {
     return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
   }
+  // PR 3 supplies chat-owned routing; never reinterpret a chat qualifier as No Work.
+  if (parsed.authority.kind === "lineage") return null;
   const requestedSlug = parsed.authority.workSlug;
   const qualified = availableWorks.find(({ slug }) => slug === requestedSlug);
   return qualified ? { scheme: parsed.scheme, path: parsed.path, workId: qualified.id } : null;

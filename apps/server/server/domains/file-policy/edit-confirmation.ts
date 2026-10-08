@@ -88,7 +88,14 @@ async function grantsCover(
 
 function holds(container: Extract<FileTarget, { kind: "container" }>, facts: FileFacts): boolean {
   if (container.scheme !== facts.scheme) return false;
+  if (container.owner.scope === "lineage")
+    return (
+      facts.projectId === container.owner.projectId &&
+      facts.ownerRootThreadId === container.owner.rootThreadId
+    );
   return container.owner.scope === "project"
-    ? facts.ownerWork === null && facts.projectId === container.owner.projectId
+    ? facts.ownerWork === null &&
+        !facts.ownerRootThreadId &&
+        facts.projectId === container.owner.projectId
     : facts.ownerWork?.id === container.owner.workId;
 }

@@ -15,6 +15,7 @@ import {
   linkRedirects,
   modelResponses,
   projects,
+  threads,
   works,
 } from "@meridian/database/schema";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
@@ -22,6 +23,7 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
 import type { NamespaceLocation } from "../adapters/context-fs/document-locations.js";
+import { createDrizzleScratchLineages } from "../adapters/scratch-lineages.js";
 import { createDocumentLinkResolver } from "../document-link-resolution.js";
 import { resolveDocumentUri } from "../document-uri-resolver.js";
 import type { ContextTreeMoveCommand } from "../ports/context-tree-mutation-store.js";
@@ -65,7 +67,12 @@ export async function recordMoveRedirects(
 
   const authorities = createDrizzleProjectWorkAuthorityResolver(db);
   const catalog = createDrizzleContextCatalog(tx as Database);
-  const resolver = createDocumentLinkResolver({ catalog, workAuthorityResolver: authorities });
+  const lineages = createDrizzleScratchLineages(db);
+  const resolver = createDocumentLinkResolver({
+    catalog,
+    workAuthorityResolver: authorities,
+    lineages,
+  });
   const uris = new Map<string, Promise<string | null>>();
   function uri(id: string) {
     let result = uris.get(id);
@@ -82,12 +89,14 @@ export async function recordMoveRedirects(
       workId: works.id,
       projectId: contextSources.projectId,
       workProjectId: works.projectId,
+      rootThreadRef: threads.ref,
     })
     .from(contextSources)
     .leftJoin(works, eq(works.id, contextSources.workId))
+    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
     .where(eq(contextSources.id, input.destinationSourceId));
   if (!destination) throw new Error("Move destination source missing");
-  const destinationPrefix = `${destination.scheme}://${destination.workId ? `@${destination.slug ?? ""}/` : ""}`;
+  const destinationPrefix = `${destination.scheme}://${destination.rootThreadRef ? `@/${destination.rootThreadRef}/` : destination.workId ? `@${destination.slug ?? ""}/` : ""}`;
   const relocated = new Map<string, string>();
   for (const entry of moved)
     relocated.set(
@@ -127,8 +136,13 @@ export async function recordMoveRedirects(
         : p.authority.kind === "none"
           ? await authorities.noWork(projectId)
           : null;
-    const scope =
-      p.scheme === "user"
+    const lineage =
+      p.authority.kind === "lineage"
+        ? await lineages.byRef(projectId, p.authority.rootThreadRef)
+        : null;
+    const scope = lineage
+      ? { kind: "lineage" as const, projectId, rootThreadId: lineage.rootThreadId }
+      : p.scheme === "user"
         ? { kind: "user" as const, userId }
         : work
           ? { kind: "work" as const, projectId, workId: work.workId }

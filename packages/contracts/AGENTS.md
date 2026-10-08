@@ -58,3 +58,7 @@ runtime shapes, and observability records.
 - Do not import server adapters, database clients, React, or provider SDKs.
 - Blocks describe the writer transcript. Model-only document-text elisions belong
   to compaction metadata, never a block lifecycle flag or client event.
+
+- Scratch's `@/c12/` qualifier is a lineage owner, not a path segment.
+  `@/x` without a first-chat handle is invalid; bare `scratch://x` remains
+  contextual. Href traversal and relative spelling cannot cross lineage owners.

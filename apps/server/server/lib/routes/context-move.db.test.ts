@@ -45,6 +45,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const resolver = createDrizzleProjectWorkAuthorityResolver(db);
       const resolveLocator = async (locator: typeof move.source) => {
         if (locator.scope === "project") return locator;
+        if (locator.scope === "lineage") {
+          const [root] = await db
+            .select()
+            .from(schema.threads)
+            .where(eq(schema.threads.id, locator.rootThreadId));
+          if (!root?.ref) throw new Error("missing lineage root");
+          return {
+            ...locator,
+            authority: {
+              kind: "lineage" as const,
+              rootThreadRef: root.ref,
+            },
+          };
+        }
         const authority =
           locator.scope === "none"
             ? await resolver.noWork(
@@ -502,26 +516,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await yjsState(DOCUMENT_ID)).toEqual(documentYjsBefore);
     });
 
-    it("durably moves one document from no-Work to a real Work and back", async () => {
+    it("moves lineage notes to a Work but refuses writer moves back into a lineage", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
-      const created = await port.write("scratch://@/Unassigned.md", "portable", {
-        origin: { type: "human", userId: USER_ID },
+      const rootId = crypto.randomUUID();
+      await db.insert(schema.threads).values({
+        id: rootId,
+        rootThreadId: rootId,
+        ref: "c12",
+        projectId,
+        createdByUserId: USER_ID,
+      });
+      const created = await port.write("scratch://@/c12/Unassigned.md", "portable", {
+        origin: { type: "agent", agentSlug: null, threadId: rootId, turnId: crypto.randomUUID() },
       });
       expect(created).toMatchObject({
         ok: true,
-        value: { uri: "scratch://@/Unassigned.md", documentId: expect.any(String) },
+        value: { uri: "scratch://@/c12/Unassigned.md", documentId: expect.any(String) },
       });
       if (!created.ok || !created.value.documentId) throw new Error("missing no-Work document");
       const documentId = created.value.documentId;
-      const [noWork] = await db
-        .select({ id: schema.works.id })
-        .from(schema.works)
-        .where(and(eq(schema.works.projectId, projectId), eq(schema.works.isNoWork, true)));
       await expect(documentOwner(documentId)).resolves.toMatchObject({
         documentId,
-        sourceScope: "work",
-        sourceWorkId: noWork?.id,
-        sourceProjectId: null,
+        sourceScope: "lineage",
+        sourceWorkId: null,
+        sourceProjectId: projectId,
         folderName: null,
         documentName: "Unassigned",
         extension: "md",
@@ -535,7 +553,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           body: {
             expected: { kind: "file", nodeId: documentId },
             path: "Unassigned.md",
-            sourceWorkId: null,
+            sourceRootThreadId: rootId,
             destinationScheme: "scratch",
             destinationWorkId: workId,
             destinationFolderPath: "Assigned",
@@ -560,7 +578,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         port.stat("scratch://@current-work/Assigned/Unassigned.md"),
       ).resolves.toMatchObject({ ok: true, value: { documentId } });
-      await expect(port.stat("scratch://@/Unassigned.md")).resolves.toMatchObject({
+      await expect(port.stat("scratch://@/c12/Unassigned.md")).resolves.toMatchObject({
         ok: false,
         error: { code: "not_found" },
       });
@@ -575,33 +593,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             path: "Assigned/Unassigned.md",
             sourceWorkId: workId,
             destinationScheme: "scratch",
-            destinationWorkId: null,
+            destinationRootThreadId: rootId,
             destinationFolderPath: "Returned",
           },
         }),
-      ).resolves.toEqual({
-        status: "moved",
-        linkUpdate: { links: 0, documents: 0 },
-        scheme: "scratch",
-        path: "Returned/Unassigned.md",
-        name: "Unassigned.md",
-      });
-      const returned = await documentOwner(documentId);
-      expect(returned).toMatchObject({
-        documentId,
-        sourceScope: "work",
-        sourceWorkId: noWork?.id,
-        sourceProjectId: null,
-        folderName: "Returned",
-      });
-      expect(returned?.documentSourceId).toBe(returned?.folderSourceId);
-      await expect(port.stat("scratch://@/Returned/Unassigned.md")).resolves.toMatchObject({
-        ok: true,
-        value: { documentId },
-      });
-      await expect(
-        port.stat("scratch://@current-work/Assigned/Unassigned.md"),
-      ).resolves.toMatchObject({ ok: false, error: { code: "not_found" } });
+      ).rejects.toThrow();
     });
 
     it("graduates provisional naming in place on a deliberate stay-put", async () => {

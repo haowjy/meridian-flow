@@ -13,7 +13,6 @@ const work = (id: string, over: Partial<FileWorkFacts> = {}): FileWorkFacts => (
   deleted: false,
   ...over,
 });
-const NO_WORK = work("no-work", { slug: null, isNoWork: true });
 
 function file(
   scheme: ContextUriScheme,
@@ -39,6 +38,7 @@ const link = (permission: "read" | "edit", workId: string): AgentLink => ({
   threadId: `t-${permission}-${workId}`,
   permission,
   threadWorkId: workId,
+  scratchOwner: { scope: "work", workId },
 });
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
@@ -73,8 +73,6 @@ describe("file policy", () => {
     ["a read agent reads another Work's scratch", agent(link("read", "a")), file("scratch", X), "read", "agent_read_only"],
     ["after work switch to X, X's scratch is its own", agent(link("read", "x")), file("scratch", X), "edit", null],
     ["after work switch to X, A's scratch is not", agent(link("read", "x")), file("scratch", A), "read", "agent_read_only"],
-    ["No Work's scratch is a No Work agent's own", agent(link("read", "no-work")), file("scratch", NO_WORK), "edit", null],
-    ["No Work's scratch is not a named Work agent's", agent(link("read", "a")), file("scratch", NO_WORK), "read", "agent_read_only"],
     // Delegation: the minimum over the chain.
     ["an edit child under a read parent reads manuscript", agent(link("edit", "a"), link("read", "a")), file("manuscript"), "read", "agent_read_only"],
     ["an edit child under a read parent edits their shared Work's scratch", agent(link("edit", "a"), link("read", "a")), file("scratch", A), "edit", null],
@@ -89,6 +87,21 @@ describe("file policy", () => {
       ownerGrants.filter(() => principal.accountId === OWNER),
     );
     expect([result.level, result.limitedBy]).toEqual([level, limitedBy]);
+  });
+
+  it("read delegation edits only the shared lineage Scratch", () => {
+    const lineageLink = (rootThreadId: string): AgentLink => ({
+      ...link("read", "no-work"),
+      scratchOwner: { scope: "lineage", projectId: PROJECT, rootThreadId },
+    });
+    const notes = file("scratch", null, { ownerRootThreadId: "root" });
+    expect(decide(agent(lineageLink("root"), lineageLink("root")), notes, ownerGrants).level).toBe(
+      "edit",
+    );
+    expect(decide(agent(lineageLink("root"), lineageLink("other")), notes, ownerGrants).level).toBe(
+      "read",
+    );
+    expect(decide(agent(link("read", "named")), notes, ownerGrants).level).toBe("read");
   });
 
   it("names the archived Work for refusal copy", () => {

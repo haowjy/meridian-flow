@@ -108,7 +108,6 @@ describe("catalog-backed document links", () => {
     [project, "kb", "Gate.md"],
     [user, "user", "Gate.md"],
     [noneWork, "uploads", "Gate Map.png"],
-    [noneWork, "scratch", "Gate.md"],
     [b, "scratch", "notes/Gate.md"],
     [b, "uploads", "Gate.png"],
   ] as const)("opens an explicitly addressed file in %j / %s", async (scope, scheme, path) => {
@@ -123,13 +122,10 @@ describe("catalog-backed document links", () => {
   it("resolves contextual and relative paths without escaping their authority", async () => {
     const f = fixture();
     const file = f.add(a, "scratch", "Gate.md");
-    const noWork = f.add(noneWork, "scratch", "Gate.md");
     expect(await f.resolve({ kind: "scheme", uri: "scratch://Gate" })).toMatchObject({
       documentId: file.entryId,
     });
-    expect(await f.resolve({ kind: "scheme", uri: "scratch://Gate" }, null)).toMatchObject({
-      documentId: noWork.entryId,
-    });
+    expect(await f.resolve({ kind: "scheme", uri: "scratch://Gate" }, null)).toBeNull();
     expect(
       await f.resolve(
         { kind: "relative", baseUri: "scratch://@work-a/notes/Plan.md", path: "../Gate.md" },

@@ -41,6 +41,20 @@ const promotionDeps = (
 ) => ({
   objectStore,
   results,
+  lineages: {
+    async byId(projectId: string, rootThreadId: string) {
+      return { projectId, rootThreadId, rootThreadRef: "c12" };
+    },
+    async rootForThreadRef() {
+      return null;
+    },
+    async byRef() {
+      return null;
+    },
+    async list() {
+      return [];
+    },
+  },
   eventSink: createNoopEventSink(),
   workAuthorityResolver: {
     async byId(_projectId: string, workId: string) {
@@ -107,7 +121,7 @@ describe("promotion service", () => {
     expect(listed[0]?.provenance).toEqual(promoted.value.provenance);
   });
 
-  it("persists explicit no-Work authority for a no-Work owner", async () => {
+  it("labels No Work results with the first chat handle", async () => {
     const objectStore = createInMemoryObjectStore();
     const results = createInMemoryResultRepository();
     const promotion = createPromotionService(promotionDeps(objectStore, results));
@@ -125,7 +139,7 @@ describe("promotion service", () => {
     });
     expect(promoted).toMatchObject({
       ok: true,
-      value: { resultsUri: "scratch://@/results/output.png" },
+      value: { resultsUri: "scratch://@/c12/results/output.png" },
     });
   });
 

@@ -28,10 +28,12 @@ import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/dr
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
 import { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
+import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
 import { createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
+  createLineageContextDocumentStore,
   createNoWorkContextDocumentStore,
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
@@ -49,6 +51,7 @@ import type {
   ThreadContextView,
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
+import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
   getInMemoryContextTreeMutationStore,
@@ -63,10 +66,12 @@ const WORK_SCOPED_CONTEXTFS_SCHEMES: readonly WorkScopedContextFsScheme[] =
   WORK_SCOPED_CONTEXT_URI_SCHEMES;
 
 export interface UnifiedContextPortFactory {
+  lineages: ScratchLineages;
   forProject(
     projectId: string,
     userId: string,
     workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>,
+    lineage?: ScratchLineage,
   ): ContextPort;
   forWork(
     authority: ResolvedWorkAuthority,
@@ -85,6 +90,8 @@ type ManifestView = {
 };
 
 interface ContextStoreResolvers {
+  lineages: ScratchLineages;
+  resolveLineageStore(projectId: string, rootThreadId: string): ContextDocumentStore;
   resolveProjectStore(
     projectId: string,
     userId: string,
@@ -96,11 +103,7 @@ interface ContextStoreResolvers {
     scheme: WorkScopedContextFsScheme,
     projectId?: string,
   ): ContextDocumentStore;
-  resolveNoWorkStore(
-    projectId: string,
-    scheme: WorkScopedContextFsScheme,
-    userId?: string,
-  ): ContextDocumentStore;
+  resolveNoWorkStore(projectId: string, scheme: "uploads", userId?: string): ContextDocumentStore;
   resolveNoWorkId(projectId: string): Promise<string>;
   resolveMutationStore(
     manifestView?: ManifestView,
@@ -218,7 +221,7 @@ function buildNoWorkContextFsAdapters(
   const { storeResolvers, commandTransaction } = assembly;
   const mutationStore = storeResolvers.resolveMutationStore({ projectId });
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
-  for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {
+  for (const scheme of ["uploads"] as const) {
     adapters.set(
       scheme,
       contextFsAdapter(assembly, {
@@ -240,6 +243,7 @@ function buildNoWorkContextFsAdapters(
 type ContextPortBuildScope =
   | {
       kind: "project";
+      lineage?: ScratchLineage;
       projectId: string;
       userId: string;
       workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
@@ -288,12 +292,37 @@ function buildUnifiedContextPort(input: {
 
   const workAuthorities = scope.workAuthorities;
   const primaryAdapters =
-    scope.kind === "work"
+    scope.kind === "work" && scope.authority.workSlug !== null
       ? buildWorkScopedContextFsAdapters(assembly, scope.authority.workId, scope.projectId)
       : buildNoWorkContextFsAdapters(assembly, scope.projectId);
   for (const [scheme, adapter] of primaryAdapters) adapters.set(scheme, adapter);
 
+  const lineageAdapters = (lineage: ScratchLineage) =>
+    new Map<ContextScheme, ContextSchemeAdapter>([
+      [
+        "scratch",
+        contextFsAdapter(assembly, {
+          store: storeResolvers.resolveLineageStore(scope.projectId, lineage.rootThreadId),
+          mutationStore: storeResolvers.resolveMutationStore({ projectId: scope.projectId }),
+          commandTransaction: input.commandTransaction,
+          scheme: "scratch",
+        }),
+      ],
+    ]);
+  const ownLineageId =
+    scope.kind === "work" && scope.thread?.scratchOwner?.scope === "lineage"
+      ? scope.thread.scratchOwner.rootThreadId
+      : scope.kind === "project"
+        ? (scope.lineage?.rootThreadId ?? null)
+        : null;
   return createContextPortRouter({
+    ownLineage: ownLineageId
+      ? () => storeResolvers.lineages.byId(scope.projectId, ownLineageId)
+      : undefined,
+    resolveLineage: (ref) => storeResolvers.lineages.byRef(scope.projectId, ref),
+    rootForThreadRef: (ref) => storeResolvers.lineages.rootForThreadRef(scope.projectId, ref),
+    listLineages: () => storeResolvers.lineages.list(scope.projectId),
+    lineageAdapters,
     adapters,
     adapterAuthorities: new Map(
       WORK_SCOPED_CONTEXTFS_SCHEMES.map((scheme) => [
@@ -311,7 +340,7 @@ function buildUnifiedContextPort(input: {
           ? scope.authority.workId
           : await storeResolvers.resolveNoWorkId(scope.projectId);
       return {
-        adapters: buildWorkScopedContextFsAdapters(assembly, workId, scope.projectId),
+        adapters: buildNoWorkContextFsAdapters(assembly, scope.projectId),
         workId,
       };
     },
@@ -328,8 +357,13 @@ function inMemoryNoWorkId(projectId: string): string {
 
 function createInMemoryStoreResolvers(
   registry: InMemoryUnifiedContextStoreRegistry,
+  lineages: ScratchLineages,
 ): ContextStoreResolvers {
   return {
+    lineages,
+    resolveLineageStore(_projectId, rootThreadId) {
+      return getInMemoryWorkContextStore(registry, rootThreadId, "scratch");
+    },
     resolveProjectStore(projectId, userId, scheme, _manifestView) {
       return getInMemoryProjectContextStore(registry, projectId, userId, scheme);
     },
@@ -365,6 +399,16 @@ function createProductionStoreResolvers(
   });
 
   return {
+    lineages: createDrizzleScratchLineages(db),
+    resolveLineageStore(projectId, rootThreadId) {
+      return createLineageContextDocumentStore(
+        db,
+        projectId,
+        rootThreadId,
+        membershipObserverFor({ projectId }),
+        catalogMutations,
+      );
+    },
     resolveProjectStore(projectId, userId, scheme, manifestView) {
       // Every scheme registers creations in the project manifest. The ws
       // onConnect gate requires live-room membership for ALL documents, and
@@ -419,16 +463,34 @@ export function createInMemoryUnifiedContextPortFactory(
   options: {
     documentSync?: ContextFSDeps["documentSync"];
     storeRegistry?: InMemoryUnifiedContextStoreRegistry;
+    lineages?: ScratchLineages;
   } = {},
 ): UnifiedContextPortFactory {
   const registry = options.storeRegistry ?? createInMemoryUnifiedContextStoreRegistry();
   const documentSync = options.documentSync ?? createInMemoryCollabDomain();
-  const storeResolvers = createInMemoryStoreResolvers(registry);
+  const storeResolvers = createInMemoryStoreResolvers(
+    registry,
+    options.lineages ?? {
+      async byId() {
+        return null;
+      },
+      async rootForThreadRef() {
+        return null;
+      },
+      async byRef() {
+        return null;
+      },
+      async list() {
+        return [];
+      },
+    },
+  );
 
   return {
-    forProject(projectId, userId, workAuthorities) {
+    lineages: storeResolvers.lineages,
+    forProject(projectId, userId, workAuthorities, lineage) {
       return buildUnifiedContextPort({
-        scope: { kind: "project", projectId, userId, workAuthorities },
+        scope: { kind: "project", projectId, userId, workAuthorities, lineage },
         storeResolvers,
         documentSync,
       });
@@ -483,9 +545,10 @@ export function createProductionUnifiedContextPortFactory(options: {
   }
 
   return {
-    forProject(projectId, userId, workAuthorities) {
+    lineages: storeResolvers.lineages,
+    forProject(projectId, userId, workAuthorities, lineage) {
       return buildUnifiedContextPort({
-        scope: { kind: "project", projectId, userId, workAuthorities },
+        scope: { kind: "project", projectId, userId, workAuthorities, lineage },
         storeResolvers,
         documentSync: options.documentSync,
         documentCreation: options.documentSync,

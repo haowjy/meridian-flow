@@ -40,6 +40,7 @@ export interface ContextReadRouteInput {
   scheme: ProjectContextTreeScheme;
   rawPath: unknown;
   workId?: string | null;
+  rootThreadId?: string | null;
 }
 interface ResolvedReadPath {
   uri: string;
@@ -86,7 +87,10 @@ export function resolveContextReadPath(
               ? parsed.value.authority.kind === "none"
               : parsed.value.authority.kind === "work" &&
                 parsed.value.authority.workSlug === authority.workSlug
-            : parsed.value.authority.kind === "none";
+            : "kind" in authority && authority.kind === "lineage"
+              ? parsed.value.authority.kind === "lineage" &&
+                parsed.value.authority.rootThreadRef === authority.rootThreadRef
+              : parsed.value.authority.kind === "none";
         if (!sameAuthority) {
           throw createError({ statusCode: 400, message: "Context authority does not match route" });
         }
@@ -117,7 +121,13 @@ export async function handleContextReadRequest(
 ): Promise<ContextReadResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   let authority: CanonicalContextAuthority = { kind: "contextual" };
-  if (isWorkScopedBrowseScheme(input.scheme)) {
+  if (input.rootThreadId) {
+    if (input.workId || input.scheme !== "scratch")
+      throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
+    const lineage = await deps.contextPorts.lineages.byId(input.projectId, input.rootThreadId);
+    if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
+    authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+  } else if (isWorkScopedBrowseScheme(input.scheme)) {
     if (!input.workId) authority = { kind: "none" };
     else {
       const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
@@ -126,6 +136,17 @@ export async function handleContextReadRequest(
       }
       authority = resolved;
     }
+  }
+  if (
+    input.scheme === "scratch" &&
+    !input.rootThreadId &&
+    !("workSlug" in authority && authority.workSlug !== null)
+  ) {
+    throw createError({
+      statusCode: 400,
+      message:
+        "Scratch requires a chat lineage or named Work. Use scratch://x in a chat, or scratch://@/c12/x.",
+    });
   }
   const path = resolveContextReadPath(input.scheme, input.rawPath, authority);
   const port = await contextPortForProjectBrowse({
@@ -137,6 +158,7 @@ export async function handleContextReadRequest(
     projectId: input.projectId,
     userId: input.userId,
     workId: input.workId,
+    rootThreadId: input.rootThreadId,
   });
   if (!port) throwContextWorkUnavailableHttpError("work_missing");
   const ref = await port.stat(path.uri);
