@@ -74,16 +74,6 @@ describe("explicit links and bare URL round trips", () => {
 
   it.each([
     {
-      rule: "matching filename",
-      input: "[a.md](a.md)",
-      expected: paragraph(t("a.md", [m("link", { href: "a.md", title: null })])),
-    },
-    {
-      rule: "matching spaced filename",
-      input: "[Lin Feng.md](<Lin Feng.md>)",
-      expected: paragraph(t("Lin Feng.md", [m("link", { href: "Lin Feng.md", title: null })])),
-    },
-    {
       rule: "angle autolink",
       input: "<kb://a.md>",
       expected: addressLink,

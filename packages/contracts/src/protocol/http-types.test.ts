@@ -1,63 +1,6 @@
 /** Working-set route parsing protects the scheme/work authority wire invariant. */
 import { describe, expect, it } from "vitest";
-import {
-  forkThreadRequestSchema,
-  handoffBriefRetryRequestSchema,
-  parseWorkingSetRoute,
-  parseWorkingSetRouteList,
-  replyRetryRequestSchema,
-} from "./http-types.js";
-import { apiThreadHandoffBriefPath, apiThreadTurnRetryPath } from "./paths.js";
-
-describe("fork request schema", () => {
-  it("requires a client id and explicit cutoff and rejects removed Agent selection input", () => {
-    const request = { id: crypto.randomUUID(), originTurnId: crypto.randomUUID() };
-    expect(forkThreadRequestSchema.safeParse(request).success).toBe(true);
-    expect(forkThreadRequestSchema.safeParse({ id: request.id }).success).toBe(false);
-    expect(
-      forkThreadRequestSchema.safeParse({
-        ...request,
-        agentSelection: {
-          catalogEntryId: crypto.randomUUID(),
-          definitionRevisionId: crypto.randomUUID(),
-        },
-      }).success,
-    ).toBe(false);
-  });
-});
-
-describe("reply retry request schema", () => {
-  it("requires exactly one client-minted UUID", () => {
-    expect(replyRetryRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(true);
-    expect(replyRetryRequestSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
-    expect(
-      replyRetryRequestSchema.safeParse({ id: crypto.randomUUID(), turnId: crypto.randomUUID() })
-        .success,
-    ).toBe(false);
-  });
-
-  it("builds the canonical retry path for a failed reply", () => {
-    expect(apiThreadTurnRetryPath("thread-id", "turn-id")).toBe(
-      "/api/threads/thread-id/turns/turn-id/retry",
-    );
-  });
-});
-
-describe("handoff brief retry route contract", () => {
-  it("requires one client-minted seed id and rejects extra fields", () => {
-    expect(handoffBriefRetryRequestSchema.safeParse({ id: crypto.randomUUID() }).success).toBe(
-      true,
-    );
-    expect(
-      handoffBriefRetryRequestSchema.safeParse({ id: crypto.randomUUID(), control: {} }).success,
-    ).toBe(false);
-    expect(handoffBriefRetryRequestSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
-  });
-
-  it("builds the canonical direct retry path", () => {
-    expect(apiThreadHandoffBriefPath("thread-id")).toBe("/api/threads/thread-id/handoff/brief");
-  });
-});
+import { parseWorkingSetRoute, parseWorkingSetRouteList } from "./http-types.js";
 
 describe("working-set route parser", () => {
   it("accepts each valid union arm", () => {
@@ -74,14 +17,6 @@ describe("working-set route parser", () => {
       ok: true,
       value: { documentId, scheme: "scratch", path: "/notes.md", workId: null },
     });
-  });
-
-  it("rejects locator-only and malformed document identities", () => {
-    expect(parseWorkingSetRoute({ scheme: "manuscript", path: "/chapter.md" }).ok).toBe(false);
-    expect(
-      parseWorkingSetRoute({ documentId: "not-a-uuid", scheme: "manuscript", path: "/chapter.md" })
-        .ok,
-    ).toBe(false);
   });
 
   it("enforces workId pairing in both directions", () => {

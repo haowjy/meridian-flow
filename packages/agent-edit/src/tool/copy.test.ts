@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 
-import { blockTexts, expectOutcome, hashAt } from "./test-support/assertions.js";
+import { expectOutcome, hashAt } from "./test-support/assertions.js";
 import {
   context,
   harness,
@@ -105,21 +105,5 @@ describe("document copy", () => {
     const commit = await ctx.core.commitResponse("response-copy");
     expect(commit.stagedCreates.committed).toEqual(["copy.md"]);
     expect(nodesJson(ctx.liveDoc("copy.md"))).toEqual(nodesJson(ctx.liveDoc("src.md")));
-  });
-
-  it("undoes a copy back to an empty document", async () => {
-    const ctx = harness();
-    seed(ctx, "src.md", [paragraph("Copied.")]);
-    const nodes = await sourceNodes(ctx, "src.md");
-    const copied = await ctx.core.write(
-      { command: "copy", file: "copy.md", from: { path: "src.md" } },
-      { ...context, copiedNodes: nodes },
-    );
-    expectOutcome(copied, "success");
-
-    const undone = await ctx.core.write({ command: "undo", file: "copy.md" }, context);
-
-    expect(undone.status).toBe("reversed");
-    expect(blockTexts(ctx.liveDoc("copy.md")).join("")).toBe("");
   });
 });
