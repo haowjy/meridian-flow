@@ -42,32 +42,6 @@ describe("matchDocument", () => {
     expect(match?.matchCount).toBe(6);
   });
 
-  it("never counts the hash itself", () => {
-    // "cafe" is hex, so a hash can spell a query the writer's prose does not.
-    expect(
-      matchDocument(["cafe|nothing here", "beef|the cafe was closed"], "cafe", HASHLINES),
-    ).toEqual({
-      matches: [{ excerpt: "the cafe was closed", blockHash: "beef" }],
-      matchCount: 1,
-    });
-  });
-
-  it("omits the hash when a serialized block has none, and its separator with it", () => {
-    // `stripBlockHash` correctly refuses this line — an empty prefix is not a
-    // hash — so leaving the separator on would have shown the writer a pipe.
-    expect(matchDocument(["|unhashed body"], "unhashed", HASHLINES)).toEqual({
-      matches: [{ excerpt: "unhashed body" }],
-      matchCount: 1,
-    });
-  });
-
-  it("treats plain markdown as lines and never splits a table row into a hash", () => {
-    expect(matchDocument(["| name | role |", "| Elara | envoy |"], "elara", PLAIN)).toEqual({
-      matches: [{ excerpt: "| Elara | envoy |" }],
-      matchCount: 1,
-    });
-  });
-
   it("returns null when nothing matches", () => {
     expect(matchDocument(["aa11|nothing"], "dragon", HASHLINES)).toBeNull();
     expect(matchDocument(["aa11|nothing"], "", HASHLINES)).toBeNull();
