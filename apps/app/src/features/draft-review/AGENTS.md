@@ -1,7 +1,7 @@
 # features/draft-review — the writer's changes under review
 
 The pieces every surface shows a review's changes with: the change list's rows,
-the focused change's bar, the stepper, the draft switcher, the toast. One change
+the focused change's bar, the stepper, the Draft chip and its menu, the file list, the toast. One change
 is one server closure class.
 
 ## Mental model
@@ -30,16 +30,43 @@ is one server closure class.
   `dispositionLocked`) is read from it. The change record never keeps its own
   pending state: a change's pending is the draft's claim. Never add a
   surface-specific guard or lock beside it.
-- **`useReviewHeader`** is the header's model without its layout: the Work's
-  drafts and their counts, the whole-draft commands that move on to the next
-  draft, the refusal line and "No changes left". The desktop header
-  (`features/editor/DraftReviewHeader`) and the phone's
+- **There is no review header row on the desktop.** The review's controls live in
+  the document's identity row (`DocumentIdentityBar`): the Draft chip with its
+  menu after the breadcrumb, then the stepper, Show changes, Discard and Apply
+  on the right (`features/editor/DraftReviewBand`, sized to the row's 22px
+  box, so entering review moves nothing below it). The state lines of the
+  review ("No changes left" with Next draft, "Applying", "Formatting changes
+  remain") are an inline run in that row (`ReviewStateInline`); refusals need a
+  line of their own and sit under the row (`DraftReviewFailureNotices`, only
+  while there is one). Narrow rows collapse in a fixed order, always on one row:
+  folders become `…`, Show changes becomes an icon (same name), `4 of 4`
+  becomes `4/4`, the scheme's name becomes its icon, then the file name
+  truncates. The Draft chip, Discard and Apply never hide.
+- **`useReviewHeader`** is the header's model without its layout: the next draft
+  file, the whole-draft commands that move on to it, the refusal line and "No
+  changes left". The identity row's band and the phone's header
   (`features/project/mobile/MobileReviewHeader`) are two layouts over it.
+- **The Draft chip (`DraftChip`) is one control in two states.** "Review draft"
+  on a live document with a pending draft (`DraftReviewChip`: the identity row
+  on the desktop, a row under the top bar on the phone) and "Draft" with a
+  chevron while reviewing (`DraftSwitcher`). Its menu is the versions of THIS
+  document: the live version and its draft (a document has one active draft
+  per Work today, so those are the two; listing drafts of one document across
+  Works needs an endpoint the server does not have), plus Rename, and on the
+  phone Apply draft, Discard draft and Hide changes. It names no other file.
+- **One file order, one Changes list.** Every list of draft files (composer strip,
+  dock Changes tab, Work files, phone changes sheet, Next draft) uses
+  `sortDraftFiles` (name, then id; never update time, which reshuffles as the AI
+  writes). Moving between files and the Work-wide Apply all and Discard all
+  live in `ReviewFiles` (dock tab and phone sheet, built by
+  `useReviewFileList`): every file once, the open file expanded in place with
+  its changes in document order (`reviewChanges` breaks ties on class id so a
+  refreshed preview never reorders them).
 - **Presentational components take no controller.** `ReviewChangeRow`,
-  `ReviewChangeBar`, `ReviewStepper`, `DraftSwitcher` and `ReviewToast` are
-  handed props and callbacks, so the phone's change sheet and bar reuse them.
-  `touch` is their phone form (44px targets); `DraftSwitcher` takes
-  `draftCommands` and `marks` to carry what the phone header has no room for.
+  `ReviewChangeBar`, `ReviewStepper`, `DraftSwitcher`, `ReviewFiles` and
+  `ReviewToast` are handed props and callbacks, so the phone's change sheet and
+  bar reuse them. `touch` is their phone form (44px targets); `DraftSwitcher`
+  takes `draftCommands` and `marks` to carry what the phone header has no room for.
 
 ## Key rules
 
@@ -131,17 +158,25 @@ is one server closure class.
   refuse with `DraftCommandNotSentError` when `onlineManager` says the browser
   is offline: the change comes back as `offline` ("Couldn't apply/discard. Check
   your connection and try again.") and a whole-draft command is held on its
-  draft (`apply-failed`, `discard-offline`), the same as a rejection. TanStack's
+  draft (`apply-offline`, `discard-offline`). TanStack's
   default would pause the mutation and fire it on reconnect with the change
   gone from the screen meanwhile. Nothing fires when the network returns; the
   writer acts again.
+- **A failure's wording comes from what the request was, never from its message**
+  (`client/query/draft-command-rejection`). No HTTP answer (offline, dropped):
+  `offline`, the only one that says "Check your connection". A typed server
+  envelope (`MeridianApiError`): `refused`, "Couldn't apply this change." (or
+  "...this draft.", "Couldn't discard...") followed by the server's own reason
+  when it sent one. An HTTP error with no envelope (a bare 5xx): `server-error`,
+  "...Try again." with no mention of the connection. The client words no reason
+  itself, so it assumes no Work. `stale` is unchanged.
 - Unknown outcomes are held, not guessed. A per-change Apply or Discard that got
   no answer is held on its change as `unknown` ("Couldn't confirm whether this
   applied." / "...was discarded. Check what is left before you try again."),
   apart from a refusal (`offline`); both run through one flow in the session. A
   whole-draft Discard has no unknown outcome: a lost answer is `discard-offline`. The copy promises no automatic update: only
   a read after the failure can resolve the change, and one can find it still there. A rejected
-  whole-draft Apply is held on that draft's record (`apply-failed`) and shown
+  whole-draft Apply is held on that draft's record (`apply-offline`, `apply-refused`, `apply-server-error`) and shown
   wherever the draft is listed (switcher row, composer strip, Work files, Changes
   tab) after the review moved on to the next draft; it never navigates back.
   The review the writer is in also says it: `useReviewHeader.failedElsewhere`

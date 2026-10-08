@@ -56,7 +56,9 @@ export function DraftSwitcher({
   marks,
   onRename,
 }: DraftSwitcherProps) {
-  // Rename opens a field that takes focus itself; the menu must not hand focus back to the chip over it.
+  // Rename opens a field that takes focus itself. It opens once the menu has finished
+  // closing (the menu's own focus return would otherwise land after the field's focus
+  // and leave it on the page), and the menu must not hand focus back to the chip.
   const renaming = useRef(false);
 
   return (
@@ -73,6 +75,7 @@ export function DraftSwitcher({
           if (!renaming.current) return;
           renaming.current = false;
           event.preventDefault();
+          onRename?.();
         }}
       >
         <DropdownMenuLabel className="text-caption font-normal text-muted-foreground">
@@ -118,7 +121,6 @@ export function DraftSwitcher({
           <DropdownMenuItem
             onSelect={() => {
               renaming.current = true;
-              onRename();
             }}
             className="pl-7"
           >

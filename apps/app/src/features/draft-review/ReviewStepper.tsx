@@ -53,12 +53,12 @@ export function ReviewStepper({
         {focusedIndex >= 0 ? (
           compact ? (
             <>
-              <span className="@max-[34rem]:sr-only">
+              <span className="@max-[36rem]:sr-only">
                 <Trans>
                   {position} of {count}
                 </Trans>
               </span>
-              <span aria-hidden className="hidden @max-[34rem]:inline">
+              <span aria-hidden className="hidden @max-[36rem]:inline">
                 {position}/{count}
               </span>
             </>
@@ -67,6 +67,15 @@ export function ReviewStepper({
               {position} of {count}
             </Trans>
           )
+        ) : compact ? (
+          <>
+            <span className="@max-[36rem]:sr-only">
+              {count === 1 ? <Trans>1 change</Trans> : <Trans>{count} changes</Trans>}
+            </span>
+            <span aria-hidden className="hidden @max-[36rem]:inline">
+              {count}
+            </span>
+          </>
         ) : count === 1 ? (
           <Trans>1 change</Trans>
         ) : (
