@@ -24,10 +24,11 @@ describe("writer review classes", () => {
     };
     const rows = [
       { id: 10, actorTurnId: "ai", updateData: edit(10, 0, 6, "proposed ") },
-      { id: 11, actorUserId: "writer", updateData: edit(11, 0, 10, "inside ") },
+      { id: 11, actorUserId: "writer", actorTurnId: null, updateData: edit(11, 0, 10, "inside ") },
       {
         id: 12,
         actorUserId: "writer",
+        actorTurnId: null,
         updateData: edit(
           12,
           blockIndex,
@@ -72,6 +73,7 @@ describe("writer review classes", () => {
     const rows = [..."word"].map((letter, index) => ({
       id: index + 10,
       actorUserId: "writer",
+      actorTurnId: null,
       updateData: captureUpdate(draft, () =>
         model.applyTextEdit(
           toDocHandle(draft),

@@ -425,6 +425,13 @@ async function commitPreparedDiscard(
   input: PreparedDiscardCommit,
   now: Date,
 ): Promise<void> {
+  await lockDocumentMutation(db, input.branch.documentId);
+  if (
+    input.expectedLiveRevision !== undefined &&
+    input.expectedLiveRevision !== (await readLiveReviewRevision(db, input.branch.documentId))
+  )
+    throw new DraftChangeRefusal("stale");
+
   const [casRow] = await db
     .update(documentBranches)
     .set({

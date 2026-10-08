@@ -164,7 +164,10 @@ export type TrailContributionReplacement = {
   documentTitles: ReadonlyMap<string, string>;
 };
 
+export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
+
 export type PreparedDiscardCommit = {
+  expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   state: Uint8Array;
@@ -261,11 +264,7 @@ export type BranchPushService = {
   }): Promise<PushToLiveResult>;
   pushSelectedToLive(input: {
     branchId: string;
-    journalIds?: readonly number[];
-    selectRows?: (
-      branch: BranchSnapshot,
-      rows: BranchJournalRow[],
-    ) => Promise<{ journalIds: readonly number[]; expectedLiveRevision: string }>;
+    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
@@ -303,10 +302,7 @@ export type BranchTurnReversal =
 export type BranchReviewService = {
   discardSelected(input: {
     branchId: string;
-    selectRows: (
-      branch: BranchSnapshot,
-      rows: BranchJournalRow[],
-    ) => Promise<{ journalIds: readonly number[] }>;
+    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
     reviewedByUserId?: UserId;
   }): Promise<
     | { status: "discarded"; branchId: string; journalIds: number[] }
