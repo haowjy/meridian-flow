@@ -14,8 +14,10 @@
  *    (decode `Y.RelativePosition` anchors → absolute positions).
  *  - Remote sync transactions rebuild from relative anchors; local writer
  *    typing maps the existing set through the transaction.
- *  - `setInlineReviewActiveOperation` command → rebuild in place so the
- *    focused change picks up the emphasis class.
+ *  - `setInlineReviewActiveOperation` command → repaint from the resolved
+ *    geometry so the focused change picks up the emphasis class. Anchors are
+ *    resolved once per model and document: a focus step, a pulse, a fold or a
+ *    locale change repaints without resolving a single position again.
  *  - `setInlineReviewMarksVisible(false)` hides every mark (the header's
  *    "Show changes" off) without dropping the model, selection or folds.
  *  - Local typing paints its own inserted range gold at once, so the writer's
@@ -25,6 +27,7 @@
  * this code path and pay no per-transaction cost.
  */
 
+import { i18n } from "@lingui/core";
 import { captureUndoRestorationClaims } from "@meridian/prosemirror-schema";
 import { Extension } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
@@ -33,7 +36,13 @@ import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type * as Y from "yjs";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { isRemoteDocumentRebuild } from "../../anchors";
-import { buildDecorations, inlineReviewClassNames, resolverFromState } from "./decorations";
+import {
+  inlineReviewClassNames,
+  paintDecorations,
+  type ReviewGeometry,
+  resolveGeometry,
+  resolverFromState,
+} from "./decorations";
 import type { InlineReviewModel } from "./model";
 import type { RemovalHandlers } from "./removal-widget";
 import { reviewWriterClient } from "./writer-client";
@@ -62,6 +71,11 @@ export interface InlineReviewPluginState {
   expandedRemovals: ReadonlySet<string>;
   /** The focused change's bar has no room in the margin and takes a block after the change. */
   barSlot: boolean;
+  /**
+   * The model's anchors resolved in `geometry.doc`, kept until the model or
+   * the document changes. Null while the binding cannot resolve anchors yet.
+   */
+  geometry: ReviewGeometry | null;
   /** Model-derived hunk decorations over the server draft projection. */
   decorations: DecorationSet;
 }
@@ -72,6 +86,7 @@ type PluginMeta =
   | { kind: "set-marks-visible"; visible: boolean }
   | { kind: "set-pulse"; operationIds: readonly string[] }
   | { kind: "set-bar-slot"; open: boolean }
+  | { kind: "relocalize" }
   | { kind: "removal-click"; operationId: string; toggle: string | null; keyboard: boolean };
 
 /** Spec flag on the writer's just-typed ranges; the next full rebuild replaces them. */
@@ -231,28 +246,41 @@ function removalHandlersFor(view: EditorView): RemovalHandlers {
   };
 }
 
-function paint(
+/**
+ * The geometry to paint: the one already resolved when it still belongs to this
+ * model and this document, otherwise a fresh resolve. A remote rebuild always
+ * re-resolves, since the binding's mapping changes under an unchanged document
+ * on its first passes.
+ */
+function geometryFor(
   model: InlineReviewModel | null,
-  state: InlineReviewPluginState,
+  previous: ReviewGeometry | null,
   newState: EditorState,
+  reresolve: boolean,
+): ReviewGeometry | null {
+  if (!model) return null;
+  if (!reresolve && previous?.model === model && previous.doc === newState.doc) return previous;
+  const resolver = resolverFromState(newState);
+  return resolver ? resolveGeometry(model, resolver) : null;
+}
+
+function paint(
+  geometry: ReviewGeometry | null,
+  state: InlineReviewPluginState,
   refocusRemoval: string | null = null,
 ) {
-  if (!state.marksVisible) return DecorationSet.empty;
-  const resolver = resolverFromState(newState);
-  return resolver
-    ? buildDecorations(
-        model,
-        {
-          activeOperationId: state.activeOperationId,
-          pulsedOperationIds: state.pulsedOperationIds,
-          expandedRemovals: state.expandedRemovals,
-          refocusRemoval,
-          barSlot: state.barSlot,
-        },
-        resolver,
-        removalHandlersFor,
-      )
-    : DecorationSet.empty;
+  if (!state.marksVisible || !geometry) return DecorationSet.empty;
+  return paintDecorations(
+    geometry,
+    {
+      activeOperationId: state.activeOperationId,
+      pulsedOperationIds: state.pulsedOperationIds,
+      expandedRemovals: state.expandedRemovals,
+      refocusRemoval,
+      barSlot: state.barSlot,
+    },
+    removalHandlersFor,
+  );
 }
 
 /**
@@ -321,9 +349,11 @@ export function buildInlineReviewPlugin({
           marksVisible,
           expandedRemovals: new Set(),
           barSlot: false,
+          geometry: null,
           decorations: DecorationSet.empty,
         };
-        return { ...initial, decorations: paint(initialModel, initial, state) };
+        const geometry = geometryFor(initialModel, null, state, true);
+        return { ...initial, geometry, decorations: paint(geometry, initial) };
       },
       apply(tr, previous, oldState, newState) {
         // Accepted PM content transactions precede the binding's Yjs write in
@@ -363,6 +393,8 @@ export function buildInlineReviewPlugin({
           if (meta.open === barSlot) return previous;
           barSlot = meta.open;
           mustRebuild = true;
+        } else if (meta?.kind === "relocalize") {
+          mustRebuild = true;
         } else if (meta?.kind === "set-marks-visible") {
           marksVisible = meta.visible;
           mustRebuild = true;
@@ -389,10 +421,12 @@ export function buildInlineReviewPlugin({
           marksVisible,
           expandedRemovals,
           barSlot,
+          geometry: previous.geometry,
           decorations: previous.decorations,
         };
         if (mustRebuild) {
-          let rebuilt = paint(model, next, newState, refocusRemoval);
+          next.geometry = geometryFor(model, previous.geometry, newState, ySyncChangeOrigin);
+          let rebuilt = paint(next.geometry, next, refocusRemoval);
           if (keepOptimistic && marksVisible) {
             const typed = previous.decorations
               .map(tr.mapping, tr.doc)
@@ -412,9 +446,17 @@ export function buildInlineReviewPlugin({
     },
     // Collaboration's view updates first (registered before review). Only then
     // can relative positions address the writer's newly allocated Yjs items.
-    view: () => {
+    view: (view) => {
       const detach = document && captureUndoRestorationClaims(document);
-      return { update: (view) => writerClient?.capture(view.state), destroy: () => detach?.() };
+      // The fold's label is copy: a locale change redraws it from the same geometry.
+      const unsubscribe = i18n.on("change", () => dispatchMeta(view, { kind: "relocalize" }));
+      return {
+        update: (view) => writerClient?.capture(view.state),
+        destroy: () => {
+          unsubscribe();
+          detach?.();
+        },
+      };
     },
     props: {
       decorations(state) {

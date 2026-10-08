@@ -90,7 +90,8 @@ the dock is a bug (the dock is a sidebar).
 
 ### Changes view: controller seam
 
-`DockChangesView` lists the change of the review open in the **Editor**. The
+`DockChangesView` lists the change of the review open in the **Editor**; the open
+file's body is `OpenFileChanges`, shared with the phone's sheet. The
 dock sits in the Chat's `DraftReviewBoundary`, whose controller never has a
 review open, so the view reads the Editor scope's value through
 `useEditorDraftReview()` (`EditorReviewScope`, offered by `ProjectView`) and
@@ -121,7 +122,7 @@ fresh claim. `focusReviewChange` reads the editor from this ref
 to highlight and scroll manuscript spans; warm hidden editors never stomp the
 reference because only the active review editor claims it.
 
-See [`features/chat/useDraftReviewController.ts`](../../../chat/useDraftReviewController.ts) and
+See [`features/draft-review/useDraftReviewController.ts`](../../../draft-review/useDraftReviewController.ts) and
 [`core/editor/.context/CONTEXT.md`](../../../../core/editor/.context/CONTEXT.md).
 
 ## Architecture

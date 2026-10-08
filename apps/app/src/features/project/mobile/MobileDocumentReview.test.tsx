@@ -516,11 +516,52 @@ describe("the change-list sheet", () => {
     });
   });
 
-  it("closes itself when the last change is handled", async () => {
+  it("stays open when the last change is handled, and says the file is done beside the other drafts", async () => {
     await render(async () => {
       await act(async () => named("Show the 3 changes")?.click());
       expect(sheet()).not.toBeNull();
       await flip(() => Object.assign(view, { items: [], finished: true }));
+      expect(sheet()).not.toBeNull();
+      expect(sheet()?.textContent).toContain("No changes left");
+      expect(sheet()?.textContent).toContain("Chapter 13");
+      expect(named("All drafts")).toBeDefined();
+    });
+  });
+
+  it("opens for a formatting-only file, with the other drafts and Apply all still in it", async () => {
+    Object.assign(view, { items: [], unlisted: true });
+    await render(async () => {
+      expect(header()?.querySelector("[aria-label='Next change']")).toBeNull();
+      await act(async () => named("Show the draft files")?.click());
+      expect(sheet()).not.toBeNull();
+      expect(sheet()?.textContent).toContain("Formatting changes remain");
+      expect(sheet()?.textContent).toContain("Chapter 13");
+      expect(named("All drafts")).toBeDefined();
+      const row = Array.from(sheet()?.querySelectorAll<HTMLElement>("button") ?? []).find((node) =>
+        node.textContent?.includes("Chapter 13"),
+      );
+      await act(async () => row?.click());
+      expect(launcher.openDockRow).toHaveBeenCalledWith(
+        expect.objectContaining({ documentId: "doc-13" }),
+        "w",
+      );
+      expect(sheet()).toBeNull();
+    });
+  });
+
+  it("holds a finished review's file in the list and offers the next draft", async () => {
+    Object.assign(view, { items: [], finished: true });
+    await render(async () => {
+      await act(async () => named("Show the draft files")?.click());
+      expect(sheet()?.textContent).toContain("No changes left");
+      const next = Array.from(sheet()?.querySelectorAll<HTMLElement>("button") ?? []).find(
+        (node) => node.textContent === "Next draft",
+      );
+      await act(async () => next?.click());
+      expect(launcher.openDockRow).toHaveBeenCalledWith(
+        expect.objectContaining({ documentId: "doc-13" }),
+        "w",
+      );
       expect(sheet()).toBeNull();
     });
   });
