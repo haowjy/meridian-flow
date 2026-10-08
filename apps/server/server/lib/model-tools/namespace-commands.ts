@@ -173,6 +173,7 @@ async function commitMove(
   const port = call.context.livePort();
   const moved = await port.commitWriterLocation(source.uri, input.path, {
     expected: { kind: "file", nodeId: source.documentId },
+    linksSettled: true,
   });
   if (!moved.ok) return Err(namespaceContextRefusal(input.command, moved.error));
   const landed = await port.stat(input.path);
@@ -241,6 +242,8 @@ export async function runNamespaceCommand(
     destination: grant.destination,
   });
   if (stale) return { isError: true, output: stale.result };
+
+  if (input.command === "move") await call.context.livePort().settleLinks([source.uri]);
 
   const committed = await underGrants(deps, input.command, sourcePath(input), grants, () =>
     deps.documentSync.namespaceChanges.commit(

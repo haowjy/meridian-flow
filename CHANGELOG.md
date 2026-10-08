@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Settle links before model move, Undo/Redo, and reply rollback transactions.
+
 - Removed unused namespace API exports and redundant Restore identity output.
 
 - Concurrent attribution requires its existing read baseline; removed unreachable fallback.

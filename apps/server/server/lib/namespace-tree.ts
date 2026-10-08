@@ -19,7 +19,7 @@ export function namespaceTree(
     delete: (uri, documentId) => port.delete(uri, { expected: { kind: "file", documentId } }),
     restore: (uri, documentId) => port.restore(uri, { documentId }),
     async settleLinks(uris) {
-      await port.settleLinks(uris);
+      if (!options.linksSettled) await port.settleLinks(uris);
       return namespaceTree(port, { linksSettled: true });
     },
     lock: (uris) => port.lockTree(uris),

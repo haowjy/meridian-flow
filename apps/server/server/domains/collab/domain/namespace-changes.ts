@@ -174,12 +174,16 @@ export function createNamespaceChanges(deps: {
       });
     },
 
-    reverse(tree, change, direction) {
+    async reverse(tree, change, direction) {
+      const settled =
+        change.kind === "move"
+          ? await tree.settleLinks([direction === "undo" ? change.toUri : change.fromUri])
+          : tree;
       return refusable(atomic, async () => {
         if (!(await store.transition(change.id, direction === "undo" ? "active" : "reversed"))) {
           throw new StepRefused({ code: "claimed" });
         }
-        const applied = await applyChange(tree, change.documentId, change, direction);
+        const applied = await applyChange(settled, change.documentId, change, direction);
         if (!applied.ok) throw new StepRefused(applied.error);
       });
     },
