@@ -16,7 +16,11 @@ import {
   previewWithoutOperations,
   readPreviewAfterChangeCommands,
 } from "./change-command-record";
-import { beginDraftCommand, resetDraftCommandRecords } from "./draft-command-record";
+import {
+  beginDraftCommand,
+  releaseDraftCommand,
+  resetDraftCommandRecords,
+} from "./draft-command-record";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
 const one = { classId: "c1", operationIds: ["1"] };
@@ -161,5 +165,44 @@ describe("change command record", () => {
     beginChangeCommand(draft, one, "apply");
     const other = { ...draft, draftId: "y" };
     expect(changeCommandState(currentChangeCommandRecords(), other, one)).toBeNull();
+  });
+
+  describe("a change the server regroups", () => {
+    const a = { classId: "closure:1", operationIds: ["1"] };
+    const b = { classId: "closure:1+2", operationIds: ["1", "2"] };
+    const c = { classId: "closure:1+2+3", operationIds: ["1", "2", "3"] };
+
+    it("retires the failure held under its old class when the writer acts again", () => {
+      failChangeCommand(draft, a, "apply", "stale");
+      expect(beginChangeCommand(draft, b, "discard")).toBe(true);
+      expect(Object.keys(currentChangeCommandRecords().changes)).toEqual([]);
+    });
+
+    it("shows the latest failure, however many times it was regrouped since", () => {
+      failChangeCommand(draft, a, "apply", "stale");
+      beginChangeCommand(draft, b, "discard");
+      failChangeCommand(draft, b, "discard", "refused", "The server's reason");
+      releaseDraftCommand(draft);
+      expect(changeCommandState(currentChangeCommandRecords(), draft, c)).toMatchObject({
+        mode: "discard",
+        code: "refused",
+        reason: "The server's reason",
+      });
+    });
+
+    it("shows the newest of several failures that still apply, not the first held", () => {
+      failChangeCommand(draft, a, "apply", "stale");
+      failChangeCommand(draft, { classId: "closure:2", operationIds: ["2"] }, "discard", "offline");
+      expect(changeCommandState(currentChangeCommandRecords(), draft, b)).toMatchObject({
+        mode: "discard",
+        code: "offline",
+      });
+    });
+
+    it("leaves the failures of unrelated changes alone", () => {
+      failChangeCommand(draft, { classId: "closure:9", operationIds: ["9"] }, "apply", "stale");
+      beginChangeCommand(draft, b, "discard");
+      expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(1);
+    });
   });
 });

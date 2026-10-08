@@ -112,10 +112,6 @@ function setRecord(
   });
 }
 
-function recordFor(draft: DraftRef, classId: string): ChangeCommandRecord | undefined {
-  return useChangeCommandStore.getState().records[recordKey(draft, classId)];
-}
-
 /** Claim the draft for one command on this change; false when any command is in flight on the draft. */
 export function beginChangeCommand(
   draft: DraftRef,
@@ -180,9 +176,38 @@ export function confirmChangeCommand(
   retireConfirmations();
 }
 
-/** Drop a held failure (the next action on the change, a dismissal); never touches a claim. */
+type FailedRecord = Extract<ChangeCommandRecord, { phase: "failed" }>;
+
+/**
+ * The failures held for this change: under its own class id, or under any
+ * class that shares one of its operations (the server regrouped it since). The
+ * one rule for finding a change's failure, to show it and to retire it.
+ */
+function failuresOfChange(
+  records: ChangeRecords,
+  draft: DraftRef,
+  change: ChangeRef,
+): { key: string; record: FailedRecord }[] {
+  const prefix = draftPrefix(draft);
+  const ids = new Set(change.operationIds);
+  const held: { key: string; record: FailedRecord }[] = [];
+  for (const [key, record] of Object.entries(records)) {
+    if (record.phase !== "failed" || !key.startsWith(prefix)) continue;
+    if (record.classId === change.classId || record.operationIds.some((id) => ids.has(id))) {
+      held.push({ key, record });
+    }
+  }
+  return held;
+}
+
+/** Drop the failures held for a change (the next action on it, a dismissal); never touches a claim. */
 export function clearChangeFailure(draft: DraftRef, change: ChangeRef): void {
-  if (recordFor(draft, change.classId)?.phase === "failed") setRecord(draft, change, null);
+  const held = failuresOfChange(useChangeCommandStore.getState().records, draft, change);
+  if (held.length === 0) return;
+  const dropped = new Set(held.map(({ key }) => key));
+  useChangeCommandStore.setState((state) => ({
+    records: Object.fromEntries(Object.entries(state.records).filter(([key]) => !dropped.has(key))),
+  }));
 }
 
 /** A confirmation only fences reads that started before it; drop it once none is left. */
@@ -313,7 +338,7 @@ export function hiddenOperationIds(
   return hidden;
 }
 
-/** What a change's command record says, matched by class id or any shared operation. */
+/** What a change's command record says: its claim, else its latest failure (`failuresOfChange`). */
 export function changeCommandState(
   records: ChangeCommandRecords,
   draft: DraftRef,
@@ -327,20 +352,18 @@ export function changeCommandState(
   ) {
     return { phase: "pending", mode: pending.mode };
   }
-  const own = records.changes[recordKey(draft, change.classId)];
-  const candidates = own ? [own] : recordsOfDraft(records.changes, draft);
-  const ids = new Set(change.operationIds);
-  for (const record of candidates) {
-    if (record.phase !== "failed") continue;
-    if (record !== own && !record.operationIds.some((id) => ids.has(id))) continue;
-    return {
-      phase: "failed",
-      mode: record.mode,
-      code: record.code,
-      ...(record.reason ? { reason: record.reason } : {}),
-    };
-  }
-  return null;
+  // Several can apply after regrouping; the writer's latest action is the one that counts.
+  const latest = failuresOfChange(records.changes, draft, change).reduce<FailedRecord | null>(
+    (newest, { record }) => (newest && newest.at > record.at ? newest : record),
+    null,
+  );
+  if (!latest) return null;
+  return {
+    phase: "failed",
+    mode: latest.mode,
+    code: latest.code,
+    ...(latest.reason ? { reason: latest.reason } : {}),
+  };
 }
 
 export function resetChangeCommandRecords(): void {
