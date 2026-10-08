@@ -71,9 +71,6 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
   useDraftReview: () => ({ controller, groups }),
 }));
 vi.mock("@/features/draft-review/useReviewChanges", () => ({ useReviewChanges: () => view }));
-vi.mock("@/features/draft-review/useDraftChangeCounts", () => ({
-  useDraftChangeCounts: () => new Map([["doc-13", 11]]),
-}));
 
 function render(
   props: Partial<React.ComponentProps<typeof DraftReviewBand>>,
