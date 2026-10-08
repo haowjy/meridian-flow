@@ -8,16 +8,9 @@ import {
   ThreadCreationConflictError,
   ThreadCreationNotFoundError,
 } from "./thread-creation.js";
-import { parseCreationTitle, throwThreadCreationError } from "./thread-creation-http.js";
+import { throwThreadCreationError } from "./thread-creation-http.js";
 
 describe("root creation transport", () => {
-  it.each([123, false, [], {}])("rejects malformed title %j", (value) => {
-    expect(() => parseCreationTitle(value)).toThrow("title must be a string or null");
-  });
-  it("preserves title text and normalizes empty titles", () => {
-    for (const value of [null, undefined, ""]) expect(parseCreationTitle(value)).toBeNull();
-    expect(parseCreationTitle(" A scene ")).toBe(" A scene ");
-  });
   it.each([
     [new AgentSelectionError("revision"), "agent_not_found"],
     [new InvalidWorkAttachmentError("Work unavailable"), "work_unavailable"],

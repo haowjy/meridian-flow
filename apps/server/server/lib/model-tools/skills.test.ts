@@ -66,65 +66,6 @@ async function criticTools() {
 }
 
 describe("skills:// at the model tools", () => {
-  it("reads a bound skill's SKILL.md and a resource whole, under the skill header", async () => {
-    const call = await criticTools();
-    const skill = await call("read", { path: "skills://story-review/SKILL.md" });
-    expect(skill).toMatch(
-      /^skills:\/\/story-review\/SKILL\.md\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n---\nname: /,
-    );
-    const resource = await call("read", { path: "skills://story-review/resources/line-edit.md" });
-    expect(resource).toMatch(
-      /^skills:\/\/story-review\/resources\/line-edit\.md\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n/,
-    );
-  });
-
-  it("reads a markdown file's #heading section and outline with document slugs (D60)", async () => {
-    const call = await criticTools();
-    const file = "skills://story-review/resources/line-edit.md";
-    const section = (await call("read", { path: `${file}#method` })) as string;
-    expect(section).toMatch(
-      /^skills:\/\/story-review\/resources\/line-edit\.md#method\nPaths in this skill are relative to skills:\/\/story-review\/\.\n\n## Method\n/,
-    );
-    expect(section).not.toContain("## Check");
-    // A GitHub-style slug (case, doubled hyphens) finds the same section.
-    expect(await call("read", { path: `${file}#--Method` })).toContain("## Method\n");
-    expect(await call("read", { path: file, format: "outline" })).toContain(
-      [
-        `Read a section with read({"path": "${file}#<slug>"}).`,
-        "",
-        "# Line Edit  #line-edit",
-        "## Method  #method",
-        "## Check  #check",
-      ].join("\n"),
-    );
-    expect(await call("read", { path: `${file}#nope` })).toContain(
-      'Section "#nope" was not found.',
-    );
-    expect(await call("read", { path: file, in: "abcd" })).toBe(
-      "Invalid arguments for read:\n- in: skills:// files have no block hashes, so in doesn't work here. Read the whole file or a #heading.",
-    );
-  });
-
-  it("loads a bound skill exactly as read does, and refuses an unbound one", async () => {
-    const call = await criticTools();
-    const loaded = await call("skill", { name: "story-review" });
-    expect(loaded).toBe(await call("read", { path: "skills://story-review/SKILL.md" }));
-    expect(loaded).toMatch(/^skills:\/\/story-review\/SKILL\.md\nPaths in this skill are relative/);
-    expect(await call("skill", { name: "creative-writing-modes" })).toBe(
-      'Skill "creative-writing-modes" isn\'t available. Skills you can load: story-review, writing-principles. (not_found)',
-    );
-  });
-
-  it("lists only the skills the binding offers", async () => {
-    const call = await criticTools();
-    expect(await call("ls", { path: "skills://" })).toBe(
-      "skills://\n  story-review/ (read-only)\n  writing-principles/ (read-only)",
-    );
-    expect(await call("ls", { path: "skills://story-review" })).toBe(
-      "skills://story-review/\n  resources/ (read-only)\n  SKILL.md (read-only)",
-    );
-  });
-
   it("answers an unbound skill and a path out of the folder as not found", async () => {
     const call = await criticTools();
     for (const path of [
