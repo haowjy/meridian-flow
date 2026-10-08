@@ -11,12 +11,12 @@
  *
  * Pure data, no React.
  */
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type { DraftPreviewResponse, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type { ChangeRef } from "@/client/query/draft-command-record";
 import { unattributedHunkKey } from "@/core/editor/extensions/inline-review";
 import { type ChangeAttribution, changeAttribution } from "./change-attribution";
 import {
   changeTextForHunks,
-  changeTextForOperations,
   type OperationChangeText,
   operationsWithWriterEdits,
 } from "./operation-change-text";
@@ -71,14 +71,36 @@ export function reviewChanges(
     else byClass.set(operation.closureClassId, [operation]);
   }
 
+  // One pass over the hunks: where each operation first appears, and which
+  // hunks each class owns (a hunk owned by operations of two classes is in both).
+  const classOfOperation = new Map<string, string>();
+  for (const operation of operations)
+    classOfOperation.set(operation.operationId, operation.closureClassId);
   const firstHunk = new Map<string, number>();
+  const hunksByClassId = new Map<string, ReviewHunk[]>();
   hunks.forEach((hunk, index) => {
-    for (const id of hunk.operationIds) if (!firstHunk.has(id)) firstHunk.set(id, index);
+    const classesOfHunk = new Set<string>();
+    for (const id of hunk.operationIds) {
+      if (!firstHunk.has(id)) firstHunk.set(id, index);
+      const classId = classOfOperation.get(id);
+      if (classId !== undefined) classesOfHunk.add(classId);
+    }
+    for (const classId of classesOfHunk) {
+      const bucket = hunksByClassId.get(classId);
+      if (bucket) bucket.push(hunk);
+      else hunksByClassId.set(classId, [hunk]);
+    }
   });
-  const writerJoined = operationsWithWriterEdits([...operations], [...hunks]);
+  const writerJoined = operationsWithWriterEdits(operations, hunks);
 
   const ranked = [...byClass].map(([classId, classOps]) => {
-    const change = describeChange(classId, classOps, hunks, firstHunk, writerJoined);
+    const change = describeChange(
+      classId,
+      classOps,
+      hunksByClassId.get(classId) ?? [],
+      firstHunk,
+      writerJoined,
+    );
     return {
       change,
       position: Math.min(
@@ -105,6 +127,41 @@ export function reviewChanges(
     .map(({ change }) => change);
 }
 
+type ActivePreview = Extract<DraftPreviewResponse, { status: "active"; inlineModelPresent: true }>;
+
+const changesOfPreview = new WeakMap<ActivePreview, ReviewChange[]>();
+
+/**
+ * `reviewChanges` of a preview, derived once per preview object: the header,
+ * the manuscript, the bar and the dock all read the same list, and the preview
+ * (immutable, shared by the query cache) is its identity.
+ */
+export function reviewChangesOfPreview(preview: ActivePreview): readonly ReviewChange[] {
+  let changes = changesOfPreview.get(preview);
+  if (!changes) {
+    changes = reviewChanges(preview.operations, preview.hunks);
+    changesOfPreview.set(preview, changes);
+  }
+  return changes;
+}
+
+/**
+ * The change a held focus now names. A class the server regrouped keeps some of
+ * its operations, so when the class id is gone the change that shares an
+ * operation with the focus is the same change.
+ */
+export function resolveFocusedChange(
+  changes: readonly ReviewChange[],
+  focus: ChangeRef | null,
+): ReviewChange | null {
+  if (!focus) return null;
+  const exact = changes.find((change) => change.classId === focus.classId);
+  if (exact) return exact;
+  if (focus.operationIds.length === 0) return null;
+  const held = new Set(focus.operationIds);
+  return changes.find((change) => change.operationIds.some((id) => held.has(id))) ?? null;
+}
+
 /** A hunk the server could not attribute and that no operation owns. It has no per-change commands. */
 function describeUnattributed(hunk: ReviewHunk): ReviewChange {
   const key = unattributedHunkKey(hunk.hunkId);
@@ -126,13 +183,11 @@ function describeUnattributed(hunk: ReviewHunk): ReviewChange {
 function describeChange(
   classId: string,
   classOps: ReviewOperation[],
-  hunks: readonly ReviewHunk[],
+  classHunks: readonly ReviewHunk[],
   firstHunk: ReadonlyMap<string, number>,
   writerJoined: ReadonlySet<string>,
 ): ReviewChange {
   const operationIds = classOps.map((op) => op.operationId);
-  const ids = new Set(operationIds);
-  const classHunks = hunks.filter((hunk) => hunk.operationIds.some((id) => ids.has(id)));
   const includesWriterEdits = classOps.some(
     (op) => op.kind === "writer" || writerJoined.has(op.operationId),
   );
@@ -160,7 +215,7 @@ function describeChange(
           : "ai",
     includesWriterEdits,
     merged,
-    change: changeTextForOperations(classOps, [...hunks]),
+    change: changeTextForHunks(classHunks, classOps),
     attribution: changeAttribution(classOps),
   };
 }

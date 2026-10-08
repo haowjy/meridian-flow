@@ -46,6 +46,28 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
   };
 }
 
+const withoutHidden = new WeakMap<
+  DraftPreviewResponse,
+  { hiddenKey: string; preview: DraftPreviewResponse }
+>();
+
+/**
+ * The read minus the hidden operations, one object for every reader of it: a
+ * reader's own copy would be a new preview each, and everything derived from a
+ * preview (the changes list) would be derived once per reader.
+ */
+function previewWithoutHidden(
+  data: DraftPreviewResponse,
+  hidden: ReadonlySet<string>,
+  hiddenKey: string,
+): DraftPreviewResponse {
+  const held = withoutHidden.get(data);
+  if (held?.hiddenKey === hiddenKey) return held.preview;
+  const preview = previewWithoutOperations(data, hidden);
+  withoutHidden.set(data, { hiddenKey, preview });
+  return preview;
+}
+
 export function useDraftPreview(
   projectId: string | null,
   workId: string | null,
@@ -77,7 +99,7 @@ export function useDraftPreview(
   const hidden = hiddenOperationIds(records, draft);
   const hiddenKey = [...hidden].sort().join(",");
   const preview = useMemo(
-    () => (data ? previewWithoutOperations(data, hidden) : null),
+    () => (data ? previewWithoutHidden(data, hidden, hiddenKey) : null),
     [data, hiddenKey],
   );
 

@@ -12,9 +12,11 @@ import { act, type ReactNode, useState } from "react";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
+  useDraftReview,
   useDraftReviewScopeValue,
 } from "@/features/chat/DraftReviewProvider";
 import type { DockRow } from "@/features/chat/docked-drafts";
+import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { withReactRoot } from "./react-dom-harness";
 
@@ -74,6 +76,7 @@ export const discarded = (draftClosed: boolean) => ({
 });
 
 export type ScopeProbe = {
+  queryClient: QueryClient;
   /** The Editor's scope: where a review lives and per-change commands run. */
   editor: DraftReviewContextValue;
   /** The Chat's scope: the composer's whole-draft commands. */
@@ -82,6 +85,8 @@ export type ScopeProbe = {
   header: ReviewHeaderModel;
   /** The writer opens another draft of the Work: the header then reads that one. */
   openDraft: (draft: ReviewedDraft) => Promise<void>;
+  /** A surface mounts after the review is already open (the dock's tab, a sheet): its view of the Editor's review. */
+  mountLateReader: () => Promise<() => ReviewChangesView>;
 };
 
 export type ReviewedDraft = { documentId: string; draftId: string };
@@ -95,11 +100,26 @@ export function renderReviewScopes(
     onOpenDraft = () => {},
   } = options;
   const current: Partial<ScopeProbe> = {};
+  let lateView: ReviewChangesView | null = null;
+  let showLateReader: (() => void) | null = null;
+  function LateReader() {
+    lateView = useReviewChanges(useDraftReview().controller);
+    return null;
+  }
   function HeaderProbe() {
     const [reviewed, setReviewed] = useState(initialReviewed);
+    const [lateMounted, setLateMounted] = useState(false);
+    showLateReader = () => setLateMounted(true);
     current.header = useReviewHeader({ ...reviewed, onOpenDraft });
     current.openDraft = (draft) => act(async () => setReviewed(draft));
-    return null;
+    current.mountLateReader = async () => {
+      await act(async () => showLateReader?.());
+      return () => {
+        if (!lateView) throw new Error("The late reader did not mount.");
+        return lateView;
+      };
+    };
+    return lateMounted ? <LateReader /> : null;
   }
   function Scopes(): ReactNode {
     const editor = useDraftReviewScopeValue({ projectId: "project-a", work });
@@ -113,6 +133,7 @@ export function renderReviewScopes(
     );
   }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  current.queryClient = queryClient;
   return withReactRoot(
     <QueryClientProvider client={queryClient}>
       <Scopes />

@@ -64,6 +64,7 @@ function preview(
   };
 }
 
+const inReview = { documentId: "doc", draftId: "draft" };
 const key = projectQueryKeys.workDraftPreview("p", "w", "doc", "draft");
 const draft = { projectId: "p", workId: "w", documentId: "doc", draftId: "draft" };
 
@@ -78,7 +79,7 @@ function fakeController(overrides: Partial<DraftReviewController> = {}) {
     projectId: "p",
     workId: "w",
     inlineReview: { kind: "inline", documentId: "doc", draftId: "draft" },
-    focusedClassId: null,
+    focus: null,
     dispositionLocked: false,
     focusReviewChange: vi.fn(),
     applyChange: vi.fn(async () => ({ kind: "change-settled", mode: "apply" })),
@@ -230,7 +231,9 @@ describe("useReviewChanges", () => {
   });
 
   it("keeps focus on a change the server regrouped, because it shares an operation", async () => {
-    const controller = fakeController({ focusedClassId: "c2" } as Partial<DraftReviewController>);
+    const controller = fakeController({
+      focus: { classId: "c2", operationIds: ["2"] },
+    } as Partial<DraftReviewController>);
     await mount(controller, async (client) => {
       expect(latest.focused?.classId).toBe("c2");
       client.setQueryData(
@@ -250,19 +253,24 @@ describe("useReviewChanges", () => {
     await mount(controller, async () => {
       await act(async () => latest.step(1));
       expect(controller.focusReviewChange).toHaveBeenLastCalledWith(
+        inReview,
         expect.objectContaining({ classId: "c1" }),
         { scroll: true },
       );
       await act(async () => latest.step(-1));
       expect(controller.focusReviewChange).toHaveBeenLastCalledWith(
+        inReview,
         expect.objectContaining({ classId: "c3" }),
         { scroll: true },
       );
     });
-    const focused = fakeController({ focusedClassId: "c3" } as Partial<DraftReviewController>);
+    const focused = fakeController({
+      focus: { classId: "c3", operationIds: ["3"] },
+    } as Partial<DraftReviewController>);
     await mount(focused, async () => {
       await act(async () => latest.step(1));
       expect(focused.focusReviewChange).toHaveBeenLastCalledWith(
+        inReview,
         expect.objectContaining({ classId: "c1" }),
         { scroll: true },
       );
@@ -270,7 +278,9 @@ describe("useReviewChanges", () => {
   });
 
   it("after Apply, lands on the next change; after a refusal, comes back to the change", async () => {
-    const controller = fakeController({ focusedClassId: "c2" } as Partial<DraftReviewController>);
+    const controller = fakeController({
+      focus: { classId: "c2", operationIds: ["2"] },
+    } as Partial<DraftReviewController>);
     await mount(controller, async () => {
       const target = latest.items[1].change;
       await act(async () => {
@@ -278,12 +288,13 @@ describe("useReviewChanges", () => {
       });
       expect(controller.applyChange).toHaveBeenCalledWith(target);
       expect(controller.focusReviewChange).toHaveBeenCalledWith(
+        inReview,
         expect.objectContaining({ classId: "c3" }),
         { scroll: true },
       );
     });
     const refused = fakeController({
-      focusedClassId: "c2",
+      focus: { classId: "c2", operationIds: ["2"] },
       applyChange: vi.fn(async () => ({ kind: "change-refused", mode: "apply", code: "stale" })),
     } as unknown as Partial<DraftReviewController>);
     await mount(refused, async () => {
@@ -291,7 +302,9 @@ describe("useReviewChanges", () => {
       await act(async () => {
         await latest.apply(target);
       });
-      expect(refused.focusReviewChange).toHaveBeenLastCalledWith(target, { scroll: true });
+      expect(refused.focusReviewChange).toHaveBeenLastCalledWith(inReview, target, {
+        scroll: true,
+      });
     });
   });
 
