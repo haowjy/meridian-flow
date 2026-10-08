@@ -134,5 +134,6 @@ function pendingDrafts(...branchIds: string[]) {
       updatedAt: new Date("2026-01-01"),
     },
     rows: [],
+    actorThreadIds: [],
   }));
 }

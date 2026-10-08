@@ -55,6 +55,7 @@ const draft = (documentId: string, documentName: string): ThreadDraftListItem =>
   contextPath: `/${documentName}.md`,
   status: "active",
   lastActorTurnId: null,
+  actorThreads: [],
   updatedAt: "2026-10-01T00:00:00.000Z",
   wordsAdded: 3,
   wordsRemoved: 0,

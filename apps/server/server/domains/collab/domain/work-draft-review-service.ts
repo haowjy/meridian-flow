@@ -86,7 +86,10 @@ export function createWorkDraftReviewService(input: {
     const drafts: ReviewableDraft[] = [];
     const pending = await input.workDraftPending.list(workId);
     const uris = await input.resolveDocumentUris(pending.map(({ branch }) => branch.documentId));
-    for (const { branch, rows } of pending) {
+    const titles = await input.resolveThreadTitles([
+      ...new Set(pending.flatMap(({ actorThreadIds }) => actorThreadIds)),
+    ]);
+    for (const { branch, rows, actorThreadIds } of pending) {
       const uri = uris.get(branch.documentId) ?? null;
       drafts.push({
         draftId: branch.branchId,
@@ -94,6 +97,10 @@ export function createWorkDraftReviewService(input: {
         workId,
         status: "active",
         lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
+        actorThreads: actorThreadIds.map((threadId) => ({
+          threadId,
+          title: titles.get(threadId) ?? null,
+        })),
         wordsAdded: null,
         wordsRemoved: null,
         updatedAt: branch.updatedAt,

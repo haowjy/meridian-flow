@@ -380,6 +380,9 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           generation: documentBranches.generation,
           updatedAt: documentBranches.updatedAt,
           journal: {
+            id: branchWriteJournal.id,
+            source: branchWriteJournal.source,
+            threadId: branchWriteJournal.threadId,
             turnId: branchWriteJournal.turnId,
             updateMeta: branchWriteJournal.updateMeta,
           },
