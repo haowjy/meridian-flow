@@ -441,6 +441,8 @@ describe("ReviewChangeBar", () => {
       ["apply", "offline", "Couldn't apply. Check your connection and try again."],
       ["discard", "stale", "This change was updated. Check it and discard again."],
       ["discard", "offline", "Couldn't discard. Check your connection and try again."],
+      ["apply", "server-error", "Couldn't apply this change. Try again."],
+      ["discard", "server-error", "Couldn't discard this change. Try again."],
       [
         "apply",
         "unknown",
@@ -455,9 +457,43 @@ describe("ReviewChangeBar", () => {
     for (const [mode, code, text] of messages) {
       await render(
         <ReviewChangeBar {...barProps({ failure: { phase: "failed", mode, code } })} />,
-        async () => expect(document.body.textContent).toContain(text),
+        async () => {
+          expect(document.body.textContent).toContain(text);
+          // Only a lost request tells the writer to check their connection.
+          if (code === "server-error")
+            expect(document.body.textContent).not.toContain("connection");
+        },
       );
     }
+  });
+
+  it("says a server refusal in the change's own words, followed by the server's reason", async () => {
+    await render(
+      <ReviewChangeBar
+        {...barProps({
+          failure: {
+            phase: "failed",
+            mode: "apply",
+            code: "refused",
+            reason: "This Work is archived and read-only.",
+          },
+        })}
+      />,
+      async () => {
+        const text = document.body.textContent ?? "";
+        expect(text).toContain("Couldn't apply this change. This Work is archived and read-only.");
+        expect(text).not.toContain("connection");
+      },
+    );
+    await render(
+      <ReviewChangeBar
+        {...barProps({ failure: { phase: "failed", mode: "discard", code: "refused" } })}
+      />,
+      async () => {
+        expect(document.body.textContent).toContain("Couldn't discard this change.");
+        expect(document.body.textContent).not.toContain("Try again");
+      },
+    );
   });
 });
 

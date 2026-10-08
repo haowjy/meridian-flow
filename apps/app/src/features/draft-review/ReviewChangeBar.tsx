@@ -120,7 +120,7 @@ export function ReviewChangeBar({
       </div>
       {failure ? (
         <p role="status" className="pr-2 text-meta text-destructive">
-          <ChangeFailureText code={failure.code} mode={failure.mode} />
+          <ChangeFailureText failure={failure} />
         </p>
       ) : null}
     </section>

@@ -8,6 +8,7 @@ import {
 } from "@/client/query/draft-command-record";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { sortDraftFiles } from "@/features/chat/docked-drafts";
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -28,7 +29,8 @@ export function WorkDrafts({
   const { openAiDraft } = useAiDraftLauncher();
   const query = useWorkDrafts(projectId, workId);
   const commandRecords = useDraftCommandRecords();
-  const groups = activeWorkDraftGroups(query.groups);
+  // The same file order as every other list of drafts, not most-recently-updated first.
+  const groups = sortDraftFiles(activeWorkDraftGroups(query.groups));
   const visible = groups.filter((group) =>
     matchesSearch(group.documentName || group.contextPath || ""),
   );
@@ -82,7 +84,7 @@ export function WorkDrafts({
                   </button>
                   {refused ? (
                     <InlineErrorRow
-                      message={<ReviewMessageText code={refused} />}
+                      message={<ReviewMessageText failure={refused} />}
                       onDismiss={() => clearDraftCommandFailure(draft)}
                     />
                   ) : null}

@@ -1,38 +1,22 @@
 // @vitest-environment jsdom
 /**
- * The switcher's phone menu: Apply draft, Discard draft and the marks switch
- * appear only when the header hands them over (the desktop header keeps them in
- * the row), and the trigger is a 44px target.
+ * The Draft chip's menu is the versions of one document: the live version and
+ * its draft. It names no other file, tag or count (moving between files is the
+ * Changes list's). On a phone it also carries Apply draft, Discard draft and
+ * the marks switch, and the trigger is a 44px target.
  */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DockRow } from "@/features/chat/docked-drafts";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftSwitcher, type DraftSwitcherProps } from "./DraftSwitcher";
 
-const row = (documentId: string, name: string, isNewDocument = false) =>
-  ({
-    documentId,
-    documentName: name,
-    contextPath: `/${name}.md`,
-    isNewDocument,
-    draft: { draftId: `d-${documentId}`, documentId, documentName: name, isNewDocument },
-  }) as unknown as DockRow;
-
 const props = (overrides: Partial<DraftSwitcherProps> = {}): DraftSwitcherProps => ({
-  rows: [row("a", "Chapter 12"), row("b", "Chapter 13")],
-  currentDocumentId: "a",
-  counts: new Map([["a", 6]]),
-  onOpenChange: vi.fn(),
   draftOnly: false,
   disabled: false,
-  onOpenDraft: vi.fn(),
   onShowLive: vi.fn(),
-  onApplyAll: vi.fn(),
-  onDiscardAll: vi.fn(),
   ...overrides,
 });
 
@@ -58,22 +42,52 @@ async function open() {
   });
 }
 
-describe("DraftSwitcher on a phone", () => {
-  it("offers no whole-draft commands unless handed them", async () => {
+describe("DraftSwitcher", () => {
+  it("lists this document's versions, the draft checked, and nothing about other files", async () => {
     await render(props(), async () => {
       await open();
-      expect(item("Apply draft")).toBeUndefined();
-      expect(item("Discard draft")).toBeUndefined();
-      expect(item("Show live version")).toBeDefined();
-      expect(item("Hide changes")).toBeUndefined();
+      const menu = document.querySelector("[role=menu]")?.textContent ?? "";
+      expect(menu).toContain("Versions of this document");
+      expect(item("Live version")).toBeDefined();
+      expect(item("Draft")?.getAttribute("aria-current")).toBe("true");
+      for (const gone of ["Drafts in this Work", "Apply all", "Discard all", "New document"]) {
+        expect(menu).not.toContain(gone);
+      }
+      expect(menu).not.toMatch(/\d+ changes?/);
     });
   });
 
-  it("carries Apply draft, Discard draft, Show live version and the marks switch", async () => {
+  it("shows the live version on pick", async () => {
+    const onShowLive = vi.fn();
+    await render(props({ onShowLive }), async () => {
+      await open();
+      await act(async () => item("Live version")?.click());
+      expect(onShowLive).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("has no live version for a draft-only document: it closes the review instead", async () => {
+    const onShowLive = vi.fn();
+    await render(props({ draftOnly: true, onShowLive }), async () => {
+      await open();
+      expect(item("Live version")).toBeUndefined();
+      await act(async () => item("Close review")?.click());
+      expect(onShowLive).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("offers Rename only when it can be done, and on phone Apply draft, Discard draft and the marks switch", async () => {
+    await render(props(), async () => {
+      await open();
+      expect(item("Rename")).toBeUndefined();
+      expect(item("Apply draft")).toBeUndefined();
+      expect(item("Hide changes")).toBeUndefined();
+    });
     const draftCommands = { canApply: true, applying: false, onApply: vi.fn(), onDiscard: vi.fn() };
     const onChange = vi.fn();
+    const onRename = vi.fn();
     await render(
-      props({ touch: true, draftCommands, marks: { visible: true, onChange } }),
+      props({ touch: true, draftCommands, marks: { visible: true, onChange }, onRename }),
       async () => {
         expect(document.querySelector("[data-slot=dropdown-menu-trigger]")?.className).toContain(
           "min-h-11",
@@ -81,43 +95,25 @@ describe("DraftSwitcher on a phone", () => {
         await open();
         await act(async () => item("Apply draft")?.click());
         expect(draftCommands.onApply).toHaveBeenCalledOnce();
-      },
-    );
-    await render(
-      props({ touch: true, draftCommands, marks: { visible: true, onChange } }),
-      async () => {
         await open();
         await act(async () => item("Discard draft")?.click());
         expect(draftCommands.onDiscard).toHaveBeenCalledOnce();
-      },
-    );
-    await render(
-      props({ touch: true, draftCommands, marks: { visible: false, onChange } }),
-      async () => {
         await open();
-        await act(async () => item("Show changes")?.click());
-        expect(onChange).toHaveBeenCalledWith(true);
+        await act(async () => item("Hide changes")?.click());
+        expect(onChange).toHaveBeenCalledWith(false);
+        await open();
+        await act(async () => item("Rename")?.click());
+        expect(onRename).toHaveBeenCalledOnce();
       },
     );
   });
 
-  it("disables Apply draft while a command is in flight or nothing can be applied", async () => {
-    const draftCommands = {
-      canApply: false,
-      applying: false,
-      onApply: vi.fn(),
-      onDiscard: vi.fn(),
-    };
-    await render(props({ touch: true, draftCommands }), async () => {
+  it("disables the whole-draft commands while one is in flight", async () => {
+    const draftCommands = { canApply: true, applying: false, onApply: vi.fn(), onDiscard: vi.fn() };
+    await render(props({ touch: true, disabled: true, draftCommands }), async () => {
       await open();
-      expect(item("Apply draft")?.getAttribute("data-disabled")).not.toBeNull();
+      expect(item("Apply draft")?.getAttribute("aria-disabled")).toBe("true");
+      expect(item("Discard draft")?.getAttribute("aria-disabled")).toBe("true");
     });
-    await render(
-      props({ touch: true, disabled: true, draftCommands: { ...draftCommands, canApply: true } }),
-      async () => {
-        await open();
-        expect(item("Discard draft")?.getAttribute("data-disabled")).not.toBeNull();
-      },
-    );
   });
 });

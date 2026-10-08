@@ -115,8 +115,8 @@ describe("a command sent while the browser is offline", () => {
       await act(async () => {
         outcome = await probe().editor.controller.apply("document-a", "draft-a");
       });
-      expect(outcome).toEqual({ kind: "failed", code: "apply-failed" });
-      expect(probe().header.commandError).toBe("apply-failed");
+      expect(outcome).toEqual({ kind: "failed", failure: { code: "apply-offline" } });
+      expect(probe().header.commandError).toEqual({ code: "apply-offline" });
       expect(probe().header.locked).toBe(false);
 
       await reconnect();
@@ -132,7 +132,7 @@ describe("a command sent while the browser is offline", () => {
       await act(async () => {
         outcome = await probe().editor.controller.discard("document-a", "draft-a");
       });
-      expect(outcome).toEqual({ kind: "failed", code: "discard-offline" });
+      expect(outcome).toEqual({ kind: "failed", failure: { code: "discard-offline" } });
 
       await reconnect();
       expect(mocks.discardDraft).not.toHaveBeenCalled();
@@ -176,7 +176,10 @@ describe("a command whose answer was lost", () => {
       await act(async () => {
         await probe().editor.controller.discardChange(change("2"));
       });
-      expect(failureOf(probe(), "class-2")).toMatchObject({ code: "offline", mode: "discard" });
+      expect(failureOf(probe(), "class-2")).toMatchObject({
+        code: "server-error",
+        mode: "discard",
+      });
     });
   });
 });

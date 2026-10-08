@@ -37,6 +37,7 @@ vi.mock("../context/use-context-removal-project", () => ({
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {},
+    groupForDocument: () => null,
     reviewRoomNameForDraft: () => null,
     setActiveEditorDocumentId: vi.fn(),
   }),

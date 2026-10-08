@@ -1,32 +1,27 @@
 /**
- * Renders the Changes view in the project dock: the change list of the review
- * that is open in the Editor, then the Work's other drafts to open.
+ * Renders the Changes view in the project dock: every draft file of the Work in
+ * one stable order (`sortDraftFiles`), with the file open in the Editor expanded
+ * in place to its changes in document order. Opening another file moves the
+ * expansion, never the list. The Work-wide Apply all and Discard all sit at the
+ * top of the list.
  *
  * The review belongs to the Editor's scope, so the list reads that scope's
  * controller (`useEditorDraftReview`), never the Chat's ambient one: the dock
  * sits in the Chat's boundary, and the Chat's controller never has a review
  * open.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { FileCheck2, Loader2 } from "lucide-react";
 import { useMemo } from "react";
-import {
-  clearDraftCommandFailure,
-  draftCommandFailure,
-  useDraftCommandRecords,
-} from "@/client/query/draft-command-record";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { NewBadge } from "@/components/app/NewBadge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDraftReview, useEditorDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, dockRowName, dockRows, draftAfter } from "@/features/chat/docked-drafts";
-import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
-import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
+import { type DockRow, draftAfter } from "@/features/chat/docked-drafts";
 import { ReviewChangeRow } from "@/features/draft-review/ReviewChangeRow";
+import { ReviewFiles } from "@/features/draft-review/ReviewFiles";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useReviewFileList } from "@/features/draft-review/useReviewFileList";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
@@ -34,26 +29,21 @@ export function DockChangesView({ className }: { className?: string }) {
   const { groups, controller } = useDraftReview();
   const { controller: editor, groups: editorGroups } = useEditorDraftReview();
   const { openDockRow: openDraft } = useAiDraftLauncher();
-  const commandRecords = useDraftCommandRecords();
+  const view = useReviewChanges(editor);
 
-  const editorRows = useMemo(() => dockRows(editorGroups), [editorGroups]);
-  // The chat can be in another Work than the Editor; its drafts are listed too,
-  // each opening in its own Work.
-  const chatRows = useMemo(
-    () => (editor.workId === controller.workId ? [] : dockRows(groups)),
-    [controller.workId, editor.workId, groups],
-  );
+  const {
+    files,
+    rows: editorRows,
+    batch,
+  } = useReviewFileList({
+    review: { controller: editor, groups: editorGroups },
+    view,
+    openDraft,
+    other: { controller, groups },
+  });
   const reviewed = editor.inlineReview;
-  const reviewedRow = editorRows.find((row) => row.documentId === reviewed?.documentId) ?? null;
-  // The reviewed document is listed by its changes, not as a row to open again.
-  const otherRows = [
-    ...editorRows
-      .filter((row) => row.documentId !== reviewed?.documentId)
-      .map((row) => ({ row, workId: editor.workId })),
-    ...chatRows.map((row) => ({ row, workId: controller.workId })),
-  ];
 
-  if (!reviewed && otherRows.length === 0) {
+  if (files.length === 0) {
     return (
       <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
         {/* Empty-state form (slice-7 study): centered glyph + title + one-line
@@ -73,111 +63,73 @@ export function DockChangesView({ className }: { className?: string }) {
 
   return (
     <div className={cn("flex min-h-0 flex-col gap-2 overflow-y-auto px-2 py-2", className)}>
-      {reviewed ? (
-        <ChangeList
-          controller={editor}
-          name={
-            reviewedRow
-              ? documentName(reviewedRow)
-              : (reviewed.completion?.documentName ?? t`This draft`)
-          }
-          next={draftAfter(editorRows, reviewed.documentId)}
-          onOpenNext={(row) => openDraft(row, editor.workId)}
-        />
-      ) : null}
-      {otherRows.length > 0 ? (
-        <div className="flex flex-col">
-          {otherRows.map(({ row, workId }) => (
-            <DraftDocumentRow
-              key={`${workId}:${row.documentId}`}
-              row={row}
-              error={draftCommandFailure(commandRecords, {
-                projectId: controller.projectId,
-                workId,
-                documentId: row.documentId,
-                draftId: row.draft.draftId,
-              })}
-              onDismissError={() =>
-                clearDraftCommandFailure({
-                  projectId: controller.projectId,
-                  workId,
-                  documentId: row.documentId,
-                  draftId: row.draft.draftId,
-                })
-              }
-              onReview={() => openDraft(row, workId)}
-            />
-          ))}
-        </div>
-      ) : null}
+      <ReviewFiles files={files} batch={batch}>
+        {reviewed ? (
+          <OpenFileChanges
+            view={view}
+            controller={editor}
+            next={draftAfter(
+              editorRows,
+              reviewed.documentId,
+              reviewed.completion?.documentName ?? null,
+            )}
+            onOpenNext={(row) => openDraft(row, editor.workId)}
+          />
+        ) : null}
+      </ReviewFiles>
     </div>
   );
 }
 
-const documentName = (row: DockRow) => dockRowName(row, t`Untitled document`);
-
-function ChangeList({
+/** The open file's body under its heading: its changes in document order, or the state that stands in for them. */
+function OpenFileChanges({
+  view,
   controller,
-  name,
   next,
   onOpenNext,
 }: {
+  view: ReturnType<typeof useReviewChanges>;
   controller: ReturnType<typeof useEditorDraftReview>["controller"];
-  name: string;
   next: DockRow | null;
   onOpenNext: (row: DockRow) => void;
 }) {
-  const view = useReviewChanges(controller);
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
   const arrived = useArrivedChanges(
     changes,
     view.status === "ready",
     view.documentId && view.draftId ? `${view.documentId}:${view.draftId}` : null,
   );
-  const count = view.items.length;
 
-  return (
-    <section aria-label={t`Changes in ${name}`} className="flex flex-col gap-1">
-      <h3 className="flex items-baseline gap-2 px-2 pt-1 text-caption font-medium text-foreground">
-        <span className="min-w-0 flex-1 truncate">{name}</span>
-        {view.status === "ready" && !view.finished && !view.completing && !view.unlisted ? (
-          <span className="shrink-0 text-meta font-normal text-muted-foreground tabular-nums">
-            {count === 1 ? t`1 change` : t`${count} changes`}
-          </span>
-        ) : null}
-      </h3>
-      {view.status === "loading" ? (
-        <div className="flex flex-col gap-1.5 px-2 py-1" aria-busy>
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-4/5" />
-        </div>
-      ) : view.completing ? (
-        <ReviewCompleting mode={view.completing} />
-      ) : view.finished ? (
-        <ReviewDone next={next} onOpenNext={onOpenNext} onBack={controller.exitInlineReview} />
-      ) : view.unlisted ? (
-        <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
-          <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-0.5">
-          {view.items.map(({ change, failure }) => (
-            <ReviewChangeRow
-              key={change.classId}
-              change={change}
-              focused={view.focused?.classId === change.classId}
-              arrived={arrived.has(change.classId)}
-              disabled={view.locked}
-              canApply={view.canApply}
-              failure={failure}
-              onFocus={() => view.focus(change, { scroll: true })}
-              onApply={() => void view.apply(change)}
-              onDiscard={() => void view.discard(change)}
-            />
-          ))}
-        </ul>
-      )}
-    </section>
+  return view.status === "loading" ? (
+    <div className="flex flex-col gap-1.5 px-2 py-1" aria-busy>
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-4/5" />
+    </div>
+  ) : view.completing ? (
+    <ReviewCompleting mode={view.completing} />
+  ) : view.finished ? (
+    <ReviewDone next={next} onOpenNext={onOpenNext} onBack={controller.exitInlineReview} />
+  ) : view.unlisted ? (
+    <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
+      <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
+    </p>
+  ) : (
+    <ul className="flex flex-col gap-0.5">
+      {view.items.map(({ change, failure }) => (
+        <ReviewChangeRow
+          key={change.classId}
+          change={change}
+          focused={view.focused?.classId === change.classId}
+          arrived={arrived.has(change.classId)}
+          disabled={view.locked}
+          canApply={view.canApply}
+          failure={failure}
+          onFocus={() => view.focus(change, { scroll: true })}
+          onApply={() => void view.apply(change)}
+          onDiscard={() => void view.discard(change)}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -218,47 +170,6 @@ function ReviewDone({
           <Trans>Back to live</Trans>
         </Button>
       )}
-    </div>
-  );
-}
-
-function DraftDocumentRow({
-  row,
-  error,
-  onDismissError,
-  onReview,
-}: {
-  row: DockRow;
-  /** A held failure on this row's draft, such as a Review that could not open. */
-  error: Parameters<typeof ReviewMessageText>[0]["code"] | null;
-  onDismissError: () => void;
-  onReview: () => void;
-}) {
-  const stats = draftStats(row.draft);
-  return (
-    <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={onReview}
-        className="group focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent/40"
-      >
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground">{documentName(row)}</span>
-        {/* The one signal that differentiates a new-document row from an edited
-            one: a quiet neutral badge between the name and the stats. Its
-            additions-only stats (`+N`, no `−0`) reinforce it (spec §5.5). */}
-        {row.isNewDocument ? <NewBadge /> : null}
-        {stats ? (
-          <span className="shrink-0 text-caption">
-            <DraftStatsLabel stats={stats} wordsSuffix={false} />
-          </span>
-        ) : null}
-        <span className="shrink-0 text-caption font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-          <Trans>Review</Trans>
-        </span>
-      </button>
-      {error ? (
-        <InlineErrorRow message={<ReviewMessageText code={error} />} onDismiss={onDismissError} />
-      ) : null}
     </div>
   );
 }
