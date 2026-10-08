@@ -5,7 +5,9 @@
  * Text crosses these doors: the Markdown engine (reads, the read API and
  * download, writer and import writes, projections, link rewrites), the model's
  * edit core, a reply's save, the draft-aware hashline read, and offline
- * reconciliation, and a live turn's reversal. A push scopes itself in
+ * reconciliation, and a live turn's reversal. Draft preview scopes both sides
+ * in `work-draft-review-service.ts`; ContextFS.search scopes its source's
+ * chapters together. A push scopes itself before branch locks in
  * `branch-push.ts`, and its settlement in `branch-push-transition.ts`. A
  * picture serialized outside every scope is reported (see
  * `createUnscopedAssetPathObserver`).
@@ -134,7 +136,10 @@ export function scopeBranchPeerAssetPaths(
     readEffectiveRevision: access.readEffectiveRevision,
     pullThreadPeer: access.pullThreadPeer,
     flushBranchLivePull: access.flushBranchLivePull,
-    readEffectiveMarkdown: access.readEffectiveMarkdown,
+    readEffectiveMarkdown: (command) =>
+      assetPaths.within({ documentId: command.documentId }, () =>
+        access.readEffectiveMarkdown(command),
+      ),
     resolveManifestMembership: access.resolveManifestMembership,
     reconcileProjectManifest: access.reconcileProjectManifest,
     recordManifestDocumentCreated: access.recordManifestDocumentCreated,
