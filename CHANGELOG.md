@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Concurrent attribution requires its existing read baseline; removed unreachable fallback.
+
 - Mixed and content-only Undo use the same write selector.
 
 - Restore targets the clicked delete, shares refusal state, and drops stale errors after retry, redo, or account changes.

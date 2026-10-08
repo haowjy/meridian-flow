@@ -575,7 +575,7 @@ async function concurrentUpdatesSince(
   journal: UpdateJournal,
   docId: string,
   doc: Y.Doc,
-  baselineDoc: Y.Doc | undefined,
+  baselineDoc: Y.Doc,
   sinceStateVector: Uint8Array,
   afterJournalId?: number,
   liveJournalSeq?: number,
@@ -591,17 +591,6 @@ async function concurrentUpdatesSince(
       liveJournalSeq,
       attemptId,
     });
-  }
-  if (!baselineDoc) {
-    const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
-    const empty = new Y.Doc({ gc: false });
-    try {
-      return effectiveYjsUpdate(empty, update)
-        ? [{ update, origin: { type: "human", userId: "unknown" } }]
-        : [];
-    } finally {
-      empty.destroy();
-    }
   }
   // Nothing past the baseline leaves no row to attribute, so skip the journal read.
   if (
