@@ -69,18 +69,18 @@ going blind to a concurrent human edit.
 - **Offline-peer model.** The model never edits the live doc. It edits a
   per-session **runtime Y.Doc**; the live doc is canonical (source of truth). All
   reconciliation is Yjs CRDT merge — never last-writer-wins or conflict resolution.
-- **V_sync is the write gate.** `session.documents[docId].stateVector` ("what the
-  runtime has seen") is set by `markSynced` on read / create / write / commit. A
-  mutating write requires a prior sync (`requireSynced`); when the runtime replica
-  is missing or the live doc is stale, `requireSynced` transparently cold-rebuilds
+- **Session membership is the write gate.** `markSynced` adds the document ID to
+  `session.documents` (a set) on read / create / write / commit. A mutating write
+  calls `requireSynced`; when the document is absent from the set or the live doc
+  is stale, `requireSynced` transparently cold-rebuilds
   from canonical rather than forcing the model to `read` — a read is never
   *required* to edit. Only a genuinely missing document errors. Staleness of the
   shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
   in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
   cache.
 - **Runtime sync state is memory-only and not an attribution source.**
-  `session.documents[docId]` keeps only the current state vector (`V_sync`) while
-  a process/session is live; nothing in that map is persisted. Attribution/echo
+  `session.documents` holds initialized-document membership, not vectors or
+  snapshots, while a process/session is live; nothing in that set is persisted. Attribution/echo
   baselines are cold-derived per interaction from durable pull-time primitives
   (thread-peer branch state plus journal floor) and passed through the write
   context. If a standalone package caller lacks that host baseline, detection
@@ -103,7 +103,7 @@ going blind to a concurrent human edit.
   pending: otherwise a write after a mid-response `read` could re-match
   already-edited text and self-mangle at commit.
 - **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
-  advance V_sync → emit echo`; the echo's concurrent set = blocks the re-sync
+  mark session document synced → emit echo`; the echo's concurrent set = blocks the re-sync
   touched. Deferred commit collapses **only** the merge+re-sync to once per turn
   (N writes → 1); each buffered write already emitted its per-write echo before
   commit.
