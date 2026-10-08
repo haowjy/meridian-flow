@@ -43,7 +43,6 @@ export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
   ActorSession,
-  ActorSessionDocumentState,
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type { DocumentCoordinator, DocumentLockOptions } from "./ports/document-coordinator.js";

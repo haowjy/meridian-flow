@@ -107,7 +107,7 @@ export function createWriteCommands(deps: {
     for (const update of stagedUpdates) {
       Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
-    markSynced(session, address.documentId, runtime);
+    markSynced(session, address.documentId);
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok)
@@ -347,15 +347,15 @@ export function createWriteCommands(deps: {
         });
         if (rejected) {
           restorePreWriteSnapshot(runtime, preWriteSnapshot);
-          markSynced(session, address.documentId, runtime);
+          markSynced(session, address.documentId);
           return rejected;
         }
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        markSynced(session, address.documentId, runtime);
+        markSynced(session, address.documentId);
         throw cause;
       }
-      markSynced(session, address.documentId, runtime);
+      markSynced(session, address.documentId);
       const summary = mutationCommit.summarizeMutationEcho({
         runtime,
         before,
@@ -606,14 +606,14 @@ export function createWriteCommands(deps: {
         });
         if (rejected) {
           restorePreWriteSnapshot(runtime, preOwnSnapshot);
-          markSynced(session, address.documentId, runtime);
+          markSynced(session, address.documentId);
           return rejected;
         }
-        markSynced(session, address.documentId, runtime);
+        markSynced(session, address.documentId);
         return result;
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preOwnSnapshot);
-        markSynced(session, address.documentId, runtime);
+        markSynced(session, address.documentId);
         throw cause;
       }
     }
@@ -702,7 +702,7 @@ export function createWriteCommands(deps: {
         };
       } else {
         restorePreWriteSnapshot(input.runtime, input.preOwnSnapshot);
-        markSynced(session, input.docId, input.runtime);
+        markSynced(session, input.docId);
         throw cause;
       }
     }
