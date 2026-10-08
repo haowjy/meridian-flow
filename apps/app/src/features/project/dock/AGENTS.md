@@ -6,7 +6,9 @@ The right dock is a **view container** that sits in the project shell's `dock`
 grid slot. It has per-screen view sets (Chat-main: Context | Changes;
 Work/Editor-main: Chat | Changes) and a single header row with a contained
 segmented switch. It can also hold **one document** on Work and Chat, shown in
-the standard editor and replacing the views (and their switch) until closed.
+the standard editor and replacing the views (and their switch) until closed. Work
+Files notes open there on the Work screen; a note picked from a chat's Scratch menu
+opens there on the Chat screen only (`use-open-scratch-note.ts`).
 The **Changes** view is the work-scoped settle surface: every document with
 pending AI changes, grouped into server-vended Discard-class cards carrying
 selective Discard. Document-level Apply all stays in the review header. It works on every

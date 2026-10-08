@@ -4,8 +4,9 @@
  * `ChatView` provides the returned navigation to transcript references and
  * renders the returned dialog props.
  *
- * Scope: the thread's Work, with no base URI (so relative links are text). It
- * is pending only while the thread or the Works snapshot is loading; a click
+ * Scope: the thread's Work, and its lineage while the thread is on No Work (a
+ * bare `scratch://` is the lineage's), with no base URI (so relative links are
+ * text). It is pending only while the thread or the Works snapshot is loading; a click
  * then waits, showing checking, and is never answered from a guessed Work.
  * A null thread binding remains pending rather than guessing No Work. A No
  * Work thread uses the locked row id whichever snapshot names it first, so
