@@ -102,9 +102,10 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
 - **Header** (`MobileReviewHeader`): the draft switcher, the stepper and the
   list button (with the change count when there are changes), in a 48px row under
   the top bar. The list button stays whatever the count: the sheet is the Work's
-  file list and Apply all, and the open file is always in it. Apply draft, Discard draft, Show
-  live version (Close review for a new document), the marks switch and Apply all /
-  Discard all live in the switcher's menu, so the row stays short. A refused
+  file list and Apply all, and the open file is always in it. Apply draft, Discard
+  draft and Show changes live in the switcher's menu (with this document's Live
+  and Draft versions and Rename), so the row stays short; Apply all and Discard
+  all are the sheet's menu. A refused
   whole-draft command, "No changes left" and "Formatting changes remain" take a
   line under it.
 - **Bar** (`MobileChangeBar`): a tap on a change selects it (the inline-review
@@ -129,8 +130,9 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
   Making the draft editable is one prop (`editable` on `EditorView`) plus those two
   pieces of work. The desktop's struck-removal click (caret beside the removal)
   does nothing on this read-only body.
-- The phone has no identity bar, so a live document with a pending draft offers
-  no way into its review; the composer strip and Work files are the entries.
+- A live document with a pending draft shows the version chip (`DraftReviewChip`,
+  `touch`) under the top bar; its Draft item opens the review. The composer
+  strip and Work files are the other entries.
 
 ## Architecture
 

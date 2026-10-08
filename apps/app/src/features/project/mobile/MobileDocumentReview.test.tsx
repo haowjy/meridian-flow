@@ -93,7 +93,7 @@ const view = vi.hoisted(() => ({
   apply: vi.fn(async () => {}),
   discard: vi.fn(async () => {}),
 }));
-const launcher = vi.hoisted(() => ({ openDockRow: vi.fn(), openAiDraft: vi.fn() }));
+const launcher = vi.hoisted(() => ({ openReviewFile: vi.fn(), openAiDraft: vi.fn() }));
 
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
@@ -138,7 +138,7 @@ beforeEach(() => {
     view.step,
     view.apply,
     view.discard,
-    launcher.openDockRow,
+    launcher.openReviewFile,
     launcher.openAiDraft,
   ])
     fn.mockClear();
@@ -293,18 +293,18 @@ describe("the phone review header", () => {
       await openSwitcher();
       await act(async () => menuItem("Apply draft")?.click());
       expect(controller.apply).toHaveBeenCalledWith("doc-12", "draft-doc-12");
-      expect(launcher.openDockRow).toHaveBeenCalledWith(
+      expect(launcher.openReviewFile).toHaveBeenCalledWith(
         expect.objectContaining({ documentId: "doc-13" }),
         "w",
       );
     });
     controller.apply.mockClear();
-    launcher.openDockRow.mockClear();
+    launcher.openReviewFile.mockClear();
     await render(async () => {
       await openSwitcher();
       await act(async () => menuItem("Discard draft")?.click());
       expect(controller.discard).toHaveBeenCalledWith("doc-12", "draft-doc-12");
-      expect(launcher.openDockRow).toHaveBeenCalledOnce();
+      expect(launcher.openReviewFile).toHaveBeenCalledOnce();
     });
   });
 
@@ -338,7 +338,7 @@ describe("the phone review header", () => {
         node.textContent?.includes("Chapter 13"),
       );
       await act(async () => row?.click());
-      expect(launcher.openDockRow).toHaveBeenCalledWith(
+      expect(launcher.openReviewFile).toHaveBeenCalledWith(
         expect.objectContaining({ documentId: "doc-13" }),
         "w",
       );
@@ -378,7 +378,7 @@ describe("the phone review header", () => {
       await openSwitcher();
       expect(menuItem("Apply draft")).toBeUndefined();
       await act(async () => named("Next draft")?.click());
-      expect(launcher.openDockRow).toHaveBeenCalledWith(
+      expect(launcher.openReviewFile).toHaveBeenCalledWith(
         expect.objectContaining({ documentId: "doc-13" }),
         "w",
       );
@@ -400,7 +400,7 @@ describe("the phone review header", () => {
         expect(header()?.querySelector("[aria-label='Document version']")).not.toBeNull();
         expect(controller.exitInlineReview).not.toHaveBeenCalled();
         await act(async () => named("Next draft")?.click());
-        expect(launcher.openDockRow).toHaveBeenCalledWith(
+        expect(launcher.openReviewFile).toHaveBeenCalledWith(
           expect.objectContaining({ documentId: "doc-13" }),
           "w",
         );
@@ -541,7 +541,7 @@ describe("the change-list sheet", () => {
         node.textContent?.includes("Chapter 13"),
       );
       await act(async () => row?.click());
-      expect(launcher.openDockRow).toHaveBeenCalledWith(
+      expect(launcher.openReviewFile).toHaveBeenCalledWith(
         expect.objectContaining({ documentId: "doc-13" }),
         "w",
       );
@@ -558,7 +558,7 @@ describe("the change-list sheet", () => {
         (node) => node.textContent === "Next draft",
       );
       await act(async () => next?.click());
-      expect(launcher.openDockRow).toHaveBeenCalledWith(
+      expect(launcher.openReviewFile).toHaveBeenCalledWith(
         expect.objectContaining({ documentId: "doc-13" }),
         "w",
       );

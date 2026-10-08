@@ -51,11 +51,13 @@ it.each([
     });
     const reopened = { ...command, draftId: reopenedId };
     const nextPreview = await f.collab.draftReview.preview(reopened);
+    const nextDraft = await f.draftMarkdown(reopenedId);
     expect(await f.collab.draftReview.applyWorkDraft(reopened)).toMatchObject({
       status: "applied",
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(`The ${adjective}dusk.\n`);
-    expect(nextPreview).toMatchObject({ status: "active", markdown: `The ${adjective}dusk.\n` });
+    expect(nextPreview.status).toBe("active");
+    expect(nextDraft).toBe(`The ${adjective}dusk.\n`);
   } finally {
     harness.destroyWarmState();
   }

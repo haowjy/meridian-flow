@@ -75,17 +75,19 @@ that moves, so they read `anchorRect` rather than a captured point. Both are
 Two self-contained surfaces, both resolving their own state from
 `DraftReviewProvider` (never props-drilled):
 
-- `DraftReviewChip` — the pending-changes nudge, mounted by the context
-  feature's `DocumentIdentityBar` in the breadcrumb row. Hides itself once its
-  document's review has painted (`inlineReview.shown`).
-- `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
-  ABOVE the identity bar (order: tab strip → review strip → identity bar →
-  prose), only once `inlineReview.shown`. One row: the draft
-  switcher, the stepper, Show changes, Discard draft, Apply draft; a second line
-  appears only for a failed whole-draft command, when the last change is
-  handled ("No changes left" with Next draft), or when the draft is open with no
-  change to list ("Formatting changes remain", Apply draft and Discard draft kept). Its parts live in
-  `features/draft-review`.
+- `DraftReviewChip` — the version chip on a live document with a pending
+  draft, mounted by the context feature's `DocumentIdentityBar` in the
+  breadcrumb row. It is the same `DraftSwitcher` menu as in review, showing
+  Live; its Draft item opens the review.
+- `DraftReviewBand` — the review controls inside `DocumentIdentityBar`, in the
+  same row as the path (there is no separate header above it), once
+  `inlineReview.shown`: the version chip (Draft), the stepper, Show changes,
+  Discard draft and Apply draft. The row takes the dock tint while a draft is
+  reviewed. As the row narrows it collapses in a fixed order (folders, Show
+  changes label, stepper count, file name, button labels); the chip, Discard
+  and Apply stay. A line under the row appears only for a failed whole-draft
+  command, "No changes left" with Next draft, or "Formatting changes remain".
+  Its parts live in `features/draft-review`.
 - The focused change's bar is the `review-change-bar` chrome surface
   (`surfaces/review`). It never covers manuscript text. With room in the right
   margin (`place-review-bar`: at least 132px between the text column and the

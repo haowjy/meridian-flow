@@ -66,9 +66,8 @@ ContextPaneController
        ├─ in-memory ContextTab[] (tracked, viewer, and new)
        └─ ContextViewer
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
-              ├─ DraftReviewHeader (one-row review header, above the identity bar)
               ├─ ReviewToast (confirmation of a per-change Apply or Discard)
-              ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
+              ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip, and DraftReviewBand while reviewing)
               ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
               ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
