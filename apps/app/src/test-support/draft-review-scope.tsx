@@ -8,12 +8,13 @@
  */
 import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { act, type ReactNode, useState } from "react";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/chat/DraftReviewProvider";
+import type { DockRow } from "@/features/chat/docked-drafts";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { withReactRoot } from "./react-dom-harness";
 
@@ -79,18 +80,25 @@ export type ScopeProbe = {
   chat: DraftReviewContextValue;
   /** What the header, the dock's list and the editor's chrome read, for the reviewed draft. */
   header: ReviewHeaderModel;
+  /** The writer opens another draft of the Work: the header then reads that one. */
+  openDraft: (draft: ReviewedDraft) => Promise<void>;
 };
 
 export type ReviewedDraft = { documentId: string; draftId: string };
 
 export function renderReviewScopes(
   run: (probe: () => ScopeProbe) => Promise<void>,
-  options: { reviewed?: ReviewedDraft } = {},
+  options: { reviewed?: ReviewedDraft; onOpenDraft?: (row: DockRow) => void } = {},
 ): Promise<void> {
-  const { reviewed = { documentId: "document-a", draftId: "draft-a" } } = options;
+  const {
+    reviewed: initialReviewed = { documentId: "document-a", draftId: "draft-a" },
+    onOpenDraft = () => {},
+  } = options;
   const current: Partial<ScopeProbe> = {};
   function HeaderProbe() {
-    current.header = useReviewHeader({ ...reviewed, onOpenDraft: () => {} });
+    const [reviewed, setReviewed] = useState(initialReviewed);
+    current.header = useReviewHeader({ ...reviewed, onOpenDraft });
+    current.openDraft = (draft) => act(async () => setReviewed(draft));
     return null;
   }
   function Scopes(): ReactNode {

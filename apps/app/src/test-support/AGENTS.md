@@ -31,12 +31,16 @@ visible is a browser question and belongs in a probe.
 
 ## Review fixtures
 
-- **`draft-review-scope.tsx`** — the draft review's real composition (Editor and
-  Chat scopes over one Work, controllers, mutations, query cache, and the
-  header's model) for a claim about a cross-surface outcome. The suite fakes only
+- **`draft-review-scope.tsx`** — the draft review's real controller composition
+  (Editor and Chat scopes over one Work, controllers, mutations, query cache, and
+  the header's model) for a claim about a cross-surface outcome. It mounts no
+  editor, marks, bar or sheet. The suite fakes only
   the network (`@/client/api/drafts-api`); never set the review's state by hand.
 - **`editor-session-fakes.ts`** — fake document sessions and a branch-room
   registry for suites about which editor exists and when (`EditorView`).
+- **`inline-review-editor.ts`** — a real collaborative editor with the
+  inline-review extension, for claims about marks, removal widgets, folds, focus
+  and the bar slot.
 
 ## Green tests are quiet
 

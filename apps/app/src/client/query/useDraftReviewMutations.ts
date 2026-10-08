@@ -10,7 +10,12 @@ import type {
   DraftPreviewResponse,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
-import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  onlineManager,
+  type QueryClient,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { applyDraft, applyDraftChanges, discardDraft } from "@/client/api/drafts-api";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -35,14 +40,42 @@ type DraftReviewMutationBase = {
 export type DraftApplyMutationInput = DraftReviewMutationBase;
 
 /**
- * The Apply request got no HTTP answer, so the server may or may not have
- * applied the draft. Distinct from a rejection, which has a status.
+ * A command's request got no HTTP answer, so the server may or may not have
+ * acted on it. Distinct from a rejection, which has a status.
  */
-export class DraftApplyOutcomeUnknownError extends Error {
+export class DraftCommandOutcomeUnknownError extends Error {
   constructor() {
-    super("Draft Apply outcome is unknown");
+    super("Draft command outcome is unknown");
   }
 }
+
+/** Run a request whose lost answer is unknown, not a refusal: only an HTTP answer is a rejection. */
+async function sendKnowingOutcome<T>(send: () => Promise<T>): Promise<T> {
+  try {
+    return await send();
+  } catch (error) {
+    if (httpErrorStatus(error) !== undefined) throw error;
+    throw new DraftCommandOutcomeUnknownError();
+  }
+}
+
+/**
+ * The browser is offline, so the command was not sent. A refusal of the writer's
+ * click, not a held request: TanStack would pause these mutations and fire them
+ * when the network returned, with the change gone from the screen meanwhile.
+ */
+export class DraftCommandNotSentError extends Error {
+  constructor() {
+    super("Draft command was not sent: the browser is offline");
+  }
+}
+
+function assertOnline(): void {
+  if (!onlineManager.isOnline()) throw new DraftCommandNotSentError();
+}
+
+/** Disposition commands run now (and refuse when offline) instead of waiting for the network. */
+const SEND_NOW = { networkMode: "always" } as const;
 
 export type DraftReviewMutationInput = DraftReviewMutationBase & {
   /** A selective Discard: the changes' operation ids and the revision tokens of the preview the writer saw. */
@@ -98,17 +131,20 @@ export function useApplyDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    ...SEND_NOW,
     mutationFn: async (variables: DraftApplyMutationInput): Promise<void> => {
+      assertOnline();
       const draftsKey = projectQueryKeys.workDrafts(variables.projectId, variables.workId);
       void queryClient.cancelQueries({ queryKey: draftsKey });
       try {
-        await applyDraft(variables.projectId, variables.workId, variables.documentId, {
-          draftId: variables.draftId,
-        });
+        await sendKnowingOutcome(() =>
+          applyDraft(variables.projectId, variables.workId, variables.documentId, {
+            draftId: variables.draftId,
+          }),
+        );
       } catch (error) {
         void invalidateDraftReviewQueries(queryClient, variables).catch(() => undefined);
-        if (httpErrorStatus(error) !== undefined) throw error;
-        throw new DraftApplyOutcomeUnknownError();
+        throw error;
       }
       confirmDraftCommand(variables);
       queryClient.setQueryData<ThreadDraftListItem[]>(draftsKey, (drafts) =>
@@ -128,6 +164,7 @@ export function useDiscardDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    ...SEND_NOW,
     mutationFn: async ({
       projectId,
       workId,
@@ -136,10 +173,15 @@ export function useDiscardDraft() {
       request,
       onAnswered,
     }: DraftReviewMutationInput) => {
-      const response = await discardDraft(projectId, workId, documentId, {
-        draftId,
-        ...(request?.operationIds?.length ? request : {}),
-      });
+      assertOnline();
+      const send = () =>
+        discardDraft(projectId, workId, documentId, {
+          draftId,
+          ...(request?.operationIds?.length ? request : {}),
+        });
+      // A change's Discard that got no answer may have landed, as an Apply's may.
+      // A whole-draft Discard is unfenced and reads as not sent.
+      const response = await (request?.operationIds?.length ? sendKnowingOutcome(send) : send());
       onAnswered?.(response);
       return response;
     },
@@ -166,6 +208,7 @@ export function useApplyDraftChanges() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    ...SEND_NOW,
     mutationFn: async ({
       projectId,
       workId,
@@ -174,17 +217,10 @@ export function useApplyDraftChanges() {
       request,
       onAnswered,
     }: DraftChangesApplyInput) => {
-      let response: DraftApplyChangesResponse;
-      try {
-        response = await applyDraftChanges(projectId, workId, documentId, {
-          draftId,
-          ...request,
-        });
-      } catch (error) {
-        // No answer is not a refusal: the change may have landed.
-        if (httpErrorStatus(error) !== undefined) throw error;
-        throw new DraftApplyOutcomeUnknownError();
-      }
+      assertOnline();
+      const response = await sendKnowingOutcome(() =>
+        applyDraftChanges(projectId, workId, documentId, { draftId, ...request }),
+      );
       onAnswered?.(response);
       return response;
     },

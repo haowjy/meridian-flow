@@ -104,8 +104,8 @@ through the Editor controller:
 - `view.locked` — the global disposition lock, disabling every row together
 
 Below the changes it lists the Work's other drafts to open (the Editor Work's,
-and the Chat Work's when it differs). A draft the writer handled to its last
-change is not listed (`change-command-record`'s cleared marks).
+and the Chat Work's when it differs). A draft the server closed is not listed:
+it has left the Work's draft list, and no client mark hides it.
 
 The review session owner is `useDraftReviewController` in the chat feature; the
 dock only renders review state and dispatches actions.
@@ -117,7 +117,7 @@ review editor in a claim-based ref (`inlineRuntimeRef`): the review editor
 registers on mount, and release is a **no-op unless the caller still holds
 the claim** — on a review document switch the new editor may register before
 the old one's effect cleanup runs, and that stale cleanup must not clear the
-fresh claim. The dock's `focusReviewOperation` reads the editor from this ref
+fresh claim. `focusReviewChange` reads the editor from this ref
 to highlight and scroll manuscript spans; warm hidden editors never stomp the
 reference because only the active review editor claims it.
 
@@ -136,7 +136,7 @@ DockShell -->|Work view=file| File[ContextViewerBareHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
     Changes --> List[ChangeList of the open review]
     List --> Row[ReviewChangeRow per change]
-    Row --> Verbs[Apply and Discard one change]
+    Row --> Verbs[Apply and Discard one change, when actionable]
     Changes --> Other[DraftDocumentRow per other draft]
 ```
 

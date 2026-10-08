@@ -95,6 +95,8 @@ export type ChangeApplyRequest = {
   draftRevisionToken: string;
 };
 
+type ChangeTokens = Pick<ChangeApplyRequest, "liveRevisionToken" | "draftRevisionToken">;
+
 export type DraftReviewCommandPorts = {
   /** The Work these commands act in; part of every command record's identity. */
   scope: { projectId: string; workId: string };
@@ -105,12 +107,13 @@ export type DraftReviewCommandPorts = {
   /**
    * Discard the complete classes `request` names, fenced by the revision tokens
    * the writer saw. Resolves with the server's answer (`stale` is data, not an
-   * error) and rejects when the request got none or was refused.
+   * error), or "unknown" when the request got none (it may have landed), and
+   * rejects when the server refused it.
    */
   discardChanges: (
     selection: DraftReviewSelection,
     request: ChangeApplyRequest,
-  ) => Promise<DraftDiscardResponse>;
+  ) => Promise<DraftDiscardResponse | "unknown">;
   /**
    * Apply the complete classes `request` names. Resolves with the server's
    * answer, or "unknown" when the request got none (it may have landed), and
@@ -126,7 +129,7 @@ export type DraftReviewCommandPorts = {
     change: ChangeRef,
     mode: "apply" | "discard",
   ) => void;
-  batchStarted: () => void;
+  batchStarted: (mode: "apply" | "discard") => void;
   batchSettled: (error: DraftBatchErrorCode | null) => void;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
@@ -157,46 +160,10 @@ export class DraftReviewSession {
   applyChange(
     selection: DraftReviewSelection,
     change: ChangeRef,
-    tokens: Pick<ChangeApplyRequest, "liveRevisionToken" | "draftRevisionToken">,
+    tokens: ChangeTokens,
   ): Promise<DraftCommandOutcome> {
-    return this.withReservation(
-      { kind: "apply-change", ...selection, classId: change.classId },
-      async (_reservation, ports) => {
-        const draft = { ...ports.scope, ...selection };
-        if (!beginChangeCommand(draft, change, "apply")) return { kind: "blocked" };
-        try {
-          let response: DraftApplyChangesResponse | "unknown";
-          try {
-            response = await ports.applyChanges(selection, {
-              operationIds: [...change.operationIds],
-              ...tokens,
-            });
-          } catch {
-            failChangeCommand(draft, change, "apply", "offline");
-            return { kind: "change-refused", mode: "apply", code: "offline" };
-          }
-          if (response === "unknown") {
-            // No answer: the change may have landed. Held on the change as
-            // unknown, never as a refusal, and never inferred from the list.
-            failChangeCommand(draft, change, "apply", "unknown");
-            return { kind: "change-refused", mode: "apply", code: "unknown" };
-          }
-          if (response.status === "applied") {
-            ports.changeConfirmed(selection, change, "apply");
-            return { kind: "change-settled", mode: "apply" };
-          }
-          if (response.status === "gone") {
-            // Nothing to apply any more: the change leaves, with a word about it.
-            ports.changeConfirmed(selection, change, "apply");
-            return { kind: "change-refused", mode: "apply", code: "gone" };
-          }
-          const code = response.status === "draft_only" ? "draft-only" : "stale";
-          failChangeCommand(draft, change, "apply", code);
-          return { kind: "change-refused", mode: "apply", code };
-        } finally {
-          releaseChangeCommand(draft);
-        }
-      },
+    return this.changeCommand("apply", selection, change, tokens, (ports, request) =>
+      ports.applyChanges(selection, request),
     );
   }
 
@@ -209,39 +176,10 @@ export class DraftReviewSession {
   discardChange(
     selection: DraftReviewSelection,
     change: ChangeRef,
-    tokens: Pick<ChangeApplyRequest, "liveRevisionToken" | "draftRevisionToken">,
+    tokens: ChangeTokens,
   ): Promise<DraftCommandOutcome> {
-    return this.withReservation(
-      { kind: "discard-change", ...selection, classId: change.classId },
-      async (_reservation, ports) => {
-        const draft = { ...ports.scope, ...selection };
-        if (!beginChangeCommand(draft, change, "discard")) return { kind: "blocked" };
-        try {
-          let response: DraftDiscardResponse;
-          try {
-            response = await ports.discardChanges(selection, {
-              operationIds: [...change.operationIds],
-              ...tokens,
-            });
-          } catch {
-            failChangeCommand(draft, change, "discard", "offline");
-            return { kind: "change-refused", mode: "discard", code: "offline" };
-          }
-          if (response.status === "discarded") {
-            ports.changeConfirmed(selection, change, "discard");
-            return { kind: "change-settled", mode: "discard" };
-          }
-          if (response.status === "gone") {
-            ports.changeConfirmed(selection, change, "discard");
-            return { kind: "change-refused", mode: "discard", code: "gone" };
-          }
-          const code = response.status === "draft_only" ? "draft-only" : "stale";
-          failChangeCommand(draft, change, "discard", code);
-          return { kind: "change-refused", mode: "discard", code };
-        } finally {
-          releaseChangeCommand(draft);
-        }
-      },
+    return this.changeCommand("discard", selection, change, tokens, (ports, request) =>
+      ports.discardChanges(selection, request),
     );
   }
 
@@ -260,20 +198,76 @@ export class DraftReviewSession {
     if (!reservation) return [{ kind: "blocked" }];
     const ports = this.ports();
     const outcomes: DraftCommandOutcome[] = [];
-    ports.batchStarted();
+    ports.batchStarted(mode);
     try {
       for (const draft of drafts) {
         const outcome = await (mode === "apply"
           ? this.applyDraft(draft, reservation, ports)
           : this.discardDraftWithReservation(draft, reservation, ports));
+        // A refusal belongs to the draft it was sent for and is held there
+        // (`failDraftCommand`); the drafts after it are independent documents
+        // and still get their turn, so the batch never ends half-done unannounced.
+        // Nothing here moves the writer: where they are is theirs to choose.
         outcomes.push(outcome);
-        if (!batchOutcomeSucceeded(mode, outcome)) break;
       }
     } finally {
       this.disposition.release(reservation);
       ports.batchSettled(batchErrorCode(mode, outcomes));
     }
     return outcomes;
+  }
+
+  /**
+   * One change's Apply or Discard. Both are answered by the same statuses
+   * (`applied` or `discarded` confirms, `gone` drops the change with a word,
+   * anything else brings it back with its reason), and a request that got no
+   * answer is held as `unknown` for both: it may have landed, so it is never
+   * read as a refusal and never inferred from the list.
+   */
+  private changeCommand(
+    mode: "apply" | "discard",
+    selection: DraftReviewSelection,
+    change: ChangeRef,
+    tokens: ChangeTokens,
+    send: (
+      ports: DraftReviewCommandPorts,
+      request: ChangeApplyRequest,
+    ) => Promise<{ status: string } | "unknown">,
+  ): Promise<DraftCommandOutcome> {
+    return this.withReservation(
+      { kind: `${mode}-change`, ...selection, classId: change.classId },
+      async (_reservation, ports) => {
+        const draft = { ...ports.scope, ...selection };
+        if (!beginChangeCommand(draft, change, mode)) return { kind: "blocked" };
+        try {
+          let response: { status: string } | "unknown";
+          try {
+            response = await send(ports, { operationIds: [...change.operationIds], ...tokens });
+          } catch {
+            failChangeCommand(draft, change, mode, "offline");
+            return { kind: "change-refused", mode, code: "offline" };
+          }
+          if (response === "unknown") {
+            failChangeCommand(draft, change, mode, "unknown");
+            return { kind: "change-refused", mode, code: "unknown" };
+          }
+          if (response.status === (mode === "apply" ? "applied" : "discarded")) {
+            ports.changeConfirmed(selection, change, mode);
+            return { kind: "change-settled", mode };
+          }
+          if (response.status === "gone") {
+            // Nothing left to handle: the change leaves, with a word about it.
+            ports.changeConfirmed(selection, change, mode);
+            return { kind: "change-refused", mode, code: "gone" };
+          }
+          const code = response.status === "draft_only" ? "draft-only" : "stale";
+          failChangeCommand(draft, change, mode, code);
+          return { kind: "change-refused", mode, code };
+        } finally {
+          releaseChangeCommand(draft);
+        }
+      },
+    );
   }
 
   private async applyDraft(
@@ -351,17 +345,16 @@ export class DraftReviewSession {
   }
 }
 
-function batchOutcomeSucceeded(mode: "apply" | "discard", outcome: DraftCommandOutcome): boolean {
-  return mode === "apply" ? outcome.kind === "applied" : outcome.kind === "discarded";
-}
-
 function batchErrorCode(
   mode: "apply" | "discard",
   outcomes: readonly DraftCommandOutcome[],
 ): DraftBatchErrorCode | null {
-  const last = outcomes.at(-1)?.kind;
-  if (last === "apply-outcome-unknown") return "apply-unknown";
-  return last === "failed" ? (mode === "apply" ? "apply-failed" : "discard-offline") : null;
+  if (outcomes.some((outcome) => outcome.kind === "failed")) {
+    return mode === "apply" ? "apply-failed" : "discard-offline";
+  }
+  return outcomes.some((outcome) => outcome.kind === "apply-outcome-unknown")
+    ? "apply-unknown"
+    : null;
 }
 
 export type DraftReviewSelection = {

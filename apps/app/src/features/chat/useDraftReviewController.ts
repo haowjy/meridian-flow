@@ -16,14 +16,14 @@ import {
 } from "react";
 import type { ChangeRef } from "@/client/query/change-command-record";
 import {
-  clearDraftCommandFailure,
+  clearDraftReviewLaunchFailure,
   draftCommandPendingIn,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import {
-  DraftApplyOutcomeUnknownError,
+  DraftCommandOutcomeUnknownError,
   settleConfirmedChange,
   useApplyDraft,
   useApplyDraftChanges,
@@ -71,6 +71,16 @@ export type InlineReviewRuntime = {
   documentId: string;
   draftId: string;
 };
+
+/** A command whose request got no answer settles as "unknown"; a rejection still throws. */
+async function unlessOutcomeUnknown<T>(command: Promise<T>): Promise<T | "unknown"> {
+  try {
+    return await command;
+  } catch (error) {
+    if (error instanceof DraftCommandOutcomeUnknownError) return "unknown";
+    throw error;
+  }
+}
 
 export type DraftReviewController = {
   projectId: string;
@@ -178,6 +188,10 @@ export function useDraftReviewController({
     null,
   );
   const nextReviewAttemptIdRef = useRef(0);
+  /** The review open when Apply all or Discard all began, as it was listed then. */
+  const batchReviewedRef = useRef<(DraftReviewSelection & { documentName: string | null }) | null>(
+    null,
+  );
   stateRef.current = state;
 
   useEffect(() => {
@@ -305,18 +319,35 @@ export function useDraftReviewController({
     }
   };
 
+  /**
+   * Apply all or Discard all closed the draft the writer is reviewing. The
+   * review holds on "No changes left" (as it does after the last change) so the
+   * batch's pending and settled outcome stays in front of them, rather than
+   * falling to live as if every draft had applied.
+   */
+  const holdBatchClosedReview = (documentId: string, draftId: string): boolean => {
+    const reviewed = batchReviewedRef.current;
+    if (reviewed?.documentId !== documentId || reviewed.draftId !== draftId) return false;
+    const inline = stateRef.current.surface;
+    if (inline.kind !== "inline" || inline.documentId !== documentId || inline.draftId !== draftId)
+      return false;
+    if (!activeRef.current) return false;
+    dispatch({ type: "reviewClosed", documentId, draftId, documentName: reviewed.documentName });
+    return true;
+  };
+
   commandPortsRef.current = {
     scope: { projectId, workId },
     apply: async ({ documentId, draftId }) => {
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
-      try {
-        await applyMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
-      } catch (error) {
-        if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
-        throw error;
-      }
+      if (
+        (await unlessOutcomeUnknown(
+          applyMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId }),
+        )) === "unknown"
+      )
+        return "unknown";
       // Confirmed is terminal for the command: the batch advances now. Tab
       // promotion and the route repair are navigation's business and run on.
       void settleConfirmedApply(tab);
@@ -326,21 +357,24 @@ export function useDraftReviewController({
       await discardMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
     },
     discardChanges: ({ documentId, draftId }, request) =>
-      discardMutation.mutateAsync({
-        projectId,
-        workId,
-        threadId,
-        documentId,
-        draftId,
-        request,
-        // Only an answered Discard can close the draft; a refusal says nothing about it.
-        onAnswered: (response) => {
-          if (response.status === "discarded") settleAnsweredCommand(documentId, draftId, response);
-        },
-      }),
-    applyChanges: async ({ documentId, draftId }, request) => {
-      try {
-        return await applyChangesMutation.mutateAsync({
+      unlessOutcomeUnknown(
+        discardMutation.mutateAsync({
+          projectId,
+          workId,
+          threadId,
+          documentId,
+          draftId,
+          request,
+          // Only an answered Discard can close the draft; a refusal says nothing about it.
+          onAnswered: (response) => {
+            if (response.status === "discarded")
+              settleAnsweredCommand(documentId, draftId, response);
+          },
+        }),
+      ),
+    applyChanges: ({ documentId, draftId }, request) =>
+      unlessOutcomeUnknown(
+        applyChangesMutation.mutateAsync({
           projectId,
           workId,
           threadId,
@@ -350,12 +384,8 @@ export function useDraftReviewController({
           onAnswered: (response) => {
             if (response.status === "applied") settleAnsweredCommand(documentId, draftId, response);
           },
-        });
-      } catch (error) {
-        if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
-        throw error;
-      }
-    },
+        }),
+      ),
     changeConfirmed: ({ documentId, draftId }, change, mode) =>
       settleConfirmedChange(
         queryClient,
@@ -363,10 +393,47 @@ export function useDraftReviewController({
         change,
         mode,
       ),
-    batchStarted: () => {
+    batchStarted: (mode) => {
+      // The review the writer is in is part of the batch: its completion is pending
+      // until its own command answers, and the header says so. Read now: the draft
+      // leaves the Work's list when it is applied.
+      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+      const listedDraft = inline
+        ? queryClient
+            .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
+            ?.find((item) => item.draftId === inline.draftId)
+        : undefined;
+      // A new document's review is promoted to the live document, not held.
+      if (inline && listedDraft?.isNewDocument !== true) {
+        const documentName = listedDraft?.documentName ?? null;
+        batchReviewedRef.current = {
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          documentName,
+        };
+        dispatch({
+          type: "reviewCompleting",
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          mode,
+          documentName,
+        });
+      } else {
+        batchReviewedRef.current = null;
+      }
       dispatch({ type: "batchStarted" });
     },
     batchSettled: (error) => {
+      const reviewed = batchReviewedRef.current;
+      batchReviewedRef.current = null;
+      // Its command did not close it (refused, lost): the review carries on, with
+      // the refusal on it. A no-op when it closed.
+      if (reviewed)
+        dispatch({
+          type: "reviewReopened",
+          documentId: reviewed.documentId,
+          draftId: reviewed.draftId,
+        });
       dispatch({ type: "batchSettled", error });
     },
     // The tab closes with the click; a refusal leaves it closed and the error
@@ -375,17 +442,19 @@ export function useDraftReviewController({
       contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
     },
     draftApplied: ({ documentId, draftId }) => {
-      dispatch({ type: "applySucceeded", documentId, draftId });
+      if (!holdBatchClosedReview(documentId, draftId))
+        dispatch({ type: "applySucceeded", documentId, draftId });
     },
     draftDiscarded: ({ documentId, draftId }) => {
-      dispatch({ type: "discardSucceeded", draftId });
+      if (!holdBatchClosedReview(documentId, draftId))
+        dispatch({ type: "discardSucceeded", draftId });
       contextRemoval.discardDraft(projectId, workId, documentId, draftId);
     },
   };
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
-      clearDraftCommandFailure({ projectId, workId, documentId, draftId });
+      clearDraftReviewLaunchFailure({ projectId, workId, documentId, draftId });
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },

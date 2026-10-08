@@ -7,8 +7,9 @@ grid slot. It has per-screen view sets (Chat-main: Context | Changes;
 Work/Editor-main: Chat | Changes, with transient File on Work) and a single header row with a contained
 segmented switch.
 The **Changes** view is the work-scoped settle surface: the change list of the
-review open in the Editor (one line per server closure class, each with Apply
-and Discard) and the Work's other drafts to open. Whole-draft Apply and Discard
+review open in the Editor (one line per server closure class, with Apply and
+Discard unless the change is unattributed or the server marks its class not
+actionable) and the Work's other drafts to open. Whole-draft Apply and Discard
 stay in the review header. It reads the Editor scope's controller, not the
 Chat's. It works on every screen, with or without a mounted manuscript, so
 entering review never has to leave the screen the writer is on.
@@ -94,3 +95,15 @@ finds an active draft.
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — draft review controller, docked-drafts, DraftDock composer strip
 - [`../../editor/DraftReviewHeader.tsx`](../../editor/DraftReviewHeader.tsx) — full-width editor review chrome
 - [KB: Draft Review Commands Keep Authority on the Server](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md)
+
+## Review handover
+
+`review-handover.tsx` holds the review being left on screen while another
+draft's opens. `EditorReviewHandoffProvider` owns the hold (`openEditorReview`
+begins it, a failed or cancelled launch releases it, an expiry set at capture
+ends it), `ReviewHandoverFrame` goes around each page a review is painted in
+(the desktop page sheet, the phone document column) and makes that page inert
+while the hold lasts, and `useReviewHandoverRelease` (called by
+`EditorReviewAddressOwner`, which stays mounted) ends it when the target paints
+or fails or the route goes elsewhere. Keep navigation (tabs, sidebar) outside
+the frame. See `features/draft-review/AGENTS.md`.

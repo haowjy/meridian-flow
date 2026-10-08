@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import {
-  clearDraftCommandFailure,
+  clearDraftReviewLaunchFailure,
   failDraftReviewLaunch,
 } from "@/client/query/draft-command-record";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
@@ -19,6 +19,7 @@ import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import { ReviewHandoverContext, useReviewHandoverOwner } from "./review-handover";
 
 export type AiDraftLaunchTarget = {
   workId: string;
@@ -76,6 +77,8 @@ export function EditorReviewHandoffProvider({
 }) {
   const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
   const [routingDraftId, setRoutingDraftId] = useState<string | null>(null);
+  const handover = useReviewHandoverOwner();
+  const { begin: beginHandover, release: releaseHandover } = handover;
   const sequence = useRef(0);
   const latest = useRef<EditorReviewIntent | null>(null);
   const claimed = useRef<number | null>(null);
@@ -89,7 +92,13 @@ export function EditorReviewHandoffProvider({
         draftId: target.draftId,
       };
       // A new attempt retires the previous attempt's message.
-      clearDraftCommandFailure(draft);
+      clearDraftReviewLaunchFailure(draft);
+      // Navigation happens first; what is painted stays until the review being opened has painted.
+      const held = beginHandover({
+        documentId: target.documentId,
+        draftId: target.draftId,
+        documentName: target.documentName,
+      });
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
@@ -132,6 +141,7 @@ export function EditorReviewHandoffProvider({
               latest.current = null;
               setIntent(null);
             }
+            releaseHandover(held);
             return;
           }
           if (latest.current?.sequence !== staged.sequence) return;
@@ -143,6 +153,7 @@ export function EditorReviewHandoffProvider({
           setIntent(null);
         }
         // The failure belongs on the draft the writer tried to open.
+        releaseHandover(held);
         failDraftReviewLaunch(draft);
         throw error;
       } finally {
@@ -151,7 +162,7 @@ export function EditorReviewHandoffProvider({
         }
       }
     },
-    [openContextRoute, projectId],
+    [beginHandover, openContextRoute, projectId, releaseHandover],
   );
   const claim = useCallback((claimedSequence: number) => {
     if (latest.current?.sequence !== claimedSequence) return;
@@ -162,7 +173,7 @@ export function EditorReviewHandoffProvider({
   return (
     <EditorReviewCommandContext.Provider value={openEditorReview}>
       <EditorReviewIntentContext.Provider value={{ intent, routingDraftId, claim }}>
-        {children}
+        <ReviewHandoverContext.Provider value={handover}>{children}</ReviewHandoverContext.Provider>
       </EditorReviewIntentContext.Provider>
     </EditorReviewCommandContext.Provider>
   );

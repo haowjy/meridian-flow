@@ -141,6 +141,12 @@ export interface RemovalHandlers {
    * was activated from the keyboard, so focus can follow it to the rebuilt widget.
    */
   activate: (operationId: string, toggleIdentity: string | null, keyboard: boolean) => void;
+  /**
+   * A click on the struck text: the caret goes to where the removal stands, on
+   * the side of it that was clicked, so typing lands there. The removal itself
+   * stays outside the document and cannot be selected into.
+   */
+  placeCaret: (removalIdentity: string, side: -1 | 1) => void;
 }
 
 export interface RemovalRenderOptions {
@@ -219,9 +225,26 @@ export function createRemovalElement(
     if (!operationId) return;
     const onToggle =
       event.target instanceof Element && event.target.closest(`.${REMOVAL_TOGGLE_CLASS}`);
+    // A pointer click on the struck text (not the fold, not Enter on it). The side
+    // is read before activating: activating rebuilds this widget, and a detached
+    // one has no box to measure.
+    const side = !onToggle && event.detail > 0 ? clickedSide(root, event, plan.block) : null;
     options.handlers.activate(operationId, onToggle ? plan.identity : null, event.detail === 0);
+    if (side !== null) options.handlers.placeCaret(plan.identity, side);
   });
   return root;
+}
+
+/** Which side of the removal a click landed on: left or upper half is before it, the rest after. */
+function clickedSide(root: HTMLElement, event: MouseEvent, block: boolean): -1 | 1 {
+  const rect = root.getBoundingClientRect();
+  return block
+    ? event.clientY < rect.top + rect.height / 2
+      ? -1
+      : 1
+    : event.clientX < rect.left + rect.width / 2
+      ? -1
+      : 1;
 }
 
 export const BAR_SLOT_CLASS = "meridian-review-bar-slot";
