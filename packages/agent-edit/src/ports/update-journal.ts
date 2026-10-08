@@ -19,6 +19,8 @@ type JournalMutationBase = {
   writeId?: string;
   /** Pre-reserved durable ordinal rendered as w<N>. */
   wId?: number;
+  /** The model's own tool call id (unscoped): the transcript row that made this write. */
+  toolCallId?: string;
   actorKind: "agent" | "human" | "system";
   userId?: string;
   systemOrigin?: string;

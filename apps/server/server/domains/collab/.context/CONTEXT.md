@@ -280,7 +280,10 @@ publication belong to the caller, not these pure traversal primitives.
 Agent preview operations carry `actorThreadId` and the thread title at preview
 time (`actorThreadTitle`). The application service collects journal thread IDs
 and resolves titles with one batched lookup, never one query per operation.
-Writer operations carry neither field.
+Writer operations carry neither field. The same operations carry `actorTurnId`
+and `actorToolCallId` (the journal row's `turn_id` and `tool_call_id`, the
+model's own unscoped tool call id), so the app can open the chat at the write.
+Rows written before the column existed have no tool call id.
 
 ### Empty per-change reviews
 

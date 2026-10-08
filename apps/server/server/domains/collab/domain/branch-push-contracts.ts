@@ -43,6 +43,8 @@ export type BranchJournalRow = {
   branchId: string;
   generation: number;
   wId: number | null;
+  /** The model's tool call that made this write; null for writer rows and legacy rows. */
+  toolCallId?: string | null;
   source: "agent" | "writer";
   threadId: ThreadId | null;
   turnId: TurnId | null;

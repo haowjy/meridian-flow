@@ -650,6 +650,7 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
     branchId: row.branchId,
     generation: row.generation,
     wId: row.wId,
+    toolCallId: row.toolCallId,
     source: row.source,
     threadId: row.threadId,
     turnId: row.turnId,

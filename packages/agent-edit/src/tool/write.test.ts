@@ -336,6 +336,29 @@ describe("write tool dispatch", () => {
     ]);
   });
 
+  it("hands the model's own tool call id to the journal, unscoped", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.read({ file: "chapter.md" }, context);
+    const appended = vi.spyOn(ctx.journal, "appendBatch");
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta.", tool_use_id: "call-write-9" },
+      { ...context, turnId: "turn-9", responseId: "response-9" },
+    );
+    await ctx.core.commitResponse("response-9");
+
+    const mutations = appended.mock.calls.flatMap(([entries]) =>
+      entries.map((entry) => entry.mutation),
+    );
+    expect(mutations).toEqual([
+      expect.objectContaining({
+        turnId: "turn-9",
+        toolCallId: "call-write-9",
+        writeId: "response:response-9:tool:call-write-9",
+      }),
+    ]);
+  });
+
   it("rejects tool_use_id replay after rollback instead of returning cached staged success", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);

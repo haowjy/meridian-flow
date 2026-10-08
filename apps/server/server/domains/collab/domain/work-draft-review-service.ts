@@ -185,6 +185,7 @@ export function createWorkDraftReviewService(input: {
             ? {
                 ...operation,
                 actorThreadId: row.threadId,
+                ...(row.toolCallId ? { actorToolCallId: row.toolCallId } : {}),
                 ...(titles.has(row.threadId) ? { actorThreadTitle: titles.get(row.threadId) } : {}),
               }
             : operation;

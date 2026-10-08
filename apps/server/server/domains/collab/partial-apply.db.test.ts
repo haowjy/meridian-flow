@@ -113,13 +113,13 @@ describe("per-change Apply (postgres)", () => {
     expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toEqual([]);
   });
 
-  it("attributes agent operations to the chat's current title, not writer operations", async () => {
+  it("attributes agent operations to the chat's current title and the tool call that wrote them, not writer operations", async () => {
     const harness = createReviewHarness();
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "chat-attribution");
     const fixture = harness.crossWorkProbeFixture();
     const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
-    await stageText(fixture, branch.branchId, 0, " Agent", "agent");
+    await stageText(fixture, branch.branchId, 0, " Agent", "agent", undefined, "call_write_7");
     await stageText(fixture, branch.branchId, 1, " Writer", "writer");
     await db
       .update(schema.threads)
@@ -134,11 +134,14 @@ describe("per-change Apply (postgres)", () => {
     expect(preview.operations.find((op) => op.kind === "agent")).toMatchObject({
       actorThreadId: THREAD_ID,
       actorThreadTitle: "Renamed chat",
+      actorTurnId: TURN_ID,
+      actorToolCallId: "call_write_7",
     });
     const writer = preview.operations.find((op) => op.kind === "writer");
     expect(writer).toBeDefined();
     expect(writer).not.toHaveProperty("actorThreadId");
     expect(writer).not.toHaveProperty("actorThreadTitle");
+    expect(writer).not.toHaveProperty("actorToolCallId");
   });
 
   it.each([
@@ -809,6 +812,7 @@ async function stageText(
   suffix: string,
   source: "agent" | "writer",
   clientId?: number,
+  toolCallId?: string,
 ): Promise<number> {
   const staged = await fixture.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
     const clone = createCollabYDoc({ gc: false });
@@ -830,6 +834,7 @@ async function stageText(
       threadId: THREAD_ID,
       turnId: source === "agent" ? TURN_ID : null,
       wId: null,
+      toolCallId: toolCallId ?? null,
       updateMeta: null,
     });
   } finally {
