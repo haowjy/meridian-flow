@@ -462,7 +462,7 @@ describe("write reversal under concurrent edits", () => {
     ]);
   });
 
-  it("keeps a human insertion before the agent replacement at the same text boundary", async () => {
+  it("refuses undo when a human insertion anchors on the agent replacement", async () => {
     const scenario = await ReversalScenario.read({
       "chapter.md": "Beta shield.",
     });
@@ -486,12 +486,8 @@ describe("write reversal under concurrent edits", () => {
       context,
     );
 
-    expect(undo.status).toBe("reconciled");
-    expect(undo.result).toMatchObject({
-      command: "undo",
-      reversal: { direction: "undo", writes: ["w1"] },
-    });
-    expect(scenario.blockTexts()).toEqual(["Beta bright shield."]);
+    expect(undo.status).toBe("cant_undo_dependent");
+    expect(scenario.blockTexts()).toEqual(["Beta bright ward."]);
   });
 
   it("expands one grouped redo boundary after a multi-cycle runtime replay", async () => {

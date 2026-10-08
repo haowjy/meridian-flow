@@ -81,8 +81,8 @@ stable reversal-result identity.
   visible to the dependency predicate instead of being folded into an AI
   mutation or representative push author.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
-  the dependency check (`hasDependentLaterRows` in
-  `domain/journal-dependencies.ts`) inside the same transaction, under
+  the dependency check (`@meridian/agent-edit`'s `hasDependentLaterRows`, the
+  same rule `planUndo` uses for the receipt) inside the same transaction, under
   `lockDocumentMutation` advisory lock; nothing else guards a live
   reversal commit. Work-draft reversal uses the generation and
   journal-watermark fence above.

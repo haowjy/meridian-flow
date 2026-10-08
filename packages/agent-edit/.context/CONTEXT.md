@@ -12,7 +12,7 @@ Read the page that owns the seam you are changing:
 - [Port contracts](port-contracts.md) — journal, coordinator, lifecycle, codec,
   model, session-store, and core interfaces.
 - [Write architecture](write-architecture.md) — module boundaries, codec flow,
-  semantic certification, tiered application, and cold reversal.
+  semantic certification, edit application, and cold reversal.
 - [Write invariants](write-invariants.md) — block identity, destructive-edit
   safety, synchronization, and resolver constraints.
 - [Write tool surface](write-tool-surface.md) — lifecycle behavior, outcomes,
