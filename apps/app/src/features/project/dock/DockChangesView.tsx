@@ -10,9 +10,11 @@
  * sits in the Chat's boundary, and the Chat's controller never has a review
  * open.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { FileCheck2, Loader2 } from "lucide-react";
 import { useMemo } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDraftReview, useEditorDraftReview } from "@/features/chat/DraftReviewProvider";
@@ -31,6 +33,8 @@ export function DockChangesView({ className }: { className?: string }) {
   const { openDockRow: openDraft } = useAiDraftLauncher();
   const view = useReviewChanges(editor);
 
+  // One list per Work: the Editor's, and the Chat's when the chat is in another
+  // Work. Each list's menu and count are of its own drafts.
   const {
     files,
     rows: editorRows,
@@ -39,11 +43,17 @@ export function DockChangesView({ className }: { className?: string }) {
     review: { controller: editor, groups: editorGroups },
     view,
     openDraft,
-    other: { controller, groups },
   });
+  const chatInOtherWork = controller.workId !== editor.workId;
+  const chat = useReviewFileList({
+    review: { controller, groups: chatInOtherWork ? groups : null },
+    view: null,
+    openDraft,
+  });
+  const workName = useWorkNames(editor.projectId);
   const reviewed = editor.inlineReview;
 
-  if (files.length === 0) {
+  if (files.length === 0 && chat.files.length === 0) {
     return (
       <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
         {/* Empty-state form (slice-7 study): centered glyph + title + one-line
@@ -63,22 +73,39 @@ export function DockChangesView({ className }: { className?: string }) {
 
   return (
     <div className={cn("flex min-h-0 flex-col gap-2 overflow-y-auto px-2 py-2", className)}>
-      <ReviewFiles files={files} batch={batch}>
-        {reviewed ? (
-          <OpenFileChanges
-            view={view}
-            controller={editor}
-            next={draftAfter(
-              editorRows,
-              reviewed.documentId,
-              reviewed.completion?.documentName ?? null,
-            )}
-            onOpenNext={(row) => openDraft(row, editor.workId)}
-          />
-        ) : null}
-      </ReviewFiles>
+      {files.length > 0 ? (
+        <ReviewFiles
+          files={files}
+          batch={batch}
+          title={chat.files.length > 0 ? workName(editor.workId) : undefined}
+        >
+          {reviewed ? (
+            <OpenFileChanges
+              view={view}
+              controller={editor}
+              next={draftAfter(
+                editorRows,
+                reviewed.documentId,
+                reviewed.completion?.documentName ?? null,
+              )}
+              onOpenNext={(row) => openDraft(row, editor.workId)}
+            />
+          ) : null}
+        </ReviewFiles>
+      ) : null}
+      {chat.files.length > 0 ? (
+        <ReviewFiles files={chat.files} batch={chat.batch} title={workName(controller.workId)} />
+      ) : null}
     </div>
   );
+}
+
+/** A Work's name for a heading, from the project's Works. */
+function useWorkNames(projectId: string): (workId: string) => string {
+  const { works, noWork } = useWorks(projectId);
+  const anotherWork = t`Another Work`;
+  return (workId) =>
+    [...(works ?? []), noWork].find((work) => work?.id === workId)?.name ?? anotherWork;
 }
 
 /** The open file's body under its heading: its changes in document order, or the state that stands in for them. */

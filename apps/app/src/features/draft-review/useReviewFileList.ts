@@ -1,12 +1,20 @@
 /**
- * useReviewFileList — the Work's draft files as `ReviewFiles` takes them: every
+ * useReviewFileList — one Work's draft files as `ReviewFiles` takes them: every
  * file once, in the one file order, the file under review marked open, with the
- * Work-wide Apply all and Discard all. The dock's Changes tab and the phone's
+ * Work's Apply all and Discard all. The dock's Changes tab and the phone's
  * changes sheet are two layouts over it, so they cannot order or label files
  * differently.
+ *
+ * One list is one Work: its rows are what its Apply all and Discard all act on,
+ * and its count is of those rows. A review whose draft has left the list keeps
+ * its place by name, shown but not counted.
+ *
+ * Stable actions, volatile view (as in `ContextTreeRows`): the files are built
+ * from the Work's rows and records and the open file's change count only, so a
+ * focus change, which moves `view` and nothing else, hands `ReviewFiles` the
+ * same file objects and no closed row renders again.
  */
-import { t } from "@lingui/core/macro";
-import { createElement, useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import {
   clearDraftCommandFailure,
@@ -15,7 +23,7 @@ import {
 } from "@/client/query/draft-command-record";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { type DockRow, dockRowName, dockRows, sortDraftFiles } from "@/features/chat/docked-drafts";
-import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
+import { draftStats } from "@/features/chat/draft-stats";
 import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
 import type { ReviewFile, ReviewFilesBatch } from "./ReviewFiles";
 import type { ReviewChangesView } from "./useReviewChanges";
@@ -33,7 +41,6 @@ type ListedFile = {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
-  workId: string;
   row: DockRow | null;
 };
 
@@ -41,91 +48,86 @@ export function useReviewFileList({
   review,
   view,
   openDraft,
-  other,
 }: {
-  /** The Work the review lives in: its drafts, its Apply all and Discard all. */
+  /** The Work whose drafts these are: its review, its Apply all and Discard all. */
   review: Scope;
-  view: ReviewChangesView;
+  /** The review's changes, for the open file's count; null for a Work with no review open. */
+  view: ReviewChangesView | null;
   openDraft: (row: DockRow, workId: string) => void;
-  /** Another Work's drafts listed beside it (the chat can be in another Work than the Editor). */
-  other?: Scope;
 }): { files: ReviewFile[]; rows: DockRow[]; batch: ReviewFilesBatch } {
   const { controller } = review;
+  const { projectId, workId, disposeDrafts, dispositionLocked } = controller;
   const commandRecords = useDraftCommandRecords();
   const rows = useMemo(() => dockRows(review.groups), [review.groups]);
-  const otherRows = useMemo(
-    () => (other && other.controller.workId !== controller.workId ? dockRows(other.groups) : []),
-    [other, controller.workId],
-  );
-  const reviewed = controller.inlineReview;
-  const reviewedDocumentId = reviewed?.documentId ?? null;
-  const closedName = reviewed?.completion?.documentName ?? null;
+  const reviewedDocumentId = controller.inlineReview?.documentId ?? null;
+  const closedName = controller.inlineReview?.completion?.documentName ?? null;
 
   const listed = useMemo(() => {
-    const files: ListedFile[] = [
-      ...rows.map((row) => ({ ...row, workId: controller.workId, row })),
-      ...otherRows.map((row) => ({ ...row, workId: other?.controller.workId ?? "", row })),
-    ];
+    const files: ListedFile[] = rows.map((row) => ({ ...row, row }));
     // A finished review's draft has left the list; it keeps its place by name until the writer moves on.
     if (reviewedDocumentId && !rows.some((row) => row.documentId === reviewedDocumentId)) {
       files.push({
         documentId: reviewedDocumentId,
         documentName: closedName,
         contextPath: null,
-        workId: controller.workId,
         row: null,
       });
     }
     return sortDraftFiles(files);
-  }, [rows, otherRows, other, controller.workId, reviewedDocumentId, closedName]);
+  }, [rows, reviewedDocumentId, closedName]);
 
-  const count = view.items.length;
-  const showCount = view.status === "ready" && !view.finished && !view.completing && !view.unlisted;
-  const files = listed.map<ReviewFile>((file) => {
-    const open = file.workId === controller.workId && file.documentId === reviewedDocumentId;
-    const draftRef = file.row
-      ? {
-          projectId: controller.projectId,
-          workId: file.workId,
-          documentId: file.documentId,
-          draftId: file.row.draft.draftId,
-        }
+  // The latest opener without making every file depend on it.
+  const openDraftRef = useRef(openDraft);
+  openDraftRef.current = openDraft;
+
+  const base = useMemo(
+    () =>
+      listed.map<ReviewFile>((file) => {
+        const draftRef = file.row
+          ? { projectId, workId, documentId: file.documentId, draftId: file.row.draft.draftId }
+          : null;
+        return {
+          key: `${workId}:${file.documentId}`,
+          // Unnamed is null, not a phrase: the words are chosen when shown, in the language shown.
+          name: (file.row ? dockRowName(file.row, "") : file.documentName) || null,
+          held: file.row === null,
+          open: file.documentId === reviewedDocumentId,
+          isNewDocument: file.row?.isNewDocument === true,
+          changeCount: null,
+          stats: file.row ? draftStats(file.row.draft) : null,
+          error: draftRef ? draftCommandFailure(commandRecords, draftRef) : null,
+          onOpen: () => file.row && openDraftRef.current(file.row, workId),
+          onDismissError: () => draftRef && clearDraftCommandFailure(draftRef),
+        };
+      }),
+    [listed, commandRecords, projectId, workId, reviewedDocumentId],
+  );
+
+  // Only the open file knows how many changes it has; the rest keep their identity.
+  const openChangeCount =
+    view && view.status === "ready" && !view.finished && !view.completing && !view.unlisted
+      ? view.items.length
       : null;
-    const stats = file.row ? draftStats(file.row.draft) : null;
-    return {
-      key: `${file.workId}:${file.documentId}`,
-      name: file.row
-        ? dockRowName(file.row, t`Untitled document`)
-        : (file.documentName ?? t`This draft`),
-      open,
-      isNewDocument: file.row?.isNewDocument === true,
-      meta: open
-        ? showCount
-          ? count === 1
-            ? t`1 change`
-            : t`${count} changes`
-          : null
-        : stats
-          ? createElement(DraftStatsLabel, { stats, wordsSuffix: false })
-          : null,
-      error: draftRef ? draftCommandFailure(commandRecords, draftRef) : null,
-      onOpen: () => file.row && openDraft(file.row, file.workId),
-      onDismissError: () => draftRef && clearDraftCommandFailure(draftRef),
-    };
-  });
+  const files = useMemo(
+    () =>
+      openChangeCount === null
+        ? base
+        : base.map((file) => (file.open ? { ...file, changeCount: openChangeCount } : file)),
+    [base, openChangeCount],
+  );
 
-  const selections = rows.map((row) => ({
-    documentId: row.documentId,
-    draftId: row.draft.draftId,
-  }));
-  return {
-    files,
-    rows,
-    batch: {
+  const batch = useMemo<ReviewFilesBatch>(() => {
+    const selections = rows.map((row) => ({
+      documentId: row.documentId,
+      draftId: row.draft.draftId,
+    }));
+    return {
       count: rows.length,
-      disabled: controller.dispositionLocked,
-      onApplyAll: () => void controller.disposeDrafts("apply", selections),
-      onDiscardAll: () => void controller.disposeDrafts("discard", selections),
-    },
-  };
+      disabled: dispositionLocked,
+      onApplyAll: () => void disposeDrafts("apply", selections),
+      onDiscardAll: () => void disposeDrafts("discard", selections),
+    };
+  }, [rows, dispositionLocked, disposeDrafts]);
+
+  return { files, rows, batch };
 }

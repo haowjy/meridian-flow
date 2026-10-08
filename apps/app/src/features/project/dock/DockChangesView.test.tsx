@@ -7,7 +7,7 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { ReviewChange } from "@/features/draft-review/review-changes";
@@ -31,7 +31,14 @@ const group = (documentId: string, name: string) => ({
   },
 });
 
-const chatController = { projectId: "p", workId: "w", inlineReview: null, which: "chat" };
+const chatController = {
+  projectId: "p",
+  workId: "w",
+  inlineReview: null,
+  dispositionLocked: false,
+  disposeDrafts: vi.fn(async () => []),
+  which: "chat",
+};
 const editorController = {
   projectId: "p",
   workId: "w",
@@ -42,8 +49,19 @@ const editorController = {
   which: "editor",
 };
 const groups = [group("doc-12", "Chapter 12"), group("doc-13", "Chapter 13")];
+/** The Chat's scope: the Editor's Work unless a test puts the chat in another one. */
+const chatScope = { groups };
+vi.mock("@/client/query/useWorks", () => ({
+  useWorks: () => ({
+    works: [
+      { id: "w", name: "Book One" },
+      { id: "w2", name: "Side Quest" },
+    ],
+    noWork: { id: "no-work", name: "No Work" },
+  }),
+}));
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
-  useDraftReview: () => ({ controller: chatController, groups }),
+  useDraftReview: () => ({ controller: chatController, groups: chatScope.groups }),
   useEditorDraftReview: () => ({ controller: editorController, groups }),
 }));
 vi.mock("@/client/query/draft-command-record", () => ({
@@ -119,6 +137,8 @@ const button = (name: string) =>
 beforeEach(() => {
   seen.controllers = [];
   openAiDraft.mockClear();
+  editorController.disposeDrafts.mockClear();
+  chatController.disposeDrafts.mockClear();
   for (const fn of [view.focus, view.apply, view.discard]) fn.mockClear();
   Object.assign(view, {
     status: "ready",
@@ -275,6 +295,74 @@ describe("DockChangesView", () => {
       expect(document.body.textContent).toContain("No changes left");
       await act(async () => button("Next draft")?.click());
       expect(openAiDraft).toHaveBeenCalledWith(expect.objectContaining({ documentId: "doc-13" }));
+    });
+  });
+
+  it("counts the drafts it acts on, not the finished review it still shows", async () => {
+    const open = editorController.inlineReview;
+    editorController.inlineReview = {
+      kind: "inline",
+      documentId: "doc-9",
+      draftId: "draft-doc-9",
+      completion: { phase: "closed", documentName: "Chapter 9" },
+    } as typeof open;
+    Object.assign(view, { items: [], finished: true });
+    try {
+      await render(async () => {
+        // Both files are listed (the finished one keeps its place) ...
+        expect(document.body.textContent).toContain("Chapter 9");
+        expect(document.body.textContent).toContain("Chapter 13");
+        // ... but Apply all and Discard all act on the two listed drafts, and say so.
+        expect(document.body.textContent).toContain("2 drafts to review");
+      });
+    } finally {
+      editorController.inlineReview = open;
+    }
+  });
+
+  describe("when the chat's Work is not the Editor's", () => {
+    beforeEach(() => {
+      chatController.workId = "w2";
+      chatScope.groups = [group("doc-30", "Side chapter")];
+    });
+    afterEach(() => {
+      chatController.workId = "w";
+      chatScope.groups = groups;
+    });
+
+    it("lists each Work's drafts under its own name, with its own Apply all and Discard all", async () => {
+      await render(async () => {
+        const sections = Array.from(document.querySelectorAll<HTMLElement>("[data-review-files]"));
+        expect(sections.map((node) => node.getAttribute("aria-label"))).toEqual([
+          "Book One",
+          "Side Quest",
+        ]);
+        expect(sections[0].textContent).toContain("Chapter 13");
+        expect(sections[0].textContent).not.toContain("Side chapter");
+        expect(sections[1].textContent).toContain("Side chapter");
+        expect(sections[0].textContent).toContain("2 drafts to review");
+        expect(sections[1].textContent).toContain("1 draft to review");
+      });
+    });
+
+    it("sends each menu only the drafts of its own Work", async () => {
+      await render(async () => {
+        const menus = Array.from(
+          document.querySelectorAll<HTMLButtonElement>("button[aria-label^='All drafts']"),
+        );
+        expect(menus).toHaveLength(2);
+        await act(async () =>
+          menus[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+        );
+        const apply = Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find(
+          (node) => node.textContent?.includes("Apply all 1 draft"),
+        );
+        await act(async () => apply?.click());
+        expect(chatController.disposeDrafts).toHaveBeenCalledWith("apply", [
+          { documentId: "doc-30", draftId: "draft-doc-30" },
+        ]);
+        expect(editorController.disposeDrafts).not.toHaveBeenCalled();
+      });
     });
   });
 });

@@ -10,11 +10,20 @@
  *
  * Presentational: the caller builds the files (name, order, errors, what a tap
  * does) and hands the open file's body as children. `touch` raises targets to 44px.
+ *
+ * One list is one Work: the menu and the count in front of it are of the files'
+ * drafts that Apply all and Discard all act on (`batch.count`), which leaves out
+ * a finished review still shown (`held`). A second Work's drafts are a second
+ * list with its own `title`.
+ *
+ * A file row is memoized on its file object, which the caller keeps when
+ * nothing about that file changed, so moving focus among the open file's
+ * changes renders none of the closed rows.
  */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { MoreHorizontal } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { DraftCommandFailure } from "@/client/query/draft-command-record";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { NewBadge } from "@/components/app/NewBadge";
@@ -25,17 +34,23 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { type DraftStats, DraftStatsLabel } from "@/features/chat/draft-stats";
 import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { cn } from "@/lib/utils";
 
 export type ReviewFile = {
   key: string;
-  name: string;
+  /** Null when the draft has no name to show; the words for that are chosen when shown. */
+  name: string | null;
+  /** The review's draft has left the list (finished): shown by name, not a draft to review. */
+  held: boolean;
   /** The file under review: expanded in place, never a row to open again. */
   open: boolean;
   isNewDocument: boolean;
-  /** Right of the name: a change count on the open file, word stats on the others. */
-  meta?: ReactNode;
+  /** The open file's number of changes, once known; right of its name. */
+  changeCount: number | null;
+  /** Word stats of a closed file's draft, right of its name. */
+  stats: DraftStats;
   /** A held failure on this file's draft, such as a Review that could not open. */
   error: DraftCommandFailure | null;
   onOpen: () => void;
@@ -43,7 +58,7 @@ export type ReviewFile = {
 };
 
 export type ReviewFilesBatch = {
-  /** How many drafts Apply all and Discard all act on. */
+  /** How many drafts Apply all and Discard all act on; the caption in front of the menu counts the same. */
   count: number;
   disabled: boolean;
   onApplyAll: () => void;
@@ -53,34 +68,36 @@ export type ReviewFilesBatch = {
 export function ReviewFiles({
   files,
   batch,
+  title,
   touch = false,
   children,
 }: {
   /** Every draft file once, in `sortDraftFiles` order. */
   files: readonly ReviewFile[];
   batch?: ReviewFilesBatch;
+  /** The Work's name, when more than one Work's drafts are listed. */
+  title?: string;
   touch?: boolean;
   /** The open file's body: its changes, or the state that stands in for them. */
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1" data-review-files>
-      {batch && batch.count > 0 ? (
-        <BatchMenu batch={batch} count={files.length} touch={touch} />
-      ) : null}
+    <section className="flex flex-col gap-1" data-review-files aria-label={title}>
+      {title ? <p className="px-2 pt-1 text-caption font-medium text-foreground">{title}</p> : null}
+      {batch && batch.count > 0 ? <BatchMenu batch={batch} title={title} touch={touch} /> : null}
       {files.map((file) =>
         file.open ? (
           <section
             key={file.key}
-            aria-label={t`Changes in ${file.name}`}
+            aria-label={t`Changes in ${fileName(file)}`}
             className="flex flex-col gap-1"
             data-review-file-open
           >
             <h3 className="flex items-baseline gap-2 px-2 pt-1 text-caption font-medium text-foreground">
-              <span className="min-w-0 flex-1 truncate">{file.name}</span>
-              {file.meta ? (
+              <span className="min-w-0 flex-1 truncate">{fileName(file)}</span>
+              {file.changeCount !== null ? (
                 <span className="shrink-0 text-meta font-normal text-muted-foreground tabular-nums">
-                  {file.meta}
+                  <Plural value={file.changeCount} one="# change" other="# changes" />
                 </span>
               ) : null}
             </h3>
@@ -90,24 +107,29 @@ export function ReviewFiles({
           <FileRow key={file.key} file={file} touch={touch} />
         ),
       )}
-    </div>
+    </section>
   );
+}
+
+/** What a file is called as a string: its name, else a word for a draft that has none. */
+function fileName(file: ReviewFile): string {
+  return file.name ?? (file.held ? t`This draft` : t`Untitled document`);
 }
 
 function BatchMenu({
   batch,
-  count,
+  title,
   touch,
 }: {
   batch: ReviewFilesBatch;
-  count: number;
+  title: string | undefined;
   touch: boolean;
 }) {
   const total = batch.count;
   return (
     <div className="flex items-center gap-2 px-2 text-caption text-muted-foreground">
       <p className="min-w-0 flex-1 truncate">
-        <Plural value={count} one="# draft to review" other="# drafts to review" />
+        <Plural value={total} one="# draft to review" other="# drafts to review" />
       </p>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -115,7 +137,7 @@ function BatchMenu({
             variant="quiet"
             size={touch ? "default" : "xs"}
             className={touch ? "size-11 p-0" : "size-6 p-0"}
-            aria-label={t`All drafts`}
+            aria-label={title ? t`All drafts in ${title}` : t`All drafts`}
           >
             <MoreHorizontal aria-hidden className={touch ? "size-5" : "size-3.5"} />
           </Button>
@@ -145,7 +167,7 @@ function BatchMenu({
   );
 }
 
-function FileRow({ file, touch }: { file: ReviewFile; touch: boolean }) {
+const FileRow = memo(function FileRow({ file, touch }: { file: ReviewFile; touch: boolean }) {
   return (
     <div className="flex flex-col">
       <button
@@ -156,12 +178,18 @@ function FileRow({ file, touch }: { file: ReviewFile; touch: boolean }) {
           touch && "min-h-11",
         )}
       >
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground">{file.name}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+          {file.name ?? (file.held ? <Trans>This draft</Trans> : <Trans>Untitled document</Trans>)}
+        </span>
         {/* The one signal that differentiates a new-document row from an edited
             one: a quiet neutral badge between the name and the stats. Its
             additions-only stats (`+N`, no `−0`) reinforce it (spec §5.5). */}
         {file.isNewDocument ? <NewBadge /> : null}
-        {file.meta ? <span className="shrink-0 text-caption">{file.meta}</span> : null}
+        {file.stats ? (
+          <span className="shrink-0 text-caption">
+            <DraftStatsLabel stats={file.stats} wordsSuffix={false} />
+          </span>
+        ) : null}
         <span
           className={cn(
             "shrink-0 text-caption font-medium text-primary transition-opacity",
@@ -181,4 +209,4 @@ function FileRow({ file, touch }: { file: ReviewFile; touch: boolean }) {
       ) : null}
     </div>
   );
-}
+});
