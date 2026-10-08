@@ -388,8 +388,11 @@ function ActiveSessionEditorView({
   const { noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const holder = resourceForDocumentIdentity(records, documentId);
   const location = holder && projectId ? projectResourceLocation(projectId, holder) : null;
+  // A draft-created document has no holder record until Apply, so under review
+  // its links belong to the draft's Work. Without one the scope would stay
+  // pending and a followed link would wait forever.
   const linkWorkId = !location
-    ? null
+    ? reviewWorkId
     : location.scheme === "scratch" || location.scheme === "uploads"
       ? location.workId
       : (noWork?.id ?? null);
