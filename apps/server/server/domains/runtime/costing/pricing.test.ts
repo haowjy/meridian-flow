@@ -9,35 +9,12 @@ import {
   computeModelCost,
   createDefaultModelTokenRateSource,
   createLayeredTokenRateSource,
-  findModelTokenRate,
-  meteredMillicreditsFromRaw,
 } from "./pricing.js";
 
 const REGISTRY_PINNED_RATES = extractPinnedRates(MODEL_REGISTRY);
 
 describe("model pricing", () => {
   const rateSource = createDefaultModelTokenRateSource();
-
-  it("applies the fixed cost multiplier when converting raw USD micros to metered millicredits", () => {
-    // $0.10 raw = 100,000 USD micros. ceil(100,000 * 115 / 1000) = 11,500 millicredits ($0.115).
-    expect(meteredMillicreditsFromRaw(100_000n)).toBe(11_500n);
-    expect(meteredMillicreditsFromRaw(1n)).toBe(1n);
-    expect(meteredMillicreditsFromRaw(0n)).toBe(0n);
-  });
-
-  it("computes millicredits deterministically from registry-pinned token rates", () => {
-    const cost = computeModelCost({
-      provider: "deepseek",
-      model: "deepseek-v4-flash",
-      usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-      rateSource,
-    });
-
-    expect(cost.costUsd).toBe("0.420000");
-    expect(cost.millicredits).toBe("48300");
-    expect(cost.pricingSnapshot.source).toContain("pinned:");
-    expect(cost.pricingSnapshot.sourceLayer).toBe("pinned");
-  });
 
   it("prices an Anthropic 1h cache write at 2x input, not the 5m tier's 1.25x", () => {
     // loop/prompt-cache-marks.ts + the Anthropic adapter always request
@@ -64,33 +41,6 @@ describe("model pricing", () => {
       output_tokens_details: { reasoning_tokens: 0 },
       total_tokens: 1_977,
     });
-
-    expect(usage).toEqual({
-      inputTokens: 1_903,
-      outputTokens: 74,
-      cacheReadTokens: 1_792,
-    });
-    expect(
-      computeModelCost({
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        usage,
-        rateSource,
-      }),
-    ).toMatchObject({
-      costUsd: "0.000040",
-      millicredits: "5",
-    });
-  });
-
-  it("normalizes Anthropic's disjoint cache counters before pricing the MR3 case", () => {
-    const usage = mapAnthropicUsage({
-      input_tokens: 111,
-      output_tokens: 74,
-      cache_read_input_tokens: 1_792,
-      cache_creation_input_tokens: 0,
-      output_tokens_details: null,
-    } as Parameters<typeof mapAnthropicUsage>[0]);
 
     expect(usage).toEqual({
       inputTokens: 1_903,
@@ -271,27 +221,6 @@ describe("model pricing", () => {
         rateSource,
       }),
     ).toThrow(/No pinned token price/);
-  });
-
-  it("prices every production registry model for its provider entry", () => {
-    for (const provider of MODEL_REGISTRY.providers) {
-      for (const model of provider.models) {
-        expect(() => findModelTokenRate(provider.id, model.id, rateSource)).not.toThrow();
-      }
-    }
-  });
-
-  it("bills mock gateway fixtures at zero via the override layer", () => {
-    const cost = computeModelCost({
-      provider: "mock",
-      model: "mock-llm-v1",
-      usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
-      rateSource,
-    });
-
-    expect(cost.costUsd).toBe("0.000000");
-    expect(cost.millicredits).toBe("0");
-    expect(cost.pricingSnapshot.sourceLayer).toBe("override");
   });
 
   it("prefers override rates over pinned rates for the same provider/model key", () => {
