@@ -64,7 +64,12 @@ stable reversal-result identity.
   writer or another thread are not dependencies; they surface at apply time
   as `location_taken` or `stale_location`. The model walk, turn preflight
   (`turnNamespaceEligibility`) and the turn receipt's Undo/Redo projection
-  all call it, so the receipt never offers what the command refuses.
+  all call it, so the receipt never offers what the command refuses. The
+  receipt (`adapters/drizzle-turn-receipt.ts`) picks one direction first:
+  Undo while any of the turn's content, branch or namespace work is still
+  active, Redo only once none is. It then counts only that direction's
+  blockers, so a blocked Redo on one document never hides a valid Undo of a
+  partially reversed turn.
 - **One reversal step for a create, move or delete**:
   `createNamespaceChanges` (`domain/namespace-changes.ts`) claims the row,
   changes the tree and flips its status in one transaction, and `commit`
