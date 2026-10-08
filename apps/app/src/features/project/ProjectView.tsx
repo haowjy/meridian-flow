@@ -625,6 +625,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           titleEdit={props.titleEdit}
           activeScreen={props.activeScreen}
           editorWorkId={props.editorWorkId}
+          chatThreadId={displayedChatThreadId(props.chatDisplay)}
           contextLive={props.contextLive}
           activeContextScheme={props.activeContextScheme}
           activeContextPath={props.activeContextPath}

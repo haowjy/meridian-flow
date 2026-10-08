@@ -2586,6 +2586,10 @@ msgstr ""
 msgid "No model"
 msgstr ""
 
+#: src/features/project/context/use-catalog-menu-source.ts
+msgid "No notes yet. The AI keeps its notes for this chat here."
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr ""
@@ -3285,7 +3289,6 @@ msgid "scene break"
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
-#: src/features/project/chat/ChatScratchButton.tsx
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
@@ -3299,7 +3302,7 @@ msgstr ""
 msgid "Scratch for {chatTitle}"
 msgstr ""
 
-#: src/features/project/chat/ChatScratchButton.tsx
+#: src/features/project/chat/ChatScratch.tsx
 msgid "Scratch for {name}"
 msgstr ""
 

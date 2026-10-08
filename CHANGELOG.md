@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- A chat's header has a Scratch menu listing the notes the AI keeps for it. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the menu is a bottom sheet. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
+- A Scratch control at the bottom of the left sidebar lists the notes the AI keeps for the chat on screen, even before its first note. It opens upwards. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the control sits at the bottom of the menu drawer and opens a bottom sheet. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
 
 - A chat's Scratch keeps its name, and links and doors to its notes keep opening, after the chat that started it is deleted while a fork continues.
 

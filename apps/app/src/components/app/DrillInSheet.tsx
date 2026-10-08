@@ -86,7 +86,11 @@ function DrillInSheetBody({
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {entries.length === 0 ? (
           <p className="px-4 py-3 text-sm text-muted-foreground">
-            <Trans>Nothing here yet.</Trans>
+            {folder ? (
+              <Trans>Nothing here yet.</Trans>
+            ) : (
+              (tree.empty ?? <Trans>Nothing here yet.</Trans>)
+            )}
           </p>
         ) : (
           <ul>

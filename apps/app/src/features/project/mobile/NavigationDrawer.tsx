@@ -1,5 +1,5 @@
 /**
- * NavigationDrawer — phone project drawer for destinations and account.
+ * NavigationDrawer — phone project drawer for destinations, the chat's Scratch and account.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -7,6 +7,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { RailScratchControl } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
@@ -27,6 +28,10 @@ export type NavigationDrawerProps = {
   activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
   onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
+  /** The chat on screen, which the Scratch control browses; null hides the control. */
+  chatThreadId: string | null;
+  /** The drawer has closed; open the Scratch sheet the project hosts. */
+  onOpenScratch: () => void;
 };
 
 export function NavigationDrawer({
@@ -42,6 +47,8 @@ export function NavigationDrawer({
   activeContextPath,
   onSelectScreen,
   onSelectContextPath,
+  chatThreadId,
+  onOpenScratch,
 }: NavigationDrawerProps) {
   const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
@@ -129,6 +136,16 @@ export function NavigationDrawer({
                 onOpenChange(false);
               }}
               presentation="phone"
+              scratch={
+                <RailScratchControl
+                  projectId={projectId}
+                  threadId={chatThreadId}
+                  onOpenSheet={() => {
+                    onOpenChange(false);
+                    onOpenScratch();
+                  }}
+                />
+              }
             >
               {contextLive ? (
                 <ContextTreePanel

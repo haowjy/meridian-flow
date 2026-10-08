@@ -5,7 +5,7 @@
  * tree's source. A divider then separates the tree from the actions.
  *
  * The component takes a tree source and an action list, so the dock's
- * document title and a chat's Scratch button can share it. It owns only the
+ * document title and the rail's Scratch control can share it. It owns only the
  * drill state; picking an entry and running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
@@ -34,6 +34,8 @@ export type DrillNode = {
 export type DrillTree = {
   /** Names the tree's source at the top level. */
   heading: string;
+  /** What an empty top level says; a folder with nothing in it keeps the generic line. */
+  empty?: string;
   /** A folder's entries in display order; `null` is the top level. */
   children: (folderId: string | null) => readonly DrillNode[];
 };
@@ -55,6 +57,8 @@ export type DrillInMenuProps = {
   onPick: (node: DrillNode) => void;
   /** Where focus goes when the menu closes without an action; defaults to the trigger. */
   returnFocusRef?: RefObject<HTMLElement | null>;
+  /** Which side of the trigger the menu opens on; it flips when there is no room. */
+  side?: "top" | "bottom";
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
 };
@@ -66,6 +70,7 @@ export function DrillInMenu({
   actions,
   onPick,
   returnFocusRef,
+  side,
   children,
 }: DrillInMenuProps) {
   const [open, setOpen] = useState(false);
@@ -98,6 +103,7 @@ export function DrillInMenu({
       <DropdownMenuContent
         ref={contentRef}
         align="start"
+        side={side}
         className="w-64 max-w-[calc(100vw-1rem)]"
         onKeyDown={(event) => {
           if (event.key === "ArrowLeft" && trail.length > 0) {
@@ -135,7 +141,11 @@ export function DrillInMenu({
         )}
         {entries.length === 0 ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
-            <Trans>Nothing here yet.</Trans>
+            {folder ? (
+              <Trans>Nothing here yet.</Trans>
+            ) : (
+              (tree.empty ?? <Trans>Nothing here yet.</Trans>)
+            )}
           </p>
         ) : (
           entries.map((node) => (

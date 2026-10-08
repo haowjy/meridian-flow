@@ -8,7 +8,6 @@
 import { ChatThreadTitle } from "@/features/chat/ChatThreadTitle";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
-import { ChatScratchButton } from "./chat/ChatScratchButton";
 import { ChatIndexChip } from "./chat-index/ChatIndexButton";
 import { useChatNavigation } from "./routing/chat-navigation";
 
@@ -47,12 +46,7 @@ export function ChatPaneController({
       left={sidebarToggle}
       right={contextToggle}
       actions={
-        threadId ? (
-          <>
-            <ChatScratchButton projectId={projectId} threadId={threadId} />
-            <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
-          </>
-        ) : null
+        threadId ? <SubagentHeader threadId={threadId} nodes={activity.activity.children} /> : null
       }
     />
   );

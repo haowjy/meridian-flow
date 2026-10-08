@@ -1,7 +1,7 @@
 /**
  * The tree behind a Scratch menu: what `DrillInMenu` and `DrillInSheet` browse.
  *
- * One source serves the chat-header Scratch button and the dock document's
+ * One source serves the left rail's Scratch control and the dock document's
  * title chip, so both list the same notes the same way. Its catalog is the
  * owner's Scratch: a named Work's, or a No Work chat's lineage. A chat on a
  * Work whose lineage still holds notes lists them under one "Earlier notes"
@@ -28,8 +28,6 @@ export type CatalogMenuSource = {
   tree: DrillTree;
   /** The owner's own catalog (not the earlier notes), for rows and rename siblings. */
   catalog: CatalogContextView | null;
-  /** Whether any note is listed, earlier ones included. */
-  hasNotes: boolean;
   /** The folders, outermost first, that hold the note at `path` in the owner's own Scratch. */
   foldersOf(path: string): DrillNode[];
   /** The tab a picked note opens as. */
@@ -78,6 +76,7 @@ export function useCatalogMenuSource({
   const tree = useMemo<DrillTree>(
     () => ({
       heading,
+      empty: t`No notes yet. The AI keeps its notes for this chat here.`,
       children: (folderId) => {
         if (folderId === EARLIER_ID) return earlier ? listChildren(earlier, null) : [];
         if (folderId === null) {
@@ -122,7 +121,6 @@ export function useCatalogMenuSource({
   return {
     tree,
     catalog,
-    hasNotes: (catalog?.files().length ?? 0) > 0 || earlierHasNotes,
     foldersOf,
     tabFor,
   };
