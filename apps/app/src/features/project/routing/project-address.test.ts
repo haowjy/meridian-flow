@@ -6,6 +6,7 @@ const P = "/p/550e8400-e29b-41d4-a716-446655440000";
 const WORK = "123e4567-e89b-42d3-a456-426614174000";
 const OTHER_WORK = "223e4567-e89b-42d3-a456-426614174000";
 const CHAT = "00000000-0000-4000-8000-000000000000";
+const ROOT = "323e4567-e89b-42d3-a456-426614174000";
 
 function parse(href: string) {
   const cut = href.indexOf("?");
@@ -44,7 +45,9 @@ describe("readable project addresses", () => {
     [`${P}/editor/unfiled/draft.md`, { kind: "document" }],
     [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
     [`${P}/editor/scratch/notes.md?work=${WORK}`, { kind: "document", scheme: "scratch" }],
-    [`${P}/editor/scratch/notes.md?work=`, { kind: "document", scheme: "scratch" }],
+    [`${P}/editor/scratch/notes.md?chat=${ROOT}`, { kind: "document", scheme: "scratch" }],
+    [`${P}/editor/browse/scratch/duel?chat=${ROOT}`, { kind: "browse", scheme: "scratch" }],
+    [`${P}/editor/uploads/cover.png?work=`, { kind: "document", scheme: "uploads" }],
     [`${P}/editor/uploads/cover.png?work=${WORK}`, { kind: "document", scheme: "uploads" }],
     [`${P}/editor/browse`, { kind: "browse", scheme: null, path: "" }],
     [`${P}/editor/browse/manuscript`, { kind: "browse", scheme: "manuscript", path: "" }],
@@ -84,6 +87,9 @@ describe("readable project addresses", () => {
     `${P}/editor/scratch/notes.md`,
     `${P}/editor/uploads/cover.png`,
     `${P}/editor/browse/scratch`,
+    `${P}/editor/scratch/notes.md?work=`,
+    `${P}/editor/scratch/notes.md?chat=fight-scene`,
+    `${P}/editor/scratch/notes.md?work=${WORK}&chat=${ROOT}`,
     `${P}/editor/scratch/notes.md?work=fight-scene`,
     `${P}/editor/browse/uploads?work=%40revision`,
   ])("a Work-owned resource requires its Work: rejects %s", (href) => {
@@ -95,13 +101,27 @@ describe("readable project addresses", () => {
       address: { destination: { kind: "document", scheme: "scratch" }, work: { id: WORK } },
       href: `${P}/editor/scratch/notes.md?work=${WORK}`,
     });
-    expect(parse(`${P}/editor/scratch/notes.md?work=`)).toMatchObject({
+    expect(parse(`${P}/editor/uploads/cover.png?work=`)).toMatchObject({
       address: { work: { kind: "none" } },
-      href: `${P}/editor/scratch/notes.md?work=`,
+      href: `${P}/editor/uploads/cover.png?work=`,
     });
     // The same path under two Works is two addresses.
     expect(parse(`${P}/editor/scratch/notes.md?work=${OTHER_WORK}`)).toMatchObject({
       href: `${P}/editor/scratch/notes.md?work=${OTHER_WORK}`,
+    });
+  });
+
+  it("names a chat's Scratch by its lineage in `?chat=`, never a Work", () => {
+    const parsed = parse(`${P}/editor/scratch/duel/beats.md?chat=${ROOT.toUpperCase()}`);
+    expect(parsed).toMatchObject({
+      kind: "valid",
+      address: { lineage: ROOT, work: { kind: "absent" } },
+      href: `${P}/editor/scratch/duel/beats.md?chat=${ROOT}`,
+    });
+    // Only Scratch has a lineage; other schemes ignore the parameter and never write it.
+    expect(parse(`${P}/editor/manuscript/chapter.md?chat=${ROOT}`)).toMatchObject({
+      kind: "valid",
+      href: `${P}/editor/manuscript/chapter.md`,
     });
   });
 

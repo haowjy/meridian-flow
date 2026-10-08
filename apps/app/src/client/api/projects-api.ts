@@ -231,6 +231,7 @@ export async function updateWorkWriteMode(
 function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): string {
   const query = new URLSearchParams({ scope: scope.kind, ...extra });
   if (scope.kind === "work") query.set("workId", scope.workId);
+  if (scope.kind === "lineage") query.set("rootThreadId", scope.rootThreadId);
   return query.toString();
 }
 

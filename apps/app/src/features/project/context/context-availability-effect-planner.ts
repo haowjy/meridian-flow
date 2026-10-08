@@ -1,4 +1,6 @@
 /** Pure final-state planner for one project's availability command batch. */
+
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   isWorkScopedProjectContextScheme,
   type WorkingSetRoute,
@@ -15,6 +17,7 @@ import {
   contextRouteMatchesSearch,
   openContextRouteSearch,
   type ProjectSearch,
+  sameContextTarget,
 } from "../routing/project-route";
 import type {
   AppliedAvailabilityCommand,
@@ -56,7 +59,7 @@ function documentId(command: ProjectDocumentAvailabilityCommand): string {
 }
 
 function sameTarget(left: ContextRouteTarget | null, right: ContextRouteTarget): boolean {
-  return left?.scheme === right.scheme && left.path === right.path && left.workId === right.workId;
+  return left !== null && sameContextTarget(left, right);
 }
 
 export function planContextAvailabilityBatch(
@@ -106,15 +109,27 @@ export function planContextAvailabilityBatch(
         ? Scheme
         : never;
       const path = `/${entry.path.join("/")}`;
-      if (isWorkScopedProjectContextScheme(scheme) && entry.scope.kind !== "work")
-        throw new Error("Work-scoped availability requires a Work owner");
-      const targetWorkId = isWorkScopedProjectContextScheme(scheme)
-        ? entry.scope.kind === "work"
-          ? entry.scope.workId
-          : null
-        : input.project.activeWorkId;
+      const lineageId = entry.scope.kind === "lineage" ? entry.scope.rootThreadId : undefined;
+      if (isWorkScopedProjectContextScheme(scheme) && entry.scope.kind !== "work" && !lineageId)
+        throw new Error("Work-scoped availability requires a Work or chat owner");
+      // A chat's Scratch keeps the Editor's own Work in its route, as a project document does.
+      const lineageRef = lineageId
+        ? (() => {
+            const uri = parseContextUri(entry.uri);
+            return uri.ok && uri.value.authority.kind === "lineage"
+              ? uri.value.authority.rootThreadRef
+              : undefined;
+          })()
+        : undefined;
+      const targetWorkId = lineageId
+        ? input.project.activeWorkId
+        : isWorkScopedProjectContextScheme(scheme)
+          ? entry.scope.kind === "work"
+            ? entry.scope.workId
+            : null
+          : input.project.activeWorkId;
       const target: ContextRouteTarget | null = targetWorkId
-        ? { scheme, path, workId: targetWorkId }
+        ? { scheme, path, workId: targetWorkId, ...(lineageId ? { rootThreadId: lineageId } : {}) }
         : null;
       const priorTargets = tabs.flatMap((tab) =>
         tab.kind !== "new" && tab.documentId === id && input.project.activeWorkId
@@ -133,12 +148,23 @@ export function planContextAvailabilityBatch(
           name: entry.name,
           provisionalName: entry.provisionalName,
         };
-        const { workId: _oldWork, ...withoutWork } = common;
+        const {
+          workId: _oldWork,
+          rootThreadId: _oldLineage,
+          rootThreadRef: _oldHandle,
+          ...withoutOwner
+        } = common;
+        if (lineageId && lineageRef)
+          return {
+            ...withoutOwner,
+            rootThreadId: lineageId,
+            rootThreadRef: lineageRef,
+          } as ContextTab;
         return isWorkScopedProjectContextScheme(scheme) && targetWorkId
-          ? ({ ...withoutWork, workId: targetWorkId } as ContextTab)
-          : (withoutWork as ContextTab);
+          ? ({ ...withoutOwner, workId: targetWorkId } as ContextTab)
+          : (withoutOwner as ContextTab);
       });
-      if (isWorkScopedProjectContextScheme(scheme) && targetWorkId) {
+      if (isWorkScopedProjectContextScheme(scheme) && targetWorkId && !lineageId) {
         for (const workId of selectedWorks) delete selectedTabIdByWork[workId];
         if (selectedWorks.length) selectedTabIdByWork[targetWorkId] = id;
       }
@@ -164,7 +190,8 @@ export function planContextAvailabilityBatch(
         id,
         scheme,
         path,
-        isWorkScopedProjectContextScheme(scheme) ? targetWorkId : undefined,
+        isWorkScopedProjectContextScheme(scheme) && !lineageId ? targetWorkId : undefined,
+        lineageId,
       );
       if (replacement) {
         recentRoutes = recentRoutes.map((route) =>
@@ -242,6 +269,7 @@ export function planContextAvailabilityBatch(
           expectedSearch: {
             screen: "context",
             work: routeSearch.work,
+            chat: routeSearch.chat,
             scheme: current.locator.scheme,
             path: current.locator.path,
           },
@@ -298,6 +326,7 @@ export function planContextAvailabilityBatch(
           ...routeSearch,
           screen: "work",
           work: undefined,
+          chat: undefined,
           scheme: undefined,
           folder: undefined,
           path: undefined,

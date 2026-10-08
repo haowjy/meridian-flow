@@ -104,8 +104,12 @@ export function ContextViewer({
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
+  // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it.
   const activeFileInWork =
-    activeTab && activeTab.kind !== "new" && isWorkScopedProjectContextScheme(activeTab.scheme);
+    activeTab &&
+    activeTab.kind !== "new" &&
+    isWorkScopedProjectContextScheme(activeTab.scheme) &&
+    activeTab.rootThreadId === undefined;
 
   // Draft review state — the banner sits above the identity bar so review
   // chrome is the first thing the writer sees when entering review mode.

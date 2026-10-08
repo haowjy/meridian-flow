@@ -11,6 +11,8 @@ export type ProjectContextRemovalControllerProps = {
   activeScreen: ScreenKey;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
+  /** A chat's Scratch route names its lineage here. */
+  activeContextChat?: string | null;
   editorWorkId: string;
   localDocumentId?: string;
   route: ContextRemovalRoutePort;
@@ -21,6 +23,7 @@ export function ProjectContextRemovalController({
   activeScreen,
   activeContextScheme,
   activeContextPath,
+  activeContextChat,
   editorWorkId,
   localDocumentId,
   route,
@@ -56,7 +59,12 @@ export function ProjectContextRemovalController({
     if (!registration) return;
     const locator =
       activeScreen === "context" && activeContextScheme !== null && activeContextPath !== null
-        ? { scheme: activeContextScheme, path: activeContextPath, workId: editorWorkId }
+        ? {
+            scheme: activeContextScheme,
+            path: activeContextPath,
+            workId: editorWorkId,
+            ...(activeContextChat ? { rootThreadId: activeContextChat } : {}),
+          }
         : null;
     if (registration.editorWorkId !== editorWorkId) {
       coordinator.changeWorkSelection(projectId, editorWorkId, locator);
@@ -70,6 +78,7 @@ export function ProjectContextRemovalController({
     if (locator) coordinator.beginRouteSelection(projectId, locator);
     else coordinator.clearRouteSelection(projectId);
   }, [
+    activeContextChat,
     activeContextPath,
     activeContextScheme,
     activeScreen,

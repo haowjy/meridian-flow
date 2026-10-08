@@ -18,12 +18,15 @@ import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit"
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath, validateContextEntryName } from "./context-entry-name";
-import { destinationWorkAuthority } from "./identity-location";
+import { destinationOwner } from "./identity-location";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
   entryId: string;
   workId: string | null;
+  /** A chat's Scratch: its lineage's first chat id and the handle its URI spells. */
+  rootThreadId?: string;
+  rootThreadRef?: string;
   scheme: ProjectContextTreeScheme;
   /** Current full path of the entry being renamed. */
   path: string;
@@ -46,6 +49,8 @@ export function useRenameEntryForm({
   projectId,
   entryId,
   workId,
+  rootThreadId,
+  rootThreadRef,
   scheme,
   path,
   currentName,
@@ -66,8 +71,12 @@ export function useRenameEntryForm({
             ? t`This folder is unavailable. Refresh and try again.`
             : t`This file is unavailable. Refresh and try again.`,
         );
-      const authority = destinationWorkAuthority(
-        { scheme, ...(ownedWorkId ? { workId: ownedWorkId } : {}) },
+      const authority = destinationOwner(
+        {
+          scheme,
+          ...(ownedWorkId ? { workId: ownedWorkId } : {}),
+          ...(rootThreadId ? { rootThreadId, rootThreadRef } : {}),
+        },
         works,
         noWork,
       );

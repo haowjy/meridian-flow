@@ -157,6 +157,8 @@ export type ProjectViewProps = {
   activeContextFolder: string | null;
   /** Active context file path, when `screen=context`. */
   activeContextPath: string | null;
+  /** The lineage a chat's Scratch route names, in place of a Work. */
+  activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewDraftId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
@@ -339,6 +341,7 @@ export function ProjectView(props: ProjectViewProps) {
               activeScreen={props.activeScreen}
               activeContextScheme={props.activeContextScheme}
               activeContextPath={props.activeContextPath}
+              activeContextChat={props.activeContextChat}
               editorWorkId={editorScope.workId}
               localDocumentId={props.activeLocalDocumentId}
               route={props.contextRemovalRoute}
@@ -387,7 +390,11 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps &
 
 type MobileEditorPresentation = Pick<
   ResolvedProjectViewProps,
-  "activeContextScheme" | "activeContextPath" | "activeContextFolder" | "activeLocalDocumentId"
+  | "activeContextScheme"
+  | "activeContextPath"
+  | "activeContextChat"
+  | "activeContextFolder"
+  | "activeLocalDocumentId"
 > & { mobileDocumentRoute: MobileDocumentRoute };
 
 function HydratedReviewProject(props: ResolvedProjectViewProps & ProjectIdentityProps) {
@@ -418,6 +425,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
     workId: props.editorWorkId,
+    rootThreadId: props.activeContextChat,
     addressState: addressStateOf(props.routeIssues?.editor),
   });
   const priorMobile = useRef<{
@@ -452,6 +460,7 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
         presentation: {
           activeContextScheme: props.activeContextScheme,
           activeContextPath: props.activeContextPath,
+          activeContextChat: props.activeContextChat,
           activeContextFolder: props.activeContextFolder,
           activeLocalDocumentId: props.activeLocalDocumentId,
           mobileDocumentRoute: requestedMobileDocumentRoute,
@@ -538,6 +547,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         | "editorWork"
         | "activeContextScheme"
         | "activeContextPath"
+        | "activeContextChat"
         | "activeLocalDocumentId"
       > & { editorWorkId: string })
     | null
@@ -667,6 +677,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 editorWork={mountedEditor.editorWork}
                 activeContextScheme={mountedEditor.activeContextScheme}
                 activeContextPath={mountedEditor.activeContextPath}
+                activeContextChat={mountedEditor.activeContextChat}
                 localDocumentId={mountedEditor.activeLocalDocumentId}
                 addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
                 active={editorActive}

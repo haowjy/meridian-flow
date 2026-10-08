@@ -9,7 +9,7 @@ import type { ContextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
 import {
   type DesiredIdentity,
-  destinationWorkAuthority,
+  destinationOwner,
   identityDestination,
   tabLocation,
 } from "./identity-location";
@@ -28,6 +28,8 @@ export type IdentityCommitted = {
   path: string;
   name: string;
   workId?: string;
+  rootThreadId?: string;
+  rootThreadRef?: string;
   /** Editor route ownership captured when this command began. */
   routeWorkId: string | null;
 };
@@ -52,13 +54,14 @@ export function identityCommitMayNavigate(
  */
 export function identityCommitRoute(
   documentId: string,
-  next: Pick<IdentityCommitted, "scheme" | "path" | "routeWorkId">,
+  next: Pick<IdentityCommitted, "scheme" | "path" | "routeWorkId" | "rootThreadId">,
 ): { request: ContextRouteRequest; options: OpenContextOptions } {
   return {
     request: {
       scheme: next.scheme,
       path: next.path,
       workId: next.routeWorkId ?? undefined,
+      ...(next.rootThreadId ? { rootThreadId: next.rootThreadId } : {}),
       documentId,
     },
     options: { replace: true },
@@ -86,7 +89,8 @@ export function deriveIdentityCommitPlan(
   const sameDestination =
     desired.destination.scheme === current.scheme &&
     desired.destination.folderPath === current.folderPath &&
-    desired.destination.workId === current.workId;
+    desired.destination.workId === current.workId &&
+    desired.destination.rootThreadId === current.rootThreadId;
   const sameName = desired.name === location.leaf;
   if (sameDestination && sameName) {
     return location.provisional ? { kind: "commit", desired } : { kind: "no-op" };
@@ -121,7 +125,7 @@ export function useIdentityCommit({
         : await resources.keyForDocument(projectId, tab.documentId);
       if (!key) throw new Error("Document resource is unavailable");
       const destination = plan.desired.destination;
-      const authority = destinationWorkAuthority(destination, works, noWork);
+      const authority = destinationOwner(destination, works, noWork);
       if (!authority) throw new Error("The destination Work is unavailable");
       const ownership = await resources.setLocation(projectId, key, {
         scheme: destination.scheme,
@@ -137,6 +141,12 @@ export function useIdentityCommit({
           path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
           name: plan.desired.name,
           ...(destination.workId ? { workId: destination.workId } : {}),
+          ...(destination.rootThreadId
+            ? {
+                rootThreadId: destination.rootThreadId,
+                rootThreadRef: destination.rootThreadRef,
+              }
+            : {}),
           routeWorkId: authority.workId ?? editorWorkId,
         },
         ownership,

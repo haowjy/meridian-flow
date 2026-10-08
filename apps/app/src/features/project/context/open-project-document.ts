@@ -232,13 +232,14 @@ function localFileForRecord(
 ): {
   scheme: ProjectContextTreeScheme;
   workId: string | null;
+  rootThreadId?: string;
   file: CatalogFile;
   entry: CatalogFileEntry;
 } | null {
   if (record.resource.content.kind !== "exact") return null;
   const location = projectResourceLocation(projectId, record);
   if (!location) return null;
-  const scope = contextCatalogScope(projectId, location.scheme, location.workId);
+  const scope = contextCatalogScope(projectId, location.scheme, location);
   if (!scope) return null;
   const projected = accessibleResourceCatalogView(projectId, scope, record);
   const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
@@ -249,6 +250,7 @@ function localFileForRecord(
   return {
     scheme: location.scheme,
     workId: location.workId,
+    rootThreadId: location.rootThreadId,
     file,
     entry,
   };
@@ -309,6 +311,7 @@ export class ProjectDocumentNavigationAdapter {
             scheme: resolved.scheme,
             file: resolved.file,
             routeWorkId: resolved.workId ?? workId,
+            rootThreadId: resolved.rootThreadId,
             disposition,
             isCurrent,
             canCommit,
@@ -368,6 +371,8 @@ export class ProjectDocumentNavigationAdapter {
       if (!scheme) return { kind: "unavailable", reason: "failed" };
       const routeWorkId =
         result.document.scope.kind === "work" ? result.document.scope.workId : workId;
+      const rootThreadId =
+        result.document.scope.kind === "lineage" ? result.document.scope.rootThreadId : undefined;
       const file = projectCatalogFile(result.document);
       if (disposition === "current" && !this.dependencies.openRoute) {
         throw new Error("Opening a project document requires the project route owner");
@@ -377,6 +382,7 @@ export class ProjectDocumentNavigationAdapter {
         scheme,
         file,
         routeWorkId,
+        rootThreadId,
         disposition,
         isCurrent,
         canCommit,
@@ -395,13 +401,15 @@ export class ProjectDocumentNavigationAdapter {
     scheme: ProjectContextTreeScheme;
     file: CatalogFile;
     routeWorkId: string | undefined;
+    /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
+    rootThreadId?: string;
     disposition: "current" | "background";
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const tabWorkId = input.routeWorkId;
+    const tabWorkId = input.rootThreadId ? undefined : input.routeWorkId;
     const tab = isEditorScheme(input.scheme)
-      ? contextTabFromFile(input.scheme, input.file, tabWorkId)
+      ? contextTabFromFile(input.scheme, input.file, tabWorkId, input.rootThreadId)
       : undefined;
     if (!input.isCurrent()) return "cancelled";
     if (input.disposition === "current") {
@@ -412,7 +420,8 @@ export class ProjectDocumentNavigationAdapter {
         {
           scheme: input.scheme,
           path: input.file.path,
-          workId: input.routeWorkId,
+          workId: input.rootThreadId ? undefined : input.routeWorkId,
+          ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
           documentId: input.file.documentId,
         },
         { tab, isCurrent: input.isCurrent, canCommit: input.canCommit },

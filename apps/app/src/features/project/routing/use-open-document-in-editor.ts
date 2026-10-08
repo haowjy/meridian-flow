@@ -9,7 +9,12 @@ export function useOpenDocumentInEditor() {
     (tab: ServerContextTab) => {
       if (!openContextRoute) return;
       void openContextRoute(
-        { scheme: tab.scheme, path: tab.path, workId: tab.workId },
+        {
+          scheme: tab.scheme,
+          path: tab.path,
+          workId: tab.workId,
+          ...(tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : {}),
+        },
         { replace: false },
       );
     },

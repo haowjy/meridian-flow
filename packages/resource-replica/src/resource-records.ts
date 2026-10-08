@@ -16,25 +16,49 @@ import type { CatalogCacheView } from "./catalog";
 /** Account-global identity. Project access belongs to catalogs and namespace intentions. */
 export type ResourceKey = Readonly<{ handle: string }>;
 /**
- * Durable Work identity asserted by a scoped catalog or checked command constructor.
- * The type preserves the pair; only a known project snapshot can establish which
- * row is No Work. Use resourceWorkAuthorityFor when constructing writer commands.
+ * Durable owner identity asserted by a scoped catalog or checked command constructor.
+ * Project-scoped schemes have no owner (`workId: null`). A Work-scoped location
+ * names a Work (id and slug, slug null for No Work) or, for Scratch, a lineage
+ * (the first chat's id and its handle, as in `scratch://@/c12/`). The type
+ * preserves each pair; only a known project snapshot can establish which row is
+ * No Work. Use resourceWorkAuthorityFor when constructing writer commands.
  */
-export type ResourceWorkAuthority =
-  | { workId: null; workSlug?: undefined }
-  | { workId: string; workSlug: string | null };
+export type ResourceOwner =
+  | { workId: null; workSlug?: undefined; rootThreadId?: undefined; rootThreadRef?: undefined }
+  | { workId: string; workSlug: string | null; rootThreadId?: undefined; rootThreadRef?: undefined }
+  | { workId: null; workSlug?: undefined; rootThreadId: string; rootThreadRef: string };
 export type ResourceLocation = Readonly<
-  { scheme: ProjectContextTreeScheme; path: string; name: string } & ResourceWorkAuthority
+  { scheme: ProjectContextTreeScheme; path: string; name: string } & ResourceOwner
 >;
-/** A location's Work authority alone, without its other fields. */
-export function workAuthorityOf(location: ResourceWorkAuthority): ResourceWorkAuthority {
+/** A location's owner alone, without its other fields. */
+export function ownerOf(location: ResourceOwner): ResourceOwner {
+  if (location.rootThreadId !== undefined)
+    return {
+      workId: null,
+      rootThreadId: location.rootThreadId,
+      rootThreadRef: location.rootThreadRef,
+    };
   return location.workId === null
     ? { workId: null }
     : { workId: location.workId, workSlug: location.workSlug };
 }
+/** What decides whether two owners are the same: the Work, or the lineage. Handles and slugs follow. */
+export type ResourceOwnerKey = {
+  workId: string | null;
+  workSlug?: string | null;
+  rootThreadId?: string | null;
+};
+/** Whether two locations are held by the same owner. */
+export function sameOwner(left: ResourceOwnerKey, right: ResourceOwnerKey): boolean {
+  return (
+    left.workId === right.workId &&
+    (left.workSlug ?? null) === (right.workSlug ?? null) &&
+    (left.rootThreadId ?? null) === (right.rootThreadId ?? null)
+  );
+}
 /** Where `setLocation` places a document: a folder path in place of the full path. */
 export type ResourceDestination = Readonly<
-  { scheme: ProjectContextTreeScheme; folderPath: string; name: string } & ResourceWorkAuthority
+  { scheme: ProjectContextTreeScheme; folderPath: string; name: string } & ResourceOwner
 >;
 
 export type ResourceDescriptor = ResourceKey & {
@@ -84,6 +108,9 @@ export type NamespaceRequest =
       scheme: ProjectContextTreeScheme;
       sourceWorkSlug: string | null;
       destinationWorkSlug: string | null;
+      /** Handles of the lineages named by the body's root thread ids; they identify receipt URIs. */
+      sourceRootThreadRef?: string | null;
+      destinationRootThreadRef?: string | null;
       body: MoveContextEntryRequest;
     }
   | {
@@ -91,6 +118,8 @@ export type NamespaceRequest =
       scheme: ProjectContextTreeScheme;
       workId: string | null;
       workSlug: string | null;
+      rootThreadId?: string | null;
+      rootThreadRef?: string | null;
       body: DeleteContextEntryRequest;
     };
 
