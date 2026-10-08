@@ -4,7 +4,8 @@
  * The chip names the document (icon, name, chevron) in the dock header, the
  * same chip grammar as the chat title beside it. It opens a `DrillInMenu` on the
  * document's own tree (a Work's Scratch or Uploads, as the Work page's Files
- * lists it) at the document's folder, so a sibling note is one pick away.
+ * lists it, or a chat's Scratch, as that chat's header lists it) at the
+ * document's folder, so a sibling note is one pick away.
  * Below the tree: Open in Editor and Rename. Rename swaps the chip for the
  * tree row's own inline name field, so a rename here is the one the Files list
  * makes.
@@ -12,17 +13,17 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { ArrowUpRight, ChevronDown, Folder, Pencil } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Pencil } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useWorks } from "@/client/query/useWorks";
 import { type DrillAction, DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
 import { schemeLabel } from "../context/context-schemes";
-import { serverTabFromFile } from "../context/context-tab-from-file";
 import { EntryNameField } from "../context/EntryNameField";
+import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { PaneTitle } from "../PaneTitle";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
@@ -44,7 +45,6 @@ export function DockDocumentTitle({
   const openInEditor = useOpenDocumentInEditor();
   const openInDock = useOpenDocumentInDock();
   const { works } = useWorks(projectId);
-  const { catalog } = useContextCatalogView(projectId, tab.scheme, { workId: tab.workId ?? null });
   const [renaming, setRenaming] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   // The chip comes back after a rename; focus returns to it once it is there.
@@ -56,42 +56,27 @@ export function DockDocumentTitle({
 
   const work = tab.workId ? works?.find((candidate) => candidate.id === tab.workId) : undefined;
   const archived = work ? isWorkArchived(work) : false;
-  const current = catalog?.findDocument(tab.documentId) ?? null;
-  const heading = work ? t`${schemeLabel(tab.scheme)} for ${work.name}` : schemeLabel(tab.scheme);
-
-  const tree = useMemo(
-    () => ({
-      heading,
-      children: (folderId: string | null): DrillNode[] => {
-        if (!catalog) return [];
-        return catalog
-          .children(folderId ?? catalog.root.entryId)
-          .map((node) => ({
-            id: node.entryId,
-            name: node.name,
-            folder: node.kind === "dir",
-            icon: node.kind === "dir" ? Folder : fileKindIcon(node),
-          }))
-          .sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name));
-      },
-    }),
-    [catalog, heading],
+  // A document's owner names its menu: the Work, or the chat whose Scratch it is.
+  const lineageTitle = useLineageTitle(
+    projectId,
+    tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : null,
   );
-  const openAt = useMemo(() => {
-    if (!catalog) return [];
-    const folders = tab.path.split("/").filter(Boolean).slice(0, -1);
-    return folders.flatMap((_, index) => {
-      const folder = catalog.findPath(`/${folders.slice(0, index + 1).join("/")}`);
-      return folder?.kind === "dir"
-        ? [{ id: folder.entryId, name: folder.name, folder: true, icon: Folder }]
-        : [];
-    });
-  }, [catalog, tab.path]);
+  const ownerName = work?.name ?? lineageTitle;
+  const heading = ownerName
+    ? t`${schemeLabel(tab.scheme)} for ${ownerName}`
+    : schemeLabel(tab.scheme);
+  const source = useCatalogMenuSource({
+    projectId,
+    scheme: tab.scheme === "uploads" ? "uploads" : "scratch",
+    owner: { workId: tab.workId ?? null, rootThreadId: tab.rootThreadId },
+    heading,
+  });
+  const { catalog } = source;
+  const current = catalog?.findDocument(tab.documentId) ?? null;
+  const openAt = useMemo(() => source.foldersOf(tab.path), [source, tab.path]);
 
   const pick = (node: DrillNode) => {
-    const file = catalog?.files().find((candidate) => candidate.entryId === node.id);
-    if (!file) return;
-    const next = serverTabFromFile(tab.scheme, file, tab.workId);
+    const next = source.tabFor(node.id);
     if (next) openInDock(next);
   };
 
@@ -116,6 +101,8 @@ export function DockDocumentTitle({
         projectId={projectId}
         scheme={tab.scheme}
         workId={tab.workId ?? null}
+        rootThreadId={tab.rootThreadId}
+        rootThreadRef={tab.rootThreadRef}
         file={current}
         siblingNames={catalogSiblingNames(catalog, current)}
         onDone={() => setRenaming(false)}
@@ -125,7 +112,7 @@ export function DockDocumentTitle({
   const Icon = fileKindIcon(tab.name);
   return (
     <DrillInMenu
-      tree={tree}
+      tree={source.tree}
       currentId={current?.entryId ?? null}
       openAt={openAt}
       actions={actions}
@@ -148,6 +135,8 @@ function DockDocumentRename({
   projectId,
   scheme,
   workId,
+  rootThreadId,
+  rootThreadRef,
   file,
   siblingNames,
   onDone,
@@ -155,6 +144,8 @@ function DockDocumentRename({
   projectId: string;
   scheme: ProjectContextTreeScheme;
   workId: string | null;
+  rootThreadId?: string;
+  rootThreadRef?: string;
   file: CatalogFile;
   siblingNames: readonly string[];
   onDone: () => void;
@@ -163,6 +154,8 @@ function DockDocumentRename({
     projectId,
     entryId: file.entryId,
     workId,
+    rootThreadId,
+    rootThreadRef,
     scheme,
     path: file.path,
     currentName: file.name,

@@ -24,6 +24,7 @@ import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
 import type { ContextRouteRequest } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
+import { ChatScratchButton } from "./ChatScratchButton";
 import { ChatScreen } from "./ChatScreen";
 
 /** `center` = the wide main column (Chat screen); `dock` = right rail (Work, Editor). */
@@ -66,6 +67,9 @@ export function ChatSurface({
   renderHeader,
 }: ChatSurfaceProps) {
   const threadSelect = <ChatThreadTitle projectId={projectId} threadId={threadId} />;
+  const scratchMenu = threadId ? (
+    <ChatScratchButton projectId={projectId} threadId={threadId} onOpened={onCloseDock} />
+  ) : null;
   return (
     <div
       aria-hidden={!visible}
@@ -89,6 +93,7 @@ export function ChatSurface({
             ...args,
             onClose: onCloseDock,
             threadSelect,
+            scratchMenu,
             threadId,
           };
           return renderHeader ? renderHeader(headerProps) : <DockHeader {...headerProps} />;
