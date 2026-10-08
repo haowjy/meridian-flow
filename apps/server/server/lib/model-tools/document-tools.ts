@@ -67,13 +67,18 @@ export async function resolveDocumentAddress(
   context: ResolvedModelContextPort,
   command: DocumentCommandName,
   path: string,
-  options: { deferTrackedDocumentSync?: boolean; metadata?: DocumentCreationMetadata } = {},
+  options: {
+    deferTrackedDocumentSync?: boolean;
+    metadata?: DocumentCreationMetadata;
+    origin?: import("../../domains/context/index.js").WriteProvenance;
+  } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(path);
   if (command === "create" || command === "copy") {
     if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
     const ensureOptions = {
+      ...(options.origin ? { origin: options.origin } : {}),
       ...(options.deferTrackedDocumentSync ? { deferDocumentSync: true } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
     };
@@ -87,7 +92,7 @@ export async function resolveDocumentAddress(
     return {
       documentId: ensured.value.documentId,
       uri: ensured.value.uri,
-      filePath: basePath,
+      filePath: ensured.value.uri.startsWith("scratch://@/") ? ensured.value.uri : basePath,
       created: ensured.value.created,
     };
   }
@@ -126,7 +131,7 @@ export async function resolveDocumentAddress(
   return {
     documentId: ref.value.documentId,
     uri: ref.value.uri,
-    filePath: basePath,
+    filePath: ref.value.uri.startsWith("scratch://@/") ? ref.value.uri : basePath,
     ...(fragment === undefined ? {} : { fragment }),
   };
 }
@@ -292,6 +297,12 @@ export function createWriteHandler(deps: ToolWiringDeps) {
 
     const address = await inContainer(deps, principal, parsed.command, target, () =>
       resolveDocumentAddress(context, parsed.command, parsed.path, {
+        origin: {
+          type: "agent",
+          agentSlug: ctx.agentSlug,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+        },
         deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
         ...(parsed.command === "copy" && copied
           ? { metadata: { copiedFrom: copied.copiedFrom } }

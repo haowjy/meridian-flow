@@ -257,7 +257,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       const projectId = await ensureProject(tx, userId);
       const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
       const manuscriptSourceId = await ensureProjectManifestSource(db, projectId);
-      await ensureWorkContextSource(db, noWorkId, "scratch");
       await ensureWorkContextSource(db, noWorkId, "uploads");
       const documentId = await ensureDocument(tx, projectId, manuscriptSourceId);
 

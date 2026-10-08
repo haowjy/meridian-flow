@@ -4,18 +4,12 @@ import { resolvedWorkAuthority } from "../projects/domain/work-authority.js";
 import { createInMemoryUnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
 describe("No Work context authority", () => {
-  it("writes contextual Scratch under explicit `@/` authority", async () => {
+  it("requires a chat for bare Scratch and refuses the old shared No Work spelling", async () => {
     const port = createInMemoryUnifiedContextPortFactory().forProject("project", "user", new Map());
-    await expect(port.write("scratch://notes/plan.md", "Plan")).resolves.toMatchObject({
-      ok: true,
-    });
+    await expect(port.read("scratch://notes/plan.md")).resolves.toMatchObject({ ok: false });
     await expect(port.read("scratch://@/notes/plan.md")).resolves.toMatchObject({
-      ok: true,
-      value: { content: expect.stringContaining("Plan") },
-    });
-    await expect(port.list("scratch://@/notes")).resolves.toMatchObject({
-      ok: true,
-      value: { uri: "scratch://@/notes", entries: [{ uri: "scratch://@/notes/plan.md" }] },
+      ok: false,
+      error: { code: "invalid_uri" },
     });
   });
 
@@ -59,7 +53,7 @@ describe("No Work context authority", () => {
     });
     await expect(port.stat("scratch://@/notes.md")).resolves.toMatchObject({
       ok: false,
-      error: { code: "not_found" },
+      error: { code: "invalid_uri" },
     });
   });
 });

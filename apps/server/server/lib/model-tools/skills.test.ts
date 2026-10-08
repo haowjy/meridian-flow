@@ -47,7 +47,12 @@ async function criticTools() {
   const deps = {
     threads: { findById: async (id: string) => ({ id, userId: "user-1" }) },
     readAgentChain: async (threadId: string) => [
-      { threadId, permission: "edit", threadWorkId: "work-1" },
+      {
+        threadId,
+        permission: "edit",
+        threadWorkId: "work-1",
+        scratchOwner: { scope: "work", workId: "work-1" },
+      },
     ],
     readChainPermission: async () => "edit",
     fileAccess: createAllowAllFileAccess(),

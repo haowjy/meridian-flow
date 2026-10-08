@@ -27,7 +27,10 @@ export async function resolveThreadContextPort(
   threadId: ThreadId,
   userId: UserId,
 ) {
-  const resolution = await resolveThreadContext(deps, threadId);
+  const resolution = await resolveThreadContext(
+    { ...deps, scratchLineages: deps.contextPorts.lineages },
+    threadId,
+  );
   if (!resolution || resolution.thread.userId !== userId) {
     throw createError({ statusCode: 404, message: "Thread not found" });
   }

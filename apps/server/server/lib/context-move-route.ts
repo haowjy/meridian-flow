@@ -59,7 +59,8 @@ type NoWorkLocator = {
   path: string;
 };
 
-export type ContextMoveLocator = ProjectLocator | NoWorkLocator | WorkLocator;
+type LineageLocator = { scope: "lineage"; scheme: "scratch"; rootThreadId: string; path: string };
+export type ContextMoveLocator = ProjectLocator | NoWorkLocator | WorkLocator | LineageLocator;
 
 export interface ParsedContextMove {
   operationId: string;
@@ -70,7 +71,13 @@ export interface ParsedContextMove {
 }
 
 type ResolvedWorkLocator = Omit<WorkLocator, "workId"> & { authority: ResolvedWorkAuthority };
-export type ResolvedContextMoveLocator = ProjectLocator | ResolvedWorkLocator;
+type ResolvedLineageLocator = LineageLocator & {
+  authority: { kind: "lineage"; rootThreadRef: string };
+};
+export type ResolvedContextMoveLocator =
+  | ProjectLocator
+  | ResolvedWorkLocator
+  | ResolvedLineageLocator;
 export type ResolvedContextMove = {
   operationId: string;
   expected: MoveContextEntryRequest["expected"];
@@ -92,9 +99,20 @@ function parseLocator(input: {
   path: string;
   workId: string | null;
   workIdField: "sourceWorkId" | "destinationWorkId";
+  rootThreadId?: unknown;
 }): ContextMoveLocator {
   if (!isProjectContextTreeScheme(input.scheme)) {
     throw createError({ statusCode: 400, message: "Context scheme is invalid" });
+  }
+  if (input.rootThreadId != null) {
+    if (input.scheme !== "scratch" || input.workId)
+      throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
+    return {
+      scope: "lineage",
+      scheme: "scratch",
+      path: input.path,
+      rootThreadId: requireRequestId(input.rootThreadId, "rootThreadId"),
+    };
   }
   if (isWorkScopedProjectContextScheme(input.scheme)) {
     if (!input.workId) {
@@ -151,12 +169,14 @@ export function parseContextMove(input: {
       path: sourcePath,
       workId: parseWorkId(body.sourceWorkId, "sourceWorkId"),
       workIdField: "sourceWorkId",
+      rootThreadId: body.sourceRootThreadId,
     }),
     destination: parseLocator({
       scheme: body.destinationScheme,
       path: destinationFolderPath,
       workId: parseWorkId(body.destinationWorkId, "destinationWorkId"),
       workIdField: "destinationWorkId",
+      rootThreadId: body.destinationRootThreadId,
     }),
     ...(name ? { name } : {}),
   };
@@ -171,7 +191,7 @@ function joinPath(parent: string, name: string): string {
 }
 
 function locatorUri(locator: ResolvedContextMoveLocator, path = locator.path): string {
-  return locator.scope === "work"
+  return locator.scope !== "project"
     ? projectBrowseContextUri(locator.scheme, path, locator.authority)
     : projectBrowseContextUri(locator.scheme, path);
 }
@@ -206,10 +226,13 @@ export async function commitContextMove(input: {
       const authorityMatches =
         destination.scope === "project"
           ? collision.value.authority.kind === "contextual"
-          : destination.authority.workSlug === null
-            ? collision.value.authority.kind === "none"
-            : collision.value.authority.kind === "work" &&
-              collision.value.authority.workSlug === destination.authority.workSlug;
+          : destination.scope === "lineage"
+            ? collision.value.authority.kind === "lineage" &&
+              collision.value.authority.rootThreadRef === destination.authority.rootThreadRef
+            : destination.authority.workSlug === null
+              ? collision.value.authority.kind === "none"
+              : collision.value.authority.kind === "work" &&
+                collision.value.authority.workSlug === destination.authority.workSlug;
       if (
         collision.value.scheme !== destination.scheme ||
         collision.value.path !== destinationPath ||
@@ -223,20 +246,30 @@ export async function commitContextMove(input: {
       return {
         status: "conflict",
         collision:
-          destination.scope === "work"
+          destination.scope === "lineage"
             ? {
                 scheme: destination.scheme,
                 path: collision.value.path,
                 authority: {
-                  workId: destination.authority.workId,
-                  workSlug: destination.authority.workSlug,
+                  kind: "lineage",
+                  rootThreadId: destination.rootThreadId,
+                  rootThreadRef: destination.authority.rootThreadRef,
                 },
               }
-            : {
-                scheme: destination.scheme,
-                path: collision.value.path,
-                authority: { kind: "project" },
-              },
+            : destination.scope === "work"
+              ? {
+                  scheme: destination.scheme,
+                  path: collision.value.path,
+                  authority: {
+                    workId: destination.authority.workId,
+                    workSlug: destination.authority.workSlug,
+                  },
+                }
+              : {
+                  scheme: destination.scheme,
+                  path: collision.value.path,
+                  authority: { kind: "project" },
+                },
       };
     }
     contextErrorToHttp(result.error);
@@ -258,6 +291,11 @@ export async function handleContextMoveRequest(
   const move = parseContextMove({ sourceScheme: input.sourceScheme, body: input.body });
   async function resolveLocator(locator: ContextMoveLocator): Promise<ResolvedContextMoveLocator> {
     if (locator.scope === "project") return locator;
+    if (locator.scope === "lineage") {
+      const lineage = await deps.contextPorts.lineages.byId(input.projectId, locator.rootThreadId);
+      if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
+      return { ...locator, authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef } };
+    }
     const authority =
       locator.scope === "none"
         ? await deps.workAuthorityResolver.noWork(input.projectId)
@@ -301,11 +339,21 @@ export async function handleContextMoveRequest(
           scheme: locator.scheme,
           owner: { scope: "project", projectId: input.projectId as ProjectId },
         }
-      : {
-          kind: "container",
-          scheme: locator.scheme,
-          owner: { scope: "work", workId: locator.authority.workId as WorkId },
-        };
+      : locator.scope === "lineage"
+        ? {
+            kind: "container",
+            scheme: "scratch",
+            owner: {
+              scope: "lineage",
+              projectId: input.projectId,
+              rootThreadId: locator.rootThreadId,
+            },
+          }
+        : {
+            kind: "container",
+            scheme: locator.scheme,
+            owner: { scope: "work", workId: locator.authority.workId as WorkId },
+          };
   const moved =
     resolvedMove.expected.kind === "file"
       ? documentTarget(resolvedMove.expected.nodeId)

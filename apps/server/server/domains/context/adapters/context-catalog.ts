@@ -24,6 +24,7 @@ import {
   documents,
   folders,
   projects,
+  threads,
   works,
 } from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
@@ -96,11 +97,18 @@ function stableJson(value: unknown): string {
 function scopeForSource(row: {
   sourceProjectId: string | null;
   sourceWorkId: string | null;
+  sourceRootThreadId: string | null;
   projectUserId: string | null;
   projectIsPersonal: boolean | null;
   workProjectId: string | null;
   sourceSlug: string;
 }): CatalogScope | null {
+  if (row.sourceRootThreadId && row.sourceProjectId)
+    return {
+      kind: "lineage",
+      projectId: row.sourceProjectId,
+      rootThreadId: row.sourceRootThreadId,
+    };
   if (row.sourceWorkId && row.workProjectId) {
     return { kind: "work", projectId: row.workProjectId, workId: row.sourceWorkId };
   }
@@ -122,6 +130,7 @@ async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly C
     .select({
       sourceProjectId: contextSources.projectId,
       sourceWorkId: contextSources.workId,
+      sourceRootThreadId: contextSources.rootThreadId,
       sourceSlug: contextSources.slug,
       projectUserId: projects.userId,
       projectIsPersonal: projects.isPersonal,
@@ -137,21 +146,27 @@ async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly C
 
 async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
   const conditions =
-    scope.kind === "work"
-      ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
-      : scope.kind === "user"
-        ? and(
-            eq(projects.userId, scope.userId),
-            eq(projects.isPersonal, true),
-            eq(contextSources.slug, "user"),
-            isNull(projects.deletedAt),
-            isNull(contextSources.deletedAt),
-          )
-        : and(
-            eq(contextSources.projectId, scope.projectId),
-            inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
-            isNull(contextSources.deletedAt),
-          );
+    scope.kind === "lineage"
+      ? and(
+          eq(contextSources.rootThreadId, scope.rootThreadId),
+          eq(contextSources.projectId, scope.projectId),
+          isNull(contextSources.deletedAt),
+        )
+      : scope.kind === "work"
+        ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
+        : scope.kind === "user"
+          ? and(
+              eq(projects.userId, scope.userId),
+              eq(projects.isPersonal, true),
+              eq(contextSources.slug, "user"),
+              isNull(projects.deletedAt),
+              isNull(contextSources.deletedAt),
+            )
+          : and(
+              eq(contextSources.projectId, scope.projectId),
+              inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
+              isNull(contextSources.deletedAt),
+            );
   return db
     .select({
       id: contextSources.id,
@@ -159,10 +174,12 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
       slug: contextSources.slug,
       workId: contextSources.workId,
       workSlug: works.slug,
+      rootThreadRef: threads.ref,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
+    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
     .where(conditions)
     .orderBy(asc(contextSources.sortOrder), asc(contextSources.id));
 }
@@ -261,7 +278,12 @@ async function buildScopeEntries(
   const entries: CatalogEntry[] = [];
   for (const source of sourceRows) {
     const scheme = source.slug as ContextUriScheme;
-    const authority = catalogSourceAuthority(scheme, source.workId, source.workSlug);
+    const authority = catalogSourceAuthority(
+      scheme,
+      source.workId,
+      source.workSlug,
+      source.rootThreadRef,
+    );
     entries.push({
       kind: "source",
       entryId: source.id,
@@ -295,6 +317,7 @@ async function buildScopeEntries(
           scheme,
           workId: source.workId,
           workSlug: source.workSlug,
+          rootThreadRef: source.rootThreadRef,
           parentPath,
         }),
       );

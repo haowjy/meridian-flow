@@ -7,6 +7,7 @@ import {
   contextSources,
   documents,
   folders,
+  threads,
   works,
 } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -42,10 +43,12 @@ export async function resolveDocumentUri(
       sourceSlug: contextSources.slug,
       workId: works.id,
       workProjectId: works.projectId,
+      rootThreadRef: threads.ref,
     })
     .from(documents)
     .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
     .leftJoin(works, eq(works.id, contextSources.workId))
+    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
     .where(
       and(
         eq(documents.id, documentId as DocumentId),
@@ -63,6 +66,8 @@ export async function resolveDocumentUri(
   const folderPath = await resolveFolderPath(db, document.folderId);
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
   const path = [...folderPath, filename].join("/");
+  if (scheme === "scratch" && document.rootThreadRef)
+    return toCanonical(scheme, path, { kind: "lineage", rootThreadRef: document.rootThreadRef });
   const workAuthority =
     scheme === "scratch" || scheme === "uploads"
       ? document.workId && document.workProjectId

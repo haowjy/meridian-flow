@@ -18,6 +18,7 @@ export type DocumentLinkTarget =
   | { kind: "relative"; path: string; baseUri: string };
 
 export interface ResolvedDocumentLink {
+  rootThreadId?: string | null;
   documentId: string;
   title: string;
   scheme: ContextUriScheme;
@@ -28,6 +29,7 @@ export interface ResolvedDocumentLink {
 
 /** POST `/api/projects/:projectId/links/resolve`. */
 export interface ResolveDocumentLinkRequest {
+  rootThreadId?: string | null;
   workId?: string | null;
   holder?: { documentId: string; href: string };
   target: DocumentLinkTarget;

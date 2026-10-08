@@ -115,6 +115,7 @@ export function resolveLocalDocumentAddress(
     return undefined;
   const entry = catalog.normalized.entries.get(file.documentId);
   if (entry?.kind !== "file") return undefined;
+  if (entry.scope.kind === "lineage") return undefined; // PR 3 supplies chat-owned route state.
   let authority: AvailableDocumentAuthority;
   if (entry.scope.kind === "project") authority = entry.scope;
   else if (entry.scope.kind === "user") authority = entry.scope;

@@ -294,9 +294,9 @@ describe("planCatalogInstallation", () => {
     },
     {
       scope: { kind: "work", projectId, workId: "no-work-id" } as const,
-      scheme: "scratch" as const,
-      uri: "scratch://@/notes.md",
-      expected: { scheme: "scratch", workId: "no-work-id" },
+      scheme: "uploads" as const,
+      uri: "uploads://@/notes.md",
+      expected: { scheme: "uploads", workId: "no-work-id" },
     },
     {
       scope: { kind: "work", projectId, workId: "work-id" } as const,

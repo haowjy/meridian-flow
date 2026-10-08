@@ -202,6 +202,8 @@ function stableAuthority(
   authorities: ReferenceAuthorityIndex,
 ): StableReferenceAuthority | null {
   switch (scope.kind) {
+    case "lineage":
+      return null; // PR 3 adds chat-owned picker authorities.
     case "project":
       return { kind: "project", projectId: scope.projectId };
     case "user":

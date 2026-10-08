@@ -2,8 +2,10 @@
 
 Agent-readable/writable content addressed by context URIs. Context schemes split
 into durable Project content (`manuscript://`, `kb://`, `unfiled://`), authenticated personal
-content (`user://`), and Work-scoped material (`scratch://`, `uploads://`), including
-No Work. Public `@/` authority stays parse-only; resolve mints the locked Work id.
+content (`user://`), and named-Work material (`scratch://@slug/`, `uploads://@slug/`). No Work
+keeps Uploads at `uploads://@/`; its Scratch belongs to the chat lineage at
+`scratch://@/c12/`. Bare Scratch follows `scratchOwnerFor(thread, work)`.
+Lineage handles name first chats, including trashed first chats, never forks.
 Bare paths default to `manuscript://`.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is
@@ -52,7 +54,7 @@ construction. Writer-facing mutation input goes through the shared
 reason-coded validators in `lib/context-mutation-validation.ts`.
 
 `move.post.ts` is intentionally a thinner shell over `lib/context-move-route.ts`:
-the route core resolves every requested locator to exact project/no-Work/Work
+the route core resolves every requested locator to exact project/lineage/Work
 authority before it calls
 `ContextPort.commitWriterLocation`. Proven destination occupation returns a
 collision locator with that same authority; any port identity mismatch is an

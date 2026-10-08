@@ -774,7 +774,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const db = database.current;
       const NO_WORK = "00000000-0000-4000-8000-000000000808";
       const NAMED = "00000000-0000-4000-8000-000000000809";
-      const SCRATCH = "00000000-0000-4000-8000-00000000080a";
       const UPLOADS = "00000000-0000-4000-8000-00000000080b";
       const NAMED_SCRATCH = "00000000-0000-4000-8000-00000000080c";
       const FILE = "00000000-0000-4000-8000-00000000080d";
@@ -799,7 +798,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.insert(contextSources).values([
-        { id: SCRATCH, workId: NO_WORK, scope: "work", name: "Scratch", slug: "scratch" },
         { id: UPLOADS, workId: NO_WORK, scope: "work", name: "Uploads", slug: "uploads" },
         {
           id: NAMED_SCRATCH,
@@ -810,7 +808,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       ]);
       await db.insert(documents).values([
-        { id: FILE, contextSourceId: SCRATCH, name: "notes", extension: "md" },
+        { id: FILE, contextSourceId: UPLOADS, name: "notes", extension: "md" },
         {
           id: UPLOAD_FILE,
           contextSourceId: UPLOADS,
@@ -831,7 +829,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           projectId: PROJECT_ID,
           workId: NO_WORK,
         }),
-      ).toEqual(["scratch://@/notes.md", "uploads://@/shot.png"]);
+      ).toEqual(["uploads://@/notes.md", "uploads://@/shot.png"]);
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);
@@ -868,7 +866,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createDrizzleDocumentAddressStore(db).candidate({
           projectId: PROJECT_ID as never,
           userId: USER_ID,
-          scheme: "scratch",
+          scheme: "uploads",
           workId: NO_WORK,
           path: "/notes.md",
         }),

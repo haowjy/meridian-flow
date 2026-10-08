@@ -41,6 +41,7 @@ import {
   createDrizzleFigureDocumentRepository,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
+  createDrizzleScratchLineages,
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
@@ -497,6 +498,7 @@ export async function createProductionAppPorts(input: {
     threads: threadRepos.threads,
     threadWorks: threadRepos.threadWorks,
     agentRevisions,
+    works: { findById: (id: string) => workRepo.findById(id) },
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
@@ -538,6 +540,7 @@ export async function createProductionAppPorts(input: {
   boundManifestMembership = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
+    lineages: createDrizzleScratchLineages(db),
     objectStore,
     results,
     workAuthorityResolver,
@@ -648,6 +651,7 @@ export async function createProductionAppPorts(input: {
       catalog: contextCatalog,
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
+      lineages: createDrizzleScratchLineages(db),
     }),
     projects,
     works: workRepo,

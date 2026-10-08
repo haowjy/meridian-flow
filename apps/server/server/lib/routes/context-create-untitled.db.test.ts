@@ -268,7 +268,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             scope: "project",
             workId: null,
           }),
-          expect.objectContaining({ slug: "scratch", scope: "work", projectId: null }),
           expect.objectContaining({ slug: "uploads", scope: "work", projectId: null }),
         ]),
       );

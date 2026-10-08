@@ -4,8 +4,10 @@
  * permission and current Work. Policies take the minimum over the chain, so a
  * `read` parent caps every descendant.
  */
+
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { scratchOwnerFor } from "../../../context/index.js";
 import type { AgentChain, AgentLink } from "../../../file-policy/index.js";
 import type { AgentRevisionStore } from "../../../packages/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../../../threads/index.js";
@@ -16,6 +18,7 @@ interface AgentChainDeps {
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
+  works: Pick<import("../../../projects/index.js").WorkRepository, "findById">;
 }
 
 /**
@@ -31,7 +34,17 @@ export async function readAgentChain(
   for (const { threadId: id, permission } of await readLineage(deps, threadId)) {
     const primary = await deps.threadWorks.findPrimary(id);
     if (!primary) throw new Error(`Agent chain thread has no primary Work: ${id}`);
-    chain.push({ threadId: id, permission, threadWorkId: primary.workId });
+    const [thread, work] = await Promise.all([
+      deps.threads.findByIdIncludingDeleted(id),
+      deps.works.findById(primary.workId),
+    ]);
+    if (!thread || !work) throw new Error("Scratch owner is unavailable");
+    chain.push({
+      threadId: id,
+      permission,
+      threadWorkId: primary.workId,
+      scratchOwner: scratchOwnerFor(thread, work),
+    });
   }
   return chain;
 }

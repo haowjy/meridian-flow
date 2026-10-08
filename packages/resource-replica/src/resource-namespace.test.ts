@@ -613,8 +613,8 @@ it.each([
     scheme: "scratch",
     path: "/before.md",
     name: "before.md",
-    workId: "no-work",
-    workSlug: null,
+    workId: "work",
+    workSlug: "notes",
   };
   before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   before.intents = [
@@ -627,8 +627,8 @@ it.each([
           scheme: "scratch",
           folderPath: "",
           name: "after.md",
-          workId: "no-work",
-          workSlug: null,
+          workId: "work",
+          workSlug: "notes",
         },
       },
     },
@@ -658,8 +658,8 @@ it.each([
                 operationId: "operation",
                 command: {
                   kind: "move",
-                  sourceUri: "scratch://@/before.md",
-                  destinationUri: "scratch://@/after.md",
+                  sourceUri: "scratch://@notes/before.md",
+                  destinationUri: "scratch://@notes/after.md",
                   expected: { kind: "file", nodeId: "document" },
                 },
                 result: {
@@ -667,8 +667,8 @@ it.each([
                   error: {
                     code: "context_unavailable",
                     reason,
-                    workSlug: null,
-                    uri: "scratch://@/after.md",
+                    workSlug: "notes",
+                    uri: "scratch://@notes/after.md",
                   },
                 },
               },
@@ -724,10 +724,10 @@ it.each([
             operationId: "delete-operation",
             command: {
               kind: "delete",
-              uri: "scratch://@/before.md",
+              uri: "scratch://@notes/before.md",
               expected: { kind: "file", documentId: "document" },
             },
-            result: { ok: false, error: { code: "conflict", uri: "scratch://@/before.md" } },
+            result: { ok: false, error: { code: "conflict", uri: "scratch://@notes/before.md" } },
           },
         }),
       }),

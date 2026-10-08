@@ -1166,6 +1166,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         state: "finalized",
         storageUrl: stored.value.storageUrl,
       });
+      const [lineageSource] = await db
+        .insert(schema.contextSources)
+        .values({
+          projectId: PROJECT_ID,
+          rootThreadId: THREAD_ID,
+          scope: "lineage",
+          name: "Scratch",
+          slug: "scratch",
+        })
+        .returning();
+      const [lineageNote] = await db
+        .insert(schema.documents)
+        .values({
+          contextSourceId: lineageSource.id,
+          name: "outline",
+          extension: "md",
+          fileType: "markdown",
+        })
+        .returning();
+      await db
+        .insert(schema.threadDocuments)
+        .values({ threadId: THREAD_ID, documentId: lineageNote.id });
       await works.softDelete(work.id);
       await db
         .update(schema.works)
@@ -1174,6 +1196,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(purger.sweep()).resolves.toBe(1);
       await expect(works.findById(work.id)).resolves.toBeNull();
+      expect(
+        await db
+          .select()
+          .from(schema.contextSources)
+          .where(eq(schema.contextSources.id, lineageSource.id)),
+      ).toEqual([]);
+      expect(
+        await db.select().from(schema.documents).where(eq(schema.documents.id, lineageNote.id)),
+      ).toEqual([]);
       await expect(works.findById(other.id)).resolves.toMatchObject({ deletedAt: null });
       await expect(
         db

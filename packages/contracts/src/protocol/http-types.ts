@@ -136,6 +136,8 @@ export type MoveContextEntryRequest = {
   destinationFolderPath: string;
   newName?: string;
   /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
+  sourceRootThreadId?: string | null;
+  destinationRootThreadId?: string | null;
   sourceWorkId?: WorkId | null;
   /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
   destinationWorkId?: WorkId | null;
@@ -159,6 +161,11 @@ export type MoveContextEntryLocator =
       scheme: WorkAuthorityScheme;
       path: string;
       authority: { workId: WorkId; workSlug: WorkSlug | null };
+    }
+  | {
+      scheme: "scratch";
+      path: string;
+      authority: { kind: "lineage"; rootThreadId: string; rootThreadRef: string };
     };
 export type MoveContextEntryConflict = {
   status: "conflict";

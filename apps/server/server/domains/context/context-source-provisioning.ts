@@ -118,6 +118,7 @@ async function findProjectContextSource(
         eq(contextSources.projectId, sourceProjectId),
         eq(contextSources.slug, scheme),
         isNull(contextSources.workId),
+        isNull(contextSources.rootThreadId),
         isNull(contextSources.deletedAt),
       ),
     )
@@ -148,7 +149,7 @@ async function ensureProjectContextSource(
     })
     .onConflictDoNothing({
       target: [contextSources.projectId, contextSources.slug],
-      where: sql`${contextSources.workId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
+      where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
     })
     .returning({ id: contextSources.id });
   if (created) return created.id;
@@ -185,6 +186,13 @@ export async function ensureWorkContextSource(
   return runInDrizzleTransaction(db, async () => {
     await requireLockedActiveWorks(db, [workId]);
     const activeDb = currentDrizzleDb(db) as Database;
+    if (scheme === "scratch") {
+      const [work] = await activeDb
+        .select({ isNoWork: works.isNoWork })
+        .from(works)
+        .where(eq(works.id, workId));
+      if (work?.isNoWork) throw new Error("No Work does not own Scratch");
+    }
     const existing = await findWorkContextSource(activeDb, workId, scheme);
     if (existing) return existing;
 
@@ -389,7 +397,7 @@ export function createWorkContextDocumentStore(
 export function createNoWorkContextDocumentStore(
   db: Database,
   projectId: string,
-  scheme: WorkScopedContextFsScheme,
+  scheme: "uploads",
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
 ): ContextDocumentStore {
@@ -407,6 +415,57 @@ export function createNoWorkContextDocumentStore(
     },
     membershipObserver,
     resolveWorkId,
+    catalogMutations,
+  );
+}
+
+/** Reads never provision lineage notes; the first AI write does. */
+export function createLineageContextDocumentStore(
+  db: Database,
+  projectId: string,
+  rootThreadId: string,
+  membershipObserver?: ContextDocumentMembershipObserver,
+  catalogMutations?: ContextCatalogMutationPort,
+): ContextDocumentStore {
+  const find = async () => {
+    const [row] = await currentDrizzleDb(db)
+      .select({ id: contextSources.id })
+      .from(contextSources)
+      .where(
+        and(
+          eq(contextSources.projectId, projectId),
+          eq(contextSources.rootThreadId, rootThreadId),
+          eq(contextSources.slug, "scratch"),
+          isNull(contextSources.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  };
+  return new SourceResolvedContextDocumentStore(
+    db,
+    async () => {
+      const existing = await find();
+      if (existing) return existing;
+      const [created] = await currentDrizzleDb(db)
+        .insert(contextSources)
+        .values({
+          projectId,
+          rootThreadId,
+          scope: "lineage",
+          name: "Scratch",
+          slug: "scratch",
+          adapterType: "local",
+        })
+        .onConflictDoNothing()
+        .returning({ id: contextSources.id });
+      const id = created?.id ?? (await find());
+      if (!id) throw new Error("Chat Scratch is unavailable");
+      return id;
+    },
+    find,
+    membershipObserver,
+    undefined,
     catalogMutations,
   );
 }

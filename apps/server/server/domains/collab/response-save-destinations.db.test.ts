@@ -81,7 +81,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** An `edit` agent in `workId`; in draft mode its drafted writes go to that Work's draft. */
     function agent(threadId: string, workId: string, draftMode: boolean): Principal {
       const chain: AgentChain = [
-        { threadId: threadId as ThreadId, permission: "edit", threadWorkId: workId as WorkId },
+        {
+          threadId: threadId as ThreadId,
+          permission: "edit",
+          threadWorkId: workId as WorkId,
+          scratchOwner: { scope: "work", workId: workId },
+        },
       ];
       chains.set(threadId, chain);
       return {

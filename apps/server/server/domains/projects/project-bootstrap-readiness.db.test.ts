@@ -82,7 +82,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.select({ id: schema.documents.id }).from(schema.documents),
           db.select({ id: schema.threads.id }).from(schema.threads),
         ]).then((rows) => rows.map((row) => row.length)),
-      ).resolves.toEqual([1, 1, 3, 2, 0]);
+      ).resolves.toEqual([1, 1, 2, 2, 0]);
 
       const [project] = await db
         .select({ ready: schema.projects.defaultBootstrapReady })

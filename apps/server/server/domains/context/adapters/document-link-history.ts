@@ -72,15 +72,20 @@ export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHist
           and(
             eq(contextSources.slug, address.scheme),
             isNull(contextSources.deletedAt),
-            scope.kind === "work"
-              ? eq(contextSources.workId, scope.workId)
-              : scope.kind === "user"
-                ? and(
-                    eq(projects.userId, scope.userId),
-                    eq(projects.isPersonal, true),
-                    isNull(projects.deletedAt),
-                  )
-                : eq(contextSources.projectId, scope.projectId),
+            scope.kind === "lineage"
+              ? and(
+                  eq(contextSources.rootThreadId, scope.rootThreadId),
+                  eq(contextSources.projectId, scope.projectId),
+                )
+              : scope.kind === "work"
+                ? eq(contextSources.workId, scope.workId)
+                : scope.kind === "user"
+                  ? and(
+                      eq(projects.userId, scope.userId),
+                      eq(projects.isPersonal, true),
+                      isNull(projects.deletedAt),
+                    )
+                  : eq(contextSources.projectId, scope.projectId),
           ),
         );
       const match = matchDocumentPath(rows, address.path, (row) => row.path);

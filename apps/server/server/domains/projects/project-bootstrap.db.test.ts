@@ -65,7 +65,7 @@ else
       domain.bindHocuspocus(hocuspocus);
       return { domain, hocuspocus };
     }
-    it("converges project, manuscript, locked No Work, and work-scoped scratch/uploads without a thread", async () => {
+    it("converges project, manuscript, locked No Work, and No Work uploads without a thread", async () => {
       const repository = createDrizzleProjectBootstrapRepository({ db, documents: collab() });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
@@ -116,11 +116,10 @@ else
       expect(manuscript).toEqual([{ slug: "manuscript", workId: null, scope: "project" }]);
       expect(workSources).toEqual(
         expect.arrayContaining([
-          { slug: "scratch", workId: noWorkId, scope: "work", projectId: null },
           { slug: "uploads", workId: noWorkId, scope: "work", projectId: null },
         ]),
       );
-      expect(workSources).toHaveLength(2);
+      expect(workSources).toHaveLength(1);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
     });
