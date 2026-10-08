@@ -4,6 +4,11 @@
 
 - Publishing a chat's edits to its Work draft preserves their own deletion ranges instead of adding earlier edits' deletions back.
 - Independent AI replacements can be reviewed and applied separately instead of carrying earlier changes' deletions with them.
+- Moving from one draft to another (picking it in the switcher, Apply draft, Discard draft, Next draft) no longer shows a blank skeleton with no header in between. The review you are leaving stays on screen until the next one has painted with its header and marks, then the two swap in one step, on desktop and phone. While it is held, the page being opened cannot be clicked, tabbed to or read by a screen reader (it says "Opening" and the chapter's name instead), tabs and the sidebar still work, and the held review goes as soon as you go anywhere else, the draft fails to load, or ten seconds have passed. The next draft is also read ahead while you are in the current one. Opening a draft that refused to apply keeps its refusal on it.
+- Clicking or double-clicking struck-through (removed) text in a draft now puts the caret where that text stood, so what you type lands there. The removed text itself still cannot be selected or edited. The first click on a removed paragraph that was not selected yet follows the same rule: its top half puts the caret before the paragraph, its bottom half after.
+- When Apply draft is refused, the draft you were moved to now says which draft did not apply, with an Open button (phone and desktop), instead of the refusal showing only on a row in the closed draft menu. Apply all and Discard all no longer stop at the first draft that fails: they finish the rest, name every draft that did not apply (with an Open button each), and never move you: they leave you where you are, even when the answer arrives after you went to another draft. If Apply all or Discard all closes the draft you are reviewing, the review stays on "No changes left" with the outcome in front of you instead of dropping to the live text as if everything were done.
+- Apply and Discard on a change (or a whole draft) while you are offline now say so right away on the change ("Couldn't apply. Check your connection and try again.") and send nothing, instead of removing the change, doing nothing, and applying it silently when the network came back. When an Apply's answer is lost, the message no longer promises it will update by itself: "Couldn't confirm whether this applied. Check what is left before you try again."
+- A draft open in two tabs stays in step: when one tab applies a change, the other tab's list and marks update within a second, instead of keeping the applied change until its next action was refused as out of date.
 
 - Draft preview keeps changes with missing attribution visible and reserves them for document-level Apply or Discard.
 
@@ -17,7 +22,7 @@
 - After you apply or discard the last change, the review says "Applying" or "Discarding" until the server answers, and shows "No changes left" only once it has closed the draft. A last Discard no longer lets you type into the finished text before the server answers; if another change arrived meanwhile, the review comes back with it.
 - A change you handled while a review was still opening no longer comes back in the list.
 - If Apply draft is refused after the review moved on to the next draft, the refusal shows on the draft that was refused (in the switcher, the Changes tab and Work files).
-- An Apply of one change whose answer never arrived says it couldn't confirm whether it applied, instead of saying it failed.
+- An Apply or Discard of one change whose answer never arrived says it couldn't confirm whether it applied (or was discarded), instead of saying it failed.
 
 - Draft preview stays available when different chats edit adjacent sentences, and retained punctuation is no longer shown as deleted.
 

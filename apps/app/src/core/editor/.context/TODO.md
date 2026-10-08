@@ -27,9 +27,6 @@ Affected paths: `apps/app/src/core/editor/document-session.ts` and
   fallback routing are still spread across provider/hooks/components. Per-change
   commands, focus and the change list now go through the one controller and
   `features/draft-review`; the rest remains to collapse.
-- **Narrow viewport review parity.** The right rail intentionally hides below
-  `lg`; make sure the docked diff panel keeps feature parity for any new
-  Discard-class actions.
 
 Design reference: [inline-diff-decoration-architecture.md].
 

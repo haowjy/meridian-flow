@@ -34,7 +34,7 @@ function harness(answer: Answer | (() => Promise<DraftApplyChangesResponse>)) {
     apply: vi.fn(),
     discard: vi.fn(async () => {}),
     discardChanges: vi.fn(
-      async (): Promise<DraftDiscardResponse> => ({
+      async (): Promise<DraftDiscardResponse | "unknown"> => ({
         status: "discarded",
         draftId: "draft",
       }),
@@ -229,9 +229,22 @@ describe("discarding one change", () => {
     expect(ports.changeConfirmed).toHaveBeenCalledWith(selection, change, "discard");
   });
 
-  it("a Discard that got no answer brings the change back", async () => {
+  it("a Discard that got no answer is held on the change as unknown, as an Apply's is", async () => {
     const { session, ports } = harness("unknown");
-    ports.discardChanges.mockRejectedValueOnce(new Error("offline"));
+    ports.discardChanges.mockResolvedValueOnce("unknown");
+    const outcome = await session.discardChange(selection, change, tokens);
+    expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code: "unknown" });
+    expect(ports.changeConfirmed).not.toHaveBeenCalled();
+    expect(changeCommandState(await records(), draft, change)).toEqual({
+      phase: "failed",
+      mode: "discard",
+      code: "unknown",
+    });
+  });
+
+  it("a Discard the server refused brings the change back as an offline failure", async () => {
+    const { session, ports } = harness("unknown");
+    ports.discardChanges.mockRejectedValueOnce(new Error("refused"));
     const outcome = await session.discardChange(selection, change, tokens);
     expect(outcome).toEqual({ kind: "change-refused", mode: "discard", code: "offline" });
     expect(changeCommandState(await records(), draft, change)).toEqual({

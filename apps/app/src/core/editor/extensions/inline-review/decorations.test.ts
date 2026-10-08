@@ -549,6 +549,124 @@ describe("clicking a removal", () => {
   });
 });
 
+describe("clicking a removal puts the caret where it stands", () => {
+  const pressAndRelease = (removal: HTMLElement | undefined, clientX: number, clientY = 0) => {
+    removal?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    removal?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX, clientY }));
+  };
+  /**
+   * jsdom lays nothing out: give the widget a box so a click has a side. Like a
+   * browser, a widget that has left the document has no box, so a side read
+   * after the click rebuilt the widget comes out as zero.
+   */
+  const boxed = (removal: HTMLElement | undefined) =>
+    vi
+      .spyOn(removal as HTMLElement, "getBoundingClientRect")
+      .mockImplementation(
+        () =>
+          (removal?.parentNode
+            ? { left: 100, top: 10, width: 40, height: 20 }
+            : { left: 0, top: 0, width: 0, height: 0 }) as DOMRect,
+      );
+
+  it("moves the caret to the removal's position, so typing lands there", () => {
+    const { editor } = createReviewEditor(["Alpha beta gamma."]);
+    const at = posOf(editor, "beta");
+    editor.commands.setTextSelection(posOf(editor, "gamma"));
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent")],
+        [textHunk(editor, "h1", ["a1"], { from: at, to: at }, { deletedText: "gone" })],
+      ),
+    );
+    const [removal] = removals(editor);
+    boxed(removal);
+    pressAndRelease(removal, 110);
+    expect(editor.state.selection.empty).toBe(true);
+    expect(editor.state.selection.from).toBe(at);
+
+    editor.commands.insertContent("X");
+    expect(editor.getText()).toBe("Alpha Xbeta gamma.");
+    // The removal itself is still not part of the document.
+    expect(editor.getText()).not.toContain("gone");
+  });
+
+  it("moves it the same way for the right half and for a double click", () => {
+    const { editor } = createReviewEditor(["Alpha beta gamma."]);
+    const at = posOf(editor, "beta");
+    editor.commands.setTextSelection(1);
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent")],
+        [textHunk(editor, "h1", ["a1"], { from: at, to: at }, { deletedText: "gone" })],
+      ),
+    );
+    const [removal] = removals(editor);
+    boxed(removal);
+    pressAndRelease(removal, 135);
+    removal?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2, clientX: 135 }));
+    removal?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2, clientX: 135 }));
+    expect(editor.state.selection.from).toBe(at);
+    expect(editor.state.selection.empty).toBe(true);
+  });
+
+  it("puts the caret at the end of the text before a removed paragraph for the upper half, at the start of the text after it for the lower", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    const between = posOf(editor, "Keep two") - 1;
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent")],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["a1"],
+            { from: between, to: between },
+            { deletedText: "Removed paragraph." },
+          ),
+        ],
+      ),
+    );
+    const [removal] = removals(editor);
+    boxed(removal);
+    // The first click focuses the change and rebuilds the widget under the pointer.
+    pressAndRelease(removal, 110, 12);
+    expect(editor.state.selection.from).toBe(posOf(editor, "one.") + 4);
+    const [rebuilt] = removals(editor);
+    boxed(rebuilt);
+    pressAndRelease(rebuilt, 110, 25);
+    expect(editor.state.selection.from).toBe(posOf(editor, "Keep two"));
+  });
+
+  it("does not move the caret when the click opens a fold", () => {
+    const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
+    const between = posOf(editor, "Keep two") - 1;
+    editor.commands.setTextSelection(2);
+    setModel(
+      editor,
+      model(
+        [operation("a1", "agent")],
+        [
+          textHunk(
+            editor,
+            "h1",
+            ["a1"],
+            { from: between, to: between },
+            { deletedText: "z".repeat(REMOVAL_COLLAPSE_CHARS + 20) },
+          ),
+        ],
+      ),
+    );
+    const toggle = removals(editor)[0]?.querySelector("button");
+    toggle?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    toggle?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    expect(editor.state.selection.from).toBe(2);
+  });
+});
+
 describe("focus and visibility", () => {
   function focusModel(editor: Editor): InlineReviewModel {
     const first = posOf(editor, "alpha");

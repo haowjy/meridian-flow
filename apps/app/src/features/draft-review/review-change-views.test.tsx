@@ -441,6 +441,16 @@ describe("ReviewChangeBar", () => {
       ["apply", "offline", "Couldn't apply. Check your connection and try again."],
       ["discard", "stale", "This change was updated. Check it and discard again."],
       ["discard", "offline", "Couldn't discard. Check your connection and try again."],
+      [
+        "apply",
+        "unknown",
+        "Couldn't confirm whether this applied. Check what is left before you try again.",
+      ],
+      [
+        "discard",
+        "unknown",
+        "Couldn't confirm whether this was discarded. Check what is left before you try again.",
+      ],
     ] as const;
     for (const [mode, code, text] of messages) {
       await render(
