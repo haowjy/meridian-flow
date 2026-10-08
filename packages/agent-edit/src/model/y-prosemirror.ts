@@ -12,7 +12,6 @@ import type {
   ContentLineage,
   InlineReplacementResult,
   InlineTextReplacement,
-  TextRun,
 } from "../ports/model.js";
 import {
   blockHashesForDoc,
@@ -89,8 +88,8 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return collectVisibleContentLineage(unwrapBlock(block));
     },
 
-    inlineRuns(block) {
-      return collectTextRuns(unwrapBlock(block));
+    inlineRunCount(block) {
+      return countTextRuns(unwrapBlock(block));
     },
 
     transact(doc, fn, origin) {
@@ -533,25 +532,12 @@ function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   return segments;
 }
 
-function collectTextRuns(block: Y.XmlElement): TextRun[] {
-  const runs: TextRun[] = [];
-  let flatOffset = 0;
+function countTextRuns(block: Y.XmlElement): number {
+  let count = 0;
   const visit = (type: Y.XmlElement | Y.XmlText) => {
     if (type instanceof Y.XmlText) {
-      for (const delta of type.toDelta() as Array<{
-        insert?: string;
-        attributes?: Record<string, unknown>;
-      }>) {
-        const text = typeof delta.insert === "string" ? delta.insert : "";
-        const length = text.length;
-        if (length > 0) {
-          runs.push({
-            start: flatOffset,
-            length,
-            attrsKey: stableAttrsKey(delta.attributes),
-          });
-          flatOffset += length;
-        }
+      for (const delta of type.toDelta()) {
+        if (typeof delta.insert === "string" && delta.insert.length > 0) count += 1;
       }
       return;
     }
@@ -560,7 +546,7 @@ function collectTextRuns(block: Y.XmlElement): TextRun[] {
     }
   };
   visit(block);
-  return runs;
+  return count;
 }
 
 function clearText(type: Y.XmlElement | Y.XmlText): void {
@@ -664,21 +650,6 @@ function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | un
   const attrs: Record<string, unknown> = {};
   for (const mark of marks) attrs[mark.type.name] = mark.attrs;
   return attrs;
-}
-
-function stableAttrsKey(attrs: Record<string, unknown> | undefined): string {
-  if (!attrs) return "";
-  return JSON.stringify(sortRecord(attrs));
-}
-
-function sortRecord(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortRecord);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => [key, sortRecord(nested)]),
-  );
 }
 
 function createBindingMetadata(): BindingMetadata {

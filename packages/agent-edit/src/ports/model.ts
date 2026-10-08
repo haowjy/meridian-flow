@@ -10,12 +10,6 @@ export interface CanonicalBlockIdentity {
   clock: number;
 }
 
-export interface TextRun {
-  start: number;
-  length: number;
-  attrsKey: string;
-}
-
 export interface ContentLineage {
   clientID: number;
   clock: number;
@@ -116,8 +110,8 @@ export interface DocumentModel {
  * y-prosemirror adapter is only one implementation.
  */
 export interface AgentEditModel extends DocumentModel {
-  /** Neutral inline mark runs; undo repair skips blocks with more than one. */
-  inlineRuns(block: BlockRef): TextRun[];
+  /** Nonempty text delta runs, including nested blocks; undo repair skips more than one. */
+  inlineRunCount(block: BlockRef): number;
 
   /** Apply disjoint same-block replacements through one adapter-owned ProseMirror transform. */
   applyInlineReplacements(
