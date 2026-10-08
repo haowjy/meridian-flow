@@ -5,6 +5,33 @@
 - A Scratch note opened from a Work's Files now opens in the sidebar as the full editor: edit it, and it saves, works offline and freezes with an archived Work like an Editor tab. Its title menu lists the Work's other notes, with Open in Editor and Rename. Opening the same note in an Editor tab keeps your caret steady for other people.
 - Following a link inside a document the AI created and you are still reviewing now opens it, instead of waiting on "Opening the link" forever.
 - The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
+- Changed writes return mutation facts directly, without allocating discarded per-edit summaries.
+
+- Model reads, writes and recovery stop retaining unused session clock maps.
+
+- AI writes accept `<img>` without a closing slash. Image paths, alt text and widths survive read-back.
+
+- A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes, downloads and link updates keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one image-path snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading image paths no longer holds up branch edits during reads or Apply.
+- Chapter overwrites parse replacement content once, including unchanged writes. Changed writes no longer render three discarded snapshots or an unused echo.
+
+- Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
+
+- An AI overwrite or replace changes only the paragraphs and words that differ. Single-match and find-all replacements use the same inline operation, without numeric apply tiers. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and a paragraph the AI adds never takes over the comments of the one it edits next to it.
+
+- An AI write that changes nothing (a chapter written back as it is, or a word replaced with itself) records nothing: no write, no receipt and nothing to undo.
+
+- An AI write that only centers a paragraph or renumbers a list now applies the change instead of reporting success and dropping it.
+
+- Undo repair counts formatting runs without rebuilding unused mark metadata.
+
+- A turn's receipt offers Undo only when Undo will work. Text you type inside the AI's words now shows the turn as no longer undoable, as Undo itself already treated it.
+
+- Overlapping bold and italic, runs of alternating bold and italic, and strikethrough that starts or ends on a space export as Markdown that reads back with the same formatting instead of stray `*`, `_` or `~~`.
+
+- A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`. A paragraph of only line breaks comes back as one paragraph.
+- File moves, Apply, and Discard share one catalog repair queue instead of racing independent repairs. Repairs read file metadata without chapter prose; queued bursts append without recopying earlier moves. Lock contention logs warnings, not errors.
+
+- Draft writes filter covered history once and skip its attribution replay. Unchanged drafts avoid rebuilding retained history. Concurrent writer edits still appear in save receipts.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
@@ -20,8 +47,6 @@
 
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
-
-## [Unreleased]
 
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
 - Model tool results are short text; the typed `result` is stored beside it, and the app reads only `result`. `read` and `write` return a status line plus `hash|text` blocks. `ls` returns the folder's URI, then one line per entry, with `(read-only)` and a non-text file's kind only when they apply. `work` returns one line per Work, `search` returns `hash|excerpt` around each match, and a `read` outline gives each heading's `#slug`. `verbose: true` on `ls`, `work` and `search` adds sizes, edit times, dates and whole blocks. A refusal reads as its message and code. In the typed result, `ls` entries carry `readonly` (was `editable`) and Works carry `writes` and `pendingChangeCount`.

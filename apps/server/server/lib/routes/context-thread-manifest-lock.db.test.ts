@@ -8,6 +8,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleDocumentAssetPaths } from "../../domains/context/adapters/asset-path-resolver.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
@@ -66,6 +67,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture() {
       const collab = createCollabDomain({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
@@ -83,6 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: collab,

@@ -2,6 +2,7 @@
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
 import { splitHashline, toHashline } from "../model/hashline.js";
+import { weightedOrderedMatches } from "../ordered-matching.js";
 import type { AgentEditModel, ContentLineage } from "../ports/model.js";
 import type {
   ApplyEchoHunk,
@@ -141,23 +142,33 @@ function diffConcurrentSnapshots(
   const direct = diffSnapshots(before, after);
   if (direct.deleted.size === 0 && direct.inserted.size === 0) return direct;
 
-  const matches = bodyLcs(before, after);
+  const matches = weightedOrderedMatches(
+    (oldIndex, newIndex) => blockMatchScore(before[oldIndex], after[newIndex]),
+    0,
+    before.length,
+    0,
+    after.length,
+    4_000_000,
+  );
+  // Beyond the table cap, report identity-based changes rather than guessing
+  // which rematerialized bodies continued across the concurrent update.
+  if (matches === null) return direct;
   const changed = new Set(direct.changed);
   const deleted = new Set<string>();
   const inserted = new Set<string>();
   let beforeStart = 0;
   let afterStart = 0;
 
-  for (const match of [...matches, { beforeIndex: before.length, afterIndex: after.length }]) {
+  for (const [beforeIndex, afterIndex] of [...matches, [before.length, after.length]]) {
     addConcurrentGap({
-      before: before.slice(beforeStart, match.beforeIndex),
-      after: after.slice(afterStart, match.afterIndex),
+      before: before.slice(beforeStart, beforeIndex),
+      after: after.slice(afterStart, afterIndex),
       deleted,
       inserted,
       changed,
     });
-    beforeStart = match.beforeIndex + 1;
-    afterStart = match.afterIndex + 1;
+    beforeStart = beforeIndex + 1;
+    afterStart = afterIndex + 1;
   }
 
   return { changed, deleted, inserted };
@@ -182,52 +193,7 @@ function addConcurrentGap(input: {
   for (const block of input.after) input.changed.add(block.hash);
 }
 
-function bodyLcs(
-  before: readonly BlockSnapshot[],
-  after: readonly BlockSnapshot[],
-): Array<{ beforeIndex: number; afterIndex: number }> {
-  const rows = before.length + 1;
-  const columns = after.length + 1;
-  const table = Array.from({ length: rows }, () => Array<number>(columns).fill(0));
-  for (let i = before.length - 1; i >= 0; i -= 1) {
-    for (let j = after.length - 1; j >= 0; j -= 1) {
-      const matchScore = blockMatchScore(before[i], after[j]);
-      table[i][j] =
-        matchScore > 0
-          ? Math.max(table[i + 1][j + 1] + matchScore, table[i + 1][j], table[i][j + 1])
-          : Math.max(table[i + 1][j], table[i][j + 1]);
-    }
-  }
-
-  const matches: Array<{ beforeIndex: number; afterIndex: number }> = [];
-  let i = 0;
-  let j = 0;
-  while (i < before.length && j < after.length) {
-    const matchScore = blockMatchScore(before[i], after[j]);
-    const matchValue = matchScore > 0 ? table[i + 1][j + 1] + matchScore : -1;
-    if (
-      matchScore > 0 &&
-      matchValue >= table[i + 1][j] &&
-      matchValue >= table[i][j + 1] &&
-      table[i][j] === matchValue
-    ) {
-      matches.push({ beforeIndex: i, afterIndex: j });
-      i += 1;
-      j += 1;
-    } else if (table[i + 1][j] >= table[i][j + 1]) {
-      i += 1;
-    } else {
-      j += 1;
-    }
-  }
-  return matches;
-}
-
-function blockMatchScore(
-  before: BlockSnapshot | undefined,
-  after: BlockSnapshot | undefined,
-): number {
-  if (!before || !after) return 0;
+function blockMatchScore(before: BlockSnapshot, after: BlockSnapshot): number {
   if (before.body !== after.body) return 0;
   return before.hash === after.hash ? 2 : 1;
 }
