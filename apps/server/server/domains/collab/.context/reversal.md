@@ -49,10 +49,22 @@ stable reversal-result identity.
   `agent_namespace_changes` holds the model's live creates (a `create` or
   `copy` shares its content write's handle), moves and deletes, on the
   document's `w_id` counter (`adapters/write-ordinals.ts`) shared with content
-  writes, and records the draft branch each landed in (null for live). The
-  model's walk (`lib/model-tools/namespace-reversal*.ts`) orders both kinds,
-  drafted content handles included, and reverses each change where it
-  landed, under a grant there, whatever the thread's mode is now.
+  writes, and records the draft branch each landed in (null for live).
+  `domain/namespace-reversal.ts` plans the model's walk over both kinds,
+  drafted content handles included, and executes it, reversing each change
+  where it landed, under a grant there, whatever the thread's mode is now.
+  `lib/model-tools/namespace-reversal.ts` only resolves the path, binds
+  grants and content reversal as ports, and formats the outcome.
+- **Namespace dependencies are per document and per thread**:
+  `namespaceReversalEligibility` is the one rule. Undo is blocked by this
+  thread's later active namespace change on the document (A→B→C: undoing
+  A→B waits until B→C is undone), and undoing a create by any later content
+  write not reversed in the same command. Redo is blocked by an earlier
+  change still undone and by a later change now active. Changes by the
+  writer or another thread are not dependencies; they surface at apply time
+  as `location_taken` or `stale_location`. The model walk, turn preflight
+  (`turnNamespaceEligibility`) and the turn receipt's Undo/Redo projection
+  all call it, so the receipt never offers what the command refuses.
 - **One reversal step for a create, move or delete**:
   `createNamespaceChanges` (`domain/namespace-changes.ts`) claims the row,
   changes the tree and flips its status in one transaction, and `commit`
@@ -61,9 +73,11 @@ stable reversal-result identity.
   (`POST …/turns/:turnId/restore-delete`) and turn undo all take it. Rollback
   tries every change of the reply, logs `response_rollback.failed` for one
   that stays, and forgets every handle of the reply.
-- **Turn undo settles links before its transaction**: the tree's link
-  derivations flush once before `atomic(...)` and every move in it skips its
-  own flush, so no move waits on a flush under the turn's locks. Inside, the
+- **Links settle before every namespace transaction**: a model move, and
+  `reverse` for a move (model undo/redo, reply rollback), flush link
+  derivations before `atomic(...)`, so no connection is held across the
+  flush. Turn undo flushes once for the whole turn and passes the settled
+  tree, on which a repeat settle is a no-op. Inside, the
   turn takes its tree locks first, then reverses the changes that leave the
   document in place, then content, then the ones that remove it (an undone
   create, a redone delete), keeping the seam's namespace-then-document order.
