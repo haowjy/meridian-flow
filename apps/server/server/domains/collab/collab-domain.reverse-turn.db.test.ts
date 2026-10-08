@@ -512,6 +512,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await collab.writeDocument({
         documentId: DOC_ID as never,
+        // A pure insertion anchored inside agent-born text: both the chip and the
+        // real undo must treat it as dependent.
         markdown: "Base.\n\nAgent HUMAN-KEEP paragraph.",
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,

@@ -16,7 +16,7 @@ Y.XmlElement CRDT item ID (`clientID`, `clock`); the displayed prefix is unique
 within the current sibling set and is not durable identity. Kernel callers see
 only the neutral `BlockRef`.
 
-### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/tiers.ts`)
+### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/apply-edits.ts`)
 The resolver emits `SemanticEditIRV1` bound to the exact input Yjs revision. It
 declares scope and deletion ranges plus a disjoint, exhaustive partition of
 each output into preserved continuation, fresh payload, copy, or certified
@@ -25,7 +25,7 @@ restoration. A whole-scope zero-continuation edit uses the distinct
 out-of-scope sources, missing/overlapping output claims, restoration without a
 retained certificate, and UTF-16 surrogate splits before mutation.
 
-Plain same-block find-all emits one `textRanges` edit with exact, ordered match
+Plain same-block find (one or all matches) emits one `textRanges` edit with exact, ordered match
 spans. The adapter adds those replacements back-to-front to one ProseMirror
 `Transform` and projects each exact step inside one Yjs transaction. Unmatched
 gaps therefore keep their CRDT items; the semantic IR partitions the replacement
@@ -35,21 +35,41 @@ the whole IR and the provenance writer excludes those runs from its insertion
 stream. Any non-retained continuation or restoration run in the same IR still
 receives its provenance fact; fresh payloads remain agent-born by normal
 insertion attribution.
-Single-match output retains the existing `text` shape. Formatted
-and cross-block finds keep the serialized-markdown reconciliation path.
+Formatted and cross-block finds keep the serialized-markdown reconciliation path.
 
-### 3-tier apply (`src/apply/tiers.ts`)
-Preflight-before-mutate discipline: Phase 1 (read-only) validates all
-references, parses content, computes offsets, and validates the semantic IR.
-Phase 2 (inside `doc.transact()`) applies pre-computed operations. Find-based
-text edits deliberately bypass the direct-text fast path so their single PM
-lowering is the certification seam; other eligible plain edits retain Tier 1.
+A scope rewrite (`replace` over `in`, a formatted or cross-block find, and
+`create { overwrite: true }`) goes through `replaceScope`, which aligns the
+scope's blocks with the parsed replacement (`resolver/block-alignment.ts`):
+equal blocks get no edit; between them, blocks that may pair (same node type,
+same heading level) pair by shared edge text first and by position after, and
+each pair becomes a `block` edit that `updateYFragment` diffs in place,
+attributes included. Only unpaired blocks are inserted or deleted, so a new
+paragraph never takes over an edited one's element and comments. A write that resolves to no edits (a document's own export written back, or a
+find replaced with itself) returns `unchanged` before a write handle is
+reserved, so it journals nothing and leaves nothing to undo.
+`weightedOrderedMatches` (`src/ordered-matching.ts`) is shared by alignment
+and echo. Past the table limit, alignment pairs the gap by position; echo
+falls back to block-identity diffing. Scoring and gap policy stay with callers.
 
-| Tier | Kind | Mechanism |
-|---|---|---|
-| 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary/formatting change, `textRanges`, or a same-type complex block changes | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
-| 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
+Flat inline offsets exclude atoms (pictures, hard breaks), so `textRanges` edits
+apply only to blocks without atoms; anything else is a `block` edit.
+
+### Edit application (`src/apply/apply-edits.ts`)
+`applyEdits` owns mutation and returns ordered live touched IDs, deleted IDs,
+and applied-edit metadata without rendering prose. The write/commit owner takes
+its own snapshots, merges concurrent updates, and produces the final echo.
+Preflight-before-mutate discipline: the write owner validates semantic IR,
+then apply validates all block references. Each edit is preflighted (content
+and offsets) before its transaction mutates the document. Every agent
+text edit lowers through ProseMirror (`applyInlineReplacements`), the single
+inline mutation seam. `applyTextEdit` remains as the
+model's plain-text verb for undo repair and trims unchanged edge text before
+touching Yjs.
+
+| Kind | Mechanism |
+|---|---|
+| `textRanges`, or a matched block changes (`block`) | Adapter-owned exact inline ranges (`applyInlineReplacements`) or whole-block replacement + per-block updateYFragment |
+| `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
 structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`

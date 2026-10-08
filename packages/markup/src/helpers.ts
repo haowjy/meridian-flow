@@ -22,6 +22,7 @@ import {
   type ComponentSpec,
   type PropSpec,
 } from "./components.js";
+import { HARD_BREAK_TAG } from "./markdown/blocks/hard-break.js";
 import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
@@ -207,6 +208,14 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }
   });
+  // A hard break ending the text has no Markdown spelling (`\` there is a
+  // literal backslash), so it escalates to the tag, as a sized picture does,
+  // and so does every break before it: remark writes a `\` break followed by
+  // raw HTML as a literal backslash.
+  for (let index = tokens.length - 1; tokens[index]?.type === "break"; index--) {
+    ensureBlockCodecRegistered("hard_break", ctx);
+    tokens[index] = { type: "html", value: HARD_BREAK_TAG, marks: [] };
+  }
   return inlineTokensToMdast(tokens, ctx);
 }
 
@@ -227,16 +236,16 @@ export function parseInlineChildren(
         out.push(ctx.schema.node("hard_break"));
         break;
       case "image": {
-        const image = parseInlineImage(child, ctx);
+        const image = parseInlineAtom(child, ctx);
         if (image) out.push(image);
         break;
       }
       default: {
-        // A raw `<img>` tag: pure Markdown hands it over as `html`, MDX as a
-        // parsed JSX element, and the image codec reads both.
-        const image = parseInlineImage(child, ctx);
-        if (image) {
-          out.push(image);
+        // A raw `<br>` or `<img>` tag: pure Markdown hands it over as `html`,
+        // MDX as a parsed JSX element, and the break and image codecs read both.
+        const atom = parseInlineAtom(child, ctx);
+        if (atom) {
+          out.push(atom);
           break;
         }
         const marked = addRegisteredMark(activeMarks, child, ctx);
@@ -597,15 +606,24 @@ function addRegisteredMark(
   return null;
 }
 
+/** Inline atoms whose codecs also read the raw tags they escalate to. */
+const INLINE_ATOM_CODECS = ["hard_break", "image"] as const;
+
 /**
- * The picture an inline AST node means, through the one registered image codec:
- * `![alt](src)` and the raw `<img>` tag a sized picture
- * escalates to, in whichever shape this dialect's parser reports it.
+ * The break or picture an inline AST node means, through the registered codec:
+ * `![alt](src)`, the raw `<img>` tag a sized picture escalates to, or the
+ * `<br/>` a trailing break escalates to, in whichever shape this dialect's
+ * parser reports it.
  */
-function parseInlineImage(ast: unknown, ctx: ParseContext): PMNode | null {
-  const imageCodec = getRuntime(ctx).blockMap.get("image");
-  if (!imageCodec) throw new Error('mdast->pm: missing "image" codec');
-  return imageCodec.parse(ast, ctx);
+function parseInlineAtom(ast: unknown, ctx: ParseContext): PMNode | null {
+  const blockMap = getRuntime(ctx).blockMap;
+  for (const name of INLINE_ATOM_CODECS) {
+    const codec = blockMap.get(name);
+    if (!codec) throw new Error(`mdast->pm: missing "${name}" codec`);
+    const parsed = codec.parse(ast, ctx);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function ensureBlockCodecRegistered(name: string, ctx: SerializeContext): void {

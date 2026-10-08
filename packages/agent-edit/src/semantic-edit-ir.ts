@@ -130,7 +130,6 @@ export function validateOutputPartition(output: string, runs: readonly SemanticO
 
 function editOutput(edit: ResolvedEdit): string {
   switch (edit.kind) {
-    case "text":
     case "insert":
       return edit.newText;
     case "textRanges":

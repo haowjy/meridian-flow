@@ -57,7 +57,6 @@ export type {
   BlockLookup,
   CanonicalBlockIdentity,
   DocumentModel,
-  TextRun,
 } from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
@@ -104,6 +103,15 @@ export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
 export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
+export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
+export {
+  decodeUpdateForDependencies,
+  deleteRanges,
+  dependsOnRows,
+  hasDependentLaterRows,
+  rangeCovers,
+  suppliedRanges,
+} from "./undo/journal-dependencies.js";
 export type {
   PersistUndoWatermarkRecord,
   PersistUndoWatermarkUpdate,

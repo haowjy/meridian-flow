@@ -72,7 +72,8 @@ Merge order:
 Build validation always rejects duplicate block names, duplicate mark names, and
 missing schema mark codecs. Required block validation is opt-in through
 `requiredBlockNames` or `requireSchemaBlockCoverage`; schema coverage excludes
-`doc`, `text`, and `hard_break`.
+`doc`, `text`, and the table's row and cell nodes. `hard_break` is a registered
+codec like any other block (see Hard breaks and emphasis).
 
 ## MDX components
 
@@ -166,6 +167,28 @@ resource, including multiline titles.
 If MDX cannot consume the resource (for example, a link label containing
 nested link syntax), ingress keeps the delimiter escaped and the result
 deterministic instead of exposing it as a JSX opener.
+
+## Hard breaks and emphasis
+
+A hard break between words is `\` and a newline. A break ending a paragraph
+has no Markdown spelling (CommonMark reads a trailing `\` as a backslash), so it
+and every break directly before it escalate to `<br/>`, the way a sized picture escalates to `<img>`.
+`hardBreakCodec` (`markdown/blocks/hard-break.ts`) owns that tag in both
+dialects and is hoisted above the JSX codecs in MDX; inline parsing asks it and
+the image codec in turn, and a lone break wraps back into a paragraph. MDX
+parses one element per `<br/>`, so its `postParse` (`joinBreakLines`) regroups
+the tags on one source line into one paragraph; a paragraph of only breaks
+round-trips.
+
+Overlapping bold and italic split into adjacent sibling runs whose delimiters
+would fuse (`****`). `markdown/attention.ts` overrides the stringify handlers:
+along a chain of adjacent bold or italic runs the marker alternates, `_` after
+an odd count (`*a*__b__*c*`), and `peek` reports the same marker. Strike gets
+the edge encoding remark gives `*`, so a strike starting or ending on a space
+or punctuation writes that character, or the letter outside it, as a character
+reference (`Li&#x6E;~~&#x20;Feng~~`). The encoding is
+copied from `mdast-util-to-markdown`'s private `encodeInfo`; recheck it when
+that dependency moves.
 
 ## Links
 

@@ -1,8 +1,7 @@
 // Durable reversal lineage helpers: derive ownership from mutation and reversal rows, never delete-set guesses.
-import * as Y from "yjs";
-
 import type { JournalSnapshot, PersistedUpdate, ReversalRecord } from "../ports/types.js";
 import type { WriteMutationRow } from "../ports/update-journal.js";
+import { dependsOnRows, type JournalDependencyRow } from "./journal-dependencies.js";
 
 interface LineageHandleState {
   handle: string;
@@ -26,17 +25,6 @@ interface CompatibleLineageGroup extends ActiveClosure {
 }
 
 type DependencyVerdict = { ok: true } | { ok: false; blockingWriteIds: readonly string[] };
-
-interface IdRange {
-  client: number;
-  clock: number;
-  len: number;
-}
-
-interface DecodedUpdateLike {
-  structs?: readonly { id?: { client: number; clock: number }; length?: number }[];
-  ds?: { clients?: Map<number, readonly { clock: number; len: number }[]> };
-}
 
 export type UndoClosure =
   | { ok: true; handles: string[]; targetSeqs: ReadonlySet<number> }
@@ -225,13 +213,14 @@ function evaluateLineageDependencies(input: {
   reversalOpSeqs?: ReadonlySet<number>;
   reversedForwardSeqs?: ReadonlySet<number>;
 }): DependencyVerdict {
-  const selectedInsertedIds = insertedIdRanges(
-    input.snapshot.updates.filter(
-      (update) =>
-        input.closure.targetSeqs.has(update.seq) || input.closure.forwardSeqs.has(update.seq),
-    ),
+  const dependsOnSelected = dependsOnRows(
+    input.snapshot.updates
+      .filter(
+        (update) =>
+          input.closure.targetSeqs.has(update.seq) || input.closure.forwardSeqs.has(update.seq),
+      )
+      .map(dependencyRow),
   );
-  if (selectedInsertedIds.length === 0) return { ok: true };
 
   const selectedHandles = new Set(input.closure.handles);
   const blockingWriteIds = new Set<string>();
@@ -249,7 +238,7 @@ function evaluateLineageDependencies(input: {
       input.reversedForwardSeqs?.has(update.seq)
     )
       continue;
-    if (!deleteSetIntersects(update, selectedInsertedIds)) continue;
+    if (!dependsOnSelected(dependencyRow(update))) continue;
     const handle = input.seqToHandle?.get(update.seq);
     if (handle && !selectedHandles.has(handle)) blockingWriteIds.add(handle);
     else hasUnknownBlocker = true;
@@ -345,44 +334,8 @@ function snapshotRetainsSeq(snapshot: { updates: { seq: number }[] }, seq: numbe
   return snapshot.updates.some((update) => update.seq === seq);
 }
 
-function insertedIdRanges(updates: readonly PersistedUpdate[]): IdRange[] {
-  const ranges: IdRange[] = [];
-  for (const update of updates) {
-    const decoded = decodeUpdate(update);
-    if (!decoded) continue;
-    for (const struct of decoded.structs ?? []) {
-      const id = struct.id;
-      const len = struct.length ?? 0;
-      if (!id || len <= 0) continue;
-      ranges.push({ client: id.client, clock: id.clock, len });
-    }
-  }
-  return ranges;
-}
-
-function deleteSetIntersects(update: PersistedUpdate, insertedRanges: readonly IdRange[]): boolean {
-  const decoded = decodeUpdate(update);
-  const deleteClients = decoded?.ds?.clients;
-  if (!deleteClients || deleteClients.size === 0) return false;
-  for (const inserted of insertedRanges) {
-    const deletes = deleteClients.get(inserted.client) ?? [];
-    for (const deleted of deletes) {
-      if (rangesIntersect(inserted.clock, inserted.len, deleted.clock, deleted.len)) return true;
-    }
-  }
-  return false;
-}
-
-function decodeUpdate(update: PersistedUpdate): DecodedUpdateLike | undefined {
-  try {
-    return Y.decodeUpdate(update.update) as DecodedUpdateLike;
-  } catch {
-    return undefined;
-  }
-}
-
-function rangesIntersect(leftClock: number, leftLen: number, rightClock: number, rightLen: number) {
-  return leftClock < rightClock + rightLen && rightClock < leftClock + leftLen;
+function dependencyRow(update: PersistedUpdate): JournalDependencyRow {
+  return { seq: update.seq, updateData: update.update };
 }
 
 function sortWriteHandles(handles: readonly string[]): string[] {
