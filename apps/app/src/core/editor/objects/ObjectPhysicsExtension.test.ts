@@ -69,6 +69,27 @@ function press(instance: Editor, init: KeyboardEventInit): boolean {
   return event.defaultPrevented;
 }
 
+/** One printable keystroke, the way ProseMirror hears one. */
+function typeCharacter(instance: Editor, character: string): void {
+  instance.view.dom.dispatchEvent(
+    new KeyboardEvent("keypress", {
+      key: character,
+      charCode: character.charCodeAt(0),
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+function nodeCount(instance: Editor, type: string): number {
+  let count = 0;
+  instance.state.doc.descendants((node) => {
+    if (node.type.name === type) count += 1;
+    return true;
+  });
+  return count;
+}
+
 function blockTypes(instance: Editor): string[] {
   const types: string[] = [];
   instance.state.doc.forEach((node) => {
@@ -105,5 +126,29 @@ describe("Delete on a selected object", () => {
 
     press(instance, { key: "Delete" });
     expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
+  });
+});
+
+describe("a printable character beside a selected object", () => {
+  // Closing an image's full-screen view leaves the picture node-selected, and
+  // one letter used to replace it. A letter is not a destructive verb.
+
+  it("types after the picture rather than over it", () => {
+    const instance = mount([
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "look " },
+          { type: "image", attrs: { src: "asset:2" } },
+        ],
+      },
+      paragraph("after"),
+    ]);
+    select(instance, positionOf(instance, "image"));
+
+    typeCharacter(instance, "Q");
+
+    expect(nodeCount(instance, "image")).toBe(1);
+    expect(instance.state.doc.firstChild?.textContent).toBe("look Q");
   });
 });
