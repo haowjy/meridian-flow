@@ -1,6 +1,6 @@
 /** Public API for canonical Markdown/MDX codecs and asset/link helpers. */
 
-export { createAssetPathResolver, unresolvedAssetPathResolver } from "./asset-path-resolver.js";
+export { unresolvedAssetPathResolver } from "./asset-path-resolver.js";
 export type * from "./ast.js";
 export type { ComponentRegistry, ComponentSpec, EditorSpec, PropSpec } from "./components.js";
 export { builtInComponents, documentComponentRegistry } from "./components.js";

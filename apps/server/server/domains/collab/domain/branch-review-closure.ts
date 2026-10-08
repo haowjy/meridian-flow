@@ -1,19 +1,19 @@
 /** Builds server-authoritative dependency-closed Apply/Discard classes. */
 
 import { createHash } from "node:crypto";
-import type { ReviewHunk } from "@meridian/contracts/drafts";
-import {
-  asPhysicalSourceUpdateIds,
-  type DraftReviewOperationInternal,
-  type PhysicalSourceUpdateIds,
-} from "./draft-review-types.js";
 import {
   type ClockRange,
   decodeUpdateForDependencies,
   deleteRanges,
   rangesOverlap,
   suppliedRanges,
-} from "./journal-dependencies.js";
+} from "@meridian/agent-edit/integration";
+import type { ReviewHunk } from "@meridian/contracts/drafts";
+import {
+  asPhysicalSourceUpdateIds,
+  type DraftReviewOperationInternal,
+  type PhysicalSourceUpdateIds,
+} from "./draft-review-types.js";
 
 type DependencyUpdate = { id: number; updateData: Uint8Array | Buffer };
 

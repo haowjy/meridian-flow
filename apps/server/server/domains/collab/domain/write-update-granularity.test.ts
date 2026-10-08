@@ -25,6 +25,15 @@ function clone(doc: Y.Doc) {
 describe("per-write journal encoding", () => {
   it.each([
     {
+      name: "two overwrite chats, aligned different paragraphs",
+      sameChat: false,
+      reread: true,
+      sentence: false,
+      dependent: false,
+      classes: 2,
+      overwrite: true,
+    },
+    {
       name: "two chats, different paragraphs",
       sameChat: false,
       reread: true,
@@ -64,7 +73,7 @@ describe("per-write journal encoding", () => {
       dependent: true,
       classes: 1,
     },
-  ])("$name", async ({ sameChat, reread, sentence, dependent, classes }) => {
+  ])("$name", async ({ sameChat, reread, sentence, dependent, classes, overwrite }) => {
     let client = 50000;
     const docs: Y.Doc[] = [];
     const h = createWriteToolHarness(
@@ -97,6 +106,7 @@ describe("per-write journal encoding", () => {
           threadId,
           turnId: `turn-${i + 1}`,
           responseId: `reply-${i + 1}`,
+          ...(overwrite ? { createdDocument: false } : {}),
           interactionContext: {
             mode: "threadPeer" as const,
             afterJournalId: i,
@@ -108,8 +118,19 @@ describe("per-write journal encoding", () => {
             "success",
           );
         expect(
-          (await h.core.write({ command: "replace", file: "chapter.md", ...edit }, context)).result
-            .status,
+          (
+            await h.core.write(
+              overwrite
+                ? {
+                    command: "create",
+                    file: "chapter.md",
+                    overwrite: true,
+                    content: text(draft).replace(edit.find, edit.content),
+                  }
+                : { command: "replace", file: "chapter.md", ...edit },
+              context,
+            )
+          ).result.status,
         ).toBe("success");
         expect((await h.core.commitResponse(context.responseId)).status).toBe("committed");
       }

@@ -104,8 +104,8 @@ dependency leaks.
 Structural model port for what "block" means to the editing core. The kernel
 sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
 objects. The seam carries block lookup/identity, visible-content CRDT lineage,
-text inspection, Tier 1/3
-mutation verbs, neutral inline runs, adapter-owned `applyInlineReplacement` and
+text inspection, plain-text (undo repair) and structural
+mutation verbs, a nonempty inline-run count for undo repair, adapter-owned `applyInlineReplacements` and
 same-type `applyBlockReplacement`, and batch projection/serialization
 (`projectBlocks`, `serializeBlockLines`, `serializeBlockBodies`). v1 is
 y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
@@ -149,7 +149,9 @@ regression gate (`*.bench.test.ts` is excluded from the normal vitest run).
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`
-only. Optional — falls back to a local in-memory map when omitted.
+only. Each session tracks initialized document membership as a set, not retained
+state vectors; live sync and stale-document recovery remain runtime-store duties.
+Optional — falls back to a local in-memory map when omitted.
 
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,

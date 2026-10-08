@@ -21,7 +21,11 @@ import {
 } from "../test-support/in-memory-pending-settlement-store.js";
 import { unimplementedBranchMutations } from "../test-support/unimplemented-branch-mutations.js";
 import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
-import { createBranchCriticalSections } from "./branch-critical-sections.js";
+import {
+  type BranchCriticalSections,
+  createBranchCriticalSections,
+} from "./branch-critical-sections.js";
+
 import { createBranchPushService } from "./branch-push.js";
 import type {
   BranchJournalReadStore,
@@ -35,6 +39,8 @@ import type {
 import { BranchPushCommitConflictError, DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
 import { createBranchReviewOperations } from "./branch-review-operations.js";
+import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
+import { NO_DOCUMENT_ASSET_PATHS } from "./ports/document-asset-paths.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
 const MANIFEST_ID = "00000000-0000-4000-8000-000000000102" as DocumentId;
@@ -247,6 +253,8 @@ function unsupportedWorkPolicyStore(): WorkPushPolicyStore {
 }
 
 function serviceFixture(input: {
+  assetPaths?: DocumentAssetPaths;
+  criticalSections?: BranchCriticalSections;
   branches: readonly BranchSnapshot[];
   rows: BranchJournalRow[];
   pushes?: readonly PushLineageRow[];
@@ -286,6 +294,8 @@ function serviceFixture(input: {
     stores,
     branchStore,
     service: createBranchPushService({
+      assetPaths: input.assetPaths ?? NO_DOCUMENT_ASSET_PATHS,
+      criticalSections: input.criticalSections,
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore: stores,
@@ -308,7 +318,9 @@ function serviceFixture(input: {
   };
 }
 
-async function blindConflictFixture() {
+async function blindConflictFixture(
+  options: { assetPaths?: DocumentAssetPaths; criticalSections?: BranchCriticalSections } = {},
+) {
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
   const contentBranchDoc = cloneDoc(contentLive);
   const doomed = model.getBlocks(toDocHandle(contentBranchDoc))[0];
@@ -346,6 +358,7 @@ async function blindConflictFixture() {
     seq: 0,
   });
   const fixture = serviceFixture({
+    ...options,
     branches: [contentBranch, manifestBranch],
     rows: [row],
     journal,
@@ -412,6 +425,38 @@ describe("branch push review regressions", () => {
       journalIds: [2],
       message: "manifest_membership_push left pending Yjs dependencies for journal rows 2",
     });
+  });
+
+  it.each([
+    false,
+    true,
+  ])("loads image paths before branch locks (companion: %s)", async (companion) => {
+    const criticalSections = createBranchCriticalSections();
+    let loaded = false;
+    const fixture = await blindConflictFixture({
+      criticalSections,
+      assetPaths: {
+        ...NO_DOCUMENT_ASSET_PATHS,
+        async within(_project, operation) {
+          // Nested settlement reuses the operation's snapshot, just as the adapter does.
+          if (!loaded) {
+            await criticalSections.withBranches(["branch_content", "branch_manifest"], async () => {
+              loaded = true;
+            });
+          }
+          return operation();
+        },
+      },
+    });
+    const result = companion
+      ? await fixture.service.pushToLiveWithManifestEntry({
+          branchId: fixture.contentBranch.branchId,
+          manifestBranchId: fixture.manifestBranch.branchId,
+          manifestEntryDocumentId: CONTENT_ID,
+        })
+      : await fixture.service.pushToLive({ branchId: fixture.contentBranch.branchId });
+    expect(result.status).toBe("pushed");
+    expect(loaded).toBe(true);
   });
 
   it("always applies writer-overlapping whole and companion pushes", async () => {
