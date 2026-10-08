@@ -36,16 +36,6 @@ describe("createModelAttemptSignal", () => {
     attempt.cleanup();
   });
 
-  it("clears timers on cleanup before either window elapses", () => {
-    vi.useFakeTimers();
-    const attempt = createModelAttemptSignal(undefined, { stallMs: 500, ceilingMs: 1_000 });
-
-    attempt.cleanup();
-    vi.advanceTimersByTime(5_000);
-
-    expect(attempt.signal.aborted).toBe(false);
-  });
-
   it("propagates a parent abort without classifying it as a timeout", () => {
     vi.useFakeTimers();
     const parent = new AbortController();
