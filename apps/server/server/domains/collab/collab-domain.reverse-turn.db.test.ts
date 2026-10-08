@@ -4,10 +4,21 @@ import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
-import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
+
+import {
+  CREATED_DOC_ID,
+  createWorkDraftFixture,
+  DOC_ID,
+  DRAFT_DESTINATION,
+  PROJECT_ID,
+  SOURCE_ID,
+  THREAD_ID,
+  TURN_2_ID,
+  TURN_ID,
+  USER_ID,
+  WORK_ID,
+} from "./test-support/work-draft-fixture.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -19,61 +30,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const {
       branchWriteJournal,
-      changeTrailDocumentDetails,
-      contextSources,
       documentBranches,
       documentYjsReversals,
       documentYjsUpdates,
       documents,
-      folders,
       modelResponses,
-      projects,
-      threadWorks,
-      threads,
-      turns,
-      users,
       works,
     } = await import("@meridian/database/schema");
-    const { conformanceUserValues } = await import(
-      "@meridian/database/__test-support__/db-fixtures"
-    );
-    const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
-    const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
-      "../../test-support/drizzle-reset.js"
-    );
-
-    const USER_ID = "00000000-0000-4000-8000-000000000701";
-    const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
-    const SOURCE_ID = "00000000-0000-4000-8000-000000000703";
-    const WORK_ID = "00000000-0000-4000-8000-000000000704";
-    const DOC_ID = "00000000-0000-4000-8000-000000000705";
-    const THREAD_ID = "00000000-0000-4000-8000-000000000706";
-    const TURN_ID = "00000000-0000-4000-8000-000000000707";
-    const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
-    const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
-    const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
-
-    const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "work" } as const;
     const db = createDb(DATABASE_URL, { max: 4 });
-    const hocuspocus = fakeHocuspocus();
-    const collabs: Array<{ dispose(): void }> = [];
-    const createTestCollab = () => {
-      const collab = createCollabDomain({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
-        fileAccess: createAllowAllFileAccess(),
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-      });
-      collabs.push(collab);
-      return collab;
-    };
-
-    afterEach(() => {
-      for (const collab of collabs.splice(0)) collab.dispose();
-    });
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
+    afterEach(dispose);
 
     /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
     async function applyDraft(
@@ -107,77 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return draft.draftId;
     }
 
-    beforeEach(async () => {
-      hocuspocus.documents.clear();
-      await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
-      await db.insert(users).values(conformanceUserValues(USER_ID, "collab-reverse"));
-      await db
-        .insert(projects)
-        .values({ id: PROJECT_ID, userId: USER_ID, name: "Project", slug: "project" });
-      await db.insert(works).values({
-        id: WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Work",
-        slug: "work",
-        aiWriteMode: "draft",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-        scope: "project",
-        isPrimary: true,
-      });
-      await db.insert(documents).values({
-        id: DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter",
-        extension: "md",
-        fileType: "markdown",
-      });
-      await db.insert(threads).values({
-        rootThreadId: THREAD_ID,
-        id: THREAD_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        title: "Thread",
-        kind: "primary",
-        status: "idle",
-      });
-      await db.insert(turns).values([
-        {
-          id: TURN_ID as never,
-          threadId: THREAD_ID as never,
-          position: 1,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
-        {
-          id: TURN_2_ID as never,
-          threadId: THREAD_ID as never,
-          position: 2,
-          parentTurnId: TURN_ID as never,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
-        {
-          id: TURN_3_ID as never,
-          threadId: THREAD_ID as never,
-          position: 3,
-          parentTurnId: TURN_2_ID as never,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
-      ]);
-      await db
-        .insert(threadWorks)
-        .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
-    });
+    beforeEach(reset);
 
     afterAll(async () => {
       await db.$client.end();
@@ -390,91 +287,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(outcome.status).toBe("reversed");
       }
       await expectMarkdown(collab, DOC_ID, "Live undo target.");
-    });
-
-    /** A chapter showing `assets/map.png`, and the model's grant in this project. */
-    async function seedChapterWithMap(collab: ReturnType<typeof createTestCollab>) {
-      const ASSETS_ID = "00000000-0000-4000-8000-000000000711";
-      await db
-        .insert(folders)
-        .values({ id: ASSETS_ID, contextSourceId: SOURCE_ID, name: "assets" });
-      await db.insert(documents).values({
-        id: "00000000-0000-4000-8000-000000000712",
-        contextSourceId: SOURCE_ID,
-        folderId: ASSETS_ID,
-        name: "map",
-        extension: "png",
-        fileType: "image",
-        mimeType: "image/png",
-      });
-      await collab.writeDocument({
-        documentId: DOC_ID as never,
-        markdown: "Base.\n\n![Map](assets/map.png)",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      const grant = testFileGrant(DRAFT_DESTINATION, DOC_ID);
-      await expect(
-        collab.agentEdit().write(
-          {
-            command: "insert",
-            file: "chapter.md",
-            documentId: DOC_ID,
-            content: "![Pass](assets/map.png) The pass.",
-          },
-          {
-            sessionId: "session-map",
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            grant: { ...grant, facts: { ...grant.facts, projectId: PROJECT_ID as never } },
-          },
-        ),
-      ).resolves.toMatchObject({ status: "success" });
-    }
-
-    it("accepts a draft on a chapter with an image", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await seedChapterWithMap(collab);
-
-      await expect(
-        collab.draftReview.applyWorkDraft({
-          projectId: PROJECT_ID as never,
-          workId: WORK_ID as never,
-          documentId: DOC_ID as never,
-          draftId: await currentDraftId(collab, DOC_ID),
-          userId: USER_ID as never,
-        }),
-      ).resolves.toMatchObject({ status: "applied" });
-
-      const details = await db
-        .select({ changes: changeTrailDocumentDetails.changes })
-        .from(changeTrailDocumentDetails)
-        .where(eq(changeTrailDocumentDetails.documentId, DOC_ID as never));
-      // The trail keeps block text, which an image has none of; the push's
-      // snapshot of every block is what serializes the picture.
-      const trail = JSON.stringify(details);
-      expect(trail).toContain("The pass.");
-      expect(trail).not.toContain("asset:");
-    });
-
-    it("undoes and redoes a live turn on a chapter with an image", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await seedChapterWithMap(collab);
-      await applyDraft(collab, DOC_ID);
-
-      for (const direction of ["undo", "redo"] as const) {
-        const outcome = await collab.reverseTurn({
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-          direction,
-          actor: { type: "user", userId: USER_ID },
-        });
-        expect(outcome.status, JSON.stringify(outcome)).toBe("reversed");
-        expect(JSON.stringify(outcome)).not.toContain("asset:");
-      }
-      await expectMarkdown(collab, DOC_ID, "![Pass](assets/map.png) The pass.");
     });
 
     it("undoes and redoes overlapping replace and delete writes as one turn", async () => {
@@ -1013,19 +825,4 @@ async function readMarkdown(
 ): Promise<string> {
   const read = await collab.readAsMarkdown(documentId);
   return read.ok ? read.value : "";
-}
-
-function fakeHocuspocus() {
-  const documents = new Map<string, Y.Doc>();
-  return {
-    documents,
-    async openDirectConnection(documentName: string) {
-      let document = documents.get(documentName);
-      if (!document) {
-        document = new Y.Doc({ gc: false });
-        documents.set(documentName, document);
-      }
-      return { document, disconnect: async () => undefined };
-    },
-  };
 }
