@@ -51,7 +51,10 @@ async function main(): Promise<void> {
   const testArgs = process.argv.slice(2);
   if (testArgs[0] === "--") testArgs.shift();
   const allSuites = testArgs[0] === "--all";
-  if (allSuites) testArgs.shift();
+  if (allSuites) {
+    testArgs.shift();
+    if (testArgs[0] === "--") testArgs.shift();
+  }
   const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
   if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
     throw new Error(
