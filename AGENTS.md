@@ -112,6 +112,11 @@ Driving or inspecting the running app (threads, docs, mock model, logs): use
 ## Build and test
 
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
+`pnpm test:all` runs unit and managed DB tests together. Keep automated tests
+below 2,000 total cases and target at most 60 seconds for that full run. New
+tests must protect a named risk; prune weaker duplicate coverage rather than
+adding another layer. Skips, exclusions, and bundling unrelated cases do not
+satisfy the budget.
 
 ## Git workflow
 
