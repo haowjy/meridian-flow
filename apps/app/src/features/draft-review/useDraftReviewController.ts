@@ -30,7 +30,6 @@ import {
   useDiscardDraft,
 } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs } from "@/client/stores";
-import { reviewChanges } from "@/features/draft-review/review-changes";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
@@ -49,6 +48,7 @@ import {
   inlineReviewFromState,
   type ReviewToast,
 } from "./draft-review-session";
+import { reviewChanges } from "./review-changes";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 
@@ -91,8 +91,6 @@ export type DraftReviewController = {
   reviewRoomName: string | null;
   reviewRoomError: boolean;
   isApplying: boolean;
-  isDiscarding: boolean;
-  isPending: boolean;
   canApplyReviewedDraft: boolean;
   /**
    * The global disposition lock: any Apply/Discard in flight in the session.
@@ -108,12 +106,27 @@ export type DraftReviewController = {
   /** The header's "Show changes". The editor paints from it (`useInlineReviewFocus`). */
   marksVisible: boolean;
   setMarksVisible: (visible: boolean) => void;
-  /** The change the writer is looking at in the open review, or null. */
-  focusedClassId: string | null;
-  /** The editor reports the change a click in the manuscript landed on. */
-  reportFocusedClass: (documentId: string, draftId: string, classId: string | null) => void;
-  /** Focus one change: in the manuscript and in every list. `scroll` brings it into view. */
-  focusReviewChange: (change: ReviewChangeTarget, options?: { scroll?: boolean }) => void;
+  /**
+   * The change the writer is looking at in the open review, with the operations
+   * it held, or null. Read it through `resolveFocusedChange`.
+   */
+  focus: ChangeRef | null;
+  /**
+   * Record the change the focus is on without touching the manuscript: the
+   * editor reporting a click, and the review keeping the focus current when the
+   * server regroups the change. Ignored unless `review` is the open review.
+   */
+  reportFocusedChange: (review: DraftReviewSelection, change: ChangeRef) => void;
+  /**
+   * Focus one change: in the manuscript and in every list. `scroll` brings it
+   * into view. `review` is the review the caller meant: a caller that waited
+   * (a command's answer) may find another one open, and then nothing happens.
+   */
+  focusReviewChange: (
+    review: DraftReviewSelection,
+    change: ReviewChangeTarget,
+    options?: { scroll?: boolean },
+  ) => void;
   /** Apply or Discard one change of the open review. It leaves every surface at once. */
   applyChange: (change: ChangeRef) => Promise<DraftCommandOutcome>;
   discardChange: (change: ChangeRef) => Promise<DraftCommandOutcome>;
@@ -206,8 +219,6 @@ export function useDraftReviewController({
 
   const activeDisposition = disposition.busy ? disposition.target : null;
   const isApplying = activeDisposition?.kind === "apply-draft";
-  const isDiscarding = activeDisposition?.kind === "discard-draft";
-  const isPending = isApplying || isDiscarding;
   // A command in flight on any draft of this Work, from any surface, disables this one.
   const commandRecords = useDraftCommandRecords();
   const isDisposing =
@@ -513,30 +524,35 @@ export function useDraftReviewController({
     }
   }, []);
 
-  const focusReviewChange = useCallback(
-    (change: ReviewChangeTarget, options?: { scroll?: boolean }) => {
-      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
-      if (!inline) return;
-      dispatch({
-        type: "changeFocused",
-        documentId: inline.documentId,
-        draftId: inline.draftId,
-        classId: change.classId,
-      });
-      const editor = inlineRuntimeRef.current?.editor;
-      if (!editor || editor.isDestroyed) return;
-      editor.commands.setInlineReviewActiveOperation(change.anchorOperationId);
-      if (options?.scroll)
-        editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId);
-    },
-    [],
-  );
+  const reportFocusedChange = useCallback((review: DraftReviewSelection, change: ChangeRef) => {
+    dispatch({
+      type: "changeFocused",
+      documentId: review.documentId,
+      draftId: review.draftId,
+      focus: { classId: change.classId, operationIds: change.operationIds },
+    });
+  }, []);
 
-  const reportFocusedClass = useCallback(
-    (documentId: string, draftId: string, classId: string | null) => {
-      dispatch({ type: "changeFocused", documentId, draftId, classId });
+  const focusReviewChange = useCallback(
+    (review: DraftReviewSelection, change: ReviewChangeTarget, options?: { scroll?: boolean }) => {
+      // The identity is checked before anything is touched: the open review, and
+      // the editor showing it, are the ones this focus was meant for.
+      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+      if (inline?.documentId !== review.documentId || inline.draftId !== review.draftId) return;
+      reportFocusedChange(review, change);
+      const runtime = inlineRuntimeRef.current;
+      if (
+        !runtime ||
+        runtime.documentId !== review.documentId ||
+        runtime.draftId !== review.draftId ||
+        runtime.editor.isDestroyed
+      )
+        return;
+      runtime.editor.commands.setInlineReviewActiveOperation(change.anchorOperationId);
+      if (options?.scroll)
+        runtime.editor.commands.scrollInlineReviewOperationIntoView(change.anchorOperationId);
     },
-    [],
+    [reportFocusedChange],
   );
 
   const setMarksVisible = useCallback((visible: boolean) => {
@@ -674,15 +690,13 @@ export function useDraftReviewController({
       reviewRoomName,
       reviewRoomError,
       isApplying,
-      isDiscarding,
-      isPending,
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
       marksVisible: state.marksVisible,
       setMarksVisible,
-      focusedClassId: inlineReview?.focusedClassId ?? null,
-      reportFocusedClass,
+      focus: inlineReview?.focus ?? null,
+      reportFocusedChange,
       focusReviewChange,
       applyChange,
       discardChange,
@@ -708,15 +722,13 @@ export function useDraftReviewController({
       reviewRoomName,
       reviewRoomError,
       isApplying,
-      isDiscarding,
-      isPending,
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
       state.marksVisible,
       setMarksVisible,
-      inlineReview?.focusedClassId,
-      reportFocusedClass,
+      inlineReview?.focus,
+      reportFocusedChange,
       focusReviewChange,
       applyChange,
       discardChange,

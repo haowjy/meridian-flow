@@ -1,0 +1,91 @@
+/**
+ * useReviewRefresh — the one owner of "the open review's draft changed, read it
+ * again". It watches the review room (the draft's text: the writer typing, the
+ * AI writing, a peer editing) and the live document the draft is measured
+ * against (another tab's Apply, a collaborator), and after the changes settle
+ * invalidates the Work's draft list and the draft's preview once.
+ *
+ * The manuscript does not subscribe on its own: `useInlineReviewSync` only
+ * projects the preview this refreshes into the editor, so a local edit costs one
+ * read, and the review stays current with no editor mounted (the dock alone).
+ *
+ * A burst of changes is one read after it settles (`SETTLE_MS`), but a stream
+ * that never pauses (the AI writing) still refreshes every `MAX_WAIT_MS`, so the
+ * review does not sit on a stale list until the stream ends.
+ */
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+
+import { projectQueryKeys } from "@/client/query/project-query-keys";
+import type { DocumentSession } from "@/core/editor/document-session";
+import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
+
+const SETTLE_MS = 500;
+const MAX_WAIT_MS = 2_000;
+
+let refreshOwnerSequence = 0;
+
+export function useReviewRefresh({
+  projectId,
+  workId,
+  review,
+  roomName,
+  liveSession,
+}: {
+  projectId: string | null;
+  workId: string | null;
+  /** The open review's draft, or null when none is open. */
+  review: { documentId: string; draftId: string } | null;
+  /** The review's room, once resolved. */
+  roomName: string | null;
+  /** The live document of the reviewed draft, when a surface holds it. */
+  liveSession: DocumentSession | null;
+}): void {
+  const queryClient = useQueryClient();
+  const registry = useLiveDocumentSessionRegistry();
+  const owner = useRef(`draft-review-refresh:${++refreshOwnerSequence}`);
+  const documentId = review?.documentId ?? null;
+  const draftId = review?.draftId ?? null;
+
+  useEffect(() => {
+    if (!projectId || !workId || !documentId || !draftId) return;
+    const sources: DocumentSession[] = [];
+    if (roomName) {
+      registry.retainBranchRooms(owner.current, [roomName]);
+      try {
+        sources.push(registry.getBranchRoom(roomName));
+      } catch (error) {
+        registry.releaseBranchRooms(owner.current);
+        throw error;
+      }
+    }
+    if (liveSession) sources.push(liveSession);
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let firstPendingAt = 0;
+    const refresh = () => {
+      timer = null;
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workDrafts(projectId, workId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+      });
+    };
+    const schedule = () => {
+      const now = Date.now();
+      if (timer === null) firstPendingAt = now;
+      else clearTimeout(timer);
+      timer = setTimeout(
+        refresh,
+        Math.min(SETTLE_MS, Math.max(0, firstPendingAt + MAX_WAIT_MS - now)),
+      );
+    };
+    for (const source of sources) source.document.on("update", schedule);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      for (const source of sources) source.document.off("update", schedule);
+      if (roomName) registry.releaseBranchRooms(owner.current);
+    };
+  }, [projectId, workId, documentId, draftId, roomName, liveSession, queryClient, registry]);
+}

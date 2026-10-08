@@ -16,9 +16,9 @@ import { Plural, Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
 import type { DraftCommandFailure } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
-import type { DockRow } from "@/features/chat/docked-drafts";
-import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { cn } from "@/lib/utils";
+import { ReviewMessageText } from "./ReviewMessageText";
+import type { ReviewFileTarget } from "./review-files";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
@@ -29,9 +29,9 @@ export type ReviewStateProps = {
   unlisted?: boolean;
   /** The last change's command is in flight: nothing is finished yet. */
   completing?: "apply" | "discard" | null;
-  next: DockRow | null;
+  next: ReviewFileTarget | null;
   draftOnly: boolean;
-  onOpenNext: (row: DockRow) => void;
+  onOpenNext: (row: ReviewFileTarget) => void;
   onShowLive: () => void;
 };
 
@@ -44,8 +44,8 @@ export function ReviewFailureNotices({
 }: {
   commandError: DraftCommandFailure | null;
   /** Other drafts of the Work whose last Apply or Discard was refused or lost. */
-  failedElsewhere?: { row: DockRow; failure: DraftCommandFailure }[];
-  onOpenNext: (row: DockRow) => void;
+  failedElsewhere?: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
+  onOpenNext: (row: ReviewFileTarget) => void;
   touch?: boolean;
   /** The inset of whatever hosts the notices. */
   className?: string;
@@ -213,7 +213,7 @@ export function ReviewHeaderNotices({
   ...state
 }: ReviewStateProps & {
   commandError: DraftCommandFailure | null;
-  failedElsewhere?: { row: DockRow; failure: DraftCommandFailure }[];
+  failedElsewhere?: { row: ReviewFileTarget; failure: DraftCommandFailure }[];
   touch?: boolean;
 }) {
   return (

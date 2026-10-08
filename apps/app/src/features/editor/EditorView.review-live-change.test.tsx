@@ -5,18 +5,20 @@
  * network and the document sessions are the only fakes. A second tab's
  * per-change Apply writes the live document this tab holds underneath its
  * review; the review must re-read its preview promptly, whatever else re-renders
- * the editor while the read is waiting.
+ * the editor while the read is waiting. One edit is one read: the review owner
+ * (`useReviewRefresh`) is the only subscriber.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, useState } from "react";
+import type { Editor } from "@tiptap/core";
+import { act, useEffect, useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import {
   DraftReviewBoundary,
   useDraftReview,
   useDraftReviewScopeValue,
-} from "@/features/chat/DraftReviewProvider";
+} from "@/features/draft-review/DraftReviewProvider";
 import { listed, previewOf, work } from "@/test-support/draft-review-scope";
 import { registry, sessionFor } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -74,6 +76,14 @@ let rerenderHost: () => void = () => {};
 function Host() {
   const value = useDraftReview();
   const [, setTick] = useState(0);
+  // The hosts tell the review which live document the editor holds (`ActiveEditorProjection`);
+  // the review owner watches it for changes made elsewhere.
+  const owner = useRef({});
+  const { setActiveEditorDocumentId } = value;
+  useEffect(() => {
+    setActiveEditorDocumentId(documentId, sessionFor(documentId), true, owner.current);
+    return () => setActiveEditorDocumentId(null, null, false, owner.current);
+  }, [setActiveEditorDocumentId]);
   rerenderHost = () => setTick((tick) => tick + 1);
   review = value;
   return (
@@ -135,6 +145,38 @@ describe("a review whose draft changed under it", () => {
           () => expect(mocks.getDraftPreview.mock.calls.length).toBeGreaterThan(readsBefore),
           { timeout: 3000 },
         );
+      },
+      { drainMacrotask: true },
+    );
+  });
+
+  it("reads the preview once for one local edit in the review editor, not once per subscriber", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await withReactRoot(
+      <QueryClientProvider client={queryClient}>
+        <Scope />
+      </QueryClientProvider>,
+      async () => {
+        await act(async () => review?.controller.enterInlineReview(documentId, "draft-a"));
+        await vi.waitFor(() =>
+          expect(review?.controller.inlineReview?.previewIdentity).toBeDefined(),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        const readsBefore = mocks.getDraftPreview.mock.calls.length;
+
+        // The writer types in the review editor.
+        const editors = [
+          ...document.querySelectorAll<HTMLElement & { editor?: Editor }>(".ProseMirror"),
+        ];
+        const reviewEditor = editors.find((dom) => !dom.closest(".hidden"))?.editor;
+        if (!reviewEditor) throw new Error("no visible editor");
+        await act(async () => {
+          reviewEditor.commands.insertContent("a few words");
+        });
+        // Long enough for every debounce a subscriber could have.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        expect(mocks.getDraftPreview.mock.calls.length - readsBefore).toBe(1);
       },
       { drainMacrotask: true },
     );

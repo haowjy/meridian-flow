@@ -124,7 +124,7 @@ one row's anatomy and its navigation rules in
 composer mode, and review state live in
 [`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md),
 [`.context/composer-write-mode.md`](.context/composer-write-mode.md), and
-[`.context/draft-review.md`](.context/draft-review.md).
+[`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md).
 
 ## Key rules
 
@@ -171,9 +171,12 @@ composer mode, and review state live in
 
 Inline review is the only draft-review surface. It uses server-backed
 Apply/Discard disposition commands; dispositions never ride browser mutation
-history, even though the review editor itself stays editable. See
-[`.context/draft-review.md`](.context/draft-review.md) for the lifecycle, session,
-preview, and projection contracts.
+history, even though the review editor itself stays editable. The review's
+provider, controller, command session, refusal copy and file model are
+`features/draft-review`'s; Chat is a consumer (the composer's `DraftDock` strip,
+review-prose focus). See
+[`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md)
+for the lifecycle, session, preview, and projection contracts.
 
 ## Transcript viewport (TurnList)
 

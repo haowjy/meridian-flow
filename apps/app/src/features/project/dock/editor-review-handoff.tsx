@@ -15,8 +15,8 @@ import {
   failDraftReviewLaunch,
 } from "@/client/query/draft-command-record";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { ReviewHandoverContext, useReviewHandoverOwner } from "./review-handover";

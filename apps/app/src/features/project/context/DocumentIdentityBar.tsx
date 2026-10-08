@@ -4,8 +4,8 @@ import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import type { DockRow } from "@/features/chat/docked-drafts";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -100,7 +100,7 @@ export function DocumentIdentityBar({
   const review = controller.inlineReview;
   const reviewDraftId =
     review?.documentId === tab.documentId && review.shown ? review.draftId : null;
-  const openDraft = (row: DockRow) => openDockRow(row, controller.workId);
+  const openDraft = (row: ReviewFileTarget) => openDockRow(row, controller.workId);
   const canMove = !readOnly && location.scheme !== "uploads";
   const showChip = canMove && !reviewDraftId;
 

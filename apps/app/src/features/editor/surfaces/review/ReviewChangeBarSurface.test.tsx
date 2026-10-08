@@ -52,7 +52,7 @@ const view = {
   apply: vi.fn(),
   discard: vi.fn(),
 };
-vi.mock("@/features/chat/DraftReviewProvider", () => ({
+vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({ controller: { marksVisible: true } }),
 }));
 vi.mock("@/features/draft-review/useReviewChanges", () => ({ useReviewChanges: () => view }));

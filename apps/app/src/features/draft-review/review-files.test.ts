@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { dockRows, draftAfter, sortDraftFiles } from "./docked-drafts";
+import { nextReviewFile, reviewFileTargets, sortDraftFiles } from "./review-files";
 
 const group = (
   documentId: string,
@@ -34,7 +34,8 @@ describe("the file order", () => {
       group("1", "Chapter 12"),
       group("3", "Interlude", "2026-03-01T00:00:00Z"),
     ];
-    const names = (groups: ThreadDraftGroup[]) => dockRows(groups).map((row) => row.documentName);
+    const names = (groups: ThreadDraftGroup[]) =>
+      reviewFileTargets(groups).map((row) => row.documentName);
     expect(names(before)).toEqual(["Chapter 12", "Chapter 13", "Interlude"]);
     expect(names(after)).toEqual(names(before));
   });
@@ -49,22 +50,22 @@ describe("the file order", () => {
   });
 });
 
-describe("draftAfter", () => {
-  const rows = dockRows([
+describe("nextReviewFile", () => {
+  const rows = reviewFileTargets([
     group("1", "Chapter 12"),
     group("2", "Chapter 13"),
     group("3", "Interlude"),
   ]);
 
   it("is the next file in the order, wrapping, and none when this is the only one", () => {
-    expect(draftAfter(rows, "1")?.documentId).toBe("2");
-    expect(draftAfter(rows, "3")?.documentId).toBe("1");
-    expect(draftAfter(rows.slice(0, 1), "1")).toBeNull();
+    expect(nextReviewFile(rows, "1")?.documentId).toBe("2");
+    expect(nextReviewFile(rows, "3")?.documentId).toBe("1");
+    expect(nextReviewFile(rows.slice(0, 1), "1")).toBeNull();
   });
 
   it("keeps the place of a file whose draft has left the list", () => {
     const left = rows.filter((row) => row.documentId !== "2");
-    expect(draftAfter(left, "2", "Chapter 13")?.documentId).toBe("3");
-    expect(draftAfter(left, "2")?.documentId).toBe("1");
+    expect(nextReviewFile(left, "2", "Chapter 13")?.documentId).toBe("3");
+    expect(nextReviewFile(left, "2")?.documentId).toBe("1");
   });
 });

@@ -14,7 +14,7 @@ import type {
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
 import {

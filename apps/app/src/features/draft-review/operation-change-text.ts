@@ -5,8 +5,8 @@ export type OperationChangeText = { removed: string | null; added: string | null
 
 /** The agent operations whose changes share a hunk with the writer's own edits. */
 export function operationsWithWriterEdits(
-  operations: ReviewOperation[],
-  hunks: ReviewHunk[],
+  operations: readonly ReviewOperation[],
+  hunks: readonly ReviewHunk[],
 ): ReadonlySet<string> {
   const kindById = new Map(operations.map((op) => [op.operationId, op.kind]));
   const mixed = new Set<string>();
@@ -24,17 +24,6 @@ export function operationsWithWriterEdits(
     }
   }
   return mixed;
-}
-
-export function changeTextForOperations(
-  operations: readonly ReviewOperation[],
-  hunks: ReviewHunk[],
-): OperationChangeText {
-  const opIds = new Set(operations.map((op) => op.operationId));
-  return changeTextForHunks(
-    hunks.filter((hunk) => hunk.operationIds.some((id) => opIds.has(id))),
-    operations,
-  );
 }
 
 /**

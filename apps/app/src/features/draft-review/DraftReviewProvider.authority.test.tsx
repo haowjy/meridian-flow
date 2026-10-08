@@ -281,7 +281,8 @@ describe("a per-change Apply that got no answer", () => {
       const item = probe().header.view.items.find((entry) => entry.change.classId === "class-2");
       expect(item?.failure).toMatchObject({
         code: "refused",
-        reason: "This Work is archived. Unarchive it to apply or discard its drafts.",
+        serverCode: "work_archived",
+        serverReason: "This Work is archived and read-only.",
       });
     });
   });

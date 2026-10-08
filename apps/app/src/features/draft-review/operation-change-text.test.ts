@@ -7,7 +7,16 @@
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { changeTextForOperations, operationsWithWriterEdits } from "./operation-change-text";
+import { changeTextForHunks, operationsWithWriterEdits } from "./operation-change-text";
+
+/** What a class of these operations reads as: the hunks they own, with their excerpts as fallback. */
+function changeTextForOperations(operations: readonly ReviewOperation[], hunks: ReviewHunk[]) {
+  const ids = new Set(operations.map((op) => op.operationId));
+  return changeTextForHunks(
+    hunks.filter((hunk) => hunk.operationIds.some((id) => ids.has(id))),
+    operations,
+  );
+}
 
 /** A single-operation class is the single-card body — the common case here. */
 function operationChangeText(operation: ReviewOperation, hunks: ReviewHunk[]) {

@@ -27,14 +27,18 @@ import {
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import {
+  aggregateDraftStats,
+  DraftStatsLabel,
+  draftStats,
+} from "@/features/draft-review/draft-stats";
+import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
+import { type ReviewFileTarget, reviewFileTargets } from "@/features/draft-review/review-files";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
-import { useDraftReview } from "./DraftReviewProvider";
-import { type DockRow, dockRows } from "./docked-drafts";
-import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
-import { ReviewMessageText } from "./ReviewMessageText";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
@@ -44,7 +48,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const commandRecords = useDraftCommandRecords();
 
   const applyDraft = useCallback(
-    (row: DockRow) => {
+    (row: ReviewFileTarget) => {
       return controller.disposeDrafts("apply", [
         { documentId: row.documentId, draftId: row.draft.draftId },
       ]);
@@ -52,10 +56,10 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     [controller],
   );
 
-  const rows = useMemo(() => dockRows(groups), [groups]);
+  const rows = useMemo(() => reviewFileTargets(groups), [groups]);
 
   const reviewRow = useCallback(
-    (row: DockRow) => {
+    (row: ReviewFileTarget) => {
       if (!row.contextPath) return;
       openAiDraft({
         workId: controller.workId,
@@ -73,7 +77,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   // view; the row itself is a plain "take me to the file" affordance).
   const openContextUri = useChatContextNavigation();
   const openRow = useCallback(
-    (row: DockRow) => {
+    (row: ReviewFileTarget) => {
       const uri = row.contextPath ? contextUriFromWritePath(row.contextPath) : null;
       if (!openContextUri || !uri) return;
       openContextUri(uri);
@@ -90,7 +94,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     dispositionLocked: controller.dispositionLocked,
     dispositionError: controller.dockDispositionError,
     /** A refused command on this row's draft, shown on the row it belongs to. */
-    rowError: (row: DockRow) =>
+    rowError: (row: ReviewFileTarget) =>
       draftCommandFailure(commandRecords, {
         projectId: controller.projectId,
         workId: controller.workId,
@@ -104,7 +108,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
       if (first) reviewRow(first);
     },
     applyRow: applyDraft,
-    discardRow: (row: DockRow) =>
+    discardRow: (row: ReviewFileTarget) =>
       controller.disposeDrafts("discard", [
         { documentId: row.documentId, draftId: row.draft.draftId },
       ]),
@@ -291,7 +295,7 @@ function DockRowLine({
   onOpen,
   onReview,
 }: {
-  row: DockRow;
+  row: ReviewFileTarget;
   error: DraftCommandFailure | null;
   busy: boolean;
   onOpen: () => void;

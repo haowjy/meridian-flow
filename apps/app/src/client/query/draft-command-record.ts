@@ -48,8 +48,14 @@ export type DraftCommandFailureCode =
   | "discard-server-error"
   | "review-failed";
 
-/** A held failure: its code and, for a refusal, the reason the server gave. */
-export type DraftCommandFailure = { code: DraftCommandFailureCode; reason?: string };
+/**
+ * What a typed server refusal said, as the server sent it: its error code and
+ * its own text. Kept so the words are chosen when the failure is shown.
+ */
+export type ServerRefusal = { serverCode: string; serverReason?: string };
+
+/** A held failure: its code and, for a refusal, what the server said. */
+export type DraftCommandFailure = { code: DraftCommandFailureCode } & Partial<ServerRefusal>;
 
 export type ChangeCommandMode = "apply" | "discard";
 

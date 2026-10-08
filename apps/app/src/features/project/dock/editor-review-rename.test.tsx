@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
-} from "@/features/chat/DraftReviewProvider";
+} from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
 import { EditorReviewHandoffProvider, EditorReviewIntentClaimant } from "./editor-review-handoff";

@@ -8,8 +8,8 @@ import {
 } from "@/client/query/draft-command-record";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { sortDraftFiles } from "@/features/chat/docked-drafts";
-import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
+import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
+import { sortDraftFiles } from "@/features/draft-review/review-files";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { RowIcon, RuledList } from "../RuledList";

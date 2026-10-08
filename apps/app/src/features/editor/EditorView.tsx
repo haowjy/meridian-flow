@@ -50,7 +50,7 @@ import {
   useMountedEditor,
 } from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useLinkableDocuments } from "@/features/links";
 import {
   useAccountResourceProjection,
@@ -331,7 +331,6 @@ export function EditorView(props: EditorViewProps) {
             editable={reviewRequested && !closed ? false : props.editable}
             identity={mountIdentity(props, "live")}
             session={liveSession}
-            liveSession={liveSession}
             held={reviewRequested && !closed}
           />
         </div>
@@ -348,7 +347,6 @@ export function EditorView(props: EditorViewProps) {
             {...props}
             identity={identity}
             session={reviewSession}
-            liveSession={liveSession}
             onPainted={() => setPaintedReviewKey(reviewKey)}
           />
         </div>
@@ -360,7 +358,6 @@ export function EditorView(props: EditorViewProps) {
 type SessionEditorViewProps = EditorViewProps & {
   identity: EditorMountIdentity;
   session: DocumentSession;
-  liveSession: DocumentSession | null;
   /** The live editor kept warm under an active review: its chrome and navigation stand down. */
   held?: boolean;
   /** Called once this mount's TipTap editor exists and is showing its content. */
@@ -427,7 +424,6 @@ function ActiveSessionEditorView({
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
-  liveSession,
   held = false,
   onPainted,
   snapshot,
@@ -438,7 +434,6 @@ function ActiveSessionEditorView({
   const { controller } = useDraftReview();
   const inReview = identity.surface === "review";
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
-  const liveReviewSession = inReview ? liveSession : null;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -603,7 +598,6 @@ function ActiveSessionEditorView({
 
   useInlineReviewSync({
     editor,
-    liveSession: liveReviewSession,
     projectId: projectId ?? null,
     workId: reviewWorkId,
     documentId,

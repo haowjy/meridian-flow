@@ -2,7 +2,13 @@
 
 The pieces every surface shows a review's changes with: the change list's rows,
 the focused change's bar, the stepper, the Draft chip and its menu, the file list, the toast. One change
-is one server closure class.
+is one server closure class. The feature also owns the review's state and commands:
+`DraftReviewProvider` (the scope owner), `useDraftReviewController` and
+`draft-review-session` (the command session), `ReviewMessageText` (refusal and
+failure copy) and `review-files` (the file model: `ReviewFileTarget`, the one file
+order `sortDraftFiles`, `nextReviewFile`). Chat, the editor and the project shell
+consume them; none of it is chat rendering. Lifecycle contracts:
+[`.context/draft-review.md`](.context/draft-review.md).
 
 ## Mental model
 
@@ -11,11 +17,28 @@ is one server closure class.
   hunk each owns; the server's operations are not in reading order), each with
   its colour (`tone`), whether the writer's edits are inside it, whether it is a
   merge the server flags (`mergeArtifact` on a hunk), and who made it (`change-attribution`).
+- **The focus is the review's, not a reader's.** `controller.focus` holds the
+  focused change's class id and the operations it held (`inlineReview.focus`);
+  `useReconcileReviewFocus`, mounted once by the scope owner, moves it onto the
+  regrouped change when the server changes a class id, and every reader resolves
+  it with the pure `resolveFocusedChange`. A reader keeps no focus history, so a
+  surface mounted after a regrouping agrees with one already showing it.
+  `focusReviewChange(review, change)` names the review it was meant for and is
+  ignored when another is open. The change list is derived once per preview
+  (`reviewChangesOfPreview`) and shared by every reader.
+- **One refresh owner.** `useReviewRefresh` (scope owner) watches the review room
+  and the live document and re-reads the draft list and the preview once per
+  settled burst; the manuscript's `useInlineReviewSync` only projects the result.
 - **`useReviewChanges(controller)`** reads the preview (`useDraftPreview`) and
   the change command records and returns the changes, the focused one, and
   `focus`, `step`, `apply`, `discard`. It takes the controller as an argument:
   the review lives in the **Editor** scope and the dock sits in the Chat's, so a
   surface outside the Editor passes `useEditorDraftReview().controller`.
+- **A refusal's words are chosen when shown.** A typed refusal is stored as the
+  server's code and text (`serverCode`, `serverReason`); `RefusalReason` words the
+  known codes in the language shown at that moment, and keeps the server's text
+  for any other code. A change's failure is found by one overlap-aware rule
+  (own class id or a shared operation, newest wins) for showing and retiring it.
 - **Optimistic by record.** A change with an Apply or Discard in flight, or
   confirmed, is already gone from the preview these read
   (`client/query/change-command-record`). A failure brings it back with its
@@ -61,7 +84,11 @@ is one server closure class.
   `sortDraftFiles` (name, then id; never update time, which reshuffles as the AI
   writes). Moving between files and the Work-wide Apply all and Discard all
   live in `ReviewFiles` (dock tab and phone sheet, built by
-  `useReviewFileList`): every file once, the open file expanded in place with
+  `useReviewFileList`). One list is one Work: its menu and its count are of the
+  rows it acts on (a finished review still shown is listed, not counted), and the
+  chat's drafts from another Work are a second named list with its own menu. The
+  files keep their identity when only the focus moves, and a closed row is
+  memoized. Every file once, the open file expanded in place with
   its changes in document order (`reviewChanges` breaks ties on class id so a
   refreshed preview never reorders them).
 - **Presentational components take no controller.** `ReviewChangeRow`,

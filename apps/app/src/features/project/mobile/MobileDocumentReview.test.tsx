@@ -13,8 +13,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { failDraftCommand, resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { DockRow } from "@/features/chat/docked-drafts";
 import type { ReviewChange } from "@/features/draft-review/review-changes";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 
@@ -36,7 +36,7 @@ const draft = (documentId: string, name: string, isNewDocument = false) =>
       wordsRemoved: 0,
       isNewDocument,
     },
-  }) as unknown as DockRow;
+  }) as unknown as ReviewFileTarget;
 const groups = [draft("doc-12", "Chapter 12"), draft("doc-13", "Chapter 13")];
 
 const change = (classId: string, overrides: Partial<ReviewChange> = {}): ReviewChange =>
@@ -95,7 +95,7 @@ const view = vi.hoisted(() => ({
 }));
 const launcher = vi.hoisted(() => ({ openDockRow: vi.fn(), openAiDraft: vi.fn() }));
 
-vi.mock("@/features/chat/DraftReviewProvider", () => ({
+vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller,
     groups,
@@ -104,9 +104,6 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
   }),
 }));
 vi.mock("@/features/draft-review/useReviewChanges", () => ({ useReviewChanges: () => view }));
-vi.mock("@/features/draft-review/useDraftChangeCounts", () => ({
-  useDraftChangeCounts: () => new Map([["doc-13", 11]]),
-}));
 vi.mock("../dock/useAiDraftLauncher", () => ({ useAiDraftLauncher: () => launcher }));
 
 const all = [change("c1"), change("c2", { includesWriterEdits: true }), change("c3")];
