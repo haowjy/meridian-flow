@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleDocumentAssetPaths } from "../../domains/context/adapters/asset-path-resolver.js";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -73,6 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createBoundCollab() {
       const collab = createCollabDomain({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
@@ -94,6 +96,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: collab,
@@ -173,6 +176,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       let failNextMembershipWrite = true;
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: {
@@ -223,6 +227,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: collab,

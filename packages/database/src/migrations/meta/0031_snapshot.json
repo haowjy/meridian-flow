@@ -1,5 +1,5 @@
 {
-  "id": "e6363714-a9a3-46ff-a82b-ad91857a7184",
+  "id": "7087b9f2-1541-4a6d-a776-3b6125f008e8",
   "prevId": "dcb01017-9977-499e-ab5d-884eefefa0be",
   "version": "7",
   "dialect": "postgresql",
@@ -3922,12 +3922,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "root_thread_id": {
-          "name": "root_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "name": {
           "name": "name",
           "type": "text",
@@ -4048,7 +4042,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
+          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4071,28 +4065,6 @@
           ],
           "isUnique": true,
           "where": "\"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"deleted_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "context_sources_lineage_slug": {
-          "name": "context_sources_lineage_slug",
-          "columns": [
-            {
-              "expression": "root_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"context_sources\".\"root_thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4167,15 +4139,15 @@
       "checkConstraints": {
         "context_sources_exactly_one_scope": {
           "name": "context_sources_exactly_one_scope",
-          "value": "(\"context_sources\".\"scope\" = 'project' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'work' AND \"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'lineage' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NOT NULL AND \"context_sources\".\"slug\" = 'scratch')"
+          "value": "(\"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL) OR (\"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL)"
         },
         "context_sources_scope_valid": {
           "name": "context_sources_scope_valid",
-          "value": "\"context_sources\".\"scope\" IN ('project', 'work', 'lineage')"
+          "value": "\"context_sources\".\"scope\" IN ('project', 'work')"
         },
         "context_sources_scope_work_fk": {
           "name": "context_sources_scope_work_fk",
-          "value": "\"context_sources\".\"scope\" <> 'work' OR \"context_sources\".\"work_id\" IS NOT NULL"
+          "value": "\"context_sources\".\"scope\" = 'project' OR \"context_sources\".\"work_id\" IS NOT NULL"
         },
         "context_sources_scope_project_fk": {
           "name": "context_sources_scope_project_fk",
@@ -4641,6 +4613,22 @@
           "method": "btree",
           "with": {}
         },
+        "documents_context_images": {
+          "name": "documents_context_images",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"documents\".\"file_type\" = 'image' AND \"documents\".\"kind\" = 'content'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "documents_markdown_projection_fts": {
           "name": "documents_markdown_projection_fts",
           "columns": [
@@ -4916,6 +4904,37 @@
           ],
           "isUnique": true,
           "where": "\"folders\".\"parent_id\" IS NULL AND \"folders\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "folders_context_root": {
+          "name": "folders_context_root",
+          "columns": [
+            {
+              "expression": "context_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"folders\".\"parent_id\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "folders_parent": {
+          "name": "folders_parent",
+          "columns": [
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

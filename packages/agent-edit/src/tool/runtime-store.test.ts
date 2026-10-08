@@ -29,7 +29,7 @@ describe("runtime store", () => {
     const createSession = (id: string, threadId: string): ActorSession => ({
       id,
       threadId,
-      documents: new Map(),
+      documents: new Set(),
     });
     const store = createRuntimeStore({
       coordinator: new MemoryCoordinator({}),
@@ -41,9 +41,9 @@ describe("runtime store", () => {
     const chapterRuntime = store.runtimeFor(threadSession, "chapter.md");
     const notesRuntime = store.runtimeFor(threadSession, "notes.md");
     const otherRuntime = store.runtimeFor(otherThreadSession, "chapter.md");
-    store.markSynced(threadSession, "chapter.md", chapterRuntime);
-    store.markSynced(threadSession, "notes.md", notesRuntime);
-    store.markSynced(otherThreadSession, "chapter.md", otherRuntime);
+    store.markSynced(threadSession, "chapter.md");
+    store.markSynced(threadSession, "notes.md");
+    store.markSynced(otherThreadSession, "chapter.md");
 
     await store.evictThreadRuntimes("", THREAD_ID);
 

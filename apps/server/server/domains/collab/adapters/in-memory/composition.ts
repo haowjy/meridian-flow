@@ -26,6 +26,7 @@ import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
+import { NO_DOCUMENT_ASSET_PATHS } from "../../domain/ports/document-asset-paths.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import {
@@ -66,6 +67,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
   const runtime = createAgentEditRuntime({
+    assetPaths: NO_DOCUMENT_ASSET_PATHS,
     journal,
     coordinator,
     lifecycle: documentCreation,

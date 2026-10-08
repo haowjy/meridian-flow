@@ -25,7 +25,9 @@ path shares.
 
 Three shapes reach the parse and mean the same picture: a raw `html` node (pure
 Markdown, inline or block), `mdxJsxTextElement`, and `mdxJsxFlowElement` (MDX,
-where `img` is a lowercase intrinsic). A tag carrying anything the package would
+where `img` is a lowercase intrinsic). An image tag may omit its closing slash,
+as HTML allows; it serializes back in canonical self-closing form.
+A tag carrying anything the package would
 not write back the same way — an unknown attribute, a percentage or fractional
 width, an expression attribute — parses as nothing and stays the inert text it
 already was.

@@ -347,10 +347,15 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     recordTouchInBackground(deps, address.documentId, ctx);
-    // Undo and redo apply at once; every other write stages until the response commits.
+    // Undo and redo apply at once; every other write stages until the response
+    // commits. A write that changed nothing has nothing to stage or refresh.
+    const unchanged = outcome.result.unchanged === true;
     const stagedWrite =
-      ctx.responseId !== undefined && parsed.command !== "undo" && parsed.command !== "redo";
-    if (!stagedWrite) {
+      !unchanged &&
+      ctx.responseId !== undefined &&
+      parsed.command !== "undo" &&
+      parsed.command !== "redo";
+    if (!stagedWrite && !unchanged) {
       await deps.documentSync.refreshDocumentProjection({
         documentId: address.documentId,
         threadId: ctx.threadId,
