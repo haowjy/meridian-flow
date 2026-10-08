@@ -96,6 +96,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       const catalog = createDrizzleContextCatalog(db);
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: collab,
@@ -175,6 +176,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createBoundCollab();
       let failNextMembershipWrite = true;
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: {
@@ -225,6 +227,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { projectId, workId } = await provisionProject();
       const collab = createBoundCollab();
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: collab,

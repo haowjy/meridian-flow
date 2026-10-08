@@ -149,19 +149,23 @@ export function createDrizzleDocumentAssetPaths(
       const outer = enclosing?.open ? enclosing : undefined;
       const key = memberKey(project);
       // A nested call for the same project reads the enclosing operation's paths.
-      if (outer?.members.has(key)) return operation();
+      const members = [key, ...(project.documentIds ?? []).map((id) => `document:${id}`)];
+      if (outer?.members.has(key)) {
+        for (const member of members) outer.members.add(member);
+        return operation();
+      }
       const projectId = await resolveProjectId(db, project);
       // One whose project can't be found has no paths of its own to load.
       if (outer && projectId === null) return operation();
       if (outer && outer.projectId === projectId) {
-        outer.members.add(key);
+        for (const member of members) outer.members.add(member);
         return operation();
       }
       const locations = projectId ? await loadImageLocations(db, projectId) : [];
       const opened: Scope = {
         projectId,
         resolver: resolverFor(locations),
-        members: new Set([key, ...(projectId ? [`project:${projectId}`] : [])]),
+        members: new Set([...members, ...(projectId ? [`project:${projectId}`] : [])]),
         open: true,
       };
       try {

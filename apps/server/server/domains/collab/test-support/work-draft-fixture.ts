@@ -38,9 +38,9 @@ export const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "wo
 export function createWorkDraftFixture(db: Database) {
   const hocuspocus = fakeHocuspocus();
   const collabs: Array<{ dispose(): void }> = [];
-  const createTestCollab = () => {
+  const createTestCollab = (assetPaths = createDrizzleDocumentAssetPaths(db)) => {
     const collab = createCollabDomain({
-      assetPaths: createDrizzleDocumentAssetPaths(db),
+      assetPaths,
       fileAccess: createAllowAllFileAccess(),
       db,
       workProjectionMutation: createTestWorkProjectionMutation(db),

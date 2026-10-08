@@ -1,3 +1,4 @@
+import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
@@ -101,6 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheReason: "facts_unavailable",
       });
       const context = new ContextFS({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),

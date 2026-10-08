@@ -71,6 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db),
         documentSync: collab,

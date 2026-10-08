@@ -97,6 +97,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab,
         hocuspocus,
         contextPorts: createProductionUnifiedContextPortFactory({
+          assetPaths: createDrizzleDocumentAssetPaths(db),
           db,
           documentSync: collab,
           manifestMembership: collab,

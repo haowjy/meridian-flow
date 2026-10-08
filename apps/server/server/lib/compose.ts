@@ -549,6 +549,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
   });
   contextPorts = createProductionUnifiedContextPortFactory({
+    assetPaths,
     db,
     documentSync,
     manifestMembership: documentSync,
