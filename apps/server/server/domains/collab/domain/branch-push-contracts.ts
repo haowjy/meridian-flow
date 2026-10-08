@@ -1,4 +1,5 @@
 /** Neutral branch-push contracts shared across collab domain services and adapters. */
+
 import type {
   DocumentCoordinator,
   UpdateJournal,
@@ -12,6 +13,7 @@ import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-co
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
+import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
@@ -321,6 +323,7 @@ export type BranchPushServiceInput = {
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: MarkupCodec;
+  assetPaths: DocumentAssetPaths;
   changeEventDelivery: ChangeEventDelivery;
   pushUpdateComputer?: PushUpdateComputer;
   criticalSections?: BranchCriticalSections;

@@ -10,12 +10,6 @@ export interface CanonicalBlockIdentity {
   clock: number;
 }
 
-export interface TextRun {
-  start: number;
-  length: number;
-  attrsKey: string;
-}
-
 export interface ContentLineage {
   clientID: number;
   clock: number;
@@ -42,7 +36,7 @@ export interface InlineTextReplacement {
 }
 
 /**
- * Block-operation seam carrying block semantics and Tier 1/3 apply routing.
+ * Block-operation seam carrying block semantics and the plain-text and structural mutation verbs.
  *
  * The seam is expressed in opaque handles. Adapters own the concrete CRDT/content
  * objects behind DocHandle and BlockRef; resolver/apply code only preserves
@@ -88,23 +82,21 @@ export interface DocumentModel {
   /** Apply a concurrent CRDT update with its persisted origin metadata. */
   applyUpdate(doc: DocHandle, update: Uint8Array, origin: unknown): void;
 
-  /** True if `after` reflects CRDT progress past `before`. */
-  stateVectorAdvanced(before: Uint8Array, after: Uint8Array): boolean;
-
   /**
-   * Apply a text edit within a block (Tier 1 / Tier 2 routing).
+   * Replace plain text within a block, keeping unchanged text at the span's edges.
+   * Undo repair's verb; agent writes go through `applyInlineReplacements`.
    * Mutates doc in place; span must refer to valid offsets in getText(block).
    */
   applyTextEdit(doc: DocHandle, block: BlockRef, span: Span, newText: string): void;
 
   /**
-   * Insert new blocks after a reference block (Tier 3).
+   * Insert new blocks after a reference block.
    * When after is null, inserts at document start. Returns the inserted blocks.
    */
   insertBlocks(doc: DocHandle, after: BlockRef | null, parsed: ParsedContent): BlockRef[];
 
   /**
-   * Delete a block (Tier 3). Clears text instead of removing when it is the last block.
+   * Delete a block. Clears text instead of removing when it is the last block.
    */
   deleteBlock(doc: DocHandle, block: BlockRef): void;
 }
@@ -115,20 +107,8 @@ export interface DocumentModel {
  * y-prosemirror adapter is only one implementation.
  */
 export interface AgentEditModel extends DocumentModel {
-  /** Neutral inline mark runs for Tier 1-vs-Tier 2 text edit selection. */
-  inlineRuns(block: BlockRef): TextRun[];
-
-  /** True when parsed replacement markup can use the Tier 1 flat-text path. */
-  isPlainTextReplacement(parsed: ParsedContent, source: string): boolean;
-
-  /** Tier 2 formatted text replacement; adapters own codec projection and tree diffing. */
-  applyInlineReplacement(
-    doc: DocHandle,
-    block: BlockRef,
-    span: Span,
-    replacementMarkup: string,
-    codec: AgentEditCodec,
-  ): InlineReplacementResult;
+  /** Nonempty text delta runs, including nested blocks; undo repair skips more than one. */
+  inlineRunCount(block: BlockRef): number;
 
   /** Apply disjoint same-block replacements through one adapter-owned ProseMirror transform. */
   applyInlineReplacements(

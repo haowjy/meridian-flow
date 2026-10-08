@@ -16,12 +16,12 @@ const base = (payload = "😀"): SemanticEditIRV1 => ({
     edits: [
       {
         edit: {
-          kind: "text",
+          kind: "textRanges",
           documentId: "doc-1",
           file: "chapter.md",
           block: {} as never,
-          span: { start: 0, end: 2 },
-          newText: payload,
+          replacements: [{ span: { start: 0, end: 2 }, newText: payload }],
+          output: payload,
         },
         outputRuns: [{ kind: "fresh", payload, output: { from: 0, to: payload.length } }],
       },

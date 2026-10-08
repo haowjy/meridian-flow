@@ -31,12 +31,39 @@ fails the projection. The event carries schema version, node types, and clock
 counts, never prose.
 
 `domain/agent-edit-runtime.ts` is the one place a `mdxCodec` is built, so it is
-also the one place the project asset index enters serialization. The composition
-root passes `assetPathResolver`; compositions with no asset namespace (in-memory,
-tests) omit it and get `unresolvedAssetPathResolver`, which throws rather than
-inventing a path. The resolver translates `asset:<documentId>` to a
-project-relative path on serialize and back on parse, so an asset's identity
-survives a rename while markdown keeps a readable path.
+also the one place image paths enter serialization. The composition root passes
+a required `DocumentAssetPaths` port (`domain/ports/document-asset-paths.ts`);
+compositions with no project tree (in-memory, tests) pass
+`NO_DOCUMENT_ASSET_PATHS`. The resolver translates `asset:<documentId>` to a
+manuscript-relative path on serialize and back on parse, so an image's identity
+survives a move while markdown keeps a readable path.
+
+The codec asks synchronously, so the paths are loaded per operation, never
+cached: `within(project, op)` reads every manuscript image (deleted ones at
+their last location) in one query and binds them to the operation with
+`AsyncLocalStorage`. `domain/asset-path-scope.ts` wraps every door that
+serializes: the markdown engine, the edit core (`read`/`write` by grant
+project, reversal by document), the branch peer, the reply's save (by thread),
+live turn reversal, draft push and its settlement, and offline reconciliation.
+Draft preview owns one enclosing scope for both live and draft serialization.
+ContextFS search owns one for all matching documents in its source; it supplies
+those document IDs with the first document as the project anchor, so nested
+reads need neither another image-tree load nor another project lookup.
+Wrappers name every method, so a new method does not compile until its scope is
+decided. A nested `within` for the same project reuses the enclosing scope only
+while that operation is still running; a timer that inherited a settled scope
+loads fresh. Effective Markdown and hashline reads load before branch locks;
+Apply resolves branch identities and paths first, then revalidates all branch
+snapshots under their locks. The snapshot precedes locks, so a move that
+lands in between, or one the operation makes itself, shows only in the next
+scope.
+
+A picture never fails its document. An id with no document spells as its
+`asset:` ref. A deleted image keeps its last path only while that path reads
+back to it alone (no live image and no other deleted image there); otherwise it
+spells as its ref, so a chapter saved while the image is gone reconnects on
+restore. A picture serialized outside every scope spells as its ref and is
+reported: `serialize.asset_path_unscoped` in production, a throw under test.
 
 **Durable whole-document projections route through this engine.** Push
 completion and trail forward actions inject `DurableProjectionSerializer`
