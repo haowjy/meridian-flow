@@ -1,5 +1,6 @@
 /** Builds server-authoritative dependency-closed Apply/Discard classes. */
 
+import { createHash } from "node:crypto";
 import {
   asPhysicalSourceUpdateIds,
   type DraftReviewHunkInternal,
@@ -78,7 +79,7 @@ export function assignReviewClasses(input: {
         ),
       ].sort((left, right) => left - right),
     );
-    const closureClassId = `closure:${operationIds.join("+")}`;
+    const closureClassId = classId(operationIds);
     for (const operationId of operationIds) {
       classByOperationId.set(operationId, { closureClassId, closureUpdateIds });
     }
@@ -87,7 +88,7 @@ export function assignReviewClasses(input: {
   return input.operations.map((operation) => ({
     ...operation,
     ...(classByOperationId.get(operation.operationId) ?? {
-      closureClassId: `closure:${operation.operationId}`,
+      closureClassId: classId([operation.operationId]),
       closureUpdateIds: operation.closureUpdateIds,
     }),
   }));
@@ -235,7 +236,7 @@ class UnionFind {
 }
 
 function operationSort(left: string, right: string): number {
-  return left.localeCompare(right, undefined, { numeric: true });
+  return left.localeCompare(right, undefined, { numeric: true }) || left.localeCompare(right);
 }
 
 // Match #712's decoded-update shape; dependencies() is not part of that API.
@@ -304,4 +305,8 @@ function visitOverlaps(
   if (node.range.clock >= ref.clock + ref.length) return;
   if (rangesOverlap(node.range, ref)) visit(node.range);
   visitOverlaps(node.right, ref, visit);
+}
+
+function classId(operationIds: readonly string[]): string {
+  return `closure:v1:${createHash("sha256").update(JSON.stringify(operationIds)).digest("base64url")}`;
 }
