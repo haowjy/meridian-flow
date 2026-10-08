@@ -142,11 +142,11 @@ describe("applyEdits preflight safety", () => {
   });
 });
 
-describe("applyEdits echo and concurrent edits", () => {
+describe("mutation and echo composition", () => {
   it("echoes the agent window and lists a non-overlapping concurrent human edit", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma waits.\n\nDelta waits.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
+    const before = snapshotBlocks(local, baseModel, codec);
     const localBlocks = baseModel.getBlocks(local);
     const alphaHash = baseModel.getBlockId(localBlocks[0]);
     const betaHash = baseModel.getBlockId(localBlocks[1]);
@@ -163,15 +163,24 @@ describe("applyEdits echo and concurrent edits", () => {
       codec,
       textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
       origin,
-      {
-        syncStateVector,
-        concurrentUpdates: [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
-      },
     );
 
     expectOk(result);
-    expect(result.ok && result.concurrentEdits?.human).toEqual([remoteHash]);
-    expect(result.ok && result.echo).toEqual([
+    const concurrent = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
+      origin,
+    );
+    const echo = computeEcho({
+      before,
+      after: snapshotBlocks(local, baseModel, codec),
+      agentTouchedHashes: new Set(result.changedBlocks),
+      agentDeletedHashes: new Set(result.deletedBlocks),
+    });
+    expect(concurrent.info?.human).toEqual([remoteHash]);
+    expect(echo).toEqual([
       { mode: "full", blocks: [`${alphaHash}|Alpha blade.`] },
       { mode: "truncated", blocks: [`${betaHash}|Beta waits.`] },
     ]);
@@ -187,7 +196,7 @@ describe("applyEdits echo and concurrent edits", () => {
   it("shows a full echo when a concurrent human edit touches the agent hunk", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
+    const before = snapshotBlocks(local, baseModel, codec);
     const [localAlpha] = baseModel.getBlocks(local);
     const alphaHash = baseModel.getBlockId(localAlpha);
     const remoteUpdate = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", {
@@ -201,20 +210,27 @@ describe("applyEdits echo and concurrent edits", () => {
       codec,
       textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
       origin,
-      {
-        syncStateVector,
-        concurrentUpdates: [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
-      },
     );
 
     expectOk(result);
-    expect(result.ok && result.concurrentEdits?.human).toEqual([alphaHash]);
-    expect(result.ok && result.echo).toHaveLength(2);
-    expect(result.ok && result.echo[0]?.mode).toBe("full");
-    expect(result.ok && result.echo[1]?.mode).toBe("truncated");
-    expect(
-      result.ok && result.echo[0]?.blocks.some((line) => line.startsWith(`${alphaHash}|`)),
-    ).toBe(true);
+    const concurrent = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
+      origin,
+    );
+    const echo = computeEcho({
+      before,
+      after: snapshotBlocks(local, baseModel, codec),
+      agentTouchedHashes: new Set(result.changedBlocks),
+      agentDeletedHashes: new Set(result.deletedBlocks),
+    });
+    expect(concurrent.info?.human).toEqual([alphaHash]);
+    expect(echo).toHaveLength(2);
+    expect(echo[0]?.mode).toBe("full");
+    expect(echo[1]?.mode).toBe("truncated");
+    expect(echo[0]?.blocks.some((line) => line.startsWith(`${alphaHash}|`))).toBe(true);
     expectNoOrphanedElements(local);
   });
 });

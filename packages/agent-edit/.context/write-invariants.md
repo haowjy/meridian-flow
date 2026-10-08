@@ -156,7 +156,7 @@ going blind to a concurrent human edit.
   double-commits.
 - **`find` matching happens in serialized markdown space.** When a matched block
   body is identical to flat editable text and the payload is plain text, same-block
-  matches lower to exact text spans (`text` for one match, `textRanges` for several).
+  matches (one or more) lower to one `textRanges` edit of exact spans.
   All formatted, escaped, entity, and cross-block cases splice and parse the
   affected serialized range before `replaceScope(...)`; they must not use
   serialized-body→flat offset mapping.

@@ -47,13 +47,20 @@ attributes included. Only unpaired blocks are inserted or deleted, so a new
 paragraph never takes over an edited one's element and comments. A write that resolves to no edits (a document's own export written back, or a
 find replaced with itself) returns `unchanged` before a write handle is
 reserved, so it journals nothing and leaves nothing to undo.
+`weightedOrderedMatches` (`src/ordered-matching.ts`) is shared by alignment
+and echo. Past the table limit, alignment pairs the gap by position; echo
+falls back to block-identity diffing. Scoring and gap policy stay with callers.
+
 Flat inline offsets exclude atoms (pictures, hard breaks), so `textRanges` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 
 ### Edit application (`src/apply/apply-edits.ts`)
-Preflight-before-mutate discipline: Phase 1 (read-only) validates all
-references, parses content, computes offsets, and validates the semantic IR.
-Phase 2 (inside `doc.transact()`) applies pre-computed operations. Every agent
+`applyEdits` owns mutation and returns ordered live touched IDs, deleted IDs,
+and applied-edit metadata without rendering prose. The write/commit owner takes
+its own snapshots, merges concurrent updates, and produces the final echo.
+Preflight-before-mutate discipline: the write owner validates semantic IR,
+then apply validates all block references. Each edit is preflighted (content
+and offsets) before its transaction mutates the document. Every agent
 text edit lowers through ProseMirror (`applyInlineReplacements`), the single
 inline mutation seam. `applyTextEdit` remains as the
 model's plain-text verb for undo repair and trims unchanged edge text before
@@ -61,7 +68,7 @@ touching Yjs.
 
 | Kind | Mechanism |
 |---|---|
-| `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
+| `textRanges`, or a matched block changes (`block`) | Adapter-owned exact inline ranges (`applyInlineReplacements`) or whole-block replacement + per-block updateYFragment |
 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of

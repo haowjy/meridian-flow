@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Chapter overwrites parse replacement content once, including unchanged writes.
+- Chapter overwrites parse replacement content once, including unchanged writes. Changed writes no longer render three discarded snapshots or an unused echo.
 
 - Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
 

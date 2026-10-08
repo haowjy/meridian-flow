@@ -171,7 +171,7 @@ accidental UUID interpolation fails loudly.
   edits` reports `human` vs `agent` categories; no individual actor names.
 
 - **Cross-block `find`** (find string containing `\n\n`) supported via
-  structural lowering in the resolver. Routes to Tier 2+3.
+  structural lowering in the resolver. Applies inline, whole-block, or structural edits.
 
 ## Testing
 

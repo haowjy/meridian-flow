@@ -5,17 +5,8 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
-import {
-  applyConcurrentUpdates,
-  type BlockSnapshot,
-  type ConcurrentUpdateInput,
-  computeEcho,
-  snapshotBlocks,
-} from "./echo.js";
 import type {
-  AgentOrigin,
   AppliedEditSummary,
-  ApplyEditsOptions,
   ApplyErrorCode,
   ApplyResult,
   ApplyTransactionOrigin,
@@ -27,27 +18,23 @@ type Ref = BlockRef;
 type PlannedEdit =
   | {
       kind: "textRanges";
-
       edit: Extract<ResolvedEdit, { kind: "textRanges" }>;
       replacements: Array<{ span: Span; newText: string }>;
       blockId: string;
     }
   | {
       kind: "insert";
-
       edit: Extract<ResolvedEdit, { kind: "insert" }>;
       parsed: ParsedContent;
     }
   | {
       kind: "delete";
-
       edit: Extract<ResolvedEdit, { kind: "delete" }>;
       blockId: string;
       removesBlock: boolean;
     }
   | {
       kind: "block";
-
       edit: Extract<ResolvedEdit, { kind: "block" }>;
       blockId: string;
     };
@@ -60,14 +47,13 @@ interface ApplyAccumulator {
 
 type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 
-/** Apply resolved edits to an agent-local document, preflighting each before it mutates. */
+/** Mutate an agent-local document without rendering; the write owner snapshots and reports. */
 export function applyEdits(
   doc: DocHandle,
   model: AgentEditModel,
   codec: AgentEditCodec,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
-  options: ApplyEditsOptions = {},
 ): ApplyResult {
   const editList = Array.isArray(edits) ? [...edits] : [edits];
   if (editList.length === 0) {
@@ -77,7 +63,6 @@ export function applyEdits(
   const turnSafety = validateNoSameTurnTombstones(doc, model, editList);
   if (!turnSafety.ok) return turnSafety;
 
-  const before = snapshotBlocks(doc, model, codec);
   const accumulator: ApplyAccumulator = {
     applied: [],
     touchedHashes: new Set(),
@@ -112,50 +97,17 @@ export function applyEdits(
     committedEdits += 1;
   }
 
-  const concurrent = applyConcurrentUpdates(
-    doc,
-    model,
-    codec,
-    (options.concurrentUpdates ?? []) as readonly ConcurrentUpdateInput[],
-    ownAgentOrigin(origin, options.ownActorTurnId),
-  );
-  const after = snapshotBlocks(doc, model, codec);
-  const echo = computeEcho({
-    before,
-    after,
-    agentTouchedHashes: accumulator.touchedHashes,
-    agentDeletedHashes: accumulator.deletedHashes,
-  });
-
   return {
     ok: true,
     status: "success",
     documentId: editList[0].documentId,
     file: editList[0].file,
-    echo,
-    ...(concurrent.info ? { concurrentEdits: concurrent.info } : {}),
-    changedBlocks: orderedLiveHashes(after, accumulator.touchedHashes),
+    changedBlocks: model
+      .getDocumentBlockIds(doc)
+      .filter((hash) => accumulator.touchedHashes.has(hash)),
     deletedBlocks: [...accumulator.deletedHashes],
     appliedEdits: accumulator.applied,
   };
-}
-
-function ownAgentOrigin(
-  origin: ApplyTransactionOrigin,
-  ownActorTurnId: string | undefined,
-): AgentOrigin | undefined {
-  if (ownActorTurnId) return { type: "agent", actorTurnId: ownActorTurnId };
-  if (isAgentOrigin(origin)) return origin;
-  return undefined;
-}
-
-function isAgentOrigin(origin: ApplyTransactionOrigin): origin is AgentOrigin {
-  return (
-    typeof origin === "object" &&
-    origin !== null &&
-    (origin as { type?: unknown }).type === "agent" &&
-    typeof (origin as { actorTurnId?: unknown }).actorTurnId === "string"
-  );
 }
 
 function preflightEdit(
@@ -415,10 +367,6 @@ function parseContent(
       ...(Object.keys(details).length > 0 ? { details } : {}),
     };
   }
-}
-
-function orderedLiveHashes(after: readonly BlockSnapshot[], hashes: ReadonlySet<string>): string[] {
-  return after.map((block) => block.hash).filter((hash) => hashes.has(hash));
 }
 
 function applyError(
