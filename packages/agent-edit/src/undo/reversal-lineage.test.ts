@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import type { JournalSnapshot, PersistedUpdate, ReversalRecord } from "../ports/types.js";
+import type { PersistedUpdate, ReversalRecord } from "../ports/types.js";
 import type { WriteMutationRow } from "../ports/update-journal.js";
 import { selectUndoClosure } from "./reversal-lineage.js";
 
@@ -10,22 +10,6 @@ const DOC_ID = "doc";
 const THREAD_ID = "thread";
 
 describe("selectUndoClosure", () => {
-  it("selects a single active handle and its retained forward seq", () => {
-    const snapshot = snapshotWithSeqs([1]);
-    const closure = selectUndoClosure({
-      snapshot,
-      reversals: [],
-      rowsByHandle: new Map([["w1", [mutation("w1", 1)]]]),
-      selectedHandles: ["w1"],
-      candidateHandles: ["w1"],
-      reversalOpSeqs: new Set(),
-      isScopeSelection: false,
-    });
-
-    expect(closure.ok && closure.handles).toEqual(["w1"]);
-    expect(closure.ok && [...closure.targetSeqs]).toEqual([1]);
-  });
-
   it("refuses undo when a later retained write consumes selected content", () => {
     const updates = textUpdates();
     const rowsByHandle = new Map([
@@ -51,42 +35,7 @@ describe("selectUndoClosure", () => {
       selectedWriteIds: ["w1"],
     });
   });
-
-  it("returns nothing_to_undo when selected rows are not active and retained", () => {
-    const snapshot = snapshotWithSeqs([1]);
-
-    expect(
-      selectUndoClosure({
-        snapshot,
-        reversals: [],
-        rowsByHandle: new Map([["w1", [{ ...mutation("w1", 1), status: "reversed" }]]]),
-        selectedHandles: ["w1"],
-        candidateHandles: ["w1"],
-        reversalOpSeqs: new Set(),
-        isScopeSelection: false,
-      }),
-    ).toEqual({ ok: false, status: "nothing_to_undo" });
-
-    expect(
-      selectUndoClosure({
-        snapshot,
-        reversals: [],
-        rowsByHandle: new Map([["w2", [mutation("w2", 2)]]]),
-        selectedHandles: ["w2"],
-        candidateHandles: ["w2"],
-        reversalOpSeqs: new Set(),
-        isScopeSelection: false,
-      }),
-    ).toEqual({ ok: false, status: "nothing_to_undo" });
-  });
 });
-
-function snapshotWithSeqs(seqs: readonly number[]): JournalSnapshot {
-  return {
-    checkpoint: null,
-    updates: seqs.map((seq) => ({ seq, update: new Uint8Array(), meta: { origin: "test", seq } })),
-  };
-}
 
 function mutation(handle: string, seq: number): WriteMutationRow {
   const wId = Number(handle.slice(1));

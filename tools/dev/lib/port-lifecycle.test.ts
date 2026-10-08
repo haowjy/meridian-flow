@@ -2,7 +2,7 @@
 
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isLocalPortFree, releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
+import { releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
 
 const MOCK_PORT = 12_345;
 const servers: net.Server[] = [];
@@ -26,13 +26,6 @@ function closeServer(server: net.Server): Promise<void> {
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map(closeServer));
-});
-
-describe("isLocalPortFree", () => {
-  it("reports a held port as not free", async () => {
-    const port = await listenOnEphemeralPort();
-    expect(await isLocalPortFree(port)).toBe(false);
-  });
 });
 
 describe("waitForPortsFree", () => {

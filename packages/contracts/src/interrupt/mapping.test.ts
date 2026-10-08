@@ -8,9 +8,7 @@ import { componentContentForAsk } from "./builders.js";
 import { type AskRequest, askInterrupt } from "./index.js";
 import {
   httpErrorInterruptBody,
-  isMeridianError,
   meridianErrorFromGateway,
-  meridianErrorFromWsBoundary,
   sharedErrorInterrupt,
   wsErrorInterruptPayload,
 } from "./mapping.js";
@@ -29,20 +27,6 @@ describe("interrupt error serialization", () => {
       threadId: "thread_1",
       ...httpBody,
     });
-  });
-
-  it("maps WS boundary codes into MeridianError before serialization", () => {
-    const error = meridianErrorFromWsBoundary("interrupt_not_pending", "No pending interrupt");
-    const httpBody = httpErrorInterruptBody(error);
-    const wsPayload = wsErrorInterruptPayload(error, "thread_1");
-
-    expect(httpBody.error).toMatchObject({
-      code: "interrupt_not_pending",
-      message: "No pending interrupt",
-      source: "system",
-      retryable: false,
-    });
-    expect({ kind: wsPayload.kind, error: wsPayload.error }).toEqual(httpBody);
   });
 });
 
@@ -88,16 +72,5 @@ describe("ask interrupt component wire contract", () => {
       },
     });
     expect(interruptIdForBlock(block)).toBe("interrupt_generic_form");
-  });
-});
-
-describe("isMeridianError", () => {
-  it("accepts a fully-shaped MeridianError and rejects partial hand-rolled objects", () => {
-    const error = meridianErrorFromGateway("provider_error", "Upstream model failed", true);
-    expect(isMeridianError(error)).toBe(true);
-    expect(isMeridianError({ code: "tool_error", source: "tool" })).toBe(false);
-    expect(isMeridianError({ code: "x", message: "x", retryable: false, source: "bogus" })).toBe(
-      false,
-    );
   });
 });

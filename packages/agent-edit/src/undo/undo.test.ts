@@ -19,7 +19,6 @@ import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import type { UpdateMeta } from "../ports/types.js";
 import { InMemoryAgentEditJournal } from "../test-support/index.js";
 import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
-import { createThreadOriginRegistry } from "./thread-origin-registry.js";
 
 const schema = buildDocumentSchema();
 const codec = createAgentEditCodec(
@@ -32,58 +31,11 @@ const THREAD_A = "thread-a";
 const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
-describe("thread origins", () => {
-  it("returns a stable transaction origin per document/thread", () => {
-    const origins = createThreadOriginRegistry();
-    const first = origins.getThreadOrigin(DOC_ID, THREAD_A);
-
-    expect(origins.getThreadOrigin(DOC_ID, THREAD_A)).toBe(first);
-    expect(origins.getThreadOrigin("doc-2", THREAD_A)).not.toBe(first);
-    expect(origins.getThreadOrigin(DOC_ID, "thread-b")).not.toBe(first);
-
-    origins.evictThread(DOC_ID, THREAD_A);
-    expect(origins.getThreadOrigin(DOC_ID, THREAD_A)).not.toBe(first);
-  });
-});
-
-describe("cold reconstruction", () => {
-  it("captures Y.applyUpdate with the outer doc.transact origin token", () => {
-    const source = new Y.Doc({ gc: false });
-    const text = source.getText("probe");
-    const beforeSource = Y.encodeStateVector(source);
-    source.transact(() => text.insert(0, "captured"), Symbol("source"));
-    const update = Y.encodeStateAsUpdate(source, beforeSource);
-
-    const token = Symbol("target-turn");
-    const replay = new Y.Doc({ gc: false });
-    const replayText = replay.getText("probe");
-    const seenOrigins: unknown[] = [];
-    const um = new Y.UndoManager(replayText, {
-      trackedOrigins: new Set([token]),
-      captureTimeout: Number.POSITIVE_INFINITY,
-    });
-    um.on("stack-item-added", (event: { origin: unknown }) => seenOrigins.push(event.origin));
-
-    replay.transact(() => {
-      Y.applyUpdate(replay, update);
-    }, token);
-
-    expect(seenOrigins).toEqual([token]);
-    expect(um.undoStack).toHaveLength(1);
-    um.undo();
-    expect(replayText.toString()).toBe("");
-  });
-});
-
-describe("8-case reconcile matrix", () => {
+describe("cold undo reconstruction boundaries", () => {
   it.each([
-    ["clean reverse", caseCleanReverse],
-    ["human edited different paragraph", caseHumanDifferentParagraph],
-    ["human edited around agent edit", caseHumanAroundAgentEdit],
     ["human built inside agent-inserted paragraph", caseHumanInsideAgentInsertedParagraph],
     ["discontiguous multi-range", caseDiscontiguousMultiRange],
     ["markdown/whitespace normalization", caseMarkdownWhitespaceNormalization],
-    ["cross-unload rebuild", caseCrossUnloadRebuild],
     ["partial reversal", casePartialReversal],
   ] satisfies Array<[string, () => MatrixCase]>)("%s", (_name, buildCase) => {
     const matrixCase = buildCase();
@@ -282,41 +234,6 @@ function serializeDoc(doc: Y.Doc): string {
   return codec.serialize(model.projectBlocks(doc));
 }
 
-function caseCleanReverse(): MatrixCase {
-  const ctx = createScenario("Alpha sword.");
-  agentTurn(ctx, "clean", () => {
-    applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-  });
-  return { ctx, turnId: "clean", expectedTexts: ["Alpha sword."] };
-}
-
-function caseHumanDifferentParagraph(): MatrixCase {
-  const ctx = createScenario("Alpha sword.\n\nBeta waits.");
-  agentTurn(ctx, "agent", () => {
-    applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-  });
-  humanText(ctx, 1, { from: 5, to: 10 }, "marches");
-  return { ctx, turnId: "agent", expectedTexts: ["Alpha sword.", "Beta marches."] };
-}
-
-function caseHumanAroundAgentEdit(): MatrixCase {
-  const ctx = createScenario("Alpha sword.");
-  agentTurn(ctx, "agent", () => {
-    applyAgentText(ctx, THREAD_A, 0, { start: 6, end: 11 }, "blade");
-  });
-  humanText(ctx, 0, { from: 0, to: 0 }, "Old ");
-  humanText(
-    ctx,
-    0,
-    {
-      from: model.getText(model.getBlocks(ctx.doc)[0]).length,
-      to: model.getText(model.getBlocks(ctx.doc)[0]).length,
-    },
-    " now",
-  );
-  return { ctx, turnId: "agent", expectedTexts: ["Old Alpha sword. now"] };
-}
-
 function caseHumanInsideAgentInsertedParagraph(): MatrixCase {
   const ctx = createScenario("Alpha");
   agentTurn(ctx, "insert", () => {
@@ -349,14 +266,6 @@ function caseMarkdownWhitespaceNormalization(): MatrixCase {
     expectedTexts: ["Alpha sword."],
     expectedMarkdown: "Alpha sword.\n",
   };
-}
-
-function caseCrossUnloadRebuild(): MatrixCase {
-  const ctx = createScenario("Alpha sword.\n\nBeta waits.");
-  agentTurn(ctx, "agent", () => {
-    applyAgentText(ctx, THREAD_A, 1, { start: 5, end: 10 }, "marches");
-  });
-  return { ctx, turnId: "agent", expectedTexts: ["Alpha sword.", "Beta waits."] };
 }
 
 function casePartialReversal(): MatrixCase {

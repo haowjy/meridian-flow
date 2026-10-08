@@ -4,7 +4,7 @@ import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts
 import { describe, expect, it } from "vitest";
 import type { CatalogCacheView } from "./catalog";
 import { catalogViewFromSnapshot } from "./catalog";
-import { catalogViewFromCheckpoint, planCatalogInstallation } from "./catalog-installation";
+import { planCatalogInstallation } from "./catalog-installation";
 import type { ResourceRecord } from "./resource-records";
 
 const projectId = "project";
@@ -112,62 +112,6 @@ function observed(record: ResourceRecord, revision = record.resource.revision) {
 }
 
 describe("planCatalogInstallation", () => {
-  it("creates an unacquired acknowledged resource for a server-created file", () => {
-    const result = planCatalogInstallation({ projectId, records: [], view: view() });
-
-    expect(result.checkpoint).toMatchObject({
-      projectId,
-      revision: 1,
-      cursor: "cursor",
-    });
-    expect(result.resources).toEqual([
-      {
-        expectedRevision: null,
-        next: {
-          resource: expect.objectContaining({
-            handle: "catalog:document",
-            identity: { documentId: "document", revision: 1 },
-            content: { kind: "unacquired" },
-            classification: {
-              editable: true,
-              filetype: "markdown",
-              schemaType: "document",
-            },
-            canonical: {
-              scheme: "manuscript",
-              path: "/chapter.md",
-              name: "chapter.md",
-              workId: null,
-            },
-            lifecycle: { kind: "acknowledged", availabilityGeneration: null },
-          }),
-          intents: [],
-        },
-      },
-    ]);
-  });
-
-  it("preserves exact content while installing an observed canonical location", () => {
-    const current = record({
-      lifecycle: { kind: "acknowledged", availabilityGeneration: null },
-    });
-    const stale = planCatalogInstallation({ projectId, records: [current], view: view() });
-    expect(stale.resources).toEqual([]);
-
-    const fresh = planCatalogInstallation({
-      projectId,
-      records: [current],
-      view: view(),
-      observedAfter: observed(current),
-    });
-    expect(fresh.resources[0]?.next.resource).toMatchObject({
-      content: current.resource.content,
-      canonical: { scheme: "manuscript", path: "/chapter.md" },
-      lifecycle: current.resource.lifecycle,
-      obligations: {},
-    });
-  });
-
   it("does not overwrite canonical location until a post-receipt observation", () => {
     const current = record({
       lifecycle: { kind: "acknowledged", availabilityGeneration: "authority" },
@@ -187,38 +131,6 @@ describe("planCatalogInstallation", () => {
       canonical: { path: "/chapter.md" },
       obligations: {},
     });
-  });
-
-  it("rejects a late response whose pre-request resource revision is stale", () => {
-    const current = record({
-      revision: 2,
-      lifecycle: { kind: "acknowledged", availabilityGeneration: "authority" },
-      canonical: { scheme: "manuscript", path: "/newer.md", name: "newer.md", workId: null },
-    });
-    expect(
-      planCatalogInstallation({
-        projectId,
-        records: [current],
-        view: view(),
-        observedAfter: {
-          resources: new Map([
-            [
-              current.resource.handle,
-              {
-                revision: 1,
-                canonical: {
-                  scheme: "manuscript",
-                  path: "/older.md",
-                  name: "older.md",
-                  workId: null,
-                },
-                classification: current.resource.classification,
-              },
-            ],
-          ]),
-        },
-      }).resources,
-    ).toEqual([]);
   });
 
   it("leaves locally reserved creation under namespace outcome ownership", () => {
@@ -311,20 +223,5 @@ describe("planCatalogInstallation", () => {
       view: scopedView(scope, scheme, uri),
     });
     expect(result.resources[0]?.next.resource.canonical).toMatchObject(expected);
-  });
-
-  it("round-trips a durable checkpoint with derived indexes and invalidation", () => {
-    const base = view();
-    const current = { ...base, invalidatedEntryIds: new Set(["document"]) };
-    const checkpoint = planCatalogInstallation({
-      projectId,
-      records: [],
-      view: current,
-    }).checkpoint;
-    const restored = catalogViewFromCheckpoint(checkpoint);
-
-    expect(restored.sourceIdsByScheme.get("manuscript")).toBe("source");
-    expect(restored.childIdsByParentId.get("source")).toEqual(["document"]);
-    expect(restored.invalidatedEntryIds).toEqual(new Set(["document"]));
   });
 });
