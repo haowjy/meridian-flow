@@ -491,7 +491,7 @@ it("reselects Discard under the lock after a snapshot CAS conflict and refuses t
           expect(locked).toBe(true);
           observedCuts.push(currentRows.map((row) => row.id));
           if (currentRows.length !== 1) throw new DraftChangeRefusal("stale");
-          return { journalIds: [1] };
+          return { journalIds: [1], expectedLiveRevision: "live-cut" };
         },
       }),
     ).rejects.toMatchObject({ status: "stale" });

@@ -1642,7 +1642,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     if (!discarded) throw new Error("discarded dependency row missing");
     await branchReview.discardSelected({
       branchId: branch.branchId,
-      selectRows: async () => ({ journalIds: [discarded.id] }),
+      selectRows: async () => ({
+        journalIds: [discarded.id],
+        expectedLiveRevision: (
+          await createDrizzleDraftReviewLive(db, persistence.journal)(ALPHA_ID)
+        ).revision,
+      }),
       reviewedByUserId: USER_ID,
     });
 
@@ -1741,6 +1746,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedCheckpointRestoredExplicitDelete,
     seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
+      branchReview,
       runtime,
       branchPulls,
       branchPush: realBranchPush,

@@ -612,6 +612,41 @@ describe("per-change Apply (postgres)", () => {
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("New live. Alpha base.\n");
   });
 
+  it("rejects a live admission after Discard selection without discarding rows", async () => {
+    const harness = createReviewHarness();
+    await harness.seedWriterDocument("Alpha base.", "commit-fence");
+    const fixture = harness.crossWorkProbeFixture();
+    const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const selectedId = await stageText(fixture, branch.branchId, 0, " Proposed", "agent");
+    const preview = await fixture.collab.draftReview.preview({
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+    });
+    if (preview.status !== "active") throw new Error("missing preview");
+    await expect(
+      fixture.branchReview.discardSelected({
+        branchId: branch.branchId,
+        reviewedByUserId: USER_ID,
+        selectRows: async () => {
+          await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+            const before = Y.encodeStateVector(doc);
+            const block = fixture.model.getBlocks(toDocHandle(doc))[0];
+            fixture.model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "New live. ");
+            await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+              origin: `human:${USER_ID}`,
+              seq: 0,
+            });
+          });
+          return { journalIds: [selectedId], expectedLiveRevision: preview.liveRevisionToken };
+        },
+      }),
+    ).rejects.toMatchObject({ status: "stale" });
+    expect(await journalStatuses(branch.branchId)).toEqual([{ id: selectedId, status: "active" }]);
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("New live. Alpha base.\n");
+  });
+
   it("Discard closes independent visible hunks sharing a Yjs client clock prefix", async () => {
     const harness = createReviewHarness();
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "clock-discard");
@@ -710,9 +745,18 @@ describe("per-change Apply (postgres)", () => {
     const appliedId = await stageText(fixture, branch.branchId, 0, " Applied", "agent");
     const discardedId = await stageText(fixture, branch.branchId, 1, " Discard-me", "agent");
 
+    const beforeApply = await fixture.collab.draftReview.preview({
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+    });
+    if (beforeApply.status !== "active") throw new Error("missing preview");
     await fixture.realBranchPush.pushSelectedToLive({
       branchId: branch.branchId,
-      journalIds: [appliedId],
+      selectRows: async () => ({
+        journalIds: [appliedId],
+        expectedLiveRevision: beforeApply.liveRevisionToken,
+      }),
       pushedByUserId: USER_ID,
     });
     const preview = await fixture.collab.draftReview.preview({
