@@ -182,6 +182,58 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text(HOLDER)).toContain(`[One](${RENAMED})`);
     });
 
+    it("keeps image paths through model move, link rewrite and model undo", async () => {
+      const { runtime, script } = await start();
+      await db.insert(schema.documents).values({
+        id: randomUUID(),
+        contextSourceId: SOURCE_ID,
+        name: "map",
+        extension: "png",
+        fileType: "image",
+        mimeType: "image/png",
+      });
+      const image = "![Map](map.png)";
+      await runtime.ports.documentSync.writeDocument({
+        documentId: DOC_ID,
+        markdown: `Chapter one text.\n\n${image}`,
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const notes = "manuscript://illustrated-notes.md";
+      const created = await runtime.app.contextPorts
+        .forProject(PROJECT_ID, USER_ID, new Map())
+        .createTrackedDocument(notes, `${image}\n\n[One](${CHAPTER}).`);
+      if (!created.ok) throw new Error(JSON.stringify(created.error));
+
+      await script.reply(async (call) => {
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      });
+      await runtime.app.linkUpdates.sweep();
+      expect(await script.text(RENAMED)).toContain(image);
+      expect(await script.text(notes)).toContain(`[One](${RENAMED})`);
+      const [movedNotes] = await db
+        .select({ markdown: schema.documents.markdownProjection })
+        .from(schema.documents)
+        .where(eq(schema.documents.name, "illustrated-notes"));
+      expect(movedNotes.markdown).toContain(image);
+      expect(movedNotes.markdown).toContain(`[One](${RENAMED})`);
+
+      await script.reply(async (call) => {
+        expect(await call("write", { command: "undo", path: RENAMED })).toMatch(
+          /^status: reversed;/,
+        );
+      });
+      await runtime.app.linkUpdates.sweep();
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
+      expect(await script.text(CHAPTER)).toContain(image);
+      expect(await script.text(notes)).toContain(`[One](${CHAPTER})`);
+      const [restoredNotes] = await db
+        .select({ markdown: schema.documents.markdownProjection })
+        .from(schema.documents)
+        .where(eq(schema.documents.name, "illustrated-notes"));
+      expect(restoredNotes.markdown).toContain(image);
+      expect(restoredNotes.markdown).toContain(`[One](${CHAPTER})`);
+    });
+
     it("the link update a move makes doesn't reach the model as the writer's edit", async () => {
       const { runtime, script } = await start();
       const notes = "manuscript://notes.md";
