@@ -100,7 +100,8 @@ synchronously before waiting for persistence.
 ## Certified provenance materialization
 
 **Ordering invariant:** declaration order in `ir.intent.edits` is not application
-order. `applyEdits` sorts same-block Tier-1 edits right-to-left before execution;
+order. A `textRanges` edit applies its same-block replacements right-to-left
+(`applyInlineReplacements`);
 partitioning allocation-ordered strings by iterating declared edits swaps
 provenance roots between adjacent targets. The writer instead locates each edit
 by its final output span and intersects that span with newly inserted strings.

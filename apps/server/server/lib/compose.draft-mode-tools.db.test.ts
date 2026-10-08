@@ -282,6 +282,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(content.ok ? content.value.trim() : "").toBe("");
     });
 
+    it("stages nothing for a write that leaves the chapter unchanged", async () => {
+      await db
+        .update(schema.works)
+        .set({ aiWriteMode: "direct" })
+        .where(eq(schema.works.id, WORK_ID));
+      const script = await startWithChapter("Writer live content.");
+      const { call } = await script.begin();
+
+      const written = await call("write", {
+        command: "create",
+        path: CHAPTER,
+        overwrite: true,
+        content: "Writer live content.",
+      });
+
+      expect(written.isError).toBeFalsy();
+      expect(text(written)).toContain("unchanged:");
+      expect((written.metadata as { stagedWrite?: unknown } | undefined)?.stagedWrite).toBe(
+        undefined,
+      );
+    });
+
     // D24: a binary copy duplicates the stored object and lands live, even in a draft Work.
     it("copies a binary file live as a new stored object", async () => {
       const runtime = await runtimes.compose();

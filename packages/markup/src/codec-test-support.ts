@@ -2,7 +2,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { expect } from "vitest";
 
-import type { ComponentRegistry, mdxCodec } from "./index.js";
+import type { AssetPathResolver, ComponentRegistry, mdxCodec } from "./index.js";
 
 export const schema = buildDocumentSchema();
 export const components = {
@@ -71,4 +71,20 @@ export function expectStable(codec: ReturnType<typeof mdxCodec>, input: string):
   const second = codec.parse(serialized).blocks;
   expect(docFrom(second).toJSON()).toEqual(docFrom(first).toJSON());
   expect(codec.serialize(second)).toBe(serialized);
+}
+
+/** A fixed id ↔ path table, for codec fixtures. */
+export function createAssetPathResolver(
+  entries: Iterable<readonly [string, string]>,
+): AssetPathResolver {
+  const pathById = new Map(entries);
+  const idByPath = new Map(Array.from(pathById, ([id, path]) => [path, id]));
+  return {
+    pathForAsset(assetDocumentId) {
+      return pathById.get(assetDocumentId) ?? null;
+    },
+    assetForPath(path) {
+      return idByPath.get(path) ?? null;
+    },
+  };
 }
