@@ -424,6 +424,15 @@ describe("tables and Layout round-trip corpus", () => {
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(first.toJSON());
   });
 
+  it("does not normalize table-looking hard breaks inside code fences", () => {
+    const input = ["```md", "| H |", "| - |", "| a\\", "b |", "```"].join("\n");
+    const block = firstParsedBlock(codec, input);
+
+    expect(block.type.name).toBe("code_block");
+    expect(block.textContent).toBe(["| H |", "| - |", "| a\\", "b |"].join("\n"));
+    expect(codec.serializeBlock(block)).toBe(input);
+  });
+
   it("does not canonicalize literal br syntax inside code fences", () => {
     const input = ["```md", "| H |", "| - |", "| a<br />b |", "```"].join("\n");
     const nested = [
