@@ -5,13 +5,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type {
-  AppliedEditSummary,
-  ApplyErrorCode,
-  ApplyResult,
-  ApplyTransactionOrigin,
-  ResolvedEdit,
-} from "./types.js";
+import type { ApplyErrorCode, ApplyResult, ApplyTransactionOrigin, ResolvedEdit } from "./types.js";
 
 type Ref = BlockRef;
 
@@ -40,7 +34,7 @@ type PlannedEdit =
     };
 
 interface ApplyAccumulator {
-  applied: AppliedEditSummary[];
+  insertedBlocks: string[];
   touchedHashes: Set<string>;
   deletedHashes: Set<string>;
 }
@@ -64,7 +58,7 @@ export function applyEdits(
   if (!turnSafety.ok) return turnSafety;
 
   const accumulator: ApplyAccumulator = {
-    applied: [],
+    insertedBlocks: [],
     touchedHashes: new Set(),
     deletedHashes: new Set(),
   };
@@ -99,14 +93,11 @@ export function applyEdits(
 
   return {
     ok: true,
-    status: "success",
-    documentId: editList[0].documentId,
-    file: editList[0].file,
     changedBlocks: model
       .getDocumentBlockIds(doc)
       .filter((hash) => accumulator.touchedHashes.has(hash)),
     deletedBlocks: [...accumulator.deletedHashes],
-    appliedEdits: accumulator.applied,
+    insertedBlocks: accumulator.insertedBlocks,
   };
 }
 
@@ -259,18 +250,13 @@ function executePlan(
       const applied = model.applyInlineReplacements(doc, plan.edit.block, plan.replacements, codec);
       if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
       accumulator.touchedHashes.add(plan.blockId);
-      accumulator.applied.push({
-        kind: "textRanges",
-
-        blockIds: [plan.blockId],
-      });
       break;
     }
     case "insert": {
       const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
       const blockIds = inserted.map((block) => model.getBlockId(block));
       for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
-      accumulator.applied.push({ kind: "insert", blockIds });
+      accumulator.insertedBlocks.push(...blockIds);
       break;
     }
     case "delete":
@@ -280,12 +266,10 @@ function executePlan(
       } else {
         accumulator.touchedHashes.add(plan.blockId);
       }
-      accumulator.applied.push({ kind: "delete", blockIds: [plan.blockId] });
       break;
     case "block":
       model.applyBlockReplacement(doc, plan.edit.block, plan.edit.replacement);
       accumulator.touchedHashes.add(plan.blockId);
-      accumulator.applied.push({ kind: "block", blockIds: [plan.blockId] });
       break;
   }
 }

@@ -78,11 +78,6 @@ export interface ConcurrentUpdate {
   };
 }
 
-export interface AppliedEditSummary {
-  kind: ResolvedEdit["kind"];
-  blockIds: string[];
-}
-
 export interface ApplyEchoHunk {
   mode: "suppressed" | "truncated" | "full";
   blocks: string[];
@@ -107,12 +102,9 @@ export interface ConcurrentEditRun {
 export type ApplyResult =
   | {
       ok: true;
-      status: "success";
-      documentId: string;
-      file: string;
       changedBlocks: string[];
       deletedBlocks: string[];
-      appliedEdits: AppliedEditSummary[];
+      insertedBlocks: string[];
     }
   | {
       ok: false;

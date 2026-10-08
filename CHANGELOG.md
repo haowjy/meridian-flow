@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Changed writes return mutation facts directly, without allocating discarded per-edit summaries.
+
 - Model reads, writes and recovery stop retaining unused session clock maps.
 
 - AI writes accept `<img>` without a closing slash. Image paths, alt text and widths survive read-back; other HTML void tags no longer require JSX closing slashes.
