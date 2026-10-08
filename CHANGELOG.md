@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Development: `pnpm test:all` runs unit and managed PostgreSQL tests together; its DB guard checks nested tests and rejects unit-only runs.
+- Development: DB fixture resets send their ordered deletes in one round trip, preserving transaction rollback and FK locking.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 

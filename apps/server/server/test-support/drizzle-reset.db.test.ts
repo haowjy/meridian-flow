@@ -321,9 +321,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       );
 
-      await expect(deleteDrizzleRows(db, [parent])).rejects.toThrow(
-        'Failed query: DELETE FROM "drizzle_reset_test"."parent"',
-      );
+      await expect(deleteDrizzleRows(db, [parent])).rejects.toMatchObject({
+        cause: { message: "parent delete rejected" },
+      });
 
       await expect(db.select().from(parent)).resolves.toEqual([{ id: 1 }]);
       const midRows = await db.execute(
