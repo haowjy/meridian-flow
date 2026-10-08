@@ -160,6 +160,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "current-work",
       });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: collab,

@@ -9,6 +9,10 @@ import {
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
+import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
+import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
+import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
 import {
   createWorkDraftFixture,
   DOC_ID,
@@ -28,7 +32,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("collab image paths (postgres)", () => {});
 } else {
   describe("collab image paths (postgres)", () => {
-    const db = createDb(DATABASE_URL, { max: 4 });
+    const queries: string[] = [];
+    const db = createDb(DATABASE_URL, {
+      max: 4,
+      postgres: {
+        debug: (_connection, query) => {
+          queries.push(query);
+        },
+      },
+    });
     const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
@@ -106,6 +118,121 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).resolves.toMatchObject({ status: "success" });
     }
+
+    it.each([
+      false,
+      true,
+    ])("shares search paths across chapters (thread view: %s)", async (threadView) => {
+      const paths = createDrizzleDocumentAssetPaths(db);
+      const collab = createTestCollab(paths);
+      collab.bindHocuspocus(hocuspocus as never);
+      await seedChapterWithMap(collab);
+      const secondDocumentId = "00000000-0000-4000-8000-000000000713";
+      await db.insert(documents).values({
+        id: secondDocumentId,
+        contextSourceId: SOURCE_ID,
+        name: "chapter-two",
+        extension: "md",
+        fileType: "markdown",
+      });
+      await collab.writeDocument({
+        documentId: secondDocumentId as never,
+        markdown: "![Map](assets/map.png)",
+        origin: { type: "user", actorUserId: USER_ID as never },
+      });
+      let moveAfterRead = true;
+      async function moveImage() {
+        if (!moveAfterRead) return;
+        moveAfterRead = false;
+        await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
+      }
+      const context = new ContextFS({
+        scheme: "manuscript",
+        assetPaths: paths,
+        store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
+        mutationStore: new DrizzleContextTreeMutationStore(db),
+        ...(threadView
+          ? {
+              threadView: {
+                threadId: THREAD_ID,
+                draftWork: { id: WORK_ID as never, slug: "work" },
+              },
+            }
+          : {}),
+        documentSync: {
+          ...collab,
+          async readVersionedMarkdown(documentId) {
+            const read = await collab.readVersionedMarkdown(documentId);
+            await moveImage();
+            return read;
+          },
+          async readEffectiveHashlines(command) {
+            const read = await collab.readEffectiveHashlines(command);
+            await moveImage();
+            return read;
+          },
+        },
+      });
+      queries.length = 0;
+      const hits = await context.search("map.png");
+      expect(
+        queries.filter((query) => query.includes("WITH RECURSIVE manuscript AS")),
+      ).toHaveLength(1);
+      expect(
+        queries.filter((query) => query.includes("COALESCE(cs.project_id, w.project_id)")),
+      ).toHaveLength(1);
+      expect(hits.ok).toBe(true);
+      if (!hits.ok) throw new Error(JSON.stringify(hits.error));
+      expect(hits.value).toHaveLength(2);
+      for (const hit of hits.value) {
+        expect(JSON.stringify(hit.matches)).toContain("assets/map.png");
+        expect(JSON.stringify(hit.matches)).not.toContain("art/map.png");
+      }
+      const next = await context.search("map.png");
+      expect(next.ok).toBe(true);
+      if (!next.ok) throw new Error(JSON.stringify(next.error));
+      expect(next.value).toHaveLength(2);
+      for (const hit of next.value) expect(JSON.stringify(hit.matches)).toContain("art/map.png");
+    });
+
+    it("keeps one path snapshot when an image moves between preview serializations", async () => {
+      const paths = createDrizzleDocumentAssetPaths(db);
+      let moveAfterSerialization = false;
+      const collab = createTestCollab({
+        resolver: paths.resolver,
+        within: (project, operation) =>
+          paths.within(project, async () => {
+            const result = await operation();
+            // The engine's live serialization completes before preview reads the draft.
+            if (moveAfterSerialization) {
+              moveAfterSerialization = false;
+              await db
+                .update(folders)
+                .set({ name: "art" })
+                .where(eq(folders.contextSourceId, SOURCE_ID));
+            }
+            return result;
+          }),
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await seedChapterWithMap(collab);
+      const command = {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: DOC_ID as never,
+        draftId: await currentDraftId(collab, DOC_ID),
+      };
+      moveAfterSerialization = true;
+      const preview = await collab.draftReview.preview(command);
+      if (preview.status !== "active") throw new Error("missing draft preview");
+      expect(preview.live).toContain("assets/map.png");
+      expect(preview.markdown).toContain("assets/map.png");
+      expect(preview.markdown).not.toContain("art/map.png");
+      const next = await collab.draftReview.preview(command);
+      if (next.status !== "active") throw new Error("missing draft preview");
+      expect(next.live).toContain("art/map.png");
+      expect(next.markdown).toContain("art/map.png");
+    });
 
     it("accepts a draft on a chapter with an image", async () => {
       const collab = createTestCollab();

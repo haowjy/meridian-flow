@@ -1,3 +1,4 @@
+import { createDrizzleDocumentAssetPaths } from "../adapters/asset-path-resolver.js";
 /** Postgres-backed coverage for independent figure asset identity. */
 
 import { createDb } from "@meridian/database";
@@ -88,6 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("creates a distinct binary asset without changing the host document", async () => {
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: createInMemoryCollabDomain(),
         manifestMembership: {

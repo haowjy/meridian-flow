@@ -45,6 +45,10 @@ their last location) in one query and binds them to the operation with
 serializes: the markdown engine, the edit core (`read`/`write` by grant
 project, reversal by document), the branch peer, the reply's save (by thread),
 live turn reversal, draft push and its settlement, and offline reconciliation.
+Draft preview owns one enclosing scope for both live and draft serialization.
+ContextFS search owns one for all matching documents in its source; it supplies
+those document IDs with the first document as the project anchor, so nested
+reads need neither another image-tree load nor another project lookup.
 Wrappers name every method, so a new method does not compile until its scope is
 decided. A nested `within` for the same project reuses the enclosing scope only
 while that operation is still running; a timer that inherited a settled scope

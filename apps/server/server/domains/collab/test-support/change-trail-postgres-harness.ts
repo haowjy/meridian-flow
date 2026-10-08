@@ -590,6 +590,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
+    assetPaths: NO_DOCUMENT_ASSET_PATHS,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       db,
       branchStore,

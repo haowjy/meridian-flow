@@ -416,6 +416,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deps.assetPaths,
   );
   const drafts = createWorkDraftReviewService({
+    assetPaths: deps.assetPaths,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
       branches,

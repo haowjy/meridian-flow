@@ -85,6 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       collab.bindHocuspocus(hocuspocus);
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         db,
         documentSync: collab,
         manifestMembership: collab,

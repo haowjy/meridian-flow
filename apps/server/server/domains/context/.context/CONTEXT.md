@@ -123,7 +123,10 @@ router resolves to exact project-scoped Work authority before dispatch.
   manuscript, wherever it sits and including deleted ones, in one recursive
   query kept to the project's rows by the `folders_context_root`,
   `folders_parent` and `documents_context_images` indexes. Nothing is cached
-  between operations, and figure upload does not notify it. Paths are
+  between operations, and figure upload does not notify it. ContextFS search
+  binds its source document IDs to one scope, resolving their common project
+  once and reusing its image snapshot across all chapters. The factory must
+  receive the same asset-path port instance as collab. Paths are
   manuscript-relative; parsing accepts the bare form and `manuscript://`. A
   path held by a live image resolves to it; otherwise only a sole deleted image
   at that path claims it. Scope rules live in collab's
