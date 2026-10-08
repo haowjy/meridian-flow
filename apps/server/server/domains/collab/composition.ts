@@ -434,7 +434,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveCoordinator,
       branchJournal,
     ),
-
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
       branches,

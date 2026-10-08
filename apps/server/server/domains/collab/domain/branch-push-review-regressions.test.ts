@@ -25,7 +25,6 @@ import {
   type BranchCriticalSections,
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
-
 import { createBranchPushService } from "./branch-push.js";
 import type {
   BranchJournalReadStore,
