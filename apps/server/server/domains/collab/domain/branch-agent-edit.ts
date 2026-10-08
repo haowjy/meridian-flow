@@ -100,6 +100,7 @@ type ConcurrentUpdateOrigin =
   | { type: "agent"; actorTurnId: string };
 
 type ConcurrentAttributionBasis = {
+  baselineSnapshot: Y.Snapshot;
   baselineState: Uint8Array | null;
   currentUpstreamState?: Uint8Array;
   fallbackCurrentUpstream: Y.Doc;
@@ -249,6 +250,7 @@ export function createBranchAgentEditCoordinator(input: {
       attemptId,
     }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
+      const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
@@ -265,6 +267,7 @@ export function createBranchAgentEditCoordinator(input: {
             )
           : [];
         const partitioned = partitionConcurrentUpdates({
+          baselineSnapshot,
           baselineState,
           journalRows: [...concurrent.rows, ...liveRows],
           currentUpstreamState: concurrent.upstreamState,
@@ -795,21 +798,16 @@ function partitionConcurrentUpdates(
 ): PartitionedConcurrentUpdate[] {
   const upstreamState =
     input.currentUpstreamState ?? Y.encodeStateAsUpdate(input.fallbackCurrentUpstream);
+  // A state vector alone misses delete-only edits. Capture structs and tombstones
+  // before journal reads yield, so both checks use the same baseline cut.
+  const rows = input.journalRows.filter(
+    (row) => !Y.snapshotContainsUpdate(input.baselineSnapshot, row.updateData),
+  );
+  if (rows.length === 0 && input.baselineState && bytesEqual(input.baselineState, upstreamState)) {
+    return [];
+  }
   const scratch = docFromState(input.baselineState);
   try {
-    // A state vector alone misses delete-only edits. The snapshot includes both
-    // the integrated structs and tombstones; covered rows cannot change attribution.
-    const baseline = Y.snapshot(scratch);
-    const rows = input.journalRows.filter(
-      (row) => !Y.snapshotContainsUpdate(baseline, row.updateData),
-    );
-    if (
-      rows.length === 0 &&
-      input.baselineState &&
-      bytesEqual(input.baselineState, upstreamState)
-    ) {
-      return [];
-    }
     const coverage = partitionByBlockCoverage({
       baselineState: input.baselineState,
       upstreamState,
