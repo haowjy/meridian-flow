@@ -573,7 +573,7 @@ describe("draft review attribution", () => {
     ]);
   });
 
-  it("emits ordered inserted sub-spans remapped to stable writer operation ids", () => {
+  it("emits ordered inserted sub-spans with source writer operation identities", () => {
     const live = createDoc("Alpha tail text for mixed insertion span ordering.");
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
