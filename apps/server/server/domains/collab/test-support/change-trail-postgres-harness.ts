@@ -14,7 +14,10 @@ import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
-import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
+import {
+  createDocumentUrisResolver,
+  resolveDocumentUri as resolvePersistedDocumentUri,
+} from "../../context/document-uri-resolver.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
@@ -618,7 +621,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
-    resolveDocumentUri,
+    resolveDocumentUris: createDocumentUrisResolver(
+      db,
+      createDrizzleProjectWorkAuthorityResolver(db),
+    ),
     resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
     readLiveReviewCut: createDrizzleDraftReviewLive(db, persistence.journal),
   });

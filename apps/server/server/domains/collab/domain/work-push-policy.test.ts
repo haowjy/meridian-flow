@@ -131,6 +131,7 @@ function pendingDrafts(...branchIds: string[]) {
       documentId: "00000000-0000-4000-8000-000000000003",
       workId: WORK_ID,
       generation: 1,
+      updatedAt: new Date("2026-01-01"),
     },
     rows: [],
   }));

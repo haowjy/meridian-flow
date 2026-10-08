@@ -52,7 +52,7 @@ export function createWorkDraftReviewService(input: {
   model: YProsemirrorDocumentModel;
   agentEdit: ThreadPeerAgentEditCore;
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
-  resolveDocumentUri(documentId: string): Promise<string | null>;
+  resolveDocumentUris(documentIds: readonly string[]): Promise<ReadonlyMap<string, string | null>>;
   readLiveReviewCut(documentId: string): Promise<{ doc: Y.Doc; revision: string }>;
 }): CollabDrafts {
   async function resolveDraftOnlyDocumentIds(command: {
@@ -81,8 +81,10 @@ export function createWorkDraftReviewService(input: {
   ): Promise<ReviewableDraft[]> {
     const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
     const drafts: ReviewableDraft[] = [];
-    for (const { branch, rows } of await input.workDraftPending.list(workId)) {
-      const uri = await input.resolveDocumentUri(branch.documentId);
+    const pending = await input.workDraftPending.list(workId);
+    const uris = await input.resolveDocumentUris(pending.map(({ branch }) => branch.documentId));
+    for (const { branch, rows } of pending) {
+      const uri = uris.get(branch.documentId) ?? null;
       drafts.push({
         draftId: branch.branchId,
         documentId: branch.documentId,
@@ -91,7 +93,7 @@ export function createWorkDraftReviewService(input: {
         lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
         wordsAdded: null,
         wordsRemoved: null,
-        updatedAt: new Date(),
+        updatedAt: branch.updatedAt,
         documentName: documentTitleFromUri(uri),
         contextPath: manuscriptContextPath(uri),
         ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
