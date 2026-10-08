@@ -1,10 +1,12 @@
 /** Attribution must skip covered history without caching away a later concurrency recheck. */
+import { renderAgentEditResult } from "@meridian/agent-edit";
 import {
   cloneYDoc,
   createAgentEditCodec,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
+import { blockTexts, createWriteToolHarness, humanText } from "@meridian/agent-edit/test-support";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
@@ -24,13 +26,14 @@ afterEach(() => {
   for (const doc of docs.splice(0)) doc.destroy();
 });
 
-function fixture() {
+function fixture(existingUpstream?: Y.Doc) {
   const codec = createAgentEditCodec(
     mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
   );
   const serialize = vi.spyOn(codec, "serializeBlockBodies");
-  const upstream = new Y.Doc({ gc: false });
-  model.insertBlocks(toDocHandle(upstream), null, codec.parse("Alpha.\n\nBeta."));
+  const upstream = existingUpstream ?? new Y.Doc({ gc: false });
+  if (!existingUpstream)
+    model.insertBlocks(toDocHandle(upstream), null, codec.parse("Alpha.\n\nBeta."));
   const baseline = cloneYDoc(upstream);
   docs.push(upstream, baseline);
   const rows: BranchJournalRow[] = [];
@@ -112,10 +115,48 @@ function fixture() {
     if (!changes) throw new Error("Missing branch attribution");
     return changes;
   }
-  return { upstream, baseline, rows, liveUpdates, row, check, serialize };
+  return { upstream, baseline, rows, liveUpdates, row, check, serialize, coordinator };
 }
 
 describe("branch concurrent attribution", () => {
+  it("reports writer content arriving after the fast preflight in the actual response save", async () => {
+    let afterPreflight = () => {};
+    const ctx = createWriteToolHarness(
+      { "chapter.md": "Alpha para.\n\nBeta para." },
+      {
+        afterResponsePreflight: () => afterPreflight(),
+      },
+    );
+    const f = fixture(ctx.liveDoc("chapter.md"));
+    f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
+    ctx.coordinator.concurrentUpdatesSince = f.coordinator.concurrentUpdatesSince;
+    const context = {
+      sessionId: "session",
+      threadId: "thread-a",
+      turnId: "turn-late",
+      responseId: "reply-late",
+    };
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", in: 1, content: "Alpha AI edit." },
+      context,
+    );
+    afterPreflight = () => {
+      expect(f.serialize).not.toHaveBeenCalled();
+      const vector = Y.encodeStateVector(f.upstream);
+      humanText(f.upstream, 0, { from: 11, to: 11 }, " WRITER");
+      f.rows.push(f.row(Y.encodeStateAsUpdate(f.upstream, vector)));
+    };
+    const saved = await ctx.core.commitResponse("reply-late");
+    expect(blockTexts(f.upstream)).toEqual(["Alpha AI edit. WRITER", "Beta para."]);
+    const receipt = saved.documents[0]?.receipts.at(-1)?.result;
+    if (!receipt) throw new Error("Missing saved receipt");
+    expect(renderAgentEditResult(receipt)).toContain(
+      "concurrent user content swept during commit; re-read required",
+    );
+    expect(f.serialize).toHaveBeenCalled();
+  });
+
   it("does no block projection for identical states with retained, covered journal rows", async () => {
     const f = fixture();
     for (let i = 0; i < 20; i++) f.rows.push(f.row(Y.encodeStateAsUpdate(f.baseline)));
