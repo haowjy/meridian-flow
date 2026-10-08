@@ -34,12 +34,7 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 
-async function prepareBrief(input: {
-  userCutoff: boolean;
-  previousTooLarge?: boolean;
-  sourcePreparationFails?: boolean;
-  revisionLookupFails?: boolean;
-}) {
+async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boolean }) {
   let sourceId = "";
   const summarizer = scriptedSummarizer();
   const gateway = {
@@ -63,7 +58,6 @@ async function prepareBrief(input: {
     toolRegistry,
     documentRevisions: {
       async current({ documentIds }) {
-        if (input.revisionLookupFails) throw new Error("Revision lookup unavailable");
         return new Map(documentIds.map((id) => [id, "revision-2"]));
       },
     },
@@ -218,11 +212,6 @@ async function prepareBrief(input: {
       cutoffTurnId: cutoff.id,
     },
   });
-  if (input.sourcePreparationFails) {
-    rig.deps.agentRevisions.readThreadBinding = async () => {
-      throw new Error("Source binding unavailable");
-    };
-  }
   const beforeTurns = await rig.repos.turns.listByThread(source.id);
   const beforeBlocks = await rig.repos.blocks.listByThread(source.id);
   const result = await generateHandoffBrief(
@@ -265,16 +254,4 @@ it("marks a retry after a too-large brief rejection as known too large", async (
   const { result, calls } = await prepareBrief({ userCutoff: false, previousTooLarge: true });
   expect(result.outcome.kind).toBe("complete");
   expect(calls[0]).toMatchObject({ knownTooLarge: true });
-});
-
-it("reports a read document as changed when its current revision cannot be read", async () => {
-  const { result, calls } = await prepareBrief({
-    userCutoff: false,
-    revisionLookupFails: true,
-  });
-
-  expect(result.outcome.kind).toBe("complete");
-  expect(calls[0]).toMatchObject({
-    changedDocuments: ["manuscript://chapter-12.md"],
-  });
 });

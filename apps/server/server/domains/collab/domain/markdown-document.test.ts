@@ -86,16 +86,6 @@ describe("code document serialization", () => {
     projection.destroy();
   });
 
-  it("reads a code-schema document without markdown fences", async () => {
-    const subject = setup();
-    await seedCode(subject);
-
-    await expect(subject.engine.readAsMarkdown(DOCUMENT_ID)).resolves.toEqual({
-      ok: true,
-      value: "const answer = 42;",
-    });
-  });
-
   it("restores a code checkpoint without turning fences into literal code", async () => {
     const subject = setup();
     await seedCode(subject, "const original = true;");

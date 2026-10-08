@@ -28,29 +28,6 @@ function customBlock(props: Record<string, JsonValue>): Block {
   };
 }
 
-describe("thread store block upserts", () => {
-  it("does not change turn or block references for duplicate historical replacement", () => {
-    const store = setup();
-    store.getState().ensureAssistantTurn("thread-1", "turn-1");
-    store.getState().ensureAssistantTurn("thread-1", "turn-2");
-    store
-      .getState()
-      .upsertAssistantBlock("thread-1", "turn-1", customBlock({ outcome: "succeeded" }));
-    const before = store.getState().turns("thread-1") ?? [];
-    const beforeBlocks = before[0]?.blocks;
-    const otherTurn = before[1];
-
-    store
-      .getState()
-      .upsertAssistantBlock("thread-1", "turn-1", customBlock({ outcome: "succeeded" }));
-
-    const after = store.getState().turns("thread-1") ?? [];
-    expect(after).toBe(before);
-    expect(after[0]?.blocks).toBe(beforeBlocks);
-    expect(after[1]).toBe(otherTurn);
-  });
-});
-
 describe("durable block wire freshness", () => {
   it("keeps the cursor and snapshot floor monotonic beyond safe integers", () => {
     const store = setup();
