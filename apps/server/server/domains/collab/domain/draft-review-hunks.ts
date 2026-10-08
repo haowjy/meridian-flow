@@ -158,11 +158,11 @@ type TextSegment = {
   itemRanges: ClockRange[];
 };
 
-type AlignmentEntry =
-  | { kind: "equal"; live: BlockInfo; draft: BlockInfo }
-  | { kind: "change"; live: BlockInfo; draft: BlockInfo }
-  | { kind: "delete"; live: BlockInfo }
-  | { kind: "insert"; draft: BlockInfo };
+type AlignmentEntry<T extends BlockAlignmentInput = BlockInfo> =
+  | { kind: "equal"; live: T; draft: T }
+  | { kind: "change"; live: T; draft: T }
+  | { kind: "delete"; live: T }
+  | { kind: "insert"; draft: T };
 
 type RawHunkBase = {
   anchor: { relStart: string; relEnd: string };
@@ -202,21 +202,61 @@ function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
   }));
 }
 
-function alignBlocks(
-  liveBlocks: readonly BlockAlignmentInput[],
-  draftBlocks: readonly BlockAlignmentInput[],
-): AlignmentEntry[] {
-  const lengths = lcsLengths(
-    liveBlocks.map((block) => block.id),
-    draftBlocks.map((block) => block.id),
-  );
-  const entries: AlignmentEntry[] = [];
-  let liveIndex = 0;
-  let draftIndex = 0;
-  while (liveIndex < liveBlocks.length && draftIndex < draftBlocks.length) {
+export function alignBlocks<T extends BlockAlignmentInput>(
+  liveBlocks: readonly T[],
+  draftBlocks: readonly T[],
+): AlignmentEntry<T>[] {
+  const entries: AlignmentEntry<T>[] = [];
+  const pair = (live: T, draft: T) =>
+    entries.push({
+      kind: blockContentMatches(live, draft) ? "equal" : "change",
+      live,
+      draft,
+    });
+  let liveIndex = 0,
+    draftIndex = 0;
+  while (
+    liveIndex < liveBlocks.length &&
+    draftIndex < draftBlocks.length &&
+    liveBlocks[liveIndex].id === draftBlocks[draftIndex].id
+  ) {
+    pair(liveBlocks[liveIndex], draftBlocks[draftIndex]);
+    liveIndex++;
+    draftIndex++;
+  }
+  const offset = liveIndex;
+  let liveEnd = liveBlocks.length,
+    draftEnd = draftBlocks.length;
+  // Duplicate IDs make suffix matching ambiguous under the LCS tie rule.
+  const uniqueIds = (blocks: readonly T[]) => {
+    const counts = new Map<string, number>();
+    for (const block of blocks) counts.set(block.id, (counts.get(block.id) ?? 0) + 1);
+    return counts;
+  };
+  const liveCounts = uniqueIds(liveBlocks.slice(offset)),
+    draftCounts = uniqueIds(draftBlocks.slice(offset));
+  while (liveEnd > offset && draftEnd > offset) {
+    const id = liveBlocks[liveEnd - 1].id;
+    if (
+      id !== draftBlocks[draftEnd - 1].id ||
+      liveCounts.get(id) !== 1 ||
+      draftCounts.get(id) !== 1
+    )
+      break;
+    liveEnd--;
+    draftEnd--;
+  }
+  const lengths =
+    liveIndex < liveEnd && draftIndex < draftEnd
+      ? lcsLengths(
+          liveBlocks.slice(offset, liveEnd).map((block) => block.id),
+          draftBlocks.slice(offset, draftEnd).map((block) => block.id),
+        )
+      : [];
+  while (liveIndex < liveEnd && draftIndex < draftEnd) {
     if (liveBlocks[liveIndex].id === draftBlocks[draftIndex].id) {
-      const live = liveBlocks[liveIndex] as BlockInfo;
-      const draft = draftBlocks[draftIndex] as BlockInfo;
+      const live = liveBlocks[liveIndex];
+      const draft = draftBlocks[draftIndex];
       entries.push({
         kind: blockContentMatches(live, draft) ? "equal" : "change",
         live,
@@ -224,21 +264,27 @@ function alignBlocks(
       });
       liveIndex += 1;
       draftIndex += 1;
-    } else if (lengths[liveIndex + 1][draftIndex] >= lengths[liveIndex][draftIndex + 1]) {
-      entries.push({ kind: "delete", live: liveBlocks[liveIndex] as BlockInfo });
+    } else if (
+      lengths[liveIndex - offset + 1][draftIndex - offset] >=
+      lengths[liveIndex - offset][draftIndex - offset + 1]
+    ) {
+      entries.push({ kind: "delete", live: liveBlocks[liveIndex] });
       liveIndex += 1;
     } else {
-      entries.push({ kind: "insert", draft: draftBlocks[draftIndex] as BlockInfo });
+      entries.push({ kind: "insert", draft: draftBlocks[draftIndex] });
       draftIndex += 1;
     }
   }
-  while (liveIndex < liveBlocks.length) {
-    entries.push({ kind: "delete", live: liveBlocks[liveIndex] as BlockInfo });
+  while (liveIndex < liveEnd) {
+    entries.push({ kind: "delete", live: liveBlocks[liveIndex] });
     liveIndex += 1;
   }
-  while (draftIndex < draftBlocks.length) {
-    entries.push({ kind: "insert", draft: draftBlocks[draftIndex] as BlockInfo });
+  while (draftIndex < draftEnd) {
+    entries.push({ kind: "insert", draft: draftBlocks[draftIndex] });
     draftIndex += 1;
+  }
+  while (liveEnd < liveBlocks.length) {
+    pair(liveBlocks[liveEnd++], draftBlocks[draftEnd++]);
   }
   return entries;
 }
