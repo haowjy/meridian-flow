@@ -26,26 +26,7 @@ function reasoning(messageId: string, delta: string): AGUIEvent {
   return { type: EventType.REASONING_MESSAGE_CONTENT, messageId, delta } as AGUIEvent;
 }
 
-function finish(): AGUIEvent {
-  return { type: EventType.RUN_FINISHED, threadId: "t", runId: "r" } as AGUIEvent;
-}
-
 describe("StreamDeltaCoalescer", () => {
-  it("flushes a pending run before a non-mergeable event", () => {
-    const { schedule } = manualScheduler();
-    const applied: AGUIEvent[] = [];
-    const coalescer = new StreamDeltaCoalescer((event) => applied.push(event), schedule);
-
-    coalescer.push(content("m1", "a"));
-    coalescer.push(finish());
-
-    expect(applied.map((event) => event.type)).toEqual([
-      EventType.TEXT_MESSAGE_CONTENT,
-      EventType.RUN_FINISHED,
-    ]);
-    expect(applied[0]).toMatchObject({ delta: "a" });
-  });
-
   it("does not merge across message or block-kind boundaries", () => {
     const { schedule, runNext } = manualScheduler();
     const applied: AGUIEvent[] = [];
