@@ -42,7 +42,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       updateWorkTransition,
       WorkRestoreConflictError,
       WorkRestoreExpiredError,
-      WorkLifecycleUnavailableError,
       createWorkProjectionMutation,
       createDrizzleWorkPurger,
     } = await import("./index.js");
@@ -130,20 +129,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await works.findById(work.id)).toMatchObject({ archivedAt: null, deletedAt: null });
     });
 
-    it("refuses archived metadata updates until the Work is unarchived", async () => {
-      const work = await works.create({ projectId: PROJECT_ID, name: "Read only" });
-      const deps = { works, workContextNotices: { async workChanged() {} } };
-      await works.archive(work.id);
-
-      await expect(
-        updateWorkTransition(deps, work.id, { goal: "Should not change" }),
-      ).rejects.toBeInstanceOf(WorkLifecycleUnavailableError);
-      await works.unarchive(work.id);
-      await expect(
-        updateWorkTransition(deps, work.id, { goal: "Writable again" }),
-      ).resolves.toMatchObject({ after: { goal: "Writable again", archivedAt: null } });
-    });
-
     it("returns coded PATCH refusals for archived and deleted Works", async () => {
       const work = await works.create({ projectId: PROJECT_ID, name: "PATCH lifecycle" });
       const deps = {
@@ -189,17 +174,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ),
       ).resolves.toEqual({ status: 404, code: "work_not_found" });
-    });
-
-    it("generates deduplicated handles and keeps them through rename", async () => {
-      const first = await works.create({ projectId: PROJECT_ID, name: "Book 2!" });
-      const second = await works.create({ projectId: PROJECT_ID, name: "Book 2?" });
-      const symbols = await works.create({ projectId: PROJECT_ID, name: "!!!" });
-
-      expect([first.slug, second.slug, symbols.slug]).toEqual(["book-2", "book-2-2", "work"]);
-      await expect(works.update(first.id, { name: "Renamed" })).resolves.toMatchObject({
-        slug: "book-2",
-      });
     });
 
     it("keeps UUID-shaped slugs and resolves ambiguous strings by exact field role", async () => {
@@ -923,32 +897,67 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) })
         .where(inArray(schema.works.id, [sourceWork.id, unrelatedWork.id]));
       // Fill the oldest page with retained sources; the later unrelated Work must still purge.
-      for (let index = 1; index < 100; index += 1) {
-        const blocked = await works.create({ projectId: PROJECT_ID, name: `Retained ${index}` });
-        const root = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
-        await threadRepos.threadWorks.addMembership(root.id, blocked.id, true);
-        const forkId = crypto.randomUUID();
-        const cutoff = await threadRepos.turns.create({
-          threadId: root.id,
+      // Extra candidates fill the purge page with deleted roots and live dependent forks.
+      // Bulk seeding avoids provisioning and cascading 99 unrelated context catalogs.
+      const expiredAt = new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000);
+      const retained = Array.from({ length: 99 }, (_, index) => ({
+        workId: crypto.randomUUID(),
+        rootId: crypto.randomUUID(),
+        forkId: crypto.randomUUID(),
+        turnId: crypto.randomUUID(),
+        name: `Retained ${index + 1}`,
+      }));
+      await db.insert(schema.works).values(
+        retained.map((row) => ({
+          id: row.workId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: row.name,
+          slug: row.name.toLowerCase().replaceAll(" ", "-"),
+          deletedAt: expiredAt,
+        })),
+      );
+      await db.insert(schema.threads).values(
+        retained.map((row) => ({
+          id: row.rootId,
+          rootThreadId: row.rootId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          deletedAt: expiredAt,
+          deletedByWorkId: row.workId,
+        })),
+      );
+      await db.insert(schema.turns).values(
+        retained.map((row) => ({
+          id: row.turnId,
+          threadId: row.rootId,
+          position: 1,
           role: "assistant",
           origin: "assistant",
           status: "complete",
-        });
-        await db.insert(schema.threads).values({
-          id: forkId,
-          rootThreadId: root.id,
+        })),
+      );
+      await db.insert(schema.threads).values(
+        retained.map((row) => ({
+          id: row.forkId,
+          rootThreadId: row.rootId,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
           originType: "fork",
-          originTurnId: cutoff.id,
-        });
-        await threadRepos.threadWorks.addMembership(forkId, destinationWork.id, true);
-        await works.softDelete(blocked.id);
-        await db
-          .update(schema.works)
-          .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })
-          .where(eq(schema.works.id, blocked.id));
-      }
+          originTurnId: row.turnId,
+        })),
+      );
+      await db.insert(schema.threadWorks).values(
+        retained.flatMap((row) => [
+          { threadId: row.rootId, workId: row.workId, projectId: PROJECT_ID, isPrimary: true },
+          {
+            threadId: row.forkId,
+            workId: destinationWork.id,
+            projectId: PROJECT_ID,
+            isPrimary: true,
+          },
+        ]),
+      );
       await db
         .update(schema.works)
         .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })

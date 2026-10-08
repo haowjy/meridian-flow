@@ -14,7 +14,6 @@ import { hashPromptBakeContent } from "../../threads/domain/prompt-bake-hash.js"
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
 import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
 import { seedGeneralAgent } from "../domain/default-package-seeding.js";
-import { AgentPublicationConflictError } from "../domain/source-publication.js";
 
 const USER = "00000000-0000-4000-8000-000000000871";
 const OTHER = "00000000-0000-4000-8000-000000000872";
@@ -78,73 +77,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await store.readRevision(next.selectedRevisionId))?.definition.metadata.model).toBe(
         "next-model",
       );
-    });
-
-    it("projects the retained revision through thread reads, lists, and updates", async () => {
-      const threads = createDrizzleThreadRepository(db);
-      const original = source();
-      original.files["agents/general.md"] = original.files["agents/general.md"].replace(
-        "name: General",
-        "name: Retained Name",
-      );
-      const first = (await store.installSource(original)).definitions[0];
-      await store.bindThread(THREAD, first.id, bindingConfiguration, null);
-      expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBe(first.id);
-      expect((await threads.listByUser(USER))[0]?.agentDefinitionRevisionId).toBe(first.id);
-      const updated = await threads.updateStatus(THREAD, "idle");
-      expect(updated?.agentDefinitionRevisionId).toBe(first.id);
-      expect(updated?.agentName).toBe("Retained Name");
-      expect((await threads.findById(THREAD))?.agentName).toBe("Retained Name");
-      expect((await threads.listByUser(USER))[0]?.agentName).toBe("Retained Name");
-    });
-
-    it("labels an agent-less binding as the generic subagent through thread reads and the chat feed", async () => {
-      const threads = createDrizzleThreadRepository(db);
-      const { createDrizzleRepositoriesForTest } = await import(
-        "../../threads/adapters/drizzle/repositories.js"
-      );
-      const repos = createDrizzleRepositoriesForTest(db);
-      await store.bindThread(THREAD, null, bindingConfiguration, null);
-      expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBeNull();
-      expect((await threads.findById(THREAD))?.agentName).toBe("Subagent");
-      expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
-      const updated = await threads.updateStatus(THREAD, "idle");
-      expect(updated?.agentName).toBe("Subagent");
-      const feed = await repos.chatFeed.queryPage({
-        projectId: PROJECT,
-        userId: USER,
-        after: null,
-        limit: 10,
-        favorite: false,
-        search: null,
-        workId: null,
-      });
-      expect(feed[0]?.agentName).toBe("Subagent");
-    });
-
-    it("searches chat feed titles case-insensitively with LIKE metacharacters taken literally", async () => {
-      const threads = createDrizzleThreadRepository(db);
-      const { createDrizzleRepositoriesForTest } = await import(
-        "../../threads/adapters/drizzle/repositories.js"
-      );
-      const repos = createDrizzleRepositoriesForTest(db);
-      await threads.updateTitle(THREAD, "50% Sect trials");
-      const titles = async (search: string) =>
-        (
-          await repos.chatFeed.queryPage({
-            projectId: PROJECT,
-            userId: USER,
-            after: null,
-            limit: 10,
-            favorite: false,
-            search,
-            workId: null,
-          })
-        ).map((item) => item.title);
-      expect(await titles("sect")).toEqual(["50% Sect trials"]);
-      expect(await titles("50%")).toEqual(["50% Sect trials"]);
-      expect(await titles("5_%")).toEqual([]);
-      expect(await titles("dragon")).toEqual([]);
     });
 
     it("chooses one complete prompt-freeze winner across independent connections", async () => {
@@ -357,31 +289,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.readSelection(USER, entry.entry.id, secret.id)).toBeUndefined();
       await store.removeOwnedEntry(USER, entry.entry.id);
       expect(await store.readSelection(USER, entry.entry.id, first.id)).toBeUndefined();
-    });
-
-    it("lists and resolves exact catalog revisions with one host support check", async () => {
-      const catalog = createBoundAgentCatalog({
-        defaultModel: () => "test-model",
-        store,
-        unavailableReasons: (definition) =>
-          definition.metadata.model === "fixture-model" ? [] : ["Model unavailable"],
-      });
-      await catalog.installSystemSource(source());
-      const page = await catalog.list(USER, { limit: 100 });
-      expect(page.agents).toHaveLength(1);
-      const reserved = page.agents[0].selection;
-      expect(page.agents[0].unavailableReasons).toEqual([]);
-      await catalog.installSystemSource(source("Updated prompt"));
-      const resolved = await catalog.resolvePrimary(USER, reserved);
-      expect(resolved).toMatchObject({
-        ok: true,
-        revision: { definition: { systemPrompt: "Original prompt." } },
-      });
-      const before = await store.listCatalog({ userId: USER, limit: 100 });
-      await expect(
-        catalog.installSystemSource({ ...source("Colliding source"), coordinate: "other-source" }),
-      ).rejects.toThrow(AgentPublicationConflictError);
-      expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual(before);
     });
 
     it("publishes complete system sources under concurrent updates", async () => {

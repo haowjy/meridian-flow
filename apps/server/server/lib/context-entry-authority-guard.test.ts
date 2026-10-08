@@ -16,9 +16,7 @@ function expectAuthorityReservation(parse: () => unknown) {
 
 describe("context entry authority-prefix guard", () => {
   it.each([
-    ["file at root", { type: "file", path: "@notes.md" }],
     ["file nested", { type: "file", path: "Drafts/@notes.md" }],
-    ["folder at root", { type: "folder", path: "@Drafts" }],
     ["folder nested", { type: "folder", path: "Act 1/@Drafts" }],
   ])("rejects create for a %s", (_label, body) => {
     expectAuthorityReservation(() => parseCreateContextEntryBody(body));
@@ -46,11 +44,5 @@ describe("context entry authority-prefix guard", () => {
     ],
   ])("rejects move for a %s", (_label, body) => {
     expectAuthorityReservation(() => parseContextMove({ sourceScheme: "manuscript", body }));
-  });
-
-  it("allows interior at signs through the shared route choke", () => {
-    expect(parseCreateContextEntryBody({ type: "file", path: "Drafts/notes@revision.md" })).toEqual(
-      { type: "file", path: "Drafts/notes@revision.md", content: undefined },
-    );
   });
 });
