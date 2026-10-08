@@ -162,7 +162,7 @@ conversion. `rawTextForAst()` slices from `runtime.source`, so fallback text and
 AST positions stay self-consistent even when preprocessors rewrite input.
 MDX ingress asks CommonMark to classify raw-HTML literal ranges, then hides
 their punctuation behind character references before the MDX parse. Valid
-PascalCase components, supported HTML tables, and the hard-break spelling stay
+PascalCase components, images, supported HTML tables, and the hard-break spelling stay
 active markup; syntax-looking text inside other raw HTML stays inert prose.
 Whole-source CommonMark-classified enclosed link/image destinations likewise
 keep their `<` delimiter active when an MDX syntax probe preserves the same
@@ -170,6 +170,14 @@ resource, including multiline titles.
 If MDX cannot consume the resource (for example, a link label containing
 nested link syntax), ingress keeps the delimiter escaped and the result
 deterministic instead of exposing it as a JSX opener.
+
+Both the codec and the enclosed-destination probe use
+`remarkMdxWithHtmlVoidElements` (`mdx/syntax.ts`). Its JSX tag-exit adapter closes
+lowercase HTML void names implicitly, leaving syntax/attributes and other closing
+tags to remark-mdx. It does not rewrite source or positions. Registering stock
+remark-mdx afterward would override these handlers. Ingress escaping still owns
+which tags reach this parser: ordinary prose `<br>` and `<hr>` remain literal;
+`<img>` and the canonical `<br/>` spelling remain active.
 
 ## Hard breaks and emphasis
 

@@ -56,7 +56,8 @@ apply only to blocks without atoms; anything else is a `block` edit.
 
 ### Edit application (`src/apply/apply-edits.ts`)
 `applyEdits` owns mutation and returns ordered live touched IDs, deleted IDs,
-and applied-edit metadata without rendering prose. The write/commit owner takes
+and inserted IDs in insertion order, without rendering prose or building per-edit
+summaries. The write/commit owner takes
 its own snapshots, merges concurrent updates, and produces the final echo.
 Preflight-before-mutate discipline: the write owner validates semantic IR,
 then apply validates all block references. Each edit is preflighted (content
