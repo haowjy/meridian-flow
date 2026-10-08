@@ -65,7 +65,7 @@ it.each([
     };
     const preview = await f.collab.draftReview.preview(cmd);
     if (preview.status !== "active") throw Error("missing preview");
-    expect(preview.markdown).toContain("**Beta**");
+    expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
     const result = await (action === "apply"
       ? f.collab.draftReview.applyWorkDraftChanges
       : f.collab.draftReview.discardWorkDraft)({
@@ -80,7 +80,7 @@ it.each([
       status: action === "apply" ? "applied" : "discarded",
       draftClosed: false,
     });
-    expect(after.markdown).toContain("**Beta**");
+    expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("**Beta**");
     expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
   } finally {
@@ -164,7 +164,6 @@ it.each([
     const after = await f.collab.draftReview.preview(command);
     expect(after).toMatchObject({
       status: "active",
-      markdown: arrived.markdown,
       draftRevisionToken: arrived.draftRevisionToken,
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha base.\n");

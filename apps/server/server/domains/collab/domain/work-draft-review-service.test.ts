@@ -1,5 +1,7 @@
 /** Command completion must distinguish durable disposition from maintenance. */
 import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+import { cloneDoc, createDoc, model } from "./draft-review-test-fixture.js";
 import { createWorkDraftReviewService } from "./work-draft-review-service.js";
 
 const command = { draftId: "draft", workId: "work", documentId: "doc", userId: "writer" };
@@ -56,4 +58,29 @@ describe("draft command boundary", () => {
     });
     expect(maintenanceFailed).toHaveBeenCalled();
   });
+});
+
+it("returns review metadata without serializing whole documents", async () => {
+  const live = createDoc("Alpha base.");
+  const serializeDocument = vi.fn(async () => "whole document");
+  const service = createWorkDraftReviewService({
+    readLiveReviewCut: async () => ({ state: Y.encodeStateAsUpdate(live), revision: "live" }),
+    branches: {
+      resolveWorkDraftBranchForWork: async () => ({
+        branchId: "draft",
+        generation: 1,
+        doc: cloneDoc(live),
+      }),
+    },
+    branchJournal: { listReviewableJournalRows: async () => [] },
+    resolveThreadTitles: async () => new Map(),
+    model,
+    documents: { serializeDocument },
+  } as unknown as Parameters<typeof createWorkDraftReviewService>[0]);
+  const result = await service.draftReview.preview(command as never);
+  expect(result.status).toBe("active");
+  expect(result).not.toHaveProperty("live");
+  expect(result).not.toHaveProperty("markdown");
+  expect(serializeDocument).not.toHaveBeenCalled();
+  live.destroy();
 });

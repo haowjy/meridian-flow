@@ -6,6 +6,7 @@ import type {
   DraftApplyResponse,
   DraftDiscardResponse,
   DraftPreviewResponse,
+  ReviewOperation,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -134,8 +135,6 @@ export async function handleWorkDraftPreviewRequest(
     status: "active" as const,
     draftId: preview.draftId,
     reviewRoomName: preview.reviewRoomName,
-    live: preview.live,
-    preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
     ...(preview.notice ? { notice: preview.notice } : {}),
@@ -214,9 +213,9 @@ export async function handleDiscardWorkDraftRequest(
   );
 }
 
-function toWireReviewOperation<T extends { closureUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
-  operation: T,
-) {
+function toWireReviewOperation(
+  operation: import("../domains/collab/domain/draft-review-types.js").DraftReviewOperationInternal,
+): ReviewOperation {
   const {
     closureUpdateIds: _closureUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,

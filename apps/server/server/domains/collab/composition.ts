@@ -426,7 +426,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPush,
     branchReview,
     workDraftPending,
-    documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
     resolveDocumentUri: documentUriResolver,

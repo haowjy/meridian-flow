@@ -1,4 +1,10 @@
 /** Groups the complete draft difference into attributed, dependency-closed review classes. */
+
+import type {
+  ReviewDeletedSpan,
+  ReviewHunk,
+  ReviewOperationContribution,
+} from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 import { assignReviewClasses } from "./branch-review-closure.js";
 import {
@@ -11,13 +17,7 @@ import {
   type OperationClockRange,
 } from "./draft-review-attribution.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation.js";
-import type {
-  DraftReviewDeletedSpanInternal,
-  DraftReviewDiagnostic,
-  DraftReviewHunkInternal,
-  DraftReviewOperationContribution,
-  DraftReviewOperationInternal,
-} from "./draft-review-types.js";
+import type { DraftReviewDiagnostic, DraftReviewOperationInternal } from "./draft-review-types.js";
 
 export type { ClockRange, IndexedDraftUpdate } from "./draft-review-attribution.js";
 
@@ -30,11 +30,11 @@ type OperationGraphHunk = {
     blockKey: string;
     blockIndex: number;
   };
-  review: DraftReviewHunkInternal;
+  review: ReviewHunk;
 };
 
 type DraftReviewOperationGraph = {
-  hunks: DraftReviewHunkInternal[];
+  hunks: ReviewHunk[];
   operations: DraftReviewOperationInternal[];
   diagnostics: DraftReviewDiagnostic[];
 };
@@ -53,7 +53,8 @@ type DraftReviewOperationGraph = {
  * dependencies, and every class member carries the same closed row set.
  *
  * Span invariant: hunk spans are inserted-text-only, ordered, non-overlapping,
- * and cover the hunk's inserted ranges exactly once without changing source-operation identity. Deletions stay widget-level on DraftReviewHunkInternal.deletedText.
+ * and cover the hunk's inserted ranges exactly once without changing source
+ * identity. Deletions stay widget-level on ReviewHunk.deletedText.
  */
 export function computeDraftReviewOperations(input: {
   baseDoc: Y.Doc;
@@ -80,7 +81,7 @@ export function computeDraftReviewOperations(input: {
 type AttributedOperationGraphHunk = OperationGraphHunk & {
   operationIds: string[];
   complete: boolean;
-  deletedSpans: DraftReviewDeletedSpanInternal[];
+  deletedSpans: ReviewDeletedSpan[];
   insertedAttribution: OperationClockRange[];
 };
 
@@ -114,7 +115,7 @@ function groupOperationsForHunks(
               spans: hunkSpans(hunk.insertedAttribution),
             }
           : {}),
-      }) as DraftReviewHunkInternal,
+      }) as ReviewHunk,
   );
 
   const hunkCounts = new Map<string, number>();
@@ -184,7 +185,7 @@ function mergeContributionInto(
 
 function operationContribution(
   contribution: DraftOperationContributionFlags | undefined,
-): DraftReviewOperationContribution {
+): ReviewOperationContribution {
   if (!contribution) return "edited";
   if (contribution.inserted && contribution.deleted) return "rewrote";
   if (contribution.inserted) return "added";

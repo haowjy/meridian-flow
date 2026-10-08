@@ -33,7 +33,6 @@ import type {
   SetWorkPushPolicyResult,
 } from "./domain/branch-push-contracts.js";
 import type {
-  ActiveDraft,
   DraftApplyResult,
   DraftDiscardResult,
   DraftReviewPreview,
@@ -301,7 +300,7 @@ export type DraftReviewApi = {
     workId: WorkId;
     documentId: DocumentId;
     draftId: string;
-  }): Promise<({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }>;
+  }): Promise<({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string }>;
   applyWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -331,13 +330,8 @@ export type DraftReviewApi = {
   ): Promise<DraftDiscardResult>;
 };
 
-export type DraftSessionStats = {
-  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
-};
-
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  draftSessionStats: DraftSessionStats;
 };
 
 export type TurnLiveLineageAccess = {
