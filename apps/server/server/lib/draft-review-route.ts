@@ -6,6 +6,7 @@ import type {
   DraftApplyResponse,
   DraftDiscardResponse,
   DraftPreviewResponse,
+  ReviewOperation,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
@@ -134,8 +135,6 @@ export async function handleWorkDraftPreviewRequest(
     status: "active" as const,
     draftId: preview.draftId,
     reviewRoomName: preview.reviewRoomName,
-    live: preview.live,
-    preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
     ...(preview.notice ? { notice: preview.notice } : {}),
@@ -197,15 +196,26 @@ export async function handleDiscardWorkDraftRequest(
     draftRevisionToken?: string;
   },
 ): Promise<DraftDiscardResponse> {
+  const selection = parseDraftDiscardSelection(input);
+  if (selection.status === "stale") return { status: "stale", draftId: input.draftId };
   const grants = await draftGrants(deps, input, "edit");
   return withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(deps.documentSync.draftReview.discardWorkDraft(input)),
+    callDraftReview(
+      deps.documentSync.draftReview.discardWorkDraft({
+        projectId: input.projectId,
+        workId: input.workId,
+        documentId: input.documentId,
+        draftId: input.draftId,
+        userId: input.userId,
+        ...selection.command,
+      }),
+    ),
   );
 }
 
-function toWireReviewOperation<T extends { closureUpdateIds?: unknown; sourceUpdateIds?: unknown }>(
-  operation: T,
-) {
+function toWireReviewOperation(
+  operation: import("../domains/collab/domain/draft-review-types.js").DraftReviewOperationInternal,
+): ReviewOperation {
   const {
     closureUpdateIds: _closureUpdateIds,
     sourceUpdateIds: _sourceUpdateIds,
@@ -276,4 +286,43 @@ function serializeThreadDraft(
 function throwReadFailure(code: string): never {
   if (code === "not_found") throw createError({ statusCode: 404, message: "Document not found" });
   throw createError({ statusCode: 500, message: "Document markdown is unavailable" });
+}
+
+/** Presence chooses selective Discard; malformed selections can never widen its scope. */
+export function parseDraftDiscardSelection(input: {
+  operationIds?: unknown;
+  liveRevisionToken?: unknown;
+  draftRevisionToken?: unknown;
+}):
+  | { status: "ready"; command: import("../domains/collab/contracts.js").DraftDiscardCommand }
+  | { status: "stale" } {
+  if (Object.hasOwn(input, "operationIds")) {
+    if (
+      !Array.isArray(input.operationIds) ||
+      input.operationIds.length === 0 ||
+      input.operationIds.some((id) => typeof id !== "string" || !id.trim())
+    )
+      throw createError({
+        statusCode: 400,
+        message: "operationIds must be a nonempty array of strings",
+      });
+    if (
+      typeof input.liveRevisionToken !== "string" ||
+      !input.liveRevisionToken ||
+      typeof input.draftRevisionToken !== "string" ||
+      !input.draftRevisionToken
+    )
+      return { status: "stale" };
+    return {
+      status: "ready",
+      command: {
+        operationIds: input.operationIds,
+        liveRevisionToken: input.liveRevisionToken,
+        draftRevisionToken: input.draftRevisionToken,
+      },
+    };
+  }
+  if (Object.hasOwn(input, "liveRevisionToken") || Object.hasOwn(input, "draftRevisionToken"))
+    throw createError({ statusCode: 400, message: "revision tokens require operationIds" });
+  return { status: "ready", command: {} };
 }

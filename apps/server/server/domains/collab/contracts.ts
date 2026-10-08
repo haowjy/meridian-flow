@@ -33,7 +33,6 @@ import type {
   SetWorkPushPolicyResult,
 } from "./domain/branch-push-contracts.js";
 import type {
-  ActiveDraft,
   DraftApplyResult,
   DraftDiscardResult,
   DraftReviewPreview,
@@ -290,6 +289,10 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
+export type DraftDiscardCommand =
+  | { operationIds?: never; liveRevisionToken?: never; draftRevisionToken?: never }
+  | { operationIds: string[]; liveRevisionToken: string; draftRevisionToken: string };
+
 export type DraftReviewApi = {
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
   preview(input: {
@@ -297,9 +300,7 @@ export type DraftReviewApi = {
     workId: WorkId;
     documentId: DocumentId;
     draftId: string;
-  }): Promise<
-    ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
-  >;
+  }): Promise<({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string }>;
   applyWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -317,26 +318,20 @@ export type DraftReviewApi = {
       signal?: AbortSignal;
     },
   ): Promise<DraftApplyChangesResponse>;
-  discardWorkDraft(input: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-    userId?: UserId;
-    operationIds?: string[];
-    liveRevisionToken?: string;
-    draftRevisionToken?: string;
-  }): Promise<DraftDiscardResult>;
-};
-
-export type DraftSessionStats = {
-  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+  discardWorkDraft(
+    input: DraftDiscardCommand & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      threadId?: ThreadId;
+      documentId: DocumentId;
+      draftId: string;
+      userId?: UserId;
+    },
+  ): Promise<DraftDiscardResult>;
 };
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  draftSessionStats: DraftSessionStats;
 };
 
 export type TurnLiveLineageAccess = {

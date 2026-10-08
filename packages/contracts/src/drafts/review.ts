@@ -1,5 +1,3 @@
-export type WIdRange = { min: number; max: number };
-
 /** Wire view-models for listing and reviewing AI document drafts. */
 
 export interface ThreadDraftListItem {
@@ -31,8 +29,6 @@ type ActiveDraftPreviewBase = {
   draftId: string;
   /** Hocuspocus room name for inline branch review; already generation-fenced. */
   reviewRoomName: string;
-  live: string;
-  preview: string;
   liveRevisionToken: string;
   draftRevisionToken: string;
   notice?: { code: "branch_corrupt_reset"; message: string };
@@ -51,7 +47,7 @@ export type DraftPreviewResponse =
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     })
-  | { status: "gone"; draftId: string; live: string };
+  | { status: "gone"; draftId: string };
 
 export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
