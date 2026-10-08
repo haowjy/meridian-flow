@@ -12,12 +12,6 @@ export interface ResolvedSpan {
  */
 export type ResolvedEdit = { documentId: string; file: string } & (
   | {
-      kind: "text";
-      block: BlockRef;
-      span: ResolvedSpan;
-      newText: string;
-    }
-  | {
       kind: "textRanges";
       block: BlockRef;
       replacements: Array<{ span: ResolvedSpan; newText: string }>;

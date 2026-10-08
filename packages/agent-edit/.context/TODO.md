@@ -42,12 +42,6 @@ matches the text a writer sees.
 
 ## Deferred — reopen when earned
 
-- **Collapse `text` into `textRanges`.** With no direct-text tier, a
-  single-match `text` edit equals a one-range `textRanges` edit with the same
-  IR. Collapsing would delete `preflightTextEdit` and the `text` kind, but
-  `write-architecture.md` keeps the `text` shape for single matches on purpose;
-  decide before cleaning up.
-
 - **Full ProseMirror-out-of-kernel.** (Issue #70.) The CRDT (Yjs) axis is
   neutral; the content-representation axis is not — and the remaining coupling is
   now *asymmetric*:

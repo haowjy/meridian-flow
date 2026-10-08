@@ -93,7 +93,7 @@ export interface DocumentModel {
 
   /**
    * Replace plain text within a block, keeping unchanged text at the span's edges.
-   * Undo repair's verb; agent writes go through `applyInlineReplacement`.
+   * Undo repair's verb; agent writes go through `applyInlineReplacements`.
    * Mutates doc in place; span must refer to valid offsets in getText(block).
    */
   applyTextEdit(doc: DocHandle, block: BlockRef, span: Span, newText: string): void;
@@ -118,15 +118,6 @@ export interface DocumentModel {
 export interface AgentEditModel extends DocumentModel {
   /** Neutral inline mark runs; undo repair skips blocks with more than one. */
   inlineRuns(block: BlockRef): TextRun[];
-
-  /** Tier 2 formatted text replacement; adapters own codec projection and tree diffing. */
-  applyInlineReplacement(
-    doc: DocHandle,
-    block: BlockRef,
-    span: Span,
-    replacementMarkup: string,
-    codec: AgentEditCodec,
-  ): InlineReplacementResult;
 
   /** Apply disjoint same-block replacements through one adapter-owned ProseMirror transform. */
   applyInlineReplacements(

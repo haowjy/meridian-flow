@@ -384,19 +384,7 @@ function lowerPlainTextFindMatches(
       }))
       // Replacing a match with itself changes nothing, so it makes no edit.
       .filter(({ span, newText }) => blockText.slice(span.start, span.end) !== newText);
-    const first = replacements[0];
-    if (!first) continue;
-    if (replacements.length === 1) {
-      edits.push({
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "text",
-        block: element,
-        span: first.span,
-        newText: first.newText,
-      });
-      continue;
-    }
+    if (replacements.length === 0) continue;
     edits.push({
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
@@ -604,20 +592,7 @@ function semanticIrForResolvedEdits(
   const deleted: LineageRange[] = [];
   const mappedEdits = edits.map((edit) => {
     let outputRuns: SemanticOutputRun[] = [];
-    if (edit.kind === "text") {
-      const lineage = ctx.model.getVisibleContentLineage(edit.block);
-      scope.push(...lineage);
-      deleted.push(...sliceLineage(lineage, edit.span.start, edit.span.end));
-      if (edit.newText.length > 0) {
-        outputRuns = [
-          {
-            kind: "fresh",
-            payload: edit.newText,
-            output: { from: 0, to: edit.newText.length },
-          },
-        ];
-      }
-    } else if (edit.kind === "textRanges") {
+    if (edit.kind === "textRanges") {
       const lineage = ctx.model.getVisibleContentLineage(edit.block);
       scope.push(...lineage);
       for (const replacement of edit.replacements) {

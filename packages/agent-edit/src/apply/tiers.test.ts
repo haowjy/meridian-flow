@@ -494,10 +494,10 @@ function textEdit(
   return {
     documentId: "doc-1",
     file: "chapter.md",
-    kind: "text",
+    kind: "textRanges",
     block: toRef(element),
-    span,
-    newText,
+    replacements: [{ span, newText }],
+    output: newText,
   };
 }
 function remoteTextUpdate(

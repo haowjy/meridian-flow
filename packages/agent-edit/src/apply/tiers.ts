@@ -33,13 +33,6 @@ type PlannedEdit =
       blockId: string;
     }
   | {
-      kind: "text";
-      tier: 2;
-      edit: Extract<ResolvedEdit, { kind: "text" }>;
-      span: Span;
-      blockId: string;
-    }
-  | {
       kind: "insert";
       tier: 3;
       edit: Extract<ResolvedEdit, { kind: "insert" }>;
@@ -174,8 +167,6 @@ function preflightEdit(
   | { ok: true; plan: PlannedEdit }
   | { ok: false; code: ApplyErrorCode; message: string; details?: Record<string, unknown> } {
   switch (edit.kind) {
-    case "text":
-      return preflightTextEdit(doc, model, codec, edit);
     case "textRanges":
       return preflightTextRangesEdit(doc, model, codec, edit);
     case "insert":
@@ -195,11 +186,11 @@ function preflightTextRangesEdit(
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.block, "target");
   if (!live.ok) return live;
-  if (edit.replacements.length < 2) {
+  if (edit.replacements.length === 0) {
     return {
       ok: false,
       code: "invalid_write",
-      message: "Multi-range text edits require at least two replacements",
+      message: "Text edits require at least one replacement",
     };
   }
 
@@ -251,34 +242,6 @@ function preflightBlockReplacement(
   return {
     ok: true,
     plan: { kind: "block", tier: 2, edit, blockId: model.getBlockId(edit.block) },
-  };
-}
-
-function preflightTextEdit(
-  doc: DocHandle,
-  model: AgentEditModel,
-  codec: AgentEditCodec,
-  edit: Extract<ResolvedEdit, { kind: "text" }>,
-): ReturnType<typeof preflightEdit> {
-  const live = validateLiveBlock(doc, model, edit.block, "target");
-  if (!live.ok) return live;
-  const span = { from: edit.span.start, to: edit.span.end };
-  const block = edit.block;
-  const text = model.getText(block);
-  if (span.from < 0 || span.to < span.from || span.to > text.length) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Invalid text span ${span.from}..${span.to} for block length ${text.length}`,
-    };
-  }
-
-  const parsed = parseContent(codec, edit.newText, "text");
-  if (!parsed.ok) return parsed;
-
-  return {
-    ok: true,
-    plan: { kind: "text", tier: 2, edit, span, blockId: model.getBlockId(block) },
   };
 }
 
@@ -340,19 +303,6 @@ function executePlan(
   accumulator: ApplyAccumulator,
 ): ApplyFailure | undefined {
   switch (plan.kind) {
-    case "text": {
-      const applied = model.applyInlineReplacement(
-        doc,
-        plan.edit.block,
-        plan.span,
-        plan.edit.newText,
-        codec,
-      );
-      if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
-      accumulator.touchedHashes.add(plan.blockId);
-      accumulator.applied.push({ kind: "text", tier: 2, blockIds: [plan.blockId] });
-      break;
-    }
     case "textRanges": {
       const applied = model.applyInlineReplacements(doc, plan.edit.block, plan.replacements, codec);
       if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
@@ -420,7 +370,6 @@ function validateNoSameTurnTombstones(
 
 function referencedElements(edit: ResolvedEdit): Ref[] {
   switch (edit.kind) {
-    case "text":
     case "textRanges":
     case "delete":
     case "block":
