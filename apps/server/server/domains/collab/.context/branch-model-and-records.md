@@ -21,6 +21,14 @@ new write. Draft-only Discard removes only that document’s manifest entry and
 resets its content branch in one Work-locked transaction. Branch reset
 notifications publish after commit; rolled-back resets never advance a room.
 
+A durable thread peer has no unpublished authored state: reply finalization saves
+its edits into the shared Work draft atomically. Before a new call, a pull tests
+whether the parent contains the peer's full update, including deletes. If review
+retired peer effects, the coordinator resets that peer to the parent instead of
+merging stale structs or tombstones back in. Fresh drafted calls also evict the
+previous reply's runtime replica before rebuilding from the pulled peer. Calls
+already holding a staged document keep that response's private edits.
+
 Thread-peer resolution is primary-Work-aware. After conversation reassignment,
 the old peer is no longer resolvable; provisioning closes it and seeds a new
 peer from the new primary Work draft while holding the conversation row lock.

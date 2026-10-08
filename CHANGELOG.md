@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Discarding a draft's last change keeps it discarded when the same chat writes again. Applying a later draft no longer brings the earlier discarded text back.
+
 - Draft review has one row, not two. The review header above the document is gone: the Draft chip, the stepper, Show changes, Discard and Apply now sit in the row that shows the document's path, and the page below does not move when you enter or leave review. The "Review draft" button on a live document is the same chip, so the control you click to get in is the one you look at to get out. When the row gets narrow it gives up room in order (folders become `…`, Show changes becomes an icon, `4 of 4` becomes `4/4`, then the file name shortens); the Draft chip, Discard and Apply always stay. Rename moves into the Draft chip's menu while you review.
 - The Draft chip's menu is about this document: its live version and its draft, plus Rename. Moving to another file, and Apply all or Discard all for the Work, are in the Changes list (the dock's Changes tab, and the change list on the phone), where every draft file appears once in the same order, with the file you are reviewing opened in place instead of jumping to the top. Work files, the composer's draft strip and Next draft use that order too.
 - On the phone, a live document with a pending draft now has a Draft chip under the top bar that opens its review.
