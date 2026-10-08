@@ -223,6 +223,10 @@ msgstr "{count, plural, one {# match} other {# matches}}"
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr "{count, plural, one {# more} other {# more}}"
 
+#: src/core/editor/extensions/inline-review/removal-widget.ts
+msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
+msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
+
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{count, plural, one {Apply it now} other {Apply them now}}"
 msgstr "{count, plural, one {Apply it now} other {Apply them now}}"
@@ -323,6 +327,10 @@ msgstr "{title} added to Favorites"
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "{title} removed from Favorites"
 msgstr "{title} removed from Favorites"
+
+#: src/core/editor/extensions/inline-review/removal-widget.ts
+msgid "{words, plural, one {# word removed} other {# words removed}}"
+msgstr "{words, plural, one {# word removed} other {# words removed}}"
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "<0.1 s"
@@ -2172,6 +2180,10 @@ msgstr "Heading 3"
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Hide changes"
 msgstr "Hide changes"
+
+#: src/core/editor/extensions/inline-review/removal-widget.ts
+msgid "Hide removed text"
+msgstr "Hide removed text"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"

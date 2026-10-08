@@ -678,7 +678,17 @@ lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
 The plugin paints **one decoration per `ReviewHunk.spans` entry** rather
 than one per hunk, so nested authorship (a writer edit inside an AI
 insertion) renders in each owner's own color — gold inside green. Hunks with no
-resolvable spans fall back to whole-hunk coloring via `hunkKind`.
+resolvable spans fall back to whole-hunk coloring.
+
+Tone is decided once per hunk (`hunkTone` in `model.ts`), before text or block
+geometry: a merge artifact or an unclassified hunk is **neutral** (the dashed
+seam, a ring on a block, an unattributed struck removal and fold), never an
+invented AI colour. Anchors are resolved once per model and document into
+`ReviewGeometry` (`resolveGeometry`), kept in plugin state; focus, pulse, folds,
+the bar slot, marks visibility and a locale change repaint from it
+(`paintDecorations`) without resolving a position. Remote rebuilds, a new model
+and a changed document re-resolve. The removal widget's copy is Lingui, drawn at
+render time.
 
 ## Change-trail navigation
 
