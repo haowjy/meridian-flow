@@ -10,6 +10,8 @@
 
 - An AI write that only centers a paragraph or renumbers a list now applies the change instead of reporting success and dropping it.
 
+- Undo repair counts formatting runs without rebuilding unused mark metadata.
+
 - A turn's receipt offers Undo only when Undo will work. Text you type inside the AI's words now shows the turn as no longer undoable, as Undo itself already treated it.
 
 - Overlapping bold and italic, runs of alternating bold and italic, and strikethrough that starts or ends on a space export as Markdown that reads back with the same formatting instead of stray `*`, `_` or `~~`.

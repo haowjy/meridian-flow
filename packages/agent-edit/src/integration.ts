@@ -57,7 +57,6 @@ export type {
   BlockLookup,
   CanonicalBlockIdentity,
   DocumentModel,
-  TextRun,
 } from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
