@@ -50,7 +50,10 @@ asserts that relationship through its Work-qualified scope and canonical URI;
 commands must use the checked snapshot constructor, not manufacture a nullable
 slug. This is a trusted-input boundary, not a type-only identity guarantee.
 No Work link Create and Editor identity rename use the same namespace journal
-as named Works. No Work has no exposed Scratch tree.
+as named Works. The server's No Work row owns no Scratch: a No Work chat's
+Scratch belongs to its lineage (`scratch://@/c12/`). The replica has no lineage
+owner yet, so `catalogEntryLocation` refuses a lineage catalog scope; never map
+a lineage location onto the No Work row.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.
 A never-submitted local resource settles deletion locally, cancels unsubmitted

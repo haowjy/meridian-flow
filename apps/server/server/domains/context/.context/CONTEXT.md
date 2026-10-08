@@ -229,10 +229,12 @@ currently available to the request owner in the requested project.
 
 ## URI and router invariants
 
-- Wire context URIs are `scheme://[@slug]/path`; a scheme root is `scheme://`.
+- Wire context URIs are `scheme://[@slug]/path`, plus `scratch://@/cN/path` for
+  a lineage; a scheme root is `scheme://`.
   Parsing validates syntax and returns `normalized`; it does not authorize a
   Work. Stable server results use the persisted slug carried by opaque,
-  same-project resolved authority; explicit `@/` is no-Work authority.
+  same-project resolved authority; explicit `@/` is no-Work authority except
+  on Scratch, where it must be followed by a first-chat handle.
 - Bare paths default to `manuscript://` (project-scoped).
 - Leading/trailing slashes and repeated slashes are normalized away; `.` segments
   are dropped; `..` is rejected.

@@ -104,6 +104,10 @@ translate those to `title` and `description` in `ProjectDto`.
   dependency. Keyset paging passes retained sources and still removes up to 100
   eligible Works per sweep. References can extend storage retention beyond the
   restore window; they do not extend the 30-day restore deadline.
+  Purge also deletes the lineage Scratch sources (`context_sources.root_thread_id`)
+  of every root thread in its purge set, with their documents, journal rows,
+  memberships and stored blobs. Work delete never marks lineage Scratch; it is
+  hidden only through lineage liveness when the delete trashes the last live member.
 - Membership changes follow thread-before-Work locking. Delete and purge use
   `lockWorkThreadTree` to read the primary chat forest, lock its threads, lock
   the Work, then recheck the full set; a newly joined chat retries rather than
