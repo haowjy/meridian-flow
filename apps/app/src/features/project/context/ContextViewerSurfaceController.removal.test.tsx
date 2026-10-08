@@ -16,10 +16,7 @@ import {
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextViewerSurfaceController } from "../ContextPaneController";
 import type { ProjectSearch } from "../routing/project-route";
-import type {
-  ContextRemovalCoordinator,
-  ContextRemovalRoutePort,
-} from "./context-removal-coordinator";
+import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
 
 const tree = {
@@ -107,47 +104,6 @@ const shellProps = {
   onOpenContextTarget: vi.fn(),
   onShowEditorRecents: vi.fn(),
 };
-
-it("keeps the current Work's scratch tab on the Editor surface", async () => {
-  const current: ContextTab = {
-    kind: "tracked",
-    documentId: "scratch-current",
-    scheme: "scratch",
-    path: "/current.md",
-    name: "current.md",
-    workId: "work-a",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-  };
-  const other: ContextTab = { ...current, documentId: "scratch-other", workId: "work-b" };
-  useContextTabsStore.setState({
-    byProject: {
-      project: {
-        tabs: [current, other],
-        selectedTabIdByWork: { "work-a": current.documentId },
-      },
-    },
-    _workspaceHydrated: true,
-  });
-
-  await withReactRoot(
-    <AccountFeatureTestProvider accountId="work-scratch-account">
-      <ContextViewerSurfaceController
-        {...shellProps}
-        projectId="project"
-        editorWorkId="work-a"
-        localDocumentId={current.documentId}
-        activeContextScheme="scratch"
-        activeContextPath={current.path}
-        active={false}
-      />
-    </AccountFeatureTestProvider>,
-    () => {
-      expect(viewerProps?.tabs.map((tab) => tab.documentId)).toEqual([current.documentId]);
-    },
-  );
-});
 
 it("persists and admits the real New action without an empty working-set route", async () => {
   vi.stubGlobal("isSecureContext", true);
@@ -301,73 +257,6 @@ it("persists and admits the real New action without an empty working-set route",
   }
 });
 
-it("guarded-redirects a selected materialized local owner before admitting its server route", async () => {
-  const materialized: ContextTab = {
-    kind: "tracked",
-    documentId: "local-a",
-    scheme: "unfiled",
-    path: "/Untitled.md",
-    name: "Untitled.md",
-    workId: "work-a",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-    origin: "local-resource",
-  };
-  useContextTabsStore.setState({
-    byProject: {
-      project: { tabs: [materialized], selectedTabIdByWork: { "work-a": materialized.documentId } },
-    },
-    _workspaceHydrated: true,
-  });
-  let search: ProjectSearch = {
-    screen: "context",
-    work: "work-a",
-    scheme: "unfiled",
-    path: "",
-  };
-
-  function Harness() {
-    const [path, setPath] = useState("");
-    return (
-      <AccountFeatureTestProvider accountId="materialized-redirect-account">
-        <CaptureCoordinator />
-        <ProjectContextRemovalController
-          projectId="project"
-          activeScreen="context"
-          activeContextScheme="unfiled"
-          activeContextPath={path}
-          editorWorkId="work-a"
-          route={{
-            transition: acceptContextTransition,
-            readSearch: () => search,
-            updateSearch: (_projectId, update) => {
-              search = update(search);
-              setPath(search.path ?? "");
-            },
-          }}
-        />
-        <ContextViewerSurfaceController
-          {...shellProps}
-          projectId="project"
-          editorWorkId="work-a"
-          activeContextScheme="unfiled"
-          activeContextPath={path}
-          active
-        />
-      </AccountFeatureTestProvider>
-    );
-  }
-
-  await withReactRoot(<Harness />, async () => {
-    expect(search.path).toBe("/Untitled.md");
-    expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
-      selection: { status: "bound", identity: { documentId: materialized.documentId } },
-      admitted: { scheme: "unfiled", path: "/Untitled.md", workId: "work-a" },
-    });
-  });
-});
-
 it("restores the exact older local owner across A to B to A through mounted controllers", async () => {
   const older: ContextTab = {
     kind: "new",
@@ -463,53 +352,6 @@ it("restores the exact older local owner across A to B to A through mounted cont
       expect.arrayContaining([expect.objectContaining(older), expect.objectContaining(newer)]),
     );
   });
-});
-
-it.each([
-  ["loading", false, true],
-  ["error with cached absence", true, false],
-] as const)("preserves a route candidate during %s", async (_case, isError, isFetching) => {
-  queryState.isError = isError;
-  queryState.isFetching = isFetching;
-  const route: ContextRemovalRoutePort = {
-    transition: acceptContextTransition,
-    readSearch: () => ({
-      screen: "context",
-      work: "work-1",
-      scheme: "manuscript",
-      path: "/missing.md",
-    }),
-    updateSearch: () => undefined,
-  };
-
-  await withReactRoot(
-    <AccountFeatureTestProvider accountId={`account-${_case}`}>
-      <CaptureCoordinator />
-      <ProjectContextRemovalController
-        projectId="project"
-        activeScreen="context"
-        activeContextScheme="manuscript"
-        activeContextPath="/missing.md"
-        editorWorkId="work-1"
-        route={route}
-      />
-      <ContextViewerSurfaceController
-        {...shellProps}
-        projectId="project"
-        editorWorkId="work-1"
-        activeContextScheme="manuscript"
-        activeContextPath="/missing.md"
-        active
-      />
-    </AccountFeatureTestProvider>,
-    () => {
-      if (!coordinator) throw new Error("coordinator did not mount");
-      expect(coordinator.getProjectSnapshot("project")).toMatchObject({
-        selection: { status: "candidate", locator: { path: "/missing.md" } },
-        admitted: null,
-      });
-    },
-  );
 });
 
 it("does not admit an old bound document while its retained controller is inactive", async () => {

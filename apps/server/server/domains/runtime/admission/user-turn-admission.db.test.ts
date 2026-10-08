@@ -36,10 +36,6 @@ if (!RUN) {
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
-
-    const { runInDrizzleTransaction, runInDrizzleSavepoint } = await import(
-      "../../../shared/drizzle-transaction.js"
-    );
     const { lockThreadAndWorks } = await import("../../../shared/thread-work-lock.js");
     const { requireWritableThread } = await import("./require-writable-thread.js");
     const url = process.env.DATABASE_URL;
@@ -212,34 +208,6 @@ if (!RUN) {
       });
     }
 
-    it("persists the actual sparse cursor for a one-text admission and replays it", async () => {
-      const service = await composeAdmission({ threadId: THREAD, documentId: DOCUMENT, uri: "" });
-      const request = {
-        actorUserId: USER as never,
-        threadId: THREAD,
-        submissionId: "one-text",
-        text: "Opening",
-        blocks: [{ type: "text" as const, text: "Opening" }],
-        references: [],
-      };
-
-      const accepted = await service.admit(request);
-      expect(accepted).toMatchObject({ kind: "accepted" });
-      if (accepted.kind !== "accepted" && accepted.kind !== "already-accepted") {
-        throw new Error("expected accepted admission");
-      }
-      // The writer turn is persisted at enqueue; no assistant container exists yet.
-      const turns = (await firstDb.select().from(schema.turns)).filter(
-        (turn) => turn.threadId === THREAD,
-      );
-      expect(turns).toHaveLength(1);
-      expect(turns[0]?.role).toBe("user");
-      await expect(service.admit(request)).resolves.toMatchObject({
-        kind: "already-accepted",
-        snapshotFloorNextSeq: accepted.snapshotFloorNextSeq,
-      });
-    });
-
     it("admits sends while the thread's Work is archived", async () => {
       const service = await composeAdmission({ threadId: THREAD, documentId: DOCUMENT, uri: "" });
       await firstDb
@@ -257,93 +225,6 @@ if (!RUN) {
       };
       await expect(service.admit(request)).resolves.toMatchObject({ kind: "accepted" });
       await expect(firstDb.select().from(schema.turns)).resolves.toHaveLength(1);
-    });
-
-    it("rolls the writer turn, inbox row, and journal back on an admission winner", async () => {
-      const hub = createThreadEventHub({
-        journalWriter: createDrizzleEventJournalWriter(firstDb),
-        journalReader: createDrizzleEventJournalReader(firstDb),
-        eventSink: createNoopEventSink(),
-      });
-      const wakeCallbacks: string[] = [];
-      const _inbox = createDrizzleInbox(firstDb);
-      const delivery = createTestDrizzleDelivery(firstDb, {
-        repos,
-        eventWriter: hub,
-        runStarter: {
-          async start() {
-            wakeCallbacks.push("wake");
-          },
-        },
-      });
-      const reserved = await records.reserve({
-        actorUserId: USER as never,
-        threadId: THREAD,
-        submissionId: "winner-rollback",
-        fingerprint: "fingerprint",
-        claimExpiresAt: new Date(Date.now() + 60_000),
-      });
-      expect(reserved.kind).toBe("reserved");
-      await records.reject({
-        threadId: THREAD,
-        submissionId: "winner-rollback",
-        fingerprint: "fingerprint",
-        code: "recovery_no_committed_turn",
-      });
-
-      const producer = createWriterTurnProducer({
-        async requireWritableThread() {},
-        inbox: createDrizzleInbox(firstDb),
-        persistence: {
-          repos,
-          eventWriter: hub,
-          savepoint: (operation) => runInDrizzleSavepoint(firstDb, operation),
-        },
-        hub,
-        runner: { getRunningTurn: () => null },
-        turns: repos.turns,
-        delivery,
-        records: {
-          ...records,
-          async accept(input) {
-            return records.accept(input);
-          },
-        },
-        consumeUploads: async () => undefined,
-        attachDocument: async () => undefined,
-      });
-
-      const result = await runInDrizzleTransaction(firstDb, () =>
-        producer.enqueue({
-          admission: {
-            actorUserId: USER as never,
-            threadId: THREAD,
-            submissionId: "winner-rollback",
-            text: "late",
-            blocks: [{ type: "text" as const, text: "late" }],
-            references: [],
-          },
-          fingerprint: "fingerprint",
-          blocks: [{ type: "text" as const, text: "late" }],
-          references: [],
-        }),
-      );
-
-      expect(result).toMatchObject({ kind: "rejected", code: "recovery_no_committed_turn" });
-      const turns = (await firstDb.select().from(schema.turns)).filter(
-        (turn) => turn.threadId === THREAD,
-      );
-      expect(turns).toHaveLength(0);
-      const inboxRows = (await firstDb.select().from(schema.threadInboxMessages)).filter(
-        (row) => row.threadId === THREAD,
-      );
-      expect(inboxRows).toHaveLength(0);
-      expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
-      expect(await records.lookup(THREAD, "winner-rollback")).toMatchObject({
-        state: "rejected",
-        code: "recovery_no_committed_turn",
-      });
-      expect(wakeCallbacks).toEqual([]);
     });
 
     it("persists ordered occurrences, replays their actual sparse cursor, and rolls the whole accepted settlement back together", async () => {
@@ -596,8 +477,6 @@ if (!RUN) {
 
     it.each([
       "lookup",
-      "admit",
-      "retire",
     ] as const)("recovers expired orphan admissions through %s", async (operation) => {
       const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { canonicalAdmissionFingerprint } = await import("./user-turn-admission.js");

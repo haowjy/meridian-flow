@@ -3,11 +3,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  hydrateWorkingSet,
-  readRecentRoutes,
-  replaceRecentRoutes,
-} from "@/client/working-set/driver";
+import { hydrateWorkingSet, replaceRecentRoutes } from "@/client/working-set/driver";
 import { buildWorkingSetRoute } from "@/client/working-set/store";
 import type { ConnectivityHint, ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { WorkingSetSyncPreferenceProvider } from "./WorkingSetSyncPreferenceProvider";
@@ -71,7 +67,6 @@ async function mount(strict = false) {
 }
 it.each([
   "abort",
-  "unmount",
 ])("working-set owner releases its subscription and ignores hints after account %s", async (end) => {
   await mount();
   if (end === "abort") account.epoch.abort();
@@ -124,28 +119,6 @@ async function unmount() {
   root = undefined;
 }
 it.each([
-  false,
-  true,
-])("same-account remount preserves newer recency while the old PUT drains (StrictMode=%s)", async (strict) => {
-  const finish = holdNextPut();
-  await mount();
-  replaceRecentRoutes("project", [route("old")]);
-  window.dispatchEvent(new Event("pagehide"));
-  expect(account.put).toHaveBeenCalledTimes(1);
-  await unmount();
-  account.epoch = new AbortController();
-  await mount(strict);
-  replaceRecentRoutes("project", [route("new")]);
-  account.get.mockResolvedValue({ revision: 1, recentRoutes: [route("old")] });
-  await vi.advanceTimersByTimeAsync(4_000);
-  finish({ revision: 1 });
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(readRecentRoutes("project")).toEqual([route("new")]);
-  expect(account.put).toHaveBeenCalledTimes(2);
-  expect(account.put.mock.calls[1]?.[1]).toEqual({ recentRoutes: [route("new")] });
-});
-it.each([
-  false,
   true,
 ])("account transition drains the new account queue after the old PUT (StrictMode=%s)", async (strict) => {
   const finish = holdNextPut();

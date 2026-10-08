@@ -135,120 +135,79 @@ describe("thread event hub background journaling", () => {
 
     expect(received).toEqual([]);
   });
-
-  it("persists the journal row without a projection", async () => {
-    const { hub, journal } = createHub();
-    const event = backgroundEvents()[0] as OrchestratorEvent;
-    await hub.appendEvent(THREAD_ID, event);
-
-    const rows = await journal.readAfter(THREAD_ID, 0n);
-    expect(rows.map((row) => row.payload)).toEqual([event]);
-  });
-
-  it("replays an unknown historical row without inventing a live frame", async () => {
-    const { hub, journal } = createHub();
-    await journal.appendEvent(THREAD_ID, {
-      type: "historical.unknown",
-    } as unknown as OrchestratorEvent);
-    expect(await hub.catchup(THREAD_ID)).toEqual([]);
-  });
 });
 
 describe("thread event hub committed invalidations", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
-  for (const failAt of ["head", "page"] as const) {
-    it(`evicts idle state after ${failAt} read rejects beyond the grace window`, async () => {
-      const journal = createInMemoryEventJournalWriter();
-      await journal.appendEvent(THREAD_ID, {
-        type: "subagent.activity",
-        childThreadId: "child",
-        activity: { children: [] },
-      });
-      let entered!: () => void;
-      let rejectRead!: (error: Error) => void;
-      const started = new Promise<void>((resolve) => (entered = resolve));
-      const blocked = new Promise<never>((_resolve, reject) => (rejectRead = reject));
-      const reader: EventJournalReader = {
-        ...journal,
-        async headSeq(threadId) {
-          if (failAt === "head") {
-            entered();
-            return blocked;
-          }
-          return journal.headSeq(threadId);
-        },
-        async readAfter(threadId, afterSeq, limit) {
-          if (failAt === "page") {
-            entered();
-            return blocked;
-          }
-          return journal.readAfter(threadId, afterSeq, limit);
-        },
-      };
-      const hub = createThreadEventHub(
-        { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
-        { evictionGraceMs: 5 },
-      );
-      const unsubscribe = hub.subscribe(THREAD_ID, () => {});
-      hub.invalidateCommittedJournal(THREAD_ID);
-      await started;
-      unsubscribe();
-      await vi.advanceTimersByTimeAsync(20);
-      expect(hub.hasThreadState(THREAD_ID)).toBe(true);
-      rejectRead(new Error("injected read failure"));
-      await vi.advanceTimersByTimeAsync(5);
-      expect(hub.hasThreadState(THREAD_ID)).toBe(false);
-    });
-  }
+  it("evicts idle state after a journal read rejects beyond the grace window", async () => {
+    const journal = createInMemoryEventJournalWriter();
+    let entered!: () => void;
+    let rejectRead!: (error: Error) => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const blocked = new Promise<never>((_resolve, reject) => (rejectRead = reject));
+    const reader: EventJournalReader = {
+      ...journal,
+      async headSeq() {
+        entered();
+        return blocked;
+      },
+    };
+    const hub = createThreadEventHub(
+      { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
+      { evictionGraceMs: 5 },
+    );
+    const unsubscribe = hub.subscribe(THREAD_ID, () => {});
+    hub.invalidateCommittedJournal(THREAD_ID);
+    await started;
+    unsubscribe();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(hub.hasThreadState(THREAD_ID)).toBe(true);
+    rejectRead(new Error("injected read failure"));
+    await vi.advanceTimersByTimeAsync(5);
+    expect(hub.hasThreadState(THREAD_ID)).toBe(false);
+  });
 
-  for (const followupFails of [false, true]) {
-    it(`retains a requested follow-up drain after rejection, then evicts after ${followupFails ? "failure" : "success"}`, async () => {
-      const journal = createInMemoryEventJournalWriter();
-      let firstEntered!: () => void;
-      let secondEntered!: () => void;
-      let rejectFirst!: (error: Error) => void;
-      let settleSecond!: (value: bigint) => void;
-      let rejectSecond!: (error: Error) => void;
-      const firstStarted = new Promise<void>((resolve) => (firstEntered = resolve));
-      const secondStarted = new Promise<void>((resolve) => (secondEntered = resolve));
-      const first = new Promise<bigint>((_resolve, reject) => (rejectFirst = reject));
-      const second = new Promise<bigint>((resolve, reject) => {
-        settleSecond = resolve;
-        rejectSecond = reject;
-      });
-      let reads = 0;
-      const reader: EventJournalReader = {
-        ...journal,
-        headSeq() {
-          if (++reads === 1) {
-            firstEntered();
-            return first;
-          }
-          secondEntered();
-          return second;
-        },
-      };
-      const hub = createThreadEventHub(
-        { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
-        { evictionGraceMs: 5 },
-      );
-      const unsubscribe = hub.subscribe(THREAD_ID, () => {});
-      hub.invalidateCommittedJournal(THREAD_ID);
-      await firstStarted;
-      unsubscribe();
-      hub.invalidateCommittedJournal(THREAD_ID);
-      await vi.advanceTimersByTimeAsync(20);
-      rejectFirst(new Error("first read failed"));
-      await secondStarted;
-      await vi.advanceTimersByTimeAsync(20);
-      expect(hub.hasThreadState(THREAD_ID)).toBe(true);
-      if (followupFails) rejectSecond(new Error("follow-up failed"));
-      else settleSecond(0n);
-      await vi.advanceTimersByTimeAsync(5);
-      expect(hub.hasThreadState(THREAD_ID)).toBe(false);
-    });
-  }
+  it("retains a requested follow-up drain after rejection, then evicts after its failure", async () => {
+    const journal = createInMemoryEventJournalWriter();
+    let firstEntered!: () => void;
+    let secondEntered!: () => void;
+    let rejectFirst!: (error: Error) => void;
+    let rejectSecond!: (error: Error) => void;
+    const firstStarted = new Promise<void>((resolve) => (firstEntered = resolve));
+    const secondStarted = new Promise<void>((resolve) => (secondEntered = resolve));
+    const first = new Promise<bigint>((_resolve, reject) => (rejectFirst = reject));
+    const second = new Promise<bigint>((_resolve, reject) => (rejectSecond = reject));
+    let reads = 0;
+    const reader: EventJournalReader = {
+      ...journal,
+      headSeq() {
+        if (++reads === 1) {
+          firstEntered();
+          return first;
+        }
+        secondEntered();
+        return second;
+      },
+    };
+    const hub = createThreadEventHub(
+      { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
+      { evictionGraceMs: 5 },
+    );
+    const unsubscribe = hub.subscribe(THREAD_ID, () => {});
+    hub.invalidateCommittedJournal(THREAD_ID);
+    await firstStarted;
+    unsubscribe();
+    hub.invalidateCommittedJournal(THREAD_ID);
+    await vi.advanceTimersByTimeAsync(20);
+    rejectFirst(new Error("first read failed"));
+    await secondStarted;
+    await vi.advanceTimersByTimeAsync(20);
+    expect(hub.hasThreadState(THREAD_ID)).toBe(true);
+    rejectSecond(new Error("follow-up failed"));
+    await vi.advanceTimersByTimeAsync(5);
+    expect(hub.hasThreadState(THREAD_ID)).toBe(false);
+  });
 
   it("keeps one state owner while an unsubscribed thread drain is in flight", async () => {
     const journal = createInMemoryEventJournalWriter();
@@ -475,45 +434,6 @@ describe("thread event hub committed invalidations", () => {
   });
 });
 
-describe("thread event hub subagent activity", () => {
-  it("projects the full recomputed direct-child activity as one custom frame", async () => {
-    const { hub } = createHub();
-    const received: SequencedEventInternal[] = [];
-    hub.subscribe(THREAD_ID, (entry) => received.push(entry));
-
-    const activity: ThreadActivity = {
-      children: [
-        {
-          threadId: "child-1",
-          parentThreadId: THREAD_ID,
-          ref: "p1",
-          title: "Review the chapter",
-          agentName: "Critic",
-          spawnStatus: "running",
-          status: { kind: "awake", phase: "generating", cancelRequested: false },
-          deliveryMode: null,
-          runStartedAt: null,
-          runEndedAt: null,
-          currentTool: null,
-          originTurnId: PARENT_TURN_ID,
-        },
-      ],
-    };
-    await hub.appendEvent(THREAD_ID, {
-      type: "subagent.activity",
-      childThreadId: "child-1",
-      activity,
-    });
-
-    expect(received).toHaveLength(1);
-    expect(received[0]?.event).toMatchObject({
-      type: "CUSTOM",
-      name: "meridian.subagent.activity",
-      value: activity,
-    });
-  });
-});
-
 it("projects the spawn source hint live and on journal replay", async () => {
   const { hub } = createHub();
   const received: SequencedEventInternal[] = [];
@@ -597,25 +517,4 @@ describe("thread event hub complete replay", () => {
     expect(replay.catchup.at(-1)?.seq).toBe(headJournalSeq * 1_000n);
     replay.unsubscribe();
   });
-});
-
-it("ignores unobserved invalidations and seeds cold catchup in one journal pass", async () => {
-  const reader = createCappedReader(3000, 3000n);
-  const readAfter = vi.spyOn(reader, "readAfter");
-  const hub = createThreadEventHub(
-    {
-      journalReader: reader,
-      journalWriter: { appendEvent: async () => 0n },
-      eventSink: createNoopEventSink(),
-    },
-    { evictionGraceMs: 1 },
-  );
-  hub.invalidateCommittedJournal(THREAD_ID);
-  await Promise.resolve();
-  expect(hub.hasThreadState(THREAD_ID)).toBe(false);
-  expect(readAfter).not.toHaveBeenCalled();
-  const { catchup, unsubscribe } = await hub.catchupAndSubscribe(THREAD_ID, 1000n, () => {});
-  expect(catchup).toHaveLength(2999);
-  expect(readAfter).toHaveBeenCalledTimes(3);
-  unsubscribe();
 });

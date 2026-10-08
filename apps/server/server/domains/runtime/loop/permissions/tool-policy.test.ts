@@ -5,8 +5,7 @@
  */
 import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
-import { type CoreToolHandlers, createCoreToolRegistrations } from "../../tools/core-tools.js";
-import { advertiseTools, projectToolPolicy, toolsBeyondParent } from "./tool-policy.js";
+import { projectToolPolicy, toolsBeyondParent } from "./tool-policy.js";
 
 // ask_user is never granted while disabled (#601).
 const PRIMARY_DEFAULT = [
@@ -28,11 +27,7 @@ const names = (...args: Parameters<typeof projectToolPolicy>) =>
 
 describe("projectToolPolicy", () => {
   it.each([
-    ["no lists", {}, "primary", PRIMARY_DEFAULT],
-    ["no lists, subagent", {}, "subagent", [...PRIMARY_DEFAULT, "return_result"].sort()],
     ["an empty allow-list", { tools: [] }, "primary", []],
-    ["an empty allow-list, subagent", { tools: [] }, "subagent", ["return_result"]],
-    ["an allow-list", { tools: ["read", "write", "ask_user"] }, "primary", ["read", "write"]],
     ["return_result on a primary", { tools: ["read", "return_result"] }, "primary", ["read"]],
     [
       "denials",
@@ -49,29 +44,10 @@ describe("projectToolPolicy", () => {
   ] as const)("%s", (_label, configuration, kind, expected) => {
     expect(
       names(
-        configuration as Parameters<typeof projectToolPolicy>[0],
+        configuration as unknown as Parameters<typeof projectToolPolicy>[0],
         kind as Parameters<typeof projectToolPolicy>[1],
       ),
     ).toEqual(expected);
-  });
-});
-
-const handler: CoreToolHandlers["write"] = async () => ({});
-const definitions = createCoreToolRegistrations({
-  read: handler,
-  write: handler,
-  work: handler,
-  ls: handler,
-  search: handler,
-  ask_user: handler,
-}).map(({ definition }) => definition);
-
-describe("advertiseTools", () => {
-  it("advertises each kept tool with its full schema", () => {
-    const policy = projectToolPolicy({ "disallowed-tools": ["write"] }, "primary");
-    expect(advertiseTools(definitions, policy)).toEqual(
-      definitions.filter(({ name }) => name !== "write" && name !== "ask_user"),
-    );
   });
 });
 

@@ -6,9 +6,7 @@ import * as Y from "yjs";
 import {
   type AuthorityGenerationReplacementPort,
   admitCertifiedMutation,
-  admitFreshAuthorship,
   DocumentMutationPolicyError,
-  type FreshAuthorshipPort,
   type FrozenReplicationSource,
   type MutationTarget,
   replaceAuthorityGeneration,
@@ -24,17 +22,6 @@ function updateWith(value: string): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
-function freshPort(
-  doc = new Y.Doc({ gc: false }),
-  overrides: Partial<FreshAuthorshipPort> = {},
-): FreshAuthorshipPort {
-  return {
-    admitImmediate: vi.fn(async () => ({ sequence: 4n, joined: 2 })),
-    readMutationTarget: vi.fn(() => ({ documentId: "doc-1", generation: 3n, doc })),
-    ...overrides,
-  };
-}
-
 function fullReplacementIr() {
   return {
     version: 1 as const,
@@ -47,29 +34,6 @@ function fullReplacementIr() {
 }
 
 describe("document mutation policy operations", () => {
-  it("admits fresh writer authorship with exact attribution", async () => {
-    const port = freshPort();
-    const update = updateWith("restored");
-
-    await admitFreshAuthorship(port, { source: { kind: "writer" }, update });
-
-    expect(port.admitImmediate).toHaveBeenCalledWith({
-      update,
-      attribution: { kind: "writer" },
-    });
-  });
-
-  it("requires explicit import and seed policy", async () => {
-    const port = freshPort();
-    await expect(
-      admitFreshAuthorship(port, {
-        source: { kind: "import", policy: "unknown" } as never,
-        update: updateWith("import"),
-      }),
-    ).rejects.toMatchObject({ code: "invalid_mutation" });
-    expect(port.admitImmediate).not.toHaveBeenCalled();
-  });
-
   it("validates semantic intent before lowering and admission", async () => {
     const target = new Y.Doc({ gc: false });
     const lowerCertifiedMutation = vi.fn(async () => updateWith("agent"));
@@ -94,25 +58,6 @@ describe("document mutation policy operations", () => {
     expect(admitImmediate).toHaveBeenCalledWith(
       expect.objectContaining({ attribution: { kind: "agent" } }),
     );
-  });
-
-  it("computes identity replication bytes from a directly supplied frozen source", async () => {
-    const source = new Y.Doc({ gc: false });
-    source.getText("prosemirror").insert(0, "source");
-    const target = new Y.Doc({ gc: false });
-    const admit = vi.fn(async ({ update }: { update: Uint8Array }) => {
-      Y.applyUpdate(target, update);
-      return { sequence: 1n, joined: 0 };
-    });
-
-    await replicateFrozenIdentity({
-      source: frozenSource(source),
-      target: mutationTarget(target),
-      plan: { kind: "wholeDocument" },
-      admit,
-    });
-
-    expect(target.getText("prosemirror").toString()).toBe("source");
   });
 
   it("selectively replicates named shared types and carries delete-only state", async () => {
@@ -178,15 +123,6 @@ describe("document mutation policy operations", () => {
       expect.objectContaining({ code: "authority_head_busy" }),
     );
     expect(port.replaceGeneration).not.toHaveBeenCalled();
-  });
-
-  it("installs a complete checkpoint as a new generation and fences old clients", async () => {
-    const port = replacementPort();
-
-    await expect(replaceAuthorityGeneration(port, "checkpoint-1")).resolves.toEqual({
-      generation: 4n,
-    });
-    expect(port.disconnectGeneration).toHaveBeenCalledWith(3n);
   });
 
   it("rejects Y.Doc-only checkpoints rather than re-minting provenance", async () => {

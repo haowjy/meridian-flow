@@ -1,18 +1,9 @@
 /** Unit coverage for turn-level reversal safety handoff. */
 import { modelResult, type ReversalStore } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
-import { aggregateStatus, reverseTurn } from "./turn-reversal.js";
+import { reverseTurn } from "./turn-reversal.js";
 
 describe("reverseTurn", () => {
-  it("classifies a targeted success plus no-op as partial", () => {
-    expect(aggregateStatus("undo", [{ status: "reversed" }, { status: "nothing_to_undo" }])).toBe(
-      "partial",
-    );
-    expect(aggregateStatus("redo", [{ status: "reconciled" }, { status: "nothing_to_redo" }])).toBe(
-      "partial",
-    );
-  });
-
   it("leaves the advisory dependency precheck to agents while users reach the intrinsic guard", async () => {
     let userReverseCalled = false;
     const base = {

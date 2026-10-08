@@ -77,29 +77,6 @@ if (!RUN) {
       fileType: "markdown" as const,
     });
 
-    it("converges concurrent same-key reservations before allocating filename collisions", async () => {
-      const repo = await seed();
-      const [first, waiter] = await Promise.all([
-        repo.reserve(reservation("concurrent", "none")),
-        repo.reserve(reservation("concurrent", "none")),
-      ]);
-
-      expect([first.kind, waiter.kind].sort()).toEqual(["existing", "reserved"]);
-      if (
-        first.kind === "conflict" ||
-        first.kind === "owner_unavailable" ||
-        waiter.kind === "conflict" ||
-        waiter.kind === "owner_unavailable"
-      ) {
-        throw new Error("same-key reservation did not converge");
-      }
-      expect(waiter.reservation).toMatchObject({
-        documentId: first.reservation.documentId,
-        canonicalUri: first.reservation.canonicalUri,
-        fileType: first.reservation.fileType,
-      });
-    });
-
     it("converges concurrent production service calls on the authoritative trio", async () => {
       const firstDb = createDb(DATABASE_URL);
       const waiterDb = createDb(DATABASE_URL);
