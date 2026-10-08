@@ -50,11 +50,13 @@ child-run coordinator can create subagent threads.
 `runChild` with `kind: "message"` authorizes through
 `spawn/authorize-thread-message.ts`, which resolves the model's `pN`/`cN` ref
 with the project-scoped `findLiveByProjectRef` (same project and user) and then
-checks `threads/domain/lineage.ts` — **background** requires `sameLineage` (same
-project and `rootThreadId`, forks included), **foreground** requires
+checks the shared connection predicate — **background** requires `sameLineage`
+(same project and `rootThreadId`, forks included) or the direct handoff/source
+pair through the handoff's `originTurnId` owner, in either direction.
+Handoff chains do not extend that edge. **Foreground** requires
 `isInSubtree` (the target is the caller or a descendant, walking
 `parentThreadId`) so a wait cannot cycle on an ancestor. A malformed or missing
-ref → `thread_message_target_not_found`; an out-of-lineage/out-of-subtree ref →
+ref → `thread_message_target_not_found`; an disconnected/out-of-subtree ref →
 `thread_message_not_authorized`. Background delivery is a queue producer only:
 the coordinator enqueues one `agent`-provenance `message` through the
 producer-facing `RuntimeDelivery` (idempotency key `thread-message:<toolCallId>`)

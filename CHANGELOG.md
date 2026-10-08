@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A handoff can read its source conversation again. The two chats can send each other background messages.
+
 - Rebinding a chat tells the AI where its earlier Scratch notes remain.
 
 - Unrelated No Work chats keep separate Scratch notes. Forks and subagents share their first chat's notes.

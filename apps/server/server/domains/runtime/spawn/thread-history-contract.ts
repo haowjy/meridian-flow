@@ -1,5 +1,6 @@
 /** History tool contract: numbered turns, visibility, pagination, saved reports, document isolation and compaction. */
 
+import { randomUUID } from "node:crypto";
 import { modelResult } from "@meridian/agent-edit";
 import { ReadToolInputSchema, WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
@@ -174,6 +175,25 @@ export function defineThreadHistoryContract(
   }
 
   describe("thread_history", () => {
+    it("lets a handoff read its direct source across lineage roots", async () => {
+      const f = await fixture();
+      const cutoff = await f.turn("user", null, "complete", "writer");
+      await f.text(cutoff, "Continue the source scene");
+      const { thread: handoff } = await f.repos.threads.createDerivedPrimary({
+        id: randomUUID() as ThreadId,
+        userId: f.thread.userId,
+        projectId: f.thread.projectId,
+        workId: f.thread.workId,
+        source: f.thread,
+        originType: "handoff",
+        originTurnId: cutoff.id,
+      });
+      expect(handoff.rootThreadId).not.toBe(f.thread.rootThreadId);
+      expect(output(await f.read({ ref: f.thread.ref ?? "" }, handoff))).toContain(
+        "Continue the source scene",
+      );
+    });
+
     it("batches pairs across page boundaries and scopes reused call ids to their turn", async () => {
       const f = await fixture();
       const first = await f.turn();

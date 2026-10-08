@@ -17,6 +17,7 @@ import type {
   SubagentThreadFactory,
   ThreadRepositories,
   ThreadRepository,
+  TurnRepository,
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
@@ -85,6 +86,7 @@ export interface ChildRunCoordinatorDeps {
       ThreadRepository,
       "updateSpawnLifecycle" | "findLiveByProjectRef" | "findById" | "lockByIdIncludingDeleted"
     >;
+    turns: Pick<TurnRepository, "findById">;
     subagentThreads: SubagentThreadFactory;
     transaction: ThreadRepositories["transaction"];
   };
@@ -131,6 +133,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         caller: input.parentThread,
         ref: input.from,
         threads: deps.repos.threads,
+        turns: deps.repos.turns,
       });
       if (!resolved.ok) return { status: "error", error: resolved.error };
       source = resolved.target;
@@ -283,6 +286,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       targetRef: request.ref,
       mode: background ? "background" : "foreground",
       threads: deps.repos.threads,
+      turns: deps.repos.turns,
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
     return prepareForegroundMessage(request, authorized.target);
@@ -364,6 +368,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       targetRef: request.ref,
       mode: "background",
       threads: deps.repos.threads,
+      turns: deps.repos.turns,
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
 

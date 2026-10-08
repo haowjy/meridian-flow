@@ -232,6 +232,7 @@ export async function dispatchToolCall(
             ref: reportInput.ref,
             repos: {
               threads: deps.persistenceDeps.repos.threads,
+              turns: deps.persistenceDeps.repos.turns,
               executionReports: deps.executionReports,
               readSnapshot: deps.readSnapshot,
             },

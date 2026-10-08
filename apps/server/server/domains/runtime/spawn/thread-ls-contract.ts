@@ -199,10 +199,9 @@ export function defineThreadLsContract(
         expect(typeof (await f.read(target, { ref: f.root.ref }))).toBe("string");
       }
       expect(handoff.rootThreadId).toBe(handoff.id);
-      expect(await f.read(f.root, { ref: handoff.ref })).toMatchObject({
-        ok: false,
-        error: { code: "thread_not_connected" },
-      });
+      // Explicit navigation admits the direct source connection; descendant listings stay lineage-scoped.
+      expect(typeof (await f.read(f.root, { ref: handoff.ref }))).toBe("string");
+      expect(typeof (await f.read(handoff, { ref: f.root.ref }))).toBe("string");
       const outsider = await f.repos.threads.create({
         projectId: f.root.projectId,
         userId: f.root.userId,
