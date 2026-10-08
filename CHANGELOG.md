@@ -2,8 +2,6 @@
 
 ## [Unreleased]
 
-- Trashing or restoring a chat now delivers its Scratch catalog updates through the validated thread socket.
-
 - Rebinding a chat tells the AI where its earlier Scratch notes remain.
 
 - Unrelated No Work chats keep separate Scratch notes. Forks and subagents share their first chat's notes.
@@ -25,8 +23,6 @@
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
 
 ## [Unreleased]
-
-- Handoffs start fresh chat lineages. No Work Scratch links name the first chat.
 
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
 - Model tool results are short text; the typed `result` is stored beside it, and the app reads only `result`. `read` and `write` return a status line plus `hash|text` blocks. `ls` returns the folder's URI, then one line per entry, with `(read-only)` and a non-text file's kind only when they apply. `work` returns one line per Work, `search` returns `hash|excerpt` around each match, and a `read` outline gives each heading's `#slug`. `verbose: true` on `ls`, `work` and `search` adds sizes, edit times, dates and whole blocks. A refusal reads as its message and code. In the typed result, `ls` entries carry `readonly` (was `editable`) and Works carry `writes` and `pendingChangeCount`.
