@@ -2,14 +2,16 @@
  * DraftReviewBand — a document's review controls, as part of the identity row
  * (`DocumentIdentityBar`) rather than a header of their own: the Draft chip with
  * its menu right after the breadcrumb, then, on the right, the stepper, Show
- * changes, Discard and Apply. Everything is sized to the row's 22px box, so
+ * changes, Discard draft and Apply draft (the per-change bar's Discard and
+ * Apply act on one change; these name their scope). Everything is sized to the row's 22px box, so
  * entering or leaving review moves nothing below it.
  *
  * Narrow rows give up room in a fixed order, always on one row (the container
  * is the identity bar's own `@container`, so a closed sidebar or open dock
  * counts): the breadcrumb's middle folders become `…` (in `IdentityPath`),
  * "Show changes" becomes an icon toggle with the same name, `4 of 4` becomes
- * `4/4`, and the file name truncates. The Draft chip, Discard and Apply never
+ * `4/4` and Discard draft / Apply draft shorten to Discard / Apply, and the
+ * file name truncates. The Draft chip, Discard and Apply never
  * hide. Apply draft and Discard draft move straight to the next draft in the
  * menu, or back to live when none is left; the model is shared with the phone
  * header (`useReviewHeader`).
@@ -98,7 +100,12 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
               disabled={locked}
               onClick={header.discardDraft}
             >
-              <Trans>Discard</Trans>
+              <span className="@max-[36rem]:hidden">
+                <Trans>Discard draft</Trans>
+              </span>
+              <span className="hidden @max-[36rem]:inline">
+                <Trans>Discard</Trans>
+              </span>
             </Button>
             <Button
               size="xs"
@@ -110,7 +117,12 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
               {controller.isApplying ? (
                 <Loader2 className="size-3 animate-spin" aria-hidden />
               ) : null}
-              <Trans>Apply</Trans>
+              <span className="@max-[36rem]:hidden">
+                <Trans>Apply draft</Trans>
+              </span>
+              <span className="hidden @max-[36rem]:inline">
+                <Trans>Apply</Trans>
+              </span>
             </Button>
           </>
         )}

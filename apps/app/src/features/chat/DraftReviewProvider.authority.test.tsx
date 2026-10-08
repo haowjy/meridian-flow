@@ -261,7 +261,7 @@ describe("a per-change Apply that got no answer", () => {
     });
   });
 
-  it("holds a typed server refusal with the server's reason, not as a connection failure", async () => {
+  it("holds a typed server refusal with its reason, not as a connection failure", async () => {
     mocks.applyDraftChanges.mockRejectedValue(
       new MeridianApiError(
         {
@@ -281,7 +281,7 @@ describe("a per-change Apply that got no answer", () => {
       const item = probe().header.view.items.find((entry) => entry.change.classId === "class-2");
       expect(item?.failure).toMatchObject({
         code: "refused",
-        reason: "This Work is archived and read-only.",
+        reason: "This Work is archived. Unarchive it to apply or discard its drafts.",
       });
     });
   });

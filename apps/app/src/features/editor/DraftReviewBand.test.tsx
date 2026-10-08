@@ -145,7 +145,7 @@ beforeEach(() => {
 });
 
 describe("DraftReviewBand", () => {
-  it("is the Draft chip, stepper, Show changes, Discard and Apply, under their full names", async () => {
+  it("is the Draft chip, stepper, Show changes, Discard draft and Apply draft, under their full names", async () => {
     await render({}, async () => {
       const text = document.body.textContent ?? "";
       // The document's name is the breadcrumb's; the chip says only what this is.
@@ -155,8 +155,11 @@ describe("DraftReviewBand", () => {
       expect(document.querySelector("[role=switch]")?.getAttribute("aria-label")).toBe(
         "Show changes",
       );
-      expect(byText("Discard draft")?.textContent).toBe("Discard");
-      expect(byText("Apply draft")?.textContent).toBe("Apply");
+      // Whole-draft commands name their scope; only the narrowest row shortens them.
+      const labels = (name: string) =>
+        [...(byText(name)?.querySelectorAll("span") ?? [])].map((span) => span.textContent);
+      expect(labels("Discard draft")).toEqual(["Discard draft", "Discard"]);
+      expect(labels("Apply draft")).toEqual(["Apply draft", "Apply"]);
       expect(document.querySelector("[aria-label='Next change']")).not.toBeNull();
     });
   });

@@ -4204,6 +4204,10 @@ msgstr ""
 msgid "This draft"
 msgstr ""
 
+#: src/client/query/draft-command-rejection.ts
+msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
+msgstr ""
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr ""
@@ -4293,6 +4297,10 @@ msgstr ""
 msgid "This Work is archived."
 msgstr ""
 
+#: src/client/query/draft-command-rejection.ts
+msgid "This Work is archived. Unarchive it to apply or discard its drafts."
+msgstr ""
+
 #: src/client/query/work-update-failure.ts
 msgid "This Work is archived. Unarchive it to edit."
 msgstr ""
@@ -4301,6 +4309,7 @@ msgstr ""
 msgid "This Work is unavailable."
 msgstr ""
 
+#: src/client/query/draft-command-rejection.ts
 #: src/client/query/work-update-failure.ts
 msgid "This Work no longer exists."
 msgstr ""
