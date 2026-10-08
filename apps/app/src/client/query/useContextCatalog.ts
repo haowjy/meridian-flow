@@ -134,7 +134,8 @@ function overlayResourceCatalogView(
     const installedMatches =
       installed?.kind === "file" &&
       installed.uri.startsWith(`${location?.scheme}://`) &&
-      `/${installed.path.join("/")}` === location?.path;
+      `/${installed.path.join("/")}` === location?.path &&
+      installed.provisionalName === location?.provisional;
     if (installed && !installedMatches) entries.delete(documentId);
     if (!location || !locationBelongsToScope(location, scope) || installedMatches) continue;
 
@@ -625,7 +626,14 @@ export function useContextCatalogWake(
   );
 }
 
-/** Duplicate-tolerant wake hint handler; the hint never mutates cache state itself. */
+/**
+ * Duplicate-tolerant wake hint handler; the hint never mutates cache state itself.
+ *
+ * A manifest change is also the one signal another page's Apply or Discard sends: a draft-only
+ * document joins or never joins the manifest, and nothing else tells this page its Work's draft
+ * list is out of date. Mounted draft lists re-read, which is what ends a review and settles a
+ * draft-only tab whose draft was disposed elsewhere.
+ */
 export function pullContextCatalogOnHint(
   queryClient: QueryClient,
   resources: Pick<AccountResourceReplica, "hintCatalog">,
@@ -636,8 +644,15 @@ export function pullContextCatalogOnHint(
     hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
   void resources
     .hintCatalog(projectId, requestedScope, hint.headRevision)
-    .then((next) =>
-      queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, requestedScope), next),
-    )
+    .then((next) => {
+      queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, requestedScope), next);
+      void queryClient.invalidateQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] === "projects" &&
+          queryKey[1] === projectId &&
+          queryKey[2] === "works" &&
+          queryKey[4] === "drafts",
+      });
+    })
     .catch(() => undefined);
 }

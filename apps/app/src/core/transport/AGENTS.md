@@ -12,6 +12,10 @@ transport behavior.
 
 ## Key rules
 
+- New network connections subscribe to injected `ConnectivityHintsPort`; never
+  add private window connectivity or wake listeners. The authenticated shell
+  owns one source for document, thread, replica, and working-set recovery.
+
 - A `DocumentSessionTransportProvider` must synchronously publish its current
   connection status when `subscribeStatus` is called, then publish every later
   transition.

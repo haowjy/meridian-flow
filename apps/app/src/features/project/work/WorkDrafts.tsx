@@ -1,13 +1,17 @@
 /** The Work Files tab's Drafts to review group: manuscript documents with pending drafts from this Work. */
 import { t } from "@lingui/core/macro";
-import { Plural } from "@lingui/react/macro";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import {
+  clearDraftCommandFailure,
+  draftCommandFailure,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { fileKindIcon } from "../context/context-file-icon";
-import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
+import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { RowIcon, RuledList } from "../RuledList";
-import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkFileGroup } from "./WorkFileGroup";
 import { workFileRowClass } from "./WorkFileRows";
 import type { WorkFileSearch } from "./work-files-model";
@@ -15,18 +19,16 @@ import type { WorkFileSearch } from "./work-files-model";
 export function WorkDrafts({
   projectId,
   workId,
-  commands,
   matchesSearch,
 }: {
   projectId: string;
   workId: ParsedRequestId;
-  commands: ProjectRouteCommands;
   matchesSearch: WorkFileSearch;
 }) {
+  const { openAiDraft } = useAiDraftLauncher();
   const query = useWorkDrafts(projectId, workId);
-  const groups = activeWorkDraftGroups(
-    usePostApplyDraftGroupProjections(query.groups, projectId, workId).commandEligibleGroups,
-  );
+  const commandRecords = useDraftCommandRecords();
+  const groups = activeWorkDraftGroups(query.groups);
   const visible = groups.filter((group) =>
     matchesSearch(group.documentName || group.contextPath || ""),
   );
@@ -45,33 +47,46 @@ export function WorkDrafts({
           className="-mx-2"
           rows={visible.map((group) => {
             const path = group.contextPath;
+            const draft = {
+              projectId,
+              workId,
+              documentId: group.documentId,
+              draftId: group.draft.draftId,
+            };
+            const refused = draftCommandFailure(commandRecords, draft);
             return {
               key: group.documentId,
               node: (
-                <button
-                  type="button"
-                  className={workFileRowClass}
-                  disabled={!path}
-                  onClick={() => {
-                    if (path)
-                      void commands.openWorkContext(
-                        { kind: "work-context", workId, scheme: "manuscript", path },
-                        { replace: false },
-                      );
-                  }}
-                >
-                  <RowIcon icon={fileKindIcon(group.documentName || path || "")} />
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {group.documentName || path || t`Untitled manuscript`}
-                  </span>
-                  <span className="shrink-0 text-xs text-jade-text">
-                    <Plural
-                      value={group.drafts.length}
-                      one="# pending draft"
-                      other="# pending drafts"
+                <>
+                  <button
+                    type="button"
+                    className={workFileRowClass}
+                    disabled={!path}
+                    onClick={() => {
+                      if (path)
+                        openAiDraft({
+                          workId,
+                          documentId: group.documentId,
+                          draftId: group.draft.draftId,
+                          contextPath: path,
+                          documentName: group.documentName ?? undefined,
+                          isNewDocument: group.draft.isNewDocument === true,
+                        });
+                    }}
+                  >
+                    <RowIcon icon={fileKindIcon(group.documentName || path || "")} />
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {group.documentName || path || t`Untitled manuscript`}
+                    </span>
+                    <span className="shrink-0 text-xs text-jade-text">{t`Pending draft`}</span>
+                  </button>
+                  {refused ? (
+                    <InlineErrorRow
+                      message={<ReviewMessageText code={refused} />}
+                      onDismiss={() => clearDraftCommandFailure(draft)}
                     />
-                  </span>
-                </button>
+                  ) : null}
+                </>
               ),
             };
           })}

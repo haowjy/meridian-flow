@@ -156,7 +156,15 @@ export function ContextViewer({
         {/* Review banner — above the identity bar so it's the first chrome
             the writer sees when entering review mode. */}
         {activeTab && activeReviewDraftId ? (
-          <DraftReviewHeader documentId={activeTab.documentId} draftId={activeReviewDraftId} />
+          <DraftReviewHeader
+            documentId={activeTab.documentId}
+            draftId={activeReviewDraftId}
+            onCloseDraftOnly={
+              activeTab.kind !== "new" && activeTab.draftOnly
+                ? () => onCloseTab(activeTab.documentId)
+                : undefined
+            }
+          />
         ) : null}
         {archivedEditorWork && editorFrozen ? (
           <ArchivedWorkNotice
@@ -190,7 +198,6 @@ export function ContextViewer({
           >
             <ContextEditorMountHost
               projectId={projectId}
-              workId={editorWorkId}
               trackedTabs={trackedTabs}
               activeTabId={activeIsEditable ? activeTabId : null}
               active={active}

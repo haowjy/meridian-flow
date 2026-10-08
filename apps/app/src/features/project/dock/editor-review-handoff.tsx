@@ -1,22 +1,23 @@
 /** Latest-wins command handoff from any project surface to the Editor review scope. */
 
+import type { EventRecord } from "@meridian/contracts/observability";
 import {
   createContext,
   type ReactNode,
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
+import {
+  clearDraftCommandFailure,
+  failDraftReviewLaunch,
+} from "@/client/query/draft-command-record";
+import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
-import type { AdmittedLiveDocument } from "../context/open-project-document";
-import type {
-  LiveDocumentAcknowledgement,
-  LiveDocumentHostBinding,
-} from "../context/use-live-document-binding";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 
 export type AiDraftLaunchTarget = {
@@ -32,29 +33,37 @@ type EditorReviewIntent = AiDraftLaunchTarget & { sequence: number };
 
 type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
 
+function reportRouteSettlement(
+  projectId: string,
+  target: AiDraftLaunchTarget,
+  kind: "applied" | "cancelled" | "superseded" | "failed",
+  attempt: number,
+): void {
+  if (!DEBUG_FEATURE_ALLOWED) return;
+  const event: EventRecord = {
+    timestamp: new Date().toISOString(),
+    level: kind === "failed" ? "error" : kind === "applied" ? "info" : "warn",
+    source: "project.review",
+    name: "editor_review.route_settlement",
+    sensitivity: "safe",
+    correlation: { projectId },
+    payload: {
+      kind,
+      attempt,
+      workId: target.workId,
+      documentId: target.documentId,
+      draftId: target.draftId,
+    },
+  };
+  appendTraceEvent(event);
+}
+
 const EditorReviewCommandContext = createContext<EditorReviewCommand | null>(null);
 const EditorReviewIntentContext = createContext<{
   intent: EditorReviewIntent | null;
+  routingDraftId: string | null;
   claim: (sequence: number) => void;
 } | null>(null);
-
-type LiveBindingRequest = {
-  sequence: number;
-  admission: AdmittedLiveDocument;
-  signal: AbortSignal;
-};
-type LiveBindingHandoff = {
-  request: LiveBindingRequest | null;
-  claim(sequence: number, owner: object): boolean;
-  complete(sequence: number, owner: object, result: LiveDocumentAcknowledgement): void;
-};
-type AcknowledgeLiveBinding = (
-  admission: AdmittedLiveDocument,
-  signal: AbortSignal,
-) => Promise<LiveDocumentAcknowledgement>;
-
-const AcknowledgeLiveBindingContext = createContext<AcknowledgeLiveBinding | null>(null);
-const LiveBindingHandoffContext = createContext<LiveBindingHandoff | null>(null);
 
 export function EditorReviewHandoffProvider({
   projectId,
@@ -66,175 +75,97 @@ export function EditorReviewHandoffProvider({
   children: ReactNode;
 }) {
   const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
+  const [routingDraftId, setRoutingDraftId] = useState<string | null>(null);
   const sequence = useRef(0);
   const latest = useRef<EditorReviewIntent | null>(null);
-  const bindingSequence = useRef(0);
-  const bindingMounted = useRef(true);
-  const bindingRequest = useRef<{
-    sequence: number;
-    owner: object | null;
-    abort: AbortController;
-    settle: (result: LiveDocumentAcknowledgement) => void;
-  } | null>(null);
-  const [advertisedBinding, setAdvertisedBinding] = useState<LiveBindingRequest | null>(null);
+  const claimed = useRef<number | null>(null);
 
   const openEditorReview = useCallback<EditorReviewCommand>(
     async (target) => {
+      const draft = {
+        projectId,
+        workId: target.workId,
+        documentId: target.documentId,
+        draftId: target.draftId,
+      };
+      // A new attempt retires the previous attempt's message.
+      clearDraftCommandFailure(draft);
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
-      // Supersession cancels any advertised intent immediately. The new one
-      // does not become claimable until its route command has committed.
-      setIntent(null);
+      claimed.current = null;
+      setRoutingDraftId(target.draftId);
+      // A matching mounted Editor may claim immediately. This avoids making a
+      // same-route review command depend on an unrelated navigation settlement.
+      setIntent(staged);
 
       const tab = contextTabFromDraftGroup(target);
 
       try {
-        const result = await openContextRoute(
-          {
-            scheme: "manuscript",
-            path: target.contextPath,
-            workId: target.workId,
-            documentId: target.documentId,
-          },
-          { tab: tab ?? undefined, canCommit: () => latest.current?.sequence === staged.sequence },
-        );
-        if (result.kind === "failed") throw result.error;
-        if (result.kind !== "applied") return;
-        if (latest.current?.sequence === staged.sequence) {
-          setIntent(staged);
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const result = await openContextRoute(
+            {
+              scheme: "manuscript",
+              path: target.contextPath,
+              workId: target.workId,
+              documentId: target.documentId,
+            },
+            {
+              replaceIfSameDocument: true,
+              tab: tab ?? undefined,
+              draftId: target.draftId,
+              canCommit: () => latest.current?.sequence === staged.sequence,
+            },
+          );
+          reportRouteSettlement(projectId, target, result.kind, attempt + 1);
+          if (result.kind === "failed") throw result.error;
+          if (result.kind === "applied") {
+            if (
+              latest.current?.sequence === staged.sequence &&
+              claimed.current === staged.sequence
+            ) {
+              latest.current = null;
+            }
+            return;
+          }
+          if (result.kind === "cancelled") {
+            if (latest.current?.sequence === staged.sequence) {
+              latest.current = null;
+              setIntent(null);
+            }
+            return;
+          }
+          if (latest.current?.sequence !== staged.sequence) return;
         }
+        throw new Error("Editor review navigation did not settle after retry");
       } catch (error) {
         if (latest.current?.sequence === staged.sequence) {
           latest.current = null;
           setIntent(null);
         }
+        // The failure belongs on the draft the writer tried to open.
+        failDraftReviewLaunch(draft);
         throw error;
+      } finally {
+        if (latest.current?.sequence === staged.sequence || claimed.current === staged.sequence) {
+          setRoutingDraftId(null);
+        }
       }
     },
     [openContextRoute, projectId],
   );
   const claim = useCallback((claimedSequence: number) => {
     if (latest.current?.sequence !== claimedSequence) return;
-    latest.current = null;
+    claimed.current = claimedSequence;
     setIntent(null);
-  }, []);
-
-  const acknowledgeLiveBinding = useCallback<AcknowledgeLiveBinding>((admission, signal) => {
-    bindingRequest.current?.settle({ kind: "cancelled" });
-    const requestSequence = ++bindingSequence.current;
-    const abort = new AbortController();
-    return new Promise<LiveDocumentAcknowledgement>((resolve) => {
-      let settled = false;
-      const timeout = globalThis.setTimeout(() => settle({ kind: "unclaimed" }), 1_000);
-      const settle = (result: LiveDocumentAcknowledgement) => {
-        if (settled) return;
-        settled = true;
-        globalThis.clearTimeout(timeout);
-        abort.abort();
-        signal.removeEventListener("abort", cancel);
-        if (bindingRequest.current?.sequence === requestSequence) {
-          bindingRequest.current = null;
-          if (bindingMounted.current) setAdvertisedBinding(null);
-        }
-        resolve(result);
-      };
-      const cancel = () => settle({ kind: "cancelled" });
-      signal.addEventListener("abort", cancel, { once: true });
-      bindingRequest.current = {
-        sequence: requestSequence,
-        owner: null,
-        abort,
-        settle,
-      };
-      if (signal.aborted) {
-        cancel();
-        return;
-      }
-      setAdvertisedBinding({ sequence: requestSequence, admission, signal: abort.signal });
-    });
-  }, []);
-  const claimLiveBinding = useCallback((requestSequence: number, owner: object) => {
-    const request = bindingRequest.current;
-    if (!request || request.sequence !== requestSequence || request.owner) return false;
-    request.owner = owner;
-    return true;
-  }, []);
-  const completeLiveBinding = useCallback(
-    (requestSequence: number, owner: object, result: LiveDocumentAcknowledgement) => {
-      const request = bindingRequest.current;
-      if (!request || request.sequence !== requestSequence || request.owner !== owner) return;
-      request.settle(result);
-    },
-    [],
-  );
-  const liveBindingHandoff = useMemo<LiveBindingHandoff>(
-    () => ({
-      request: advertisedBinding,
-      claim: claimLiveBinding,
-      complete: completeLiveBinding,
-    }),
-    [advertisedBinding, claimLiveBinding, completeLiveBinding],
-  );
-
-  useEffect(() => {
-    bindingMounted.current = true;
-    return () => {
-      bindingMounted.current = false;
-      bindingRequest.current?.settle({ kind: "cancelled" });
-    };
   }, []);
 
   return (
     <EditorReviewCommandContext.Provider value={openEditorReview}>
-      <AcknowledgeLiveBindingContext.Provider value={acknowledgeLiveBinding}>
-        <EditorReviewIntentContext.Provider value={{ intent, claim }}>
-          <LiveBindingHandoffContext.Provider value={liveBindingHandoff}>
-            {children}
-          </LiveBindingHandoffContext.Provider>
-        </EditorReviewIntentContext.Provider>
-      </AcknowledgeLiveBindingContext.Provider>
+      <EditorReviewIntentContext.Provider value={{ intent, routingDraftId, claim }}>
+        {children}
+      </EditorReviewIntentContext.Provider>
     </EditorReviewCommandContext.Provider>
   );
-}
-
-export function useAcknowledgeLiveBinding(): AcknowledgeLiveBinding {
-  const command = useContext(AcknowledgeLiveBindingContext);
-  if (!command) throw new Error("Draft Apply requires the project Editor handoff owner");
-  return command;
-}
-
-/** Lets only the matching concrete host consume the one advertised admission. */
-export function useLiveBindingAcknowledgementHost(
-  projectId: string,
-  documentId: string | null,
-  host: LiveDocumentHostBinding,
-): void {
-  const handoff = useContext(LiveBindingHandoffContext);
-  const request = handoff?.request ?? null;
-  const owner = useRef({});
-
-  useEffect(() => {
-    if (!handoff || !request || !documentId) return;
-    if (
-      request.admission.projectId !== projectId ||
-      request.admission.documentId !== documentId ||
-      !handoff.claim(request.sequence, owner.current)
-    ) {
-      return;
-    }
-    const abort = new AbortController();
-    const cancel = () => abort.abort();
-    request.signal.addEventListener("abort", cancel, { once: true });
-    if (request.signal.aborted) abort.abort();
-    void host
-      .adoptAndAcknowledge(request.admission, { signal: abort.signal })
-      .then((result) => handoff.complete(request.sequence, owner.current, result));
-    return () => {
-      request.signal.removeEventListener("abort", cancel);
-      abort.abort();
-      handoff.complete(request.sequence, owner.current, { kind: "cancelled" });
-    };
-  }, [documentId, handoff, host.adoptAndAcknowledge, projectId, request]);
 }
 
 export function useOpenEditorReview(): EditorReviewCommand {
@@ -243,15 +174,22 @@ export function useOpenEditorReview(): EditorReviewCommand {
   return command;
 }
 
-/** Mount inside the Editor review boundary, beside the active viewer/editor. */
+/** Draft currently crossing the route-to-Editor handoff, if any. */
+export function usePendingEditorReviewDraftId(): string | null {
+  return useContext(EditorReviewIntentContext)?.routingDraftId ?? null;
+}
+
+/**
+ * Mount inside the Editor review boundary, beside the active viewer/editor. The
+ * Work, document and draft decide the claim; the address path is only a label
+ * that a rename can change between the launch and the claim.
+ */
 export function EditorReviewIntentClaimant({
   editorWorkId,
   activeScheme,
-  activePath,
 }: {
   editorWorkId: string | null;
   activeScheme: string | null;
-  activePath: string | null;
 }) {
   const handoff = useContext(EditorReviewIntentContext);
   const intent = handoff?.intent ?? null;
@@ -260,13 +198,13 @@ export function EditorReviewIntentClaimant({
   useEffect(() => {
     if (!intent) return;
     if (editorWorkId !== intent.workId) return;
-    if (activeScheme !== "manuscript" || activePath !== intent.contextPath) return;
+    if (activeScheme !== "manuscript") return;
     if (review.activeEditorDocumentId !== intent.documentId) return;
     const group = review.groupForDocument(intent.documentId);
-    if (!group?.drafts.some((draft) => draft.draftId === intent.draftId)) return;
+    if (group?.draft.draftId !== intent.draftId) return;
     review.controller.enterInlineReview(intent.documentId, intent.draftId);
     handoff?.claim(intent.sequence);
-  }, [activePath, activeScheme, editorWorkId, handoff, intent, review]);
+  }, [activeScheme, editorWorkId, handoff, intent, review]);
 
   return null;
 }

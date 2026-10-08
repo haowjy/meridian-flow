@@ -19,17 +19,28 @@ export function resolveWorkspaceRoute({
   tabs,
   selectedDocumentId,
   locator,
+  boundDocumentId,
 }: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
   locator: ContextRouteTarget | null;
+  /**
+   * The document this locator is bound to. Its tab owns the route wherever the
+   * tab's own path has gone, so a rename that updates the tab before the address
+   * follows never leaves the route unowned for a frame.
+   */
+  boundDocumentId?: string | null;
 }): WorkspaceRouteResolution {
   if (!locator) return { kind: "unowned" };
-  const server = tabs.find(
-    (tab) =>
-      tab.kind !== "new" &&
-      contextTabMatchesRoute(tab, locator.scheme, locator.path, locator.workId),
-  );
+  // Identity before path (see route-document-owner): a bound document's tab owns the route
+  // wherever the tab's path went, and no other tab may own it by holding the path.
+  const server = boundDocumentId
+    ? tabs.find((tab) => tab.kind !== "new" && tab.documentId === boundDocumentId)
+    : tabs.find(
+        (tab) =>
+          tab.kind !== "new" &&
+          contextTabMatchesRoute(tab, locator.scheme, locator.path, locator.workId),
+      );
   if (server) {
     return {
       kind: "owner",

@@ -26,54 +26,23 @@ describe("DocumentSession persistence cleanup", () => {
     persistence.createWhenSynced.mockReset().mockResolvedValue();
   });
 
-  it("preserves IndexedDB when a never-attached session is destroyed", async () => {
+  it.each([
+    { attached: false, clearPersistence: false },
+    { attached: true, clearPersistence: false },
+    { attached: true, clearPersistence: true },
+    { attached: false, clearPersistence: true },
+  ])("cleans persistence with attached=$attached, clear=$clearPersistence", async ({
+    attached,
+    clearPersistence,
+  }) => {
     const session = new DocumentSession({
-      roomKey: "doc-never-materialized",
+      roomKey: "doc-cleanup",
       persistence: { kind: "indexeddb", key: "test:document-session" },
     });
-
-    await session.destroy();
-
-    expect(persistence.destroy).toHaveBeenCalledOnce();
-    expect(persistence.clearData).not.toHaveBeenCalled();
-  });
-
-  it("preserves an attached room cache unless cleanup is explicitly requested", async () => {
-    const session = new DocumentSession({
-      roomKey: "doc-materialized",
-      persistence: { kind: "indexeddb", key: "test:document-session" },
-    });
-    session.attachTransport(() => ({ destroy: vi.fn() }));
-
-    await session.destroy();
-
-    expect(persistence.destroy).toHaveBeenCalledOnce();
-    expect(persistence.clearData).not.toHaveBeenCalled();
-  });
-
-  it("can explicitly clear an attached room cache after server deletion", async () => {
-    const session = new DocumentSession({
-      roomKey: "doc-deleted",
-      persistence: { kind: "indexeddb", key: "test:document-session" },
-    });
-    session.attachTransport(() => ({ destroy: vi.fn() }));
-
-    await session.destroy({ clearPersistence: true });
-
-    expect(persistence.clearData).toHaveBeenCalledOnce();
-    expect(persistence.destroy).not.toHaveBeenCalled();
-  });
-
-  it("can explicitly clear a detached empty room cache after confirmed cleanup", async () => {
-    const session = new DocumentSession({
-      roomKey: "doc-empty",
-      persistence: { kind: "indexeddb", key: "test:document-session" },
-    });
-
-    await session.destroy({ clearPersistence: true });
-
-    expect(persistence.clearData).toHaveBeenCalledOnce();
-    expect(persistence.destroy).not.toHaveBeenCalled();
+    if (attached) session.attachTransport(() => ({ destroy: vi.fn() }));
+    await session.destroy({ clearPersistence });
+    expect(persistence.clearData).toHaveBeenCalledTimes(clearPersistence ? 1 : 0);
+    expect(persistence.destroy).toHaveBeenCalledTimes(clearPersistence ? 0 : 1);
   });
 
   it("retries only failed teardown stages and freezes the first persistence policy", async () => {

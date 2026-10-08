@@ -47,6 +47,7 @@ import type {
   DocumentSessionTransportProvider,
 } from "@/core/editor/document-session";
 
+import type { ConnectivityHintsPort } from "./connectivity-hints";
 import { buildSameOriginWsUrl } from "./dev-transport";
 import {
   createServerAcknowledgementTracker,
@@ -64,6 +65,8 @@ const SOCKET_OPEN = 1;
 
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
+  private reconnectGeneration = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly acknowledgement: ServerAcknowledgementTracker;
 
   constructor(
@@ -76,9 +79,13 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
 
   // The provider emits "open" only after this listener (registered in the base
   // constructor), so counting starts before the handshake's first frame.
+  // 4.3 also clears retry cancellation on native open, before the first frame
+  // settles the attempt. Keep it until resolution so retry-now can fence that loop.
   override async onOpen(event: Event) {
     this.acknowledgement.beginConnection();
-    return super.onOpen(event);
+    const cancel = this.cancelWebsocketRetry;
+    void super.onOpen(event);
+    this.cancelWebsocketRetry = cancel;
   }
 
   // Every document frame passes here, whether the provider sent it directly,
@@ -102,15 +109,53 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     }
   }
 
-  // Hocuspocus 4.3 schedules an untracked reconnect from its close handler.
-  // Guard connect itself so a terminal room cannot resurrect after destroy().
   override async connect() {
-    if (this.permanentlyDestroyed) return;
+    if (this.permanentlyDestroyed || this.status === WebSocketStatus.Connected) return;
+    this.reconnectGeneration += 1;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    // Settle the superseded attempt before replacing its shared resolve/reject
+    // slot. super.connect cancels that retryer's next attempt synchronously.
+    this.rejectConnectionAttempt();
     return super.connect();
+  }
+
+  override resolveConnectionAttempt(): void {
+    super.resolveConnectionAttempt();
+    this.cancelWebsocketRetry = undefined;
+  }
+
+  override onClose(parameters: onCloseParameters): void {
+    const shouldConnect = this.shouldConnect;
+    // Retain library cleanup/status/queue semantics, but own its otherwise
+    // untracked delayed-close timer. The abortable retry still owns failures
+    // before the first frame, with its cancellation handle retained above.
+    this.shouldConnect = false;
+    super.onClose(parameters);
+    this.shouldConnect = shouldConnect && !this.permanentlyDestroyed;
+    if (!this.shouldConnect || this.cancelWebsocketRetry) return;
+    const generation = this.reconnectGeneration;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      if (generation !== this.reconnectGeneration || !this.shouldConnect) return;
+      this.reconnectTimer = undefined;
+      void this.connect();
+    }, this.configuration.delay);
+  }
+
+  suspectOffline(): void {
+    if (this.permanentlyDestroyed || this.status !== WebSocketStatus.Connected) return;
+    // Drive normal cleanup now: native close handshakes can stall offline.
+    this.emit("close", {
+      event: new CloseEvent("close", { code: 1000, reason: "browser_offline" }),
+    });
   }
 
   override destroy(): void {
     this.permanentlyDestroyed = true;
+    this.reconnectGeneration += 1;
+    clearTimeout(this.reconnectTimer);
+    this.cancelWebsocketRetry?.();
     super.destroy();
   }
 }
@@ -175,12 +220,14 @@ export type HocuspocusDocumentTransportOptions = {
   roomName: string;
   document: Y.Doc;
   awareness: Awareness;
+  connectivityHints?: ConnectivityHintsPort;
 };
 
 export function createHocuspocusDocumentTransport({
   roomName,
   document,
   awareness,
+  connectivityHints,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
   const listeners = new Set<(state: DocumentSessionConnectionState) => void>();
   const accessListeners = new Set<(access: DocumentSessionAccess) => void>();
@@ -194,6 +241,7 @@ export function createHocuspocusDocumentTransport({
     {
       url: buildSameOriginWsUrl(yjsWsPath()),
       WebSocketPolyfill: CollabSchemaWebSocket,
+      autoConnect: false,
     },
     acknowledgement,
   );
@@ -209,7 +257,12 @@ export function createHocuspocusDocumentTransport({
     resolveSynced = resolve;
   });
 
+  const source = {};
+  let stopHints = () => {};
+
   function publish(state: DocumentSessionConnectionState): void {
+    if (state.kind === "connected") connectivityHints?.reportConnected(source);
+    else connectivityHints?.reportDisconnected(source);
     currentState = state;
     for (const listener of listeners) listener(state);
   }
@@ -223,6 +276,7 @@ export function createHocuspocusDocumentTransport({
   function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
+    stopHints();
     acknowledgement.endConnection();
     publish(state);
     provider.destroy();
@@ -292,10 +346,23 @@ export function createHocuspocusDocumentTransport({
     notifyYjsRoomAttached(roomName, document.clientID);
   }
 
+  stopHints =
+    connectivityHints?.subscribe(source, (hint) => {
+      if (terminal || destroyed) return;
+      if (hint === "suspect-offline") {
+        // Do not use disconnect(): it disables Hocuspocus's normal retry loop.
+        websocket.suspectOffline();
+      } else if (websocket.status !== WebSocketStatus.Connected) {
+        // The room adapter fences both the delayed-close and abortable retries.
+        void websocket.connect();
+      }
+    }) ?? (() => {});
+
   document.on("update", handleDocumentUpdate);
 
   // External websocketProvider: Hocuspocus v4.2.0 only auto-attaches when it owns the socket.
   provider.attach();
+  void websocket.connect();
 
   if (provider.synced) resolveSynced();
 
@@ -332,6 +399,7 @@ export function createHocuspocusDocumentTransport({
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      stopHints();
       document.off("update", handleDocumentUpdate);
       acknowledgement.endConnection();
       provider.destroy();

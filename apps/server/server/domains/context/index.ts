@@ -52,6 +52,8 @@ export type {
   ContextCatalog,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
+  ProjectCatalogLifecyclePort,
+  ProjectDocumentCatalogRefreshPort,
 } from "./ports/context-catalog.js";
 export type {
   ContextDocumentStore,

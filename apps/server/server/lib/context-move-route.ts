@@ -24,7 +24,7 @@ import {
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
-import { contextErrorToHttp } from "./context-error-http.js";
+import { contextErrorToHttp, throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 import {
   parseContextMutationName,
   parseContextMutationPath,
@@ -262,7 +262,7 @@ export async function handleContextMoveRequest(
       locator.scope === "none"
         ? await deps.workAuthorityResolver.noWork(input.projectId)
         : await deps.workAuthorityResolver.byId(input.projectId, locator.workId);
-    if (!authority) throw createError({ statusCode: 404, message: "Work not found" });
+    if (!authority) throwContextWorkUnavailableHttpError("work_missing");
     return { scope: "work", scheme: locator.scheme, path: locator.path, authority };
   }
   const resolvedMove: ResolvedContextMove = {
@@ -292,7 +292,7 @@ export async function handleContextMoveRequest(
     primaryWorkId,
     projectWorks: works,
   });
-  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+  if (!port) throwContextWorkUnavailableHttpError("work_missing");
   // Move and rename need edit on what moves and on the folder it lands in (file-access §2).
   const containerOf = (locator: ResolvedContextMoveLocator): FileTarget =>
     locator.scope === "project"

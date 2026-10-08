@@ -40,12 +40,20 @@ export function addressDocumentName(address: string): string | null {
   return leaf ? leaf.replace(/\.md$/i, "") || leaf : null;
 }
 
-/** The areas a follow's Create can make a document in; uploads and Unfiled are not. */
-const CREATABLE_LINK_SCHEMES = ["manuscript", "kb", "user", "scratch"] as const;
+/**
+ * The areas a follow's Create can make a document in. Scratch notes come from a
+ * Work's Files tab or the AI; uploads and Unfiled are not documents a link makes.
+ */
+const CREATABLE_LINK_SCHEMES = ["manuscript", "kb", "user"] as const;
 export type CreatableLinkScheme = (typeof CREATABLE_LINK_SCHEMES)[number];
 
 export function isCreatableLinkScheme(scheme: string): scheme is CreatableLinkScheme {
   return (CREATABLE_LINK_SCHEMES as readonly string[]).includes(scheme);
+}
+
+/** The areas a link can name an existing document in: the creatable ones and Scratch. */
+export function isLinkDocumentScheme(scheme: string): boolean {
+  return scheme === "scratch" || isCreatableLinkScheme(scheme);
 }
 
 /**
@@ -67,7 +75,7 @@ export function documentFileName(name: string): string | null {
  * holder, so Create later makes it in the same folder. A name with `folders`
  * (a pasted `[[Arc 1/Kael]]`) goes at that path from the holder's area root
  * instead, where Obsidian makes a note for a path link. A holder with no
- * address yet, or in an area Create refuses (Uploads, Unfiled), puts it under
+ * address yet, or in an area Create refuses (Scratch, Uploads, Unfiled), puts it under
  * the manuscript's root. Null when a segment cannot be a folder name or the
  * name cannot be a document filename.
  */

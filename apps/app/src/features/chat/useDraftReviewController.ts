@@ -14,12 +14,24 @@ import {
   useSyncExternalStore,
 } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
+import {
+  clearDraftCommandFailure,
+  draftCommandPendingIn,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
+import {
+  DraftApplyOutcomeUnknownError,
+  useApplyDraft,
+  useDiscardDraft,
+} from "@/client/query/useDraftReviewMutations";
 import { getContextTabs } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
-import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
-import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
+import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
+import {
+  useIsCurrentContextRoute,
+  useOpenContextRoute,
+} from "@/features/project/routing/ProjectNavigationContext";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -68,7 +80,7 @@ export type DraftReviewController = {
   canApplyReviewedDraft: boolean;
   /**
    * The global disposition lock: any Apply/Discard in flight in the session.
-   * Review disables on it so dispositions can't overlap.
+   * Every mutating control disables on it so dispositions can't overlap.
    */
   isDisposing: boolean;
   /**
@@ -111,17 +123,19 @@ export function useDraftReviewController({
   stateOwner?: DraftReviewStateOwner;
 }): DraftReviewController {
   const workId = work?.id ?? "";
-  const owningWorkLabel = work?.name ?? null;
   const draftsFrozen = work !== null && isWorkArchived(work);
   const queryClient = useQueryClient();
-  const accountId = usePostApplyAccountId();
-  const recovery = useProjectDraftApplyRecovery();
   const contextRemoval = useContextRemovalCoordinator();
+  const openContextRoute = useOpenContextRoute();
+  const isCurrentContextRoute = useIsCurrentContextRoute();
   const applyMutation = useApplyDraft();
   const discardMutation = useDiscardDraft();
   const localStateOwner = useDraftReviewStateOwner();
   const { state, dispatch } = stateOwner ?? localStateOwner;
   const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
+  // One session per Work: the controller outlives navigation between Works, and
+  // a command still in flight in the Work left behind must not keep the new
+  // Work's controls disabled.
   const reviewSession = useMemo(
     () =>
       new DraftReviewSession(() => {
@@ -129,7 +143,7 @@ export function useDraftReviewController({
         if (!ports) throw new Error("Draft review command ports are not ready.");
         return ports;
       }),
-    [],
+    [projectId, workId],
   );
   const dispositionLock = reviewSession.disposition;
   const disposition = useSyncExternalStore(
@@ -165,7 +179,10 @@ export function useDraftReviewController({
   const isDiscarding = activeDisposition?.kind === "discard-draft";
   const isInlineDiscardPending = activeDisposition?.kind === "discard-operation";
   const isPending = isApplying || isDiscarding;
-  const isDisposing = disposition.busy;
+  // A command in flight on any draft of this Work, from any surface, disables this one.
+  const commandRecords = useDraftCommandRecords();
+  const isDisposing =
+    disposition.busy || draftCommandPendingIn(commandRecords, { projectId, workId });
   const dispositionLocked = isDisposing || draftsFrozen;
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
@@ -224,58 +241,43 @@ export function useDraftReviewController({
     [projectId, queryClient, workId],
   );
 
-  commandPortsRef.current = {
-    apply: async ({ documentId, draftId }) => {
-      let applyRoomName = reviewRoomName;
-      if (!applyRoomName) {
-        const preview = await getDraftPreview(projectId, workId, documentId, draftId);
-        if (preview.status !== "active" || preview.draftId !== draftId)
-          throw new Error("Draft Apply branch is no longer active");
-        applyRoomName = preview.reviewRoomName;
-        queryClient.setQueryData(
-          projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-          preview,
-        );
+  async function settleConfirmedApply(
+    tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
+  ): Promise<void> {
+    if (tab?.kind !== "tracked") return;
+    try {
+      if (tab.draftOnly) await contextRemoval.promoteAppliedDraft(projectId, tab);
+      if (isCurrentContextRoute && openContextRoute) {
+        const target = routeTargetForTab(tab, workId);
+        if (isCurrentContextRoute(target)) {
+          await openContextRoute(target, {
+            replace: true,
+            isCurrent: () => isCurrentContextRoute(target),
+          });
+        }
       }
+    } catch {
+      // Applied stays applied. A failed route repair is navigation's to show,
+      // and the document host reconciles a tab that was not promoted.
+    }
+  }
+
+  commandPortsRef.current = {
+    scope: { projectId, workId },
+    apply: async ({ documentId, draftId }) => {
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
-      const result = await applyMutation.mutateAsync({
-        projectId,
-        workId,
-        threadId,
-        documentId,
-        draftId,
-        identity: { accountId, projectId, workId, documentId, draftId },
-        presentation: {
-          documentName: tab?.name ?? null,
-          contextPath: tab && tab.kind !== "new" ? tab.path : null,
-          owningWorkLabel,
-        },
-        obligations: {
-          draftTab:
-            tab?.kind === "tracked" &&
-            tab.draftOnly &&
-            tab.reviewWorkId === workId &&
-            tab.reviewDraftId === draftId &&
-            tab.tabInstanceToken
-              ? {
-                  kind: "draft-only",
-                  reviewWorkId: workId,
-                  reviewDraftId: draftId,
-                  tabInstanceToken: tab.tabInstanceToken,
-                }
-              : { kind: "none" },
-          branch: { kind: "generation-qualified", reviewRoomName: applyRoomName },
-        },
-      });
-      if (result.kind !== "server-applied-awaiting-live") return result;
-      const initial = await recovery.awaitInitialOutcome(result.recovery);
-      return initial.kind === "live-ready"
-        ? { kind: "live-ready" }
-        : initial.kind === "writer-abandoned"
-          ? { kind: "server-applied-settled-elsewhere", outcome: "writer-abandoned" }
-          : result;
+      try {
+        await applyMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
+      } catch (error) {
+        if (error instanceof DraftApplyOutcomeUnknownError) return "unknown";
+        throw error;
+      }
+      // Confirmed is terminal for the command: the batch advances now. Tab
+      // promotion and the route repair are navigation's business and run on.
+      void settleConfirmedApply(tab);
+      return "applied";
     },
     discard: async ({ documentId, draftId }, input) => {
       await discardMutation.mutateAsync({
@@ -296,6 +298,11 @@ export function useDraftReviewController({
     batchSettled: (error) => {
       dispatch({ type: "batchSettled", error });
     },
+    // The tab closes with the click; a refusal leaves it closed and the error
+    // on the draft (see draft-command-record).
+    draftDiscardStarted: (selection) => {
+      contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
+    },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
     },
@@ -304,16 +311,17 @@ export function useDraftReviewController({
     },
     draftDiscarded: ({ documentId, draftId }) => {
       dispatch({ type: "discardSucceeded", draftId });
-      void contextRemoval.discardDraft(projectId, workId, documentId);
+      contextRemoval.discardDraft(projectId, workId, documentId, draftId);
     },
   };
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
+      clearDraftCommandFailure({ projectId, workId, documentId, draftId });
       dispatch({ type: "enterInline", documentId, draftId });
       loadInlineReviewRoom(documentId, draftId);
     },
-    [loadInlineReviewRoom],
+    [loadInlineReviewRoom, projectId, workId],
   );
 
   const exitInlineReview = useCallback(() => {

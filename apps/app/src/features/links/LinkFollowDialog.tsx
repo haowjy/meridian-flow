@@ -33,14 +33,12 @@ export function useFollowOutcomeState(): {
 export function LinkFollowDialog({
   outcome,
   projectId,
-  workId,
   onClose,
   onRetry,
   onOpen,
 }: {
   outcome: LinkFollowOutcome | null;
   projectId: string | null;
-  workId: string | null;
   onClose: () => void;
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
@@ -62,7 +60,6 @@ export function LinkFollowDialog({
         <FollowOutcomeContent
           outcome={outcome}
           projectId={projectId}
-          workId={workId}
           onClose={onClose}
           onRetry={onRetry}
           onOpen={onOpen}

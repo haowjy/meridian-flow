@@ -427,6 +427,8 @@ describe("DocumentSession status derivation", () => {
       persistence: { kind: "none" },
       transportFactory: factory,
     });
+    const { snapshots } = track(session);
+    expect(snapshots.at(-1)?.status).toBe("syncing");
     await flushMicrotasks();
     expect(session.getSnapshot().localPersistenceSynced).toBe(true);
     expect(session.getSnapshot().status).toBe("syncing");
@@ -437,26 +439,6 @@ describe("DocumentSession status derivation", () => {
     current().resolveFirstSync();
     await flushMicrotasks();
     expect(session.getSnapshot().status).toBe("synced");
-
-    void session.destroy();
-  });
-
-  it("flips to synced once local persistence loads AND transport is connected & synced", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const { snapshots } = track(session);
-    expect(snapshots.at(-1)?.status).toBe("syncing");
-
-    // Transport reports connected before first sync resolves → still syncing.
-    current().emit({ kind: "connected" });
-    expect(snapshots.at(-1)?.status).toBe("syncing");
-
-    current().resolveFirstSync();
-    await flushMicrotasks();
     expect(snapshots.at(-1)?.status).toBe("synced");
 
     void session.destroy();

@@ -45,6 +45,7 @@ import type {
   ThreadContextView,
 } from "../../ports/context-port.js";
 import type { ContextTreeMutationStore } from "../../ports/context-tree-mutation-store.js";
+import { resolveVisibleDocumentMembership } from "../../visible-document-membership.js";
 import { createContextFsTree, trackedSchemaForPersistedFiletype } from "./context-fs-tree.js";
 import { matchDocument } from "./match.js";
 
@@ -865,23 +866,10 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!view) return null;
     // A live view lists the live manifest and never touches a draft.
     const live = this.readView?.version === "live" && this.readView.draftWork !== null;
-    try {
-      const membership = await this.documentSync.resolveManifestMembership(
-        live
-          ? { projectId: view.projectId as never }
-          : {
-              projectId: view.projectId as never,
-              workId: view.workId as never,
-              threadId: view.threadId as never,
-              responseId: view.responseId,
-            },
-      );
-      return membership.documentId ? new Set(membership.members) : null;
-    } catch {
-      // Authority failure is not permission to expose raw rows. Creation paths
-      // can repair an occupied row; observations remain fail-closed.
-      return new Set();
-    }
+    return resolveVisibleDocumentMembership({
+      view: live ? { projectId: view.projectId } : view,
+      resolver: this.documentSync,
+    });
   }
 
   private async listVisibleDocuments(

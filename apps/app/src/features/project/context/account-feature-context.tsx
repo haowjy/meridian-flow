@@ -15,8 +15,8 @@ import {
   useState,
 } from "react";
 import { scopeCreationRegistry } from "@/client/creation/creation-registry";
+import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import type { PostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import type { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
@@ -32,7 +32,6 @@ const ResourceReplicaAccountContext = createContext<AccountResourceReplica | nul
 const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
   null,
 );
-const PostApplyOwnerAccountContext = createContext<PostApplyDispositionOwner | null>(null);
 
 export function AccountFeatureComposition({
   accountId,
@@ -43,13 +42,17 @@ export function AccountFeatureComposition({
   repairProjectCatalog: (projectId: string) => Promise<void>;
   children: React.ReactNode;
 }) {
+  const connectivityHints = useConnectivityHints();
   const desired = useRef({ accountId, repairProjectCatalog });
   desired.current = { accountId, repairProjectCatalog };
   const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
     () =>
-      new AccountFeatureLifetime(accountId, repairProjectCatalog, (error) =>
-        invalidationHandler.current(error),
+      new AccountFeatureLifetime(
+        accountId,
+        repairProjectCatalog,
+        (error) => invalidationHandler.current(error),
+        connectivityHints,
       ),
   );
   const [teardownError, setTeardownError] = useState<unknown>(null);
@@ -69,8 +72,11 @@ export function AccountFeatureComposition({
       .then(() => {
         const next = desired.current;
         setLifetime(
-          new AccountFeatureLifetime(next.accountId, next.repairProjectCatalog, (error) =>
-            invalidationHandler.current(error),
+          new AccountFeatureLifetime(
+            next.accountId,
+            next.repairProjectCatalog,
+            (error) => invalidationHandler.current(error),
+            connectivityHints,
           ),
         );
       })
@@ -79,7 +85,7 @@ export function AccountFeatureComposition({
         transition.current = null;
       });
     transition.current = closing;
-  }, [accountId, lifetime]);
+  }, [accountId, lifetime, connectivityHints]);
 
   useInsertionEffect(
     () => () => {
@@ -159,9 +165,7 @@ function AccountFeatureProviders({
             <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
               <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
                 <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-                  <PostApplyOwnerAccountContext.Provider value={lifetime.postApplyOwner}>
-                    {children}
-                  </PostApplyOwnerAccountContext.Provider>
+                  {children}
                 </ProjectDocumentLiveOpenerContext.Provider>
               </LiveDocumentRegistryAccountContext.Provider>
             </ResourceReplicaAccountContext.Provider>
@@ -252,12 +256,6 @@ export function useLiveDocumentSessionRegistry(): AccountFeatureLifetime["regist
   const registry = useContext(LiveDocumentRegistryAccountContext);
   if (!registry) throw new Error("AccountFeatureComposition is required");
   return registry;
-}
-
-export function useAccountPostApplyDispositionOwner(): PostApplyDispositionOwner {
-  const owner = useContext(PostApplyOwnerAccountContext);
-  if (!owner) throw new Error("AccountFeatureComposition is required");
-  return owner;
 }
 
 export function useOptionalProjectContextAvailabilityCoordinator(): ProjectContextAvailabilityCoordinator | null {

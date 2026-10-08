@@ -202,17 +202,6 @@ export class DocumentSessionRegistry
     return this.getOrCreateLiveSession(lease, state, true);
   }
 
-  getDetached(lease: LiveDocumentSessionLease): DocumentSession {
-    const state = this.requireLease(lease);
-    return this.getOrCreateLiveSession(lease, state, false);
-  }
-
-  attachDetached(lease: LiveDocumentSessionLease): DocumentSession {
-    const session = this.getDetached(lease);
-    if (session.getSnapshot().status === "detached") this.attachSessionTransport(session);
-    return session;
-  }
-
   async restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean> {
     const state = this.requireLease(lease);
     const session = state.session;
@@ -228,9 +217,7 @@ export class DocumentSessionRegistry
       return false;
     }
     this.cancelPendingTeardown(lease.documentId);
-    await session.restartTransport(({ roomKey, document, awareness }) =>
-      createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
-    );
+    await session.restartTransport(this.transportFactory);
     return true;
   }
 
@@ -333,22 +320,6 @@ export class DocumentSessionRegistry
       })
       .catch(() => undefined);
     return attempt;
-  }
-
-  peekLive(lease: LiveDocumentSessionLease): DocumentSession | undefined {
-    return this.requireLease(lease).session ?? undefined;
-  }
-
-  hasLive(lease: LiveDocumentSessionLease): boolean {
-    return this.peekLive(lease) !== undefined;
-  }
-
-  observeLive(
-    lease: LiveDocumentSessionLease,
-    observer: (snapshot: DocumentSessionSnapshot) => void,
-  ): () => void {
-    this.requireLease(lease);
-    return this.observeRoom(lease.documentId, observer);
   }
 
   observeBranchRoom(

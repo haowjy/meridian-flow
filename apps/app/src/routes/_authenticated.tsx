@@ -8,8 +8,10 @@ import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
+import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { bindDraftCommandAccount } from "@/client/query/draft-command-record";
 import { bindAccountRecents } from "@/client/recents";
 import {
   loadProjectList,
@@ -29,7 +31,6 @@ import {
   AccountFeatureComposition,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
-import { DraftApplyRecoveryProvider } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
@@ -124,6 +125,7 @@ function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   bindAccountRecents(user.userId);
   bindChatSubmissions(user.userId);
+  bindDraftCommandAccount(user.userId);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same
@@ -131,7 +133,9 @@ function AuthenticatedLayout() {
   // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
-      <AuthenticatedAccountProviderTree now={now} user={user} />
+      <ConnectivityProvider>
+        <AuthenticatedAccountProviderTree now={now} user={user} />
+      </ConnectivityProvider>
     </AppQueryProvider>
   );
 }
@@ -153,11 +157,9 @@ function AuthenticatedAccountProviderTree({
   );
   return (
     <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
-      <DraftApplyRecoveryProvider accountId={user.userId}>
-        <WorkingSetSyncPreferenceProvider serverValue={user.workingSetSyncEnabled}>
-          <AuthenticatedProviderTree now={now} user={user} />
-        </WorkingSetSyncPreferenceProvider>
-      </DraftApplyRecoveryProvider>
+      <WorkingSetSyncPreferenceProvider serverValue={user.workingSetSyncEnabled}>
+        <AuthenticatedProviderTree now={now} user={user} />
+      </WorkingSetSyncPreferenceProvider>
     </AccountFeatureComposition>
   );
 }

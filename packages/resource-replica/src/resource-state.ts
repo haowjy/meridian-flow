@@ -110,7 +110,10 @@ export function planResourceLocation(input: {
     intentId: input.intentId,
     sequence: nextSequence(record),
     identityRevision: record.resource.identity.revision,
-    desired: { kind: "set-location", destination: input.destination },
+    desired: {
+      kind: "set-location",
+      destination: input.destination,
+    },
     ...(input.operationId ? { operationId: input.operationId } : {}),
     attempts: [],
     state: "pending",

@@ -384,7 +384,8 @@ writes, and text already stored stay text; so does a drag inside the editor.
   Any match links.
 - **No match**: `linkAhead(name, folders)`, which is `linkAheadAddress`: beside
   the holder, a folder form under the holder's area root, the manuscript root
-  from a holder with no address. The link is dashed until a follow's Create
+  from a holder with no address or in an area Create refuses (Scratch,
+  Uploads, Unfiled). The link is dashed until a follow's Create
   makes the document.
 - **Spelling**: `spellDocumentHref(holderUri, uri)` plus the suffix, as `@`
   writes. The paste is one transaction, so one undo removes it.

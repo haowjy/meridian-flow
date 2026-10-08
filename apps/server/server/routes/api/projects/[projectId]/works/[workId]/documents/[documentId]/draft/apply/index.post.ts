@@ -5,6 +5,7 @@ import { createError, defineEventHandler, getRouterParam, readBody } from "nitro
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
   handleApplyWorkDraftRequest,
+  scheduleDraftCatalogRefresh,
   selectDraftRouteServices,
 } from "../../../../../../../../../../lib/draft-review-route.js";
 
@@ -15,12 +16,15 @@ export default defineEventHandler(async (event) => {
   if (!draftId) {
     throw createError({ statusCode: 400, message: "draftId is required" });
   }
-  return handleApplyWorkDraftRequest(selectDraftRouteServices(app), {
-    projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
+  const projectId = (getRouterParam(event, "projectId") ?? "") as ProjectId;
+  const result = await handleApplyWorkDraftRequest(selectDraftRouteServices(app), {
+    projectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId,
     userId: user.userId,
     signal: event.req.signal,
   });
+  scheduleDraftCatalogRefresh(app, projectId, event.waitUntil.bind(event));
+  return result;
 });

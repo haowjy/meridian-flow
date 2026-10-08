@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
+
+- A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.
+- A link to a Scratch note that doesn't exist says it can't be found, and nothing in the Editor creates Scratch notes. Scratch notes are made from the Work's Files tab or by the AI.
+- A link clicked while the Editor is still loading its document's details waits, then opens, instead of doing nothing.
+
 - The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
 
 - Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
@@ -48,6 +54,8 @@
 - Development: migration 0027 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
 - Renaming or moving a document rewrites the links to it in your other documents in the background, keeping custom link words and each link's style (relative path or full address). Until a rewrite lands, the old links still open the moved document, and chat messages that linked it before the move keep opening it until another document takes the old place.
 
+
+- Documents and chat go offline promptly and retry together when the network returns, the tab wakes, or another connection recovers. Resource and working-set sync share the same recovery signals.
 - Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice, and the provider's status and message stay on the failed reply (`./mf thread view`).
 - Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
 
@@ -60,6 +68,13 @@
 - No Work Scratch link Create and Editor title rename land locally without waiting for the server. Named Work Scratch file deletion restores rejected rows promptly and supports repeated retries.
 - Fence writer frames, agent batches, and Markdown replacements queued before a restore with their document handle’s generation. Close rooms that finish loading on a retired generation so writers reconnect to restored text, without retiring newer rooms.
 
+- Draft review: Work Files "Drafts to review" rows open review; repeated "Review draft" launches settle once; reload restores review from `?draft=` and repairs a stale one; leaving the document exits review; launches across documents push history.
+- Draft review: Apply is done when the server confirms it. The editor returns to live at once, and any later connecting or open problem shows on the document itself, with a retry, instead of a separate Finish or Abandon step. Applying several documents counts each at confirmation. If an Apply response is lost, the draft says it couldn't confirm whether it applied, apart from "Couldn't apply".
+- Draft review: the Manuscript tree shows a new document only after Apply and drops it after Discard; Apply and Discard respond once committed and refresh the catalog in the background.
+- Draft review: a never-applied document has no live version, so its review exit reads "Close review" and closes the tab (the draft stays in your list) instead of leaving a blank editor. Only Apply and Discard in the same Work disable each other, and a Discard that fails before it is sent no longer leaves the draft locked.
+- Draft review: a never-applied document opens its review from anywhere (Recently opened, a link without `draft=`, Back), and shows "unavailable" once its draft is discarded. It never opens as an empty editor.
+- Editor: entering review, Apply, Discard and Back to live never show an empty editor. The current text stays on screen and is read-only until the review is ready, so typing can't land in the live document by mistake.
+- Draft review: Discard of a never-applied document closes its tab at once and selects the neighbouring tab; a refused Discard leaves the tab closed and shows the error on the draft in the composer strip and Work Files.
 - Drop checkpoints captured before a restore when persistence reaches the new document generation; keep undo, branch reconstruction, and settlement reconciliation within the restored generation instead of replaying retired text.
 
 - Refresh the Markdown projection (text sizes and download fallback) two seconds after typing pauses (at most ten seconds while typing continues) and after restores; retry missed refreshes. Keep ContextFS writes on the same certified pipeline and read checkpoints from the current authority generation.

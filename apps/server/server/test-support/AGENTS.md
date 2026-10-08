@@ -18,3 +18,9 @@ other connections.
 Hoist immutable large fixtures to `beforeAll` only when each case restores its
 mutations. Keep query-plan fixtures large enough for their stated plan contract.
 Run DB tests through `pnpm test:db`, never against a dev database.
+
+Real transactions do not need real backoff: drive retry delays through the
+code's injectable delay and assert the schedule (`context-catalog.ts` is the
+pattern). Keep a real clock only when the claim is PostgreSQL's own timing,
+such as lock contention. Never poll for work a seed suppressed; await the
+notification that proves it ran.

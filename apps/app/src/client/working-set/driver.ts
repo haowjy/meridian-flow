@@ -3,6 +3,7 @@
 import type { ProjectWorkingSet, WorkingSetRoute } from "@meridian/contracts/protocol";
 import { getProjectWorkingSet, updateProjectWorkingSet } from "@/client/api/projects-api";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
+import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import {
   planSuspectBaselineConfirmation,
   planWorkingSetHydration,
@@ -247,10 +248,6 @@ function browserDriver(): WorkingSetSyncDriver | null {
   );
   if (!listenersInstalled) {
     listenersInstalled = true;
-    window.addEventListener("online", () => {
-      driver?.markSuspectOnReconnect();
-      driver?.flush();
-    });
     window.addEventListener("pagehide", () => driver?.flush(true));
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") driver?.flush(true);
@@ -261,6 +258,40 @@ function browserDriver(): WorkingSetSyncDriver | null {
 
 export function configureWorkingSetSync(userId: string, enabled: boolean): void {
   browserDriver()?.configure(userId, enabled);
+}
+
+let closeAccountLifetime: (() => void) | undefined;
+
+/** Committed account owner; render-time preferences never install subscriptions. */
+export function bindWorkingSetSyncLifetime(
+  epoch: AbortSignal,
+  hints: ConnectivityHintsPort | undefined,
+): () => void {
+  closeAccountLifetime?.();
+  const activeDriver = browserDriver();
+  let closed = false;
+  let stopHints = () => {};
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    stopHints();
+    epoch.removeEventListener("abort", close);
+    if (closeAccountLifetime === close) closeAccountLifetime = undefined;
+  };
+  closeAccountLifetime = close;
+  if (epoch.aborted) {
+    close();
+    return close;
+  }
+  stopHints =
+    hints?.subscribe({}, (hint) => {
+      if (closed || epoch.aborted || hint !== "retry-now") return;
+      activeDriver?.markSuspectOnReconnect();
+      activeDriver?.flush();
+    }) ?? (() => {});
+  if (epoch.aborted) close();
+  else epoch.addEventListener("abort", close, { once: true });
+  return close;
 }
 
 export function hydrateWorkingSet(
