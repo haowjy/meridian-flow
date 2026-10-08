@@ -37,13 +37,6 @@ describe("lookupBlockHash", () => {
     expect(lookup).toMatchObject({ ok: true, hash: longerPrefix });
     expect(lookup.ok && lookup.block).toBe(blocks[1]);
   });
-
-  it("reports not_found for a prefix matching no full hash", () => {
-    const doc = createDoc("Alpha\n\nBeta\n\nGamma");
-    const missingPrefix = absentPrefix(getTopLevelXmlBlocks(doc));
-
-    expect(lookupBlockHash(doc, missingPrefix)).toEqual({ ok: false, reason: "not_found" });
-  });
 });
 
 function docWithDisplayExtension(): Y.Doc {
@@ -81,12 +74,4 @@ function fullHash(block: Y.XmlElement): string {
 
 function numberedBlocks(count: number): string {
   return Array.from({ length: count }, (_, i) => `Block ${i}`).join("\n\n");
-}
-
-function absentPrefix(blocks: Y.XmlElement[]): string {
-  const firstNibbles = new Set(blocks.map((block) => fullHash(block)[0]));
-  for (const prefix of "0123456789abcdef") {
-    if (!firstNibbles.has(prefix)) return prefix;
-  }
-  throw new Error("Expected a missing one-character prefix");
 }

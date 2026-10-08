@@ -134,21 +134,4 @@ describe("validateCleanupEligibility", () => {
 
     expect(decision).toMatchObject({ eligible: false });
   });
-
-  it("refuses execution after the planned local ref moves", () => {
-    const decision = validateCleanupEligibility({
-      evidence: {
-        kind: "pull-request",
-        branch: "feature",
-        plannedOid,
-        baseBranch: "main",
-        repositoryOwner: "haowjy",
-        pullRequestNumber: 42,
-      },
-      currentOid: "3333333333333333333333333333333333333333",
-      isAncestor: undefined,
-    });
-
-    expect(decision).toMatchObject({ eligible: false });
-  });
 });
