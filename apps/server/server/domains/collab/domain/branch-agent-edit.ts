@@ -100,6 +100,7 @@ type ConcurrentUpdateOrigin =
   | { type: "agent"; actorTurnId: string };
 
 type ConcurrentAttributionBasis = {
+  baselineSnapshot: Y.Snapshot;
   baselineState: Uint8Array | null;
   currentUpstreamState?: Uint8Array;
   fallbackCurrentUpstream: Y.Doc;
@@ -249,6 +250,7 @@ export function createBranchAgentEditCoordinator(input: {
       attemptId,
     }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
+      const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
@@ -265,6 +267,7 @@ export function createBranchAgentEditCoordinator(input: {
             )
           : [];
         const partitioned = partitionConcurrentUpdates({
+          baselineSnapshot,
           baselineState,
           journalRows: [...concurrent.rows, ...liveRows],
           currentUpstreamState: concurrent.upstreamState,
@@ -795,23 +798,30 @@ function partitionConcurrentUpdates(
 ): PartitionedConcurrentUpdate[] {
   const upstreamState =
     input.currentUpstreamState ?? Y.encodeStateAsUpdate(input.fallbackCurrentUpstream);
-  const coverage = partitionByBlockCoverage({
-    baselineState: input.baselineState,
-    upstreamState,
-    rows: input.journalRows.map((row) => ({
-      id: row.id,
-      source: row.source,
-      actorTurnId: actorTurnIdForJournalRow(row),
-      update: row.updateData,
-    })),
-    model: input.model,
-    codec: input.codec,
-  });
-
+  // A state vector alone misses delete-only edits. Capture structs and tombstones
+  // before journal reads yield, so both checks use the same baseline cut.
+  const rows = input.journalRows.filter(
+    (row) => !Y.snapshotContainsUpdate(input.baselineSnapshot, row.updateData),
+  );
+  if (rows.length === 0 && input.baselineState && bytesEqual(input.baselineState, upstreamState)) {
+    return [];
+  }
   const scratch = docFromState(input.baselineState);
   try {
+    const coverage = partitionByBlockCoverage({
+      baselineState: input.baselineState,
+      upstreamState,
+      rows: rows.map((row) => ({
+        source: row.source,
+        actorTurnId: actorTurnIdForJournalRow(row),
+        update: row.updateData,
+      })),
+      model: input.model,
+      codec: input.codec,
+    });
+
     const partitioned: PartitionedConcurrentUpdate[] = [];
-    for (const row of input.journalRows) {
+    for (const row of rows) {
       const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
       if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
       const actorTurnId = actorTurnIdForJournalRow(row);
