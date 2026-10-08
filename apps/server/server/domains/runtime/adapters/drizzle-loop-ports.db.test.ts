@@ -172,18 +172,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
     });
 
-    it("gives a single winner on acquire and reflects the live lease in holder/read", async () => {
+    it("carries one thread lease through acquire, renew, release, and a stale release after reacquire", async () => {
       const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
       const second = createDrizzleRunClaim(db, { holderId: "holder-2" });
 
       const lease = required(await first.startExecution(THREAD_A, "run-1"));
-      expect(await second.startExecution(THREAD_A, "run-2")).toBeNull();
+      expect(await second.startExecution(THREAD_A, "run-contender")).toBeNull();
       expect(await first.holder(THREAD_A)).toBe("run-1");
       expect(await first.read(THREAD_A)).toEqual({
         kind: "awake",
         phase: "generating",
         cancelRequested: false,
       });
+      expect(await first.renew(lease)).toBe(true);
 
       await first.publish(lease, "waiting");
       expect(await first.read(THREAD_A)).toEqual({
@@ -195,9 +196,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await first.release(lease);
       expect(await first.holder(THREAD_A)).toBeNull();
       expect(await first.read(THREAD_A)).toEqual({ kind: "asleep" });
+      expect(await first.renew(lease)).toBe(false);
 
-      const secondLease = required(await second.startExecution(THREAD_A, "run-3"));
-      await second.release(secondLease);
+      const runTwo = required(await first.startExecution(THREAD_A, "run-2"));
+      await first.release(lease);
+      await first.release(lease);
+      expect(await first.holder(THREAD_A)).toBe("run-2");
+      expect(await first.read(THREAD_A)).toEqual({
+        kind: "awake",
+        phase: "generating",
+        cancelRequested: false,
+      });
+      expect(await second.startExecution(THREAD_A, "run-3")).toBeNull();
+
+      await first.release(runTwo);
+      expect(await first.holder(THREAD_A)).toBeNull();
+      const runThree = required(await second.startExecution(THREAD_A, "run-3"));
+      await second.release(runThree);
     });
 
     it("stores one current tool per live lease and identifies repeated writes as unchanged", async () => {
@@ -218,31 +233,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await authority.release(lease);
       expect((await authority.readMany([THREAD_A])).has(THREAD_A)).toBe(false);
       expect(await authority.setCurrentTool(lease, first)).toBe(false);
-    });
-
-    it("binds release to its run so a superseded release keeps the newer lock", async () => {
-      const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
-      const second = createDrizzleRunClaim(db, { holderId: "holder-2" });
-
-      const runOne = required(await first.startExecution(THREAD_A, "run-1"));
-      await first.release(runOne);
-
-      const runTwo = required(await first.startExecution(THREAD_A, "run-2"));
-      await first.release(runOne);
-      await first.release(runOne);
-
-      expect(await first.holder(THREAD_A)).toBe("run-2");
-      expect(await first.read(THREAD_A)).toEqual({
-        kind: "awake",
-        phase: "generating",
-        cancelRequested: false,
-      });
-      expect(await second.startExecution(THREAD_A, "run-3")).toBeNull();
-
-      await first.release(runTwo);
-      expect(await first.holder(THREAD_A)).toBeNull();
-      const runThree = required(await second.startExecution(THREAD_A, "run-3"));
-      await second.release(runThree);
     });
 
     it("keeps the physical claim and lease when terminal release rolls back", async () => {
@@ -288,16 +278,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await completion;
       const next = required(await second.startExecution(THREAD_A, "run-2"));
       await second.release(next);
-    });
-
-    it("reports whether renew kept ownership", async () => {
-      const authority = createDrizzleRunClaim(db, { holderId: "holder-1" });
-
-      const lease = required(await authority.startExecution(THREAD_A, "run-1"));
-      expect(await authority.renew(lease)).toBe(true);
-
-      await authority.release(lease);
-      expect(await authority.renew(lease)).toBe(false);
     });
 
     it("excludes short claims and executions locally and across adapters without fake leases", async () => {

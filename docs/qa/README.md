@@ -9,6 +9,24 @@ is not a claim that it passed on the current commit.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 
+## Script-backed checks
+
+On-demand checks can be automated scripts, with Markdown documenting setup,
+assertions, evidence and cleanup. They are not part of `pnpm test:all`; keep
+browser scenarios in the configured-case inventory and list standalone
+workloads separately. A missing prerequisite or skipped check is not a pass.
+
+- `pnpm smoke:app-dev-transform`: [dev startup and public routes](../../tools/dev/smoke-app-dev-transform.ts).
+- `pnpm smoke:prod-boot`: [production build, startup and public routes](../../tools/dev/smoke-app-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
+- `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
+- `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
+- [Project repository smoke](../../tools/dev/smoke-project-domain.ts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
+
+Large-chapter editing, image-in-table layout and browser first-send/concurrent
+editing recovery still lack dedicated, cataloged script-backed writer checks.
+The recipes below and in linked pages do not certify those workflows today.
+Script automation and catalog repairs are tracked in [#726](https://github.com/haowjy/meridian-flow/issues/726).
+
 Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list`; never target another worktree's process or clear its mock
 queue. Stop only your stack with `pnpm dev --stop` when finished.

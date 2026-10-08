@@ -269,7 +269,7 @@ else
       starts.mockRestore();
     });
 
-    it("Retry replays the original request, appends after failure, and is idempotent", async () => {
+    it("Retry replays the original request, appends after failure, is idempotent, and refuses the superseded original", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       const requests = gateway.requests;
       gateway.stream = async function* (request) {
@@ -332,6 +332,24 @@ else
       if (!originalRequest || !retryRequest) throw new Error("Expected both retry requests");
       expect(comparable(retryRequest)).toEqual(comparable(originalRequest));
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+
+      // Every Retry precondition except the failed leaf still holds for the original.
+      expect(await rig.repos.turns.findById(failed.id)).toMatchObject({
+        threadId: rig.threadId,
+        role: "assistant",
+        status: "error",
+      });
+      expect((await rig.repos.turns.getLatestByThread(rig.threadId))?.id).toBe(replyTurnId);
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failed.id as never,
+          replyTurnId: crypto.randomUUID() as never,
+        }),
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+      expect(requests).toHaveLength(2);
     });
 
     it("allows only one of two tab Retries to take the run claim", async () => {
@@ -484,37 +502,6 @@ else
         }),
       ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       expect(await rig.runClaim.holder(rig.threadId)).toBeNull();
-    });
-
-    it("does not allow Retry for a superseded failed reply", async () => {
-      const failedGateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
-      const failedRig = await manualFixture({ gateway: failedGateway });
-      await failedRig.delivery.enqueue({
-        threadId: failedRig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: failedRig.ids.user },
-        body: { kind: "text", text: "failed reply" },
-        idempotencyKey: "failed-reply-before-new-turn",
-      });
-      await drainControls(failedRig);
-      await processDetachedWork.drain();
-      const failed = await failedRig.repos.turns.getLatestByThread(failedRig.threadId);
-      if (!failed) throw new Error("Failed reply was not persisted");
-      const later = await failedRig.repos.turns.create({
-        threadId: failedRig.threadId,
-        prevTurnId: failed?.id as never,
-        role: "system",
-        origin: "system",
-        status: "complete",
-      });
-      expect(later).toBeTruthy();
-      await expect(
-        failedRig.orchestrator.retryReply({
-          threadId: failedRig.threadId,
-          failedTurnId: failed.id as never,
-          replyTurnId: crypto.randomUUID() as never,
-        }),
-      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
     });
 
     it("rechecks the failed leaf after taking the Retry claim", async () => {

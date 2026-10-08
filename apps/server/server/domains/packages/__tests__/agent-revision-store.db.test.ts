@@ -155,7 +155,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.listCatalog({ userId: USER, limit: 100 })).toHaveLength(1);
     });
 
-    it("keeps bindings after catalog advancement/removal and rejects rebinding", async () => {
+    it("keeps bindings through catalog advance and removal, then restores only the advanced selection", async () => {
       const first = (await store.installSource(source())).definitions[0];
       const second = (await store.installSource(source("New prompt."))).definitions[0];
       const entry = await store.selectRevision({
@@ -208,6 +208,24 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
           .delete(schema.agentDefinitionRevisions)
           .where(eq(schema.agentDefinitionRevisions.id, first.id)),
       ).rejects.toThrow();
+
+      const id = entry.entry.id;
+      expect(
+        (
+          await store.selectRevision({
+            ownerUserId: USER,
+            logicalKey: "general",
+            revisionId: first.id,
+            expectedRevisionId: second.id,
+          })
+        ).ok,
+      ).toBe(false);
+      expect(await store.restoreOwnedEntry(OTHER, id, second.id)).toBe(false);
+      expect(await store.restoreOwnedEntry(USER, id, first.id)).toBe(false);
+      expect(await store.restoreOwnedEntry(USER, id, second.id)).toBe(true);
+      expect(await store.listCatalog({ userId: USER, limit: 100 })).toMatchObject([
+        { id, selectedRevisionId: second.id },
+      ]);
     });
 
     it("round-trips an agent-less binding with a retained invocation overlay", async () => {
@@ -229,35 +247,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         invocationOverlay,
         invokedSkills: {},
       });
-    });
-
-    it("restores a removed entry explicitly while stale saves leave it removed", async () => {
-      const first = (await store.installSource(source())).definitions[0];
-      const next = (await store.installSource(source("Next"))).definitions[0];
-      const selected = await store.selectRevision({
-        ownerUserId: USER,
-        logicalKey: "general",
-        revisionId: first.id,
-      });
-      if (!selected.ok) throw new Error("Catalog creation failed");
-      const id = selected.entry.id;
-      await store.removeOwnedEntry(USER, id);
-      expect(
-        (
-          await store.selectRevision({
-            ownerUserId: USER,
-            logicalKey: "general",
-            revisionId: next.id,
-            expectedRevisionId: first.id,
-          })
-        ).ok,
-      ).toBe(false);
-      expect(await store.restoreOwnedEntry(OTHER, id, first.id)).toBe(false);
-      expect(await store.restoreOwnedEntry(USER, id, next.id)).toBe(false);
-      expect(await store.restoreOwnedEntry(USER, id, first.id)).toBe(true);
-      expect(await store.listCatalog({ userId: USER, limit: 100 })).toMatchObject([
-        { id, selectedRevisionId: first.id },
-      ]);
     });
 
     it("authorizes reserved historical revisions without granting unrelated content", async () => {
