@@ -33,13 +33,23 @@ holder's projected resource location `workId` for Scratch/Uploads, and the
 project's No Work row for manuscript/kb/user/unfiled. Editor route or remembered
 Work never supplies link scope; `baseUri` is not parsed to infer it. Chat
 continues to use the thread's Work. Unresolved surfaces have
-no scope. Contextual `scratch://` and `uploads://` links use that Work;
+no scope. Contextual `uploads://` links use that Work, and so does
+`scratch://` unless the scope also names a `rootThreadId`.
 `@/` names the locked No Work row and canonical `@<slug>` names a Work
 through Project Work authority.
 
+`rootThreadId` is the lineage (the first chat's id) a bare `scratch://` means:
+a No Work chat's own, or the lineage a note in a chat's Scratch belongs to
+(its replica location's `rootThreadId`, with `workId` the No Work row for
+`uploads://`). The resolver sends it in place of `workId`, which the server
+refuses beside it. A canonical `scratch://@/c12/x` resolves by its own handle in
+any scope, from the local index when the scope's lineage holds it, else the
+server. Chips and the follow dialog name the chat by its title
+(`useLineageTitle`), never by the handle.
+
 ## Resolution scope: what an answer is true of
 
-`{ projectId, workId, baseUri }` plus the index's `revision` is the complete
+`{ projectId, workId, rootThreadId, baseUri }` plus the index's `revision` is the complete
 semantic input to every question the resolver asks. The registration effect is
 keyed on exactly those, and reads none of them through a ref. The index object
 keeps its identity while its revision and completeness hold, so the index
@@ -169,8 +179,9 @@ document is at an address the index holds, and whether the Editor's `@`
 link-ahead address is already taken.
 
 `linkableCatalogScopes` names the catalogs: the project catalog (manuscript,
-kb, and Unfiled, whatever the Work), the user catalog, and the current Work's
-Scratch and Uploads by row id, including No Work.
+kb, and Unfiled, whatever the Work), the user catalog, the current Work's
+Uploads by row id (including No Work) and its Scratch, which is the scope's
+lineage's instead when it names one.
 These are the catalogs a contextual address resolves in on the server.
 An unresolved surface has no catalog scope; the follower waits for its Work
 rather than resolving against a guessed authority.

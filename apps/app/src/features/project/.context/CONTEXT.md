@@ -174,6 +174,19 @@ unresolved client-addressed creation routes, so the collection and other screens
 cannot inherit a prior Work's note. On the phone, and on the Editor screen, a
 Files row opens the document in the Editor instead.
 
+A chat's header carries a **Scratch** menu (`chat/ChatScratchButton.tsx`): the center
+chat's pane header, the dock's chat header, the phone chat sheet's header, and the
+phone Chat screen's top bar. Its owner is `chatScratchOwner` (`features/chat`): the
+chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
+is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
+its lineage's under an "Earlier notes" folder, so a rebind never hides them, and the
+menu follows `thread.workId` as soon as the rebind confirms. The button shows once the
+owner has a note (the AI makes them; there is no New note) and arrives live with the
+first write. A desktop pick opens beside the chat (`dock/use-open-scratch-note.ts`);
+a phone shows a bottom sheet (`components/app/DrillInSheet`) and opens the note full
+screen. The lineage is named by its first chat's title (`useLineageTitle`), never by
+its handle.
+
 The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
 server-side filter, applied before pagination, and so is title search. The
@@ -272,7 +285,9 @@ and sending does not unarchive. The Work picker never offers an archived Work,
 since binding a chat to one is refused.
 The Editor shows a tab by one rule, `isEditorTab(tab, workId)` in
 `client/stores/context-tabs-store/editor-workspace-model.ts`: every scheme but
-Uploads (`isEditorScheme`), and a Work's Scratch only in that Work's Editor.
+Uploads (`isEditorScheme`), a Work's Scratch only in that Work's Editor, and a
+chat's Scratch (a tab with `rootThreadId`) in every Editor: a lineage belongs to
+no Work.
 A local-resource history pointer pins document identity, not its namespace.
 Once placed, its removal/viewer locator uses the tracked tab's scheme and path;
 only an unplaced local document publishes `unfiled` with an empty path.
@@ -443,9 +458,14 @@ overlays. The first segment after `/p/<project>` is always a screen.
 A context `ProjectDestination` never carries a Work; the address's `work` is the one Work
 selection for every scheme. For project schemes (manuscript, kb, user,
 unfiled) `?work` is the editing context: absent, empty (no Work) or an id. For
-Scratch and Uploads (`workIsIdentity`) `?work` is the resource's identity:
+Uploads (`workIsIdentity`) `?work` is the resource's identity:
 `?work=<id>` names the Work, `?work=` is No Work, and absent or malformed is an
-invalid address. The query guard never repairs an identity `?work`. Slugs and
+invalid address. A Scratch resource has exactly one owner: `?work=<id>` for a
+named Work, or `?chat=<rootThreadId>` for a No Work chat's lineage (the first
+chat's id; `ProjectAddress.lineage`). No Work has no Scratch, so `?work=` on a
+Scratch address is invalid, and so is giving both. A lineage address leaves the
+Editor's own Work implicit, as a project document does. The query guard never
+repairs an identity `?work`. Slugs and
 `@` never appear. Older shapes (`/<scheme>/…`, `/browse/…`, `/works/<id>/<scheme>/…`)
 are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
@@ -528,7 +548,10 @@ rejection therefore stays on the acted-on document's existing identity field.
 Work-scoped tab ownership and the ready Editor Work use the Work row id, including
 the locked No Work row. Only `workSelectionFor` spells that row as `none` for
 project-content addresses; Scratch and Uploads addresses carry the row id.
-An omitted open-document Work keeps the current Editor Work. Unresolved Editor
+A chat's Scratch route target carries `rootThreadId` and keeps `workId` as the
+Editor's own Work (`ContextRouteTarget`); `targetInEditorOf` and
+`sameContextTarget` are the shared rules, so a Work change never prunes a
+lineage tab. An omitted open-document Work keeps the current Editor Work. Unresolved Editor
 Work never creates a locator or an empty selection-map key.
 
 A project address has explicit selections, not defaults: absent, no-Work,

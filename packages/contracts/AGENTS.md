@@ -62,3 +62,7 @@ runtime shapes, and observability records.
 - Scratch's `@/c12/` qualifier is a lineage owner, not a path segment.
   `@/x` without a first-chat handle is invalid; bare `scratch://x` remains
   contextual. Href traversal and relative spelling cannot cross lineage owners.
+- A document request names its owner with `workId` or, for Scratch,
+  `rootThreadId` (the first chat's id), never both
+  (`ProjectContextRequestOptions`). `WorkingSetRoute` has the same two arms: a
+  Work-scoped route carries `workId`, a chat's Scratch route `rootThreadId`.

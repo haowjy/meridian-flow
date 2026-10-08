@@ -51,11 +51,20 @@ the chat returns to the chat. Closing returns to the writer's last explicit view
 the Work or the screen changes; a Chat-screen note stays on the Chat screen. No
 document is persisted across reloads.
 
-`useOpenDocumentInDock()` is the one way in. It opens the dock document and
-`revealDock("document")`; on the Editor screen and on the phone it opens an Editor
-route instead, so those never hold a dock document. `DockReveal` is `"chat" |
-"document"`: a document reveal only opens the dock, the slot already holds the
-document.
+`useOpenDocumentInDock()` is the way in for a Work Files note. It opens the dock
+document and `revealDock("document")`; on the Editor screen and on the phone it opens
+an Editor route instead, so those never hold a dock document. `DockReveal` is
+`"chat" | "document"`: a document reveal only opens the dock, the slot already holds
+the document.
+
+`useOpenScratchNote()` is the way in for a note picked from a chat's Scratch menu
+(`../chat/ChatScratchButton.tsx`): the dock document on the Chat screen only, where
+the chat is in the middle; an Editor tab from the Work and Editor screens, where the
+chat is the dock and a dock document would cover it; the full-screen document on a
+phone. The note's owner (a Work or a lineage) travels with its tab, so the dock
+document's catalog, rename and Open in Editor follow it. A Chat-screen note stays
+open when the writer switches chats; its title menu keeps listing its own owner's
+Scratch.
 
 `DockDocumentView` follows the resource projection (`useDockDocumentTab`): a rename
 elsewhere updates the name and path the header and identity bar show, and a removed
@@ -64,9 +73,11 @@ or terminal document closes the slot. It reads `DraftReviewProvider` from wherev
 in front: the Editor tab's editor and the dock's are never both `active`.
 
 The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) over the
-document's own catalog tree (the Work's Scratch or Uploads) at the document's
-folder, then Open in Editor and Rename. The menu takes a tree source and an action
-list; a later chat Scratch button reuses it.
+document's own catalog tree (a Work's Scratch or Uploads, or a chat's Scratch) at the
+document's folder, then Open in Editor and Rename. The tree comes from
+`useCatalogMenuSource` (`../context/use-catalog-menu-source.ts`), the same source the
+chat header's Scratch button lists; the menu takes a tree source and an action list.
+On a phone the same source is a `DrillInSheet` bottom sheet with no actions.
 
 ### Two views of one document
 

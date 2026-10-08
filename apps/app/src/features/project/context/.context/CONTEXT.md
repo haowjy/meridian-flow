@@ -14,7 +14,8 @@ files retain the Editor's Work context.
 read-only Context viewers through the one stable-ID opener. Its lower-level
 `not-editable` result means no live Yjs admission, not a failed navigation:
 Editor-eligible project binary/custom metadata still opens a viewer tab and route.
-Scratch documents open Editor tabs owned by their resolved Work (including No Work).
+Scratch documents open Editor tabs owned by their resolved Work, or by their lineage
+(`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
 Uploads route to the deferred-viewing notice without opening a tab. The resolved file's
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
