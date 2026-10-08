@@ -7,7 +7,7 @@ import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
-import { ChatScratchButton } from "../chat/ChatScratchButton";
+import { ChatScratchSheet } from "../chat/ChatScratch";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
@@ -58,6 +58,7 @@ export function MobileProject(props: MobileProjectProps) {
   };
   useDockReveal((view) => openChatSheet(view));
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [scratchOpen, setScratchOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
   const localTab =
@@ -187,6 +188,14 @@ export function MobileProject(props: MobileProjectProps) {
         activeContextPath={props.activeContextPath}
         onSelectScreen={props.onSelectScreen}
         onSelectContextPath={props.onSelectContextPath}
+        chatThreadId={displayedChatThreadId(props.chatDisplay)}
+        onOpenScratch={() => setScratchOpen(true)}
+      />
+      <ChatScratchSheet
+        projectId={props.projectId}
+        threadId={displayedChatThreadId(props.chatDisplay)}
+        open={scratchOpen}
+        onOpenChange={setScratchOpen}
       />
     </div>
   );
@@ -206,15 +215,9 @@ function trailingAction(
   }
   if (props.activeScreen === "chat" && props.chatDisplay.kind !== "index") {
     return (
-      <>
-        <ChatScratchButton
-          projectId={props.projectId}
-          threadId={displayedChatThreadId(props.chatDisplay)}
-        />
-        <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
-          <Sparkles className="size-5" aria-hidden />
-        </PhoneIconButton>
-      </>
+      <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
+        <Sparkles className="size-5" aria-hidden />
+      </PhoneIconButton>
     );
   }
   // Same per-scheme policy as the desktop tree's `+`: Scratch and Uploads offer no creation.

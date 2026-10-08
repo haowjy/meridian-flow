@@ -11,6 +11,7 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import { RailScratchControl } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
@@ -22,7 +23,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * LeftSidebar — content of the persistent left project slot. The
  * `shelf-surface` slot wrapper in `desktop-layout.ts` paints the rail. One column:
  *
- *   project name (rename) · Chat/Work/Editor nav · file tree · library/account
+ *   project name (rename), Chat/Work/Editor nav, file tree, Scratch, library/account
  *
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
@@ -33,6 +34,8 @@ export type LeftSidebarProps = {
   titleEdit: ProjectTitleEdit;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
+  /** The chat on screen, which the Scratch control browses; null hides the control. */
+  chatThreadId: string | null;
   contextLive: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
@@ -48,6 +51,7 @@ export function LeftSidebar({
   titleEdit,
   activeScreen,
   editorWorkId,
+  chatThreadId,
   contextLive,
   activeContextScheme,
   activeContextPath,
@@ -87,6 +91,7 @@ export function LeftSidebar({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
+        scratch={<RailScratchControl projectId={projectId} threadId={chatThreadId} />}
       >
         {contextLive ? (
           <ContextTreePanel

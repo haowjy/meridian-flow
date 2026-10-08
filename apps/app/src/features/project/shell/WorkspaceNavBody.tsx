@@ -27,6 +27,8 @@ export type WorkspaceNavBodyProps = {
   presentation: WorkspaceNavPresentation;
   /** Persistent navigation content between the controls and account row. */
   children?: ReactNode;
+  /** The chat's Scratch control, pinned above the account row. */
+  scratch?: ReactNode;
 };
 
 export function WorkspaceNavBody({
@@ -34,6 +36,7 @@ export function WorkspaceNavBody({
   onSelectScreen,
   presentation,
   children,
+  scratch,
 }: WorkspaceNavBodyProps) {
   const phone = presentation === "phone";
 
@@ -58,6 +61,14 @@ export function WorkspaceNavBody({
       </div>
 
       <div className="min-h-0 flex-1">{children}</div>
+
+      {scratch ? (
+        <div
+          className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
+        >
+          {scratch}
+        </div>
+      ) : null}
 
       <div
         className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}

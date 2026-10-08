@@ -52,8 +52,6 @@ export type DockHeaderSlotArgs = DockViewSwitchProps & {
 export type DockHeaderProps = DockHeaderSlotArgs & {
   onClose?: () => void;
   threadSelect?: ReactNode;
-  /** The chat's Scratch menu, beside its switcher. */
-  scratchMenu?: ReactNode;
   threadId?: string | null;
 };
 
@@ -65,7 +63,6 @@ export function DockHeader({
   document: dockDocument,
   onClose,
   threadSelect,
-  scratchMenu,
   threadId,
 }: DockHeaderProps) {
   const closeDocument = useDockViewStore((state) => state.closeDocument);
@@ -84,7 +81,6 @@ export function DockHeader({
         ) : (
           <>
             {view === "chat" ? threadSelect : null}
-            {view === "chat" ? scratchMenu : null}
             {view === "chat" && threadId ? (
               <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
             ) : null}

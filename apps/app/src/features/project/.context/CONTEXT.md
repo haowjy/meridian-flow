@@ -174,17 +174,24 @@ unresolved client-addressed creation routes, so the collection and other screens
 cannot inherit a prior Work's note. On the phone, and on the Editor screen, a
 Files row opens the document in the Editor instead.
 
-A chat's header carries a **Scratch** menu (`chat/ChatScratchButton.tsx`): the center
-chat's pane header, the dock's chat header, the phone chat sheet's header, and the
-phone Chat screen's top bar. Its owner is `chatScratchOwner` (`features/chat`): the
+The left rail ends in one **Scratch** control above the account (`chat/ChatScratch.tsx`,
+passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and `NavigationDrawer`).
+It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
+chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
+control (it hides) when no chat is on screen, such as the chat index. The row shows
+the Scratch icon, the label, that chat's title and an up chevron. A collapsed rail
+hides with its control. Its owner is `chatScratchOwner` (`features/chat`): the
 chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
 is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
 its lineage's under an "Earlier notes" folder, so a rebind never hides them, and the
-menu follows `thread.workId` as soon as the rebind confirms. The button shows once the
-owner has a note (the AI makes them; there is no New note) and arrives live with the
-first write. A desktop pick opens beside the chat (`dock/use-open-scratch-note.ts`);
-a phone shows a bottom sheet (`components/app/DrillInSheet`) and opens the note full
-screen. The lineage is named by its first chat's title (`useLineageTitle`), never by
+menu follows `thread.workId` as soon as the rebind confirms. The control shows for
+every chat, so the rail never shifts when the first note lands; before it the menu
+says "No notes yet" and the list fills live with the AI's writes (the AI makes the
+notes; there is no New note). On desktop the control opens `DrillInMenu` upwards and a
+pick opens beside the chat (`dock/use-open-scratch-note.ts`). On a phone it sits at
+the foot of the drawer: a tap closes the drawer and `MobileProject` opens
+`ChatScratchSheet` (`components/app/DrillInSheet`, hosted outside the drawer so it
+outlives it), and a pick opens the note full screen. The lineage is named by its first chat's title (`useLineageTitle`), never by
 its handle.
 
 The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,

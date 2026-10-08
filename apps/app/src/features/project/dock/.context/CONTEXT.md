@@ -58,7 +58,7 @@ an Editor route instead, so those never hold a dock document. `DockReveal` is
 the document.
 
 `useOpenScratchNote()` is the way in for a note picked from a chat's Scratch menu
-(`../chat/ChatScratchButton.tsx`): the dock document on the Chat screen only, where
+(`../chat/ChatScratch.tsx`): the dock document on the Chat screen only, where
 the chat is in the middle; an Editor tab from the Work and Editor screens, where the
 chat is the dock and a dock document would cover it; the full-screen document on a
 phone. The note's owner (a Work or a lineage) travels with its tab, so the dock
@@ -80,7 +80,7 @@ The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) over the
 document's own catalog tree (a Work's Scratch or Uploads, or a chat's Scratch) at the
 document's folder, then Open in Editor and Rename. The tree comes from
 `useCatalogMenuSource` (`../context/use-catalog-menu-source.ts`), the same source the
-chat header's Scratch button lists; the menu takes a tree source and an action list.
+rail's Scratch control lists; the menu takes a tree source and an action list.
 On a phone the same source is a `DrillInSheet` bottom sheet with no actions.
 
 ### Two views of one document
