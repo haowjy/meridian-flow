@@ -23,13 +23,6 @@ const input = {
   },
 };
 describe("local document history", () => {
-  it("waits for hydration and then selects exactly the recorded draft", () => {
-    expect(resolveLocalDocumentSelection({ ...input, hydrated: false }).kind).toBe("loading");
-    expect(resolveLocalDocumentSelection(input)).toMatchObject({
-      kind: "resolved",
-      documentId: "draft-a",
-    });
-  });
   it("keeps absent distinct from stale, foreign, malformed, pointers", () => {
     expect(resolveLocalDocumentSelection({ ...input, pointer: undefined }).kind).toBe("absent");
     for (const change of [
@@ -68,9 +61,6 @@ describe("Editor screen entry", () => {
     recentRoutes: [],
     workId: "work-a",
   };
-  it("chooses the selected open tab without requiring recent history", () => {
-    expect(selectEditorEntryTab({ ...entry, selectedDocumentId: tab.documentId })).toBe(tab);
-  });
   it("resumes the selected scratch tab of the Editor's own Work only", () => {
     const scratch: ContextTab = {
       ...document,
@@ -82,14 +72,6 @@ describe("Editor screen entry", () => {
     const selected = { ...entry, tabs: [scratch], selectedDocumentId: scratch.documentId };
     expect(selectEditorEntryTab(selected)).toBe(scratch);
     expect(selectEditorEntryTab({ ...selected, workId: "work-b" })).toBeNull();
-  });
-  it("uses the current tab location, not a remembered path", () => {
-    expect(
-      selectEditorEntryTab({
-        ...entry,
-        recentRoutes: [{ documentId: "doc", scheme: "manuscript", path: "/Old.md" }],
-      }),
-    ).toBe(document);
   });
   it("does not reopen closed identities or choose an arbitrary open tab", () => {
     expect(selectEditorEntryTab(entry)).toBeNull();

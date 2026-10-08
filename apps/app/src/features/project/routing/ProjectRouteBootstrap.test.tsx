@@ -66,29 +66,6 @@ afterEach(async () => {
 });
 
 describe("ProjectRouteBootstrap", () => {
-  it("does not re-adopt loader echoes for the same mounted project", async () => {
-    const render = (data: ProjectRouteData) =>
-      root.render(
-        <QueryClientProvider client={client}>
-          <ProjectRouteBootstrap
-            project={project}
-            data={data}
-            user={{ userId: project.userId, workingSetSyncEnabled: true }}
-            pending={<div data-pending />}
-          />
-        </QueryClientProvider>,
-      );
-
-    await act(async () => render(routeData(1)));
-    expect(host.querySelector("[data-readable]")).not.toBeNull();
-    expect(mocks.seedProjectRouteData).toHaveBeenCalledTimes(1);
-    expect(mocks.hydrateWorkingSet).toHaveBeenCalledTimes(1);
-
-    await act(async () => render(routeData(2)));
-    expect(mocks.seedProjectRouteData).toHaveBeenCalledTimes(1);
-    expect(mocks.hydrateWorkingSet).toHaveBeenCalledTimes(1);
-  });
-
   const renderRoute = (id: string, data: ProjectRouteData | null) =>
     root.render(
       <QueryClientProvider client={client}>

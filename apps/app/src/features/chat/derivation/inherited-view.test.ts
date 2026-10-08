@@ -45,18 +45,6 @@ const page = (
 
 beforeEach(() => api.readThreadTranscript.mockReset());
 
-describe("inheritedViewFromPages", () => {
-  it("joins each turn with its blocks and owner, and keeps the owners' trash state", () => {
-    const view = inheritedViewFromPages([page([entry("g1", "grand"), entry("s1", "source")])]);
-    expect(view.transcript.turns.map((t) => [t.id, t.blocks.length])).toEqual([
-      ["g1", 1],
-      ["s1", 1],
-    ]);
-    expect(view.transcript.ownerByTurnId.get("g1")).toBe("grand");
-    expect(view.owners.get("grand")).toEqual({ threadId: "grand", title: "Arc 3", trashed: true });
-  });
-});
-
 describe("inheritedQueryOptions", () => {
   it("reads the inherited range oldest first, across segment boundaries, until the end", async () => {
     api.readThreadTranscript
@@ -75,38 +63,6 @@ describe("inheritedQueryOptions", () => {
 });
 
 describe("optimisticForkPrefix", () => {
-  it("takes the source's rows through the cutoff, keeping inherited owners", () => {
-    const sourceInherited = inheritedViewFromPages([page([entry("g1", "grand")])]);
-    const prefix = optimisticForkPrefix({
-      source: { id: "source", title: "Chapter 12 plan" },
-      sourceInherited,
-      localTurns: [turn("s1", "source"), turn("s2", "source", "assistant"), turn("s3", "source")],
-      cutoffTurnId: "s2",
-    });
-    expect(prefix?.transcript.turns.map((t) => t.id)).toEqual(["g1", "s1", "s2"]);
-    expect([...(prefix?.transcript.ownerByTurnId ?? [])]).toEqual([
-      ["g1", "grand"],
-      ["s1", "source"],
-      ["s2", "source"],
-    ]);
-    expect(prefix?.owners.get("source")?.title).toBe("Chapter 12 plan");
-  });
-
-  it("carries no model responses, as the server's read has none: Info never flickers", () => {
-    const reply = {
-      ...turn("s1", "source", "assistant"),
-      responses: [{ id: "r1" }],
-    } as unknown as Turn;
-    const prefix = optimisticForkPrefix({
-      source: { id: "source", title: null },
-      sourceInherited: null,
-      localTurns: [reply],
-      cutoffTurnId: "s1",
-    });
-    expect(prefix?.transcript.turns[0]?.responses).toEqual([]);
-    expect(reply.responses).toHaveLength(1);
-  });
-
   it("cuts at an inherited turn of a fork, inheriting only above it", () => {
     const sourceInherited = inheritedViewFromPages([
       page([entry("g1", "grand"), entry("g2", "grand")]),

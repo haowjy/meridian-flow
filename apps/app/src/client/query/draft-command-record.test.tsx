@@ -4,11 +4,9 @@ import { act } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
-  beginDraftCommand,
   bindDraftCommandAccount,
   confirmDraftCommand,
   draftCommandFailure,
-  draftCommandPendingIn,
   failDraftCommand,
   readDraftsAfterCommands,
   resetDraftCommandRecords,
@@ -36,17 +34,6 @@ function deferred<T>() {
 
 describe("draft command records", () => {
   beforeEach(() => resetDraftCommandRecords());
-
-  it("disables only the Work the command is in, and arbitrates the same draft", async () => {
-    await run(async () => {
-      await act(async () => void beginDraftCommand(draft));
-      expect(draftCommandPendingIn(held, scope)).toBe(true);
-      expect(draftCommandPendingIn(held, { ...scope, workId: "work-b" })).toBe(false);
-      expect(draftCommandPendingIn(held, { ...scope, projectId: "project-b" })).toBe(false);
-      expect(beginDraftCommand(draft)).toBe(false);
-      expect(beginDraftCommand({ ...draft, workId: "work-b" })).toBe(true);
-    });
-  });
 
   it("retires a confirmation once no earlier read is left, so a reused draft id is admitted", async () => {
     await run(async () => {

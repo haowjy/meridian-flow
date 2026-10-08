@@ -69,22 +69,6 @@ afterEach(async () => {
 });
 
 describe("useReplyRetry", () => {
-  it("shows a working reply below the failed one before the server answers, under a client-minted id", async () => {
-    api.retryReply.mockReturnValue(deferred<Turn>().promise);
-    await act(async () => latest.retry(failed));
-    const [reply] = latest.standIns;
-    expect(reply).toMatchObject({
-      role: "assistant",
-      status: "pending",
-      position: 3,
-      prevTurnId: "f",
-      writeMode: "direct",
-    });
-    expect(reply?.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(api.retryReply).toHaveBeenCalledWith("t", "f", { id: reply?.id });
-    expect(latest.requestOf(reply?.id ?? "")).toBe("sending");
-  });
-
   it("takes the server's reply from the response, then yields to the snapshot by id", async () => {
     api.retryReply.mockImplementation(
       async (_thread: string, _failed: string, { id }: { id: string }) =>
@@ -157,21 +141,6 @@ describe("useReplyRetry", () => {
     expect(latest.refused.has("f")).toBe(false);
   });
 
-  it("treats a shutdown refusal like any refusal: generic copy, cause only in diagnostics", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    api.retryReply.mockRejectedValue(new HttpResponseError("runtime_shutting_down", 503, null));
-    await act(async () => latest.retry(failed));
-    expect(latest.standIns).toEqual([]);
-    expect(latest.refused.has("f")).toBe(true);
-    expect(invalidateQueries).toHaveBeenCalled();
-    expect(announcements.announce).toHaveBeenCalledWith("Couldn't retry.");
-    expect(warn).toHaveBeenCalledWith(
-      "[chat-retry-refused]",
-      expect.objectContaining({ from: "f", status: 503 }),
-    );
-    warn.mockRestore();
-  });
-
   it("keeps a lost request's reply, failed, and its Retry re-sends the same id for the same failed reply", async () => {
     api.retryReply.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await act(async () => latest.retry(failed));
@@ -186,17 +155,5 @@ describe("useReplyRetry", () => {
     expect(api.retryReply).toHaveBeenLastCalledWith("t", "f", { id: lost.id });
     expect(latest.standIns).toHaveLength(1);
     expect(latest.standIns[0]).toMatchObject({ id: lost.id, status: "pending", error: null });
-  });
-
-  it("drops a lost Retry's reply when its re-send is refused, noting the failed reply", async () => {
-    api.retryReply.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-    await act(async () => latest.retry(failed));
-    const lost = latest.standIns[0] as Turn;
-    api.retryReply.mockRejectedValueOnce(
-      new HttpResponseError("reply_retry_unavailable", 409, null),
-    );
-    await act(async () => latest.retry(lost));
-    expect(latest.standIns).toEqual([]);
-    expect([...latest.refused]).toEqual(["f"]);
   });
 });

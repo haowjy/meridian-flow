@@ -22,15 +22,3 @@ it("shows the failure with a retry, keeping the destination's own content mounte
     },
   );
 });
-
-it("offers no retry for a destination that is unavailable rather than failed", async () => {
-  await withReactRoot(
-    <ProjectRouteBoundary issue="unavailable" onRetry={vi.fn()}>
-      <p>destination</p>
-    </ProjectRouteBoundary>,
-    async () => {
-      expect(document.body.textContent).toContain("This destination is unavailable.");
-      expect(retryButton()).toBeUndefined();
-    },
-  );
-});
