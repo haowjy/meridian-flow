@@ -9,6 +9,7 @@ import { ArrowUpRight } from "lucide-react";
 
 import type { ChangeCommandMode, ChangeFailureCode } from "@/client/query/change-command-record";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
+import { RefusalReason } from "@/features/chat/ReviewMessageText";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import type { ChangeAttribution } from "./change-attribution";
@@ -101,11 +102,9 @@ export function ChangeAuthor({
 
 /** Why a command on a change did not land, in the writer's words. */
 export function ChangeFailureText({
-  code,
-  mode,
+  failure: { code, mode, reason },
 }: {
-  code: ChangeFailureCode;
-  mode: ChangeCommandMode;
+  failure: { code: ChangeFailureCode; mode: ChangeCommandMode; reason?: string };
 }) {
   switch (code) {
     case "stale":
@@ -137,6 +136,23 @@ export function ChangeFailureText({
         <Trans>Couldn't apply. Check your connection and try again.</Trans>
       ) : (
         <Trans>Couldn't discard. Check your connection and try again.</Trans>
+      );
+    case "refused":
+      return (
+        <>
+          {mode === "apply" ? (
+            <Trans>Couldn't apply this change.</Trans>
+          ) : (
+            <Trans>Couldn't discard this change.</Trans>
+          )}
+          <RefusalReason reason={reason} />
+        </>
+      );
+    case "server-error":
+      return mode === "apply" ? (
+        <Trans>Couldn't apply this change. Try again.</Trans>
+      ) : (
+        <Trans>Couldn't discard this change. Try again.</Trans>
       );
   }
 }

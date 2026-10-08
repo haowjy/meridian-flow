@@ -32,11 +32,24 @@ type DraftScope = { projectId: string; workId: string };
 type DraftRef = DraftScope & { documentId: string; draftId: string };
 type ListedDraft = { documentId: string; draftId: string };
 
+/**
+ * What a held failure is, never its wording. `-offline`: the request never got
+ * there (no network, or lost). `-refused`: the server answered with a typed
+ * reason, carried beside the code. `-server-error`: it answered with an error
+ * that gave no reason. Wording is the render layer's (`ReviewMessageText`).
+ */
 export type DraftCommandFailureCode =
-  | "apply-failed"
+  | "apply-offline"
+  | "apply-refused"
+  | "apply-server-error"
   | "apply-unknown"
   | "discard-offline"
+  | "discard-refused"
+  | "discard-server-error"
   | "review-failed";
+
+/** A held failure: its code and, for a refusal, the reason the server gave. */
+export type DraftCommandFailure = { code: DraftCommandFailureCode; reason?: string };
 
 export type ChangeCommandMode = "apply" | "discard";
 
@@ -48,7 +61,7 @@ export type PendingChangeCommand = ChangeRef & { mode: ChangeCommandMode };
 
 type DraftCommandRecord =
   | { phase: "pending"; change?: PendingChangeCommand }
-  | { phase: "failed"; code: DraftCommandFailureCode; at: number }
+  | { phase: "failed"; failure: DraftCommandFailure; at: number }
   | { phase: "confirmed"; at: number };
 
 export type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
@@ -104,13 +117,13 @@ export function releaseDraftCommand(draft: DraftRef): void {
   if (recordFor(draft)?.phase === "pending") setRecord(draft, () => null);
 }
 
-export function failDraftCommand(draft: DraftRef, code: DraftCommandFailureCode): void {
-  setRecord(draft, (at) => ({ phase: "failed", code, at }), true);
+export function failDraftCommand(draft: DraftRef, failure: DraftCommandFailure): void {
+  setRecord(draft, (at) => ({ phase: "failed", failure, at }), true);
 }
 
 /** Opening Review failed; never displaces an Apply or Discard in flight on the draft. */
 export function failDraftReviewLaunch(draft: DraftRef): void {
-  if (recordFor(draft)?.phase !== "pending") failDraftCommand(draft, "review-failed");
+  if (recordFor(draft)?.phase !== "pending") failDraftCommand(draft, { code: "review-failed" });
 }
 
 /** Drop a held failure (dismissing it); never touches a claim. */
@@ -125,7 +138,8 @@ export function clearDraftCommandFailure(draft: DraftRef): void {
  */
 export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
   const record = recordFor(draft);
-  if (record?.phase === "failed" && record.code === "review-failed") setRecord(draft, () => null);
+  if (record?.phase === "failed" && record.failure.code === "review-failed")
+    setRecord(draft, () => null);
 }
 
 export function confirmDraftCommand(draft: DraftRef): void {
@@ -195,9 +209,9 @@ export function useDraftCommandRecords(): DraftCommandRecords {
 export function draftCommandFailure(
   records: DraftCommandRecords,
   draft: DraftRef,
-): DraftCommandFailureCode | null {
+): DraftCommandFailure | null {
   const record = records[draftCommandKey(draft)];
-  return record?.phase === "failed" ? record.code : null;
+  return record?.phase === "failed" ? record.failure : null;
 }
 
 /** The per-change command in flight on this draft, if the claim is one. */

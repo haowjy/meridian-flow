@@ -14,7 +14,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { useState } from "react";
-import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
+import type { DraftCommandFailure } from "@/client/query/draft-command-record";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -37,7 +37,7 @@ export type DraftSwitcherProps = {
   /** Changes per document; absent while the count is still being read. */
   counts: ReadonlyMap<string, number>;
   /** What a refused or unanswered command left on a document's draft, so the row says so wherever the review is. */
-  failures?: ReadonlyMap<string, DraftCommandFailureCode>;
+  failures?: ReadonlyMap<string, DraftCommandFailure>;
   /** The menu is open or about to be: counts are read only then. */
   onOpenChange: (open: boolean) => void;
   /** A draft-only document has no live version: its exit closes the tab. */
@@ -141,7 +141,7 @@ export function DraftSwitcher({
               )}
               {failure ? (
                 <span className="col-start-2 col-span-2 text-caption text-destructive" role="alert">
-                  <ReviewMessageText code={failure} />
+                  <ReviewMessageText failure={failure} />
                 </span>
               ) : null}
             </DropdownMenuItem>

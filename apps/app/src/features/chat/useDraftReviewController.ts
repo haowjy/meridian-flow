@@ -38,7 +38,7 @@ import {
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
 import {
-  type DraftBatchErrorCode,
+  type DraftBatchError,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
   type DraftReviewSelection,
@@ -119,7 +119,7 @@ export type DraftReviewController = {
   discardChange: (change: ChangeRef) => Promise<DraftCommandOutcome>;
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
-  dockDispositionError: DraftBatchErrorCode | null;
+  dockDispositionError: DraftBatchError | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;

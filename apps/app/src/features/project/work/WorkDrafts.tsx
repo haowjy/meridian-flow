@@ -82,7 +82,7 @@ export function WorkDrafts({
                   </button>
                   {refused ? (
                     <InlineErrorRow
-                      message={<ReviewMessageText code={refused} />}
+                      message={<ReviewMessageText failure={refused} />}
                       onDismiss={() => clearDraftCommandFailure(draft)}
                     />
                   ) : null}

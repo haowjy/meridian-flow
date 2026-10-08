@@ -340,7 +340,7 @@ describe("DraftReviewHeader", () => {
   it("shows a failed whole-draft command on the header, from the draft's own record", async () => {
     failDraftCommand(
       { projectId: "p", workId: "w", documentId: "doc-12", draftId: "draft-doc-12" },
-      "apply-failed",
+      { code: "apply-offline" },
     );
     await render({}, async () => {
       expect(document.querySelector("[role=alert]")?.textContent).toContain("Couldn't apply");
@@ -371,7 +371,7 @@ describe("DraftReviewHeader", () => {
   it("says which other draft did not apply, on the header the writer was moved to, and opens it on request", async () => {
     failDraftCommand(
       { projectId: "p", workId: "w", documentId: "doc-13", draftId: "draft-doc-13" },
-      "apply-failed",
+      { code: "apply-offline" },
     );
     const onOpenDraft = vi.fn();
     await render({ onOpenDraft }, async () => {
@@ -388,7 +388,7 @@ describe("DraftReviewHeader", () => {
   it("names a refused or unanswered Apply on the draft's row in the switcher, after the review moved on", async () => {
     failDraftCommand(
       { projectId: "p", workId: "w", documentId: "doc-13", draftId: "draft-doc-13" },
-      "apply-unknown",
+      { code: "apply-unknown" },
     );
     await render({}, async () => {
       await openSwitcher();

@@ -11,7 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  type DraftCommandFailureCode,
+  type DraftCommandFailure,
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -46,13 +46,13 @@ export type ReviewHeaderModel = {
   /** The last change's command is in flight: the review says so and is not finished. */
   completing: "apply" | "discard" | null;
   /** What the last whole-draft command of the open draft left on it (a refusal, a lost answer), if anything. */
-  commandError: DraftCommandFailureCode | null;
+  commandError: DraftCommandFailure | null;
   /**
    * The Work's other listed drafts that hold a refusal or a lost answer: Apply
    * draft and Apply all move on (or finish) while the command runs, so the
    * review the writer is in must still say which drafts did not apply.
    */
-  failedElsewhere: { row: DockRow; code: DraftCommandFailureCode }[];
+  failedElsewhere: { row: DockRow; failure: DraftCommandFailure }[];
   showLive: () => void;
   applyDraft: () => void;
   discardDraft: () => void;
@@ -116,13 +116,13 @@ export function useReviewHeader({
     draftId,
   });
   // Every listed draft that holds one, so a draft the review moved on from still says it was refused.
-  const failures = new Map<string, DraftCommandFailureCode>();
+  const failures = new Map<string, DraftCommandFailure>();
   const failedElsewhere: ReviewHeaderModel["failedElsewhere"] = [];
   for (const row of rows) {
-    const code = draftCommandFailure(commandRecords, draftOf(row));
-    if (!code) continue;
-    failures.set(row.documentId, code);
-    if (row.documentId !== documentId) failedElsewhere.push({ row, code });
+    const failure = draftCommandFailure(commandRecords, draftOf(row));
+    if (!failure) continue;
+    failures.set(row.documentId, failure);
+    if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
   }
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
