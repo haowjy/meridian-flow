@@ -2,7 +2,6 @@
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
-import type { AppliedEditSummary } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -304,7 +303,7 @@ export function createWriteCommands(deps: {
       writeCertifiedProvenance(runtime, overwrite.ir, beforeVector, preWriteSnapshot);
       touchedHashes = new Set(applied.changedBlocks);
       deletedHashes = new Set(applied.deletedBlocks);
-      insertedHashes = insertedBlockIds(applied.appliedEdits);
+      insertedHashes = applied.insertedBlocks;
     } else {
       runtime.doc.transact(() => {
         insertedHashes = options.model
@@ -533,7 +532,7 @@ export function createWriteCommands(deps: {
     writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
     const copied =
       from && copiedNodes
-        ? copySummary(from.path, insertedBlockIds(applied.appliedEdits), { edges: true })
+        ? copySummary(from.path, applied.insertedBlocks, { edges: true })
         : undefined;
     const copiedEcho = () =>
       copied
@@ -799,11 +798,6 @@ export function createWriteCommands(deps: {
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
-
-/** Hashes of the blocks the edits inserted, in document order of insertion. */
-function insertedBlockIds(applied: readonly AppliedEditSummary[] | undefined): string[] {
-  return (applied ?? []).filter((edit) => edit.kind === "insert").flatMap((edit) => edit.blockIds);
-}
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
   const restored = new Y.Doc({ gc: false });
