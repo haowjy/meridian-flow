@@ -34,7 +34,7 @@ vi.mock("../context/account-feature-context", () => ({
 vi.mock("../context/use-context-removal-project", () => ({
   useContextRemovalProject: () => selection.value,
 }));
-vi.mock("@/features/chat/DraftReviewProvider", () => ({
+vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {},
     groupForDocument: () => null,

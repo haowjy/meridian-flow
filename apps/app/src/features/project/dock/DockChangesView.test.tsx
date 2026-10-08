@@ -60,7 +60,7 @@ vi.mock("@/client/query/useWorks", () => ({
     noWork: { id: "no-work", name: "No Work" },
   }),
 }));
-vi.mock("@/features/chat/DraftReviewProvider", () => ({
+vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({ controller: chatController, groups: chatScope.groups }),
   useEditorDraftReview: () => ({ controller: editorController, groups }),
 }));

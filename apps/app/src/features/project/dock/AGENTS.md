@@ -74,8 +74,8 @@ finds an active draft.
    a complete boundary. The active segment may use page paper only inside that
    boundary; it never connects to the page like a tab chip.
 
-7. **Empty Changes is absent.** `dockRows` is the shared active-row projection.
-   `DockShell` uses its `hasDockChanges` wrapper for segment visibility, while
+7. **Empty Changes is absent.** `reviewFileTargets` is the shared active-row projection.
+   `DockShell` uses its `hasReviewFiles` wrapper for segment visibility, while
    `DockChangesView` renders the projected rows directly.
 
 ## Anti-patterns
@@ -95,7 +95,8 @@ finds an active draft.
 
 - [`.context/CONTEXT.md`](.context/CONTEXT.md) — contracts, architecture, tailwind-merge trap, runtime registration seam
 - [`../.context/CONTEXT.md`](../.context/CONTEXT.md) — project shell layout, slot topology, surface-prefs store
-- [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — draft review controller, docked-drafts, DraftDock composer strip
+- [`../../draft-review/AGENTS.md`](../../draft-review/AGENTS.md) — draft review controller, provider, file model
+- [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — the DraftDock composer strip
 - [`../../editor/DraftReviewBand.tsx`](../../editor/DraftReviewBand.tsx) — the review controls inside the identity row
 - [KB: Draft Review Commands Keep Authority on the Server](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md)
 

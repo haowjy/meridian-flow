@@ -18,7 +18,7 @@ import {
   DraftReviewBoundary,
   useDraftReview,
   useDraftReviewScopeValue,
-} from "@/features/chat/DraftReviewProvider";
+} from "@/features/draft-review/DraftReviewProvider";
 import { listed, previewOf, work } from "@/test-support/draft-review-scope";
 import { registry, sessionFor } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";

@@ -14,8 +14,8 @@ import {
   type DraftReviewContextValue,
   useDraftReview,
   useDraftReviewScopeValue,
-} from "@/features/chat/DraftReviewProvider";
-import type { DockRow } from "@/features/chat/docked-drafts";
+} from "@/features/draft-review/DraftReviewProvider";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { withReactRoot } from "./react-dom-harness";
@@ -93,7 +93,7 @@ export type ReviewedDraft = { documentId: string; draftId: string };
 
 export function renderReviewScopes(
   run: (probe: () => ScopeProbe) => Promise<void>,
-  options: { reviewed?: ReviewedDraft; onOpenDraft?: (row: DockRow) => void } = {},
+  options: { reviewed?: ReviewedDraft; onOpenDraft?: (row: ReviewFileTarget) => void } = {},
 ): Promise<void> {
   const {
     reviewed: initialReviewed = { documentId: "document-a", draftId: "draft-a" },

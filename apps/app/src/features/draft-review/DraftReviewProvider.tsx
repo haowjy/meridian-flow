@@ -22,8 +22,6 @@ import {
 } from "@/client/query/useWorkDrafts";
 import { type ContextTab, getContextTabs } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
-import { useReconcileReviewFocus } from "@/features/draft-review/useReconcileReviewFocus";
-import { useReviewRefresh } from "@/features/draft-review/useReviewRefresh";
 import {
   useContextRemovalCoordinator,
   useOptionalAccountResourceReplica,
@@ -33,6 +31,8 @@ import {
   type DraftReviewStateOwner,
   useDraftReviewController,
 } from "./useDraftReviewController";
+import { useReconcileReviewFocus } from "./useReconcileReviewFocus";
+import { useReviewRefresh } from "./useReviewRefresh";
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;

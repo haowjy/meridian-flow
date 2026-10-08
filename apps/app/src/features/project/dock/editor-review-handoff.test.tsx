@@ -7,7 +7,7 @@ import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
   useDraftReview,
-} from "@/features/chat/DraftReviewProvider";
+} from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";

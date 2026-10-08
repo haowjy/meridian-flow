@@ -16,9 +16,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 
 import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import type { DockRow } from "@/features/chat/docked-drafts";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useReviewFileList } from "@/features/draft-review/useReviewFileList";
 import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
@@ -108,7 +108,7 @@ function ReviewTop({
     draftId,
     onCloseDraftOnly,
     // The switcher lists this Work's drafts; each opens through the one launcher.
-    onOpenDraft: (row: DockRow) => openDockRow(row, controller.workId),
+    onOpenDraft: (row: ReviewFileTarget) => openDockRow(row, controller.workId),
   });
   return <MobileReviewHeader header={header} onOpenList={onOpenList} />;
 }

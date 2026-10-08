@@ -1176,16 +1176,16 @@ msgstr ""
 msgid "Couldn't apply this change. Try again."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply this draft."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply this draft. Try again."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply. Check your connection and try again."
 msgstr ""
 
@@ -1201,8 +1201,8 @@ msgstr ""
 msgid "Couldn’t confirm this preference saved."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't confirm whether this applied. Check what is left before you try again."
 msgstr ""
 
@@ -1262,16 +1262,16 @@ msgstr ""
 msgid "Couldn't discard this change. Try again."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft. Try again."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
 
@@ -1363,7 +1363,7 @@ msgstr ""
 msgid "Couldn't open this document."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
 msgstr ""
 
@@ -4161,7 +4161,7 @@ msgstr ""
 msgid "This draft"
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
 msgstr ""
 
@@ -4254,7 +4254,7 @@ msgstr ""
 msgid "This Work is archived."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "This Work is archived. Unarchive it to apply or discard its drafts."
 msgstr ""
 
@@ -4267,7 +4267,7 @@ msgid "This Work is unavailable."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
-#: src/features/chat/ReviewMessageText.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "This Work no longer exists."
 msgstr ""
 

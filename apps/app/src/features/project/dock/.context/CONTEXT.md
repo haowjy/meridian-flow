@@ -68,8 +68,8 @@ recreate the removed project query grammar to choose a dock view.
 
 ### Changes availability
 
-`dockRows(groups)` in `features/chat/docked-drafts.ts` is the shared active-row
-projection. `DockShell` uses its `hasDockChanges` wrapper for segment
+`reviewFileTargets(groups)` in `features/draft-review/review-files.ts` is the shared
+active-row projection. `DockShell` uses its `hasReviewFiles` wrapper for segment
 visibility, while `DockChangesView` renders those rows and owns its empty
 branch. When the final row disappears, `DockShell` immediately renders the
 native view and updates the session choice.

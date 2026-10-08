@@ -9,12 +9,12 @@ import { type ReversalDirection, successfulWorkReversals } from "@/client/api/re
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
+import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
-import { DraftStatsLabel } from "./draft-stats";
 import type { WorkReceipt } from "./tool-command";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";

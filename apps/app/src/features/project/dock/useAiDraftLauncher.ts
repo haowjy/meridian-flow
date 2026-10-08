@@ -11,7 +11,7 @@
  */
 import { useCallback } from "react";
 
-import type { DockRow } from "@/features/chat/docked-drafts";
+import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { type AiDraftLaunchTarget, useOpenEditorReview } from "./editor-review-handoff";
 
 export function useAiDraftLauncher() {
@@ -28,7 +28,7 @@ export function useAiDraftLauncher() {
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
   const openDockRow = useCallback(
-    (row: DockRow, workId: string) =>
+    (row: ReviewFileTarget, workId: string) =>
       row.contextPath &&
       openAiDraft({
         workId,

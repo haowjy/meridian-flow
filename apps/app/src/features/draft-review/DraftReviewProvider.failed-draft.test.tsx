@@ -17,7 +17,7 @@ import {
   renderReviewScopes,
   type ScopeProbe,
 } from "@/test-support/draft-review-scope";
-import { dockRows } from "./docked-drafts";
+import { reviewFileTargets } from "./review-files";
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -72,7 +72,7 @@ const elsewhere = (probe: ScopeProbe) =>
 const applyAll = (probe: ScopeProbe) => {
   void probe.editor.controller.disposeDrafts(
     "apply",
-    dockRows(probe.editor.groups).map((row) => ({
+    reviewFileTargets(probe.editor.groups).map((row) => ({
       documentId: row.documentId,
       draftId: row.draft.draftId,
     })),

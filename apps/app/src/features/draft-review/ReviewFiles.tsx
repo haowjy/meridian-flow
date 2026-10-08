@@ -34,9 +34,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { type DraftStats, DraftStatsLabel } from "@/features/chat/draft-stats";
-import { ReviewMessageText } from "@/features/chat/ReviewMessageText";
 import { cn } from "@/lib/utils";
+import { type DraftStats, DraftStatsLabel } from "./draft-stats";
+import { ReviewMessageText } from "./ReviewMessageText";
 
 export type ReviewFile = {
   key: string;

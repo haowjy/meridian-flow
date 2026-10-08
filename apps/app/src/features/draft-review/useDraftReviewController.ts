@@ -30,7 +30,6 @@ import {
   useDiscardDraft,
 } from "@/client/query/useDraftReviewMutations";
 import { getContextTabs } from "@/client/stores";
-import { reviewChanges } from "@/features/draft-review/review-changes";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
@@ -49,6 +48,7 @@ import {
   inlineReviewFromState,
   type ReviewToast,
 } from "./draft-review-session";
+import { reviewChanges } from "./review-changes";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
 

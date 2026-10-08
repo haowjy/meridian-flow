@@ -18,8 +18,8 @@ draft-control changes can be understood independently.
 - [Composer write mode](composer-write-mode.md) — the Work-scoped Draft /
   Auto-apply control, neutral shared presentation, New-chat and chat-detail adapters, and
   composer sizing.
-- [Draft review](draft-review.md) — inline review session, pending projection,
-  freshness, and draft-only tabs.
+- [Draft review](../../draft-review/.context/draft-review.md) — inline review session, pending projection,
+  freshness, and draft-only tabs (owned by `features/draft-review`).
 - [Compaction surfaces](compaction-surfaces.md) — divider rows, R4 shells that
   never render, `endsTranscript` with a divider, and optimistic writer
   controls (`/compact`, withdrawal).
