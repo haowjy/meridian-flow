@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Rebinding a chat tells the AI where its earlier Scratch notes remain.
+
 - Unrelated No Work chats keep separate Scratch notes. Forks and subagents share their first chat's notes.
 
 - Handoffs start fresh chat lineages. No Work Scratch links name the first chat.
