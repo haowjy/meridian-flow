@@ -10,6 +10,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
+import {
+  abandonConversationReveal,
+  peekConversationReveal,
+} from "@/test-support/conversation-reveal";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ReviewChangeBar } from "./ReviewChangeBar";
 import { ReviewChangeRow } from "./ReviewChangeRow";
@@ -154,7 +158,15 @@ describe("ReviewChangeRow", () => {
 
   it("opens the chat that wrote it without acting on the change", async () => {
     const props = rowProps({
-      change: change({ attribution: { kind: "chat", threadId: "t-9", title: "Line edit" } }),
+      change: change({
+        attribution: {
+          kind: "chat",
+          threadId: "t-9",
+          title: "Line edit",
+          turnId: null,
+          toolCallId: null,
+        },
+      }),
     });
     const openThread = vi.fn();
     await render(
@@ -173,9 +185,47 @@ describe("ReviewChangeRow", () => {
     );
   });
 
+  it("opens the chat at the turn and tool call that wrote the change", async () => {
+    const props = rowProps({
+      change: change({
+        attribution: {
+          kind: "chat",
+          threadId: "t-9",
+          title: "Line edit",
+          turnId: "turn-4",
+          toolCallId: "call-2",
+        },
+      }),
+    });
+    const openThread = vi.fn();
+    await render(
+      <ul>
+        <ReviewChangeRow {...props} />
+      </ul>,
+      async () => {
+        const link = Array.from(document.querySelectorAll("button")).find((b) =>
+          b.textContent?.includes("Line edit"),
+        );
+        await act(async () => link?.click());
+        expect(peekConversationReveal()).toEqual({
+          kind: "turn",
+          threadId: "t-9",
+          turnId: "turn-4",
+          toolCallId: "call-2",
+        });
+        expect(openThread).not.toHaveBeenCalled();
+        expect(props.onFocus).not.toHaveBeenCalled();
+        abandonConversationReveal();
+      },
+      openThread,
+    );
+  });
+
   it("calls an untitled chat what the chat list calls it, and still opens it", async () => {
     const props = rowProps({
-      change: change({ attribution: { kind: "chat", threadId: "t-3", title: null } }),
+      change: change({
+        attribution: { kind: "chat", threadId: "t-3", title: null, turnId: null, toolCallId: null },
+      }),
     });
     const openThread = vi.fn();
     await render(
@@ -379,7 +429,15 @@ describe("ReviewChangeBar", () => {
     await render(
       <ReviewChangeBar
         {...barProps({
-          change: change({ attribution: { kind: "chat", threadId: "t-3", title: null } }),
+          change: change({
+            attribution: {
+              kind: "chat",
+              threadId: "t-3",
+              title: null,
+              turnId: null,
+              toolCallId: null,
+            },
+          }),
         })}
       />,
       async () => {
@@ -409,7 +467,15 @@ describe("ReviewChangeBar", () => {
     await render(
       <ReviewChangeBar
         {...barProps({
-          change: change({ attribution: { kind: "chat", threadId: "t-1", title: "Pacing" } }),
+          change: change({
+            attribution: {
+              kind: "chat",
+              threadId: "t-1",
+              title: "Pacing",
+              turnId: null,
+              toolCallId: null,
+            },
+          }),
         })}
       />,
       async () => {

@@ -10,6 +10,7 @@ import { ArrowUpRight } from "lucide-react";
 import type { ChangeCommandMode, ChangeFailureCode } from "@/client/query/change-command-record";
 import type { ServerRefusal } from "@/client/query/draft-command-record";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
+import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import type { ChangeAttribution } from "./change-attribution";
@@ -88,7 +89,18 @@ export function ChangeAuthor({
       title={t`Open the chat that wrote this change`}
       onClick={(event) => {
         event.stopPropagation();
-        openThread(attribution.threadId);
+        // Open the chat where the write happened. Without a recorded turn
+        // (older data) it is the chat at its usual position.
+        if (attribution.turnId) {
+          requestConversationReveal({
+            kind: "turn",
+            threadId: attribution.threadId,
+            turnId: attribution.turnId,
+            ...(attribution.toolCallId ? { toolCallId: attribution.toolCallId } : {}),
+          });
+        } else {
+          openThread(attribution.threadId);
+        }
       }}
       className={cn(
         "focus-ring inline-flex min-w-0 max-w-32 items-center gap-0.5 rounded-sm text-caption text-primary hover:underline",

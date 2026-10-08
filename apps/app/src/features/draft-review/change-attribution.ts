@@ -3,7 +3,9 @@
  * plain "AI" when the preview cannot say which chat.
  *
  * The chat comes from the operation's thread (`actorThreadId`,
- * `actorThreadTitle`). A class can hold several chats' operations (two turns
+ * `actorThreadTitle`); its turn and tool call (`actorTurnId`,
+ * `actorToolCallId`) say where in that chat the write happened, and are absent
+ * for writes that predate them. A class can hold several chats' operations (two turns
  * that edited the same spot); it links to the latest, the one whose text won.
  * An operation the server cannot place in a chat reads "AI".
  */
@@ -11,7 +13,15 @@ import type { ReviewOperation } from "@meridian/contracts/drafts";
 
 export type ChangeAttribution =
   | { kind: "you" }
-  | { kind: "chat"; threadId: string; title: string | null }
+  | {
+      kind: "chat";
+      threadId: string;
+      title: string | null;
+      /** The turn that wrote it, when the server recorded one. */
+      turnId: string | null;
+      /** The tool call in that turn that wrote it, when the server recorded one. */
+      toolCallId: string | null;
+    }
   | { kind: "ai" }
   /** A difference the server could not attribute to anyone. Never given an invented author. */
   | { kind: "unattributed" };
@@ -30,5 +40,7 @@ export function changeAttribution(operations: readonly ReviewOperation[]): Chang
     kind: "chat",
     threadId: threaded.actorThreadId,
     title: threaded.actorThreadTitle?.trim() || null,
+    turnId: threaded.actorTurnId ?? null,
+    toolCallId: threaded.actorToolCallId ?? null,
   };
 }

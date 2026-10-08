@@ -163,6 +163,9 @@ consume them; none of it is chat rendering. Lifecycle contracts:
 - The chat link reads `actorThreadId` and `actorThreadTitle` from an operation
   and names the chat as the chat list does (`displayThreadTitle`: "New chat"
   when untitled); an operation the server cannot place in a chat reads "AI".
+  The link opens the chat where the write happened: it asks for a turn reveal
+  carrying `actorTurnId` and `actorToolCallId` (the chat's `conversation-reveal`
+  turn stage). Without a recorded turn it only opens the chat.
 - A change's excerpt reads its text once: operations of one change that report
   the same or overlapping text (the writer's edit inside an AI insert repeats it)
   are joined without the repeats.

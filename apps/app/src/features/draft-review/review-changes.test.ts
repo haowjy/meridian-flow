@@ -138,19 +138,41 @@ describe("reviewChanges", () => {
   });
 
   it("links the change to the latest AI operation's chat, else plain AI", () => {
-    const withThread = (id: string, threadId: string | null, title: string | null) =>
+    const withThread = (
+      id: string,
+      threadId: string | null,
+      title: string | null,
+      where: { actorTurnId?: string; actorToolCallId?: string } = {},
+    ) =>
       ({
         ...op({ operationId: id, closureClassId: "c" }),
         actorThreadId: threadId,
         actorThreadTitle: title,
+        ...where,
       }) as ReviewOperation;
     const [linked] = reviewChanges(
-      [withThread("2", "t-old", "Old chat"), withThread("9", "t-new", "Line edit")],
+      [
+        withThread("2", "t-old", "Old chat", { actorTurnId: "turn-1", actorToolCallId: "call-1" }),
+        withThread("9", "t-new", "Line edit", { actorTurnId: "turn-7", actorToolCallId: "call-3" }),
+      ],
       [],
     );
-    expect(linked.attribution).toEqual({ kind: "chat", threadId: "t-new", title: "Line edit" });
+    // The turn and tool call belong to the same latest operation as the chat.
+    expect(linked.attribution).toEqual({
+      kind: "chat",
+      threadId: "t-new",
+      title: "Line edit",
+      turnId: "turn-7",
+      toolCallId: "call-3",
+    });
     const [blank] = reviewChanges([withThread("5", "t-blank", "  ")], []);
-    expect(blank.attribution).toEqual({ kind: "chat", threadId: "t-blank", title: null });
+    expect(blank.attribution).toEqual({
+      kind: "chat",
+      threadId: "t-blank",
+      title: null,
+      turnId: null,
+      toolCallId: null,
+    });
     const [unknown] = reviewChanges([op({ operationId: "3" })], []);
     expect(unknown.attribution).toEqual({ kind: "ai" });
   });
