@@ -306,6 +306,20 @@ present on the current live cut are excluded from this edge. Same-chat writes
 without a runtime rebuild still join through their same-client clock prefix;
 fresh-client-per-write ownership belongs to the thread-peer pool.
 
+### Draft writer client boundaries
+
+Only the review editor rotates the writer's content client across independent
+change boundaries (including disjoint untouched typing sites). Class membership
+comes from the server model's relative anchors, regardless of mark visibility;
+contiguous local typing stays together before a model refetch. Pauses and
+selection moves alone allocate nothing. The awareness owner follows the new
+identity, removing the old cursor and retaining current or suspended fields.
+This avoids the upstream provider/cursor assumption that awareness and content
+client IDs agree. Normal live editors keep their existing identity lifecycle.
+Browser Undo still introduces writer structs: its local `redone` link is not
+encoded in the transaction update, so it does not establish original AI
+attribution on cold replay. Do not infer authorship from matching text.
+
 ### Surviving-text review anchors
 
 Within aligned blocks, pin common live/draft Yjs text identities before semantic

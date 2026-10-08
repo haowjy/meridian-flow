@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- In draft review, typing inside one AI change no longer pulls unrelated typing elsewhere into its Apply. Separate untouched typing sites also stay separate. Pauses alone do not split a change, and normal live editing is unchanged.
+
 - Independent AI replacements from separate chats now stay separate in draft review. Applying one puts only that edit on live: both write encoding and publication to the Work draft preserve each edit's own deletion ranges.
 - Moving from one draft to another (picking it in the switcher, Apply draft, Discard draft, Next draft) no longer shows a blank skeleton with no header in between. The review you are leaving stays on screen until the next one has painted with its header and marks, then the two swap in one step, on desktop and phone. While it is held, the page being opened cannot be clicked, tabbed to or read by a screen reader (it says "Opening" and the chapter's name instead), tabs and the sidebar still work, and the held review goes as soon as you go anywhere else, the draft fails to load, or ten seconds have passed. The next draft is also read ahead while you are in the current one. Opening a draft that refused to apply keeps its refusal on it.
 - Clicking or double-clicking struck-through (removed) text in a draft now puts the caret where that text stood, so what you type lands there. The removed text itself still cannot be selected or edited. The first click on a removed paragraph that was not selected yet follows the same rule: its top half puts the caret before the paragraph, its bottom half after.

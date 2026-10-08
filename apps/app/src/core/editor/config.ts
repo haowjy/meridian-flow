@@ -309,7 +309,14 @@ export function createEditorExtensions({
     // ephemeral half of image ingress mounts here rather than beside the door.
     ...(schemaType === "document" ? [ImageUploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
-    ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
+    ...(enableDraftInlineReview
+      ? [
+          DraftInlineReviewExtension.configure({
+            document,
+            adoptDocumentClient: presence.adoptDocumentClient,
+          }),
+        ]
+      : []),
   ];
 }
 

@@ -65,6 +65,11 @@ change-trail events, not manuscript content.
   snapshot over a correction the publisher already made — a caret the destroyed
   editor cleared came back as a ghost. A new ephemeral field is one more
   `setField` caller, never a second suspension mechanism.
+- Draft review alone rotates content clients at independent editing boundaries.
+  `local-presence.adoptDocumentClient` retires the old awareness identity and
+  follows the new one, retaining suspended fields. The caret provider exposes
+  its current client ID through a getter; never cache it or rotate without
+  migrating presence (upstream Hocuspocus and cursor plugins assume agreement).
 - Markdown autoformat is mostly inherited: TipTap's own input rules already
   resolve the parity schema and already refuse to run inside code. Check
   whether a trigger is already firing before writing a rule for it, because a
