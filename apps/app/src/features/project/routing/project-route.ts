@@ -1,5 +1,8 @@
 /** Stable-ID navigation commands and normalized context-removal CAS snapshots, not browser grammar. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { AddressableWork } from "@/client/query/useWorks";
 import type { ScreenKey } from "../shell/screens";
@@ -12,7 +15,10 @@ export type ProjectSearch = {
   folder?: string;
   path?: string;
   results?: "";
+  /** The Editor's Work. */
   work?: string;
+  /** A chat's Scratch note: its lineage, by the first chat's id. */
+  chat?: string;
   /** The chat index's Favorites filter; owned by `features/project/chat-index`. */
   filter?: "favorites";
   /** The chat index's settled search text; owned by `features/project/chat-index`. */
@@ -29,6 +35,7 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
     left.path === right.path &&
     left.results === right.results &&
     left.work === right.work &&
+    left.chat === right.chat &&
     left.filter === right.filter &&
     left.q === right.q &&
     left.view === right.view
@@ -79,12 +86,37 @@ export type WorkDetailTarget = {
   workId: ParsedRequestId;
 };
 
+/**
+ * A document's route. For Scratch and Uploads `workId` is the owning Work; a
+ * No Work chat's Scratch names its lineage in `rootThreadId` instead, and
+ * `workId` is then only the Editor's own Work, as for a project document.
+ */
 export type ContextRouteTarget = {
   documentId?: string;
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string;
+  rootThreadId?: string;
 };
+
+/** Whether the Editor of `activeWorkId` shows this target: a Work's Scratch only in its own Editor. */
+export function targetInEditorOf(target: ContextRouteTarget, activeWorkId: string): boolean {
+  return (
+    !isWorkScopedProjectContextScheme(target.scheme) ||
+    target.rootThreadId !== undefined ||
+    target.workId === activeWorkId
+  );
+}
+
+/** Whether two targets name one locator: scheme and path, within the same owner. */
+export function sameContextTarget(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
+  return (
+    a.scheme === b.scheme &&
+    a.path === b.path &&
+    a.workId === b.workId &&
+    a.rootThreadId === b.rootThreadId
+  );
+}
 
 /** Open requests inherit the current Editor Work once at the route boundary. */
 export type ContextRouteRequest = Omit<ContextRouteTarget, "workId"> & { workId?: string };
@@ -93,6 +125,7 @@ export type ContextRouteRepair = {
   expectedSearch: {
     screen: "context";
     work: string | undefined;
+    chat?: string | undefined;
     scheme: ProjectContextTreeScheme;
     path: string;
   };
@@ -119,6 +152,7 @@ export function openContextRouteSearch(
     ...search,
     screen: "context",
     work: target.workId,
+    chat: target.rootThreadId,
     scheme: target.scheme,
     folder: segments.length ? `/${segments.join("/")}` : undefined,
     path: target.path,
@@ -138,6 +172,7 @@ export function contextRouteMatchesSearch(
     search.screen === "context" &&
     search.scheme === target.scheme &&
     search.path === target.path &&
+    search.chat === target.rootThreadId &&
     workId === target.workId
   );
 }
@@ -182,6 +217,7 @@ export function applyContextRepairIfCurrent(
   if (
     latest.screen !== expected.screen ||
     latest.work !== expected.work ||
+    latest.chat !== expected.chat ||
     latest.scheme !== expected.scheme ||
     latest.path !== expected.path
   ) {
@@ -190,6 +226,7 @@ export function applyContextRepairIfCurrent(
   if (isClearContextRouteTarget(repair.next)) {
     return stripEmptySearch({
       ...latest,
+      chat: undefined,
       scheme: undefined,
       folder: undefined,
       path: undefined,

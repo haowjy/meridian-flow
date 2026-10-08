@@ -90,14 +90,16 @@ export const projectQueryKeys = {
   contextCatalogView: (
     projectId: string,
     scheme: ProjectContextTreeScheme,
-    workId?: string | null,
+    owner: { workId?: string | null; rootThreadId?: string | null } = {},
   ) => {
     const scope: CatalogScope =
       scheme === "user"
         ? { kind: "user", userId: "self" }
-        : scheme === "scratch" || scheme === "uploads"
-          ? { kind: "work", projectId, workId: workId ?? "" }
-          : { kind: "project", projectId };
+        : scheme === "scratch" && owner.rootThreadId
+          ? { kind: "lineage", projectId, rootThreadId: owner.rootThreadId }
+          : scheme === "scratch" || scheme === "uploads"
+            ? { kind: "work", projectId, workId: owner.workId ?? "" }
+            : { kind: "project", projectId };
     return ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const;
   },
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,

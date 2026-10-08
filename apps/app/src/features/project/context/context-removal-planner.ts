@@ -10,7 +10,12 @@ import {
   type ReconcileContextRoutesInput,
   workingSetRouteEquals,
 } from "@/client/working-set";
-import type { ContextRouteRepair, ContextRouteTarget } from "../routing/project-route";
+import {
+  type ContextRouteRepair,
+  type ContextRouteTarget,
+  sameContextTarget,
+  targetInEditorOf,
+} from "../routing/project-route";
 
 export type ContextRemovalIntent = {
   cause:
@@ -118,6 +123,7 @@ export type CandidateRejectionPlan = {
 
 export function planCandidateRejection(input: {
   rawRouteWork: string | undefined;
+  rawRouteChat?: string | undefined;
   revision: number;
   rejected: ContextRouteTarget;
   activeWorkId: string;
@@ -154,6 +160,7 @@ export function planCandidateRejection(input: {
       expectedSearch: {
         screen: "context",
         work: input.rawRouteWork,
+        chat: input.rawRouteChat,
         scheme: input.rejected.scheme,
         path: input.rejected.path,
       },
@@ -193,12 +200,20 @@ export function workingSetRouteForTab(tab: ContextTab) {
         tab.scheme,
         tab.path,
         isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : undefined,
+        tab.rootThreadId,
       );
 }
 
 export function routeTargetForTab(tab: ContextTab, activeWorkId: string): ContextRouteTarget {
   if (tab.kind === "new")
     return { scheme: "unfiled", path: "", workId: activeWorkId, documentId: tab.documentId };
+  if (tab.rootThreadId)
+    return {
+      scheme: tab.scheme,
+      path: tab.path,
+      workId: activeWorkId,
+      rootThreadId: tab.rootThreadId,
+    };
   let workId = activeWorkId;
   if (isWorkScopedProjectContextScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
@@ -270,8 +285,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     input.intent.cause === "work-prune" &&
     workspaceSelectedTab !== null &&
     (() => {
-      const target = routeTargetForTab(workspaceSelectedTab, activeWorkId);
-      return isWorkScopedProjectContextScheme(target.scheme) && target.workId !== activeWorkId;
+      return !targetInEditorOf(routeTargetForTab(workspaceSelectedTab, activeWorkId), activeWorkId);
     })();
   const workspaceSelectionNeedsFallback =
     workspaceSelectedRemoved || workspaceSelectedIneligibleForWork;
@@ -349,8 +363,7 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   const eligibleRemaining =
     input.intent.cause === "work-prune"
       ? remaining.filter((tab) => {
-          const target = routeTargetForTab(tab, activeWorkId);
-          return !isWorkScopedProjectContextScheme(target.scheme) || target.workId === activeWorkId;
+          return targetInEditorOf(routeTargetForTab(tab, activeWorkId), activeWorkId);
         })
       : remaining;
   const fallback =
@@ -445,15 +458,16 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
   };
 }
 
-function sameTarget(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
-  return a.scheme === b.scheme && a.path === b.path && a.workId === b.workId;
-}
+const sameTarget = sameContextTarget;
 
 function workingSetRouteMatchesTarget(route: WorkingSetRoute, target: ContextRouteTarget): boolean {
   return (
     route.scheme === target.scheme &&
     route.path === target.path &&
-    (!isWorkScopedProjectContextScheme(route.scheme) || route.workId === target.workId)
+    route.rootThreadId === target.rootThreadId &&
+    (!isWorkScopedProjectContextScheme(route.scheme) ||
+      route.rootThreadId !== undefined ||
+      route.workId === target.workId)
   );
 }
 
@@ -461,7 +475,13 @@ export function workingSetRouteForTarget(
   documentId: string,
   locator: ContextRouteTarget,
 ): WorkingSetRoute | null {
-  return buildWorkingSetRoute(documentId, locator.scheme, locator.path, locator.workId);
+  return buildWorkingSetRoute(
+    documentId,
+    locator.scheme,
+    locator.path,
+    locator.workId,
+    locator.rootThreadId,
+  );
 }
 
 export function chooseAdmittedFallback(input: {
@@ -475,7 +495,7 @@ export function chooseAdmittedFallback(input: {
 }): ContextRouteTarget | null {
   const eligible = (target: ContextRouteTarget | null): target is ContextRouteTarget =>
     target !== null &&
-    (!isWorkScopedProjectContextScheme(target.scheme) || target.workId === input.activeWorkId) &&
+    targetInEditorOf(target, input.activeWorkId) &&
     (!input.excluded || !sameContinuityLocator(target, input.excluded));
   const activeTab =
     input.tabs.find(
@@ -503,6 +523,13 @@ function contextualizeWorkingSetRoute(
   route: WorkingSetRoute,
   activeWorkId: string,
 ): ContextRouteTarget | null {
+  if (route.rootThreadId)
+    return {
+      scheme: route.scheme,
+      path: route.path,
+      workId: activeWorkId,
+      rootThreadId: route.rootThreadId,
+    };
   let workId = activeWorkId;
   if (isWorkScopedProjectContextScheme(route.scheme)) {
     if (!route.workId) return null;
@@ -524,6 +551,9 @@ function sameContinuityLocator(a: ContextRouteTarget, b: ContextRouteTarget): bo
   return (
     a.scheme === b.scheme &&
     a.path === b.path &&
-    (!isWorkScopedProjectContextScheme(a.scheme) || a.workId === b.workId)
+    a.rootThreadId === b.rootThreadId &&
+    (!isWorkScopedProjectContextScheme(a.scheme) ||
+      a.rootThreadId !== undefined ||
+      a.workId === b.workId)
   );
 }

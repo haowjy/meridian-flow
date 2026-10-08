@@ -37,6 +37,7 @@ import {
   contextRouteMatchesSearch,
   type ProjectSearch,
   projectSearchEquals,
+  targetInEditorOf,
 } from "../routing/project-route";
 import {
   type ContextAvailabilityLocalBatchPlan,
@@ -373,7 +374,7 @@ export class ContextRemovalCoordinator {
       this.workspace.read(projectId).selectedTabIdByWork[workId] !== documentId ||
       tab?.kind !== "tracked" ||
       tab.origin !== "local-resource" ||
-      (isWorkScopedProjectContextScheme(tab.scheme) && tab.workId !== workId) ||
+      !targetInEditorOf(routeTargetForTab(tab, workId), workId) ||
       !sameLocator(routeTargetForTab(tab, workId), target)
     ) {
       return false;
@@ -385,6 +386,7 @@ export class ContextRemovalCoordinator {
       expectedSearch: {
         screen: "context",
         work: search.work,
+        chat: search.chat,
         scheme: "unfiled",
         path: "",
       },
@@ -853,9 +855,7 @@ export class ContextRemovalCoordinator {
     } else {
       const selectedTab = remainingTabs.find((tab) => tab.documentId === targetSelection) ?? null;
       const compatibleSelected =
-        selectedTab &&
-        (!isWorkScopedProjectContextScheme(routeTargetForTab(selectedTab, activeWorkId).scheme) ||
-          routeTargetForTab(selectedTab, activeWorkId).workId === activeWorkId)
+        selectedTab && targetInEditorOf(routeTargetForTab(selectedTab, activeWorkId), activeWorkId)
           ? selectedTab
           : null;
       const fallbackTab = fallback
@@ -1007,6 +1007,8 @@ export class ContextRemovalCoordinator {
           tab.kind !== "new" &&
           (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
           isWorkScopedProjectContextScheme(tab.scheme) &&
+          // A chat's Scratch belongs to no Work, so changing the Editor's Work never prunes it.
+          tab.rootThreadId === undefined &&
           tab.workId !== activeWorkId,
       )
       .map((tab) => tab.documentId);
@@ -1014,6 +1016,7 @@ export class ContextRemovalCoordinator {
       selection.status === "bound" &&
       selection.identity.kind === "server" &&
       isWorkScopedProjectContextScheme(selection.locator.scheme) &&
+      selection.locator.rootThreadId === undefined &&
       selection.locator.workId !== activeWorkId &&
       !this.workspace
         .read(projectId)
@@ -1033,7 +1036,9 @@ export class ContextRemovalCoordinator {
         .readRecentRoutes(projectId)
         .filter(
           (route) =>
-            isWorkScopedProjectContextScheme(route.scheme) && route.workId !== activeWorkId,
+            isWorkScopedProjectContextScheme(route.scheme) &&
+            route.rootThreadId === undefined &&
+            route.workId !== activeWorkId,
         ),
     };
   }
@@ -1139,6 +1144,7 @@ export class ContextRemovalCoordinator {
           expectedSearch: {
             screen: "context",
             work: search.work,
+            chat: search.chat,
             scheme: current.locator.scheme,
             path: current.locator.path,
           },
@@ -1300,7 +1306,7 @@ function selectedTabIdFor(slice: ProjectTabsSlice, workId: string | null): strin
 }
 
 function locatorKey(locator: ContextRouteTarget): string {
-  return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId}`;
+  return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId}\u0000${locator.rootThreadId ?? ""}`;
 }
 
 function availabilityDocumentId(command: ProjectDocumentAvailabilityCommand): string {

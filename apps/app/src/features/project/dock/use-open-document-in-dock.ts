@@ -20,7 +20,12 @@ export function useOpenDocumentInDock() {
     (tab: ServerContextTab) => {
       if (screen === "context" || phone) {
         void openContextRoute?.(
-          { scheme: tab.scheme, path: tab.path, workId: tab.workId },
+          {
+            scheme: tab.scheme,
+            path: tab.path,
+            workId: tab.workId,
+            ...(tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : {}),
+          },
           { replace: false },
         );
         return;

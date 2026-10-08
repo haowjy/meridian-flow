@@ -15,6 +15,9 @@ export type ContextTab =
       path: string;
       name: string;
       workId?: string;
+      /** A No Work chat's Scratch: the lineage's first chat id, and the handle its URI spells. */
+      rootThreadId?: string;
+      rootThreadRef?: string;
       draftOnly?: boolean;
       /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
@@ -38,6 +41,8 @@ export type ContextTab =
       path: string;
       name: string;
       workId?: string;
+      rootThreadId?: string;
+      rootThreadRef?: string;
       draftOnly?: boolean;
       /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
@@ -76,15 +81,22 @@ export function isEditorScheme(scheme: ProjectContextTreeScheme): boolean {
 /** What `isEditorTab` reads: an open tab, or a recent route to one. */
 export type EditorTabCandidate =
   | Pick<Extract<ContextTab, { kind: "new" }>, "kind">
-  | { kind?: "tracked" | "viewer"; scheme: ProjectContextTreeScheme; workId?: string | null };
+  | {
+      kind?: "tracked" | "viewer";
+      scheme: ProjectContextTreeScheme;
+      workId?: string | null;
+      rootThreadId?: string | null;
+    };
 
 /**
  * Whether the Editor of `workId` (null: unresolved) shows this tab: any Editor
- * scheme, and a Work's scratch only in that Work's Editor.
+ * scheme, a Work's scratch only in that Work's Editor, and a chat's scratch in
+ * every Editor (a lineage belongs to no Work).
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
   if (!isEditorScheme(tab.scheme)) return false;
+  if (tab.rootThreadId) return true;
   return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;
 }
 

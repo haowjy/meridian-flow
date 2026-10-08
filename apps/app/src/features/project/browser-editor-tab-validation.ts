@@ -56,12 +56,18 @@ function availableTab(
 ): ContextTab {
   const scheme = resolution.entry.uri.slice(0, resolution.entry.uri.indexOf(":"));
   if (!isProjectContextTreeScheme(scheme)) throw new TypeError("Invalid available route scheme");
-  if (isWorkScopedProjectContextScheme(scheme) && resolution.authority.kind !== "work") {
+  if (
+    isWorkScopedProjectContextScheme(scheme) &&
+    resolution.authority.kind !== "work" &&
+    resolution.authority.kind !== "lineage"
+  ) {
     throw new TypeError("Invalid available route authority");
   }
   const workId =
     resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : undefined;
-  return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), workId);
+  const rootThreadId =
+    resolution.authority.kind === "lineage" ? resolution.authority.rootThreadId : undefined;
+  return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), workId, rootThreadId);
 }
 
 async function validateServerRoute(

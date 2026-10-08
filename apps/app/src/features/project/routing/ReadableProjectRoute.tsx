@@ -2,7 +2,7 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { useQuery } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import {
   getProjectContextAvailability,
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
+import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -78,6 +79,7 @@ import {
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
+const ABSENT: AddressSelection = { kind: "absent" };
 function screen(destination: ProjectDestination): ScreenKey {
   if (
     destination.kind === "work" ||
@@ -302,6 +304,13 @@ export function ReadableProjectRoute({
   const documentDestination =
     destination.kind === "document" && !resourceDestination ? destination : null;
   const addressWorkId = workId;
+  // A Scratch address names its own owner: a chat's lineage, else the Work the Editor shows.
+  const addressOwner: ContextOwner =
+    documentDestination?.scheme !== "scratch"
+      ? { workId: null }
+      : address.lineage
+        ? { workId: null, rootThreadId: address.lineage }
+        : { workId: addressWorkId };
   const {
     catalog: addressCatalog,
     isComplete: addressCatalogComplete,
@@ -309,7 +318,7 @@ export function ReadableProjectRoute({
     isError: addressCatalogError,
     refetch: refetchAddressCatalog,
   } = useContextCatalogView(projectId, documentDestination?.scheme ?? "manuscript", {
-    workId: documentDestination?.scheme === "scratch" ? addressWorkId : null,
+    ...addressOwner,
     enabled: !!documentDestination && editorWork.status === "present",
   });
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
@@ -318,7 +327,7 @@ export function ReadableProjectRoute({
       ...projectQueryKeys.documentAddresses(projectId),
       documentDestination?.scheme,
       documentDestination?.path,
-      documentDestination?.scheme === "scratch" ? addressWorkId : null,
+      addressOwner.rootThreadId ?? addressOwner.workId,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -328,7 +337,7 @@ export function ReadableProjectRoute({
         projectId,
         documentDestination.scheme,
         documentDestination.path,
-        { workId: documentDestination.scheme === "scratch" ? addressWorkId : null },
+        addressOwner,
       );
     },
     enabled: !!documentDestination && editorWork.status === "present",
@@ -341,6 +350,7 @@ export function ReadableProjectRoute({
     admittedDocumentId: admission?.documentId ?? null,
     destination: documentDestination,
     editorWorkId: workId,
+    rootThreadId: address.lineage,
   });
   const localDocumentAddress = useMemo(
     () =>
@@ -348,12 +358,20 @@ export function ReadableProjectRoute({
         ? resolveLocalDocumentAddress(
             projectId,
             documentDestination,
-            addressWorkId,
+            addressOwner.workId ?? null,
             addressCatalog,
             boundDocumentId,
+            addressOwner.rootThreadId ?? null,
           )
         : undefined,
-    [addressCatalog, documentDestination, addressWorkId, projectId, boundDocumentId],
+    [
+      addressCatalog,
+      documentDestination,
+      addressOwner.workId,
+      addressOwner.rootThreadId,
+      projectId,
+      boundDocumentId,
+    ],
   );
   const editorDrafts = useWorkDrafts(
     projectId,
@@ -459,7 +477,7 @@ export function ReadableProjectRoute({
         ? workspace.tabs.find((tab) => tab.documentId === documentId)
         : resolvedWorkId
           ? workspace.tabs.find((tab) =>
-              contextTabMatchesRoute(tab, target.scheme, target.path, resolvedWorkId),
+              contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }),
             )
           : undefined;
       const selected = preparedTab ?? tab;
@@ -505,12 +523,17 @@ export function ReadableProjectRoute({
       const destination: ProjectDestination = target.path
         ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
         : { kind: "editor" };
+      // A chat's Scratch names its lineage and leaves the Editor's own Work to the Editor.
+      const { lineage: _previousLineage, ...previous } = current.address;
       return {
         tab,
         address: {
-          ...current.address,
+          ...previous,
           destination,
-          work: workSelectionFor(destination, target.workId, current.noWorkId),
+          work: target.rootThreadId
+            ? ABSENT
+            : workSelectionFor(destination, target.workId, current.noWorkId),
+          ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
           draftId,
           results: false,
         } as ProjectAddress,
@@ -719,6 +742,7 @@ export function ReadableProjectRoute({
   const search: ProjectSearch = {
     screen: activeScreen,
     work: workId ?? undefined,
+    chat: documentDestination?.scheme === "scratch" ? address.lineage : undefined,
     scheme: localDocumentId
       ? (localTarget?.scheme ?? "unfiled")
       : destination.kind === "document" || destination.kind === "browse"
@@ -832,6 +856,7 @@ export function ReadableProjectRoute({
                       scheme: next.scheme,
                       path: next.path,
                       workId: next.work,
+                      rootThreadId: next.chat,
                     },
                     {
                       replace: true,
@@ -852,6 +877,7 @@ export function ReadableProjectRoute({
             activeContextScheme={search.scheme ?? null}
             activeContextFolder={search.folder ?? null}
             activeContextPath={search.path ?? null}
+            activeContextChat={search.chat ?? null}
             reviewDraftId={address.draftId}
             reviewAddressDocumentId={addressDocumentId}
             resultsOpen={address.results}

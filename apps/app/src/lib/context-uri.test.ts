@@ -9,6 +9,10 @@ import {
 const WORK_ID = "123e4567-e89b-12d3-a456-426614174000";
 const NO_WORK = { id: "no-work", slug: null };
 const ACTIVE_WORK = { id: WORK_ID, slug: "revision-pass" };
+const LINEAGES = {
+  own: "root-c12",
+  idForRef: (ref: string) => ({ c12: "root-c12", c40: "root-c40" })[ref] ?? null,
+};
 
 describe("contextRouteTargetFromUri", () => {
   it("maps non-work canonical URIs to route path tuples", () => {
@@ -89,14 +93,62 @@ describe("contextRouteTargetFromUri", () => {
     ).toBeNull();
   });
 
-  it("routes contextual Scratch in the No Work Editor by row id", () => {
+  it("routes contextual Scratch in a No Work chat to the chat's own lineage", () => {
     expect(
-      contextRouteTargetFromUri("scratch://probe-cycle-3.mdx", NO_WORK, [ACTIVE_WORK], NO_WORK.id),
+      contextRouteTargetFromUri(
+        "scratch://probe-cycle-3.mdx",
+        NO_WORK,
+        [ACTIVE_WORK],
+        NO_WORK.id,
+        LINEAGES,
+      ),
     ).toEqual({
       scheme: "scratch",
       path: "/probe-cycle-3.mdx",
-      workId: NO_WORK.id,
+      workId: null,
+      rootThreadId: "root-c12",
     });
+    // Without a lineage there is no Scratch to open; the row id never stands in for one.
+    expect(
+      contextRouteTargetFromUri("scratch://probe-cycle-3.mdx", NO_WORK, [ACTIVE_WORK], NO_WORK.id),
+    ).toBeNull();
+  });
+
+  it("routes a canonical chat URI by the first chat's handle, from any chat", () => {
+    for (const activeWork of [NO_WORK, ACTIVE_WORK]) {
+      expect(
+        contextRouteTargetFromUri(
+          "scratch://@/c40/duel/beats.md",
+          activeWork,
+          [ACTIVE_WORK],
+          NO_WORK.id,
+          LINEAGES,
+        ),
+      ).toEqual({
+        scheme: "scratch",
+        path: "/duel/beats.md",
+        workId: null,
+        rootThreadId: "root-c40",
+      });
+    }
+    expect(
+      contextRouteTargetFromUri(
+        "scratch://@/c99/x.md",
+        NO_WORK,
+        [ACTIVE_WORK],
+        NO_WORK.id,
+        LINEAGES,
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps a named-Work chat's bare Scratch in its Work and never routes No Work Scratch", () => {
+    expect(
+      contextRouteTargetFromUri("scratch://x.md", ACTIVE_WORK, [ACTIVE_WORK], NO_WORK.id, LINEAGES),
+    ).toEqual({ scheme: "scratch", path: "/x.md", workId: WORK_ID });
+    expect(
+      contextRouteTargetFromUri("scratch://@/", NO_WORK, [ACTIVE_WORK], NO_WORK.id, LINEAGES),
+    ).toBeNull();
   });
 
   it("resolves an explicit same-project authority from the supplied Work catalog", () => {
@@ -119,9 +171,9 @@ describe("canOpenContextUri", () => {
     expect(
       canOpenContextUri("scratch://notes/beat.md", ACTIVE_WORK, [ACTIVE_WORK], NO_WORK.id),
     ).toBe(true);
-    expect(canOpenContextUri("scratch://notes/beat.md", NO_WORK, [ACTIVE_WORK], NO_WORK.id)).toBe(
-      true,
-    );
+    expect(
+      canOpenContextUri("scratch://notes/beat.md", NO_WORK, [ACTIVE_WORK], NO_WORK.id, LINEAGES),
+    ).toBe(true);
     expect(
       canOpenContextUri(
         "scratch://@other-work/notes/beat.md",

@@ -68,7 +68,7 @@ describe("authorized address resolution", () => {
     ).toEqual({ kind: "id", id: "123e4567-e89b-42d3-a456-426614174000" });
     expect(
       addressWorkSelection(
-        address("/p/550e8400-e29b-41d4-a716-446655440000/editor/scratch/notes.md?work="),
+        address("/p/550e8400-e29b-41d4-a716-446655440000/editor/uploads/cover.png?work="),
       ),
     ).toEqual({ kind: "none" });
     expect(

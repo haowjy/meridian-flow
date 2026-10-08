@@ -13,6 +13,8 @@ type Options = {
   schemes: readonly ProjectContextTreeScheme[];
   kinds: readonly FileSuggestionKind[];
   workId: string | null;
+  /** A chat's Scratch (the lineage's first chat id) in place of a Work's. */
+  rootThreadId?: string | null;
 };
 
 export function useFileSuggestions(
@@ -20,9 +22,9 @@ export function useFileSuggestions(
   query: string,
   options: Options,
 ): { suggestions: FileSuggestion[]; isFetching: boolean; isError: boolean } {
-  const manuscriptScope = contextCatalogScope(projectId, "manuscript", options.workId);
-  const userScope = contextCatalogScope(projectId, "user", options.workId);
-  const scratchScope = contextCatalogScope(projectId, "scratch", options.workId);
+  const manuscriptScope = contextCatalogScope(projectId, "manuscript", options);
+  const userScope = contextCatalogScope(projectId, "user", options);
+  const scratchScope = contextCatalogScope(projectId, "scratch", options);
   const project = useContextCatalogScope(
     projectId,
     manuscriptScope ?? { kind: "project", projectId },

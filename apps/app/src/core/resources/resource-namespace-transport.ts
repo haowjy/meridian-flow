@@ -51,7 +51,7 @@ export function createResourceNamespaceTransport(
             projectId,
             request.scheme,
             request.body,
-            contextRequestOptionsForScheme(request.scheme, request.workId),
+            contextRequestOptionsForScheme(request.scheme, request),
             { signal: epoch },
           );
         }

@@ -159,7 +159,8 @@ function useMobileRouteBinding({
     if (
       selection.locator.scheme !== activeContextScheme ||
       selection.locator.path !== activeContextPath ||
-      selection.locator.workId !== workId
+      selection.locator.workId !== workId ||
+      selection.locator.rootThreadId !== (route.rootThreadId ?? undefined)
     )
       return;
     // The live catalog says nothing about a pending draft: its tab is the identity.
@@ -190,6 +191,7 @@ function useMobileRouteBinding({
     removalState.selection,
     catalogResolved,
     addressState,
+    route.rootThreadId,
     workId,
   ]);
 

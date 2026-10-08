@@ -9,7 +9,8 @@
  * never gates the route change, so a search row whose passage has moved still
  * opens its document.
  */
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 
 import {
@@ -17,6 +18,7 @@ import {
   type ContextPassageAnchor,
 } from "@/features/chat/ChatContextNavigation";
 import {
+  type ChatLineages,
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
@@ -29,32 +31,48 @@ export function ProjectChatContextNavigationProvider({
   projectId,
   activeWork,
   availableWorks,
+  rootThreadId,
   onOpenContextTarget,
   children,
 }: {
   projectId: string;
   activeWork: { id: string; slug: string | null } | null;
   availableWorks: readonly { id: string; slug: string | null }[];
+  /** The displayed chat's lineage: where its bare `scratch://` points while it is on No Work. */
+  rootThreadId: string | null;
   onOpenContextTarget?: OpenContextTarget;
   children: ReactNode;
 }) {
   const { noWork } = useWorks(projectId);
   const noWorkId = noWork?.id;
+  const { threads } = useProjectThreads(projectId);
+  const lineages = useMemo<ChatLineages>(
+    () => ({
+      own: rootThreadId,
+      // A handle names the first chat, so it is that chat's own id.
+      idForRef: (ref) =>
+        threads?.find((thread) => thread.ref === ref && thread.rootThreadId === thread.id)?.id ??
+        null,
+    }),
+    [rootThreadId, threads],
+  );
   const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
       if (!onOpenContextTarget || !activeWork || !noWorkId) return;
-      const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId);
+      const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return;
       onOpenContextTarget({ ...target, workId: target.workId ?? undefined });
       doorOpened({ ...target, uri }, passage);
     },
-    [activeWork, availableWorks, noWorkId, doorOpened, onOpenContextTarget],
+    [activeWork, availableWorks, noWorkId, lineages, doorOpened, onOpenContextTarget],
   );
   const canOpenContextUri = useCallback(
     (uri: string) =>
-      !!activeWork && !!noWorkId && isContextUriRoutable(uri, activeWork, availableWorks, noWorkId),
-    [activeWork, availableWorks, noWorkId],
+      !!activeWork &&
+      !!noWorkId &&
+      isContextUriRoutable(uri, activeWork, availableWorks, noWorkId, lineages),
+    [activeWork, availableWorks, noWorkId, lineages],
   );
 
   return (

@@ -13,6 +13,8 @@ export type PassageDoorTarget = {
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string | null;
+  /** A chat's Scratch is held by its lineage instead of a Work. */
+  rootThreadId?: string;
   uri: string;
 };
 
@@ -40,7 +42,7 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         dismissPassageNotice();
         if (!passage) return;
 
-        const file = await lookupContextCatalogFile(projectId, target.scheme, target.workId, {
+        const file = await lookupContextCatalogFile(projectId, target.scheme, target, {
           uri: target.uri,
         });
         if (signal.aborted) return;

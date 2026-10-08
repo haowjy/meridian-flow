@@ -46,13 +46,16 @@ function ContextViewerContent({
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
   const workId = isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : editorWorkId;
-  const read = useProjectContextRead(projectId, tab.scheme, tab.path, { workId });
+  const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
+    workId,
+    rootThreadId: tab.rootThreadId,
+  });
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame header={header}>
         <div className="relative h-full" aria-busy>
           <DelayedContentSkeleton
-            key={JSON.stringify([projectId, tab.scheme, tab.path, workId])}
+            key={JSON.stringify([projectId, tab.scheme, tab.path, workId, tab.rootThreadId])}
             className="absolute inset-0"
           />
         </div>

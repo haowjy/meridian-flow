@@ -5,6 +5,7 @@ import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
+import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
@@ -80,6 +81,7 @@ export function ProjectAddressDocument({
     }
     const scope = document.scope;
     const tabWorkId = scope.kind === "work" ? scope.workId : undefined;
+    const lineageId = scope.kind === "lineage" ? scope.rootThreadId : undefined;
     void (async () => {
       const installed = openTab(
         projectId,
@@ -87,6 +89,7 @@ export function ProjectAddressDocument({
           uri.value.scheme,
           mergeLocalResourceState(projectCatalogFile(document), localFile),
           tabWorkId,
+          lineageId,
         ),
         isCurrent,
       );
@@ -95,21 +98,33 @@ export function ProjectAddressDocument({
         publish("unavailable");
         return;
       }
-      const next: ProjectAddress = {
-        ...address,
-        destination: {
-          kind: "document",
-          scheme: uri.value.scheme,
-          path: document.path.join("/"),
-        },
-        work: workSelectionFor(
-          { kind: "document", scheme: uri.value.scheme, path: document.path.join("/") },
-          scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
-            ? scope.workId
-            : workId,
-          noWorkId,
-        ),
+      const destination: ProjectAddress["destination"] = {
+        kind: "document",
+        scheme: uri.value.scheme,
+        path: document.path.join("/"),
       };
+      // A chat's Scratch is addressed by its lineage; the Editor's own Work stays implicit.
+      const { lineage: _previousLineage, ...previous } = address;
+      const next: ProjectAddress = lineageId
+        ? {
+            ...previous,
+            destination,
+            work: { kind: "absent" },
+            ...(parseRequestId(lineageId)
+              ? { lineage: parseRequestId(lineageId) as ParsedRequestId }
+              : {}),
+          }
+        : {
+            ...previous,
+            destination,
+            work: workSelectionFor(
+              destination,
+              scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
+                ? scope.workId
+                : workId,
+              noWorkId,
+            ),
+          };
       if (projectAddressHref(next) !== href) {
         const replacement = await navigation.replaceIfCurrent(ticket, next);
         if (

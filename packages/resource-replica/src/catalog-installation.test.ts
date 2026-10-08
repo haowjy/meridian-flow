@@ -304,6 +304,17 @@ describe("planCatalogInstallation", () => {
       uri: "scratch://@drafting/notes.md",
       expected: { scheme: "scratch", workId: "work-id", workSlug: "drafting" },
     },
+    {
+      scope: { kind: "lineage", projectId, rootThreadId: "root-id" } as const,
+      scheme: "scratch" as const,
+      uri: "scratch://@/c12/notes.md",
+      expected: {
+        scheme: "scratch",
+        workId: null,
+        rootThreadId: "root-id",
+        rootThreadRef: "c12",
+      },
+    },
   ])("derives canonical authority for $scope.kind scope", ({ scope, scheme, uri, expected }) => {
     const result = planCatalogInstallation({
       projectId,
@@ -311,6 +322,19 @@ describe("planCatalogInstallation", () => {
       view: scopedView(scope, scheme, uri),
     });
     expect(result.resources[0]?.next.resource.canonical).toMatchObject(expected);
+  });
+
+  it("rejects a lineage catalog file that spells a Work or no chat", () => {
+    const scope = { kind: "lineage", projectId, rootThreadId: "root-id" } as const;
+    for (const uri of ["scratch://@drafting/notes.md", "scratch://@/"]) {
+      expect(() =>
+        planCatalogInstallation({
+          projectId,
+          records: [],
+          view: scopedView(scope, "scratch", uri),
+        }),
+      ).toThrow();
+    }
   });
 
   it("round-trips a durable checkpoint with derived indexes and invalidation", () => {

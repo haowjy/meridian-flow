@@ -23,7 +23,7 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
   );
   expect(search.work).toBe("no-work");
   const scope = { status: "ready", workId: "no-work" } as const;
-  expect(contextCatalogScope("project", "uploads", scope.workId)).not.toBeNull();
+  expect(contextCatalogScope("project", "uploads", { workId: scope.workId })).not.toBeNull();
   const tab = contextTabFromFile(
     "uploads",
     {
@@ -42,7 +42,9 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
     },
     scope.workId,
   );
-  expect(contextTabMatchesRoute(tab, "uploads", "/Map.png", scope.workId)).toBe(true);
+  expect(
+    contextTabMatchesRoute(tab, { scheme: "uploads", path: "/Map.png", workId: scope.workId }),
+  ).toBe(true);
   if (tab.kind !== "viewer") throw new Error("expected binary viewer");
   vi.mocked(getProjectContextRead).mockResolvedValue({
     kind: "binary",

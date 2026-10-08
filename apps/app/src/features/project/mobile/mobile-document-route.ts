@@ -21,6 +21,8 @@ export type MobileDocumentRoute = Readonly<{
   requested: boolean;
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
+  /** A chat's Scratch route names its lineage here, in place of a Work. */
+  rootThreadId?: string | null;
   tab: ServerContextTab | null;
   catalogResolved: boolean;
   /**
@@ -39,6 +41,7 @@ export function resolveMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  rootThreadId?: string | null;
   /**
    * The document this route is bound to. A rename of it or a folder above it (or that
    * rename's rollback) changes its projected path at once, so the host finds it by identity
@@ -62,6 +65,7 @@ export function resolveMobileDocumentRoute(input: {
       requested: false,
       scheme: input.scheme,
       path: input.path,
+      rootThreadId: input.rootThreadId ?? null,
       tab: null,
       catalogResolved: false,
       addressState: "settled",
@@ -70,9 +74,10 @@ export function resolveMobileDocumentRoute(input: {
     };
   }
   // Identity before path, exactly as the desktop's route owner reads it.
+  const rootThreadId = input.rootThreadId ?? undefined;
   const owner = input.workId
     ? resolveRouteDocumentOwner({
-        locator: { scheme: input.scheme, path: input.path, workId: input.workId },
+        locator: { scheme: input.scheme, path: input.path, workId: input.workId, rootThreadId },
         boundDocumentId: input.boundDocumentId,
         catalog: input.catalog,
         workspaceTabs: input.workspaceTabs,
@@ -80,7 +85,7 @@ export function resolveMobileDocumentRoute(input: {
     : { kind: "absent" as const };
   const resolved =
     owner.kind === "live" && input.workId
-      ? contextTabFromFile(input.scheme, owner.file, input.workId)
+      ? contextTabFromFile(input.scheme, owner.file, input.workId, rootThreadId)
       : owner.kind === "draft-only"
         ? owner.tab
         : null;
@@ -88,6 +93,7 @@ export function resolveMobileDocumentRoute(input: {
     requested: true,
     scheme: input.scheme,
     path: input.path,
+    rootThreadId: input.rootThreadId ?? null,
     tab: resolved?.kind === "new" ? null : resolved,
     catalogResolved: input.catalog !== null,
     addressState: input.addressState ?? "settled",
@@ -102,6 +108,7 @@ export function useMobileDocumentRoute(input: {
   scheme: ProjectContextTreeScheme | null;
   path: string | null;
   workId: string | null;
+  rootThreadId?: string | null;
   addressState?: AddressState;
 }): MobileDocumentRoute {
   const requested = input.enabled && input.scheme !== null && input.path !== null;
@@ -112,13 +119,14 @@ export function useMobileDocumentRoute(input: {
     selection.identity.kind === "server" &&
     selection.locator.scheme === input.scheme &&
     selection.locator.path === input.path &&
-    selection.locator.workId === input.workId
+    selection.locator.workId === input.workId &&
+    selection.locator.rootThreadId === (input.rootThreadId ?? undefined)
       ? selection.identity.documentId
       : null;
   const { catalog, isError, isFetching } = useContextCatalogView(
     input.projectId,
     input.scheme ?? "kb",
-    { enabled: requested, workId: input.workId },
+    { enabled: requested, workId: input.workId, rootThreadId: input.rootThreadId },
   );
   return useMemo(
     () =>
@@ -127,6 +135,7 @@ export function useMobileDocumentRoute(input: {
         scheme: input.scheme,
         path: input.path,
         workId: input.workId,
+        rootThreadId: input.rootThreadId,
         boundDocumentId,
         workspaceTabs,
         addressState: input.addressState,
@@ -143,6 +152,7 @@ export function useMobileDocumentRoute(input: {
       input.path,
       input.scheme,
       input.workId,
+      input.rootThreadId,
       isError,
       isFetching,
     ],

@@ -3,15 +3,17 @@
  *
  * Keeps desktop and phone context navigation on the same tab construction path
  * so file classification, schema type, and viewer metadata cannot drift between
- * shells. Work-scoped tabs retain their owner row id, including No Work.
+ * shells. Work-scoped tabs retain their owner row id, including No Work; a
+ * chat's Scratch retains its lineage and the handle its URI spells.
  */
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
   type FolderNamespaceRecord,
   projectResourceLocation,
+  type ResourceOwner,
   type ResourceRecord,
-  type ResourceWorkAuthority,
   rebaseFolderResourceLocation,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
@@ -20,14 +22,32 @@ import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ContextTab, ServerContextTab } from "@/client/stores";
 
 /** Work-scoped tabs retain their row identity, including No Work. */
-export function editorTabWorkId(location: ResourceWorkAuthority): string | undefined {
+export function editorTabWorkId(location: ResourceOwner): string | undefined {
   return location.workId ?? undefined;
+}
+
+/** What a tab holds of its owner: a Work row id, or a lineage with the handle its URI spells. */
+export function tabOwnerOf(location: ResourceOwner) {
+  return location.rootThreadId !== undefined
+    ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
+    : location.workId
+      ? { workId: location.workId }
+      : {};
+}
+
+/** The handle (`c12`) a chat's Scratch file's URI spells. */
+function lineageRefOf(file: CatalogFile): string {
+  const parsed = parseContextUri(file.uri);
+  if (!parsed.ok || parsed.value.authority.kind !== "lineage")
+    throw new Error("A chat's Scratch file must have a chat authority");
+  return parsed.value.authority.rootThreadRef;
 }
 
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
   workId?: string,
+  rootThreadId?: string,
 ): ContextTab {
   if (file.resourceHandle && file.resourceState === "local" && file.provisionalName) {
     return {
@@ -37,15 +57,19 @@ export function contextTabFromFile(
       resourceHandle: file.resourceHandle,
     };
   }
-  if (isWorkScopedProjectContextScheme(scheme) && !workId)
-    throw new Error("Work-scoped tabs require a Work row id");
+  if (isWorkScopedProjectContextScheme(scheme) && !workId && !rootThreadId)
+    throw new Error("Work-scoped tabs require a Work row id or a lineage");
   const base = {
     documentId: file.documentId,
     scheme,
     path: file.path,
     name: file.name,
     provisionalName: file.provisionalName,
-    ...(isWorkScopedProjectContextScheme(scheme) && workId ? { workId } : {}),
+    ...(scheme === "scratch" && rootThreadId
+      ? { rootThreadId, rootThreadRef: lineageRefOf(file) }
+      : isWorkScopedProjectContextScheme(scheme) && workId
+        ? { workId }
+        : {}),
   };
   return {
     ...base,
@@ -76,8 +100,9 @@ export function serverTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
   workId?: string,
+  rootThreadId?: string,
 ): ServerContextTab | null {
-  const tab = contextTabFromFile(scheme, file, workId);
+  const tab = contextTabFromFile(scheme, file, workId, rootThreadId);
   return tab.kind === "new" ? null : tab;
 }
 
@@ -121,7 +146,7 @@ export function contextTabFromResource(
     scheme: location.scheme,
     path: location.path,
     name: location.name,
-    ...(editorTabWorkId(location) ? { workId: editorTabWorkId(location) } : {}),
+    ...tabOwnerOf(location),
     editable: true,
     filetype: resource.classification.filetype,
     schemaType: resource.classification.schemaType,
@@ -170,14 +195,20 @@ export function projectResourceTab(
   if (record.resource.content.kind === "unacquired") {
     const location = resourcePlacement(projectId, record, folders);
     if (!location || tab.kind === "new") return { kind: "removed" };
-    const { resourceHandle: _resourceHandle, workId: _workId, ...existing } = tab;
+    const {
+      resourceHandle: _resourceHandle,
+      workId: _workId,
+      rootThreadId: _rootThreadId,
+      rootThreadRef: _rootThreadRef,
+      ...existing
+    } = tab;
     const projected = {
       ...existing,
       documentId: record.resource.identity.documentId,
       scheme: location.scheme,
       path: location.path,
       name: location.name,
-      ...(editorTabWorkId(location) ? { workId: editorTabWorkId(location) } : {}),
+      ...tabOwnerOf(location),
       ...(existing.kind === "tracked" ? { provisionalName: location.provisional } : {}),
     } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
