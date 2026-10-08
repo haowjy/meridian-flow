@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Undo availability respects later namespace moves; tools, turns, and receipts share collab-owned reversal rules.
+
 - Content-only Undo/Redo skips mixed-history and draft reconstruction when no namespace writes exist.
 
 - Attribute concurrent edits incrementally, including delete-only updates, without cloning each journal row.

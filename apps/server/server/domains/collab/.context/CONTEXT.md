@@ -258,3 +258,16 @@ Insert inside the original run, delete around the insertion, then retarget;
 this ordering preserves concurrent manual retargeting. Snapshot creation,
 reserved client identity, journal origin, admission fencing, persistence and
 publication belong to the caller, not these pure traversal primitives.
+
+## Namespace reversal
+
+`domain/namespace-reversal.ts` owns mixed content/namespace handle selection,
+namespace dependencies, and per-document execution. Model commands commit each
+step and report completed handles on refusal. Writer turn commands retain their
+cross-scope transaction and content ordering; their preflight and receipt
+projection call the same side-effect-free namespace eligibility operation.
+`namespace-changes.ts` remains the atomic claim/tree/status primitive. Move
+links settle before that transaction (including model rollback); a writer turn
+passes an already-settled tree. Tool adapters resolve URIs, bind access, and
+format domain facts, not reversal policy. Content-only commands use an indexed
+namespace-existence read before considering mixed history.

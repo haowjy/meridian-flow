@@ -104,6 +104,7 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
         tx
           .select({
             wId: agentEditMutations.wId,
+            turnId: agentEditMutations.turnId,
             status: max(agentEditMutations.status),
             reversedAt: max(agentEditMutations.reversedAt),
           })
@@ -114,13 +115,14 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
               eq(agentEditMutations.threadId, threadId as ThreadId),
             ),
           )
-          .groupBy(agentEditMutations.wId)
+          .groupBy(agentEditMutations.wId, agentEditMutations.turnId)
           .orderBy(asc(agentEditMutations.wId)),
       ]);
       return {
         namespace: rows.map(toRecord),
         content: content.map((handle) => ({
           wId: handle.wId,
+          turnId: handle.turnId,
           status: handle.status === "reversed" ? "reversed" : "active",
           reversedAt: handle.reversedAt,
         })),

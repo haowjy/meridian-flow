@@ -447,15 +447,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     markdownDocuments: runtime.markdownDocuments,
     replaceAuthorityGeneration,
   });
-  const lineage = createTurnLiveLineageReadModel({
-    store: createDrizzleTurnLiveLineageStore(deps.db),
-    receiptStore: createDrizzleTurnReceiptStore(deps.db),
-    resolveDocumentUri: documentUriResolver,
-  });
   const namespaceChanges = createNamespaceChanges({
     store: createDrizzleAgentNamespaceChanges(deps.db),
     atomic: (operation) => runInDrizzleSavepoint(deps.db, operation),
     draftHistory: { branches, branchRows: branchJournal },
+  });
+  const lineage = createTurnLiveLineageReadModel({
+    store: createDrizzleTurnLiveLineageStore(deps.db),
+    receiptStore: createDrizzleTurnReceiptStore(deps.db, namespaceChanges),
+    resolveDocumentUri: documentUriResolver,
   });
   const turnReversal = createTurnReversalService({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),

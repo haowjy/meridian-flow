@@ -12,6 +12,11 @@ export {
   type NamespaceChanges,
   type NamespaceTree,
 } from "./domain/namespace-changes.js";
+export {
+  executeNamespaceReversal,
+  planReversalWalk,
+  type ReversalLocation,
+} from "./domain/namespace-reversal.js";
 export type {
   NamespaceChangeRecord,
   NamespaceChangeShape,

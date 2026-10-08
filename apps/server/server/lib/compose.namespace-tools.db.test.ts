@@ -610,6 +610,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(restore(999)).resolves.toEqual({ status: "nothing_to_restore" });
     });
 
+    it("withdraws an older move's Undo while a later turn moved the same document", async () => {
+      const { runtime, script } = await start();
+      const third = "manuscript://third.md";
+      const laterTurn = randomUUID();
+      await db.insert(schema.turns).values({
+        id: laterTurn,
+        parentTurnId: THREAD.turnId,
+        threadId: THREAD.threadId,
+        position: 2,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      await script.reply(async (call) => {
+        await call("write", { command: "move", from: { path: CHAPTER }, path: RENAMED });
+      });
+      const receipt = (turnId: string) =>
+        runtime.app.documentSync.getTurnReceiptChip(THREAD.threadId as never, turnId as never);
+      expect(await receipt(THREAD.turnId)).toMatchObject({ control: "undo" });
+      const later = runtimes.script(runtime, { ...THREAD, turnId: laterTurn });
+      await later.reply(async (call) => {
+        await call("write", { command: "move", from: { path: RENAMED }, path: third });
+      });
+      expect(await receipt(THREAD.turnId)).toEqual({
+        state: "cant_undo_dependent",
+        control: "view_change",
+      });
+      const reverse = (turnId: string) =>
+        runtime.app.documentSync.reverseThreadContext({
+          threadId: THREAD.threadId as never,
+          turnId: turnId as never,
+          userId: USER_ID as never,
+          direction: "undo",
+          scope: "turn",
+          selection: turnId,
+        });
+      expect(await reverse(THREAD.turnId)).toMatchObject({ status: "cant_undo_dependent" });
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "third" });
+      expect(await reverse(laterTurn)).toMatchObject({ status: "reversed" });
+      expect(await receipt(THREAD.turnId)).toMatchObject({ control: "undo" });
+      expect(await reverse(THREAD.turnId)).toMatchObject({ status: "reversed" });
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter" });
+      expect(await receipt(laterTurn)).toMatchObject({ control: "view_change" });
+    });
+
     it("the writer's turn undo names a taken path, then puts back the turn's move and delete, and redo makes them again", async () => {
       const { runtime, script } = await start();
       await script.reply(async (call) => {

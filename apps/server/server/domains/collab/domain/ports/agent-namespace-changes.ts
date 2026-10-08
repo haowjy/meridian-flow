@@ -37,6 +37,7 @@ export type NamespaceChangeRecord = NamespaceChangeShape & {
  * `agent_edit_mutations`, drafted by its rows in `branch_write_journal`.
  */
 export type ContentWriteHandle = {
+  turnId: string | null;
   wId: number;
   status: NamespaceChangeStatus;
   reversedAt: Date | null;

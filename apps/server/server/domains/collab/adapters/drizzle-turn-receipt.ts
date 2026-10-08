@@ -4,7 +4,6 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
-  agentNamespaceChanges,
   branchWriteJournal,
   documentBranches,
 } from "@meridian/database/schema";
@@ -13,6 +12,8 @@ import { and, eq, sql } from "drizzle-orm";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type { BranchJournalRow } from "../domain/branch-push-contracts.js";
 import { createBranchTurnReversalPlanner } from "../domain/branch-turn-reversal-plan.js";
+import type { NamespaceChanges } from "../domain/namespace-changes.js";
+import { turnNamespaceEligibility } from "../domain/namespace-reversal.js";
 import {
   controlForTurnReceiptState,
   type TurnReceiptChip,
@@ -40,13 +41,16 @@ export function selectTurnReceiptState(
   return RECEIPT_PRIORITY.find((candidate) => candidates.includes(candidate));
 }
 
-export function createDrizzleTurnReceiptStore(db: TurnReceiptDb): TurnReceiptStateStore {
+export function createDrizzleTurnReceiptStore(
+  db: TurnReceiptDb,
+  namespaceChanges: Pick<NamespaceChanges, "forTurn" | "history">,
+): TurnReceiptStateStore {
   return {
     async getTurnReceiptChip(threadId, turnId) {
       const candidates = [
         ...(await liveStates(db, threadId, turnId)),
         ...(await branchStates(db, threadId, turnId)),
-        ...(await namespaceStates(db, threadId, turnId)),
+        ...(await namespaceStates(namespaceChanges, threadId, turnId)),
       ];
       const state = selectTurnReceiptState(candidates);
       return state
@@ -97,17 +101,33 @@ async function liveStates(
  * content writes. A turn that only moved or deleted documents still offers them.
  */
 async function namespaceStates(
-  db: TurnReceiptDb,
+  changes: Pick<NamespaceChanges, "forTurn" | "history">,
   threadId: ThreadId,
   turnId: TurnId,
 ): Promise<TurnReceiptState[]> {
-  const rows = await db
-    .selectDistinct({ status: agentNamespaceChanges.status })
-    .from(agentNamespaceChanges)
-    .where(
-      and(eq(agentNamespaceChanges.threadId, threadId), eq(agentNamespaceChanges.turnId, turnId)),
+  const states: TurnReceiptState[] = [];
+  for (const direction of ["undo", "redo"] as const) {
+    const selected = await changes.forTurn(
+      threadId,
+      turnId,
+      direction === "undo" ? "active" : "reversed",
     );
-  return rows.map(({ status }) => (status === "active" ? "live-active" : "live-reversed"));
+    if (selected.length === 0) continue;
+    const eligible = await turnNamespaceEligibility(changes, {
+      threadId,
+      turnId,
+      direction,
+      changes: selected,
+    });
+    states.push(
+      eligible.ok
+        ? direction === "undo"
+          ? "live-active"
+          : "live-reversed"
+        : "cant_undo_dependent",
+    );
+  }
+  return states;
 }
 
 async function branchStates(

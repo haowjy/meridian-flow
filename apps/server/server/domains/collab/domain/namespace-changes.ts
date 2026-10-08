@@ -126,7 +126,8 @@ async function draftedContent(
   const handles: ContentWriteHandle[] = [];
   for (const write of state.activeWrites) {
     const wId = parseWriteHandle(write.handle);
-    if (wId !== undefined) handles.push({ wId, status: "active", reversedAt: null });
+    if (wId !== undefined)
+      handles.push({ wId, turnId: write.turnId, status: "active", reversedAt: null });
   }
   for (const reversal of state.reversals) {
     if (reversal.status !== "reversed" || (reversal.expiresAt && reversal.expiresAt <= now)) {
@@ -135,7 +136,12 @@ async function draftedContent(
     for (const handle of reversal.writeIds) {
       const wId = parseWriteHandle(handle);
       if (wId !== undefined) {
-        handles.push({ wId, status: "reversed", reversedAt: reversal.reversedAt ?? null });
+        handles.push({
+          wId,
+          turnId: reversal.turnId,
+          status: "reversed",
+          reversedAt: reversal.reversedAt ?? null,
+        });
       }
     }
   }

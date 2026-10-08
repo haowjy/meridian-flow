@@ -24,6 +24,7 @@ import {
   type NamespaceChanges,
   type NamespaceTree,
 } from "./namespace-changes.js";
+import { namespaceReversalEligibility, turnNamespaceEligibility } from "./namespace-reversal.js";
 import type { NamespaceChangeRecord } from "./ports/agent-namespace-changes.js";
 import {
   aggregateStatus,
@@ -98,7 +99,12 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
       const blocked =
         direction === "undo" &&
         change.kind === "create" &&
-        (await laterHandleApplied(input.namespaceChanges, command.threadId, change));
+        !namespaceReversalEligibility({
+          direction,
+          changes: [change],
+          history: await input.namespaceChanges.history(change.documentId, command.threadId),
+          contentHandles: new Set(),
+        }).ok;
       const applied = blocked
         ? { ok: false as const, error: { code: "dependent" } }
         : await input.namespaceChanges.reverse(namespace.tree, change, direction);
@@ -119,6 +125,22 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     try {
       return await atomic(async () => {
         await lockTurnTree(command.direction, namespace);
+        if (namespace) {
+          const eligible = await turnNamespaceEligibility(input.namespaceChanges, {
+            ...command,
+            changes: namespace.changes,
+          });
+          if (!eligible.ok)
+            throw new CrossScopeReversalRefused({
+              status: "cant_undo_dependent",
+              documents: [
+                {
+                  uri: locationAfter(eligible.change, command.direction),
+                  status: "cant_undo_dependent",
+                },
+              ],
+            });
+        }
         const placed = await applyNamespace(command, namespace, false);
         const statuses =
           command.direction === "undo" ? (["active"] as const) : (["discarded"] as const);
@@ -376,22 +398,6 @@ async function writerGrants(
     else if (grant.reason !== "not_found") refused.push(grant);
   }
   return { grants, refused };
-}
-
-/**
- * Undoing a create deletes the document, so it waits for every later handle
- * this thread still has applied on it, the creating write included.
- */
-async function laterHandleApplied(
-  namespaceChanges: Pick<NamespaceChanges, "history">,
-  threadId: string,
-  create: NamespaceChangeRecord,
-): Promise<boolean> {
-  const history = await namespaceChanges.history(create.documentId, threadId);
-  return (
-    history.content.some((handle) => handle.status === "active" && handle.wId >= create.wId) ||
-    history.namespace.some((change) => change.status === "active" && change.wId > create.wId)
-  );
 }
 
 /**

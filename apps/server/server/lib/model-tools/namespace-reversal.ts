@@ -19,18 +19,21 @@ import {
 } from "@meridian/agent-edit/integration";
 import {
   type ChangeClaimed,
+  executeNamespaceReversal,
   liveAfter,
   locationAfter,
   type NamespaceChangeRecord,
+  planReversalWalk,
+  type ReversalLocation,
 } from "../../domains/collab/index.js";
 import type { ContextError } from "../../domains/context/ports/context-port.js";
 import type { FileGrant } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
+import { Err, Ok } from "../../shared/result.js";
 import { namespaceTree } from "../namespace-tree.js";
 import { documentGrant, withDraftWork } from "./file-access.js";
 import { containerGrant, underGrants } from "./namespace-commands.js";
 import { namespaceContextRefusal, namespaceRefusal } from "./namespace-refusal.js";
-import { planReversalWalk } from "./namespace-reversal-plan.js";
 import {
   documentRevisionMetadata,
   isToolError,
@@ -54,7 +57,7 @@ interface ContentReversal {
 }
 
 /** Where the document is as the walk goes: live at `uri`, or deleted from it. */
-type Location = { live: boolean; uri: string };
+type Location = ReversalLocation;
 
 function changeRefusal(
   direction: Direction,
@@ -120,9 +123,14 @@ export async function runReversal(
     selection: commandSelection(input),
     history,
     live: start.live,
-    path: input.path,
   });
-  if (!walk.ok) return writeToolError(direction, walk.message, walk.status, { path: input.path });
+  if (!walk.ok)
+    return writeToolError(
+      direction,
+      reversalRefusalMessage(direction, input.path, walk),
+      walk.status,
+      { path: input.path },
+    );
   if (!walk.steps.some((step) => step.kind === "namespace")) {
     if (isToolError(resolved)) {
       return {
@@ -181,45 +189,40 @@ export async function runReversal(
     return grants;
   };
 
-  const tree = namespaceTree(call.context.livePort());
-  let location = start;
-  let last: {
-    outcome: WriteOutcome & { isError: false };
-    address: ResolvedDocumentAddress;
-  } | null = null;
-  const done: string[] = [];
-  const contentDone = new Set<string>();
-  const doneNote = () =>
-    done.length === 0 ? "" : `${direction === "undo" ? "Undone" : "Redone"}: ${done.join(", ")}.`;
-
-  for (const step of walk.steps) {
-    if (step.kind === "namespace") {
-      const { change } = step;
-      const grants = await stepGrants(change, location);
-      if (isToolError(grants)) return withNote(grants, doneNote());
-      const applied = await underGrants(deps, direction, input.path, grants, () =>
-        changes.reverse(tree, change, direction),
-      );
-      if (isToolError(applied)) return withNote(applied, doneNote());
-      if (!applied.ok) {
-        return withNote(changeRefusal(direction, change, applied.error), doneNote());
-      }
-      done.push(writeHandle(change.wId));
-      location = { live: liveAfter(change, direction), uri: locationAfter(change, direction) };
-      continue;
-    }
-    // An earlier step may have reversed these with their group (a writer's turn undo groups a turn's writes).
-    const handles = step.handles.filter((handle) => !contentDone.has(handle));
-    if (handles.length === 0) continue;
-    const address = await content.resolve(location.uri);
-    if (isToolError(address)) return withNote(address, doneNote());
-    const outcome = await content.run(address, handles);
-    if (isToolError(outcome)) return withNote(outcome, doneNote());
-    for (const handle of outcome.result.reversal?.writes ?? []) {
-      done.push(handle);
-      contentDone.add(handle);
-    }
-    last = { outcome, address };
+  const result = await executeNamespaceReversal<
+    { outcome: WriteOutcome & { isError: false }; address: ResolvedDocumentAddress },
+    ContextError | WriteToolErrorOutput
+  >(
+    {
+      changes,
+      tree: namespaceTree(call.context.livePort()),
+      async access(change, at, apply) {
+        const grants = await stepGrants(change, at);
+        if (isToolError(grants)) return Err(grants);
+        const applied = await underGrants(deps, direction, input.path, grants, apply);
+        return isToolError(applied) ? Err(applied) : applied;
+      },
+      async content(uri, handles) {
+        const address = await content.resolve(uri);
+        if (isToolError(address)) return Err(address);
+        const outcome = await content.run(address, handles);
+        if (isToolError(outcome)) return Err(outcome);
+        return Ok({ value: { outcome, address }, writes: outcome.result.reversal?.writes ?? [] });
+      },
+    },
+    { direction, start, steps: walk.steps },
+  );
+  const { location, last, writes: done, failure } = result;
+  if (failure) {
+    const error = isToolError(failure.error)
+      ? failure.error
+      : failure.kind === "namespace"
+        ? changeRefusal(direction, failure.change, failure.error)
+        : namespaceContextRefusal(direction, { ...failure.error, uri: location.uri });
+    return withNote(
+      error,
+      done.length === 0 ? "" : `${direction === "undo" ? "Undone" : "Redone"}: ${done.join(", ")}.`,
+    );
   }
 
   if (location.live && last) {
@@ -258,4 +261,34 @@ async function finishContent(
   });
   recordTouchInBackground(deps, address.documentId, ctx);
   return { output: outcome.result, metadata: documentRevisionMetadata(address, outcome.revision) };
+}
+
+/** Model-facing explanations stay at the tool boundary; the domain returns dependency facts. */
+function reversalRefusalMessage(
+  direction: Direction,
+  path: string,
+  refusal: Exclude<ReturnType<typeof planReversalWalk>, { ok: true }>,
+): string {
+  if ("message" in refusal) return refusal.message;
+  if ("deletedBy" in refusal) {
+    const remover = refusal.deletedBy;
+    const first = !remover
+      ? "Undo the delete first."
+      : `${remover.kind === "delete" ? "Undo" : "Redo"} ${writeHandle(remover.wId)} first.`;
+    return `${path} is deleted, so its other writes can't be ${direction === "undo" ? "undone" : "redone"}. ${first}`;
+  }
+  const list = (ids: readonly number[]) =>
+    [...new Set(ids)]
+      .sort((a, b) => a - b)
+      .map(writeHandle)
+      .join(", ");
+  if (refusal.undoFirst.length > 0) {
+    const redoFirst = refusal.blocking.filter((id) => !refusal.undoFirst.includes(id));
+    return `Can't redo ${list(refusal.selected)} on its own. Undo ${list(refusal.undoFirst)} first${redoFirst.length ? `, and redo ${list(redoFirst)}` : ""}; those writes changed its location.`;
+  }
+  const all = [...refusal.selected, ...refusal.blocking];
+  const range = `${writeHandle(Math.min(...all))}..${writeHandle(Math.max(...all))}`;
+  return direction === "undo"
+    ? `Can't undo ${list(refusal.selected)} on its own — ${list(refusal.blocking)} changed the document after it. Undo ${list(refusal.blocking)} first, or undo the range ${range}.`
+    : `Can't redo ${list(refusal.selected)} on its own — ${list(refusal.blocking)}, undone too, came before it. Redo ${list(refusal.blocking)} first, or redo the range ${range}.`;
 }
