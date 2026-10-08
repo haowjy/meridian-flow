@@ -8,6 +8,7 @@ import type { LineageRange } from "../lineage/range-set.js";
 import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
+import { alignBlocks } from "./block-alignment.js";
 import {
   findTextMatches,
   serializeBlockBody,
@@ -15,14 +16,7 @@ import {
   type TextFindMatch,
 } from "./find.js";
 import { locateBlockByHash } from "./hash-locator.js";
-import {
-  type BlockScope,
-  headingLevel,
-  isHeading,
-  resolveScope,
-  resolveSearchScope,
-  type ScopeFailure,
-} from "./scope.js";
+import { type BlockScope, resolveScope, resolveSearchScope, type ScopeFailure } from "./scope.js";
 
 export type WriteCommandName = "insert" | "replace" | "remove";
 
@@ -30,6 +24,8 @@ export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
+  /** Already-parsed content, with the original source retained in `content` for semantic IR. */
+  parsedContent?: ParsedContent;
   /**
    * Blocks copied from another document (D23). They take the place of
    * `content` and are inserted as nodes, never through markup.
@@ -74,7 +70,18 @@ export function resolveWrite(
 ): ResolveWriteResult {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
-  const concreteCtx: ConcreteResolveContext = { ...ctx, doc: ctx.doc };
+  const doc = ctx.doc;
+  let projected: Block[] | undefined;
+  const concreteCtx: ConcreteResolveContext = {
+    ...ctx,
+    doc,
+    // The document can't change while a write resolves, so one projection
+    // serves every scope it replaces.
+    projectedBlocks: () => {
+      projected ??= ctx.model.projectBlocks(doc);
+      return projected;
+    },
+  };
   const normalized = normalizeParams(concreteCtx, params);
   const contentCheck = validateContent(concreteCtx, normalized);
   if (!contentCheck.ok) return contentCheck;
@@ -92,10 +99,21 @@ export function resolveWrite(
       break;
   }
   if (!resolved.ok) return resolved;
-  return { ...resolved, ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved.edits) };
+  return {
+    ok: true,
+    edits: resolved.edits,
+    ir: semanticIrForResolvedEdits(concreteCtx, normalized, resolved),
+  };
 }
 
-type ResolveWriteResultWithoutIr = { ok: true; edits: ResolvedEdit[] } | ResolveWriteFailure;
+type ResolveWriteResultWithoutIr =
+  | {
+      ok: true;
+      edits: ResolvedEdit[];
+      /** Some of the scope's blocks were already equal to their replacement and kept. */
+      keptBlocks?: true;
+    }
+  | ResolveWriteFailure;
 
 function resolveInsert(
   ctx: ConcreteResolveContext,
@@ -200,6 +218,8 @@ function resolveRemove(
 
 interface ConcreteResolveContext extends ResolveWriteContext {
   doc: DocHandle;
+  /** Every top-level block as a ProseMirror node, in document order. */
+  projectedBlocks(): readonly Block[];
 }
 
 function normalizeParams(
@@ -222,6 +242,7 @@ function validateContent(
     return { ok: true, parsed: { blocks: [] } };
   }
   if (params.command === "remove") return { ok: true, parsed: { blocks: [] } };
+  if (params.parsedContent) return { ok: true, parsed: params.parsedContent };
   try {
     return { ok: true, parsed: ctx.codec.parse(params.content) };
   } catch (cause) {
@@ -355,28 +376,18 @@ function lowerPlainTextFindMatches(
   }
   const edits: ResolvedEdit[] = [];
   for (const [element, blockMatches] of byBlock) {
-    const replacements = blockMatches.map((match) => ({
-      span: {
-        start: command === "insert" ? match.matchEnd : match.matchStart,
-        end: match.matchEnd,
-      },
-      newText: params.content,
-    }));
-    const first = replacements[0];
-    if (!first) continue;
-    if (replacements.length === 1) {
-      edits.push({
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "text",
-        block: element,
-        span: first.span,
-        newText: first.newText,
-        semanticLowering: "prosemirror",
-      });
-      continue;
-    }
     const blockText = ctx.model.getText(element);
+    const replacements = blockMatches
+      .map((match) => ({
+        span: {
+          start: command === "insert" ? match.matchEnd : match.matchStart,
+          end: match.matchEnd,
+        },
+        newText: params.content,
+      }))
+      // Replacing a match with itself changes nothing, so it makes no edit.
+      .filter(({ span, newText }) => blockText.slice(span.start, span.end) !== newText);
+    if (replacements.length === 0) continue;
     edits.push({
       documentId: params.documentAddress.documentId,
       file: params.documentAddress.filePath,
@@ -475,6 +486,12 @@ function parseReplacementRange(
   }
 }
 
+/**
+ * Rewrite a scope as `parsed`: blocks equal to their replacement are left
+ * alone, a changed block keeps its identity and is diffed in place, and only
+ * blocks with no counterpart are inserted or removed. Atoms (pictures, hard
+ * breaks) are matched as nodes, never through flat text offsets.
+ */
 function replaceScope(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -484,10 +501,15 @@ function replaceScope(
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
   const newBlocks = parsed.blocks;
+  // A scope is always a contiguous run of top-level blocks.
+  const oldNodes = ctx
+    .projectedBlocks()
+    .slice(scope.startIndex, scope.startIndex + oldBlocks.length);
   let anchor: BlockRef | undefined =
     scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
+  let keptBlocks = false;
 
   const flushStructural = () => {
     if (pendingInsert.length > 0) {
@@ -511,59 +533,41 @@ function replaceScope(
     pendingDelete = [];
   };
 
-  const sharedCount = Math.min(oldBlocks.length, newBlocks.length);
-  for (let index = 0; index < sharedCount; index += 1) {
-    const oldBlock = oldBlocks[index];
-    const newBlock = newBlocks[index];
-    if (
-      ctx.model.getBlockType(oldBlock) === newBlock.type.name &&
-      reusableAttrs(ctx, oldBlock, newBlock)
-    ) {
-      flushStructural();
-      edits.push(
-        newBlock.isTextblock && newBlock.type.name !== "code_block"
-          ? {
-              documentId: params.documentAddress.documentId,
-              file: params.documentAddress.filePath,
-              kind: "text",
-              block: oldBlock,
-              span: { start: 0, end: ctx.model.getText(oldBlock).length },
-              newText: serializePmBlockBody(ctx, newBlock),
-              ...(params.find !== undefined ? { semanticLowering: "prosemirror" as const } : {}),
-            }
-          : {
-              documentId: params.documentAddress.documentId,
-              file: params.documentAddress.filePath,
-              kind: "block",
-              block: oldBlock,
-              replacement: newBlock,
-            },
-      );
-      anchor = oldBlock;
-      continue;
+  for (const step of alignBlocks(oldNodes, newBlocks, canRewriteInPlace)) {
+    switch (step.kind) {
+      case "remove":
+        pendingDelete.push(oldBlocks[step.old]);
+        break;
+      case "add":
+        pendingInsert.push(newBlocks[step.next]);
+        break;
+      case "change":
+        flushStructural();
+        edits.push({
+          documentId: params.documentAddress.documentId,
+          file: params.documentAddress.filePath,
+          kind: "block",
+          block: oldBlocks[step.old],
+          replacement: newBlocks[step.next],
+        });
+        anchor = oldBlocks[step.old];
+        break;
+      case "keep":
+        flushStructural();
+        anchor = oldBlocks[step.old];
+        keptBlocks = true;
+        break;
     }
-    pendingDelete.push(oldBlock);
-    pendingInsert.push(newBlock);
-  }
-
-  for (let index = sharedCount; index < oldBlocks.length; index += 1) {
-    pendingDelete.push(oldBlocks[index]);
-  }
-
-  for (let index = sharedCount; index < newBlocks.length; index += 1) {
-    pendingInsert.push(newBlocks[index]);
   }
   flushStructural();
 
-  return { ok: true, edits };
+  return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
-function reusableAttrs(ctx: ConcreteResolveContext, oldBlock: BlockRef, newBlock: Block): boolean {
-  if (ctx.model.getBlockType(oldBlock) !== newBlock.type.name) return false;
-  if (isHeading(ctx.model, oldBlock)) {
-    return headingLevel(ctx.model, oldBlock) === Number(newBlock.attrs.level ?? 1);
-  }
-  return true;
+/** A block keeps its element only as the same node type and heading level. */
+function canRewriteInPlace(old: Block, next: Block): boolean {
+  if (old.type !== next.type) return false;
+  return old.type.name !== "heading" || old.attrs.level === next.attrs.level;
 }
 
 function serializeReplacementBlocks(
@@ -584,26 +588,14 @@ function trimOneTrailingNewline(value: string): string {
 function semanticIrForResolvedEdits(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
-  edits: readonly ResolvedEdit[],
+  resolved: Extract<ResolveWriteResultWithoutIr, { ok: true }>,
 ): SemanticEditIRV1 {
+  const { edits } = resolved;
   const scope: LineageRange[] = [];
   const deleted: LineageRange[] = [];
   const mappedEdits = edits.map((edit) => {
     let outputRuns: SemanticOutputRun[] = [];
-    if (edit.kind === "text") {
-      const lineage = ctx.model.getVisibleContentLineage(edit.block);
-      scope.push(...lineage);
-      deleted.push(...sliceLineage(lineage, edit.span.start, edit.span.end));
-      if (edit.newText.length > 0) {
-        outputRuns = [
-          {
-            kind: "fresh",
-            payload: edit.newText,
-            output: { from: 0, to: edit.newText.length },
-          },
-        ];
-      }
-    } else if (edit.kind === "textRanges") {
+    if (edit.kind === "textRanges") {
       const lineage = ctx.model.getVisibleContentLineage(edit.block);
       scope.push(...lineage);
       for (const replacement of edit.replacements) {
@@ -638,9 +630,12 @@ function semanticIrForResolvedEdits(
   });
   const normalizedScope = normalizeLineageRanges(scope);
   const normalizedDeleted = normalizeLineageRanges(deleted);
+  // Its payload is the whole requested content, so it only describes a scope
+  // whose every block was rewritten.
   const isTotalFreshReplacement =
     params.command === "replace" &&
     params.find === undefined &&
+    resolved.keptBlocks === undefined &&
     normalizedScope.length > 0 &&
     sameLineageRanges(normalizedScope, normalizedDeleted);
   return {

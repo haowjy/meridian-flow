@@ -3,6 +3,23 @@
 ## [Unreleased]
 
 - A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes, downloads and link updates keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one image-path snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading image paths no longer holds up branch edits during reads or Apply.
+- Chapter overwrites parse replacement content once, including unchanged writes. Changed writes no longer render three discarded snapshots or an unused echo.
+
+- Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
+
+- An AI overwrite or replace changes only the paragraphs and words that differ. Single-match and find-all replacements use the same inline operation, without numeric apply tiers. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and a paragraph the AI adds never takes over the comments of the one it edits next to it.
+
+- An AI write that changes nothing (a chapter written back as it is, or a word replaced with itself) records nothing: no write, no receipt and nothing to undo.
+
+- An AI write that only centers a paragraph or renumbers a list now applies the change instead of reporting success and dropping it.
+
+- Undo repair counts formatting runs without rebuilding unused mark metadata.
+
+- A turn's receipt offers Undo only when Undo will work. Text you type inside the AI's words now shows the turn as no longer undoable, as Undo itself already treated it.
+
+- Overlapping bold and italic, runs of alternating bold and italic, and strikethrough that starts or ends on a space export as Markdown that reads back with the same formatting instead of stray `*`, `_` or `~~`.
+
+- A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`. A paragraph of only line breaks comes back as one paragraph.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 

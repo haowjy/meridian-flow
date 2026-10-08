@@ -84,7 +84,11 @@ describe("selectUndoClosure", () => {
 function snapshotWithSeqs(seqs: readonly number[]): JournalSnapshot {
   return {
     checkpoint: null,
-    updates: seqs.map((seq) => ({ seq, update: new Uint8Array(), meta: { origin: "test", seq } })),
+    updates: seqs.map((seq) => ({
+      seq,
+      update: Y.encodeStateAsUpdate(new Y.Doc()),
+      meta: { origin: "test", seq },
+    })),
   };
 }
 
