@@ -9,8 +9,11 @@ segmented switch.
 The **Changes** view is the work-scoped settle surface: the change list of the
 review open in the Editor (one line per server closure class, with Apply and
 Discard unless the change is unattributed or the server marks its class not
-actionable) and the Work's other drafts to open. Whole-draft Apply and Discard
-stay in the review header. It reads the Editor scope's controller, not the
+actionable), inside the Work's draft files in one stable order (`ReviewFiles`):
+the open file is expanded in place and never jumps to the top, the others are
+rows to open, and the Work-wide Apply all and Discard all are in the list's own
+menu. Whole-draft Apply and Discard for the open file stay in the identity row.
+It reads the Editor scope's controller, not the
 Chat's. It works on every screen, with or without a mounted manuscript, so
 entering review never has to leave the screen the writer is on.
 
@@ -93,7 +96,7 @@ finds an active draft.
 - [`.context/CONTEXT.md`](.context/CONTEXT.md) — contracts, architecture, tailwind-merge trap, runtime registration seam
 - [`../.context/CONTEXT.md`](../.context/CONTEXT.md) — project shell layout, slot topology, surface-prefs store
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — draft review controller, docked-drafts, DraftDock composer strip
-- [`../../editor/DraftReviewHeader.tsx`](../../editor/DraftReviewHeader.tsx) — full-width editor review chrome
+- [`../../editor/DraftReviewBand.tsx`](../../editor/DraftReviewBand.tsx) — the review controls inside the identity row
 - [KB: Draft Review Commands Keep Authority on the Server](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md)
 
 ## Review handover

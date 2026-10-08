@@ -148,7 +148,7 @@ function ShowChangesToggle({
           )}
         >
           <Icon aria-hidden className="size-3.5" />
-          <span className="@max-[38rem]:hidden">
+          <span className="@max-[44rem]:hidden">
             <Trans>Show changes</Trans>
           </span>
         </button>

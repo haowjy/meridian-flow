@@ -213,7 +213,7 @@ function IdentityPath({ location, reviewing }: { location: TabLocation; reviewin
     <>
       <span data-seg="0" className="flex shrink-0 items-center gap-1">
         <SchemeIcon aria-hidden className="size-3 shrink-0" />
-        <span className="@max-md:hidden">{schemeLabel(location.scheme)}</span>
+        <span className={fold.hideScheme}>{schemeLabel(location.scheme)}</span>
       </span>
       {location.folders.length > 0 ? (
         <>
@@ -250,8 +250,17 @@ function IdentityPath({ location, reviewing }: { location: TabLocation; reviewin
 
 /** Container widths at which folders fold into `…` (literal classes: Tailwind reads them at build). */
 const FOLD = {
-  rest: { hideFolders: "@max-md:hidden", showEllipsis: "@max-md:inline" },
-  review: { hideFolders: "@max-[48rem]:hidden", showEllipsis: "@max-[48rem]:inline" },
+  rest: {
+    hideFolders: "@max-md:hidden",
+    showEllipsis: "@max-md:inline",
+    hideScheme: "@max-md:hidden",
+  },
+  // The scheme's name is the last thing to go before the file name: below 32rem it is its icon alone.
+  review: {
+    hideFolders: "@max-[48rem]:hidden",
+    showEllipsis: "@max-[48rem]:inline",
+    hideScheme: "@max-[32rem]:hidden",
+  },
 } as const;
 
 /** Chip slot at the bar's right edge. */

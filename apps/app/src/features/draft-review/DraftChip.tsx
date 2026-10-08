@@ -26,7 +26,10 @@ const TONE: Record<DraftChipState, string> = {
 
 /** The wrapper's hit area: the pill itself on desktop, a 44px target around it on a phone. */
 export function draftChipHitClass(touch: boolean): string {
-  return cn("focus-ring group/chip shrink-0 rounded-md", touch && "flex min-h-11 items-center");
+  return cn(
+    "focus-ring group/chip shrink-0 rounded-md",
+    touch ? "flex min-h-11 items-center" : "ml-1",
+  );
 }
 
 export function DraftChipFace({
