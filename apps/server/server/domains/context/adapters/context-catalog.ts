@@ -50,6 +50,7 @@ import {
   resolveCatalogDocumentMembership,
 } from "../visible-document-membership.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
+import { type CatalogRepairRequest, createCatalogRepairQueue } from "./catalog-repair-queue.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
@@ -80,6 +81,12 @@ function decodeCursor(cursor: string): CursorPayload | null {
   } catch {
     return null;
   }
+}
+
+function isLockTimeout(cause: unknown): boolean {
+  if (!cause || typeof cause !== "object") return false;
+  if ("code" in cause && cause.code === "55P03") return true;
+  return "cause" in cause && isLockTimeout(cause.cause);
 }
 
 function stableJson(value: unknown): string {
@@ -388,6 +395,68 @@ export function createDrizzleContextCatalog(
     }
     throw lastCause;
   }
+  const repairQueue = createCatalogRepairQueue(async (requests) => {
+    const scopes = new Map<string, { scope: CatalogScope; roots: Set<string> }>();
+    const publications = new Map<
+      string,
+      {
+        generation: string;
+        projectIds: string[];
+        userIds: string[];
+      }
+    >();
+    const sourceIds = new Set<string>();
+    for (const request of requests) {
+      for (const scope of request.scopes) {
+        const key = catalogScopeKey(scope);
+        const entry = scopes.get(key) ?? { scope, roots: new Set<string>() };
+        for (const root of request.invalidatedRootIds) entry.roots.add(root);
+        scopes.set(key, entry);
+      }
+      for (const sourceId of request.sourceIds) sourceIds.add(sourceId);
+      for (const [kind, ids] of [
+        ["project", request.projectIds],
+        ["user", request.userIds],
+      ] as const) {
+        for (const id of ids) {
+          const key = `${kind}:${id}`;
+          const previous = publications.get(key);
+          // Generations order an authority, not a group of unrelated authorities.
+          if (!previous || BigInt(request.availabilityGeneration) > BigInt(previous.generation)) {
+            publications.set(key, {
+              generation: request.availabilityGeneration,
+              projectIds: kind === "project" ? [id] : [],
+              userIds: kind === "user" ? [id] : [],
+            });
+          }
+        }
+      }
+    }
+    const commitId = randomUUID();
+    try {
+      await retryRefresh(() =>
+        runInDrizzleTransaction(db, async () => {
+          await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+          for (const [, { scope, roots }] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
+            await refreshScope(scope, [...roots], commitId);
+          }
+          for (const publication of publications.values()) {
+            await availabilityMutations.publishReserved(publication);
+          }
+        }),
+      );
+    } catch (cause) {
+      if (options.eventSink) {
+        emitEvent(options.eventSink, {
+          level: isLockTimeout(cause) ? "warn" : "error",
+          source: "context-catalog",
+          name: "DeferredRefreshFailure",
+          payload: { sourceIds: [...sourceIds], ...unknownToEventPayload(cause) },
+        });
+      }
+      throw cause;
+    }
+  });
   async function refreshScope(
     scope: CatalogScope,
     invalidatedRootIds: readonly string[] = [],
@@ -640,61 +709,28 @@ export function createDrizzleContextCatalog(
       );
       if (manifestBackedProjectIds.size > 0) {
         const availabilityGeneration = await availabilityMutations.reserve();
-        const repair = async () => {
-          try {
-            await retryRefresh(() =>
-              runInDrizzleTransaction(db, async () => {
-                await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
-                for (const scope of orderedScopes) {
-                  await refreshScope(scope, invalidatedRootIds, commitId);
-                }
-                await availabilityMutations.publishReserved({
-                  generation: availabilityGeneration,
-                  projectIds,
-                  userIds,
-                });
-              }),
-            );
-            return;
-          } catch (cause) {
-            if (options.eventSink) {
-              emitEvent(options.eventSink, {
-                level: "error",
-                source: "context-catalog",
-                name: "DeferredRefreshFailure",
-                payload: {
-                  sourceIds: [...new Set(sourceIds)],
-                  ...unknownToEventPayload(cause),
-                },
-              });
-            }
-            throw cause;
-          }
+        const request: CatalogRepairRequest = {
+          scopes: orderedScopes,
+          invalidatedRootIds,
+          availabilityGeneration,
+          projectIds,
+          userIds,
+          sourceIds,
         };
-        // Tracked from launch, not from the immediate: a drain between the two must wait.
+        // Track at enqueue, not at the immediate: drains must include queued reruns.
         const launchRepair = () => {
           void (options.backgroundTasks ?? processDetachedWork).track(
-            new Promise<void>((resolve) => {
-              setImmediate(() => resolve(repair().catch(() => undefined)));
-            }),
+            repairQueue.enqueue(request).catch(() => undefined),
             "context catalog repair",
           );
         };
         if (deferUntilDrizzleCommit(launchRepair)) return availabilityGeneration;
-        await repair();
+        await repairQueue.enqueue(request);
         return availabilityGeneration;
       }
       const availabilityGeneration = await availabilityMutations.advance({ projectIds, userIds });
       for (const scope of orderedScopes) {
-        const refresh = () => refreshScope(scope, invalidatedRootIds, commitId);
-        if (
-          scope.kind === "project" &&
-          manifestBackedProjectIds.has(scope.projectId) &&
-          deferUntilDrizzleCommit(refresh)
-        ) {
-          continue;
-        }
-        await refresh();
+        await refreshScope(scope, invalidatedRootIds, commitId);
       }
       return availabilityGeneration;
     },

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Bursts of file moves coalesce catalog repairs instead of racing one repair per move. Lock contention logs warnings, not errors.
+
 - Draft writes skip attribution replay for history already in the document. Concurrent writer edits still appear in save receipts.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
