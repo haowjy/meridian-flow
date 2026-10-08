@@ -1,6 +1,7 @@
 /** Attribution must skip covered history without caching away a later concurrency recheck. */
 import { renderAgentEditResult } from "@meridian/agent-edit";
 import {
+  applyConcurrentUpdates,
   cloneYDoc,
   createAgentEditCodec,
   toDocHandle,
@@ -118,6 +119,94 @@ function fixture(existingUpstream?: Y.Doc) {
 }
 
 describe("branch concurrent attribution", () => {
+  it.each([
+    "link-update",
+    "system:reconcile",
+  ])("keeps %s neutral while converging its bytes", async (origin) => {
+    const f = fixture();
+    const before = Y.encodeStateVector(f.upstream);
+    humanText(f.upstream, 0, { from: 5, to: 5 }, " maintenance");
+    f.liveUpdates.push({
+      seq: 1,
+      update: Y.encodeStateAsUpdate(f.upstream, before),
+      meta: { origin, seq: 1 },
+    });
+    const changes = await f.check();
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
+    const codec = createAgentEditCodec(
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+    );
+    const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
+    expect(blockTexts(f.baseline)).toEqual(blockTexts(f.upstream));
+    expect(echo.humanTouchedHashes.size).toBe(0);
+    expect(echo.touchedHashes.size).toBe(0);
+    expect(echo.lineageOrigins).toEqual([]);
+    expect(echo.info).toBeUndefined();
+  });
+
+  it.each([
+    "agent",
+    "writer",
+  ] as const)("preserves %s coverage when maintenance follows on the same block", async (source) => {
+    const f = fixture();
+    let before = Y.encodeStateVector(f.upstream);
+    humanText(f.upstream, 0, { from: 5, to: 5 }, " authored");
+    f.rows.push({ ...f.row(Y.encodeStateAsUpdate(f.upstream, before)), source });
+    before = Y.encodeStateVector(f.upstream);
+    humanText(f.upstream, 0, { from: 5, to: 5 }, " maintenance");
+    f.liveUpdates.push({
+      seq: 1,
+      update: Y.encodeStateAsUpdate(f.upstream, before),
+      meta: { origin: "link-update", seq: 1 },
+    });
+    const changes = await f.check();
+    expect(changes[0]).toMatchObject({
+      touchedHashes: { [source === "agent" ? "agent" : "human"]: [expect.any(String)] },
+    });
+    expect(changes[1]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
+    const codec = createAgentEditCodec(
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+    );
+    const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
+    expect(echo.info?.[source === "agent" ? "agent" : "human"]).toHaveLength(1);
+    expect(echo.info?.[source === "agent" ? "human" : "agent"]).toEqual([]);
+  });
+
+  it("does not credit a reconciliation's deleted block to the writer", async () => {
+    const f = fixture();
+    const before = Y.encodeStateVector(f.upstream);
+    model.deleteBlock(toDocHandle(f.upstream), model.getBlocks(toDocHandle(f.upstream))[0]);
+    f.liveUpdates.push({
+      seq: 1,
+      update: Y.encodeStateAsUpdate(f.upstream, before),
+      meta: { origin: "system:reconcile", seq: 1 },
+    });
+    const changes = await f.check();
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
+    expect(changes[0]?.deletedHashes).toBeUndefined();
+    const codec = createAgentEditCodec(
+      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+    );
+    const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
+    expect(blockTexts(f.baseline)).toEqual(["Beta."]);
+    expect(echo.info).toBeUndefined();
+  });
+
+  it("does not relabel maintenance when the recheck baseline is ahead of the Work draft", async () => {
+    const f = fixture();
+    const live = cloneYDoc(f.baseline);
+    docs.push(live);
+    const before = Y.encodeStateVector(live);
+    humanText(live, 0, { from: 5, to: 5 }, " maintenance");
+    const update = Y.encodeStateAsUpdate(live, before);
+    f.liveUpdates.push({ seq: 1, update, meta: { origin: "link-update", seq: 1 } });
+    expect((await f.check())[0]?.origin).toEqual({ type: "system" });
+    Y.applyUpdate(f.baseline, update);
+    expect(await f.check()).toEqual([]);
+  });
+
   it("reports writer content arriving after the fast preflight in the actual response save", async () => {
     let afterPreflight = () => {};
     const ctx = createWriteToolHarness(

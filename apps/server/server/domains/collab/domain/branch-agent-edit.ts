@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditCodec,
   bytesEqual,
+  type ConcurrentUpdateOrigin,
   cloneYDoc,
   type DocumentCoordinator,
   DocumentNotFoundError,
@@ -35,6 +36,7 @@ import {
   stageBranchReversal,
 } from "./branch-reversal-history.js";
 import {
+  type AttributionRow,
   docFromState,
   partitionByBlockCoverage,
   touchedHashesForCoverage,
@@ -95,16 +97,12 @@ export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJourn
   };
 }
 
-type ConcurrentUpdateOrigin =
-  | { type: "human"; userId: string }
-  | { type: "agent"; actorTurnId: string };
-
 type ConcurrentAttributionBasis = {
   baselineSnapshot: Y.Snapshot;
   baselineState: Uint8Array | null;
   currentUpstreamState?: Uint8Array;
   fallbackCurrentUpstream: Y.Doc;
-  journalRows: readonly BranchJournalRow[];
+  journalRows: readonly AttributionRow[];
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
 };
@@ -249,65 +247,68 @@ export function createBranchAgentEditCoordinator(input: {
         docId as DocumentId,
         afterJournalId,
       );
-      try {
-        // Durable upstream work-draft rows are never suppressed as "self" merely
-        // because they came from this thread; the journal watermark is the fence.
-        const liveRows = input.liveJournal
-          ? liveAttributionRows(
-              (await input.liveJournal.readForReconstruction(docId)).updates.filter(
-                (update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER),
-              ),
-            )
-          : [];
-        const partitioned = partitionConcurrentUpdates({
-          baselineSnapshot,
-          baselineState,
-          journalRows: [...concurrent.rows, ...liveRows],
-          currentUpstreamState: concurrent.upstreamState,
-          fallbackCurrentUpstream: doc,
-          model: input.model,
-          codec: input.codec,
+      // Durable upstream work-draft rows are never suppressed as "self" merely
+      // because they came from this thread; the journal watermark is the fence.
+      const liveRows = input.liveJournal
+        ? liveAttributionRows(
+            (await input.liveJournal.readForReconstruction(docId)).updates.filter(
+              (update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER),
+            ),
+          )
+        : [];
+      const partitioned = partitionConcurrentUpdates({
+        baselineSnapshot,
+        baselineState,
+        journalRows: [
+          ...concurrent.rows.map((row) => ({
+            id: row.id,
+            origin: originForJournalRow(row),
+            update: row.updateData,
+          })),
+          ...liveRows,
+        ],
+        currentUpstreamState: concurrent.upstreamState,
+        fallbackCurrentUpstream: doc,
+        model: input.model,
+        codec: input.codec,
+      });
+      const maxRowId = partitioned.reduce(
+        (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
+        0,
+      );
+      if (maxRowId > 0) {
+        // Load-bearing: this is only a captured candidate. Advancing the floor here would
+        // skip rows if the surrounding branch write later fails or CAS-exhausts.
+        concurrentJournalWatermarks.capturePending(
+          input.threadId,
+          docId as DocumentId,
+          maxRowId,
+          attemptId,
+        );
+        // Capture itself is provisional: failures before branch persistence must
+        // clear the candidate even though no watermark-advance participant exists yet.
+        input.enlistResponseParticipant({
+          commit() {},
+          abort() {
+            concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
+          },
         });
-        const maxRowId = partitioned.reduce(
-          (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
-          0,
-        );
-        if (maxRowId > 0) {
-          // Load-bearing: this is only a captured candidate. Advancing the floor here would
-          // skip rows if the surrounding branch write later fails or CAS-exhausts.
-          concurrentJournalWatermarks.capturePending(
-            input.threadId,
-            docId as DocumentId,
-            maxRowId,
-            attemptId,
-          );
-          // Capture itself is provisional: failures before branch persistence must
-          // clear the candidate even though no watermark-advance participant exists yet.
-          input.enlistResponseParticipant({
-            commit() {},
-            abort() {
-              concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
-            },
-          });
-        }
-        return partitioned.map((item) =>
-          item.type === "journal"
-            ? {
-                update: item.effectiveUpdate,
-                origin: item.origin,
-                touchedHashes: item.touchedHashes,
-                deletedHashes: item.deletedHashes,
-              }
-            : {
-                update: item.residualUpdate,
-                origin: item.origin,
-                touchedHashes: item.touchedHashes,
-                deletedHashes: item.deletedHashes,
-              },
-        );
-      } finally {
-        // baselineDoc is owned by the agent-edit core; this coordinator only snapshots it.
       }
+      return partitioned.map((item) =>
+        item.type === "journal"
+          ? {
+              update: item.effectiveUpdate,
+              origin: item.origin,
+              touchedHashes: item.touchedHashes,
+              deletedHashes: item.deletedHashes,
+            }
+          : {
+              update: item.residualUpdate,
+              origin: item.origin,
+              touchedHashes: item.touchedHashes,
+              deletedHashes: item.deletedHashes,
+            },
+      );
     },
   };
 }
@@ -719,33 +720,25 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
   return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
 }
 
-function liveAttributionRows(updates: readonly PersistedUpdate[]): BranchJournalRow[] {
-  return updates.map((update) => {
-    const reversalActor = update.meta.reversalActor;
-    const source =
-      reversalActor?.type === "agent" || update.meta.origin.startsWith("agent:")
-        ? "agent"
-        : "writer";
-    const actorUserId =
-      reversalActor?.type === "user"
-        ? reversalActor.userId
-        : update.meta.origin.startsWith("human:")
-          ? update.meta.origin.slice("human:".length)
-          : null;
-    return {
-      id: -update.seq,
-      branchId: "live-journal",
-      generation: 0,
-      wId: null,
-      source,
-      threadId: null,
-      turnId: (update.meta.actorTurnId ?? null) as BranchJournalRow["turnId"],
-      actorUserId: actorUserId as BranchJournalRow["actorUserId"],
-      updateData: update.update,
-      draftBaseUpdateSeq: 0,
-      status: "pushed",
-      updateMeta: update.meta,
-    };
+function liveAttributionRows(updates: readonly PersistedUpdate[]): AttributionRow[] {
+  return updates.map(({ seq, update, meta }) => {
+    let origin: ConcurrentUpdateOrigin;
+    if (meta.origin === "link-update" || meta.origin === "system:reconcile") {
+      origin = { type: "system" };
+    } else if (meta.reversalActor?.type === "agent" || meta.origin.startsWith("agent:")) {
+      origin = { type: "agent", actorTurnId: meta.actorTurnId ?? "unknown-agent" };
+    } else {
+      origin = {
+        type: "human",
+        userId:
+          meta.reversalActor?.type === "user"
+            ? meta.reversalActor.userId
+            : meta.origin.startsWith("human:")
+              ? meta.origin.slice("human:".length)
+              : "unknown",
+      };
+    }
+    return { id: -seq, origin, update };
   });
 }
 
@@ -757,7 +750,7 @@ function partitionConcurrentUpdates(
   // A state vector alone misses delete-only edits. Capture structs and tombstones
   // before journal reads yield, so both checks use the same baseline cut.
   const rows = input.journalRows.filter(
-    (row) => !Y.snapshotContainsUpdate(input.baselineSnapshot, row.updateData),
+    (row) => !Y.snapshotContainsUpdate(input.baselineSnapshot, row.update),
   );
   if (rows.length === 0 && input.baselineState && bytesEqual(input.baselineState, upstreamState)) {
     return [];
@@ -767,31 +760,22 @@ function partitionConcurrentUpdates(
     const coverage = partitionByBlockCoverage({
       baselineState: input.baselineState,
       upstreamState,
-      rows: rows.map((row) => ({
-        source: row.source,
-        actorTurnId: actorTurnIdForJournalRow(row),
-        update: row.updateData,
-      })),
+      rows,
       model: input.model,
       codec: input.codec,
     });
 
     const partitioned: PartitionedConcurrentUpdate[] = [];
     for (const row of rows) {
-      const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
-      if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
-      const actorTurnId = actorTurnIdForJournalRow(row);
-      const touchedHashes = touchedHashesForCoverage(coverage.coverage, row.source, actorTurnId);
-      const deletedHashes = touchedHashesForCoverage(
-        coverage.deletedCoverage,
-        row.source,
-        actorTurnId,
-      );
+      const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.update);
+      if (!effectiveUpdate) Y.applyUpdate(scratch, row.update);
+      const touchedHashes = touchedHashesForCoverage(coverage.coverage, row.origin);
+      const deletedHashes = touchedHashesForCoverage(coverage.deletedCoverage, row.origin);
       if (effectiveUpdate || touchedHashes || deletedHashes) {
         partitioned.push({
           type: "journal",
           rowId: row.id,
-          origin: originForJournalRow(row),
+          origin: row.origin,
           effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
           touchedHashes: touchedHashes ?? (effectiveUpdate ? {} : undefined),
           deletedHashes,
@@ -830,11 +814,6 @@ function partitionConcurrentUpdates(
   } finally {
     scratch.destroy();
   }
-}
-
-function actorTurnIdForJournalRow(row: BranchJournalRow): string | null {
-  if (row.source !== "agent") return null;
-  return row.turnId ?? row.threadId ?? "unknown-agent";
 }
 
 function effectiveUpdateFromApplyingToScratch(

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft saves no longer credit automatic link rewrites or reconciliation to the writer; authored block credit survives maintenance.
+
 - Changed writes return mutation facts directly, without allocating discarded per-edit summaries.
 
 - Model reads, writes and recovery stop retaining unused session clock maps.
