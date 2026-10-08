@@ -1,4 +1,4 @@
-/** Neutral block-coverage attribution shared by agent editing and branch push planning. */
+/** Block-coverage attribution for concurrent updates during agent editing. */
 import {
   type AgentEditCodec,
   type BlockSnapshot,
@@ -14,7 +14,6 @@ type PartitionByBlockCoverageInput = {
   baselineState: Uint8Array | null;
   upstreamState: Uint8Array;
   rows: Array<{
-    id: number;
     source: "agent" | "writer";
     actorTurnId?: string | null;
     update: Uint8Array;
@@ -32,7 +31,6 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
   const finalDoc = docFromState(inputs.upstreamState);
   const scratch = docFromState(inputs.baselineState);
   try {
-    const baseline = Y.snapshot(scratch);
     const finalBlocks = blocks(finalDoc, inputs.model, inputs.codec);
     const baselineBlocks = blocks(scratch, inputs.model, inputs.codec);
     const baselineByIdentity = new Map(
@@ -42,7 +40,6 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
     const deletedCoverage = new Map<string, BlockCoverage>();
     const finalByIdentity = new Map(finalBlocks.map((block) => [blockIdentity(block), block]));
     for (const row of inputs.rows) {
-      if (Y.snapshotContainsUpdate(baseline, row.update)) continue;
       const beforeBlocks = blocks(scratch, inputs.model, inputs.codec);
       Y.applyUpdate(scratch, row.update);
       const afterBlocks = blocks(scratch, inputs.model, inputs.codec);

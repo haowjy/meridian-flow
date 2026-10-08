@@ -814,7 +814,6 @@ function partitionConcurrentUpdates(
       baselineState: input.baselineState,
       upstreamState,
       rows: rows.map((row) => ({
-        id: row.id,
         source: row.source,
         actorTurnId: actorTurnIdForJournalRow(row),
         update: row.updateData,
