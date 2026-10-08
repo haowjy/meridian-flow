@@ -13,7 +13,7 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
 import { ArrowUpRight, ChevronDown, Folder, Pencil } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useWorks } from "@/client/query/useWorks";
@@ -47,6 +47,12 @@ export function DockDocumentTitle({
   const { catalog } = useContextCatalogView(projectId, tab.scheme, { workId: tab.workId ?? null });
   const [renaming, setRenaming] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // The chip comes back after a rename; focus returns to it once it is there.
+  const wasRenaming = useRef(false);
+  useEffect(() => {
+    if (wasRenaming.current && !renaming) triggerRef.current?.focus();
+    wasRenaming.current = renaming;
+  }, [renaming]);
 
   const work = tab.workId ? works?.find((candidate) => candidate.id === tab.workId) : undefined;
   const archived = work ? isWorkArchived(work) : false;
@@ -112,10 +118,7 @@ export function DockDocumentTitle({
         workId={tab.workId ?? null}
         file={current}
         siblingNames={catalogSiblingNames(catalog, current)}
-        onDone={() => {
-          setRenaming(false);
-          triggerRef.current?.focus();
-        }}
+        onDone={() => setRenaming(false)}
       />
     );
 
