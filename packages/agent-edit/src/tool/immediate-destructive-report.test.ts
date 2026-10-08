@@ -69,7 +69,7 @@ describe("immediate destructive reporting", () => {
     const session: ActorSession = {
       id: "session-report",
       threadId: "thread-a",
-      documents: new Map(),
+      documents: new Set(),
     };
     injectConcurrentHumanEdit(ctx, 0);
 
