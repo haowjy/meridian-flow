@@ -266,7 +266,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       ) : null}
 
       {multi && expanded ? (
-        <div>
+        // Capped so a long draft list scrolls inside the dock instead of
+        // pushing the transcript off screen above the composer.
+        <div className="app-scroll max-h-[min(40svh,20rem)]">
           {dock.rows.map((row) => (
             <DockRowLine
               key={row.documentId}
