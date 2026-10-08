@@ -108,7 +108,7 @@ function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork
   return result.destination === "live" ? "live" : "";
 }
 
-const UNCHANGED_NOTE = "unchanged: the file already matches this content; nothing was written.";
+const UNCHANGED_NOTE = "unchanged: the document already matches this content; nothing was written.";
 
 function notes(result: AgentEditResultV1, groups: readonly AgentEditBlockGroup[]): string[] {
   const lines: string[] = [];
