@@ -91,8 +91,6 @@ export type DraftReviewController = {
   reviewRoomName: string | null;
   reviewRoomError: boolean;
   isApplying: boolean;
-  isDiscarding: boolean;
-  isPending: boolean;
   canApplyReviewedDraft: boolean;
   /**
    * The global disposition lock: any Apply/Discard in flight in the session.
@@ -221,8 +219,6 @@ export function useDraftReviewController({
 
   const activeDisposition = disposition.busy ? disposition.target : null;
   const isApplying = activeDisposition?.kind === "apply-draft";
-  const isDiscarding = activeDisposition?.kind === "discard-draft";
-  const isPending = isApplying || isDiscarding;
   // A command in flight on any draft of this Work, from any surface, disables this one.
   const commandRecords = useDraftCommandRecords();
   const isDisposing =
@@ -694,8 +690,6 @@ export function useDraftReviewController({
       reviewRoomName,
       reviewRoomError,
       isApplying,
-      isDiscarding,
-      isPending,
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,
@@ -728,8 +722,6 @@ export function useDraftReviewController({
       reviewRoomName,
       reviewRoomError,
       isApplying,
-      isDiscarding,
-      isPending,
       canApplyReviewedDraft,
       isDisposing,
       dispositionLocked,

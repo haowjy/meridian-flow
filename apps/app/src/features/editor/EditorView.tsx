@@ -331,7 +331,6 @@ export function EditorView(props: EditorViewProps) {
             editable={reviewRequested && !closed ? false : props.editable}
             identity={mountIdentity(props, "live")}
             session={liveSession}
-            liveSession={liveSession}
             held={reviewRequested && !closed}
           />
         </div>
@@ -348,7 +347,6 @@ export function EditorView(props: EditorViewProps) {
             {...props}
             identity={identity}
             session={reviewSession}
-            liveSession={liveSession}
             onPainted={() => setPaintedReviewKey(reviewKey)}
           />
         </div>
@@ -360,7 +358,6 @@ export function EditorView(props: EditorViewProps) {
 type SessionEditorViewProps = EditorViewProps & {
   identity: EditorMountIdentity;
   session: DocumentSession;
-  liveSession: DocumentSession | null;
   /** The live editor kept warm under an active review: its chrome and navigation stand down. */
   held?: boolean;
   /** Called once this mount's TipTap editor exists and is showing its content. */
@@ -427,7 +424,6 @@ function ActiveSessionEditorView({
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
-  liveSession,
   held = false,
   onPainted,
   snapshot,
