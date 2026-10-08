@@ -74,11 +74,10 @@ export type WorkDraftEmptySettlement = (input: {
   workId: WorkId;
   documentId: DocumentId;
   branchId: string;
-  isEmpty(
-    liveDoc: Y.Doc,
-    draftDoc: Y.Doc,
-    rows: import("../branch-push-contracts.js").BranchJournalRow[],
-  ): boolean;
+  isEmpty(liveDoc: Y.Doc, draftDoc: Y.Doc): boolean;
+  disposition(
+    rows: readonly import("../branch-push-contracts.js").BranchJournalRow[],
+  ): "applied" | "discarded";
 }) => Promise<
   { draftClosed: false } | { draftClosed: true; draftDisposition: "applied" | "discarded" }
 >;

@@ -89,7 +89,6 @@ export function journalAttributionByChangedBlock(input: {
         actorUserId: row.actorUserId,
         updateData: row.updateData,
         updateMeta: row.updateMeta,
-        updateKind: row.source,
       })),
     });
     for (const [blockId, operationIds] of operationIdsByBlock) {

@@ -1,12 +1,12 @@
 /** Unit coverage for server-vended Apply/Discard classes. */
 
+import type { ReviewHunk } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { assignReviewClasses } from "./branch-review-closure.js";
 import {
   asPhysicalSourceUpdateIds,
   asSourceUpdateIds,
-  type DraftReviewHunkInternal,
   type DraftReviewOperationInternal,
 } from "./draft-review-types.js";
 
@@ -26,7 +26,7 @@ function op(
   };
 }
 
-function hunk(id: string, operationIds: string[]): DraftReviewHunkInternal {
+function hunk(id: string, operationIds: string[]): ReviewHunk {
   return {
     kind: "block",
     hunkId: id,

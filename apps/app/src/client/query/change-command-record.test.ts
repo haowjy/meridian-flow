@@ -35,8 +35,7 @@ function preview(): DraftPreviewResponse {
     status: "active",
     draftId: "x",
     reviewRoomName: "room",
-    live: "",
-    preview: "",
+
     liveRevisionToken: "l",
     draftRevisionToken: "t",
     inlineModelPresent: true,

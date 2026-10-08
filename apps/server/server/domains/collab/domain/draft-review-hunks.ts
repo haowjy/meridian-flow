@@ -6,6 +6,7 @@ import {
   toDocHandle,
   unwrapBlock,
 } from "@meridian/agent-edit/integration";
+import type { ReviewHunk } from "@meridian/contracts/drafts";
 import {
   cleanupSemantic,
   DIFF_DELETE,
@@ -21,19 +22,12 @@ import {
   computeDraftReviewOperations,
   type IndexedDraftUpdate,
 } from "./draft-review-operations.js";
-import type {
-  DraftReviewDiagnostic,
-  DraftReviewHunkInternal,
-  DraftReviewOperationInternal,
-} from "./draft-review-types.js";
+import type { DraftReviewDiagnostic, DraftReviewOperationInternal } from "./draft-review-types.js";
 import { encodeTrailPosition, rootRelativePosition } from "./trail-read-kernel.js";
-import { countWords } from "./word-count.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
 type YId = { client: number; clock: number };
-
-type DraftWordDelta = { wordsAdded: number; wordsRemoved: number };
 
 export type DraftReviewHunkInput = {
   liveDoc: Y.Doc;
@@ -44,8 +38,7 @@ export type DraftReviewHunkInput = {
 
 export type DraftReviewHunkResult = {
   operations: DraftReviewOperationInternal[];
-  hunks: DraftReviewHunkInternal[];
-  wordDelta: DraftWordDelta;
+  hunks: ReviewHunk[];
   diagnostics: DraftReviewDiagnostic[];
 };
 
@@ -57,7 +50,6 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
       operations: [],
       hunks: [],
       diagnostics: [],
-      wordDelta: { wordsAdded: 0, wordsRemoved: 0 },
     };
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
@@ -85,15 +77,11 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     operations: rawOperations,
     rawByHunkId,
   });
-  const visibleRawHunks = visible.hunks
-    .map((hunk) => rawByHunkId.get(hunk.hunkId))
-    .filter((hunk): hunk is RawHunk => hunk !== undefined);
   const operations = visible.operations;
   return {
     operations,
     diagnostics,
     hunks: visible.hunks,
-    wordDelta: sumDraftWordDelta(visibleRawHunks.map(hunkDisplayText)),
   };
 }
 
@@ -416,7 +404,7 @@ function operationGraphRaw(hunk: RawHunk): {
   };
 }
 
-function reviewHunkFromRaw(hunk: RawHunk, hunkId: string): DraftReviewHunkInternal {
+function reviewHunkFromRaw(hunk: RawHunk, hunkId: string): ReviewHunk {
   switch (hunk.kind) {
     case "text":
       return {
@@ -474,10 +462,10 @@ function reviewBlockDisplay(block: RawBlockDisplay): { type: string; display: st
 }
 
 function cancelRestorativeRejectBlockHunks(input: {
-  hunks: DraftReviewHunkInternal[];
+  hunks: ReviewHunk[];
   operations: DraftReviewOperationInternal[];
   rawByHunkId: ReadonlyMap<string, RawHunk>;
-}): { hunks: DraftReviewHunkInternal[]; operations: DraftReviewOperationInternal[] } {
+}): { hunks: ReviewHunk[]; operations: DraftReviewOperationInternal[] } {
   const operationsById = new Map(
     input.operations.map((operation) => [operation.operationId, operation]),
   );
@@ -510,8 +498,8 @@ function cancelRestorativeRejectBlockHunks(input: {
 }
 
 function isRestorativeRejectPair(
-  left: DraftReviewHunkInternal,
-  right: DraftReviewHunkInternal,
+  left: ReviewHunk,
+  right: ReviewHunk,
   rawByHunkId: ReadonlyMap<string, RawHunk>,
   operationsById: ReadonlyMap<string, DraftReviewOperationInternal>,
 ): boolean {
@@ -535,7 +523,7 @@ function isRestorativeRejectPair(
 }
 
 function hasOnlyOperationsOfKind(
-  hunk: DraftReviewHunkInternal,
+  hunk: ReviewHunk,
   operationsById: ReadonlyMap<string, DraftReviewOperationInternal>,
   kind: "agent" | "writer",
 ): boolean {
@@ -972,16 +960,4 @@ function itemContentLength(item: ItemLike): number {
 
 function visibleTextItemLength(item: ItemLike): number {
   return typeof item.content?.str === "string" ? item.content.str.length : 0;
-}
-
-function sumDraftWordDelta(
-  hunks: readonly { insertedText: string; deletedText: string }[],
-): DraftWordDelta {
-  return hunks.reduce(
-    (total, hunk) => ({
-      wordsAdded: total.wordsAdded + countWords(hunk.insertedText),
-      wordsRemoved: total.wordsRemoved + countWords(hunk.deletedText),
-    }),
-    { wordsAdded: 0, wordsRemoved: 0 },
-  );
 }

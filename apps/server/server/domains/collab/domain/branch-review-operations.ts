@@ -120,6 +120,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
         await deps.commitStore.commitDiscard({
           branch,
           journalRows: rows,
+          expectedLiveRevision: selection.expectedLiveRevision,
           state,
           stateVector,
           reviewedByUserId: discardInput.reviewedByUserId,

@@ -1,10 +1,8 @@
 /** Branch-backed review wire types for work-draft cards. */
 
+import type { ReviewHunk } from "@meridian/contracts/drafts";
 import type { DocumentId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import type {
-  DraftReviewHunkInternal,
-  DraftReviewOperationInternal,
-} from "./draft-review-types.js";
+import type { DraftReviewOperationInternal } from "./draft-review-types.js";
 
 export type ReviewableDraft = {
   draftId: string;
@@ -20,19 +18,15 @@ export type ReviewableDraft = {
   createdDocument?: boolean;
 };
 
-export type ActiveDraft = ReviewableDraft;
-
 export type DraftReviewPreview = {
   draftId: string;
   reviewRoomName: string;
-  live: string;
-  markdown: string;
   isNewDocument?: boolean;
   liveRevisionToken: string;
   draftRevisionToken: string;
   inlineModelPresent: true;
   operations: DraftReviewOperationInternal[];
-  hunks: DraftReviewHunkInternal[];
+  hunks: ReviewHunk[];
   notice?: { code: "branch_corrupt_reset"; message: string };
 };
 

@@ -364,13 +364,13 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       [pushInput.branchId],
       async ([branch], lease) => {
         const source = await sourceFor(branch as BranchSnapshot);
-        const selection = await pushInput.selectRows?.(source.branch, source.rows);
+        const selection = await pushInput.selectRows(source.branch, source.rows);
         const batch = buildSelectedRowCandidates({
           source,
-          journalIds: selection?.journalIds ?? pushInput.journalIds ?? [],
+          journalIds: selection.journalIds,
           ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
         });
-        batch.expectedLiveRevision = selection?.expectedLiveRevision;
+        batch.expectedLiveRevision = selection.expectedLiveRevision;
         const result = await executeCandidateBatch(
           batch,
           branchMap([source.branch]),
