@@ -47,6 +47,14 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   Manuscript reconciliation reserves an availability generation, then publishes
   the catalog commit and generation atomically after the aggregate commit; a
   failed deferred repair is retried and never publishes its reserved generation.
+  Deferred repairs coalesce per catalog scope in this adapter instance. A running
+  batch stays frozen; refreshes committed during it queue one dirty rerun.
+  Overlapping pending scope groups merge transitively and retain per-scope
+  invalidations and per-authority generation maxima. All scopes and generations
+  in a batch publish atomically with one shared catalog commit ID; disjoint
+  groups may run concurrently. Queued and running requests are drain-tracked.
+  Exhausted Postgres lock timeouts are warnings; other failures remain errors.
+  Database locks still arbitrate independent processes.
   `refreshProjectDocuments` takes the availability publisher fence (`reserve`)
   before any catalog scope lock, under a short `lock_timeout`, and retries a
   bounded number of times; `reserve` and `publishReserved` are required port

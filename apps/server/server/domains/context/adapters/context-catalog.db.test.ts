@@ -339,6 +339,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.objectContaining({
           source: "context-catalog",
           name: "DeferredRefreshFailure",
+          level: "error",
         }),
       );
     });
