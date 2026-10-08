@@ -580,7 +580,13 @@ describe("draft review hunk model", () => {
     expect(result.hunks.every((hunk) => !hunk.mergeArtifact)).toBe(true);
   });
 
-  it("flags writer typing into a sentence concurrently rewritten by AI", () => {
+  it.each([
+    { offset: 1, mergeArtifact: true },
+    { offset: 5, mergeArtifact: false },
+  ])("flags only writer typing inside text concurrently removed by AI ($offset)", ({
+    offset,
+    mergeArtifact,
+  }) => {
     const live = createDoc("Old sentence. Tail unchanged for alignment.");
     const draft = cloneDoc(live);
     const peer = cloneDoc(live);
@@ -591,7 +597,7 @@ describe("draft review hunk model", () => {
       model.applyTextEdit(toDocHandle(draft), aiBlock, { from: 0, to: 13 }, "New AI sentence."),
     );
     const writer = captureUpdate(peer, () =>
-      model.applyTextEdit(toDocHandle(peer), writerBlock, { from: 5, to: 5 }, "careful "),
+      model.applyTextEdit(toDocHandle(peer), writerBlock, { from: offset, to: offset }, "careful "),
     );
     Y.applyUpdate(draft, writer);
     const result = computeDraftReviewHunks({
@@ -603,7 +609,7 @@ describe("draft review hunk model", () => {
         { id: 179, actorTurnId: null, actorUserId: "writer", updateData: writer },
       ],
     });
-    expect(result.hunks.some((hunk) => hunk.mergeArtifact)).toBe(true);
+    expect(result.hunks.some((hunk) => hunk.mergeArtifact)).toBe(mergeArtifact);
   });
 
   it("attributes adjacent deleted spans independently of inserted-text owners", () => {
@@ -711,20 +717,19 @@ describe("draft review hunk model", () => {
         operationId: "211",
         contribution: "rewrote",
         classification: "rewrite",
-        beforeExcerpt: "target",
-        afterExcerpt: "agent writer",
+        beforeExcerpt: "tar",
+        afterExcerpt: "a",
         sourceUpdateIds: [211],
         closureUpdateIds: [211, 212],
         actorTurnId: "turn-agent",
         kind: "agent",
-        hunkCount: 1,
+        hunkCount: 2,
       }),
       expect.objectContaining({
         operationId: writerOperationId,
         contribution: "added",
-        classification: "rewrite",
-        beforeExcerpt: "target",
-        afterExcerpt: "agent writer",
+        classification: "addition",
+        afterExcerpt: "writer",
         sourceUpdateIds: [212],
         closureUpdateIds: [211, 212],
         actorUserId: "user-a",
