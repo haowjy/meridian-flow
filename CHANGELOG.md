@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Bursts of file moves coalesce catalog repairs instead of racing one repair per move. Lock contention logs warnings, not errors.
+- Bursts of file moves coalesce catalog repairs instead of racing one repair per move. Repairs read file metadata without chapter prose. Lock contention logs warnings, not errors.
 
 - Draft writes filter covered history once and skip its attribution replay. Unchanged drafts avoid rebuilding retained history. Concurrent writer edits still appear in save receipts.
 
