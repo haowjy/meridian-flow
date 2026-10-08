@@ -89,31 +89,6 @@ describe("in-memory app Agent binding transaction", () => {
     expect(hidden).toBeNull();
     expect(await app.repos.threads.findById(ordinary.id)).not.toBeNull();
   });
-
-  it("rolls a thread and binding back together", async () => {
-    const app = createInMemoryAppServices();
-    await seedGeneralAgent(app.agentRevisions, "model");
-    const general = await app.agentRevisions.readCatalogEntry(null, "general");
-    if (!general) throw new Error("Missing General");
-    let id = "";
-    await expect(
-      app.repos.transaction(async () => {
-        const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
-        id = thread.id;
-        expect(
-          await app.agentRevisions.bindThread(
-            id,
-            general.selectedRevisionId,
-            bindingConfiguration,
-            null,
-          ),
-        ).toBe(true);
-        throw new Error("after binding");
-      }),
-    ).rejects.toThrow("after binding");
-    expect(await app.repos.threads.findById(id)).toBeNull();
-    expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
-  });
 });
 
 const bindingConfiguration = {

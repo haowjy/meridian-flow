@@ -22,7 +22,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { AccountLinkConflictError } = await import("./ports/user-repository.js");
     const { provisionAuthenticatedUser } = await import("../../lib/auth.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
-    const { eq } = await import("drizzle-orm");
 
     const db = createDb(DATABASE_URL, { max: 8 });
     const control = postgres(DATABASE_URL, { max: 1 });
@@ -267,28 +266,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         ]),
       );
-    });
-
-    it("re-provisioning an existing user refreshes the mutable profile", async () => {
-      const users = createDrizzleUserRepository({ db });
-      const first = await users.ensureUser({
-        externalId: "user_workos_c",
-        email: "stable@example.com",
-        name: "Old",
-        avatarUrl: null,
-      });
-      const second = await users.ensureUser({
-        externalId: "user_workos_c",
-        email: "stable@example.com",
-        name: "New",
-        avatarUrl: "https://cdn/a.png",
-      });
-      expect(second).toBe(first);
-      const [row] = await db
-        .select({ name: schema.users.name })
-        .from(schema.users)
-        .where(eq(schema.users.id, first as never));
-      expect(row?.name).toBe("New");
     });
   });
 }

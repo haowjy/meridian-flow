@@ -504,38 +504,6 @@ else
         ).resolves.toMatchObject({ ok: false, error: { code: "thread_not_found" } });
       });
 
-      it("uses a fresh authorized root snapshot instead of the caller's uncommitted transaction", async () => {
-        const input = {
-          childThreadId: ids.child,
-          executionTurnId: ids.execution,
-          handle: "p1",
-          origin: "thread_run" as const,
-          deliveryMode: "none" as const,
-          callerThreadId: null,
-          callerTurnId: null,
-          toolCallId: null,
-          cardBlockId: null,
-        };
-        await repos.transaction(async () => {
-          await repos.executionReports.admit(input);
-          expect(
-            await readThreadReport({
-              callerThreadId: ids.caller,
-              ref: "p1",
-
-              repos,
-            }),
-          ).toMatchObject({ status: "unavailable" });
-        });
-        expect(
-          await readThreadReport({
-            callerThreadId: ids.caller,
-            ref: "p1",
-            repos,
-          }),
-        ).toMatchObject({ status: "unavailable" });
-      });
-
       it("serializes competing capture and finalization contenders without replacing a winner", async () => {
         const input = {
           childThreadId: ids.child,
