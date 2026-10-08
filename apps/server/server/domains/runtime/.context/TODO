@@ -1,4 +1,3 @@
 # TODO: must-do follow-ups (runtime)
 
 - Measure `anthropic` and `gemini` live with `scripts/probe-compaction-estimates.ts` when working API keys are available, then tighten their provisional CJK rates.
-- `runtime/handoff/seed.ts`: a handoff roots a new lineage, so the seed's `thread_history({"ref":"cN"})` read line names a source that `resolveReadableThread` refuses as `thread_not_connected`. Admit the handoff's cutoff owner in the read check or drop the line; the owner has not ruled which.

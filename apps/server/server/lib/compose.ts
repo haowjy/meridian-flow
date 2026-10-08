@@ -938,6 +938,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     defaultModel: () => ports.gateway.getDefaultModel(),
     repos: {
       threads: ports.threadRepos.threads,
+      turns: ports.threadRepos.turns,
       subagentThreads: ports.threadRepos.threads,
       transaction: ports.threadRepos.transaction,
     },
