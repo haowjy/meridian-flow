@@ -72,12 +72,11 @@ list; a later chat Scratch button reuses it.
 
 The Editor's warm tabs and the dock's document can be bound to one session at once.
 The registry reference-counts bindings per owner, so closing either view leaves the
-other bound. Undo stacks are per editor but both track every local edit (they share
-y-prosemirror's sync origin), so Ctrl+Z in either view undoes the latest edit from
-either. Presence is the one thing that collided: each view's cursor plugin clears a
-caret it did not place, and two views ping-ponged awareness writes. Each editor's
-caret writes pass `gateCaretPresence`, which follows the editor's `active` flag (upload
-announcements are not gated).
+other bound. The caret has one publisher per session and each view keeps its own
+undo stack; the contract is in
+[`core/editor/.context/CONTEXT.md`](../../../../core/editor/.context/CONTEXT.md)
+("Two editors can share one session"). The dock's part is to pass its visibility as
+the host's `active`, which is what makes it the front or back view.
 
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
