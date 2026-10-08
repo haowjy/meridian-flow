@@ -93,8 +93,16 @@ export function reviewChanges(
       ranked.push({ change: describeUnattributed(hunk), position: index });
     }
   });
-  // Array.sort is stable, so classes with no hunk keep the server's order, last.
-  return ranked.sort((a, b) => a.position - b.position).map(({ change }) => change);
+  // Classes with no hunk come last. Ties (and those) break on the class id, so
+  // a refreshed preview never reshuffles changes the server happens to list in
+  // another order.
+  return ranked
+    .sort(
+      (a, b) =>
+        (a.position === b.position ? 0 : a.position < b.position ? -1 : 1) ||
+        a.change.classId.localeCompare(b.change.classId),
+    )
+    .map(({ change }) => change);
 }
 
 /** A hunk the server could not attribute and that no operation owns. It has no per-change commands. */

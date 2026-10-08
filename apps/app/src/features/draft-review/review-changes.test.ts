@@ -66,6 +66,19 @@ describe("reviewChanges", () => {
     ]);
   });
 
+  it("keeps the same order when a refreshed preview lists the same operations differently", () => {
+    // Two changes share the hunk that places them and one has no hunk at all: ties break on the class id.
+    const ops = [
+      op({ operationId: "a", closureClassId: "c-b" }),
+      op({ operationId: "b", closureClassId: "c-a" }),
+      op({ operationId: "c", closureClassId: "c-z" }),
+    ];
+    const hunks = [textHunk({ hunkId: "h", operationIds: ["a", "b"] })];
+    const ids = (list: ReviewOperation[]) => reviewChanges(list, hunks).map((c) => c.classId);
+    expect(ids(ops)).toEqual(["c-a", "c-b", "c-z"]);
+    expect(ids([...ops].reverse())).toEqual(ids(ops));
+  });
+
   it("anchors a change on the operation that owns its earliest hunk", () => {
     const ops = [
       op({ operationId: "a", closureClassId: "c" }),

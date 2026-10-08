@@ -129,7 +129,7 @@ export function ReviewChangeRow({
       </div>
       {failure ? (
         <p role="status" className="pl-4 text-caption text-destructive">
-          <ChangeFailureText code={failure.code} mode={failure.mode} />
+          <ChangeFailureText failure={failure} />
         </p>
       ) : null}
     </li>

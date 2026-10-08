@@ -17,6 +17,7 @@ import {
   renderReviewScopes,
   type ScopeProbe,
 } from "@/test-support/draft-review-scope";
+import { dockRows } from "./docked-drafts";
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -65,10 +66,21 @@ beforeEach(() => {
 });
 
 const elsewhere = (probe: ScopeProbe) =>
-  probe.header.failedElsewhere.map((entry) => [entry.row.documentName, entry.code]);
+  probe.header.failedElsewhere.map((entry) => [entry.row.documentName, entry.failure.code]);
+
+/** Apply all, as the Changes list sends it: every draft of the Work, in the file order. */
+const applyAll = (probe: ScopeProbe) => {
+  void probe.editor.controller.disposeDrafts(
+    "apply",
+    dockRows(probe.editor.groups).map((row) => ({
+      documentId: row.documentId,
+      draftId: row.draft.draftId,
+    })),
+  );
+};
 
 async function ready(probe: () => ScopeProbe) {
-  await vi.waitFor(() => expect(probe().header.switcher.rows).toHaveLength(3));
+  await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(3));
 }
 
 describe("a whole-draft Apply the server refused", () => {
@@ -79,18 +91,20 @@ describe("a whole-draft Apply the server refused", () => {
         await ready(probe);
         await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
         await act(async () => probe().header.applyDraft());
-        await vi.waitFor(() => expect(probe().header.commandError).toBe("apply-failed"));
+        await vi.waitFor(() =>
+          expect(probe().header.commandError).toEqual({ code: "apply-server-error" }),
+        );
 
         // The writer is now in the next draft; the refusal is reported there.
         await probe().openDraft(ref("b"));
         expect(probe().header.commandError).toBeNull();
-        expect(elsewhere(probe())).toEqual([["Chapter a", "apply-failed"]]);
+        expect(elsewhere(probe())).toEqual([["Chapter a", "apply-server-error"]]);
 
         // Opening the refused draft is the writer's own move. The refusal is that draft's own
         // message now, and stays on it until they act on it again.
         await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
         await probe().openDraft(ref("a"));
-        expect(probe().header.commandError).toBe("apply-failed");
+        expect(probe().header.commandError).toEqual({ code: "apply-server-error" });
         expect(elsewhere(probe())).toEqual([]);
       },
       { reviewed: ref("a") },
@@ -112,11 +126,13 @@ describe("Apply all", () => {
         expect(applied).toEqual(["document-a", "document-b", "document-c"]);
         await vi.waitFor(() =>
           expect(elsewhere(probe())).toEqual([
-            ["Chapter a", "apply-failed"],
-            ["Chapter c", "apply-failed"],
+            ["Chapter a", "apply-server-error"],
+            ["Chapter c", "apply-server-error"],
           ]),
         );
-        expect(probe().editor.controller.dockDispositionError).toBe("apply-failed");
+        expect(probe().editor.controller.dockDispositionError).toEqual({
+          code: "apply-server-error",
+        });
       },
       { reviewed: ref("b") },
     );
@@ -129,11 +145,11 @@ describe("Apply all", () => {
     await renderReviewScopes(
       async (probe) => {
         await ready(probe);
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() =>
           expect(elsewhere(probe())).toEqual([
-            ["Chapter a", "apply-failed"],
-            ["Chapter c", "apply-failed"],
+            ["Chapter a", "apply-server-error"],
+            ["Chapter c", "apply-server-error"],
           ]),
         );
         // Open is the only way to a refused draft.
@@ -155,16 +171,18 @@ describe("Apply all", () => {
     await renderReviewScopes(
       async (probe) => {
         await ready(probe);
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() => expect(rejectApply).toBeTypeOf("function"));
         await probe().openDraft(ref("c"));
         await act(async () => probe().editor.controller.enterInlineReview("document-c", "draft-c"));
         await act(async () => rejectApply(new HttpResponseError("injected", 500, null)));
         await vi.waitFor(() =>
-          expect(probe().editor.controller.dockDispositionError).toBe("apply-failed"),
+          expect(probe().editor.controller.dockDispositionError).toEqual({
+            code: "apply-server-error",
+          }),
         );
         expect(onOpenDraft).not.toHaveBeenCalled();
-        expect(elsewhere(probe())).toEqual([["Chapter a", "apply-failed"]]);
+        expect(elsewhere(probe())).toEqual([["Chapter a", "apply-server-error"]]);
       },
       { reviewed: ref("b"), onOpenDraft },
     );
@@ -182,7 +200,7 @@ describe("Apply all", () => {
       async (probe) => {
         await ready(probe);
         await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
-        await act(async () => probe().header.switcher.onApplyAll());
+        await act(async () => applyAll(probe()));
         await vi.waitFor(() => expect(finishA).toBeTypeOf("function"));
         // Another draft is still being sent. The review says so, and is held on it: every
         // "the draft left the list" exit reads a pending completion as the writer's own.
@@ -193,7 +211,9 @@ describe("Apply all", () => {
         });
 
         await act(async () => finishA());
-        await vi.waitFor(() => expect(elsewhere(probe())).toEqual([["Chapter c", "apply-failed"]]));
+        await vi.waitFor(() =>
+          expect(elsewhere(probe())).toEqual([["Chapter c", "apply-server-error"]]),
+        );
         // The draft they were in is applied; its review holds on the outcome instead of falling to live.
         expect(probe().editor.controller.inlineReview).toMatchObject({
           draftId: "draft-b",
@@ -212,8 +232,10 @@ describe("Apply all", () => {
       async (probe) => {
         await ready(probe);
         await act(async () => probe().editor.controller.enterInlineReview("document-b", "draft-b"));
-        await act(async () => probe().header.switcher.onApplyAll());
-        await vi.waitFor(() => expect(probe().header.commandError).toBe("apply-failed"));
+        await act(async () => applyAll(probe()));
+        await vi.waitFor(() =>
+          expect(probe().header.commandError).toEqual({ code: "apply-server-error" }),
+        );
         expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
         expect(probe().header.finished).toBe(false);
         expect(probe().header.completing).toBeNull();
@@ -228,8 +250,10 @@ describe("Apply all", () => {
     await renderReviewScopes(
       async (probe) => {
         await ready(probe);
-        await act(async () => probe().header.switcher.onApplyAll());
-        await vi.waitFor(() => expect(probe().header.commandError).toBe("apply-failed"));
+        await act(async () => applyAll(probe()));
+        await vi.waitFor(() =>
+          expect(probe().header.commandError).toEqual({ code: "apply-server-error" }),
+        );
         expect(onOpenDraft).not.toHaveBeenCalled();
       },
       { reviewed: ref("a"), onOpenDraft },
@@ -251,8 +275,8 @@ describe("Apply all", () => {
         }
         expect(mocks.applyDraft).not.toHaveBeenCalled();
         expect(elsewhere(probe())).toEqual([
-          ["Chapter a", "apply-failed"],
-          ["Chapter c", "apply-failed"],
+          ["Chapter a", "apply-offline"],
+          ["Chapter c", "apply-offline"],
         ]);
       },
       { reviewed: ref("b") },

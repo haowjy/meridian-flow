@@ -270,7 +270,7 @@ describe("draft dispositions", () => {
         expect(getContextTabs("project-a").tabs).toMatchObject([{ documentId: "document-b" }]);
         expect(addressWrites).toBe(1);
         expect(open).not.toHaveBeenCalled();
-        expect(heldError()).toBe("discard-offline");
+        expect(heldError()).toEqual({ code: "discard-offline" });
 
         // Retrying clears the held error, and a confirmed Discard leaves none.
         let retry: Promise<unknown> | undefined;
@@ -374,7 +374,7 @@ describe("draft dispositions", () => {
           outcome = await controller?.apply("document-a", "draft-a");
         });
         expect(outcome).toEqual({ kind: "apply-outcome-unknown" });
-        expect(heldError()).toBe("apply-unknown");
+        expect(heldError()).toEqual({ code: "apply-unknown" });
         expect(controller?.inlineReview).toMatchObject({ draftId: "draft-a" });
         expect(
           getContextTabs("project-a").tabs.some((tab) => "draftOnly" in tab && tab.draftOnly),
@@ -384,9 +384,9 @@ describe("draft dispositions", () => {
         await act(async () => {
           outcome = await controller?.apply("document-a", "draft-a");
         });
-        expect(outcome).toEqual({ kind: "failed", code: "apply-failed" });
+        expect(outcome).toEqual({ kind: "failed", failure: { code: "apply-offline" } });
         // A rejection is held on the draft too, apart from the unknown outcome.
-        expect(heldError()).toBe("apply-failed");
+        expect(heldError()).toEqual({ code: "apply-offline" });
       },
     );
   });

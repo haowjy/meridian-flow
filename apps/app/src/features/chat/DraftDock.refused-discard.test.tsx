@@ -32,7 +32,10 @@ function dockWith(rows: DockRow[], refused: Record<string, DraftCommandFailureCo
     mounted: true,
     isBusy: false,
     dispositionError: null,
-    rowError: (candidate: DockRow) => refused[candidate.documentId] ?? null,
+    rowError: (candidate: DockRow) => {
+      const code = refused[candidate.documentId];
+      return code ? { code } : null;
+    },
     reviewRow: vi.fn(),
     openRow: vi.fn(),
     reviewFirst: vi.fn(),
@@ -72,7 +75,7 @@ describe("DraftDock refused Discard", () => {
   });
 
   it("shows a rejected Apply on its draft's row, whichever draft the review moved on to", async () => {
-    await renderDock(dockWith([row("a"), row("b")], { a: "apply-failed" }), (host) => {
+    await renderDock(dockWith([row("a"), row("b")], { a: "apply-offline" }), (host) => {
       const rowError = host.querySelector("[data-draft-dock-row-error]");
       expect(rowError?.textContent).toBe("Couldn't apply. Check your connection and try again.");
       expect(rowError?.previousElementSibling?.textContent).toContain("a.md");

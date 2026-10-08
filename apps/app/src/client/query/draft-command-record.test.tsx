@@ -68,10 +68,10 @@ describe("draft command records", () => {
 
   it("drops a failure when a later read no longer lists the draft, never carrying it forward", async () => {
     await run(async () => {
-      await act(async () => failDraftCommand(draft, "discard-offline"));
+      await act(async () => failDraftCommand(draft, { code: "discard-offline" }));
       await readDraftsAfterCommands(scope, async () => listed);
       await act(async () => undefined);
-      expect(draftCommandFailure(held, draft)).toBe("discard-offline");
+      expect(draftCommandFailure(held, draft)).toEqual({ code: "discard-offline" });
       await readDraftsAfterCommands(scope, async () => []);
       await act(async () => undefined);
       expect(held).toEqual({});
@@ -79,11 +79,11 @@ describe("draft command records", () => {
       // A failure newer than the read that omits it belongs to a draft the read never saw.
       const stale = deferred<typeof listed>();
       const read = readDraftsAfterCommands(scope, () => stale.promise);
-      await act(async () => failDraftCommand(draft, "apply-unknown"));
+      await act(async () => failDraftCommand(draft, { code: "apply-unknown" }));
       stale.resolve([]);
       await read;
       await act(async () => undefined);
-      expect(draftCommandFailure(held, draft)).toBe("apply-unknown");
+      expect(draftCommandFailure(held, draft)).toEqual({ code: "apply-unknown" });
     });
   });
 
@@ -91,10 +91,10 @@ describe("draft command records", () => {
     await run(async () => {
       await act(async () => {
         bindDraftCommandAccount("account-a");
-        failDraftCommand(draft, "discard-offline");
+        failDraftCommand(draft, { code: "discard-offline" });
         bindDraftCommandAccount("account-a");
       });
-      expect(draftCommandFailure(held, draft)).toBe("discard-offline");
+      expect(draftCommandFailure(held, draft)).toEqual({ code: "discard-offline" });
       await act(async () => bindDraftCommandAccount("account-b"));
       expect(held).toEqual({});
     });

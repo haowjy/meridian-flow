@@ -23,7 +23,7 @@ import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  type DraftCommandFailureCode,
+  type DraftCommandFailure,
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -150,7 +150,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const stripError = single && firstPending ? dock.rowError(firstPending) : null;
   // A batch-level message repeats what a row already says.
   const batchError =
-    (dock.dispositionError === "discard-offline" || dock.dispositionError === "apply-unknown") &&
+    dock.dispositionError &&
+    (dock.dispositionError.code.startsWith("discard-") ||
+      dock.dispositionError.code === "apply-unknown") &&
     refusedRowCount > 0
       ? null
       : dock.dispositionError;
@@ -254,9 +256,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       </div>
 
       {batchError ? (
-        <DockErrorLine code={batchError} />
+        <DockErrorLine failure={batchError} />
       ) : stripError ? (
-        <DockErrorLine code={stripError} />
+        <DockErrorLine failure={stripError} />
       ) : null}
 
       {multi && expanded ? (
@@ -290,7 +292,7 @@ function DockRowLine({
   onReview,
 }: {
   row: DockRow;
-  error: DraftCommandFailureCode | null;
+  error: DraftCommandFailure | null;
   busy: boolean;
   onOpen: () => void;
   onReview: () => void;
@@ -320,13 +322,13 @@ function DockRowLine({
           <ReviewPill onClick={onReview} disabled={busy} />
         </RowClickFence>
       </DockRowShell>
-      {error ? <DockErrorLine code={error} row /> : null}
+      {error ? <DockErrorLine failure={error} row /> : null}
     </>
   );
 }
 
 /** A refused command, in the strip's error voice. */
-function DockErrorLine({ code, row = false }: { code: DraftCommandFailureCode; row?: boolean }) {
+function DockErrorLine({ failure, row = false }: { failure: DraftCommandFailure; row?: boolean }) {
   return (
     <p
       className={cn(
@@ -336,9 +338,11 @@ function DockErrorLine({ code, row = false }: { code: DraftCommandFailureCode; r
           : "px-[var(--chat-card-pad-x)]",
       )}
       role="alert"
-      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-disposition-error"]: code }}
+      {...{
+        [row ? "data-draft-dock-row-error" : "data-draft-dock-disposition-error"]: failure.code,
+      }}
     >
-      <ReviewMessageText code={code} />
+      <ReviewMessageText failure={failure} />
     </p>
   );
 }

@@ -2,7 +2,8 @@
  * ReviewStepper — `‹ 2 of 6 ›`: steps through the changes in document order,
  * bringing each into view. Before any change is focused it reads the count, and
  * the first step lands on the first (or, going back, the last) change.
- * `touch` makes both arrows 44px targets for a phone.
+ * `touch` makes both arrows 44px targets for a phone. `compact` is the identity
+ * row's form: 22px boxes, and `4/4` once the row's container gets narrow.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -17,6 +18,7 @@ export function ReviewStepper({
   disabled,
   onStep,
   touch = false,
+  compact = false,
 }: {
   count: number;
   /** The focused change's place, or -1 when none is focused. */
@@ -24,14 +26,16 @@ export function ReviewStepper({
   disabled: boolean;
   onStep: (direction: 1 | -1) => void;
   touch?: boolean;
+  compact?: boolean;
 }) {
   const position = focusedIndex + 1;
+  const arrow = touch ? "size-11" : compact ? "size-5.5" : undefined;
   return (
     <div className="flex items-center gap-0.5">
       <IconButton
         size="xs"
-        variant={touch ? "quiet" : "outline"}
-        className={touch ? "size-11" : undefined}
+        variant={touch || compact ? "quiet" : "outline"}
+        className={arrow}
         tooltip={t`Previous change`}
         disabled={disabled}
         onClick={() => onStep(-1)}
@@ -40,15 +44,38 @@ export function ReviewStepper({
       </IconButton>
       <span
         className={cn(
-          "min-w-14 px-1 text-center text-caption text-muted-foreground tabular-nums",
+          "px-1 text-center text-caption text-muted-foreground tabular-nums",
+          compact ? "whitespace-nowrap" : "min-w-14",
           touch && "text-sm",
         )}
         aria-live="polite"
       >
         {focusedIndex >= 0 ? (
-          <Trans>
-            {position} of {count}
-          </Trans>
+          compact ? (
+            <>
+              <span className="@max-[36rem]:sr-only">
+                <Trans>
+                  {position} of {count}
+                </Trans>
+              </span>
+              <span aria-hidden className="hidden @max-[36rem]:inline">
+                {position}/{count}
+              </span>
+            </>
+          ) : (
+            <Trans>
+              {position} of {count}
+            </Trans>
+          )
+        ) : compact ? (
+          <>
+            <span className="@max-[36rem]:sr-only">
+              {count === 1 ? <Trans>1 change</Trans> : <Trans>{count} changes</Trans>}
+            </span>
+            <span aria-hidden className="hidden @max-[36rem]:inline">
+              {count}
+            </span>
+          </>
         ) : count === 1 ? (
           <Trans>1 change</Trans>
         ) : (
@@ -57,8 +84,8 @@ export function ReviewStepper({
       </span>
       <IconButton
         size="xs"
-        variant={touch ? "quiet" : "outline"}
-        className={touch ? "size-11" : undefined}
+        variant={touch || compact ? "quiet" : "outline"}
+        className={arrow}
         tooltip={t`Next change`}
         disabled={disabled}
         onClick={() => onStep(1)}

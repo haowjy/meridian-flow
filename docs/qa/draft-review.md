@@ -91,9 +91,12 @@ for ~200ms).
 
 1. On a live document with a pending overwrite draft, opened from the tree:
    PASS: the `DraftReviewChip` renders in the identity bar ("Review draft").
-   It and `DraftReviewHeader` must never render simultaneously; the chip opens
-   review mode (header strip above the breadcrumb), Back to live swaps back. A
-   document with no pending draft shows no chip.
+   It and the in-review Draft chip are one control in two states and never
+   render simultaneously; the chip opens review mode (the same row now carries
+   the Draft chip, stepper, Show changes, Discard and Apply, with the toolbar
+   and prose not moving), Live version in its menu swaps back. A document with
+   no pending draft shows no chip. On the phone shell (touch, 390px) the same
+   chip sits in a row under the top bar.
 2. With the Manuscript tree mounted, have the agent write a new document in
    auto-apply mode. PASS: the tree shows the document within ~5s of turn end
    with no navigation or reload.

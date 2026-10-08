@@ -131,7 +131,9 @@ describe("a rejected whole-draft Apply", () => {
     const { chat, answerApply: _answer, rejectApply } = twoSessions();
     const pending = chat.applyReviewedDraft(selection);
     rejectApply(new Error("409"));
-    expect(await pending).toEqual({ kind: "failed", code: "apply-failed" });
-    expect(draftCommandFailure(currentDraftCommandRecords(), draft)).toBe("apply-failed");
+    expect(await pending).toEqual({ kind: "failed", failure: { code: "apply-offline" } });
+    expect(draftCommandFailure(currentDraftCommandRecords(), draft)).toEqual({
+      code: "apply-offline",
+    });
   });
 });

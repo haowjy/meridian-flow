@@ -37,17 +37,12 @@ export function pendingReviewDraft(
   return group.draft;
 }
 
-/** Document groups that still carry an active, reviewable draft. */
+/** Document groups that still carry an active, reviewable draft, in the order the server listed them. */
 export function activeWorkDraftGroups(
   groups: ThreadDraftGroup[] | null | undefined,
 ): ThreadDraftGroup[] {
   if (!groups?.length) return [];
-  return groups
-    .filter((group) => pendingReviewDraft(group) !== null)
-    .sort(
-      (left, right) =>
-        (Date.parse(right.draft.updatedAt) || 0) - (Date.parse(left.draft.updatedAt) || 0),
-    );
+  return groups.filter((group) => pendingReviewDraft(group) !== null);
 }
 
 function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
