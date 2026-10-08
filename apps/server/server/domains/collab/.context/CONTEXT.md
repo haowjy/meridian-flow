@@ -237,7 +237,12 @@ storage or lifecycle eligibility (the caller checks those).
 or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
 words have writer-protected birth provenance. Maintenance is excluded from both
 live overlap dependencies and reversal lineage blockers, so rewriting a link
-inside an AI paragraph does not prevent the paragraph's Undo.
+inside an AI paragraph does not prevent the paragraph's Undo. Draft attribution
+does not yet keep it neutral: `liveAttributionRows` in
+`domain/branch-agent-edit.ts` labels every non-agent live row `writer`, so a
+rewrite after a draft's baseline echoes as a writer edit
+([#719](https://github.com/haowjy/meridian-flow/issues/719)). Do not build on
+that label.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This
