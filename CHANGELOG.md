@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - A Scratch note opened from a Work's Files now opens in the sidebar as the full editor: edit it, and it saves, works offline and freezes with an archived Work like an Editor tab. Its title menu lists the Work's other notes, with Open in Editor and Rename. Opening the same note in an Editor tab keeps your caret steady for other people.
+- Following a link inside a document the AI created and you are still reviewing now opens it, instead of waiting on "Opening the link" forever.
 - The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
