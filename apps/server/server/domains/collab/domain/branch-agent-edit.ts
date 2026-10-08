@@ -21,7 +21,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import type { BranchJournalRow } from "./branch-push-contracts.js";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 import {
   type BranchReversalScope,
@@ -132,14 +132,7 @@ export function createBranchAgentEditCoordinator(input: {
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  journalRows?: {
-    listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-    listConcurrentJournalRows(
-      branchId: string,
-      generation: number,
-      options: { afterJournalId?: number; documentId: DocumentId },
-    ): Promise<BranchJournalRow[]>;
-  };
+  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
@@ -697,62 +690,25 @@ async function concurrentUpstreamJournalRows(
     threadId: ThreadId;
     branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
-    journalRows?: {
-      listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-      listConcurrentJournalRows(
-        branchId: string,
-        generation: number,
-        options: { afterJournalId?: number; documentId: DocumentId },
-      ): Promise<BranchJournalRow[]>;
-    };
+    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
   },
   documentId: DocumentId,
   afterJournalId?: number,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
-  if (!input.journalRows || !input.branches.getBranch) return { rows: [] };
+  if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
   const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
   peer.doc.destroy();
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
   const upstreamBranchId = peerSnapshot?.upstreamBranchId;
   if (!upstreamBranchId) return { rows: [] };
-  if (typeof input.branchCoordinator.readBranch === "function") {
-    return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
-      const rows = await listConcurrentRows(journalRows, {
-        branchId: upstreamBranchId,
-        generation: snapshot.generation,
-        afterJournalId,
-        documentId,
-      });
-      return {
-        rows,
-        upstreamState: Y.encodeStateAsUpdate(doc),
-      };
-    });
-  }
-  const upstream = await input.branches.getBranch(upstreamBranchId);
-  if (!upstream) return { rows: [] };
-  const rows = await listConcurrentRows(journalRows, {
-    branchId: upstreamBranchId,
-    generation: upstream.generation,
-    afterJournalId,
-    documentId,
-  });
-  return { rows };
-}
-
-async function listConcurrentRows(
-  journalRows: NonNullable<Parameters<typeof concurrentUpstreamJournalRows>[0]["journalRows"]>,
-  input: {
-    branchId: string;
-    generation: number;
-    afterJournalId?: number;
-    documentId: DocumentId;
-  },
-): Promise<BranchJournalRow[]> {
-  return journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
-    afterJournalId: input.afterJournalId,
-    documentId: input.documentId,
+  return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
+    const rows = await journalRows.listConcurrentJournalRows(
+      upstreamBranchId,
+      snapshot.generation,
+      { afterJournalId, documentId },
+    );
+    return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
   });
 }
 

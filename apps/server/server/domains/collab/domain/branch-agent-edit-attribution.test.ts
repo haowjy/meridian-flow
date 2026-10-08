@@ -80,7 +80,6 @@ function fixture(existingUpstream?: Y.Doc) {
       listActiveWorkDraftBranchIds: async () => ["draft"],
     },
     journalRows: {
-      listActiveJournalRows: async () => rows,
       listConcurrentJournalRows: async () => rows,
     },
     liveJournal: {
