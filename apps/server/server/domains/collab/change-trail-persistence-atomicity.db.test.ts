@@ -5,7 +5,7 @@ import {
   ALPHA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   deleteDrizzleRows,
   resetDatabase,
   schema,
@@ -17,11 +17,12 @@ if (!enabled || !process.env.DATABASE_URL) {
 }
 
 describe("change trail (postgres)", () => {
-  beforeEach(resetDatabase);
-  afterAll(closeDatabase);
+  const db = createTestDatabase();
+  beforeEach(() => resetDatabase(db));
+  afterAll(() => closeDatabase(db));
 
   it("rolls content, lineage, shell, detail, and outbox back at every trail insert boundary", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const branchId = await harness.seedDestructivePush("trail-insert-boundaries");
     const beforeMarkdown = await harness.liveMarkdown(ALPHA_ID);
     const beforeUpdates = await harness.liveUpdateCount();
@@ -56,7 +57,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("persists proven replacements as live ranges and deletes conservatively", async () => {
-    const proven = createHarness();
+    const proven = createHarness(db);
     const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);
     await proven.push(provenBranchId);
     const provenChange = (await proven.trailRowMembership()).details[0]?.changes[0];
@@ -78,7 +79,7 @@ describe("change trail (postgres)", () => {
       schema.documentYjsHeads,
       schema.documentYjsUpdates,
     ]);
-    const conservative = createHarness();
+    const conservative = createHarness(db);
     const conservativeBranchId = await conservative.seedDestructivePush("conservative-delete");
     await conservative.push(conservativeBranchId);
     const conservativeChange = (await conservative.trailRowMembership()).details[0]?.changes[0];
@@ -89,7 +90,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("commits normalized trail state once and reuses it on an already-pushed retry", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const branchId = await harness.seedDestructivePush("trail-commit-retry");
     const beforeMarkdown = await harness.liveMarkdown(ALPHA_ID);
     await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
@@ -110,7 +111,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("keeps a mixed-owner push turn-owned and preserves its shell across document deletion", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const branchId = await harness.seedDestructivePush("trail-shared-delete");
     await harness.makeJournalOwnershipMixed();
     await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });

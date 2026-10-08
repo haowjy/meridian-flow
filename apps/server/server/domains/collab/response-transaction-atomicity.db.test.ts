@@ -10,7 +10,7 @@ import {
   BETA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   PROJECT_ID,
   resetDatabase,
   runInDrizzleTransaction,
@@ -43,11 +43,12 @@ async function currentDraftId(
 const MIXED_RETRY_RESPONSE = "00000000-0000-4000-8000-000000000831";
 
 describe("change trail (postgres)", () => {
-  beforeEach(resetDatabase);
-  afterAll(closeDatabase);
+  const db = createTestDatabase();
+  beforeEach(() => resetDatabase(db));
+  afterAll(() => closeDatabase(db));
 
   it("rolls back all ten state surfaces and commits the retained response on retry", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     await harness.seedAndStage("retry-response");
     const before = await harness.captureState();
     const staged = harness.stagedUpdates("retry-response");
@@ -92,7 +93,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("publishes two draft-only documents back to back without retaining the branch lock", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const fixture = harness.crossWorkProbeFixture();
     const created = [
       "00000000-0000-4000-8000-0000000008d1",
@@ -181,7 +182,7 @@ describe("change trail (postgres)", () => {
 
   // D42: a mixed save that fails after beta's live append leaves nothing, live or drafted.
   it("rolls back a live and a drafted document when the save fails after the live append", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     await harness.seedAndStage(MIXED_RETRY_RESPONSE, { liveBeta: true });
     const before = await harness.captureState();
     const liveBeta = await harness.liveMarkdown(BETA_ID);
@@ -206,7 +207,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("retains mixed provenance across repeated compaction and generation replacement", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
 
     await expect(harness.compactMixedProvenanceTwice()).resolves.toEqual({
       retainedUpdateCount: 0,
@@ -217,7 +218,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("does not compact a retired-generation suffix into the restored authority head", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
 
     await expect(harness.compactAfterAuthorityReplacement()).resolves.toEqual({
       coldMarkdown: "Restored base.\n",
@@ -226,7 +227,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("serializes compaction with concurrent authority-head replacement", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
 
     await expect(harness.compactWhileAuthorityReplacementWaits()).resolves.toEqual({
       coldMarkdown: "Restored base.\n",
@@ -235,7 +236,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("aborts every response participant when an outer ambient transaction rolls back later", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     await harness.seedAndStage("outer-rollback-response");
     const before = await harness.captureState();
 
@@ -264,7 +265,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("reports a writer sweep journaled after the observation cut", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000821";
     const branchId = await harness.seedProbeTimelineSweep(responseId);
 
@@ -295,7 +296,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("S10 reports a pulled writer edit that landed after the response read", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000822";
     const branchId = await harness.seedProbeTimelineAfterRead(responseId);
 
@@ -332,7 +333,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("merges a stale whole-document Apply with a writer insertion", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000835";
     await harness.seedWriterDocument("Writer-approved root.", responseId);
     await harness.stageCertifiedReplace({
@@ -389,7 +390,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("applies writer edits added to the draft after the reviewed preview", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000845";
     await harness.seedWriterDocument("Original draft root.", responseId);
     await harness.stageCertifiedReplace({
@@ -497,7 +498,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("preserves a live writer insertion between two branch edits", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000837";
     await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);
     const fixture = harness.crossWorkProbeFixture();
@@ -581,7 +582,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("merges a folded whole-document overwrite with a later writer insertion", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000838";
     await harness.seedWriterDocument("First writer root.\n\nSecond writer root.", responseId);
     const fixture = harness.crossWorkProbeFixture();

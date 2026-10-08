@@ -8,7 +8,7 @@ import {
   ALPHA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   resetDatabase,
   schema,
   THREAD_ID,
@@ -55,8 +55,9 @@ const trail = (changes: TrailChangeV1[]) => ({
 });
 
 describe("change trail aggregate projections (postgres)", () => {
-  beforeEach(resetDatabase);
-  afterAll(closeDatabase);
+  const db = createTestDatabase();
+  beforeEach(() => resetDatabase(db));
+  afterAll(() => closeDatabase(db));
 
   it("bounds reconciliation and revisits earlier pages to settle every trail", async () => {
     const turnIds = Array.from({ length: 101 }, () => crypto.randomUUID() as TurnId);
@@ -95,7 +96,7 @@ describe("change trail aggregate projections (postgres)", () => {
   });
 
   it("reopens a shared trail when new work arrives during an active turn", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     try {
       await harness.seedDestructivePush("shared-active-reopen");
       await db

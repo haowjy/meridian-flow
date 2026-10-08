@@ -2,26 +2,30 @@
 
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   ALPHA_ID,
   appliedMarkdown,
   COLD_SCENARIO_IDS,
+  closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   expectLiveSweepOnly,
   expirePendingClaims,
   markdownFromUpdate,
   observeSettlement,
+  resetSettlementFixture,
   schema,
-  setupSettlementFixture,
 } from "./test-support/branch-push-settlement-fixture.js";
 import { settlementOracle } from "./test-support/durable-settlement-oracle.js";
 
-setupSettlementFixture();
 describe("durable branch-push settlement oracle (postgres)", () => {
+  const db = createTestDatabase();
+  beforeEach(() => resetSettlementFixture(db));
+  afterAll(() => closeDatabase(db));
+
   it("item 6: stale A cannot renew, record failure, or perform the first apply after B claims", async () => {
-    const actorA = createHarness({
+    const actorA = createHarness(db, {
       afterDurableCommit: async () => {
         throw new Error("pause actor A after durable claim");
       },
@@ -44,16 +48,16 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       leaseExpiresAt: ownedByA.leaseExpiresAt,
     };
     actorA.destroyWarmState();
-    const contender = createHarness();
+    const contender = createHarness(db);
     await expect(contender.recoverPendingLiveSettlements()).resolves.toBe(0);
     contender.destroyWarmState();
-    await expirePendingClaims();
+    await expirePendingClaims(db);
 
     let staleProbe:
       | Awaited<ReturnType<ReturnType<typeof createHarness>["probeStaleSettlementClaim"]>>
       | undefined;
     let actorB!: ReturnType<typeof createHarness>;
-    actorB = createHarness({
+    actorB = createHarness(db, {
       async afterSettlement() {
         staleProbe ??= await actorB.probeStaleSettlementClaim(staleClaim);
       },
@@ -98,19 +102,19 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     };
     const result = await settlementOracle({
       async runWarm() {
-        const warm = createHarness({
+        const warm = createHarness(db, {
           afterDurableCommit: injectPostCutWriter,
           afterSettlement: deleteAfterFirstClassification(),
         });
         const branchId = await warm.seedDestructivePush("oracle-f1a-warm");
         await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
         await expectLiveSweepOnly(warm);
-        const observed = await observeSettlement(warm);
+        const observed = await observeSettlement(db, warm);
         warm.destroyWarmState();
         return observed;
       },
       async commitColdSubject() {
-        coldHarness = createHarness({
+        coldHarness = createHarness(db, {
           ids: COLD_SCENARIO_IDS,
           afterDurableCommit: async (input) => {
             await injectPostCutWriter(input);
@@ -125,14 +129,14 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         coldHarness = undefined;
       },
       async recoverFromPostgres() {
-        await expirePendingClaims(COLD_SCENARIO_IDS.ALPHA_ID);
-        const cold = createHarness({
+        await expirePendingClaims(db, COLD_SCENARIO_IDS.ALPHA_ID);
+        const cold = createHarness(db, {
           ids: COLD_SCENARIO_IDS,
           afterSettlement: deleteAfterFirstClassification(),
         });
         await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
         await expectLiveSweepOnly(cold);
-        const observed = await observeSettlement(cold, COLD_SCENARIO_IDS.ALPHA_ID);
+        const observed = await observeSettlement(db, cold, COLD_SCENARIO_IDS.ALPHA_ID);
         cold.destroyWarmState();
         return observed;
       },
@@ -174,7 +178,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     let coldHarness: ReturnType<typeof createHarness> | undefined;
     const result = await settlementOracle({
       async runWarm() {
-        warm = createHarness({
+        warm = createHarness(db, {
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(warm.attemptSnapshotReplacement()).resolves.toEqual({
               ok: false,
@@ -185,12 +189,12 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         });
         const branchId = await warm.seedDestructivePush("oracle-race-fault-warm");
         await expect(warm.push(branchId)).resolves.toMatchObject({ status: "pushed" });
-        const observed = await observeSettlement(warm);
+        const observed = await observeSettlement(db, warm);
         warm.destroyWarmState();
         return observed;
       },
       async commitColdSubject() {
-        coldHarness = createHarness({
+        coldHarness = createHarness(db, {
           ids: COLD_SCENARIO_IDS,
           afterDurableCommit: async ({ appendWriterPrefix }) => {
             await expect(coldHarness?.attemptSnapshotReplacement()).resolves.toEqual({
@@ -209,8 +213,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
         coldHarness = undefined;
       },
       async recoverFromPostgres() {
-        await expirePendingClaims(COLD_SCENARIO_IDS.ALPHA_ID);
-        const failingCompletion = createHarness({
+        await expirePendingClaims(db, COLD_SCENARIO_IDS.ALPHA_ID);
+        const failingCompletion = createHarness(db, {
           ids: COLD_SCENARIO_IDS,
           afterLiveApply() {
             throw new Error("completion transaction failed after live apply");
@@ -230,9 +234,9 @@ describe("durable branch-push settlement oracle (postgres)", () => {
           .update(schema.branchPushSettlementOutbox)
           .set({ availableAt: new Date(0) })
           .where(eq(schema.branchPushSettlementOutbox.documentId, COLD_SCENARIO_IDS.ALPHA_ID));
-        const cold = createHarness({ ids: COLD_SCENARIO_IDS });
+        const cold = createHarness(db, { ids: COLD_SCENARIO_IDS });
         await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
-        const observed = await observeSettlement(cold, COLD_SCENARIO_IDS.ALPHA_ID);
+        const observed = await observeSettlement(db, cold, COLD_SCENARIO_IDS.ALPHA_ID);
         cold.destroyWarmState();
         return observed;
       },
