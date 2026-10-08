@@ -12,10 +12,11 @@ document index; `EditorView` finds the URI by document id in that index and
 hands the same value to the `@` catalog, so a relative link resolves against
 the holder it is spelled from. The project and holder-owned link Work come from
 `useEditorScope()`: Scratch/Uploads use the replica location's Work row id;
-project documents use No Work. Route Work is never read for links. It calls `useLinkFollower` with:
+project documents use No Work; a note in a chat's Scratch adds its lineage
+(`rootThreadId`). Route Work is never read for links. It calls `useLinkFollower` with:
 
-- the scope `{ projectId, workId, baseUri }`, or null while the editor is not
-  active or has no project;
+- the scope `{ projectId, workId, rootThreadId, baseUri }`, or null while the
+  editor is not active or has no project;
 - `getLinkResolution(editor)`, the cache the decorations draw from;
 - the link store's `reportFollow` and `clearFollow` as the reporter;
 - `useEditorLinkDestination()`: `useOpenProjectDocument` with the holder's link Work,

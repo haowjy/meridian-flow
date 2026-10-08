@@ -43,8 +43,8 @@ its own Escape precedence. Releasing the lease tears down both halves once.
 **The browser projects; the catalog owns metadata.** `ReferenceCatalogPort`
 reads the one F1 `CatalogCacheView` and delegates explicit cold-Work acquisition
 to its owner. The browser never stores a second tree, enumerates availability,
-or turns wake hints into rows. Root merges only project, user, and current Work
-or no-Work warm views. Other Works remain authority rows until activated.
+or turns wake hints into rows. Root merges only project, user, the current Work
+or no-Work warm view, and a No Work chat's lineage Scratch. Other Works remain authority rows until activated.
 Known-empty sources, folders, and acquired authorities are omitted; cold or
 invalidated metadata cannot prove emptiness. Explicit source and folder URI
 queries retain an empty-state surface, and Back clears that search. No
@@ -57,7 +57,8 @@ deduplicated and the 20-row cap applies only after the merged ordering.
 
 **Terminal identity is already authoritative.** A file row contains one
 `AuthoritativeReference`: document ID, persisted file classification, label,
-stable authority, and full non-contextual URI. Work and no-Work contextual URI
+stable authority, and full non-contextual URI. Work, no-Work and lineage
+(`scratch://@/c12/`, the `lineage` arm of `StableReferenceAuthority`) URI
 syntax is verified through the contracts parser at this boundary; contextual
 Work syntax is never reconstructed into stable identity on the client.
 
