@@ -166,7 +166,8 @@ describe("DraftReviewBand", () => {
     await render({ onRename }, async () => {
       await openSwitcher();
       await act(async () => byText("Rename")?.click());
-      expect(onRename).toHaveBeenCalledOnce();
+      // Rename runs from the menu's close-focus callback, after Radix finishes closing.
+      await vi.waitFor(() => expect(onRename).toHaveBeenCalledOnce());
     });
     await render({}, async () => {
       await openSwitcher();
