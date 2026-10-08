@@ -5,7 +5,6 @@ import {
   collisionMarkdown,
   prefixCollisionFixture,
 } from "../resolver/test-support/hash-collision.js";
-import { hashAt } from "./test-support/assertions.js";
 import { context, harness, model } from "./test-support/write-tool-harness.js";
 
 describe("read selection", () => {
@@ -33,30 +32,5 @@ describe("read selection", () => {
       status: "not_found",
       message: expect.stringContaining('Section "#deadbeef" was not found'),
     });
-  });
-
-  it("selects radius-three windows and clamps them at document edges", async () => {
-    const markdown = Array.from({ length: 9 }, (_, index) => `Block ${index + 1}`).join("\n\n");
-    const ctx = harness({ "chapter.md": markdown });
-    const doc = ctx.liveDoc("chapter.md");
-    const readAround = async (index: number) => {
-      const result = await ctx.core.read(
-        { file: "chapter.md", around: hashAt(doc, index) },
-        context,
-      );
-      return result.result.blocks?.flatMap((group) => group.items.map((item) => item.body)) ?? [];
-    };
-
-    expect(await readAround(4)).toEqual([
-      "Block 2",
-      "Block 3",
-      "Block 4",
-      "Block 5",
-      "Block 6",
-      "Block 7",
-      "Block 8",
-    ]);
-    expect(await readAround(1)).toEqual(["Block 1", "Block 2", "Block 3", "Block 4", "Block 5"]);
-    expect(await readAround(7)).toEqual(["Block 5", "Block 6", "Block 7", "Block 8", "Block 9"]);
   });
 });

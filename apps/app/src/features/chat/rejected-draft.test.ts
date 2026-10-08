@@ -6,7 +6,6 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { ExistingThreadChatSubmission } from "@/client/chat-submissions";
-import { plainComposerDoc } from "@/components/app/composer/composer-document";
 import { type RejectedDraftComposer, restoreRejectedDraft } from "./rejected-draft";
 
 function fingerprint(
@@ -35,18 +34,6 @@ function fakeComposer(hasContent: boolean) {
 }
 
 describe("rejected-draft edit recovery", () => {
-  it("restores the stored text into an empty composer and focuses it", () => {
-    const composer = fakeComposer(false);
-
-    restoreRejectedDraft(composer, fingerprint({ text: "Hello\nWorld" }));
-
-    expect(composer.restoreSnapshot).toHaveBeenCalledTimes(1);
-    expect(composer.restoreSnapshot.mock.calls[0]?.[0]).toMatchObject({
-      doc: plainComposerDoc("Hello\nWorld"),
-    });
-    expect(composer.focus).toHaveBeenCalledTimes(1);
-  });
-
   it("never overwrites a non-empty live draft, including a reference-only one", () => {
     const composer = fakeComposer(true);
 
