@@ -18,6 +18,9 @@ outside it.
   schema coverage during construction.
 - MDX component registries are closure-captured by MDX block codec factories, not
   threaded through parse/serialize contexts.
+- MDX accepts lowercase HTML void elements without JSX closing slashes at the
+  token boundary; all other JSX syntax and closure rules stay strict. Literal
+  code and prose escaping do not pass through a tag-rewriting preprocessor.
 - Runtime source is the preprocessed source so AST positions and fallback slicing
   agree.
 - Every codec requires an `AssetPathResolver`. A consumer with no project asset
