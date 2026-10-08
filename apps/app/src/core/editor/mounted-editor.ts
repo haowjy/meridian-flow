@@ -22,6 +22,7 @@ import type { DocumentSession } from "./document-session";
 import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import type { WikilinkPasteCatalog } from "./links";
+import { gateLocalPresence } from "./local-presence";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
@@ -61,6 +62,12 @@ export type EditorSurfaceOptions = {
    * that rebuilds this object pays an extra `view.setProps` — never a remount.
    */
   editorProps: NonNullable<EditorOptions["editorProps"]>;
+  /**
+   * Whether this editor may write the client's local presence. A view kept
+   * warm behind another one of the same session must not (see
+   * `gateLocalPresence`).
+   */
+  publishPresence: boolean;
 };
 
 /** Room the `DocumentSessionRegistry` binds this editor to. */
@@ -126,6 +133,8 @@ export function useMountedEditor({
   atReferenceCatalogRef.current = atReferenceCatalog;
   const wikilinkPasteCatalogRef = useRef(wikilinkPasteCatalog);
   wikilinkPasteCatalogRef.current = wikilinkPasteCatalog;
+  const publishPresenceRef = useRef(surface.publishPresence);
+  publishPresenceRef.current = surface.publishPresence;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
@@ -134,8 +143,9 @@ export function useMountedEditor({
       document: session.document,
       // The session owns whether this client is visible (inline review suspends
       // it), so it owns every local awareness field the editor publishes — the
-      // caret's included.
-      presence: session.presence,
+      // caret's included. Gated, because another view of this session may be
+      // the one in front.
+      presence: gateLocalPresence(session.presence, () => publishPresenceRef.current),
       schemaType: identity.schemaType,
       assetRenderContext: { projectId: identity.projectId },
       showCollaborationDecorations: identity.collaborationDecorations,

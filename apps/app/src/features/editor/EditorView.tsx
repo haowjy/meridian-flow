@@ -513,7 +513,7 @@ function ActiveSessionEditorView({
     slashCommandCatalog,
     atReferenceCatalog,
     wikilinkPasteCatalog,
-    surface: { editable: effectiveEditable, editorProps },
+    surface: { editable: effectiveEditable, editorProps, publishPresence: active },
     evidenceDegraded,
   });
 
