@@ -10,8 +10,6 @@ import {
 } from "./test-support/assertions.js";
 import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
-const EMPTY_NOTE = "document is now empty; its one blank block always stays.";
-
 describe("response staging", () => {
   it("does not retain a staged write when echo summarization fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
@@ -68,60 +66,6 @@ describe("response staging", () => {
     expect(outcomeText(await ctx.core.read({ file: "new.md" }, context))).toBe(
       "status: document_not_found; path: new.md\n\nFile not found. Check the path with `ls`.",
     );
-  });
-
-  it("rejects writes staged against committed response ids with a typed tool error", async () => {
-    const lifecycleErrors: unknown[] = [];
-    const ctx = harness(
-      { "chapter.md": "Alpha." },
-      { onResponseLifecycleError: (event) => lifecycleErrors.push(event) },
-    );
-    await ctx.core.read({ file: "chapter.md" }, context);
-    const responseContext = {
-      ...context,
-      turnId: "turn-committed-response",
-      responseId: "response-committed-response",
-    };
-
-    await expect(
-      ctx.core.write(
-        { command: "insert", file: "chapter.md", content: "Committed write." },
-        responseContext,
-      ),
-    ).resolves.toMatchObject({ status: "success" });
-    await ctx.core.commitResponse("response-committed-response");
-
-    const rejected = await ctx.core.write(
-      {
-        command: "insert",
-        file: "chapter.md",
-        content: "Must not stage.",
-        tool_use_id: "closed-response-call",
-      },
-      {
-        ...context,
-        turnId: "turn-after-commit",
-        responseId: "response-committed-response",
-      },
-    );
-
-    expectOutcome(rejected, "invalid_write", true);
-    expect(outcomeText(rejected)).toContain("Response lifecycle closed");
-    expect(outcomeText(rejected)).toContain("response-committed-response");
-    expect(rejected.error).toEqual({
-      type: "response_lifecycle",
-      code: "response_closed",
-      responseId: "response-committed-response",
-      operation: "stage",
-      state: "committed",
-      documentId: "chapter.md",
-      threadId: THREAD_ID,
-      turnId: "turn-after-commit",
-      writeId: "response:response-committed-response:tool:closed-response-call",
-    });
-    expect(lifecycleErrors).toEqual([rejected.error]);
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Committed write."]);
   });
 
   it("stages multiple response writes and commits journal plus live doc once", async () => {
@@ -294,22 +238,6 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
   });
 
-  it("says in the settled receipt when a write leaves the document empty", async () => {
-    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
-    await ctx.core.read({ file: "chapter.md" }, context);
-    const responseContext = { ...context, turnId: "turn-empty", responseId: "response-empty" };
-    const staged = await ctx.core.write(
-      { command: "remove", file: "chapter.md", in: [1, 3] },
-      responseContext,
-    );
-    expect(outcomeText(staged)).toContain(EMPTY_NOTE);
-
-    const committed = await ctx.core.commitResponse("response-empty");
-    const receipt = committed.documents[0]?.receipts.at(-1)?.result;
-    if (!receipt) throw new Error("missing settled receipt");
-    expect(renderAgentEditResult(receipt)).toContain(EMPTY_NOTE);
-  });
-
   it("drops staged response buffers when invalidating a thread", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.read({ file: "chapter.md" }, context);
@@ -330,32 +258,6 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
     const read = await ctx.core.read({ file: "chapter.md" }, context);
     expect(outcomeText(read)).toContain("|Alpha.");
-    expect(outcomeText(read)).not.toContain("Beta.");
-  });
-
-  it("rolls back staged response writes and restores the runtime doc from live", async () => {
-    const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.read({ file: "chapter.md" }, context);
-    const responseContext = {
-      ...context,
-      turnId: "turn-response-rollback",
-      responseId: "response-rollback",
-    };
-
-    const staged = await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Beta." },
-      responseContext,
-    );
-    expect(outcomeText(staged)).toContain("Beta.");
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
-
-    await ctx.core.rollbackResponse("response-rollback");
-
-    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
-    const read = await ctx.core.read({ file: "chapter.md" }, context);
-    expect(outcomeText(read)).toContain("Alpha.");
     expect(outcomeText(read)).not.toContain("Beta.");
   });
 

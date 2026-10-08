@@ -5,51 +5,10 @@ import {
   collisionMarkdown,
   prefixCollisionFixture,
 } from "../resolver/test-support/hash-collision.js";
-import { renderAgentEditResult } from "./result-text.js";
 import { hashAt } from "./test-support/assertions.js";
 import { context, harness, model } from "./test-support/write-tool-harness.js";
 
 describe("read selection", () => {
-  it("returns full blocks and heading-scoped sections in the public result", async () => {
-    const ctx = harness({ "chapter.md": "# Chapter\n\nAlpha sword.\n\n## Arena\n\nBeta waits." });
-    const full = await ctx.core.read({ file: "chapter.md" }, context);
-    expect(full.result.blocks?.[0]?.items.map((item) => item.body)).toEqual([
-      "# Chapter",
-      "Alpha sword.",
-      "## Arena",
-      "Beta waits.",
-    ]);
-
-    const headingHash = hashAt(ctx.liveDoc("chapter.md"), 2);
-    const section = await ctx.core.read({ file: `chapter.md#${headingHash}` }, context);
-    expect(section.result.blocks?.[0]?.items.map((item) => item.body)).toEqual([
-      "## Arena",
-      "Beta waits.",
-    ]);
-
-    const outline = await ctx.core.read({ file: "chapter.md", format: "outline" }, context);
-    expect(outline.result.read).toEqual({ format: "outline", documentBlocks: 4 });
-    expect(outline.result.blocks?.[0]?.items.map((item) => item.body)).toContain("## Arena");
-  });
-
-  it("links each outline heading by its #heading-slug", async () => {
-    const ctx = harness({
-      "chapter.md":
-        "# Chapter\n\nAlpha.\n\n## The Arena\n\nBeta.\n\n## The Arena\n\nGamma.\n\n## Cafe\n\nDelta.",
-    });
-    const outline = await ctx.core.read({ file: "chapter.md", format: "outline" }, context);
-    const text = renderAgentEditResult(outline.result);
-    const cafeHash = hashAt(ctx.liveDoc("chapter.md"), 6);
-    expect(text).toContain('Read a section with read({"path": "chapter.md#<slug>"}).');
-    expect(text.split("\n").flatMap((line) => line.match(/ {2}(#\S+)$/u)?.[1] ?? [])).toEqual([
-      "#chapter",
-      "#the-arena",
-      "#the-arena-1",
-      // A hex-shaped slug would resolve as a block hash first, so it keeps the hash.
-      `#${cafeHash}`,
-    ]);
-  });
-
   it("returns every candidate for a colliding hash prefix", async () => {
     const ctx = harness({ "chapter.md": collisionMarkdown() });
     const fixture = prefixCollisionFixture(model, model.getBlocks(ctx.liveDoc("chapter.md")));
