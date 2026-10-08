@@ -29,27 +29,54 @@ contract the project shell relies on.
 
 ### `resolveDockView` pure fallback
 
-`resolveDockView(screen: ScreenKey, stored: DockView | undefined, hasFile: boolean)`
-is a pure function:
+`resolveDockView(screen: ScreenKey, stored: DockView | undefined)` is a pure function:
 
 - If `stored` is a valid view for the screen's set, it is the active view.
 - Otherwise, the screen's `default` is used (the occupant's native view).
-- The Work file segment is inserted while a transient Work file is available.
 - The screen's view set and primary view are always returned alongside.
 
 This is deliberately separated from the React hook (`useDockView`) so the
 fallback logic is unit-testable. The hook only adds the Zustand binding.
 
-On Work, `workFile` is a separate transient `{ workId, tab, active }` slot in
-the same session-only store. While populated, `file` joins the Chat/Changes
-segments. Opening a file activates its view without changing the writer's
-explicit Chat/Changes choice; selecting either of those parks the file view,
-and selecting File again reactivates it. Closing the slot returns to the last
-explicit view (or Chat by default). Chat remains mounted and inert underneath
-the viewer. `ProjectView` owns route reconciliation and calls `enterWork` or
-`leaveWork` to clear a stale slot on Work change, the Work collection, or any
-other destination. Pending creation routes use their client Work identity too.
-No file view is persisted across reloads.
+### Dock document slot
+
+`document` in the same session-only store is `{ screen, tab }`: the one document the
+dock shows on Work or Chat. `useDockView(screen)` returns it only for its own screen.
+While it is set, `DockShell` covers the occupant (mounted, inert) with
+`DockDocumentView` and `DockHeader` swaps the view switch for the document's title
+chip, a Close document button, and the collapse toggle. Opening a second document
+replaces the first. `setDockView` on the document's screen clears it, so revealing
+the chat returns to the chat. Closing returns to the writer's last explicit view.
+`ProjectView` calls `syncDocumentScope(screen, workId)`: a Work's note is dropped when
+the Work or the screen changes; a Chat-screen note stays on the Chat screen. No
+document is persisted across reloads.
+
+`useOpenDocumentInDock()` is the one way in. It opens the dock document and
+`revealDock("document")`; on the Editor screen and on the phone it opens an Editor
+route instead, so those never hold a dock document. `DockReveal` is `"chat" |
+"document"`: a document reveal only opens the dock, the slot already holds the
+document.
+
+`DockDocumentView` follows the resource projection (`useDockDocumentTab`): a rename
+elsewhere updates the name and path the header and identity bar show, and a removed
+or terminal document closes the slot. It reads `DraftReviewProvider` from wherever
+`DockShell` is mounted (the chat scope), so review claims follow the editor that is
+in front: the Editor tab's editor and the dock's are never both `active`.
+
+The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) over the
+document's own catalog tree (the Work's Scratch or Uploads) at the document's
+folder, then Open in Editor and Rename. The menu takes a tree source and an action
+list; a later chat Scratch button reuses it.
+
+### Two views of one document
+
+The Editor's warm tabs and the dock's document can be bound to one session at once.
+The registry reference-counts bindings per owner, so closing either view leaves the
+other bound. Undo stacks are per editor but both track every local edit (they share
+y-prosemirror's sync origin), so Ctrl+Z in either view undoes the latest edit from
+either. Presence is the one thing that collided: each view's cursor plugin clears a
+caret it did not place, and two views ping-ponged awareness writes. Each editor's
+presence writes pass `gateLocalPresence`, which follows the editor's `active` flag.
 
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
@@ -123,7 +150,8 @@ flowchart LR
     DockShell -->|center: passthrough| Occupant[ChatSurface / ContextSidebar]
     DockShell -->|dock: header + overlay| Occupant
 DockShell -->|dock: view=changes| Changes[DockChangesView]
-DockShell -->|Work view=file| File[ContextViewerBareHost]
+DockShell -->|document set| Doc[DockDocumentView]
+    Doc --> DocHost[ContextDocumentHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
     Changes --> DocGroup[ChangesDocumentGroup per doc]
     DocGroup --> Card[ReviewOperationCard per Discard class]

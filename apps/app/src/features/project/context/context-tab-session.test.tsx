@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Resource-session fallback and recovery behavior at the desktop editor host. */
+/** Resource-session fallback, recovery, and shared binding at the session boundary every document view renders through. */
 
 import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { act, useState } from "react";
@@ -299,6 +299,71 @@ describe("ContextTabSessionBoundary", () => {
 
       expect(release).toHaveBeenCalledOnce();
       expect(observed.at(-1)).toBeNull();
+    });
+  });
+
+  it("binds one document for two views under separate owners, and closing one leaves the other bound", async () => {
+    const shared = session();
+    resourceReplica.keyForDocument.mockResolvedValue(null);
+    const owners: string[] = [];
+    const releases = new Map<string, ReturnType<typeof vi.fn>>();
+    const sharedAdmission: AdmittedLiveDocument = {
+      projectId: "project-a",
+      documentId: "document-a",
+      generation: "2",
+      bind: async (owner) => {
+        owners.push(owner);
+        const release = vi.fn();
+        releases.set(owner, release);
+        return {
+          projectId: "project-a",
+          documentId: "document-a",
+          generation: "2",
+          session: shared,
+          release,
+        };
+      },
+    };
+    const opener = {
+      open: vi.fn(async () => ({ kind: "opened", admission: sharedAdmission })),
+    };
+    const observed: Record<"tab" | "dock", Array<DocumentSession | null>> = { tab: [], dock: [] };
+    let closeDock!: () => void;
+
+    function Harness() {
+      const [dockOpen, setDockOpen] = useState(true);
+      closeDock = () => setDockOpen(false);
+      const view = (name: "tab" | "dock") => (
+        <ContextTabSessionBoundary
+          projectId="project-a"
+          documentId="document-a"
+          availabilityRevision="document-1"
+        >
+          {(value) => {
+            observed[name].push(value);
+            return null;
+          }}
+        </ContextTabSessionBoundary>
+      );
+      return (
+        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
+          {view("tab")}
+          {dockOpen ? view("dock") : null}
+        </ProjectDocumentLiveOpenerContext.Provider>
+      );
+    }
+
+    await withReactRoot(<Harness />, async () => {
+      await act(async () => undefined);
+      expect(observed.tab.at(-1)).toBe(shared);
+      expect(observed.dock.at(-1)).toBe(shared);
+      expect(new Set(owners).size).toBe(2);
+
+      await act(async () => closeDock());
+
+      const released = [...releases.values()].filter((release) => release.mock.calls.length > 0);
+      expect(released).toHaveLength(1);
+      expect(observed.tab.at(-1)).toBe(shared);
     });
   });
 });

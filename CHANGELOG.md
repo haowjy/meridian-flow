@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- A Scratch note opened from a Work's Files now opens in the sidebar as the full editor: edit it, and it saves, works offline and freezes with an archived Work like an Editor tab. Its title menu lists the Work's other notes, with Open in Editor and Rename. Opening the same note in an Editor tab keeps your caret steady for other people.
+- The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
+
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
 - A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.

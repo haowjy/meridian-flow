@@ -45,6 +45,8 @@ export type ContextDocumentHostProps = {
   active: boolean;
   readOnly?: boolean;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
+  /** Overrides the editor shell's own styling, e.g. to take the dock's material. */
+  editorClassName?: string;
 };
 
 export function ContextDocumentHost({
@@ -55,6 +57,7 @@ export function ContextDocumentHost({
   active,
   readOnly = false,
   onUntitledBecameNonEmpty,
+  editorClassName,
 }: ContextDocumentHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
@@ -195,6 +198,7 @@ export function ContextDocumentHost({
               // A warm editor is hidden, not gone. Its chrome portals to
               // the body, where `hidden` on an ancestor means nothing.
               active={active && shown}
+              className={editorClassName}
               editable={!readOnly}
               showToolbar={!readOnly}
               detached={tab.kind === "new"}
