@@ -378,6 +378,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           branchId: documentBranches.id,
           documentId: documentBranches.documentId,
           generation: documentBranches.generation,
+          updatedAt: documentBranches.updatedAt,
           journal: {
             turnId: branchWriteJournal.turnId,
             updateMeta: branchWriteJournal.updateMeta,
@@ -409,6 +410,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             documentId: row.documentId,
             workId,
             generation: row.generation,
+            updatedAt: row.updatedAt,
           },
           rows: [],
         };

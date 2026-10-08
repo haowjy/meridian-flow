@@ -25,19 +25,24 @@ export async function readLiveReviewRevision(db: DrizzleDb, documentId: string):
 }
 
 export function createDrizzleDraftReviewLive(db: Database, journal: UpdateJournal) {
-  return (documentId: string): Promise<{ state: Uint8Array; revision: string }> =>
-    runInDrizzleTransaction(db, async () => {
+  return async (documentId: string): Promise<{ doc: Y.Doc; revision: string }> => {
+    const cut = await runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db);
       await lockDocumentMutation(tx, documentId);
       const revision = await readLiveReviewRevision(tx, documentId);
       const snapshot = await journal.read(documentId);
-      const doc = createCollabYDoc({ gc: false });
-      try {
-        if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-        for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
-        return { state: Y.encodeStateAsUpdate(doc), revision };
-      } finally {
-        doc.destroy();
-      }
+      return { snapshot, revision };
     });
+    // A standalone preview releases its lock before replay. Joined command
+    // transactions retain that same lock until their caller commits.
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      if (cut.snapshot.checkpoint) Y.applyUpdate(doc, cut.snapshot.checkpoint);
+      for (const row of cut.snapshot.updates) Y.applyUpdate(doc, row.update);
+      return { doc, revision: cut.revision };
+    } catch (cause) {
+      doc.destroy();
+      throw cause;
+    }
+  };
 }

@@ -16,7 +16,11 @@ import {
   runOutsideWrite,
 } from "../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
-import { createDocumentUriResolver, resolveDocumentUri } from "../context/document-uri-resolver.js";
+import {
+  createDocumentUriResolver,
+  createDocumentUrisResolver,
+  resolveDocumentUri,
+} from "../context/document-uri-resolver.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
@@ -428,7 +432,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     workDraftPending,
     model: runtime.model,
     agentEdit,
-    resolveDocumentUri: documentUriResolver,
+    resolveDocumentUris: createDocumentUrisResolver(deps.db, deps.workAuthorityResolver),
     resolveThreadTitles: lookups.resolveThreadTitles,
     readLiveReviewCut: createDrizzleDraftReviewLive(deps.db, persistence.journal),
   });

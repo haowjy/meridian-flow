@@ -1,5 +1,6 @@
 /** Builds server-authoritative dependency-closed Apply/Discard classes. */
 
+import { createHash } from "node:crypto";
 import type { ReviewHunk } from "@meridian/contracts/drafts";
 import {
   asPhysicalSourceUpdateIds,
@@ -10,7 +11,6 @@ import {
   type ClockRange,
   decodeUpdateForDependencies,
   deleteRanges,
-  dependencies,
   rangesOverlap,
   suppliedRanges,
 } from "./journal-dependencies.js";
@@ -52,10 +52,15 @@ export function assignReviewClasses(input: {
     input.baseDeletedRanges ?? [],
   );
 
-  const operationsByRoot = new Map<string, typeof input.operations>();
+  const operationsByRoot = new Map<
+    string,
+    Omit<DraftReviewOperationInternal, "closureClassId">[]
+  >();
   for (const operation of input.operations) {
     const root = unionFind.find(operation.operationId);
-    operationsByRoot.set(root, [...(operationsByRoot.get(root) ?? []), operation]);
+    const bucket = operationsByRoot.get(root) ?? [];
+    bucket.push(operation);
+    operationsByRoot.set(root, bucket);
   }
 
   const classByOperationId = new Map<
@@ -74,7 +79,7 @@ export function assignReviewClasses(input: {
         ),
       ].sort((left, right) => left - right),
     );
-    const closureClassId = `closure:${operationIds.join("+")}`;
+    const closureClassId = classId(operationIds);
     for (const operationId of operationIds) {
       classByOperationId.set(operationId, { closureClassId, closureUpdateIds });
     }
@@ -83,7 +88,7 @@ export function assignReviewClasses(input: {
   return input.operations.map((operation) => ({
     ...operation,
     ...(classByOperationId.get(operation.operationId) ?? {
-      closureClassId: `closure:${operation.operationId}`,
+      closureClassId: classId([operation.operationId]),
       closureUpdateIds: operation.closureUpdateIds,
     }),
   }));
@@ -114,46 +119,58 @@ function unionYjsDependencies(
     const decoded = decodeUpdateForDependencies(update.updateData);
     return {
       update,
-      decoded,
+      supplied: suppliedRanges(decoded),
+      references: referenceRanges(decoded),
       branchDeletes: subtractRanges(deleteRanges(decoded), baseDeletedRanges),
     };
   });
   const rowUnionFind = new UnionFind();
   for (const { update } of decoded) rowUnionFind.add(String(update.id));
-  for (const dependent of decoded) {
-    const refs = dependencies(dependent.decoded);
-    const dependentSupplied = suppliedRanges(dependent.decoded);
-    for (const supplier of decoded) {
-      if (supplier.update.id === dependent.update.id) continue;
-      const supplied = suppliedRanges(supplier.decoded);
-      const explicitDependency = refs.some((ref) =>
-        supplied.some((range) => rangesOverlap(range, ref)),
-      );
-      const clockDependency = dependentSupplied.some((range) =>
-        supplied.some(
-          (candidate) =>
-            candidate.client === range.client &&
-            candidate.clock < range.clock &&
-            candidate.clock + candidate.length <= range.clock,
-        ),
-      );
-      // State-vector updates carry cumulative delete sets, including deletions
-      // of live-base structs (which no branch row supplied). Replaying such a
-      // row also publishes those earlier deletions, so their owners must be in
-      // the same visible class. Base tombstones already exist on live and do
-      // not create a branch dependency.
-      const deleteDependency = dependent.branchDeletes.some((range) =>
-        supplier.branchDeletes.some((candidate) => rangesOverlap(range, candidate)),
-      );
-      if (!explicitDependency && !clockDependency && !deleteDependency) continue;
-      rowUnionFind.unionAll([String(dependent.update.id), String(supplier.update.id)]);
+  const supplied = rangeBuckets(
+    decoded.flatMap((row) =>
+      row.supplied.map((range) => ({ ...range, rowId: String(row.update.id) })),
+    ),
+  );
+  const deleted = rangeBuckets(
+    decoded.flatMap((row) =>
+      row.branchDeletes.map((range) => ({ ...range, rowId: String(row.update.id) })),
+    ),
+  );
+  for (const ranges of supplied.values()) {
+    // One successor edge per range preserves the connected components of all
+    // same-client prefix edges, even when cumulative supplied ranges overlap.
+    for (const range of ranges) {
+      const next = lowerBound(ranges, range.clock + range.length);
+      if (next < ranges.length) rowUnionFind.unionAll([range.rowId, ranges[next].rowId]);
+    }
+  }
+  for (const ranges of deleted.values()) {
+    let furthest: IndexedRange | undefined;
+    for (const range of ranges) {
+      if (furthest && range.clock < furthest.clock + furthest.length) {
+        rowUnionFind.unionAll([range.rowId, furthest.rowId]);
+      }
+      if (!furthest || range.clock + range.length > furthest.clock + furthest.length)
+        furthest = range;
+    }
+  }
+  const indexes = new Map(
+    [...supplied].map(([client, ranges]) => [client, intervalTree(ranges, 0, ranges.length)]),
+  );
+  for (const row of decoded) {
+    for (const ref of row.references) {
+      visitOverlaps(indexes.get(ref.client), ref, (supplier) => {
+        rowUnionFind.unionAll([String(row.update.id), supplier.rowId]);
+      });
     }
   }
 
   const updateIdsByRoot = new Map<string, number[]>();
   for (const { update } of decoded) {
     const root = rowUnionFind.find(String(update.id));
-    updateIdsByRoot.set(root, [...(updateIdsByRoot.get(root) ?? []), update.id]);
+    const bucket = updateIdsByRoot.get(root) ?? [];
+    bucket.push(update.id);
+    updateIdsByRoot.set(root, bucket);
   }
   const dependencyUpdateIdsByOperationId = new Map<string, Set<number>>();
   for (const updateIds of updateIdsByRoot.values()) {
@@ -219,5 +236,77 @@ class UnionFind {
 }
 
 function operationSort(left: string, right: string): number {
-  return left.localeCompare(right, undefined, { numeric: true });
+  return left.localeCompare(right, undefined, { numeric: true }) || left.localeCompare(right);
+}
+
+// Match #712's decoded-update shape; dependencies() is not part of that API.
+function referenceRanges(decoded: ReturnType<typeof decodeUpdateForDependencies>): ClockRange[] {
+  const refs = deleteRanges(decoded);
+  for (const struct of decoded.structs ?? []) {
+    for (const id of [struct.origin, struct.rightOrigin, struct.parent]) {
+      if (id && typeof id === "object") refs.push({ ...id, length: 1 });
+    }
+  }
+  return refs;
+}
+
+type IndexedRange = ClockRange & { rowId: string };
+type IntervalNode = {
+  range: IndexedRange;
+  maxEnd: number;
+  left?: IntervalNode;
+  right?: IntervalNode;
+};
+function rangeBuckets(ranges: IndexedRange[]): Map<number, IndexedRange[]> {
+  const buckets = new Map<number, IndexedRange[]>();
+  for (const range of ranges) {
+    const bucket = buckets.get(range.client) ?? [];
+    bucket.push(range);
+    buckets.set(range.client, bucket);
+  }
+  for (const bucket of buckets.values())
+    bucket.sort((a, b) => a.clock - b.clock || a.length - b.length);
+  return buckets;
+}
+function lowerBound(ranges: readonly IndexedRange[], clock: number): number {
+  let lo = 0,
+    hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (ranges[mid].clock < clock) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+function intervalTree(
+  ranges: readonly IndexedRange[],
+  lo: number,
+  hi: number,
+): IntervalNode | undefined {
+  if (lo === hi) return undefined;
+  const mid = (lo + hi) >>> 1;
+  const range = ranges[mid],
+    left = intervalTree(ranges, lo, mid),
+    right = intervalTree(ranges, mid + 1, hi);
+  return {
+    range,
+    left,
+    right,
+    maxEnd: Math.max(range.clock + range.length, left?.maxEnd ?? 0, right?.maxEnd ?? 0),
+  };
+}
+function visitOverlaps(
+  node: IntervalNode | undefined,
+  ref: ClockRange,
+  visit: (range: IndexedRange) => void,
+): void {
+  if (!node || node.maxEnd <= ref.clock) return;
+  visitOverlaps(node.left, ref, visit);
+  if (node.range.clock >= ref.clock + ref.length) return;
+  if (rangesOverlap(node.range, ref)) visit(node.range);
+  visitOverlaps(node.right, ref, visit);
+}
+
+function classId(operationIds: readonly string[]): string {
+  return `closure:v1:${createHash("sha256").update(JSON.stringify(operationIds)).digest("base64url")}`;
 }
