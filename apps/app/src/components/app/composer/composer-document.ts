@@ -154,6 +154,14 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
       authority = { kind: "work", projectId, workId, workSlug };
       break;
     }
+    case "lineage": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const rootThreadId = parseRequestId(rawAuthority.rootThreadId);
+      const rootThreadRef = rawAuthority.rootThreadRef;
+      if (!projectId || !rootThreadId || typeof rootThreadRef !== "string") return null;
+      authority = { kind: "lineage", projectId, rootThreadId, rootThreadRef };
+      break;
+    }
     default:
       return null;
   }

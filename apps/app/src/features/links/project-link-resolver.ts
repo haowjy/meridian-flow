@@ -25,6 +25,12 @@ export type LinkResolutionScope = {
   projectId: string;
   /** Resolved Work row id, including No Work; unresolved surfaces use a pending scope. */
   workId: string;
+  /**
+   * The lineage a bare `scratch://` means, in a No Work chat or in a note of a
+   * lineage. The server takes it in place of the Work; bare `uploads://` stays
+   * the No Work row's.
+   */
+  rootThreadId?: string | null;
   /** The URI of the document holding the link; what a relative link is relative to. */
   baseUri: string | null;
   /**
@@ -61,7 +67,7 @@ export function createProjectLinkResolver(
   scope: LinkResolutionScope,
   index: LinkableDocumentIndex,
 ): InternalLinkResolver {
-  const { projectId, workId, baseUri, holderDocumentId } = scope;
+  const { projectId, workId, rootThreadId, baseUri, holderDocumentId } = scope;
   return async (target) => {
     const request = documentLinkTarget(target, baseUri ?? "");
     // A relative path is meaningless without the URI of the document holding
@@ -79,7 +85,7 @@ export function createProjectLinkResolver(
       ? { documentId: holderDocumentId, href: linkTargetHref(target) }
       : undefined;
     const { document } = await resolveDocumentLink(projectId, {
-      workId,
+      ...(rootThreadId ? { rootThreadId } : { workId }),
       ...(holder ? { holder } : {}),
       target: request,
     });
@@ -123,5 +129,6 @@ function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {
     path: parsed.value.path,
     uri: document.uri,
     workId: document.workId,
+    ...(document.rootThreadId ? { rootThreadId: document.rootThreadId } : {}),
   };
 }

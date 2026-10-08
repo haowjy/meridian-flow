@@ -51,6 +51,7 @@ import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { chatLineageId } from "./chat-scratch-owner";
 import { answeredControlIds } from "./compaction/compaction-model";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useThreadControls } from "./compaction/useThreadControls";
@@ -203,6 +204,7 @@ export function ChatView({
     projectId,
     activeWork?.id,
     t`Reference a file`,
+    chatLineageId({ thread: activeThread, work: activeWork }),
   );
   const availableSkills = useThreadAvailableSkills(threadId);
   const activity = useThreadActivity({

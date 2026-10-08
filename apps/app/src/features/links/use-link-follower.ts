@@ -96,6 +96,7 @@ export function useLinkFollower({
   const pending = scope === "pending";
   const projectId = ready?.projectId ?? null;
   const workId = ready?.workId ?? null;
+  const rootThreadId = ready?.rootThreadId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const holderDocumentId = ready?.holderDocumentId ?? null;
   const documentRevision = ready?.documentRevision ?? 0;
@@ -114,7 +115,10 @@ export function useLinkFollower({
   useEffect(() => {
     if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
-      createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
+      createProjectLinkResolver(
+        { projectId, workId, rootThreadId, baseUri, holderDocumentId },
+        index,
+      ),
       { baseUri },
     );
     for (const release of scopeWaiters.current) release();
@@ -130,7 +134,16 @@ export function useLinkFollower({
     // old one becomes unreachable. The revision is the holder's own text
     // changing: the same invalidation, so what a link was answered cannot
     // outlive the words it was answered for.
-  }, [baseUri, documentRevision, holderDocumentId, index, projectId, resolution, workId]);
+  }, [
+    baseUri,
+    documentRevision,
+    holderDocumentId,
+    index,
+    projectId,
+    resolution,
+    rootThreadId,
+    workId,
+  ]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
@@ -174,7 +187,11 @@ export function useLinkFollower({
   // aborts. A pending scope becoming known is not a move: that is the answer
   // the follow waited for.
   const answeredScope = useRef<string | null>(null);
-  const scopeKey = ready ? `${ready.projectId}\u0000${ready.workId}` : pending ? null : "";
+  const scopeKey = ready
+    ? `${ready.projectId}\u0000${ready.workId}\u0000${ready.rootThreadId ?? ""}`
+    : pending
+      ? null
+      : "";
   useEffect(() => {
     if (scopeKey === null) return;
     if (answeredScope.current !== null && answeredScope.current !== scopeKey) {
