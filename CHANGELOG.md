@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Trashing or restoring a chat now delivers its Scratch catalog updates through the validated thread socket.
+
 - Rebinding a chat tells the AI where its earlier Scratch notes remain.
 
 - Unrelated No Work chats keep separate Scratch notes. Forks and subagents share their first chat's notes.
