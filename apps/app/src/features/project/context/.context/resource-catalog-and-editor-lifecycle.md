@@ -84,7 +84,7 @@ document.
 
 When the resource boundary returns an exact initialized local session, it also
 returns verified-local readiness through `ContextTabSessionBoundary` and
-`ContextEditorMountHost`. `EditorView` may bind that content without waiting for
+`ContextDocumentHost`. `EditorView` may bind that content without waiting for
 first server sync. Server-only sessions retain the first-sync horizon, and local
 readiness never claims remote acknowledgement; adoption and transport continue
 in the background on the same Y.Doc.

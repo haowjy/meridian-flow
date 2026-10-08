@@ -66,16 +66,19 @@ ContextPaneController
        ├─ in-memory ContextTab[] (tracked, viewer, and new)
        └─ ContextViewer
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
-              ├─ DraftReviewHeader (review strip, above the identity bar)
-              ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
-              ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
+              ├─ DocumentPaneChrome (shared with the dock's document)
+              │     ├─ PassageNotice, DraftReviewHeader, ArchivedWorkNotice
+              │     └─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
+              ├─ ContextEditorMountHost (warm-set LRU)
+              │     └─ ContextDocumentHost per tab (session boundary + EditorView;
+              │        the dock's document renders the same host)
               ├─ ContextViewerHost (active read-only viewer)
               └─ RecentDocumentsLanding (empty workspace only)
 ```
 
 `ContextViewerHost` selects one read-only surface through `previewKind`. A
 tracked-classified viewer read renders as text in every host; collaborative
-editing remains in `ContextEditorMountHost`. URL-backed text previews use a
+editing remains in `ContextDocumentHost`. URL-backed text previews use a
 TanStack query so reopening a signed preview can reuse its read.
 
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
