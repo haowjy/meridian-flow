@@ -43,14 +43,14 @@ describe("write reversal selectors", () => {
     await scenario.appendBlocks(Array.from({ length: 11 }, (_, index) => `Block ${index + 1}.`));
 
     const undo = await scenario.ctx.core.write(
-      { command: "undo", file: "chapter.md", since: "w2", to: "w10" },
+      { command: "undo", file: "chapter.md", since: "w2", to: "w11" },
       context,
     );
 
-    expect(outcomeText(undo)).toContain("undo: w2, w3, w4, w5, w6, w7, w8, w9, w10");
-    expect(scenario.blockTexts()).toEqual(["Base.", "Block 1.", "Block 11."]);
-    expect(await scenario.mutationsFor("w10")).toMatchObject([{ status: "reversed" }]);
-    expect(await scenario.mutationsFor("w11")).toMatchObject([{ status: "active" }]);
+    expect(outcomeText(undo)).toContain("undo: w2, w3, w4, w5, w6, w7, w8, w9, w10, w11");
+    expect(scenario.blockTexts()).toEqual(["Base.", "Block 1."]);
+    expect(await scenario.mutationsFor("w11")).toMatchObject([{ status: "reversed" }]);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "active" }]);
   });
 
   it("supports last and all selectors", async () => {

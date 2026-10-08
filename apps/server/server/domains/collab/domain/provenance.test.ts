@@ -156,12 +156,12 @@ describe("provenance materialization", () => {
           edits: [
             {
               edit: {
-                kind: "text",
+                kind: "textRanges",
                 documentId: "document",
                 file: "document.md",
                 block: block as never,
-                span: { start: 0, end: 3 },
-                newText: "ONE!",
+                replacements: [{ span: { start: 0, end: 3 }, newText: "ONE!" }],
+                output: "ONE!",
               },
               outputRuns: [
                 {
@@ -621,12 +621,12 @@ function restorationTextEdit(
 ) {
   return {
     edit: {
-      kind: "text" as const,
+      kind: "textRanges" as const,
       documentId: "document",
       file: "document.md",
       block: block as never,
-      span: { start, end: start + root.length },
-      newText: payload,
+      replacements: [{ span: { start, end: start + root.length }, newText: payload }],
+      output: payload,
     },
     outputRuns: [
       {
@@ -646,12 +646,12 @@ function restorationInsertion(
 ) {
   return {
     edit: {
-      kind: "text" as const,
+      kind: "textRanges" as const,
       documentId: "document",
       file: "document.md",
       block: block as never,
-      span: { start: 0, end: 0 },
-      newText: payload,
+      replacements: [{ span: { start: 0, end: 0 }, newText: payload }],
+      output: payload,
     },
     outputRuns: [
       {
@@ -681,12 +681,12 @@ function mappedTextIr(
       edits: [
         {
           edit: {
-            kind: "text",
+            kind: "textRanges",
             documentId: "document",
             file: "document.md",
             block: block as never,
-            span: { start: 0, end: source.length },
-            newText: output,
+            replacements: [{ span: { start: 0, end: source.length }, newText: output }],
+            output: output,
           },
           outputRuns,
         },
@@ -720,12 +720,12 @@ function appendCertifiedCarry(
         edits: [
           {
             edit: {
-              kind: "text",
+              kind: "textRanges",
               documentId: "document",
               file: "document.md",
               block: paragraph as never,
-              span: { start: 0, end: source.length },
-              newText: value,
+              replacements: [{ span: { start: 0, end: source.length }, newText: value }],
+              output: value,
             },
             outputRuns: [{ kind: "preserved", source, output: { from: 0, to: value.length } }],
           },

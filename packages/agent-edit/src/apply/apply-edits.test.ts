@@ -1,4 +1,4 @@
-// Behavioral coverage for tier routing, update replay fidelity, and echo.
+// Behavioral coverage for inline replacement, update replay fidelity, and echo.
 
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -9,8 +9,8 @@ import { createAgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
-import { applyConcurrentUpdates, computeEcho } from "./echo.js";
-import { applyEdits } from "./tiers.js";
+import { applyEdits } from "./apply-edits.js";
+import { applyConcurrentUpdates, computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
@@ -20,8 +20,8 @@ const codec = createAgentEditCodec(
 const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 
-describe("applyEdits tier routing", () => {
-  it("routes mark-boundary-crossing text edits to Tier 2", () => {
+describe("applyEdits inline replacement", () => {
+  it("replaces text across mark boundaries", () => {
     const doc = createDoc("A **bold** plain");
     const [block] = baseModel.getBlocks(doc);
 
@@ -34,7 +34,6 @@ describe("applyEdits tier routing", () => {
     );
 
     expectOk(result);
-    expect(result.ok && result.appliedEdits?.map((edit) => edit.tier)).toEqual([2]);
     expect(baseModel.getText(block)).toBe("A bolXlain");
     expectNoOrphanedElements(doc);
   });
@@ -43,21 +42,19 @@ describe("applyEdits tier routing", () => {
 describe("applyEdits update fidelity", () => {
   it.each([
     [
-      "Tier 1 text",
+      "text",
       "Alpha sword.",
       "Alpha blade.",
       (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "blade"),
-      1,
     ],
     [
-      "Tier 2 formatting",
+      "formatting",
       "Alpha sword.",
       "Alpha **blade**.",
       (doc: Y.Doc) => textEdit(baseModel.getBlocks(doc)[0], { start: 6, end: 11 }, "**blade**"),
-      2,
     ],
     [
-      "Tier 3 insert",
+      "insert",
       "Alpha\n\nBeta",
       "Alpha\n\nInserted\n\nBeta",
       (doc: Y.Doc): ResolvedEdit => ({
@@ -67,10 +64,9 @@ describe("applyEdits update fidelity", () => {
         after: toRef(baseModel.getBlocks(doc)[0]),
         newText: "Inserted",
       }),
-      3,
     ],
     [
-      "Tier 3 delete",
+      "delete",
       "Alpha\n\nBeta",
       "Alpha",
       (doc: Y.Doc): ResolvedEdit => ({
@@ -79,11 +75,10 @@ describe("applyEdits update fidelity", () => {
         kind: "delete",
         block: toRef(baseModel.getBlocks(doc)[1]),
       }),
-      3,
     ],
   ] satisfies Array<
-    [string, string, string, (doc: Y.Doc) => ResolvedEdit, number]
-  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, expected, makeEdit, tier) => {
+    [string, string, string, (doc: Y.Doc) => ResolvedEdit]
+  >)("replays %s update bytes into an identical fresh doc", (_name, markdown, expected, makeEdit) => {
     const doc = createDoc(markdown, 1);
     doc.clientID = 2;
     const fresh = cloneDoc(doc, 9);
@@ -92,7 +87,6 @@ describe("applyEdits update fidelity", () => {
     const result = applyEdits(doc, baseModel, codec, makeEdit(doc), origin);
 
     expectOk(result);
-    expect(result.ok && result.appliedEdits?.[0]?.tier).toBe(tier);
     const update = Y.encodeStateAsUpdate(doc, prevVector);
     Y.applyUpdate(fresh, update);
     expect(documentJson(fresh)).toEqual(documentJson(doc));
@@ -123,32 +117,13 @@ describe("applyEdits preflight safety", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
     expect(documentJson(doc)).toEqual(before);
   });
-
-  it("applies multiple same-block Tier 1 replacements back-to-front", () => {
-    const doc = createDoc("sword and sword");
-    const [block] = baseModel.getBlocks(doc);
-
-    const result = applyEdits(
-      doc,
-      baseModel,
-      codec,
-      [
-        textEdit(block, { start: 0, end: 5 }, "axe"),
-        textEdit(block, { start: 10, end: 15 }, "axe"),
-      ],
-      origin,
-    );
-
-    expectOk(result);
-    expect(blockTexts(doc)).toEqual(["axe and axe"]);
-  });
 });
 
-describe("applyEdits echo and concurrent edits", () => {
+describe("mutation and echo composition", () => {
   it("echoes the agent window and lists a non-overlapping concurrent human edit", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.\n\nGamma waits.\n\nDelta waits.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
+    const before = snapshotBlocks(local, baseModel, codec);
     const localBlocks = baseModel.getBlocks(local);
     const alphaHash = baseModel.getBlockId(localBlocks[0]);
     const betaHash = baseModel.getBlockId(localBlocks[1]);
@@ -165,15 +140,24 @@ describe("applyEdits echo and concurrent edits", () => {
       codec,
       textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
       origin,
-      {
-        syncStateVector,
-        concurrentUpdates: [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
-      },
     );
 
     expectOk(result);
-    expect(result.ok && result.concurrentEdits?.human).toEqual([remoteHash]);
-    expect(result.ok && result.echo).toEqual([
+    const concurrent = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
+      origin,
+    );
+    const echo = computeEcho({
+      before,
+      after: snapshotBlocks(local, baseModel, codec),
+      agentTouchedHashes: new Set(result.changedBlocks),
+      agentDeletedHashes: new Set(result.deletedBlocks),
+    });
+    expect(concurrent.info?.human).toEqual([remoteHash]);
+    expect(echo).toEqual([
       { mode: "full", blocks: [`${alphaHash}|Alpha blade.`] },
       { mode: "truncated", blocks: [`${betaHash}|Beta waits.`] },
     ]);
@@ -293,7 +277,7 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
 });
 
 describe("computeEcho", () => {
-  it("deduplicates overlapping windows in document order before tiering", () => {
+  it("deduplicates overlapping windows in document order before rendering", () => {
     const before = [
       block("A", "ctx0"),
       block("B", "old1"),
@@ -368,10 +352,10 @@ function textEdit(
   return {
     documentId: "doc-1",
     file: "chapter.md",
-    kind: "text",
+    kind: "textRanges",
     block: toRef(element),
-    span,
-    newText,
+    replacements: [{ span, newText }],
+    output: newText,
   };
 }
 function remoteTextUpdate(

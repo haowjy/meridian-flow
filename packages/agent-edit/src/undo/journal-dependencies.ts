@@ -1,4 +1,8 @@
-/** Yjs update dependency predicates shared by review closure and undo affordances. */
+/**
+ * Yjs update dependency predicates: the one rule for whether a later update
+ * depends on earlier ones, shared by undo planning, live undo persistence and
+ * branch review closure.
+ */
 import * as Y from "yjs";
 
 export type ClockRange = { client: number; clock: number; length: number };
@@ -16,7 +20,8 @@ export type DecodedUpdateLike = {
   ds?: { clients?: Map<number, Array<{ clock: number; len?: number; length?: number }>> };
 };
 
-export type JournalDependencyRow = { updateData: Uint8Array | Buffer };
+/** A journal row; `seq` orders it against other rows when known. */
+export type JournalDependencyRow = { seq?: number; updateData: Uint8Array | Buffer };
 
 export function decodeUpdateForDependencies(updateData: Uint8Array | Buffer): DecodedUpdateLike {
   return Y.decodeUpdate(new Uint8Array(updateData)) as DecodedUpdateLike;
@@ -40,10 +45,6 @@ export function deleteRanges(decoded: DecodedUpdateLike): ClockRange[] {
   return ranges;
 }
 
-export function dependencies(decoded: DecodedUpdateLike): ClockRange[] {
-  return [...structDependencies(decoded), ...deleteRanges(decoded)];
-}
-
 function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
   const refs: ClockRange[] = [];
   for (const struct of decoded.structs ?? []) {
@@ -58,29 +59,48 @@ export function hasDependentLaterRows(
   selectedRows: readonly JournalDependencyRow[],
   laterRows: readonly JournalDependencyRow[],
 ): boolean {
-  const selectedSupplied: ClockRange[] = [];
-  const selectedDeleted: ClockRange[] = [];
-  for (const row of selectedRows) {
+  return laterRows.some(dependsOnRows(selectedRows));
+}
+
+/**
+ * Decodes the selected rows once and returns whether a later row depends on
+ * them: it anchors on, parents into, or deletes what they inserted, or anchors
+ * on what they deleted. When both rows carry a journal seq, only selected rows
+ * before the later row count; a row cannot depend on one written after it.
+ */
+export function dependsOnRows(
+  selectedRows: readonly JournalDependencyRow[],
+): (laterRow: JournalDependencyRow) => boolean {
+  const selected = selectedRows.map((row) => {
     const decoded = decodeUpdateForDependencies(row.updateData);
-    selectedSupplied.push(...suppliedRanges(decoded));
-    // Yjs update delete sets can be cumulative for a state-vector diff, so a
-    // later delete-only row may name ranges deleted by earlier rows too. We
-    // accept that as a conservative false-positive dependency: it can withhold
-    // an otherwise-safe selective undo, but never allows a lossy undo.
-    selectedDeleted.push(...deleteRanges(decoded));
-  }
-  if (selectedSupplied.length === 0 && selectedDeleted.length === 0) return false;
-  return laterRows.some((row) => {
-    const decoded = decodeUpdateForDependencies(row.updateData);
-    return (
-      dependencies(decoded).some((dependency) =>
-        selectedSupplied.some((range) => rangesOverlap(range, dependency)),
-      ) ||
-      structDependencies(decoded).some((dependency) =>
-        selectedDeleted.some((range) => rangesOverlap(range, dependency)),
-      )
-    );
+    return {
+      seq: row.seq,
+      supplied: suppliedRanges(decoded),
+      // Yjs update delete sets can be cumulative for a state-vector diff, so a
+      // later delete-only row may name ranges deleted by earlier rows too. We
+      // accept that as a conservative false-positive dependency: it can withhold
+      // an otherwise-safe selective undo, but never allows a lossy undo.
+      deleted: deleteRanges(decoded),
+    };
   });
+  if (selected.every((row) => row.supplied.length === 0 && row.deleted.length === 0)) {
+    return () => false;
+  }
+  return (laterRow) => {
+    const earlier = selected.filter(
+      (row) => row.seq === undefined || laterRow.seq === undefined || row.seq < laterRow.seq,
+    );
+    const decoded = decodeUpdateForDependencies(laterRow.updateData);
+    const anchors = structDependencies(decoded);
+    const touched = [...anchors, ...deleteRanges(decoded)];
+    return earlier.some(
+      (row) =>
+        touched.some((dependency) =>
+          row.supplied.some((range) => rangesOverlap(range, dependency)),
+        ) ||
+        anchors.some((dependency) => row.deleted.some((range) => rangesOverlap(range, dependency))),
+    );
+  };
 }
 
 function isYId(value: unknown): value is YId {

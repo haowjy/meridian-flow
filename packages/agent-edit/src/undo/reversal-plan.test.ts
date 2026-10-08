@@ -1,5 +1,6 @@
 // Focused planner tests for retained-log write selection.
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import type { JournalSnapshot, ReversalRecord } from "../ports/types.js";
 import type {
   ActiveWriteSummary,
@@ -232,7 +233,7 @@ function snapshotWithSeqs(seqs: readonly number[]): JournalSnapshot {
     checkpoint: null,
     updates: seqs.map((seq) => ({
       seq,
-      update: new Uint8Array([seq]),
+      update: Y.encodeStateAsUpdate(new Y.Doc()),
       meta: { origin: "agent:t", seq },
     })),
   };

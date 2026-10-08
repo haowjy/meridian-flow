@@ -18,6 +18,7 @@ import type {
 } from "./branch-push-contracts.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
+import { NO_DOCUMENT_ASSET_PATHS } from "./ports/document-asset-paths.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 
 const DOCUMENT_A = "00000000-0000-4000-8000-000000000001" as DocumentId;
@@ -230,6 +231,7 @@ describe("branch push change-event broadcast", () => {
       },
     });
     const transition = createBranchPushTransition({
+      assetPaths: NO_DOCUMENT_ASSET_PATHS,
       ...storeDeps,
       liveCoordinator: coordinator(
         new Map([

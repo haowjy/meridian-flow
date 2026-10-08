@@ -11,9 +11,23 @@ import {
   getTopLevelXmlBlocks,
   lookupBlockHash,
 } from "./block-hash.js";
+import { yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const model = yProsemirrorModel(schema);
+
+describe("yProsemirrorModel inline run count", () => {
+  it.each([
+    ["plain prose", 1],
+    ["plain **bold** plain", 3],
+    ["- first\n- second", 2],
+    ["![image](https://example.com/image.png)", 0],
+  ])("counts nonempty delta runs in %s", (content, expected) => {
+    const doc = createDoc(content);
+    expect(model.inlineRunCount(model.getBlocks(doc)[0])).toBe(expected);
+  });
+});
 
 describe("yProsemirrorModel block hashes", () => {
   it("displays the shortest full-hash prefix that resolves back to each block", () => {

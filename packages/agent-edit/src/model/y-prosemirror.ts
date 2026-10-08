@@ -12,7 +12,6 @@ import type {
   ContentLineage,
   InlineReplacementResult,
   InlineTextReplacement,
-  TextRun,
 } from "../ports/model.js";
 import {
   blockHashesForDoc,
@@ -89,8 +88,8 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return collectVisibleContentLineage(unwrapBlock(block));
     },
 
-    inlineRuns(block) {
-      return collectTextRuns(unwrapBlock(block));
+    inlineRunCount(block) {
+      return countTextRuns(unwrapBlock(block));
     },
 
     transact(doc, fn, origin) {
@@ -105,10 +104,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       Y.applyUpdate(unwrapDoc(doc), update, origin);
     },
 
-    stateVectorAdvanced(beforeVector, afterVector) {
-      return stateVectorAdvanced(beforeVector, afterVector);
-    },
-
     applyTextEdit(_doc, block, span, newText) {
       applyTextEdit(unwrapBlock(block), span, newText);
     },
@@ -119,21 +114,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     deleteBlock(doc, block) {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
-    },
-
-    isPlainTextReplacement(parsed, source) {
-      return isPlainTextReplacement(parsed, source);
-    },
-
-    applyInlineReplacement(doc, block, span, replacementMarkup, codec) {
-      return applyInlineReplacement(
-        unwrapDoc(doc),
-        unwrapBlock(block),
-        span,
-        replacementMarkup,
-        codec,
-        schema,
-      );
     },
 
     applyInlineReplacements(doc, block, replacements, codec) {
@@ -196,15 +176,6 @@ export function prosemirrorBlocksForDoc(doc: Y.Doc, schema: Schema): PMNode[] {
   return blocks;
 }
 
-function stateVectorAdvanced(beforeVector: Uint8Array, afterVector: Uint8Array): boolean {
-  const before = Y.decodeStateVector(beforeVector);
-  const after = Y.decodeStateVector(afterVector);
-  for (const [client, clock] of after) {
-    if (clock > (before.get(client) ?? 0)) return true;
-  }
-  return false;
-}
-
 export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newText: string): void {
   block = unwrapBlock(toRef(block));
   const text = collectText(block);
@@ -213,6 +184,12 @@ export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newTex
       `Invalid text span ${span.from}..${span.to} for block length ${text.length}`,
     );
   }
+
+  // Equal text at either edge stays, so its items, anchors and attribution survive.
+  const trimmed = trimUnchangedEdges(text.slice(span.from, span.to), newText);
+  span = { from: span.from + trimmed.prefix, to: span.to - trimmed.suffix };
+  newText = trimmed.text;
+  if (span.from === span.to && newText.length === 0) return;
 
   const segments = collectTextSegments(block);
   const insertAttrs = attributesAtFlatOffset(segments, span.from);
@@ -235,62 +212,56 @@ export function applyTextEdit(block: Y.XmlElement | BlockRef, span: Span, newTex
   }
 }
 
+function trimUnchangedEdges(
+  oldText: string,
+  newText: string,
+): { prefix: number; suffix: number; text: string } {
+  const limit = Math.min(oldText.length, newText.length);
+  let prefix = 0;
+  while (prefix < limit && oldText.charCodeAt(prefix) === newText.charCodeAt(prefix)) prefix += 1;
+  // Never split a surrogate pair: Yjs would store each half as a broken character.
+  if (prefix > 0 && isHighSurrogate(newText.charCodeAt(prefix - 1))) prefix -= 1;
+  let suffix = 0;
+  while (
+    suffix < limit - prefix &&
+    oldText.charCodeAt(oldText.length - 1 - suffix) ===
+      newText.charCodeAt(newText.length - 1 - suffix)
+  ) {
+    suffix += 1;
+  }
+  if (suffix > 0 && isLowSurrogate(newText.charCodeAt(newText.length - suffix))) suffix -= 1;
+  return { prefix, suffix, text: newText.slice(prefix, newText.length - suffix) };
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
+}
+
+/**
+ * Rewrites a block as `replacement` in place: its attributes are written and
+ * its content is diffed against the current children, so equal text keeps its
+ * items, anchors and attribution.
+ */
 export function applyBlockDiff(
   doc: Y.Doc,
   block: Y.XmlElement | BlockRef,
   replacement: PMNode,
 ): void {
-  block = unwrapBlock(toRef(block));
-  if (block.nodeName !== replacement.type.name) {
-    throw new Error(`Cannot update ${block.nodeName} block with ${replacement.type.name} content`);
+  const element = unwrapBlock(toRef(block));
+  if (element.nodeName !== replacement.type.name) {
+    throw new Error(
+      `Cannot update ${element.nodeName} block with ${replacement.type.name} content`,
+    );
   }
-  const current = toProsemirrorBlock(doc, block, replacement.type.schema);
-  const transform = new Transform(current);
-  transform.replaceWith(0, current.content.size, replacement.content);
-  updateYFragment(doc, block as unknown as Y.XmlFragment, transform.doc, createBindingMetadata());
+  writePmBlock(doc, element, replacement);
 }
 
 function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
-}
-
-export function applyInlineReplacement(
-  doc: Y.Doc,
-  block: Y.XmlElement | BlockRef,
-  span: Span,
-  replacementMarkup: string,
-  codec: AgentEditCodec,
-  schema: Schema,
-): InlineReplacementResult {
-  const element = unwrapBlock(toRef(block));
-  const current = toProsemirrorBlock(doc, element, schema);
-  const blockType = element.nodeName;
-  if (current.type.name !== blockType) {
-    return blockTypeMismatch(blockType, current.type.name);
-  }
-
-  let parsed: ParsedContent;
-  try {
-    parsed = replacementMarkup.length === 0 ? { blocks: [] } : codec.parse(replacementMarkup);
-  } catch (cause) {
-    return parseFailure(cause);
-  }
-
-  const inline = inlineReplacement(parsed);
-  if (!inline.ok) return inline;
-  if (!canReplaceInline(current)) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edits with formatting are not supported for ${current.type.name} blocks`,
-    };
-  }
-  const replacement = replaceFlatText(current, span, inline.nodes);
-  if (replacement.type.name !== blockType) {
-    return blockTypeMismatch(blockType, replacement.type.name);
-  }
-  writePmBlock(doc, element, replacement);
-  return { ok: true };
 }
 
 export function applyInlineReplacements(
@@ -304,11 +275,11 @@ export function applyInlineReplacements(
   const current = toProsemirrorBlock(doc, element, schema);
   const blockType = element.nodeName;
   if (current.type.name !== blockType) return blockTypeMismatch(blockType, current.type.name);
-  if (!canReplaceInline(current) || current.content.size !== current.textContent.length) {
+  if (!canReplaceInline(current) || !hasFlatInlineContent(current)) {
     return {
       ok: false,
       code: "invalid_write",
-      message: `Multi-range text edits require flat inline content in ${current.type.name} blocks`,
+      message: `Text edits require flat inline content in ${current.type.name} blocks`,
     };
   }
 
@@ -337,24 +308,6 @@ export function applyInlineReplacements(
     writePmBlock(doc, element, transform.doc);
   }
   return { ok: true };
-}
-
-function isPlainTextReplacement(parsed: ParsedContent, source: string): boolean {
-  if (source.length === 0) return true;
-  if (parsed.blocks.length !== 1) return false;
-  const block = parsed.blocks[0];
-  if (!block?.isTextblock) return false;
-  if (block.textContent !== source) return false;
-  let plain = true;
-  block.descendants((node) => {
-    if (node.isText) {
-      if (node.marks.length > 0) plain = false;
-      return false;
-    }
-    if (node.type.name !== "hard_break") plain = false;
-    return !plain;
-  });
-  return plain;
 }
 
 function inlineReplacement(
@@ -387,53 +340,8 @@ function canReplaceInline(block: PMNode): boolean {
   return block.isTextblock && block.type.name !== "code_block";
 }
 
-function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode[]): PMNode {
-  if (block.content.size === block.textContent.length) {
-    const transform = new Transform(block);
-    transform.replaceWith(span.from, span.to, Fragment.from(replacement));
-    return transform.doc;
-  }
-
-  // Flat resolver offsets intentionally exclude atoms such as hard breaks. Until a span crosses
-  // one, preserve the atom structurally instead of pretending the flat offset is a PM position.
-  let cursor = 0;
-  let inserted = false;
-  const children: PMNode[] = [];
-
-  const insertReplacement = () => {
-    if (inserted) return;
-    children.push(...replacement);
-    inserted = true;
-  };
-
-  block.forEach((child) => {
-    if (!child.isText) {
-      if (cursor >= span.from && cursor <= span.to) insertReplacement();
-      children.push(child);
-      return;
-    }
-    const text = child.text ?? "";
-    const start = cursor;
-    const end = cursor + text.length;
-    if (end <= span.from || start >= span.to) {
-      if (!inserted && span.from === span.to && span.from === start) insertReplacement();
-      children.push(child);
-      cursor = end;
-      return;
-    }
-
-    const keepLeft = Math.max(0, span.from - start);
-    const keepRight = Math.max(0, end - span.to);
-    if (keepLeft > 0) children.push(child.type.schema.text(text.slice(0, keepLeft), child.marks));
-    insertReplacement();
-    if (keepRight > 0) {
-      children.push(child.type.schema.text(text.slice(text.length - keepRight), child.marks));
-    }
-    cursor = end;
-  });
-  if (!inserted) insertReplacement();
-
-  return block.type.create(block.attrs, children, block.marks);
+function hasFlatInlineContent(block: PMNode): boolean {
+  return block.content.size === block.textContent.length;
 }
 
 function serializeBlockLines(
@@ -611,25 +519,12 @@ function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   return segments;
 }
 
-function collectTextRuns(block: Y.XmlElement): TextRun[] {
-  const runs: TextRun[] = [];
-  let flatOffset = 0;
+function countTextRuns(block: Y.XmlElement): number {
+  let count = 0;
   const visit = (type: Y.XmlElement | Y.XmlText) => {
     if (type instanceof Y.XmlText) {
-      for (const delta of type.toDelta() as Array<{
-        insert?: string;
-        attributes?: Record<string, unknown>;
-      }>) {
-        const text = typeof delta.insert === "string" ? delta.insert : "";
-        const length = text.length;
-        if (length > 0) {
-          runs.push({
-            start: flatOffset,
-            length,
-            attrsKey: stableAttrsKey(delta.attributes),
-          });
-          flatOffset += length;
-        }
+      for (const delta of type.toDelta()) {
+        if (typeof delta.insert === "string" && delta.insert.length > 0) count += 1;
       }
       return;
     }
@@ -638,7 +533,7 @@ function collectTextRuns(block: Y.XmlElement): TextRun[] {
     }
   };
   visit(block);
-  return runs;
+  return count;
 }
 
 function clearText(type: Y.XmlElement | Y.XmlText): void {
@@ -742,21 +637,6 @@ function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | un
   const attrs: Record<string, unknown> = {};
   for (const mark of marks) attrs[mark.type.name] = mark.attrs;
   return attrs;
-}
-
-function stableAttrsKey(attrs: Record<string, unknown> | undefined): string {
-  if (!attrs) return "";
-  return JSON.stringify(sortRecord(attrs));
-}
-
-function sortRecord(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortRecord);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => [key, sortRecord(nested)]),
-  );
 }
 
 function createBindingMetadata(): BindingMetadata {
