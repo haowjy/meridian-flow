@@ -183,12 +183,20 @@ export async function restoreAgentDelete(
   const documentId = requireRequestId(input.documentId, "documentId");
   const tree = await writerNamespaceTree(deps, threadId, input.userId);
   const change = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
-  if (!change) return { status: "not_applied" };
+  if (change?.status !== "active") {
+    return change?.status === "reversed" && change.documentLive
+      ? { status: "already_restored", documentId, uri: change.fromUri }
+      : { status: "nothing_to_restore" };
+  }
   const restored = await deps.namespaceChanges.reverse(tree, change, "undo");
   if (restored.ok) return { status: "restored", documentId, uri: change.fromUri };
   switch (restored.error.code) {
-    case "claimed":
-      return { status: "not_applied" };
+    case "claimed": {
+      const current = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
+      return current?.status === "reversed" && current.documentLive
+        ? { status: "already_restored", documentId, uri: current.fromUri }
+        : { status: "nothing_to_restore" };
+    }
     case "conflict":
       return { status: "location_taken", uri: change.fromUri };
     case "not_found":

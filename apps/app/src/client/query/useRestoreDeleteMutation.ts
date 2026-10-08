@@ -20,7 +20,7 @@ export function useRestoreDeleteMutation(threadId: string, input: RestoreDeleteI
     mutationKey,
     mutationFn: ({ turnId, documentId }) => restoreAgentDelete(threadId, { turnId, documentId }),
     onSuccess: async (outcome, restored) => {
-      if (outcome !== "restored") return;
+      if (outcome !== "restored" && outcome !== "already_restored") return;
       const queryKey = threadQueryKeys.liveLineage(threadId, restored.turnId);
       await queryClient.cancelQueries({ queryKey });
       queryClient.setQueryData<ListTurnLiveLineageResponse>(

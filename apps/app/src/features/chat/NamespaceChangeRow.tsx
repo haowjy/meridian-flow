@@ -245,8 +245,8 @@ function restoreNote(
     }
     case "folder_missing":
       return t`Couldn't restore it. Its folder is gone.`;
-    case "not_applied":
-      return t`It's already restored.`;
+    case "nothing_to_restore":
+      return t`There is no deletion to restore.`;
     case "request_failed":
       return t`Couldn't restore it. Try again.`;
     default:

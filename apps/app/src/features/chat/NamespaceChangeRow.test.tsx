@@ -189,6 +189,14 @@ describe("a delete row's Restore", () => {
     expect(server.restoreRequests).toEqual([{ documentId: DOCUMENT }]);
   });
 
+  it("does not claim restoration when there is no matching deletion", async () => {
+    serve({ status: 409, body: { status: "nothing_to_restore" }, restores: false });
+    await renderRow();
+    await act(async () => restoreButton()?.click());
+    await vi.waitFor(() => expect(text("row")).toContain("There is no deletion to restore."));
+    expect(host.textContent).not.toContain("Restored");
+  });
+
   it("puts a refusal on the row and offers Restore again", async () => {
     serve({
       status: 409,

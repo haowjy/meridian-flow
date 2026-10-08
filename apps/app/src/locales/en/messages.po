@@ -2180,8 +2180,8 @@ msgid "It may have moved or been removed."
 msgstr "It may have moved or been removed."
 
 #: src/features/chat/NamespaceChangeRow.tsx
-msgid "It's already restored."
-msgstr "It's already restored."
+#~ msgid "It's already restored."
+#~ msgstr "It's already restored."
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -3876,6 +3876,10 @@ msgstr "The Work did not change. Try again."
 #: src/features/account/SettingsDialog.tsx
 msgid "Theme"
 msgstr "Theme"
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "There is no deletion to restore."
+msgstr "There is no deletion to restore."
 
 #: src/core/editor/images/image-uploads.ts
 msgid "There is nowhere left to put that picture."

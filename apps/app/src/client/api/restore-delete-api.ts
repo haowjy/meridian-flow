@@ -12,7 +12,7 @@ export type RestoreDeleteOutcome = RestoreAgentDeleteResponse["status"];
 const REFUSALS: ReadonlySet<unknown> = new Set<RestoreDeleteOutcome>([
   "location_taken",
   "folder_missing",
-  "not_applied",
+  "nothing_to_restore",
 ]);
 
 export async function restoreAgentDelete(

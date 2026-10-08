@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Restore distinguishes an already-restored document from a missing deletion.
+
 - Move labels retain destination section and Work when either changes.
 
 - Restore shows Restoring on both the receipt and tool row until the server confirms.

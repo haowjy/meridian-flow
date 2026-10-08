@@ -160,20 +160,20 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
 
     async findTurnDelete(threadId, turnId, documentId) {
       const [row] = await currentDrizzleDb(db)
-        .select()
+        .select({ change: agentNamespaceChanges, deletedAt: documents.deletedAt })
         .from(agentNamespaceChanges)
+        .innerJoin(documents, eq(documents.id, agentNamespaceChanges.documentId))
         .where(
           and(
             eq(agentNamespaceChanges.threadId, threadId as ThreadId),
             eq(agentNamespaceChanges.turnId, turnId as TurnId),
             eq(agentNamespaceChanges.documentId, documentId as DocumentId),
             eq(agentNamespaceChanges.kind, "delete"),
-            eq(agentNamespaceChanges.status, "active"),
           ),
         )
         .orderBy(desc(agentNamespaceChanges.id))
         .limit(1);
-      return row ? toRecord(row) : null;
+      return row ? { ...toRecord(row.change), documentLive: row.deletedAt === null } : null;
     },
 
     async transition(id, from) {

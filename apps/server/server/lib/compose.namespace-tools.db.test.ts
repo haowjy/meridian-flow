@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -21,9 +21,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
-      "../test-support/drizzle-reset.js"
-    );
+    const { createDb } = await import("@meridian/database");
+    const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
     const { restoreAgentDelete } = await import("./thread-context-route.js");
 
@@ -42,15 +41,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const RENAMED = "manuscript://renamed.md";
     const HOLDER = "manuscript://holder.md";
     const FRESH = "manuscript://fresh.md";
-    const database = useRollbackTestDatabase(DATABASE_URL, {
-      max: 4,
-      prepareSuite: (db) => deleteDrizzleRows(db, [schema.users]),
-    });
-    let db = database.current;
+    // Catalog repair runs after commit, so namespace commands need committed fixtures.
+    const db = createDb(DATABASE_URL, { max: 6 });
+    afterAll(() => db.close());
     const runtimes = useComposedRuntimes(() => db);
 
     beforeEach(async () => {
-      db = database.current;
+      await deleteDrizzleRows(db, [schema.users, schema.agentEditWidCounters]);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "namespace-tools"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,
@@ -524,7 +521,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await script.text(CHAPTER)).toContain("Chapter one text.");
       const { call } = await script.begin();
       expect(text(await call("ls", { path: "manuscript://" }))).toContain("chapter.md");
-      await expect(restore()).resolves.toEqual({ status: "not_applied" });
+      await expect(restore()).resolves.toEqual({
+        status: "already_restored",
+        documentId: DOC_ID,
+        uri: CHAPTER,
+      });
+      await port.delete(CHAPTER, { expected: { kind: "file", documentId: DOC_ID } });
+      await expect(restore()).resolves.toEqual({ status: "nothing_to_restore" });
+      await expect(
+        restoreAgentDelete(deps, {
+          threadId: THREAD.threadId as never,
+          turnId: THREAD.turnId,
+          documentId: randomUUID(),
+          userId: USER_ID as never,
+        }),
+      ).resolves.toEqual({ status: "nothing_to_restore" });
     });
 
     it("the writer's turn undo names a taken path, then puts back the turn's move and delete, and redo makes them again", async () => {

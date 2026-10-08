@@ -77,12 +77,12 @@ export interface ListTurnLiveLineageResponse {
   namespaceChanges: TurnNamespaceChangeItem[];
 }
 
-/** POST …/turns/:turnId/restore-delete: 200 `restored`, 409 for the others. */
+/** POST …/turns/:turnId/restore-delete: 200 `restored` or `already_restored`, 409 for refusals. */
 export type RestoreAgentDeleteResponse =
-  | { status: "restored"; documentId: string; uri: string }
+  | { status: "restored" | "already_restored"; documentId: string; uri: string }
   /** Something else is at the document's old location now. */
   | { status: "location_taken"; uri: string }
   /** The folder it was in is gone. */
   | { status: "folder_missing"; uri: string }
   /** The turn has no delete of that document still applied: nothing to restore. */
-  | { status: "not_applied" };
+  | { status: "nothing_to_restore" };
