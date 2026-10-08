@@ -2,13 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { scheduleDraftCatalogRefresh } from "./draft-review-route.js";
 
-const input = {
-  projectId: "00000000-0000-4000-8000-000000000001",
-  workId: "00000000-0000-4000-8000-000000000002",
-  documentId: "00000000-0000-4000-8000-000000000003",
-  draftId: "draft-1",
-  userId: "00000000-0000-4000-8000-000000000004",
-} as const;
+const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
 
 describe("draft review route catalog reconciliation", () => {
   it("attaches the adapter-owned refresh to the request lifetime", async () => {
@@ -21,14 +15,14 @@ describe("draft review route catalog reconciliation", () => {
 
     scheduleDraftCatalogRefresh(
       { contextCatalogRefresh: { refreshProjectDocuments } } as never,
-      input.projectId as never,
+      PROJECT_ID as never,
       (task) => {
         backgroundTask = task;
       },
     );
 
     expect(backgroundTask).toBeInstanceOf(Promise);
-    expect(refreshProjectDocuments).toHaveBeenCalledWith(input.projectId);
+    expect(refreshProjectDocuments).toHaveBeenCalledWith(PROJECT_ID);
 
     let settled = false;
     void backgroundTask?.then(() => {
