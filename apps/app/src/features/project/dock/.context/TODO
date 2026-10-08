@@ -1,0 +1,2 @@
+- `DockDocumentTitle.tsx`: add Copy link and Copy as Markdown to the title menu's action list. No document-level implementation exists yet; decide first what a copied link is (the canonical Context URI such as `scratch://@arc-one/beats.md`, or an app URL) and how Markdown is read from the live session.
+- `../context/viewers/ReadOnlyViewerFrame.tsx`: it paints `bg-background`, which a binary file shown in the dock draws against the dock's material. Make it transparent when the host is the dock. No Scratch file reaches it today.

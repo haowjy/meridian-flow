@@ -2,11 +2,11 @@
 
 - Open in Editor for Uploads lands on the "not available yet" placeholder
   (Scratch opens in the Editor). Tracked in https://github.com/haowjy/meridian-flow/issues/625.
-- Dock file slot is synced by effects (`dock/dock-view-store.ts` `workFile.active`,
-  `enterWork`/`leaveWork`, the `ProjectView.tsx` layout effect, `DockShell`
-  re-checks). Derive the shown file from the route's Work instead of syncing it.
-  Deferred to a dedicated side-panel work item (mention-first peeking, #625),
-  which also decides whether returning to a Work reopens its file.
+- The dock document slot is synced by an effect (`dock/dock-view-store.ts`
+  `syncDocumentScope`, called from the `ProjectView.tsx` layout effect). Derive
+  the shown document from the route's Work instead of syncing it. Deferred to a
+  dedicated side-panel work item (mention-first peeking, #625), which also
+  decides whether returning to a Work reopens its document.
 - Focus rings after programmatic focus: a screen heading focused on navigation
   (e.g. the Work list's "Work" h1) shows its ring, and the Archived tab keeps its
   ring after a refused Archive returns the Work to Active
