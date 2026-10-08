@@ -1,8 +1,7 @@
 // Mutating and query write command handlers.
 import * as Y from "yjs";
-
+import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
-import { applyEdits } from "../apply/tiers.js";
 import type { AppliedEditSummary } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";

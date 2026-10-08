@@ -16,7 +16,7 @@ Y.XmlElement CRDT item ID (`clientID`, `clock`); the displayed prefix is unique
 within the current sibling set and is not durable identity. Kernel callers see
 only the neutral `BlockRef`.
 
-### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/tiers.ts`)
+### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/apply-edits.ts`)
 The resolver emits `SemanticEditIRV1` bound to the exact input Yjs revision. It
 declares scope and deletion ranges plus a disjoint, exhaustive partition of
 each output into preserved continuation, fresh payload, copy, or certified
@@ -50,19 +50,19 @@ reserved, so it journals nothing and leaves nothing to undo.
 Flat inline offsets exclude atoms (pictures, hard breaks), so `textRanges` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 
-### Tiered apply (`src/apply/tiers.ts`)
+### Edit application (`src/apply/apply-edits.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
 references, parses content, computes offsets, and validates the semantic IR.
 Phase 2 (inside `doc.transact()`) applies pre-computed operations. Every agent
 text edit lowers through ProseMirror (`applyInlineReplacements`), the single
-certification seam; there is no direct-text tier. `applyTextEdit` remains as the
+inline mutation seam. `applyTextEdit` remains as the
 model's plain-text verb for undo repair and trims unchanged edge text before
 touching Yjs.
 
-| Tier | Kind | Mechanism |
-|---|---|---|
-| 2 | `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
-| 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
+| Kind | Mechanism |
+|---|---|
+| `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
+| `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
 structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`

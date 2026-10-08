@@ -176,7 +176,7 @@ accidental UUID interpolation fails loudly.
 ## Testing
 
 Package tests cover block-hash stability, markup round-trip, resolver with
-cross-block find, tiered apply preflight + edge cases, echo computation, cold
+cross-block find, edit apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
 drift invariants, and availability), response
 commit/recovery, and create lifecycle.

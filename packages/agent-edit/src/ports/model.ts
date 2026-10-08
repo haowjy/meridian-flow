@@ -93,13 +93,13 @@ export interface DocumentModel {
   applyTextEdit(doc: DocHandle, block: BlockRef, span: Span, newText: string): void;
 
   /**
-   * Insert new blocks after a reference block (Tier 3).
+   * Insert new blocks after a reference block.
    * When after is null, inserts at document start. Returns the inserted blocks.
    */
   insertBlocks(doc: DocHandle, after: BlockRef | null, parsed: ParsedContent): BlockRef[];
 
   /**
-   * Delete a block (Tier 3). Clears text instead of removing when it is the last block.
+   * Delete a block. Clears text instead of removing when it is the last block.
    */
   deleteBlock(doc: DocHandle, block: BlockRef): void;
 }

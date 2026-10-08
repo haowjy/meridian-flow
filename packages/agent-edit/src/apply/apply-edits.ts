@@ -1,4 +1,4 @@
-// Apply path for resolved agent edits: inline and block rewrites (tier 2), structural edits (tier 3).
+// Preflight and mutation of resolved inline, whole-block, and structural edits.
 
 import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
@@ -27,27 +27,27 @@ type Ref = BlockRef;
 type PlannedEdit =
   | {
       kind: "textRanges";
-      tier: 2;
+
       edit: Extract<ResolvedEdit, { kind: "textRanges" }>;
       replacements: Array<{ span: Span; newText: string }>;
       blockId: string;
     }
   | {
       kind: "insert";
-      tier: 3;
+
       edit: Extract<ResolvedEdit, { kind: "insert" }>;
       parsed: ParsedContent;
     }
   | {
       kind: "delete";
-      tier: 3;
+
       edit: Extract<ResolvedEdit, { kind: "delete" }>;
       blockId: string;
       removesBlock: boolean;
     }
   | {
       kind: "block";
-      tier: 2;
+
       edit: Extract<ResolvedEdit, { kind: "block" }>;
       blockId: string;
     };
@@ -216,7 +216,7 @@ function preflightTextRangesEdit(
     ok: true,
     plan: {
       kind: "textRanges",
-      tier: 2,
+
       edit,
       replacements,
       blockId: model.getBlockId(edit.block),
@@ -241,7 +241,7 @@ function preflightBlockReplacement(
   }
   return {
     ok: true,
-    plan: { kind: "block", tier: 2, edit, blockId: model.getBlockId(edit.block) },
+    plan: { kind: "block", edit, blockId: model.getBlockId(edit.block) },
   };
 }
 
@@ -261,7 +261,7 @@ function preflightInsert(
     }
     return {
       ok: true,
-      plan: { kind: "insert", tier: 3, edit, parsed: { blocks: [...edit.blocks] } },
+      plan: { kind: "insert", edit, parsed: { blocks: [...edit.blocks] } },
     };
   }
   if (edit.newText.length === 0) {
@@ -272,7 +272,7 @@ function preflightInsert(
   if (parsed.parsed.blocks.length === 0) {
     return { ok: false, code: "invalid_write", message: "insert produced no blocks" };
   }
-  return { ok: true, plan: { kind: "insert", tier: 3, edit, parsed: parsed.parsed } };
+  return { ok: true, plan: { kind: "insert", edit, parsed: parsed.parsed } };
 }
 
 function preflightDelete(
@@ -287,7 +287,7 @@ function preflightDelete(
     ok: true,
     plan: {
       kind: "delete",
-      tier: 3,
+
       edit,
       blockId: model.getBlockId(block),
       removesBlock: model.getBlocks(doc).length > 1,
@@ -309,7 +309,7 @@ function executePlan(
       accumulator.touchedHashes.add(plan.blockId);
       accumulator.applied.push({
         kind: "textRanges",
-        tier: 2,
+
         blockIds: [plan.blockId],
       });
       break;
@@ -318,7 +318,7 @@ function executePlan(
       const inserted = model.insertBlocks(doc, plan.edit.after ?? null, plan.parsed);
       const blockIds = inserted.map((block) => model.getBlockId(block));
       for (const blockId of blockIds) accumulator.touchedHashes.add(blockId);
-      accumulator.applied.push({ kind: "insert", tier: 3, blockIds });
+      accumulator.applied.push({ kind: "insert", blockIds });
       break;
     }
     case "delete":
@@ -328,12 +328,12 @@ function executePlan(
       } else {
         accumulator.touchedHashes.add(plan.blockId);
       }
-      accumulator.applied.push({ kind: "delete", tier: 3, blockIds: [plan.blockId] });
+      accumulator.applied.push({ kind: "delete", blockIds: [plan.blockId] });
       break;
     case "block":
       model.applyBlockReplacement(doc, plan.edit.block, plan.edit.replacement);
       accumulator.touchedHashes.add(plan.blockId);
-      accumulator.applied.push({ kind: "block", tier: 2, blockIds: [plan.blockId] });
+      accumulator.applied.push({ kind: "block", blockIds: [plan.blockId] });
       break;
   }
 }
