@@ -1,14 +1,15 @@
 /**
  * useReviewHeader — everything a review header needs that is not layout: the
- * Work's drafts for the switcher (with their change counts), the open review's
- * changes, and the whole-draft commands that move on to the next draft.
+ * open review's changes, the next draft file, and the whole-draft commands that
+ * move on to it.
  *
- * The desktop header and the phone header are two layouts over this one model,
- * so Apply draft, Discard draft, Apply all, "No changes left" and the refusal
- * line cannot drift between them.
+ * The identity row's controls and the phone header are two layouts over this one
+ * model, so Apply draft, Discard draft, "No changes left" and the refusal line
+ * cannot drift between them. Work-wide Apply all and Discard all belong to the
+ * Changes list (`ReviewFiles`), not here.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 import {
   type DraftCommandFailure,
@@ -18,8 +19,6 @@ import {
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows, draftAfter } from "@/features/chat/docked-drafts";
-import type { DraftSwitcherProps } from "./DraftSwitcher";
-import { useDraftChangeCounts } from "./useDraftChangeCounts";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 export type ReviewHeaderOptions = {
@@ -34,8 +33,10 @@ export type ReviewHeaderOptions = {
 export type ReviewHeaderModel = {
   controller: ReturnType<typeof useDraftReview>["controller"];
   view: ReviewChangesView;
-  /** What `DraftSwitcher` is given, minus the layout-specific props. */
-  switcher: Omit<DraftSwitcherProps, "touch">;
+  /** A draft-only document has no live version: its way out closes the tab. */
+  draftOnly: boolean;
+  /** Opens another draft of the Work in review (the editor's launcher). */
+  openDraft: (row: DockRow) => void;
   /** The next draft in the switcher, if the Work has one. */
   next: DockRow | null;
   locked: boolean;
@@ -58,6 +59,41 @@ export type ReviewHeaderModel = {
   discardDraft: () => void;
 };
 
+/**
+ * What the Work's drafts hold as refused or lost, as the review of
+ * (`documentId`, `draftId`) reads it: its own draft's failure, every listed
+ * draft's (a draft the review moved on from still says it was refused), and
+ * the other drafts' separately. Pure reads of the command records, so the
+ * identity row's notices can read them beside the header model.
+ */
+export function useReviewFailures(
+  { documentId, draftId }: { documentId: string; draftId: string },
+  listed?: readonly DockRow[],
+) {
+  const { controller, groups } = useDraftReview();
+  const rows = useMemo(() => listed ?? dockRows(groups), [listed, groups]);
+  const commandRecords = useDraftCommandRecords();
+  const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
+    projectId: controller.projectId,
+    workId: controller.workId,
+    documentId: row.documentId,
+    draftId: row.draft.draftId,
+  });
+  const commandError = draftCommandFailure(commandRecords, {
+    projectId: controller.projectId,
+    workId: controller.workId,
+    documentId,
+    draftId,
+  });
+  const failedElsewhere: { row: DockRow; failure: DraftCommandFailure }[] = [];
+  for (const row of rows) {
+    const failure = draftCommandFailure(commandRecords, draftOf(row));
+    if (!failure) continue;
+    if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
+  }
+  return { commandError, failedElsewhere };
+}
+
 export function useReviewHeader({
   documentId,
   draftId,
@@ -67,21 +103,12 @@ export function useReviewHeader({
   const { controller, groups } = useDraftReview();
   const view = useReviewChanges(controller);
   const rows = useMemo(() => dockRows(groups), [groups]);
-  const [switcherOpen, setSwitcherOpen] = useState(false);
-  const counts = useDraftChangeCounts(
-    controller,
-    rows
-      .filter((row) => row.documentId !== documentId)
-      .map((row) => ({ documentId: row.documentId, draftId: row.draft.draftId })),
-    switcherOpen,
-  );
-  const allCounts = useMemo(() => {
-    const merged = new Map(counts);
-    if (view.status === "ready") merged.set(documentId, view.items.length);
-    return merged;
-  }, [counts, documentId, view.items.length, view.status]);
 
-  const next = draftAfter(rows, documentId);
+  const next = draftAfter(
+    rows,
+    documentId,
+    controller.inlineReview?.completion?.documentName ?? null,
+  );
   // The draft Apply draft, Discard draft and Next draft move to is read while
   // the writer is still here (once this review's own read is in), so opening it
   // finds its preview already in the cache.
@@ -102,28 +129,7 @@ export function useReviewHeader({
   }, [ready, nextDocumentId, nextDraftId, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
   const { finished, completing, unlisted } = view;
-  const commandRecords = useDraftCommandRecords();
-  const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId: row.documentId,
-    draftId: row.draft.draftId,
-  });
-  const commandError = draftCommandFailure(commandRecords, {
-    projectId: controller.projectId,
-    workId: controller.workId,
-    documentId,
-    draftId,
-  });
-  // Every listed draft that holds one, so a draft the review moved on from still says it was refused.
-  const failures = new Map<string, DraftCommandFailure>();
-  const failedElsewhere: ReviewHeaderModel["failedElsewhere"] = [];
-  for (const row of rows) {
-    const failure = draftCommandFailure(commandRecords, draftOf(row));
-    if (!failure) continue;
-    failures.set(row.documentId, failure);
-    if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
-  }
+  const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId }, rows);
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
   /** Run a whole-draft command, then move to the next draft (or live) without waiting on it. */
@@ -132,22 +138,6 @@ export function useReviewHeader({
     void command();
     if (next) onOpenDraft(next);
   };
-  const selections = rows.map((row) => ({
-    documentId: row.documentId,
-    draftId: row.draft.draftId,
-  }));
-
-  /**
-   * Apply all or Discard all. The batch never stops at a refusal, and nothing in
-   * it moves the writer: the drafts are independent, an answer can come back
-   * long after the writer went elsewhere, and a refusal is held on its own draft
-   * (listed wherever drafts are, with Open as the way to it). The draft the
-   * writer is in holds on "No changes left" when the batch closes it.
-   */
-  const disposeAll = (mode: "apply" | "discard") => {
-    void controller.disposeDrafts(mode, selections);
-  };
-
   return {
     controller,
     view,
@@ -161,19 +151,7 @@ export function useReviewHeader({
     showLive,
     applyDraft: () => dispose(() => controller.apply(documentId, draftId)),
     discardDraft: () => dispose(() => controller.discard(documentId, draftId)),
-    switcher: {
-      rows,
-      currentDocumentId: documentId,
-      currentName: controller.inlineReview?.completion?.documentName ?? null,
-      counts: allCounts,
-      failures,
-      onOpenChange: setSwitcherOpen,
-      draftOnly: Boolean(onCloseDraftOnly),
-      disabled: locked,
-      onOpenDraft,
-      onShowLive: showLive,
-      onApplyAll: () => disposeAll("apply"),
-      onDiscardAll: () => disposeAll("discard"),
-    },
+    draftOnly: Boolean(onCloseDraftOnly),
+    openDraft: onOpenDraft,
   };
 }

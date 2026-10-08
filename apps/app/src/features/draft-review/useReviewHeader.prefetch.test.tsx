@@ -48,14 +48,14 @@ describe("the next draft's preview", () => {
   it("is read once this review's own preview is in, and only that draft's", async () => {
     await renderReviewScopes(
       async (probe) => {
-        await vi.waitFor(() => expect(probe().header.switcher.rows).toHaveLength(3));
+        await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(3));
         await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
         await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
         await vi.waitFor(() => {
           const read = mocks.getDraftPreview.mock.calls.map((call) => call[3]);
           expect(read).toContain("draft-b");
         });
-        // The third draft is not the next one: it is read only when the switcher opens.
+        // The third draft is not the next one: it is read only when the writer opens it.
         expect(mocks.getDraftPreview.mock.calls.map((call) => call[3])).not.toContain("draft-c");
       },
       { reviewed: { documentId: "document-a", draftId: "draft-a" } },

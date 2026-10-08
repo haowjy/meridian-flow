@@ -23,7 +23,7 @@ export function MobileReviewHeader({
   header: ReviewHeaderModel;
   onOpenList: () => void;
 }) {
-  const { controller, view, finished, switcher } = header;
+  const { controller, view, finished } = header;
   const count = view.items.length;
   const ready = view.status === "ready" && count > 0;
   return (
@@ -41,7 +41,9 @@ export function MobileReviewHeader({
       >
         <div className="min-w-0 flex-1">
           <DraftSwitcher
-            {...switcher}
+            draftOnly={header.draftOnly}
+            disabled={header.locked}
+            onShowLive={header.showLive}
             touch
             draftCommands={
               finished
@@ -86,8 +88,8 @@ export function MobileReviewHeader({
         unlisted={header.unlisted}
         completing={header.completing}
         next={header.next}
-        draftOnly={switcher.draftOnly}
-        onOpenNext={switcher.onOpenDraft}
+        draftOnly={header.draftOnly}
+        onOpenNext={header.openDraft}
         onShowLive={header.showLive}
       />
     </section>

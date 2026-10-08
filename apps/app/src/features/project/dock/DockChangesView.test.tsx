@@ -37,6 +37,8 @@ const editorController = {
   workId: "w",
   inlineReview: { kind: "inline", documentId: "doc-12", draftId: "draft-doc-12" },
   exitInlineReview: vi.fn(),
+  dispositionLocked: false,
+  disposeDrafts: vi.fn(async () => []),
   which: "editor",
 };
 const groups = [group("doc-12", "Chapter 12"), group("doc-13", "Chapter 13")];
@@ -152,6 +154,61 @@ describe("DockChangesView", () => {
       expect(openAiDraft).toHaveBeenCalledWith(
         expect.objectContaining({ documentId: "doc-13", draftId: "draft-doc-13" }),
       );
+    });
+  });
+
+  it("keeps one file order and expands the open file in place, whichever file is open", async () => {
+    groups.push(group("doc-11", "Chapter 11"), group("doc-20", "Interlude"));
+    const order = () =>
+      Array.from(document.querySelectorAll<HTMLElement>("[data-review-files] > *"))
+        .map((node) => node.querySelector(".truncate")?.textContent ?? "")
+        .filter((text) => /^(Chapter|Interlude)/.test(text));
+    try {
+      await render(async () => {
+        expect(order()).toEqual(["Chapter 11", "Chapter 12", "Chapter 13", "Interlude"]);
+        expect(document.querySelector("[data-review-file-open]")?.getAttribute("aria-label")).toBe(
+          "Changes in Chapter 12",
+        );
+      });
+      // Opening another file moves the expansion, not the list.
+      editorController.inlineReview = {
+        kind: "inline",
+        documentId: "doc-13",
+        draftId: "draft-doc-13",
+      };
+      await render(async () => {
+        expect(order()).toEqual(["Chapter 11", "Chapter 12", "Chapter 13", "Interlude"]);
+        expect(document.querySelector("[data-review-file-open]")?.getAttribute("aria-label")).toBe(
+          "Changes in Chapter 13",
+        );
+      });
+    } finally {
+      groups.splice(2, 2);
+      editorController.inlineReview = {
+        kind: "inline",
+        documentId: "doc-12",
+        draftId: "draft-doc-12",
+      };
+    }
+  });
+
+  it("applies or discards every draft of the Work from the list's menu", async () => {
+    await render(async () => {
+      await act(async () =>
+        button("All drafts")?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        ),
+      );
+      const item = (text: string) =>
+        Array.from(document.querySelectorAll<HTMLElement>("[role=menuitem]")).find((node) =>
+          node.textContent?.includes(text),
+        );
+      await act(async () => item("Apply all 2 drafts")?.click());
+      expect(editorController.disposeDrafts).toHaveBeenCalledWith("apply", [
+        { documentId: "doc-12", draftId: "draft-doc-12" },
+        { documentId: "doc-13", draftId: "draft-doc-13" },
+      ]);
+      expect(openAiDraft).not.toHaveBeenCalled();
     });
   });
 
