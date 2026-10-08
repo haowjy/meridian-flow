@@ -49,11 +49,38 @@ round-trip tests.
 
 ## Cold-start concurrent journal scan
 
-`listConcurrentJournalRows` has no lower bound when a branch has no previous
-watermark. Production promotion advances the watermark after the first
-interaction, but a simple max-id floor is unsound because journal-id order is
-not push order. The unbounded pushed-row scan is the same hole. Tracked at the
-query site in `branch-pulls.ts`.
+`listConcurrentJournalRows` in `adapters/drizzle-branch-push.ts` has no lower
+bound without an attribution watermark. The watermark advances only for novel
+attributed rows after a successful branch commit; ordinary writes whose history
+is already in the baseline can keep scanning indefinitely. Snapshot containment
+skips replay, not the query or update decoding. A future floor must follow push
+visibility: maximum journal ID is unsound because allocation order is not push
+order.
+
+## Thread-peer pull cost on every drafted write
+
+Profile before changing. `threadPeerContext` in
+`domain/thread-peer-core-pool.ts` calls `pullThreadPeer`
+(`domain/branch-pulls.ts`) on each drafted call outside an open response
+document. The pull encodes a full live snapshot, then reads the whole branch
+for the attribution baseline. Span runs on 2026-10-08 (500-document seed)
+measured 96–131 ms for a first write and 90–162 ms for later writes. Cost grows
+with retained Yjs bytes in this workload; Work-size scaling was not measured.
+Likely direction: reuse coherent captured live and peer state, and coalesce redundant
+root pulls. Keep the pull-time baseline and the final fence intact. Evidence:
+`experiments/draft-write-perf.md` and `experiments/spans-tables.md` in the
+docs repo's `model-tool-surface` work item.
+
+## Retained-state cost after attribution shortcut
+
+The 2026-10-08 repeated overwrite/restore probe still shows a later-write slope
+after attribution falls to single-digit milliseconds. Profile full-state
+materialization, encodes, persistence, and thread-peer checkpointing in
+`domain/branch-coordinator.ts` before choosing incremental update/checkpoint
+storage. Preserve the final concurrency fence, generation CAS, durable recovery,
+and delete-only changes. This is the remaining owner of the unfulfilled overall
+approximately 10% later/first target, alongside the peer pull task above. Evidence:
+`experiments/draft-speed-fix-probe.md` in the model-tool-surface work item.
 
 ## Thread-peer vs Work-draft generation split
 

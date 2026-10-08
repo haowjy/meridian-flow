@@ -20,6 +20,9 @@
 - Overlapping bold and italic, runs of alternating bold and italic, and strikethrough that starts or ends on a space export as Markdown that reads back with the same formatting instead of stray `*`, `_` or `~~`.
 
 - A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`. A paragraph of only line breaks comes back as one paragraph.
+- File moves, Apply, and Discard share one catalog repair queue instead of racing independent repairs. Repairs read file metadata without chapter prose; queued bursts append without recopying earlier moves. Lock contention logs warnings, not errors.
+
+- Draft writes filter covered history once and skip its attribution replay. Unchanged drafts avoid rebuilding retained history. Concurrent writer edits still appear in save receipts.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
@@ -35,8 +38,6 @@
 
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
-
-## [Unreleased]
 
 - Split the model's document tool into `read` and `write`; `write` command `delete` is now `remove` (blocks only), and `diff` is gone.
 - Model tool results are short text; the typed `result` is stored beside it, and the app reads only `result`. `read` and `write` return a status line plus `hash|text` blocks. `ls` returns the folder's URI, then one line per entry, with `(read-only)` and a non-text file's kind only when they apply. `work` returns one line per Work, `search` returns `hash|excerpt` around each match, and a `read` outline gives each heading's `#slug`. `verbose: true` on `ls`, `work` and `search` adds sizes, edit times, dates and whole blocks. A refusal reads as its message and code. In the typed result, `ls` entries carry `readonly` (was `editable`) and Works carry `writes` and `pendingChangeCount`.

@@ -101,6 +101,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       const members = new Set([LIVE_DOCUMENT_ID]);
       let membershipFailure = false;
+      const eventSink = createInMemoryEventSink();
       const delay = vi.fn(async (_ms: number) => {});
       const publish = vi.fn();
       const catalog = createDrizzleContextCatalog(
@@ -108,6 +109,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { publish },
         {
           delay,
+          eventSink,
           manifestMembership: {
             async resolveManifestMembership() {
               if (membershipFailure) throw new Error("membership unavailable");
@@ -174,10 +176,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(contextAvailabilityHeads)
         .where(eq(contextAvailabilityHeads.authorityKey, `project:${PROJECT_ID}`));
       membershipFailure = true;
-      await expect(catalog.refreshProjectDocuments(PROJECT_ID)).rejects.toThrow(
-        "membership unavailable",
-      );
+      await expect(catalog.refreshProjectDocuments(PROJECT_ID)).resolves.toBeUndefined();
       expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
+      expect(eventSink.events).toContainEqual(
+        expect.objectContaining({ name: "DeferredRefreshFailure", level: "error" }),
+      );
       await expect(
         db
           .select()
@@ -340,6 +343,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.objectContaining({
           source: "context-catalog",
           name: "DeferredRefreshFailure",
+          level: "error",
         }),
       );
     });
