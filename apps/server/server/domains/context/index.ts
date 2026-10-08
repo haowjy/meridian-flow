@@ -10,7 +10,11 @@ export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-st
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
-export { reconcileLineageScratch } from "./adapters/lineage-scratch-lifecycle.js";
+export {
+  createDrizzleLineageScratchLifecycle,
+  type LineageScratchLifecycle,
+  lineageHasLiveMember,
+} from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";

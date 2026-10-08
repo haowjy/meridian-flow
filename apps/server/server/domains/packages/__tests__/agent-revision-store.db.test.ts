@@ -1,4 +1,5 @@
 /** Postgres contracts for retained Agent identity, catalog ownership, and transactional binding. */
+
 import { createDb } from "@meridian/database";
 import {
   assertThrowawayDatabaseForRunDbTests,
@@ -9,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { hashPromptBakeContent } from "../../threads/domain/prompt-bake-hash.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
@@ -81,7 +83,9 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     });
 
     it("projects the retained revision through thread reads, lists, and updates", async () => {
-      const threads = createDrizzleThreadRepository(db);
+      const threads = createDrizzleThreadRepository(db, {
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
+      });
       const original = source();
       original.files["agents/general.md"] = original.files["agents/general.md"].replace(
         "name: General",
@@ -99,7 +103,9 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     });
 
     it("labels an agent-less binding as the generic subagent through thread reads and the chat feed", async () => {
-      const threads = createDrizzleThreadRepository(db);
+      const threads = createDrizzleThreadRepository(db, {
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
+      });
       const { createDrizzleRepositoriesForTest } = await import(
         "../../threads/adapters/drizzle/repositories.js"
       );
@@ -123,7 +129,9 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     });
 
     it("searches chat feed titles case-insensitively with LIKE metacharacters taken literally", async () => {
-      const threads = createDrizzleThreadRepository(db);
+      const threads = createDrizzleThreadRepository(db, {
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
+      });
       const { createDrizzleRepositoriesForTest } = await import(
         "../../threads/adapters/drizzle/repositories.js"
       );
@@ -150,8 +158,12 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     it("chooses one complete prompt-freeze winner across independent connections", async () => {
       const otherDb = createDb(url, { max: 2 });
       try {
-        const firstThreads = createDrizzleThreadRepository(db);
-        const otherThreads = createDrizzleThreadRepository(otherDb);
+        const firstThreads = createDrizzleThreadRepository(db, {
+          lineageScratch: createDrizzleLineageScratchLifecycle(db),
+        });
+        const otherThreads = createDrizzleThreadRepository(otherDb, {
+          lineageScratch: createDrizzleLineageScratchLifecycle(otherDb),
+        });
         const candidates = [
           {
             composedSystemPrompt: "First retained prompt",

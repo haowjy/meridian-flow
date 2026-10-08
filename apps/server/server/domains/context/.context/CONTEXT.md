@@ -383,7 +383,13 @@ provisions Uploads.
 There is no thread FK on `context_sources.root_thread_id`. Trash reconciliation
 keeps notes while any lineage member is live, hides the source with the last
 member, and restores it with any member. It refreshes catalog and availability
-truth in the same transaction. Work purge explicitly removes sources for roots
+truth in the same transaction through the composed catalog mutation port.
+First-write provisioning and trash/restore share the Scratch namespace lock
+and any-live-member predicate; policy exposes the same liveness even before a
+source exists. Identity lookup by ID or handle allows trashed first chats,
+while `ls scratch://@/` discovers only available notes and labels each lineage
+with its first chat’s title. Its entries have independent edit decisions.
+Work purge explicitly removes sources for roots
 in its purge set, including their documents, journal and memberships.
 
 Writer routes can read, edit, rename or move notes out, but cannot create notes

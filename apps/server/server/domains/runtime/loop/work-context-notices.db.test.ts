@@ -1,8 +1,10 @@
 /** Business mutations, durable Work notice history, and request-boundary replay against Postgres. */
+
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import {
   createDrizzleProjectWorkRepository,
@@ -38,6 +40,7 @@ else
     const db = createDb(url, { max: 6 });
     const repos = createDrizzleRepositoriesForTest(db);
     const works = createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),

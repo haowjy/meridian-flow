@@ -25,6 +25,7 @@ import {
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
+import { lineageHasLiveMember } from "../../context/index.js";
 import type { FileFacts, FileNode, FileOwnerRef, FileWorkFacts } from "../domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
 
@@ -164,9 +165,10 @@ async function loadContainer(
 ): Promise<BaseFacts | null> {
   const work = owner.scope === "work" ? await readWork(db, owner.workId) : null;
   if (owner.scope === "work" && !work) return null;
+  let lineageLive = true;
   if (owner.scope === "lineage") {
     const [root] = await currentDrizzleDb(db)
-      .select({ id: threads.id })
+      .select({ id: threads.id, live: lineageHasLiveMember(owner.rootThreadId) })
       .from(threads)
       .where(
         and(
@@ -177,6 +179,7 @@ async function loadContainer(
       )
       .limit(1);
     if (!root || scheme !== "scratch") return null;
+    lineageLive = root.live;
   }
   const projectId = work ? work.projectId : (owner as { projectId: ProjectId }).projectId;
   const [project] = await currentDrizzleDb(db)
@@ -210,7 +213,7 @@ async function loadContainer(
     ownerRootThreadId: owner.scope === "lineage" ? owner.rootThreadId : null,
     ownerWork: work ? workFacts(work) : null,
     // A missing source is provisioned by the create itself.
-    deleted: false,
+    deleted: !lineageLive,
     scheme,
     self: null,
     ancestors: sourceAncestors(source?.id ?? null, work?.id ?? null, projectId),

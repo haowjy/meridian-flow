@@ -60,6 +60,7 @@ import type {
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
 import { resolveVisibleDocumentMembership } from "../../visible-document-membership.js";
+import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
@@ -206,13 +207,15 @@ export class ContextFS implements ContextSchemeAdapter {
       },
       serializeThroughCallbacks: true,
       mapThrownError: (error) =>
-        error instanceof WorkLifecycleUnavailableError
-          ? {
-              code: "context_unavailable",
-              reason: `work_${error.state}`,
-              workSlug: error.workSlug ?? null,
-            }
-          : undefined,
+        error instanceof LineageScratchUnavailableError
+          ? { code: "not_found" }
+          : error instanceof WorkLifecycleUnavailableError
+            ? {
+                code: "context_unavailable",
+                reason: `work_${error.state}`,
+                workSlug: error.workSlug ?? null,
+              }
+            : undefined,
     });
     this.manifestView = deps.manifestView;
     this.readView = deps.threadView;

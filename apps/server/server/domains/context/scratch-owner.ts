@@ -16,6 +16,7 @@ export interface ScratchLineage {
   projectId: string;
   rootThreadId: string;
   rootThreadRef: string;
+  title?: string | null;
 }
 export interface ScratchLineages {
   byId(projectId: string, rootThreadId: string): Promise<ScratchLineage | null>;

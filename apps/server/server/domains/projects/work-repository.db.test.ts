@@ -1,9 +1,11 @@
 /** Postgres coverage for Work handles, cascaded soft deletion, and restore conflicts. */
+
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { eq, inArray } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
 
@@ -63,6 +65,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges,
       projectionMutation,

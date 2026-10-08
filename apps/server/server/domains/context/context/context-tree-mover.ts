@@ -12,6 +12,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
+import { LineageScratchUnavailableError } from "../adapters/lineage-scratch-lifecycle.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import {
   type ContextCommandTransaction,
@@ -37,6 +38,7 @@ import {
 } from "./result-aware-command-executor.js";
 
 function lifecycleCommandFailure(error: unknown, uri: string): Result<never, ContextError> {
+  if (error instanceof LineageScratchUnavailableError) return Err({ code: "not_found", uri });
   if (error instanceof WorkLifecycleUnavailableError)
     return Err({
       code: "context_unavailable",

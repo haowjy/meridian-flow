@@ -57,17 +57,23 @@ export function createLsHandler(deps: ToolWiringDeps) {
     if (!result.ok) return contextToolError(result.error);
     const listed = result.value.entries;
     const access = await deps.fileAccess.listAccess(principal, listedDocumentIds(listed));
-    // Folders below a path share its container; the root lists one per source.
-    const folderReadonly = path
-      ? await containerReadonly(deps, principal, context, path)
-      : undefined;
+    // Ordinary folders share their container; source and lineage discovery list distinct owners.
+    const folderReadonly =
+      path && path !== "scratch://@/"
+        ? await containerReadonly(deps, principal, context, path)
+        : undefined;
     const entries = await Promise.all(
       listed.map(async (entry): Promise<LsEntry[]> => {
         if (entry.kind === "directory") {
           const readonly =
             folderReadonly ?? (await containerReadonly(deps, principal, context, entry.uri));
           return [
-            { uri: entry.uri, kind: "directory", readonly: readonly ?? entry.readonly ?? false },
+            {
+              uri: entry.uri,
+              title: entry.title,
+              kind: "directory",
+              readonly: readonly ?? entry.readonly ?? false,
+            },
           ];
         }
         const decision = entry.documentId ? access.get(entry.documentId as DocumentId) : undefined;

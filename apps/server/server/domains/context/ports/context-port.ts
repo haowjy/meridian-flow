@@ -102,6 +102,7 @@ export interface ContextCreateUntitledDocumentOptions {
 
 interface BaseListEntry {
   uri: string;
+  title?: string | null;
   documentId?: string;
   sizeBytes?: number;
   updatedAt?: string;

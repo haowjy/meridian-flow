@@ -39,6 +39,7 @@ import {
   createDrizzleDocumentAddressStore,
   createDrizzleDocumentLinkHistory,
   createDrizzleFigureDocumentRepository,
+  createDrizzleLineageScratchLifecycle,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
   createDrizzleScratchLineages,
@@ -475,7 +476,13 @@ export async function createProductionAppPorts(input: {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, statusReader);
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog);
+  const threadRepos = createDrizzleRepositories(
+    db,
+    workProjectionMutation,
+    lineageScratch,
+    statusReader,
+  );
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -599,6 +606,7 @@ export async function createProductionAppPorts(input: {
     db,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
+    lineageScratch,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)

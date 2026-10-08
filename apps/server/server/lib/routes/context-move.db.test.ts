@@ -516,6 +516,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await yjsState(DOCUMENT_ID)).toEqual(documentYjsBefore);
     });
 
+    it("refuses first write into a fully trashed lineage without provisioning notes", async () => {
+      const { projectId, port } = await arrangeUntitled();
+      const rootId = crypto.randomUUID();
+      await db.insert(schema.threads).values({
+        id: rootId,
+        rootThreadId: rootId,
+        ref: "c12",
+        projectId,
+        createdByUserId: USER_ID,
+        deletedAt: new Date(),
+      });
+      const result = await port.write("scratch://@/c12/after-trash.md", "unavailable", {
+        origin: { type: "agent", agentSlug: null, threadId: rootId, turnId: crypto.randomUUID() },
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
+      expect(
+        await db
+          .select()
+          .from(schema.contextSources)
+          .where(eq(schema.contextSources.rootThreadId, rootId)),
+      ).toEqual([]);
+    });
+
     it("moves lineage notes to a Work but refuses writer moves back into a lineage", async () => {
       const { projectId, workId, port } = await arrangeUntitled();
       const rootId = crypto.randomUUID();

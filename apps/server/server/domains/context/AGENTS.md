@@ -6,6 +6,12 @@ content (`user://`), and named-Work material (`scratch://@slug/`, `uploads://@sl
 keeps Uploads at `uploads://@/`; its Scratch belongs to the chat lineage at
 `scratch://@/c12/`. Bare Scratch follows `scratchOwnerFor(thread, work)`.
 Lineage handles name first chats, including trashed first chats, never forks.
+Identity lookup does not imply availability: `ls scratch://@/` discovers only
+lineages with available notes, labeled with the first chat’s title. The lineage
+lifecycle collaborator owns provisioning and trash/restore under the shared
+Scratch namespace lock; file-policy facts use its any-live-member predicate.
+Production lifecycle repositories receive that collaborator with the composed
+catalog mutation port so transitions publish normal after-commit wake hints.
 Bare paths default to `manuscript://`.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is
