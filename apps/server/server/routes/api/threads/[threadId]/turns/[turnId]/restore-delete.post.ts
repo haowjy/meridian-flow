@@ -46,6 +46,6 @@ export default defineEventHandler(async (event) => {
     },
   );
   if (result.status !== "restored" && result.status !== "already_restored")
-    setResponseStatus(event, 409);
+    setResponseStatus(event, result.status === "permission_denied" ? 403 : 409);
   return result;
 });

@@ -25,9 +25,9 @@ import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { namespaceTree } from "../namespace-tree.js";
 import { documentGrant, withDraftWork } from "./file-access.js";
 import { containerGrant, underGrants } from "./namespace-commands.js";
+import { namespaceContextRefusal, namespaceRefusal } from "./namespace-refusal.js";
 import { planReversalWalk } from "./namespace-reversal-plan.js";
 import {
-  contextErrorMessage,
   documentRevisionMetadata,
   isToolError,
   type ResolvedDocumentAddress,
@@ -61,30 +61,20 @@ function modelSelection(input: ReversalInput): ReversalSelection {
   return { kind: "range", since: input.since, to: input.to };
 }
 
-function changeErrorMessage(
+function changeRefusal(
   direction: Direction,
   change: NamespaceChangeRecord,
   error: ContextError | ChangeClaimed,
-): string {
-  const handle = writeHandle(change.wId);
-  if (error.code === "claimed") {
-    return `${handle} was already ${direction === "undo" ? "undone" : "redone"}.`;
-  }
-  const lead = `Can't ${direction} ${handle}`;
-  const restoring = change.kind !== "move" && liveAfter(change, direction);
-  switch (error.code) {
-    case "conflict":
-      return `${lead}: ${locationAfter(change, direction)} already exists. Move or rename that document first.`;
-    case "not_found":
-      return restoring
-        ? `${lead}: the folder it was in is gone.`
-        : `${lead}: the document is no longer where ${handle} left it.`;
-    case "stale_source":
-    case "stale_target":
-      return `${lead}: the document is no longer where ${handle} left it.`;
-    default:
-      return `${lead}: ${contextErrorMessage(error)}`;
-  }
+) {
+  const path = locationAfter(change, direction);
+  if (error.code === "claimed") return namespaceRefusal(direction, path, "already_reversed");
+  if (error.code === "not_found")
+    return namespaceRefusal(
+      direction,
+      path,
+      change.kind !== "move" && liveAfter(change, direction) ? "folder_missing" : "stale_location",
+    );
+  return namespaceContextRefusal(direction, { ...error, uri: path });
 }
 
 function namespaceFact(start: Location, end: Location): AgentEditResultV1["namespace"] {
@@ -217,10 +207,7 @@ export async function runReversal(
       );
       if (isToolError(applied)) return withNote(applied, doneNote());
       if (!applied.ok) {
-        return withNote(
-          writeToolError(direction, changeErrorMessage(direction, change, applied.error)),
-          doneNote(),
-        );
+        return withNote(changeRefusal(direction, change, applied.error), doneNote());
       }
       done.push(writeHandle(change.wId));
       location = { live: liveAfter(change, direction), uri: locationAfter(change, direction) };

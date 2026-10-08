@@ -12,11 +12,7 @@ import {
   splitDocumentFile,
   writeHandle,
 } from "@meridian/agent-edit/integration";
-import type {
-  ContextError,
-  ContextPort,
-  FileRef,
-} from "../../domains/context/ports/context-port.js";
+import type { ContextPort, FileRef } from "../../domains/context/ports/context-port.js";
 import {
   type FileDestination,
   type FileGrant,
@@ -28,8 +24,8 @@ import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import { threadContainerTarget } from "../file-targets.js";
 import { documentGrant, fileAccessDeniedError, firstRefusal } from "./file-access.js";
+import { namespaceContextRefusal, namespaceRefusal } from "./namespace-refusal.js";
 import {
-  contextErrorMessage,
   isToolError,
   recordTouchInBackground,
   type ToolCall,
@@ -78,10 +74,7 @@ async function resolveSource(
   const filePath = splitDocumentFile(path).filePath;
   const ref = await call.context.port.stat(filePath);
   if (!ref.ok && ref.error.code === "not_found" && (await isFolder(call.context.port, filePath))) {
-    return writeToolError(
-      input.command,
-      `${filePath} is a folder; \`move\` and \`delete\` take a document.`,
-    );
+    return namespaceRefusal(input.command, filePath, "source_is_folder");
   }
   if (!ref.ok) {
     return ref.error.code === "not_found"
@@ -91,7 +84,7 @@ async function resolveSource(
           "document_not_found",
           { path },
         )
-      : writeToolError(input.command, aboutSource(input, contextErrorMessage(ref.error)));
+      : namespaceContextRefusal(input.command, ref.error);
   }
   const { documentId } = ref.value;
   if (!documentId) return writeToolError(input.command, `Document id missing for ${path}`);
@@ -152,21 +145,6 @@ export async function containerGrant(
   return isFileAccessDenied(container) ? fileAccessDeniedError(command, container, uri) : container;
 }
 
-function namespaceErrorMessage(input: NamespaceInput, error: ContextError): string {
-  switch (error.code) {
-    case "conflict":
-      return `${input.path} already exists. Choose another path.`;
-    case "stale_source":
-    case "stale_target":
-      return aboutSource(
-        input,
-        "The document changed while this ran. Check the path and try again.",
-      );
-    default:
-      return contextErrorMessage(error);
-  }
-}
-
 /** Runs `operation` under the grants; a seam's refusal under its locks is the tool's error. */
 export async function underGrants<T>(
   deps: ToolWiringDeps,
@@ -196,12 +174,11 @@ async function commitMove(
   const moved = await port.commitWriterLocation(source.uri, input.path, {
     expected: { kind: "file", nodeId: source.documentId },
   });
-  if (!moved.ok)
-    return Err(writeToolError(input.command, namespaceErrorMessage(input, moved.error)));
+  if (!moved.ok) return Err(namespaceContextRefusal(input.command, moved.error));
   const landed = await port.stat(input.path);
-  if (!landed.ok) return Err(writeToolError(input.command, contextErrorMessage(landed.error)));
+  if (!landed.ok) return Err(namespaceContextRefusal(input.command, landed.error));
   if (landed.value.uri === source.uri) {
-    return Err(writeToolError(input.command, `The document is already at ${input.path}.`));
+    return Err(namespaceRefusal(input.command, input.path, "already_at_destination"));
   }
   return Ok({ kind: "move", fromUri: source.uri, toUri: landed.value.uri });
 }
@@ -215,7 +192,7 @@ async function commitDelete(
     .livePort()
     .delete(source.uri, { expected: { kind: "file", documentId: source.documentId } });
   if (!deleted.ok) {
-    return Err(writeToolError(input.command, namespaceErrorMessage(input, deleted.error)));
+    return Err(namespaceContextRefusal(input.command, deleted.error));
   }
   return Ok({ kind: "delete", fromUri: source.uri });
 }

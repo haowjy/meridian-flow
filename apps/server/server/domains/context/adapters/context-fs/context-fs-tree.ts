@@ -49,6 +49,7 @@ function moveFiletypeTransition(
     if (destination.kind !== "tracked") return Ok(null);
     return Err({
       code: "invalid_operation",
+      reason: "file_type_conversion",
       message: `Cannot rename storage-backed file ${source.path} to ${destinationPath} because tracked documents require a Yjs schema`,
     });
   }
@@ -60,12 +61,14 @@ function moveFiletypeTransition(
   if (destination.kind !== "tracked") {
     return Err({
       code: "invalid_operation",
+      reason: "file_type_conversion",
       message: `Cannot rename tracked document ${source.path} to ${destinationPath} because binary and custom files use a different storage model`,
     });
   }
   if (destination.schemaType !== sourceSchema.value) {
     return Err({
       code: "invalid_operation",
+      reason: "document_type_conversion",
       message: `Cannot rename ${source.path} to ${destinationPath} because changing the Yjs schema from ${sourceSchema.value} to ${destination.schemaType} requires an explicit conversion`,
     });
   }

@@ -1,5 +1,5 @@
 // Versioned JSON result contract presented to editing models.
-import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
+import type { NamespaceRefusalReason, PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import { splitHashline } from "../model/hashline.js";
 import { type DocumentCommandName, writeCommandName } from "./command-schema.js";
@@ -66,8 +66,8 @@ export interface AgentEditModelPayload {
   /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
   message?: string;
-  /** Why a `permission_denied` result was refused (file-access §9). */
-  reason?: PermissionDeniedReason;
+  /** The expected permission or namespace cause, independent of its display message. */
+  reason?: PermissionDeniedReason | NamespaceRefusalReason;
   write?: {
     id?: string;
     deletedHashes?: string[];

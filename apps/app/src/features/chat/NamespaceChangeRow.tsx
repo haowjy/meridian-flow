@@ -200,7 +200,10 @@ function useRestoreControl(
     change ? { turnId, documentId: change.documentId, wId: change.wId } : null,
   );
   const path = change?.fromUri ?? "";
-  const note = restoreNote(restore.isError ? "request_failed" : restore.data, path);
+  const note =
+    change?.status === "active" && !restore.isPending
+      ? restoreNote(restore.isError ? { status: "request_failed" } : restore.data, path)
+      : null;
   // The control needs the server's word that the delete still stands; an
   // unloaded or rolled-back change offers nothing to act on.
   if (change?.kind !== "delete" || change.status !== "active" || restore.isPending) {
@@ -235,20 +238,24 @@ function RestoreNote({ className, children }: { className?: string; children: Re
 
 /** Why the writer's restore didn't do what they asked; null when it did. */
 function restoreNote(
-  outcome: RestoreDeleteOutcome | "request_failed" | undefined,
+  outcome: RestoreDeleteOutcome | { status: "request_failed" } | undefined,
   path: string,
 ): string | null {
-  switch (outcome) {
+  switch (outcome?.status) {
     case "location_taken": {
-      const place = documentLocationPath(path);
-      return t`Couldn't restore it. Something else is at ${place} now.`;
+      const place = documentLocationPath(path, true);
+      return t`Can't restore: another document is at ${place}. Move or rename that document, then try again.`;
     }
     case "folder_missing":
-      return t`Couldn't restore it. Its folder is gone.`;
+      return t`Can't restore: the document's original folder is gone.`;
     case "nothing_to_restore":
       return t`There is no deletion to restore.`;
+    case "permission_denied":
+      return outcome.reason === "work_archived"
+        ? t`Can't restore: the document's Work is archived. Unarchive the Work, then try again.`
+        : t`Can't restore: you don't have permission to restore this document here.`;
     case "request_failed":
-      return t`Couldn't restore it. Try again.`;
+      return t`Can't restore: the request failed. Try again.`;
     default:
       return null;
   }

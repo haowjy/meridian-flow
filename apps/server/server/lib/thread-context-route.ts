@@ -153,11 +153,14 @@ function writerTree(
     const grants = [];
     for (const target of targets) {
       const grant = await deps.fileAccess.authorize({ accountId: userId }, target, "edit");
-      if (isFileAccessDenied(grant)) return Err({ code: "permission_denied", uri });
+      if (isFileAccessDenied(grant))
+        return Err({ code: "permission_denied", uri, reason: grant.reason });
       grants.push(grant);
     }
     const run = await runWithEditGrants(deps.fileAccess, grants, operation);
-    return run.ok ? run.value : Err({ code: "permission_denied", uri });
+    return run.ok
+      ? run.value
+      : Err({ code: "permission_denied", uri, reason: run.refusal.refused[0]?.reason });
   };
   return {
     move: (from, to, documentId) => granted(to, documentId, () => tree.move(from, to, documentId)),
@@ -191,6 +194,12 @@ export async function restoreAgentDelete(
   const restored = await deps.namespaceChanges.reverse(tree, change, "undo");
   if (restored.ok) return { status: "restored", documentId, uri: change.fromUri };
   switch (restored.error.code) {
+    case "permission_denied":
+      return { status: "permission_denied", reason: restored.error.reason ?? "action_denied" };
+    case "context_unavailable":
+      return restored.error.reason === "work_archived"
+        ? { status: "permission_denied", reason: "work_archived" }
+        : { status: "nothing_to_restore" };
     case "claimed": {
       const current = await deps.namespaceChanges.findTurnDelete(threadId, turnId, documentId);
       return current?.status === "reversed" && current.documentLive

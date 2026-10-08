@@ -77,6 +77,26 @@ describe("document tool rows", () => {
     expect(toolActivityPhrase(tool)).toEqual({ verb: "Moved note to", parameter: destination });
   });
 
+  it.each([
+    ["location_taken", "Can't move: Manuscript/note.md is already taken. Choose another location."],
+    [
+      "file_type_conversion",
+      "Can't move: renaming a document does not convert its file type. Keep its current extension.",
+    ],
+    [
+      "work_archived",
+      "Can't move: the document's Work is archived. Unarchive the Work, then try again.",
+    ],
+  ])("keeps the typed %s refusal in the chat", (reason, expected) => {
+    const tool = documentTool({
+      toolName: "write",
+      input: { command: "move", from: { path: "scratch://note.md" }, path: "manuscript://note.md" },
+      result: { status: "invalid_write", reason, path: "manuscript://note.md" },
+      isError: true,
+    });
+    expect(documentToolFailureCopy(tool)).toBe(expected);
+  });
+
   it("writes failure copy from the result's status", () => {
     const notFound = documentTool({
       toolName: "read",

@@ -662,6 +662,102 @@ msgstr "缓存重置"
 msgid "Calls"
 msgstr "调用"
 
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: {place} is already taken. Choose another location."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: documents in Uploads are read-only."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: renaming a document does not convert its file type. Keep its current extension."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: that change was already reversed."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: that extension requires a different document type. Keep its current extension."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: that Work is unavailable. Choose an available Work."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the agent has read-only permission here."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the destination is a folder. Include the document's filename."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the destination needs a filename."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the document is already at that location."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the document no longer exists at that location."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the document or destination changed. Check their current locations, then try again."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the document path is not valid. Check the location, then try again."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the document's original folder is gone."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the document's Work is archived. Unarchive the Work, then try again."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: the request failed. Try again."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: this is a folder. Choose a document instead."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: this location does not support the change. Check the source and destination."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "Can't {command}: you don't have permission to change this document here."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Can't restore: another document is at {place}. Move or rename that document, then try again."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Can't restore: the document's original folder is gone."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Can't restore: the document's Work is archived. Unarchive the Work, then try again."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Can't restore: the request failed. Try again."
+msgstr ""
+
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Can't restore: you don't have permission to restore this document here."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Can't undo"
 msgstr ""
@@ -1323,16 +1419,16 @@ msgid "Couldn’t rename this Work. Try again."
 msgstr ""
 
 #: src/features/chat/NamespaceChangeRow.tsx
-msgid "Couldn't restore it. Its folder is gone."
-msgstr ""
+#~ msgid "Couldn't restore it. Its folder is gone."
+#~ msgstr ""
 
 #: src/features/chat/NamespaceChangeRow.tsx
-msgid "Couldn't restore it. Something else is at {place} now."
-msgstr ""
+#~ msgid "Couldn't restore it. Something else is at {place} now."
+#~ msgstr ""
 
 #: src/features/chat/NamespaceChangeRow.tsx
-msgid "Couldn't restore it. Try again."
-msgstr ""
+#~ msgid "Couldn't restore it. Try again."
+#~ msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -1529,6 +1625,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Default alignment"
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "delete"
 msgstr ""
 
 #: src/features/editor/surfaces/blocks/block-copy.ts
@@ -2446,6 +2546,10 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "move"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr ""
@@ -3065,6 +3169,10 @@ msgstr ""
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Redid change to Work {0}."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "redo"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -4253,6 +4361,10 @@ msgstr ""
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undid change to Work {0}."
+msgstr ""
+
+#: src/features/chat/namespace-refusal-copy.ts
+msgid "undo"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx

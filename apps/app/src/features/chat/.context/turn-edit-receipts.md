@@ -33,9 +33,13 @@ all reach the row one way: the lineage refetches. A model `undo`/`redo` result
 on the thread stream invalidates every turn's lineage, since it can reverse
 any earlier turn. That includes an error result, which may follow steps that
 went through. Restore sits on both the delete's timeline row and its receipt line
-while the delete is applied: one control and one mutation. It marks the
-lineage reversed at once, so both places follow, and a refusal lands as a
-note where the writer clicked.
+while the delete is applied. Both surfaces share the transient per-delete mutation
+key and show Restoring immediately; only server confirmation marks the lineage
+reversed. A refusal stays next to the control the writer clicked. No matching
+delete is not proof of restoration: the server distinguishes `nothing_to_restore`
+from `already_restored`, which requires a reversed delete and a live document.
+Namespace refusals retain typed causes; localized row messages never parse model
+prose. Move destinations retain their section and explicit Work when either differs.
 
 The single Undo/Redo action calls the turn-scoped reverse endpoint. Receipt state
 (`live-active`, `branch-active`, reversed, dependent, or expired) decides whether

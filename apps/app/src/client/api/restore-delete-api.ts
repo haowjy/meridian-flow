@@ -7,12 +7,13 @@ import {
 import { postJson } from "./http-client";
 
 /** What a restore came to, as the route answers it. */
-export type RestoreDeleteOutcome = RestoreAgentDeleteResponse["status"];
+export type RestoreDeleteOutcome = RestoreAgentDeleteResponse;
 
-const REFUSALS: ReadonlySet<unknown> = new Set<RestoreDeleteOutcome>([
+const REFUSALS: ReadonlySet<unknown> = new Set<RestoreDeleteOutcome["status"]>([
   "location_taken",
   "folder_missing",
   "nothing_to_restore",
+  "permission_denied",
 ]);
 
 export async function restoreAgentDelete(
@@ -22,12 +23,12 @@ export async function restoreAgentDelete(
   const response = await postJson<RestoreAgentDeleteResponse>(
     apiThreadTurnRestoreDeletePath(threadId, input.turnId),
     { documentId: input.documentId },
-    // The route's refusals answer 409 with a typed body. Any other 409 (a
-    // context conflict passed through) or 404 is a failed request.
+    // Expected refusals preserve their typed body; unknown HTTP failures stay request errors.
     {
       acceptErrorResponse: (status, payload) =>
-        status === 409 && REFUSALS.has((payload as { status?: unknown } | null)?.status),
+        (status === 409 || status === 403) &&
+        REFUSALS.has((payload as { status?: unknown } | null)?.status),
     },
   );
-  return response.status;
+  return response;
 }

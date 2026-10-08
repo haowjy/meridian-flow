@@ -4,6 +4,7 @@
  * model's copy for context errors.
  */
 import type {
+  AgentEditResultV1,
   DocumentAddress,
   DocumentVersion,
   WriteErrorStatus,
@@ -125,7 +126,7 @@ export function writeToolError(
   command: Parameters<typeof modelResult>[0]["command"],
   message: string,
   status: WriteErrorStatus = "invalid_write",
-  payload: { path?: string } = {},
+  payload: Pick<AgentEditResultV1, "path" | "reason"> = {},
 ): WriteToolErrorOutput {
   return {
     isError: true,

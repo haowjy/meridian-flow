@@ -1,3 +1,4 @@
+import type { FileAccessDenial } from "./file-access.js";
 /**
  * Purpose: Defines JSON-natural recent-document and live-lineage DTOs.
  * Why independent: Chat rail data is shared by server routes and frontend query consumers.
@@ -85,4 +86,5 @@ export type RestoreAgentDeleteResponse =
   /** The folder it was in is gone. */
   | { status: "folder_missing"; uri: string }
   /** The turn has no delete of that document still applied: nothing to restore. */
-  | { status: "nothing_to_restore" };
+  | { status: "nothing_to_restore" }
+  | { status: "permission_denied"; reason: FileAccessDenial | "action_denied" };

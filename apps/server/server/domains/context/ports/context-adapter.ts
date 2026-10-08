@@ -5,6 +5,7 @@
  * AdapterFault is scope-free and gets URI-enriched at the ContextPort boundary.
  */
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
+import type { NamespaceRefusalReason } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type {
   ContextCreateTrackedDocumentResult,
@@ -55,7 +56,7 @@ export type AdapterFault =
   | { code: "conflict" }
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "invalid_operation"; message?: string }
+  | { code: "invalid_operation"; reason?: NamespaceRefusalReason; message?: string }
   | {
       code: "context_unavailable";
       reason: "work_archived" | "work_deleted" | "work_missing";

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Move, delete and Restore refusals keep their cause and recovery instruction in model results and chat rows.
+
 - Restore distinguishes an already-restored document from a missing deletion.
 
 - Move labels retain destination section and Work when either changes.

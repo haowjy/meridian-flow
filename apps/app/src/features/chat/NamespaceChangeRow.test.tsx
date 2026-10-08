@@ -209,11 +209,28 @@ describe("a delete row's Restore", () => {
 
     await vi.waitFor(() =>
       expect(host.querySelector("[data-restore-note]")?.textContent).toBe(
-        "Couldn't restore it. Something else is at ch2.md now.",
+        "Can't restore: another document is at Manuscript/ch2.md. Move or rename that document, then try again.",
       ),
     );
     expect(host.textContent).not.toContain("Restored");
     expect(restoreButton()).not.toBeNull();
+  });
+
+  it("shows an archived Work refusal only when the server names that cause", async () => {
+    serve({
+      status: 403,
+      body: { status: "permission_denied", reason: "work_archived" },
+      restores: false,
+    });
+    await renderRow();
+    await act(async () => restoreButton("receipt")?.click());
+    await vi.waitFor(() =>
+      expect(text("receipt")).toContain(
+        "Can't restore: the document's Work is archived. Unarchive the Work, then try again.",
+      ),
+    );
+    expect(text("row")).not.toContain("Can't restore");
+    expect(host.textContent).not.toContain("Restored");
   });
 
   it("rolls back a 409 it doesn't know and asks to try again", async () => {
@@ -228,7 +245,7 @@ describe("a delete row's Restore", () => {
 
     await vi.waitFor(() =>
       expect(host.querySelector("[data-restore-note]")?.textContent).toBe(
-        "Couldn't restore it. Try again.",
+        "Can't restore: the request failed. Try again.",
       ),
     );
     expect(host.textContent).not.toContain("Restored");

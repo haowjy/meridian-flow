@@ -1,4 +1,5 @@
 /** Curated renderers for chat tool activity rows. */
+
 import { t } from "@lingui/core/macro";
 import {
   type JsonValue,
@@ -6,7 +7,6 @@ import {
 } from "@meridian/contracts/protocol";
 import { ChevronRight, FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
-
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -20,6 +20,7 @@ import {
 import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
+import { namespaceRefusalCopy } from "./namespace-refusal-copy";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
@@ -279,6 +280,15 @@ export function toolRowFailed(tool: ToolView): boolean {
 export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
+  const result = tool.result;
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    const refusal = namespaceRefusalCopy(
+      stringInput(inputObject(tool), "command") ?? "",
+      result.reason,
+      asString(result.path) ?? subjectPath(tool) ?? "",
+    );
+    if (refusal) return refusal;
+  }
   switch (status) {
     case "binary_file": {
       // A block copy's binary file is its source, not the destination in `path`.

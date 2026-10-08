@@ -226,11 +226,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .createTrackedDocument("manuscript://arc/one.md", "One.");
       if (!inArc.ok) throw new Error(JSON.stringify(inArc.error));
       const folder = await call("write", { command: "delete", path: "manuscript://arc" });
-      expect(text(folder)).toContain(
-        "manuscript://arc is a folder; `move` and `delete` take a document.",
-      );
+      expect(folder.result).toMatchObject({ status: "invalid_write", reason: "source_is_folder" });
       const missing = await call("write", { command: "delete", path: "manuscript://missing.md" });
       expect(missing.result).toMatchObject({ status: "document_not_found" });
+    });
+
+    it("preserves destination and file-type refusal causes through the model result", async () => {
+      const { script } = await start();
+      const { call } = await script.begin();
+      await call("read", { path: CHAPTER });
+      for (const [path, reason] of [
+        [HOLDER, "location_taken"],
+        ["manuscript://chapter.png", "file_type_conversion"],
+        ["manuscript://", "path_required"],
+      ]) {
+        const refused = await call("write", { command: "move", from: { path: CHAPTER }, path });
+        expect(refused.result).toMatchObject({ status: "invalid_write", reason });
+        expect(text(refused)).not.toMatch(/Yjs|invalid_operation:/);
+      }
+      expect(await documentRow(DOC_ID)).toMatchObject({ name: "chapter", deletedAt: null });
     });
 
     it("refuses in a draft-mode Work, a half-drafted move (D45), and after the mode changes until the model reads again (D41)", async () => {
@@ -409,9 +423,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { call } = await script.begin();
       const refused = await call("write", { command: "undo", path: RENAMED });
       expect(refused.isError).toBe(true);
-      expect(text(refused)).toContain(
-        "Can't undo w1: manuscript://chapter.md already exists. Move or rename that document first.",
-      );
+      expect(refused.result).toMatchObject({
+        status: "invalid_write",
+        reason: "location_taken",
+        path: CHAPTER,
+      });
       expect(await documentRow(DOC_ID)).toMatchObject({ name: "renamed", deletedAt: null });
       const [change] = await db.select().from(schema.agentNamespaceChanges);
       expect(change?.status).toBe("active");

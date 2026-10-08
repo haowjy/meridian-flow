@@ -457,7 +457,11 @@ export class ContextTreeMover {
     if (exactTarget) {
       const targetPath = destination.path.split("/").filter(Boolean).join("/");
       if (!basename(targetPath)) {
-        return Err({ code: "invalid_operation", uri: destination.canonical });
+        return Err({
+          code: "invalid_operation",
+          reason: "path_required",
+          uri: destination.canonical,
+        });
       }
       return Ok(targetPath);
     }
@@ -468,7 +472,11 @@ export class ContextTreeMover {
         ? joinPath(destination.path, sourceBasename)
         : destination.path.split("/").filter(Boolean).join("/");
     if (!basename(targetPath)) {
-      return Err({ code: "invalid_operation", uri: destination.canonical });
+      return Err({
+        code: "invalid_operation",
+        reason: "path_required",
+        uri: destination.canonical,
+      });
     }
     return Ok(targetPath);
   }
@@ -480,7 +488,11 @@ export class ContextTreeMover {
     options?: ContextMoveOptions,
   ): Result<void, ContextError> {
     if (source.kind !== existingTarget.kind) {
-      return Err({ code: "invalid_operation", uri: destinationUri });
+      return Err({
+        code: "invalid_operation",
+        reason: existingTarget.kind === "directory" ? "destination_is_folder" : "location_taken",
+        uri: destinationUri,
+      });
     }
     if (!options?.overwrite || source.kind === "directory") {
       return Err({ code: "conflict", uri: destinationUri });
