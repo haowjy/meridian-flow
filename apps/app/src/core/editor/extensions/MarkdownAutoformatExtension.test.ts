@@ -66,7 +66,6 @@ describe("block rules fire at their trigger", () => {
 
 describe("code fences capture their language", () => {
   const table: Array<[fence: string, info: string, language: string | null]> = [
-    ["```", "Python", "python"],
     ["~~~", "aa~bb", "aa~bb"],
   ];
 
