@@ -13,6 +13,7 @@ import {
 import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
 import { createLocalFileAccessChanges } from "../file-policy/index.js";
@@ -75,10 +76,13 @@ async function fixture(mode: "direct" | "draft") {
     codec: f.runtime.codec,
   });
   const revisions = createDocumentRevisions({
-    threads: createDrizzleThreadRepository(db),
+    threads: createDrizzleThreadRepository(db, {
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
+    }),
     availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
     works: createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),

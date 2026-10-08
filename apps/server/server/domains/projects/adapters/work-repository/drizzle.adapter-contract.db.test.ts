@@ -1,5 +1,7 @@
 /** PostgreSQL half of the shared WorkRepository conformance suite. */
+
 import { beforeEach, describe, it } from "vitest";
+import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../../file-policy/index.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -42,6 +44,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("honors restore, no-change, and retention policy", async () => {
       let now = new Date("2026-01-01T00:00:00.000Z");
       const repo = createDrizzleWorkRepository({
+        lineageScratch: createDrizzleLineageScratchLifecycle(db),
         db,
         fileAccessChanges: createLocalFileAccessChanges(),
         now: () => now,

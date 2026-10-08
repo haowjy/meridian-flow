@@ -24,6 +24,7 @@ import {
   type ContextDocumentMembershipObserver,
   DrizzleContextDocumentStore,
 } from "./adapters/context-fs/drizzle-store.js";
+import { createDrizzleLineageScratchLifecycle } from "./adapters/lineage-scratch-lifecycle.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
 import type {
   ContextDocumentStore,
@@ -230,6 +231,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly membershipObserver?: ContextDocumentMembershipObserver,
     private readonly workId?: string | (() => Promise<string>),
     private readonly catalogMutations?: ContextCatalogMutationPort,
+    private readonly beforeWrite?: () => Promise<void>,
   ) {}
 
   private async resolvedWorkId(): Promise<string | undefined> {
@@ -240,6 +242,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.db, async () => {
       const workId = await this.resolvedWorkId();
       if (workId) await requireLockedActiveWorks(this.db, [workId]);
+      await this.beforeWrite?.();
       return operation(await this.sourceStore());
     });
   }
@@ -345,6 +348,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.db, async () => {
       const workId = await this.resolvedWorkId();
       if (workId) await requireLockedActiveWorks(this.db, [workId]);
+      await this.beforeWrite?.();
       await this.sourceStore();
       return operation();
     });
@@ -427,6 +431,7 @@ export function createLineageContextDocumentStore(
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
 ): ContextDocumentStore {
+  const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations);
   const find = async () => {
     const [row] = await currentDrizzleDb(db)
       .select({ id: contextSources.id })
@@ -444,28 +449,11 @@ export function createLineageContextDocumentStore(
   };
   return new SourceResolvedContextDocumentStore(
     db,
-    async () => {
-      const existing = await find();
-      if (existing) return existing;
-      const [created] = await currentDrizzleDb(db)
-        .insert(contextSources)
-        .values({
-          projectId,
-          rootThreadId,
-          scope: "lineage",
-          name: "Scratch",
-          slug: "scratch",
-          adapterType: "local",
-        })
-        .onConflictDoNothing()
-        .returning({ id: contextSources.id });
-      const id = created?.id ?? (await find());
-      if (!id) throw new Error("Chat Scratch is unavailable");
-      return id;
-    },
+    () => lifecycle.ensureSource(projectId, rootThreadId),
     find,
     membershipObserver,
     undefined,
     catalogMutations,
+    () => lifecycle.requireLive(projectId, rootThreadId),
   );
 }

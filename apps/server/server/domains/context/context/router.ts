@@ -647,6 +647,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           entries: ((await deps.listLineages?.()) ?? []).map((lineage) => ({
             kind: "directory" as const,
             uri: `scratch://@/${lineage.rootThreadRef}/`,
+            title: lineage.title,
             readonly: false,
           })),
         });
