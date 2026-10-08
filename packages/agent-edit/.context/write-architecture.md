@@ -38,17 +38,31 @@ insertion attribution.
 Single-match output retains the existing `text` shape. Formatted
 and cross-block finds keep the serialized-markdown reconciliation path.
 
-### 3-tier apply (`src/apply/tiers.ts`)
+A scope rewrite (`replace` over `in`, a formatted or cross-block find, and
+`create { overwrite: true }`) goes through `replaceScope`, which aligns the
+scope's blocks with the parsed replacement (`resolver/block-alignment.ts`):
+equal blocks get no edit; between them, blocks that may pair (same node type,
+same heading level) pair by shared edge text first and by position after, and
+each pair becomes a `block` edit that `updateYFragment` diffs in place,
+attributes included. Only unpaired blocks are inserted or deleted, so a new
+paragraph never takes over an edited one's element and comments. A write that resolves to no edits (a document's own export written back, or a
+find replaced with itself) returns `unchanged` before a write handle is
+reserved, so it journals nothing and leaves nothing to undo.
+Flat `text` offsets exclude atoms (pictures, hard breaks), so `text` edits
+apply only to blocks without atoms; anything else is a `block` edit.
+
+### Tiered apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
 references, parses content, computes offsets, and validates the semantic IR.
-Phase 2 (inside `doc.transact()`) applies pre-computed operations. Find-based
-text edits deliberately bypass the direct-text fast path so their single PM
-lowering is the certification seam; other eligible plain edits retain Tier 1.
+Phase 2 (inside `doc.transact()`) applies pre-computed operations. Every agent
+text edit lowers through ProseMirror (`applyInlineReplacement`), the single
+certification seam; there is no direct-text tier. `applyTextEdit` remains as the
+model's plain-text verb for undo repair and trims unchanged edge text before
+touching Yjs.
 
 | Tier | Kind | Mechanism |
 |---|---|---|
-| 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary/formatting change, `textRanges`, or a same-type complex block changes | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
+| 2 | `text`, `textRanges`, or a matched block changes (`block`) | Adapter-owned inline, exact multi-range, or whole-block replacement + per-block updateYFragment |
 | 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of

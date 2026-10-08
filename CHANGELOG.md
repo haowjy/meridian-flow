@@ -57,6 +57,17 @@
 - Draft review works on the phone. A compact header under the top bar holds the draft switcher, a stepper through the changes and a change count; tap a change to select it and its bar (the chat that wrote it, Discard, Apply) sits at the bottom of the page, above the keyboard when it is up. The count opens the change list as a sheet over the dimmed manuscript; tap a row to go to that change. Apply draft, Discard draft, Apply all and Discard all are in the switcher's menu. Every control is a 44px target.
 - A struck-through removal in a draft no longer runs into the text that replaced it.
 - Draft review shows removed text struck through in the manuscript like suggestion mode (red for the AI, gold for you; long removals fold), your typing in a draft is gold at once, and entering review keeps the live view and its header until the draft is ready, then switches in one frame.
+- An AI overwrite or replace changes only the paragraphs and words that differ. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and a paragraph the AI adds never takes over the comments of the one it edits next to it.
+
+- An AI write that changes nothing (a chapter written back as it is, or a word replaced with itself) records nothing: no write, no receipt and nothing to undo.
+
+- An AI write that only centers a paragraph or renumbers a list now applies the change instead of reporting success and dropping it.
+
+- A turn's receipt offers Undo only when Undo will work. Text you type inside the AI's words now shows the turn as no longer undoable, as Undo itself already treated it.
+
+- Overlapping bold and italic, runs of alternating bold and italic, and strikethrough that starts or ends on a space export as Markdown that reads back with the same formatting instead of stray `*`, `_` or `~~`.
+
+- A line break at the end of a paragraph exports as `<br/>` and comes back as a line break, not a literal `\`. A paragraph of only line breaks comes back as one paragraph.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 

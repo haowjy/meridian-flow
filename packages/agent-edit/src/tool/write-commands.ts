@@ -25,6 +25,7 @@ import {
 import type { ResponseCommitter } from "./response-committer.js";
 import {
   formatApplySuccess,
+  formatUnchangedSuccess,
   isDocumentEmpty,
   status,
   truncateCreateEcho,
@@ -242,6 +243,36 @@ export function createWriteCommands(deps: {
         `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
       );
     }
+    let overwrite: Extract<ReturnType<typeof resolveWrite>, { ok: true }> | undefined;
+    if (overwriting && existingBlocks.length > 0) {
+      const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
+      const resolved = resolveWrite(
+        { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
+        empty
+          ? {
+              command: "remove",
+              documentAddress: address,
+              in: [1, existingBlocks.length],
+            }
+          : {
+              command: "replace",
+              documentAddress: address,
+              ...(copiedNodes ? { blocks: copiedNodes } : { content }),
+              in: [1, existingBlocks.length],
+            },
+      );
+      if (!resolved.ok) {
+        return errorResponse(
+          resolved.error.code,
+          resolved.error.message,
+          address.filePath,
+          documentBlocksDetail(resolved.error.details),
+        );
+      }
+      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+      if (resolved.edits.length === 0) return formatUnchangedSuccess();
+      overwrite = resolved;
+    }
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
@@ -257,38 +288,13 @@ export function createWriteCommands(deps: {
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
     const { result: failure, update } = captureWriteUpdate(runtime.doc, () => {
-      if (overwriting && existingBlocks.length > 0) {
-        const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
-        const resolved = resolveWrite(
-          { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
-          empty
-            ? {
-                command: "remove",
-                documentAddress: address,
-                in: [1, existingBlocks.length],
-              }
-            : {
-                command: "replace",
-                documentAddress: address,
-                ...(copiedNodes ? { blocks: copiedNodes } : { content }),
-                in: [1, existingBlocks.length],
-              },
-        );
-        if (!resolved.ok) {
-          return errorResponse(
-            resolved.error.code,
-            resolved.error.message,
-            address.filePath,
-            documentBlocksDetail(resolved.error.details),
-          );
-        }
-        validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
-        semanticEditIr = resolved.ir;
+      if (overwrite) {
+        semanticEditIr = overwrite.ir;
         const applied = applyEdits(
           toDocHandle(runtime.doc),
           options.model,
           options.codec,
-          resolved.edits,
+          overwrite.edits,
           origin,
           { ...(turnId ? { ownActorTurnId: turnId } : {}) },
         );
@@ -296,7 +302,7 @@ export function createWriteCommands(deps: {
           restorePreWriteSnapshot(runtime, preWriteSnapshot);
           return errorResponse(applied.error.code, applied.error.message, address.filePath);
         }
-        writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preWriteSnapshot);
+        writeCertifiedProvenance(runtime, overwrite.ir, beforeVector, preWriteSnapshot);
         touchedHashes = new Set(applied.changedBlocks ?? []);
         deletedHashes = new Set(applied.deletedBlocks ?? []);
         insertedHashes = insertedBlockIds(applied.appliedEdits);
@@ -499,6 +505,7 @@ export function createWriteCommands(deps: {
       );
     }
     validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
+    if (resolved.edits.length === 0) return formatUnchangedSuccess();
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const actor = mutationActor(session, address.documentId, context);
