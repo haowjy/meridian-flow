@@ -214,7 +214,18 @@ async function buildScopeEntries(
     sourceIds.length === 0
       ? []
       : await db
-          .select()
+          .select({
+            id: documents.id,
+            contextSourceId: documents.contextSourceId,
+            folderId: documents.folderId,
+            name: documents.name,
+            extension: documents.extension,
+            fileType: documents.fileType,
+            storageUrl: documents.storageUrl,
+            mimeType: documents.mimeType,
+            metadata: documents.metadata,
+            provisionalName: documents.provisionalName,
+          })
           .from(documents)
           .where(
             and(
