@@ -10,6 +10,7 @@ export type WorkDraftPendingEvidence = {
     documentId: DocumentId;
     workId: WorkId;
     generation: number;
+    updatedAt: Date;
   };
   rows: WorkDraftPendingRowEvidence[];
 };
