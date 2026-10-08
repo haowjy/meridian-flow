@@ -24,6 +24,7 @@ import {
 } from "./document-mutation-policy.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
+import { certifyWriterRestorations } from "./writer-restoration.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
@@ -680,6 +681,12 @@ export function createBranchCoordinator(input: {
                     updateData: inputWriter.updateData,
                     source: "writer",
                     actorUserId: inputWriter.actorUserId,
+                    updateMeta: {
+                      restorationAliases: certifyWriterRestorations(
+                        currentDocument,
+                        inputWriter.updateData,
+                      ),
+                    },
                   },
                   currentDocument,
                 ),
