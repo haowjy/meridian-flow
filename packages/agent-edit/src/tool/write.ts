@@ -229,7 +229,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const threadId = actorThreadId ?? context.threadId ?? options.defaultThreadId ?? id;
     const existing = localSessions.get(id);
     if (existing) return existing;
-    const session: ActorSession = { id, threadId, documents: new Map() };
+    const session: ActorSession = { id, threadId, documents: new Set() };
     localSessions.set(id, session);
     return session;
   }

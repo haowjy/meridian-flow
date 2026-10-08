@@ -35,6 +35,7 @@ function createUntitledFs(input: {
   const mutationStore = new InMemoryContextTreeMutationStore(backing);
   return {
     fs: new ContextFS({
+      assetPaths: { within: (_project, operation) => operation() },
       store,
       mutationStore,
       documentSync,
@@ -56,6 +57,7 @@ function createKbFs(documentSync: object = {}) {
     store,
     mutationStore,
     context: new ContextFS({
+      assetPaths: { within: (_project, operation) => operation() },
       store,
       mutationStore,
       scheme: "kb",
@@ -92,6 +94,7 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
+    assetPaths: { within: (_project, operation) => operation() },
     store,
     mutationStore: new InMemoryContextTreeMutationStore(backing),
     documentSync,
@@ -288,6 +291,7 @@ describe("ContextFS rename filetype invariant", () => {
     const markdownByDocument = new Map<string, string>();
     const mutationStore = new InMemoryContextTreeMutationStore(backing);
     const context = new ContextFS({
+      assetPaths: { within: (_project, operation) => operation() },
       store,
       mutationStore,
       scheme: "kb",
@@ -468,6 +472,7 @@ describe("ContextFS write and read", () => {
   it("creates implicit parent folders for nested binary intake in a creatable scheme", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const context = new ContextFS({
+      assetPaths: { within: (_project, operation) => operation() },
       store: new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing }),
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "scratch",

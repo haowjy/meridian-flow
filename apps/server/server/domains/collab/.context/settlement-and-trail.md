@@ -76,7 +76,7 @@
   coverage is not a later semantic dependency.
   Handles eliminated by Work-draft write reversal remain absent. A later writer row can
   therefore make producing-turn Undo unavailable through the canonical
-  dependency predicate.
+  dependency predicate (`@meridian/agent-edit` `undo/journal-dependencies.ts`).
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
   Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`

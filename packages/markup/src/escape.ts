@@ -2,14 +2,17 @@
 
 import { fromMarkdown } from "mdast-util-from-markdown";
 import remarkGfm from "remark-gfm";
-import remarkMdx from "remark-mdx";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { closesFence, type MarkdownFence, openingFenceAt } from "./markdown/container.js";
+import { remarkMdxWithHtmlVoidElements } from "./mdx/syntax.js";
 
 const RAW_HTML_CANDIDATE = /<(?:!--|!\[CDATA\[|[!?]|\/?[A-Za-z][A-Za-z0-9-]*(?=[\t\n\f\r />]))/;
 const MARKDOWN_SYNTAX_PARSER = unified().use(remarkParse);
-const MDX_SYNTAX_PARSER = unified().use(remarkParse).use(remarkGfm).use(remarkMdx);
+const MDX_SYNTAX_PARSER = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkMdxWithHtmlVoidElements);
 
 export function escapeProseForMdxIngress(text: string): string {
   const protectedText = protectRawHtmlLiterals(text);

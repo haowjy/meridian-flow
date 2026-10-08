@@ -40,6 +40,11 @@ export interface ApplySuccessResponseInput {
   copied?: { summary: CopySummary; edges: readonly string[] };
 }
 
+/** A write whose content the document already held: nothing is reserved, applied or journaled. */
+export function formatUnchangedSuccess(): InternalWriteResult {
+  return { status: "success", phase: "committed", revision: null, model: { unchanged: true } };
+}
+
 export interface ReversalSuccessResponseInput {
   direction: "undo" | "redo";
   status: UndoRedoOutcome;

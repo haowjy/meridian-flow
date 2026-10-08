@@ -142,9 +142,9 @@ every door refuses out loud rather than opening onto nothing.
 - **A pending node's `src` is `""`.** It is the schema's own default and the one
   source that names nothing, so a document synced or saved mid-upload
   round-trips as `![alt]()` (pinned in `packages/markup`'s codec test). Never
-  mint an `asset:` ref before the asset exists: `pathForAsset` throws for an id
-  the project does not know and takes the whole document's serialization with
-  it. Never write a `blob:` or `data:` src either, for the reason the paste
+  mint an `asset:` ref before the asset exists: an id the project does not know
+  reaches the wire as the bare `asset:` ref, which no reader can render. Never
+  write a `blob:` or `data:` src either, for the reason the paste
   never writes a web address.
 - **Progress is a decoration, never an attribute.** An attribute would put every
   percent in Yjs, on the wire, and in every peer's undo history. The decoration's
