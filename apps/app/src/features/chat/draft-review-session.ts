@@ -383,8 +383,14 @@ export type DraftReviewSelection = {
 export type InlineDraftReview = {
   kind: "inline";
   previewIdentity?: string;
-  /** The change (server closure class) the writer is looking at, if any. */
-  focusedClassId?: string | null;
+  /**
+   * The change (server closure class) the writer is looking at, if any, with
+   * the operations it held when last seen: a class the server regroups keeps
+   * some of them, which is how every surface finds the same change again
+   * (`resolveFocusedChange`). One value for the whole review, kept current by
+   * `useReconcileReviewFocus`; surfaces only read it.
+   */
+  focus?: ChangeRef | null;
   /**
    * The writer handled the last change. The one completion state every
    * surface reads (header, list, editor); it comes from the command's own
@@ -433,7 +439,7 @@ export type DraftReviewAction =
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
   | { type: "applySucceeded"; documentId: string; draftId: string }
-  | { type: "changeFocused"; documentId: string; draftId: string; classId: string | null }
+  | { type: "changeFocused"; documentId: string; draftId: string; focus: ChangeRef | null }
   | {
       type: "reviewCompleting";
       documentId: string;
@@ -489,8 +495,8 @@ export function draftReviewReducer(
       if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
         return state;
       }
-      if ((state.surface.focusedClassId ?? null) === action.classId) return state;
-      return { ...state, surface: { ...state.surface, focusedClassId: action.classId } };
+      if (sameFocus(state.surface.focus ?? null, action.focus)) return state;
+      return { ...state, surface: { ...state.surface, focus: action.focus } };
     case "reviewCompleting":
       if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
         return state;
@@ -567,6 +573,15 @@ export function draftReviewReducer(
 
 export function inlineReviewFromState(state: DraftReviewState): InlineDraftReview | null {
   return state.surface.kind === "inline" ? state.surface : null;
+}
+
+function sameFocus(left: ChangeRef | null, right: ChangeRef | null): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.classId !== right.classId) return false;
+  return (
+    left.operationIds.length === right.operationIds.length &&
+    left.operationIds.every((id, index) => id === right.operationIds[index])
+  );
 }
 
 function inlineSurfaceForEnter(

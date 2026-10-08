@@ -13,7 +13,7 @@
  * its reason.
  */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 
 import {
   type ChangeCommandState,
@@ -24,7 +24,7 @@ import {
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import type { DraftCommandOutcome } from "@/features/chat/draft-review-session";
 import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
-import { type ReviewChange, reviewChanges } from "./review-changes";
+import { type ReviewChange, resolveFocusedChange, reviewChangesOfPreview } from "./review-changes";
 
 export type ReviewChangeItem = {
   change: ReviewChange;
@@ -68,13 +68,15 @@ export type ReviewChangesView = {
 };
 
 const NO_ITEMS: readonly ReviewChangeItem[] = [];
+const NO_CHANGES: readonly ReviewChange[] = [];
 
 type ActivePreview = Extract<DraftPreviewResponse, { status: "active"; inlineModelPresent: true }>;
 
-export function useReviewChanges(
+/** The open review's draft and its changes, derived once per preview. */
+export function useOpenReviewChanges(
   controller: DraftReviewController,
   options?: { enabled?: boolean },
-): ReviewChangesView {
+) {
   // A warm editor that is not the one in review reads nothing.
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const documentId = inline?.documentId ?? null;
@@ -88,14 +90,21 @@ export function useReviewChanges(
       enabled: inline !== null,
     },
   );
-  const records = useChangeCommandRecords();
-
   const active: ActivePreview | null =
     preview?.status === "active" && preview.inlineModelPresent ? preview : null;
-  const changes = useMemo(
-    () => (active ? reviewChanges(active.operations, active.hunks) : []),
-    [active],
+  const changes = active ? reviewChangesOfPreview(active) : NO_CHANGES;
+  return { inline, documentId, draftId, preview, active, changes };
+}
+
+export function useReviewChanges(
+  controller: DraftReviewController,
+  options?: { enabled?: boolean },
+): ReviewChangesView {
+  const { inline, documentId, draftId, preview, active, changes } = useOpenReviewChanges(
+    controller,
+    options,
   );
+  const records = useChangeCommandRecords();
   const draftRef = useMemo(
     () =>
       documentId && draftId
@@ -112,34 +121,19 @@ export function useReviewChanges(
     [changes, records, draftRef],
   );
 
-  // The focused change keeps its place when the server regroups it: a refused
-  // Apply refetches, and the updated change shares operations with the old one.
-  const focusedClassId = controller.focusedClassId;
-  const lastFocused = useRef<{ classId: string; operationIds: ReadonlySet<string> } | null>(null);
-  let focused = changes.find((change) => change.classId === focusedClassId) ?? null;
-  if (!focused && focusedClassId && lastFocused.current?.classId === focusedClassId) {
-    const known = lastFocused.current.operationIds;
-    focused = changes.find((change) => change.operationIds.some((id) => known.has(id))) ?? null;
-  }
-  useEffect(() => {
-    if (focused) {
-      lastFocused.current = {
-        classId: focusedClassId ?? focused.classId,
-        operationIds: new Set(focused.operationIds),
-      };
-    }
-  }, [focused, focusedClassId]);
+  // The review owns the focus (class and operations); this only reads it.
+  const focused = resolveFocusedChange(changes, controller.focus);
   const focusedIndex = focused ? changes.indexOf(focused) : -1;
 
+  const review = useMemo(
+    () => (documentId && draftId ? { documentId, draftId } : null),
+    [documentId, draftId],
+  );
   const focus = useCallback(
     (change: ReviewChange, options?: { scroll?: boolean }) => {
-      lastFocused.current = {
-        classId: change.classId,
-        operationIds: new Set(change.operationIds),
-      };
-      controller.focusReviewChange(change, options);
+      if (review) controller.focusReviewChange(review, change, options);
     },
-    [controller.focusReviewChange],
+    [controller.focusReviewChange, review],
   );
 
   const step = useCallback(
@@ -177,12 +171,14 @@ export function useReviewChanges(
       if (!change.actionable) return;
       settleFocus(change);
       const outcome = await command(change);
-      // The change is back (or was updated): the writer returns to it, where its reason is shown.
+      // The change is back (or was updated): the writer returns to it, where its
+      // reason is shown. Only in the review the command was sent from: the
+      // writer may have opened another while it was in flight.
       if (outcome.kind === "change-refused" && outcome.code !== "gone") {
-        focus(change, { scroll: true });
+        if (review) controller.focusReviewChange(review, change, { scroll: true });
       }
     },
-    [focus, settleFocus],
+    [controller.focusReviewChange, review, settleFocus],
   );
   const apply = useCallback(
     (change: ReviewChange) => run(change, controller.applyChange),

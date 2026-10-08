@@ -8,7 +8,12 @@
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { changeExcerpt, reviewChanges } from "./review-changes";
+import {
+  changeExcerpt,
+  resolveFocusedChange,
+  reviewChanges,
+  reviewChangesOfPreview,
+} from "./review-changes";
 
 function op(overrides: Partial<ReviewOperation> & { operationId: string }): ReviewOperation {
   return {
@@ -244,5 +249,61 @@ describe("reviewChanges", () => {
       const [change] = reviewChanges([op({ operationId: "a" })], []);
       expect(change.actionable).toBe(true);
     });
+  });
+});
+
+describe("a change's hunks", () => {
+  it("reads the text of the hunks its operations own, and of no other class", () => {
+    const ops = [
+      op({ operationId: "a", closureClassId: "c1" }),
+      op({ operationId: "b", closureClassId: "c2" }),
+    ];
+    const hunks = [
+      textHunk({ hunkId: "h1", operationIds: ["a"], deletedText: "old a" }),
+      textHunk({ hunkId: "h2", operationIds: ["b"], deletedText: "old b" }),
+      textHunk({ hunkId: "h3", operationIds: ["a", "b"], deletedText: "shared" }),
+    ];
+    const [first, second] = reviewChanges(ops, hunks);
+    expect(first.change.removed).toBe("old a\nshared");
+    expect(second.change.removed).toBe("old b\nshared");
+  });
+});
+
+describe("reviewChangesOfPreview", () => {
+  it("derives a preview's changes once, for every reader", () => {
+    const preview = {
+      status: "active",
+      inlineModelPresent: true,
+      operations: [op({ operationId: "a", closureClassId: "c1" })],
+      hunks: [textHunk({ hunkId: "h1", operationIds: ["a"] })],
+    } as never;
+    expect(reviewChangesOfPreview(preview)).toBe(reviewChangesOfPreview(preview));
+  });
+});
+
+describe("resolveFocusedChange", () => {
+  const ops = [
+    op({ operationId: "1", closureClassId: "c1" }),
+    op({ operationId: "2", closureClassId: "c2b" }),
+    op({ operationId: "5", closureClassId: "c2b" }),
+  ];
+  const changes = reviewChanges(ops, []);
+
+  it("finds the class by id", () => {
+    expect(resolveFocusedChange(changes, { classId: "c1", operationIds: ["1"] })?.classId).toBe(
+      "c1",
+    );
+  });
+
+  it("finds a regrouped class by an operation it kept", () => {
+    expect(resolveFocusedChange(changes, { classId: "c2", operationIds: ["2"] })?.classId).toBe(
+      "c2b",
+    );
+  });
+
+  it("names nothing when the class and all its operations are gone, or nothing is focused", () => {
+    expect(resolveFocusedChange(changes, { classId: "c9", operationIds: ["9"] })).toBeNull();
+    expect(resolveFocusedChange(changes, { classId: "c9", operationIds: [] })).toBeNull();
+    expect(resolveFocusedChange(changes, null)).toBeNull();
   });
 });

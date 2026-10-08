@@ -23,6 +23,7 @@ import {
 } from "@/client/query/useWorkDrafts";
 import { type ContextTab, getContextTabs } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
+import { useReconcileReviewFocus } from "@/features/draft-review/useReconcileReviewFocus";
 import {
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
@@ -119,6 +120,7 @@ export function useDraftReviewScopeValue({
     threadId,
     stateOwner,
   });
+  useReconcileReviewFocus(controller);
 
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
