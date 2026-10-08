@@ -1,10 +1,15 @@
 /** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
-import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import {
+  contextOwner,
+  type ProjectContextTreeScheme,
+  type Work,
+} from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   getContextTabs,
   isEditorTab,
+  replaceOwner,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
@@ -130,8 +135,7 @@ export function ContextViewerSurfaceController({
     isFetching: routeTreeIsFetching,
   } = useContextCatalogView(projectId, activeContextScheme ?? "kb", {
     enabled: activeContextScheme !== null && activeContextPath !== null,
-    workId: routeWorkId,
-    rootThreadId: activeContextChat,
+    ...contextOwner(routeWorkId, activeContextChat),
   });
 
   useLayoutEffect(() => {
@@ -286,12 +290,7 @@ export function ContextViewerSurfaceController({
     if (!file) return;
     openTab(
       projectId,
-      contextTabFromFile(
-        activeContextScheme,
-        file,
-        activeContextChat ? undefined : routeWorkId,
-        activeContextChat ?? undefined,
-      ),
+      contextTabFromFile(activeContextScheme, file, contextOwner(routeWorkId, activeContextChat)),
     );
   }, [
     active,
@@ -517,10 +516,8 @@ export function ContextViewerSurfaceController({
             scheme: next.scheme,
             path: next.path,
             name: next.name,
-            workId: next.workId,
-            rootThreadId: next.rootThreadId,
-            rootThreadRef: next.rootThreadRef,
-          });
+            ...replaceOwner(next),
+          } as typeof target);
         } else if (ownership.isLatest) {
           // Any commit through the identity bar is an explicit writer save:
           // the document graduates out of provisional naming (D8).
@@ -528,9 +525,7 @@ export function ContextViewerSurfaceController({
             scheme: next.scheme,
             path: next.path,
             name: next.name,
-            workId: next.workId,
-            rootThreadId: next.rootThreadId,
-            rootThreadRef: next.rootThreadRef,
+            ...replaceOwner(next),
             provisionalName: false,
           });
         }
@@ -550,7 +545,17 @@ export function ContextViewerSurfaceController({
           );
         }
       }}
-      onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
+      onOpenExisting={(scheme, path, owner) => {
+        // A chat's Scratch note is addressed by its lineage; anything else inherits the Editor's Work.
+        if (owner.rootThreadId)
+          void onOpenContextTarget({
+            scheme,
+            path,
+            workId: routeWorkId,
+            rootThreadId: owner.rootThreadId,
+          });
+        else onSelectContextPath(path, scheme);
+      }}
     />
   );
 }

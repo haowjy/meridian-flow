@@ -1,7 +1,7 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
 import { useQuery } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
@@ -308,9 +308,7 @@ export function ReadableProjectRoute({
   const addressOwner: ContextOwner =
     documentDestination?.scheme !== "scratch"
       ? { workId: null }
-      : address.lineage
-        ? { workId: null, rootThreadId: address.lineage }
-        : { workId: addressWorkId };
+      : contextOwner(addressWorkId, address.lineage);
   const {
     catalog: addressCatalog,
     isComplete: addressCatalogComplete,

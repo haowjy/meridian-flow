@@ -90,7 +90,7 @@ export function ScratchFileRow({
       </div>
     );
   const open = () => {
-    const tab = serverTabFromFile("scratch", file, workId);
+    const tab = serverTabFromFile("scratch", file, { workId });
     if (tab) openFile(tab);
   };
   const row = (
@@ -210,7 +210,7 @@ function InlineRename({
   const form = useRenameEntryForm({
     projectId,
     entryId: file.entryId,
-    workId,
+    owner: { workId },
     scheme: "scratch",
     path: file.path,
     currentName: file.name,

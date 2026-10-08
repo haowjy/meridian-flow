@@ -7,6 +7,7 @@
  */
 import { Trans } from "@lingui/react/macro";
 import {
+  type ContextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -61,7 +62,7 @@ export type ContextViewerProps = {
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
 };
 
 export function ContextViewer({

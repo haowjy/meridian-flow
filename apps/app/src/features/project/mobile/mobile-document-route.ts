@@ -1,6 +1,6 @@
 /** Normalizes the phone route and catalog into the exact document host input. */
 
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -85,7 +85,7 @@ export function resolveMobileDocumentRoute(input: {
     : { kind: "absent" as const };
   const resolved =
     owner.kind === "live" && input.workId
-      ? contextTabFromFile(input.scheme, owner.file, input.workId, rootThreadId)
+      ? contextTabFromFile(input.scheme, owner.file, contextOwner(input.workId, rootThreadId))
       : owner.kind === "draft-only"
         ? owner.tab
         : null;
@@ -126,7 +126,7 @@ export function useMobileDocumentRoute(input: {
   const { catalog, isError, isFetching } = useContextCatalogView(
     input.projectId,
     input.scheme ?? "kb",
-    { enabled: requested, workId: input.workId, rootThreadId: input.rootThreadId },
+    { enabled: requested, ...contextOwner(input.workId, input.rootThreadId) },
   );
   return useMemo(
     () =>

@@ -14,6 +14,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useWorks } from "@/client/query/useWorks";
+import type { TabOwner } from "@/client/stores";
 import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -23,10 +24,8 @@ import { destinationOwner } from "./identity-location";
 export type UseRenameEntryFormOptions = {
   projectId: string;
   entryId: string;
-  workId: string | null;
-  /** A chat's Scratch: its lineage's first chat id and the handle its URI spells. */
-  rootThreadId?: string;
-  rootThreadRef?: string;
+  /** Who holds the entry: a Work row, or a chat's lineage with its handle. */
+  owner: TabOwner;
   scheme: ProjectContextTreeScheme;
   /** Current full path of the entry being renamed. */
   path: string;
@@ -48,9 +47,7 @@ export type RenameEntryForm = InlineEdit;
 export function useRenameEntryForm({
   projectId,
   entryId,
-  workId,
-  rootThreadId,
-  rootThreadRef,
+  owner,
   scheme,
   path,
   currentName,
@@ -62,7 +59,6 @@ export function useRenameEntryForm({
 }: UseRenameEntryFormOptions): RenameEntryForm {
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
-  const ownedWorkId = isWorkScopedProjectContextScheme(scheme) ? workId : null;
   const mutation = useMutation({
     mutationFn: async (name: string) => {
       const unavailable = () =>
@@ -72,11 +68,7 @@ export function useRenameEntryForm({
             : t`This file is unavailable. Refresh and try again.`,
         );
       const authority = destinationOwner(
-        {
-          scheme,
-          ...(ownedWorkId ? { workId: ownedWorkId } : {}),
-          ...(rootThreadId ? { rootThreadId, rootThreadRef } : {}),
-        },
+        { scheme, ...(isWorkScopedProjectContextScheme(scheme) ? owner : {}) },
         works,
         noWork,
       );

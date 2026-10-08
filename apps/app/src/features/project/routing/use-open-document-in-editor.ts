@@ -1,19 +1,19 @@
 /** Opens an already-materialized document in the Editor destination. */
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback } from "react";
-import type { ServerContextTab } from "@/client/stores";
 import { useOpenContextRoute } from "./ProjectNavigationContext";
 
 export function useOpenDocumentInEditor() {
   const openContextRoute = useOpenContextRoute();
   return useCallback(
-    (tab: ServerContextTab) => {
+    (target: { scheme: ProjectContextTreeScheme; path: string } & ContextOwner) => {
       if (!openContextRoute) return;
       void openContextRoute(
         {
-          scheme: tab.scheme,
-          path: tab.path,
-          workId: tab.workId,
-          ...(tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : {}),
+          scheme: target.scheme,
+          path: target.path,
+          workId: target.workId ?? undefined,
+          ...(target.rootThreadId ? { rootThreadId: target.rootThreadId } : {}),
         },
         { replace: false },
       );

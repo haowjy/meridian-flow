@@ -72,6 +72,10 @@ or terminal document closes the slot. It reads `DraftReviewProvider` from wherev
 `DockShell` is mounted (the chat scope), so review claims follow the editor that is
 in front: the Editor tab's editor and the dock's are never both `active`.
 
+The menu browses the tab's real scheme: a note moved out of Scratch to Manuscript or
+KB still gets its own area's tree and Rename. "Earlier notes" belongs to the chat's
+Scratch source alone.
+
 The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) over the
 document's own catalog tree (a Work's Scratch or Uploads, or a chat's Scratch) at the
 document's folder, then Open in Editor and Rename. The tree comes from

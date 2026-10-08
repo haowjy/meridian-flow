@@ -4,6 +4,8 @@
 
 - A chat's header has a Scratch menu listing the notes the AI keeps for it. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the menu is a bottom sheet. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
 
+- A chat's Scratch keeps its name, and links and doors to its notes keep opening, after the chat that started it is deleted while a fork continues. Renaming a chat's note checks that note's own folder for name clashes. The phone Scratch sheet opens at the top each time.
+
 - Links to a chat's Scratch notes open them, in chapters and in chat, and name the chat by its title. The Scratch crumb on a phone note no longer opens a view that says the folder is gone.
 
 - A handoff can read its source conversation again. The two chats can send each other background messages.

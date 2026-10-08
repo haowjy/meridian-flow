@@ -56,7 +56,7 @@ export function ChatScratchButton({
     projectId,
     owner:
       owner?.kind === "lineage"
-        ? { workId: null, rootThreadId: owner.rootThreadId }
+        ? { rootThreadId: owner.rootThreadId }
         : { workId: owner?.workId ?? null },
     // A chat rebound onto a Work keeps its lineage's notes findable.
     earlierRootThreadId: owner?.kind === "work" ? (thread?.rootThreadId ?? null) : null,

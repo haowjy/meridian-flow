@@ -40,7 +40,7 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
       fileType: "image",
       mimeType: "image/png",
     },
-    scope.workId,
+    { workId: scope.workId },
   );
   expect(
     contextTabMatchesRoute(tab, { scheme: "uploads", path: "/Map.png", workId: scope.workId }),

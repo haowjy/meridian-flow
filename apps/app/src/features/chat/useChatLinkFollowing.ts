@@ -181,6 +181,7 @@ export function useChatLinkFollowing({
     dialog: {
       outcome,
       projectId,
+      scratchRootThreadId: scope === "pending" ? null : (scope.rootThreadId ?? null),
       onClose: follower.dismiss,
       onRetry: follower.retry,
       onOpen: (document) => open(document, "current"),

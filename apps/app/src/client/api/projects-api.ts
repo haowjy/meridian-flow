@@ -17,6 +17,7 @@ import {
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
+  apiProjectContextLineagePath,
   apiProjectContextMovePath,
   apiProjectContextOperationPath,
   apiProjectContextReadPath,
@@ -40,6 +41,7 @@ import {
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
   type DocumentAddressResult,
+  type LineageInfo,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
@@ -401,4 +403,13 @@ export async function getProjectContextRead(
     urlFor(apiProjectContextReadPath(projectId, scheme, path, opts), init),
     { headers: init?.headers },
   );
+}
+
+/** The first chat's handle and title for a lineage, even when that chat is trashed. */
+export async function getContextLineage(
+  projectId: string,
+  rootThreadId: string,
+  signal?: AbortSignal,
+): Promise<LineageInfo> {
+  return getJson<LineageInfo>(apiProjectContextLineagePath(projectId, rootThreadId), { signal });
 }

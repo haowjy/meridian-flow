@@ -7,7 +7,7 @@
  * chat's Scratch retains its lineage and the handle its URI spells.
  */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
   type FolderNamespaceRecord,
@@ -19,7 +19,7 @@ import {
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
-import type { ContextTab, ServerContextTab } from "@/client/stores";
+import type { ContextTab, ServerContextTab, TabOwner } from "@/client/stores";
 
 /** Work-scoped tabs retain their row identity, including No Work. */
 export function editorTabWorkId(location: ResourceOwner): string | undefined {
@@ -27,12 +27,19 @@ export function editorTabWorkId(location: ResourceOwner): string | undefined {
 }
 
 /** What a tab holds of its owner: a Work row id, or a lineage with the handle its URI spells. */
-export function tabOwnerOf(location: ResourceOwner) {
+export function tabOwnerOf(location: ResourceOwner): TabOwner {
   return location.rootThreadId !== undefined
     ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
     : location.workId
       ? { workId: location.workId }
       : {};
+}
+
+/** The owner a location names, for catalog and request lookups. */
+export function contextOwnerOf(location: ResourceOwner): ContextOwner {
+  return location.rootThreadId !== undefined
+    ? { rootThreadId: location.rootThreadId, rootThreadRef: location.rootThreadRef }
+    : { workId: location.workId };
 }
 
 /** The handle (`c12`) a chat's Scratch file's URI spells. */
@@ -46,8 +53,7 @@ function lineageRefOf(file: CatalogFile): string {
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
-  workId?: string,
-  rootThreadId?: string,
+  owner: ContextOwner = {},
 ): ContextTab {
   if (file.resourceHandle && file.resourceState === "local" && file.provisionalName) {
     return {
@@ -57,19 +63,21 @@ export function contextTabFromFile(
       resourceHandle: file.resourceHandle,
     };
   }
-  if (isWorkScopedProjectContextScheme(scheme) && !workId && !rootThreadId)
+  if (isWorkScopedProjectContextScheme(scheme) && !owner.workId && !owner.rootThreadId)
     throw new Error("Work-scoped tabs require a Work row id or a lineage");
+  const tabOwner: TabOwner =
+    scheme === "scratch" && owner.rootThreadId
+      ? { rootThreadId: owner.rootThreadId, rootThreadRef: lineageRefOf(file) }
+      : isWorkScopedProjectContextScheme(scheme) && owner.workId
+        ? { workId: owner.workId }
+        : {};
   const base = {
     documentId: file.documentId,
     scheme,
     path: file.path,
     name: file.name,
     provisionalName: file.provisionalName,
-    ...(scheme === "scratch" && rootThreadId
-      ? { rootThreadId, rootThreadRef: lineageRefOf(file) }
-      : isWorkScopedProjectContextScheme(scheme) && workId
-        ? { workId }
-        : {}),
+    ...tabOwner,
   };
   return {
     ...base,
@@ -99,10 +107,9 @@ export function contextTabFromFile(
 export function serverTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: CatalogFile,
-  workId?: string,
-  rootThreadId?: string,
+  owner: ContextOwner = {},
 ): ServerContextTab | null {
-  const tab = contextTabFromFile(scheme, file, workId, rootThreadId);
+  const tab = contextTabFromFile(scheme, file, owner);
   return tab.kind === "new" ? null : tab;
 }
 

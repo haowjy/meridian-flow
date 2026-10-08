@@ -1,5 +1,5 @@
 /** Cached client-side suggestions composed across the project's context trees. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 import { contextCatalogScope, useContextCatalogScope } from "@/client/query/useContextCatalog";
 import {
@@ -12,9 +12,8 @@ import {
 type Options = {
   schemes: readonly ProjectContextTreeScheme[];
   kinds: readonly FileSuggestionKind[];
-  workId: string | null;
-  /** A chat's Scratch (the lineage's first chat id) in place of a Work's. */
-  rootThreadId?: string | null;
+  /** Whose Scratch and Uploads the suggestions list: the document's own owner. */
+  owner: ContextOwner;
 };
 
 export function useFileSuggestions(
@@ -22,9 +21,9 @@ export function useFileSuggestions(
   query: string,
   options: Options,
 ): { suggestions: FileSuggestion[]; isFetching: boolean; isError: boolean } {
-  const manuscriptScope = contextCatalogScope(projectId, "manuscript", options);
-  const userScope = contextCatalogScope(projectId, "user", options);
-  const scratchScope = contextCatalogScope(projectId, "scratch", options);
+  const manuscriptScope = contextCatalogScope(projectId, "manuscript", options.owner);
+  const userScope = contextCatalogScope(projectId, "user", options.owner);
+  const scratchScope = contextCatalogScope(projectId, "scratch", options.owner);
   const project = useContextCatalogScope(
     projectId,
     manuscriptScope ?? { kind: "project", projectId },
