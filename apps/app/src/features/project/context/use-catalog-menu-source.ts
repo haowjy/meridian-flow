@@ -8,10 +8,14 @@
  * folder at the top, so a rebind never hides them.
  */
 import { t } from "@lingui/core/macro";
+import {
+  type ContextOwner,
+  contextOwner,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { Folder } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import type { ContextOwner } from "@/client/query/context-request-options";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { ServerContextTab } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
@@ -55,19 +59,17 @@ export function useCatalogMenuSource({
   heading,
 }: {
   projectId: string;
-  /** The Work-scoped area browsed: Scratch, or a Work's Uploads. */
-  scheme?: "scratch" | "uploads";
+  /** The area browsed: the chat's Scratch by default, or whatever area the dock document is in. */
+  scheme?: ProjectContextTreeScheme;
   /** Whose files the menu browses. */
   owner: ContextOwner;
   /** A lineage whose notes stay listed under "Earlier notes" while `owner` is a Work. */
   earlierRootThreadId?: string | null;
   heading: string;
 }): CatalogMenuSource {
-  const { workId, rootThreadId } = owner;
-  const primary = useContextCatalogView(projectId, scheme, { workId, rootThreadId });
+  const primary = useContextCatalogView(projectId, scheme, owner);
   const earlier = useContextCatalogView(projectId, "scratch", {
-    workId: null,
-    rootThreadId: earlierRootThreadId,
+    ...contextOwner(null, earlierRootThreadId),
     enabled: Boolean(earlierRootThreadId),
   }).catalog;
   const catalog = primary.catalog;
@@ -108,14 +110,13 @@ export function useCatalogMenuSource({
   const tabFor = useCallback(
     (rowId: string): ServerContextTab | null => {
       const own = catalog?.files().find((file) => file.entryId === rowId);
-      if (own)
-        return serverTabFromFile(scheme, own, workId ?? undefined, rootThreadId ?? undefined);
+      if (own) return serverTabFromFile(scheme, own, owner);
       const old = earlier?.files().find((file) => file.entryId === rowId);
       return old && earlierRootThreadId
-        ? serverTabFromFile("scratch", old, undefined, earlierRootThreadId)
+        ? serverTabFromFile("scratch", old, { rootThreadId: earlierRootThreadId })
         : null;
     },
-    [catalog, earlier, earlierRootThreadId, rootThreadId, scheme, workId],
+    [catalog, earlier, earlierRootThreadId, owner, scheme],
   );
 
   return {

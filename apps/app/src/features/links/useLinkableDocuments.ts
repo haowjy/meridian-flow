@@ -21,6 +21,7 @@
  * already pays for, so the index costs no request.
  */
 
+import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
 
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
@@ -75,8 +76,7 @@ export function useLinkableDocuments({
     uploads: { catalog: uploads, isComplete: uploadsComplete },
   } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
     enabled: scopes !== null,
-    workId: catalogWorkId,
-    rootThreadId: catalogRootThreadId,
+    ...contextOwner(catalogWorkId, catalogRootThreadId),
   });
 
   return useMemo(() => {

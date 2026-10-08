@@ -1,5 +1,5 @@
 /** Project-route composition for document doors: what happens to passage state every time the writer opens one. */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useRef } from "react";
 
 import { lookupContextCatalogFile } from "@/client/query/useContextCatalog";
@@ -42,9 +42,14 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         dismissPassageNotice();
         if (!passage) return;
 
-        const file = await lookupContextCatalogFile(projectId, target.scheme, target, {
-          uri: target.uri,
-        });
+        const file = await lookupContextCatalogFile(
+          projectId,
+          target.scheme,
+          contextOwner(target.workId, target.rootThreadId),
+          {
+            uri: target.uri,
+          },
+        );
         if (signal.aborted) return;
         // A binary or missing file has no Yjs document to land in; the door's
         // own destination already explains both.

@@ -170,10 +170,12 @@ it("preserves local opens and tab lifetime fencing, then publishes the placed Sc
                 tabs: [
                   {
                     ...getContextTabs(projectId).tabs[0],
-                    kind: "tracked",
-                    scheme: "scratch",
+                    kind: "tracked" as const,
+                    scheme: "scratch" as const,
                     path: "/note.md",
                     workId,
+                    rootThreadId: undefined,
+                    rootThreadRef: undefined,
                     origin: "local-resource",
                     editable: true,
                     filetype: "markdown",

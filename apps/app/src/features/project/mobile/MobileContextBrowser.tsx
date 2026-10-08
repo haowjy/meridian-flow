@@ -534,7 +534,7 @@ function MobileRenameRow({
 }) {
   const form = useRenameEntryForm({
     projectId,
-    workId: editorWorkId,
+    owner: { workId: editorWorkId ?? undefined },
     scheme,
     entryId,
     path,

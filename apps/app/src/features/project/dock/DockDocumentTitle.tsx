@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useWorks } from "@/client/query/useWorks";
+import { type TabOwner, tabContextOwner } from "@/client/stores";
 import { type DrillAction, DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { cn } from "@/lib/utils";
 import { fileKindIcon } from "../context/context-file-icon";
@@ -67,8 +68,8 @@ export function DockDocumentTitle({
     : schemeLabel(tab.scheme);
   const source = useCatalogMenuSource({
     projectId,
-    scheme: tab.scheme === "uploads" ? "uploads" : "scratch",
-    owner: { workId: tab.workId ?? null, rootThreadId: tab.rootThreadId },
+    scheme: tab.scheme,
+    owner: tabContextOwner(tab),
     heading,
   });
   const { catalog } = source;
@@ -101,9 +102,7 @@ export function DockDocumentTitle({
       <DockDocumentRename
         projectId={projectId}
         scheme={tab.scheme}
-        workId={tab.workId ?? null}
-        rootThreadId={tab.rootThreadId}
-        rootThreadRef={tab.rootThreadRef}
+        owner={tab}
         file={current}
         siblingNames={catalogSiblingNames(catalog, current)}
         onDone={() => setRenaming(false)}
@@ -135,18 +134,14 @@ export function DockDocumentTitle({
 function DockDocumentRename({
   projectId,
   scheme,
-  workId,
-  rootThreadId,
-  rootThreadRef,
+  owner,
   file,
   siblingNames,
   onDone,
 }: {
   projectId: string;
   scheme: ProjectContextTreeScheme;
-  workId: string | null;
-  rootThreadId?: string;
-  rootThreadRef?: string;
+  owner: TabOwner;
   file: CatalogFile;
   siblingNames: readonly string[];
   onDone: () => void;
@@ -154,9 +149,7 @@ function DockDocumentRename({
   const form = useRenameEntryForm({
     projectId,
     entryId: file.entryId,
-    workId,
-    rootThreadId,
-    rootThreadRef,
+    owner,
     scheme,
     path: file.path,
     currentName: file.name,

@@ -1,4 +1,5 @@
 /** Account-fenced document namespace transport; durable ownership and retry scheduling stay upstream. */
+import { contextOwner } from "@meridian/contracts/protocol";
 import type { NamespaceRequest, ResourceNamespaceTransport } from "@meridian/resource-replica";
 import { httpErrorStatus, isMeridianApiError } from "@/client/api/http-client";
 import {
@@ -51,7 +52,10 @@ export function createResourceNamespaceTransport(
             projectId,
             request.scheme,
             request.body,
-            contextRequestOptionsForScheme(request.scheme, request),
+            contextRequestOptionsForScheme(
+              request.scheme,
+              contextOwner(request.workId, request.rootThreadId),
+            ),
             { signal: epoch },
           );
         }

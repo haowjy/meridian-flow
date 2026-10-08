@@ -10,6 +10,7 @@
  * opens its document.
  */
 import { type ReactNode, useCallback, useMemo } from "react";
+import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 
@@ -46,15 +47,20 @@ export function ProjectChatContextNavigationProvider({
   const { noWork } = useWorks(projectId);
   const noWorkId = noWork?.id;
   const { threads } = useProjectThreads(projectId);
+  // The chat's own lineage answers to its handle even after its first chat is
+  // trashed (a fork keeps the notes); the live list is only for other chats.
+  const ownHandle = useLineage(projectId, rootThreadId ? { rootThreadId } : null)?.rootThreadRef;
   const lineages = useMemo<ChatLineages>(
     () => ({
       own: rootThreadId,
-      // A handle names the first chat, so it is that chat's own id.
       idForRef: (ref) =>
-        threads?.find((thread) => thread.ref === ref && thread.rootThreadId === thread.id)?.id ??
-        null,
+        ref === ownHandle
+          ? rootThreadId
+          : // A handle names the first chat, so it is that chat's own id.
+            (threads?.find((thread) => thread.ref === ref && thread.rootThreadId === thread.id)
+              ?.id ?? null),
     }),
-    [rootThreadId, threads],
+    [ownHandle, rootThreadId, threads],
   );
   const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
   const openContextUri = useCallback(

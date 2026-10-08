@@ -2,13 +2,11 @@
  * Purpose: Provides canonical API path constants and URL builders for Meridian project, thread, context, and Yjs endpoints.
  * Why independent: Route paths are a shared client/server protocol primitive and should not be duplicated inside app code.
  */
+import type { ContextOwner } from "./context-owner.js";
 import { isWorkScopedProjectContextScheme, type ProjectContextTreeScheme } from "./http-types.js";
 
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
-export type ProjectContextRequestOptions = {
-  workId?: string | null;
-  rootThreadId?: string | null;
-};
+export type ProjectContextRequestOptions = ContextOwner;
 
 /** Names a Work-capable document's owner in a query; exactly one owner is sent. */
 function setOwnerQuery(
@@ -136,6 +134,11 @@ export function apiProjectWorkDocumentDraftDiscardPath(
 /** (user, project)-scoped UI preferences — user resolved from auth. */
 export function apiProjectPreferencesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/preferences`;
+}
+
+/** A chat's lineage by its first chat's id: handle and title, even when that chat is trashed. */
+export function apiProjectContextLineagePath(projectId: string, rootThreadId: string): string {
+  return `${apiProjectPath(projectId)}/context/lineages/${encodeURIComponent(rootThreadId)}`;
 }
 
 export function apiProjectContextCatalogPath(

@@ -1,6 +1,7 @@
 /** Publish an authorized address into the workspace; the document host owns live-session binding. */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
+  contextOwner,
   type DocumentAddressResult,
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
@@ -88,8 +89,7 @@ export function ProjectAddressDocument({
         contextTabFromFile(
           uri.value.scheme,
           mergeLocalResourceState(projectCatalogFile(document), localFile),
-          tabWorkId,
-          lineageId,
+          contextOwner(tabWorkId, lineageId),
         ),
         isCurrent,
       );

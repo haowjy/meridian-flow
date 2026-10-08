@@ -330,7 +330,7 @@ function RenameRow({
   const env = useTreeEnv();
   const form = useRenameEntryForm({
     projectId: env.projectId,
-    workId: env.workId,
+    owner: { workId: env.workId ?? undefined },
     scheme: env.scheme,
     entryId,
     path,

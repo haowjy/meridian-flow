@@ -14,7 +14,7 @@ import { Trans } from "@lingui/react/macro";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle } from "lucide-react";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { previewKind } from "./preview-kind";
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
@@ -45,17 +45,16 @@ function ContextViewerContent({
   tab,
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
-  const workId = isWorkScopedProjectContextScheme(tab.scheme) ? tab.workId : editorWorkId;
-  const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
-    workId,
-    rootThreadId: tab.rootThreadId,
-  });
+  const owner = isWorkScopedProjectContextScheme(tab.scheme)
+    ? tabContextOwner(tab)
+    : { workId: editorWorkId };
+  const read = useProjectContextRead(projectId, tab.scheme, tab.path, owner);
   if (read.status === "loading") {
     return (
       <ReadOnlyViewerFrame header={header}>
         <div className="relative h-full" aria-busy>
           <DelayedContentSkeleton
-            key={JSON.stringify([projectId, tab.scheme, tab.path, workId, tab.rootThreadId])}
+            key={JSON.stringify([projectId, tab.scheme, tab.path, owner])}
             className="absolute inset-0"
           />
         </div>

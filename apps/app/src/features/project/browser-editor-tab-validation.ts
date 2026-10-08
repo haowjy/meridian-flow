@@ -1,6 +1,7 @@
 /** Validates this browser tab's persisted Editor membership against current resources. */
 
 import {
+  type ContextOwner,
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
   type ProjectContextIdentityResolution,
@@ -63,11 +64,14 @@ function availableTab(
   ) {
     throw new TypeError("Invalid available route authority");
   }
-  const workId =
-    resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : undefined;
-  const rootThreadId =
-    resolution.authority.kind === "lineage" ? resolution.authority.rootThreadId : undefined;
-  return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), workId, rootThreadId);
+  const owner: ContextOwner =
+    resolution.authority.kind === "lineage"
+      ? { rootThreadId: resolution.authority.rootThreadId }
+      : {
+          workId:
+            resolution.authority.kind === "work" ? editorTabWorkId(resolution.authority) : null,
+        };
+  return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), owner);
 }
 
 async function validateServerRoute(

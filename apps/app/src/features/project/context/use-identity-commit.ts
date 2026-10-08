@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useWorks } from "@/client/query/useWorks";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import type { OpenContextOptions } from "../routing/ProjectNavigationContext";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { useAccountResourceReplica } from "./account-feature-context";
@@ -27,12 +27,9 @@ export type IdentityCommitted = {
   /** Tree-style path with a leading slash. */
   path: string;
   name: string;
-  workId?: string;
-  rootThreadId?: string;
-  rootThreadRef?: string;
   /** Editor route ownership captured when this command began. */
   routeWorkId: string | null;
-};
+} & TabOwner;
 
 export type IdentityCommitOwnership = {
   /** True only for the latest operation started by this identity surface. */
@@ -140,13 +137,7 @@ export function useIdentityCommit({
           scheme: destination.scheme,
           path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
           name: plan.desired.name,
-          ...(destination.workId ? { workId: destination.workId } : {}),
-          ...(destination.rootThreadId
-            ? {
-                rootThreadId: destination.rootThreadId,
-                rootThreadRef: destination.rootThreadRef,
-              }
-            : {}),
+          ...replaceOwner(destination),
           routeWorkId: authority.workId ?? editorWorkId,
         },
         ownership,

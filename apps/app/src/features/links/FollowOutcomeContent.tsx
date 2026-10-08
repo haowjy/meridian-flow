@@ -17,7 +17,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
-import { useLineageTitle } from "@/client/query/useLineageTitle";
+import { type LineageKey, useLineageTitle } from "@/client/query/useLineageTitle";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
@@ -58,17 +58,26 @@ function targetName(outcome: LinkFollowOutcome): string {
 function TargetLocation({
   outcome,
   projectId,
+  scratchRootThreadId,
 }: {
   outcome: LinkFollowOutcome;
   projectId: string | null;
+  scratchRootThreadId: string | null;
 }) {
   const { address, target } = outcome;
   const parsed = address ? parseContextUri(address) : null;
-  const lineageRef =
+  // A canonical address names its chat by handle; a bare one means the chat the follow was asked in.
+  const lineageKey: LineageKey | null =
     parsed?.ok && parsed.value.authority.kind === "lineage"
-      ? parsed.value.authority.rootThreadRef
-      : null;
-  const chatTitle = useLineageTitle(projectId, lineageRef ? { rootThreadRef: lineageRef } : null);
+      ? { rootThreadRef: parsed.value.authority.rootThreadRef }
+      : parsed?.ok &&
+          parsed.value.scheme === "scratch" &&
+          parsed.value.authority.kind === "contextual" &&
+          scratchRootThreadId
+        ? { rootThreadId: scratchRootThreadId }
+        : null;
+  const lineageRef = lineageKey !== null;
+  const chatTitle = useLineageTitle(projectId, lineageKey);
   if (!address || !parsed?.ok)
     return <p className="break-words text-ink-muted text-xs">{linkTargetLabel(target)}</p>;
   const { scheme, path } = parsed.value;
@@ -93,12 +102,15 @@ function TargetLocation({
 export function FollowOutcomeContent({
   outcome,
   projectId,
+  scratchRootThreadId = null,
   onClose,
   onRetry,
   onOpen,
 }: {
   outcome: LinkFollowOutcome;
   projectId: string | null;
+  /** The lineage a bare `scratch://` means where the follow was asked, for naming it. */
+  scratchRootThreadId?: string | null;
   onClose: () => void;
   onRetry: () => void;
   onOpen: (document: LinkDocumentRef) => unknown;
@@ -121,7 +133,11 @@ export function FollowOutcomeContent({
         )}
       </DialogDescription>
 
-      <TargetLocation outcome={outcome} projectId={projectId} />
+      <TargetLocation
+        outcome={outcome}
+        projectId={projectId}
+        scratchRootThreadId={scratchRootThreadId}
+      />
 
       {failedToCreate ? (
         <p className="text-destructive text-xs" role="alert">

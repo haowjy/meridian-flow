@@ -48,7 +48,7 @@ import {
 import { isEditorScheme, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
-import { contextTabFromFile } from "./context-tab-from-file";
+import { contextOwnerOf, contextTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -239,7 +239,7 @@ function localFileForRecord(
   if (record.resource.content.kind !== "exact") return null;
   const location = projectResourceLocation(projectId, record);
   if (!location) return null;
-  const scope = contextCatalogScope(projectId, location.scheme, location);
+  const scope = contextCatalogScope(projectId, location.scheme, contextOwnerOf(location));
   if (!scope) return null;
   const projected = accessibleResourceCatalogView(projectId, scope, record);
   const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
@@ -407,9 +407,14 @@ export class ProjectDocumentNavigationAdapter {
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const tabWorkId = input.rootThreadId ? undefined : input.routeWorkId;
     const tab = isEditorScheme(input.scheme)
-      ? contextTabFromFile(input.scheme, input.file, tabWorkId, input.rootThreadId)
+      ? contextTabFromFile(
+          input.scheme,
+          input.file,
+          input.rootThreadId
+            ? { rootThreadId: input.rootThreadId }
+            : { workId: input.routeWorkId ?? null },
+        )
       : undefined;
     if (!input.isCurrent()) return "cancelled";
     if (input.disposition === "current") {

@@ -3,7 +3,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { type ResourceOwner, resourceWorkAuthorityFor } from "@meridian/resource-replica";
 
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, replaceOwner, type TabOwner } from "@/client/stores";
 import { parentPath as parentFolderPath } from "./file-suggestions";
 
 export type TabLocation = {
@@ -15,22 +15,15 @@ export type TabLocation = {
   provisional: boolean;
   /** Whether the identity bar's typed surfaces may edit this tab. */
   editable: boolean;
-  workId?: string;
-  /** A chat's Scratch: its lineage's first chat id and the handle its URI spells. */
-  rootThreadId?: string;
-  rootThreadRef?: string;
   /** Server path (leading slash), or null for a not-yet-materialized tab. */
   path: string | null;
-};
+} & TabOwner;
 
 export type IdentityDestination = {
   scheme: ProjectContextTreeScheme;
   /** Tree-style parent folder path: `/`, `/Act 2`. */
   folderPath: string;
-  workId?: string;
-  rootThreadId?: string;
-  rootThreadRef?: string;
-};
+} & TabOwner;
 
 export type DesiredIdentity = {
   destination: IdentityDestination;
@@ -44,22 +37,14 @@ export function identityDestination(
   choice?: Pick<IdentityDestination, "scheme" | "folderPath">,
 ): IdentityDestination {
   const scheme = choice?.scheme ?? location.scheme;
+  const folderPath = choice?.folderPath ?? location.parentPath;
   // A chat's Scratch stays in its lineage; nothing else becomes a lineage's.
-  if (scheme === location.scheme && location.rootThreadId && location.rootThreadRef)
-    return {
-      scheme,
-      folderPath: choice?.folderPath ?? location.parentPath,
-      rootThreadId: location.rootThreadId,
-      rootThreadRef: location.rootThreadRef,
-    };
+  if (scheme === location.scheme && location.rootThreadId !== undefined)
+    return { scheme, folderPath, ...replaceOwner(location) };
   const workId = isWorkScopedProjectContextScheme(scheme)
     ? ((scheme === location.scheme ? location.workId : undefined) ?? editorWorkId ?? undefined)
     : undefined;
-  return {
-    scheme,
-    folderPath: choice?.folderPath ?? location.parentPath,
-    ...(workId ? { workId } : {}),
-  };
+  return { scheme, folderPath, ...replaceOwner({ workId }) };
 }
 
 /**
@@ -67,11 +52,11 @@ export function identityDestination(
  * from the project snapshot; null while no known Work owns it.
  */
 export function destinationOwner(
-  destination: Pick<IdentityDestination, "scheme" | "workId" | "rootThreadId" | "rootThreadRef">,
+  destination: { scheme: ProjectContextTreeScheme } & TabOwner,
   works: readonly { id: string; slug: string | null }[] | null | undefined,
   noWork: { id: string } | null | undefined,
 ): ResourceOwner | null {
-  if (destination.rootThreadId && destination.rootThreadRef)
+  if (destination.rootThreadId !== undefined)
     return {
       workId: null,
       rootThreadId: destination.rootThreadId,
@@ -109,9 +94,7 @@ export function tabLocation(tab: ContextTab): TabLocation {
     provisional:
       tab.scheme === "unfiled" || (tab.kind === "tracked" && Boolean(tab.provisionalName)),
     editable: tab.kind === "tracked",
-    workId: tab.workId,
-    rootThreadId: tab.rootThreadId,
-    rootThreadRef: tab.rootThreadRef,
     path: tab.path,
+    ...replaceOwner(tab),
   };
 }

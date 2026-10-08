@@ -63,9 +63,9 @@ export function DockDocumentView({
         onCloseTab={closeDocument}
         // The projection above follows a rename; the dock keeps no tab to patch.
         onCommitted={noopCommitted}
-        onOpenExisting={(scheme, path) => {
+        onOpenExisting={(scheme, path, owner) => {
           closeDocument();
-          openInEditor({ ...tab, scheme, path });
+          openInEditor({ scheme, path, ...owner });
         }}
       />
       {tab.kind === "tracked" ? (

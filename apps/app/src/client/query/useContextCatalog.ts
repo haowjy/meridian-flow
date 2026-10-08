@@ -4,6 +4,7 @@ import {
   type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
+  contextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -476,7 +477,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   const scopes = useMemo(() => {
     const result: CatalogScope[] = [];
     for (const scheme of schemes) {
-      const scope = contextCatalogScope(projectId, scheme, { workId, rootThreadId });
+      const scope = contextCatalogScope(projectId, scheme, contextOwner(workId, rootThreadId));
       if (scope && !result.some((existing) => sameCatalogProjectionScope(existing, scope)))
         result.push(scope);
     }
@@ -502,7 +503,11 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
           ? projectResourceCatalogView(projectId, scope, view, records, folders)
           : null;
         for (const scheme of schemes) {
-          const requested = contextCatalogScope(projectId, scheme, { workId, rootThreadId });
+          const requested = contextCatalogScope(
+            projectId,
+            scheme,
+            contextOwner(workId, rootThreadId),
+          );
           if (!requested || !sameCatalogProjectionScope(requested, scope)) continue;
           results[scheme] = {
             catalog: projected
