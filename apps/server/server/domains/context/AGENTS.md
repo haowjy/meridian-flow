@@ -2,17 +2,18 @@
 
 Agent-readable/writable content addressed by context URIs. Context schemes split
 into durable Project content (`manuscript://`, `kb://`, `unfiled://`), authenticated personal
-content (`user://`), and named-Work material (`scratch://@slug/`, `uploads://@slug/`). No Work
-keeps Uploads at `uploads://@/`; its Scratch belongs to the chat lineage at
-`scratch://@/c12/`. Bare Scratch follows `scratchOwnerFor(thread, work)`.
-Lineage handles name first chats, including trashed first chats, never forks.
-Identity lookup does not imply availability: `ls scratch://@/` discovers only
-lineages with available notes, labeled with the first chat’s title. The lineage
-lifecycle collaborator owns provisioning and trash/restore under the shared
-Scratch namespace lock; file-policy facts use its any-live-member predicate.
-Production lifecycle repositories receive that collaborator with the composed
-catalog mutation port so transitions publish normal after-commit wake hints.
-Bare paths default to `manuscript://`.
+content (`user://`), and owned material: a named Work's `scratch://@slug/` and
+`uploads://@slug/`, No Work's `uploads://@/`, and a No Work chat lineage's
+`scratch://@/c12/`. Bare paths default to `manuscript://`.
+
+**Scratch has two owner kinds.** `scratchOwnerFor(thread, work)` is the one rule
+for bare `scratch://` and for the file policy's own-Scratch term: the named Work,
+or the No Work chat's lineage (`rootThreadId`). The locked No Work row has no
+Scratch source; never route Scratch to it. A lineage handle names the first chat,
+trashed included, never a fork. Only the AI creates lineage notes; writer create,
+intake and moves into a lineage are refused. Lineage provisioning and
+trash/restore liveness belong to `adapters/lineage-scratch-lifecycle.ts`; reuse
+it rather than adding another guard.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is
 model-only, resolved by `runtime/loop/skill-files.ts` per thread binding, and
@@ -39,7 +40,7 @@ Scheme capabilities are declared once in `ports/context-adapter.ts` and enforced
 by the router. F0 owns Uploads authority, provisioning, and resolution; F4 owns
 the actual `UploadIntake` lifecycle. `uploads://` does not allow general clients
 to create context entries or directories, so binary intake is flat;
-`scratch://` is the Work authoring space and accepts nested intake paths.
+`scratch://` is the authoring space and accepts nested intake paths.
 
 Text creation and writes must resolve the document filetype and use the collab
 document engine. Never seed Yjs by hand with an assumed markdown schema.

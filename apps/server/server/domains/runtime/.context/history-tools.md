@@ -24,8 +24,8 @@ Rationale: [Models Read Connected Conversations by Lineage][kb-connected] and
 
 `resolveReadableThread` admits a ref only when it parses, names a live thread
 in the caller's project owned by the caller's user, and shares the caller's
-lineage (`sameLineage`: same project and `rootThreadId`, forks and handoffs
-included). An unknown or foreign ref is `thread_not_found`; an unconnected one
+lineage (`sameLineage`: same project and `rootThreadId`; forks and subagents
+are in it, a handoff roots a new lineage and is not). An unknown or foreign ref is `thread_not_found`; an unconnected one
 is `thread_not_connected`. `threads.root_thread_id` is `NOT NULL`, so every
 thread has a lineage root. Its callers are `thread_ls`, `thread_history`,
 `thread_report`, `spawn.from` (`child-run-coordinator.ts`), and the

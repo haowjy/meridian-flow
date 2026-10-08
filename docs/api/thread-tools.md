@@ -5,8 +5,9 @@ prompt bake. Existing bakes keep their frozen tools. They accept project-local
 `cN` and `pN` refs, never internal IDs. Omitted `ref` means the caller.
 
 All three readers use the same authorization: a live target in the caller's
-project, owned by the same writer, with the same lineage root. Spawn, fork and
-handoff edges connect a lineage. A trashed target is not readable directly;
+project, owned by the same writer, with the same lineage root. Spawn and fork
+edges connect a lineage. A handoff starts a new lineage, so it is not
+connected to its source. A trashed target is not readable directly;
 a fork still reads the inherited prefix of a trashed source.
 
 ## `thread_ls`
@@ -16,8 +17,8 @@ Input: `{ ref?, depth?: 1 | 2 | 3, cursor? }`. Default depth is 1.
 The typed result is `{ ref, listing }`: the resolved conversation and the
 listing the model reads. The listing includes the path to the root (up to 16 hops), current thread,
 and up to 50 descendant nodes. Trashed path hops are labelled; trashed nodes
-are omitted. Spawn edges use the parent. Fork and handoff edges use the cutoff
-turn's owner, including inherited cutoffs. Nodes are selected newest first per
+are omitted. Spawn edges use the parent. Fork edges use the cutoff turn's
+owner, including inherited cutoffs. Nodes are selected newest first per
 level and displayed beneath their parent. Status is `awake` or `asleep` from
 the run lease; subagents also show their saved spawn outcome.
 
