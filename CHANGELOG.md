@@ -4,7 +4,7 @@
 
 - Bursts of file moves coalesce catalog repairs instead of racing one repair per move. Lock contention logs warnings, not errors.
 
-- Draft writes filter covered history once and skip its attribution replay. Concurrent writer edits still appear in save receipts.
+- Draft writes filter covered history once and skip its attribution replay. Unchanged drafts avoid rebuilding retained history. Concurrent writer edits still appear in save receipts.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
