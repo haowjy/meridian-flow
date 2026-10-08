@@ -95,10 +95,12 @@ function MoveSentence({ from, to, undone }: { from: string; to: string; undone: 
 function DeleteSentence({
   path,
   restored,
+  pending,
   children,
 }: {
   path: string;
   restored: boolean;
+  pending: boolean;
   /** The restore control, on the row that offers it. */
   children?: ReactNode;
 }) {
@@ -108,7 +110,7 @@ function DeleteSentence({
     <Plain>{documentDisplayName(path)}</Plain>
   );
   return (
-    <TitleLine status={restored ? t`Restored` : null}>
+    <TitleLine status={pending ? t`Restoring…` : restored ? t`Restored` : null}>
       <Trans>Deleted {document}</Trans>
       {children}
     </TitleLine>
@@ -140,7 +142,11 @@ export function NamespaceChangeLine({
   }
   return (
     <>
-      <DeleteSentence path={change.fromUri} restored={change.status === "reversed"}>
+      <DeleteSentence
+        path={change.fromUri}
+        restored={change.status === "reversed"}
+        pending={restore.pending}
+      >
         {restore.control}
       </DeleteSentence>
       {restore.note ? <RestoreNote className="text-ink-muted">{restore.note}</RestoreNote> : null}
@@ -162,7 +168,7 @@ function DeleteRow({
   const restore = useRestoreControl(threadId, turnId, change);
   const path = change?.fromUri ?? stringInput(toolInputObject(tool), "path") ?? "";
   const title = (
-    <DeleteSentence path={path} restored={change?.status === "reversed"}>
+    <DeleteSentence path={path} restored={change?.status === "reversed"} pending={restore.pending}>
       {restore.control}
     </DeleteSentence>
   );
@@ -184,14 +190,17 @@ function useRestoreControl(
   threadId: string,
   turnId: string,
   change: TurnNamespaceChangeItem | null,
-): { control: ReactNode; note: string | null } {
-  const restore = useRestoreDeleteMutation(threadId);
+): { control: ReactNode; note: string | null; pending: boolean } {
+  const restore = useRestoreDeleteMutation(
+    threadId,
+    change ? { turnId, documentId: change.documentId, wId: change.wId } : null,
+  );
   const path = change?.fromUri ?? "";
   const note = restoreNote(restore.isError ? "request_failed" : restore.data, path);
   // The control needs the server's word that the delete still stands; an
   // unloaded or rolled-back change offers nothing to act on.
   if (change?.kind !== "delete" || change.status !== "active" || restore.isPending) {
-    return { control: null, note };
+    return { control: null, note, pending: restore.isPending };
   }
   const name = documentDisplayName(path);
   const control = (
@@ -201,7 +210,7 @@ function useRestoreControl(
       size="meta"
       aria-label={t`Restore ${name}`}
       onClick={() => {
-        restore.mutate({ turnId, documentId: change.documentId, wId: change.wId });
+        restore.mutate();
       }}
       // Pulled into the line box so the row keeps its rhythm.
       className="-my-1 shrink-0 font-medium text-jade-text"
@@ -209,7 +218,7 @@ function useRestoreControl(
       <Trans>Restore</Trans>
     </Button>
   );
-  return { control, note };
+  return { control, note, pending: restore.isPending };
 }
 
 function RestoreNote({ className, children }: { className?: string; children: ReactNode }) {

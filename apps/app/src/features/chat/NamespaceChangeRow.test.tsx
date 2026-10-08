@@ -45,7 +45,12 @@ function deleteCall(): ToolView {
 }
 
 /** The server: the turn's lineage, and what a restore answers. */
-function serve(restore: { status: number; body: unknown; restores: boolean }) {
+function serve(restore: {
+  status: number;
+  body: unknown;
+  restores: boolean;
+  wait?: Promise<void>;
+}) {
   let deleteStatus: "active" | "reversed" = "active";
   const lineage = (): ListTurnLiveLineageResponse => ({
     documents: [],
@@ -67,6 +72,7 @@ function serve(restore: { status: number; body: unknown; restores: boolean }) {
     vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith(`/turns/${TURN}/restore-delete`) && init?.method === "POST") {
         restoreRequests.push(JSON.parse(String(init.body)));
+        await restore.wait;
         if (restore.restores) deleteStatus = "reversed";
         return Response.json(restore.body, { status: restore.status });
       }
@@ -122,6 +128,32 @@ describe("a delete row's Restore", () => {
   function text(place: "row" | "receipt") {
     return host.querySelector(`[data-testid="${place}"]`)?.textContent ?? "";
   }
+
+  it("shares pending between receipt and tool row without claiming success", async () => {
+    let finish!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const server = serve({
+      status: 200,
+      body: { status: "restored", documentId: DOCUMENT, uri: "manuscript://ch2.md" },
+      restores: true,
+      wait,
+    });
+    await renderRow();
+    await act(async () => restoreButton("receipt")?.click());
+    await vi.waitFor(() => {
+      expect(text("receipt")).toContain("Restoring…");
+      expect(text("row")).toContain("Restoring…");
+    });
+    expect(host.textContent).not.toContain("Restored");
+    expect(restoreButton("row")).toBeNull();
+    expect(restoreButton("receipt")).toBeNull();
+    await act(async () => finish());
+    await vi.waitFor(() => expect(text("row")).toContain("Restored"));
+    expect(text("receipt")).toContain("Restored");
+    expect(server.restoreRequests).toHaveLength(1);
+  });
 
   it("restores the document and the row says so", async () => {
     const server = serve({

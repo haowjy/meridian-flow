@@ -3218,6 +3218,10 @@ msgstr ""
 msgid "Restoring"
 msgstr ""
 
+#: src/features/chat/NamespaceChangeRow.tsx
+msgid "Restoring…"
+msgstr ""
+
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
