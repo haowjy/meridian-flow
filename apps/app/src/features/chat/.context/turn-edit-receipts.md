@@ -74,6 +74,13 @@ It is handed down one stage at a time, and the surface holding a stage reports
 | turn | transcript (`useTurnRevealLanding`) | centers the turn's row, waiting for a parked viewport to be measured | settled history holds no such turn |
 | change | turn receipt (`TurnEditsReceipt` → `ChangeViewRows`) | expands the receipt and scrolls the row into view | no authorized trail, the evidence request failed, or the loaded evidence no longer carries the change |
 
+A turn target may also name a `toolCallId`, as a Changes row's chat link does.
+After the turn lands, the transcript scrolls to that tool's row and flashes it
+(`block-reveal-flash`). A row inside a closed process fold is never opened for
+the reveal: the fold's header takes the scroll and the flash, and the turn stays
+the landing when neither is found. The landing also releases follow so a
+transcript that has just mounted does not pin back to the live edge.
+
 An unavailable stage ends the request where its parent left the writer: a
 change row that never renders still leaves them on its turn, a turn that never
 arrives still leaves them in the thread. Nothing copies the pending request into

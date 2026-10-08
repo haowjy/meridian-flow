@@ -46,12 +46,14 @@ function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
   if (!isToolViewVisible(tool)) return null;
 
   return (
-    <ActivityRow
-      Icon={descriptorFor(tool).Icon}
-      title={presentation.title}
-      status={status}
-      expand={presentation.expand}
-    />
+    <div data-tool-call-id={tool.toolCallId ?? undefined}>
+      <ActivityRow
+        Icon={descriptorFor(tool).Icon}
+        title={presentation.title}
+        status={status}
+        expand={presentation.expand}
+      />
+    </div>
   );
 }
 

@@ -266,16 +266,21 @@ const TurnItemView = memo(function TurnItemView({
   directResult: DirectInvocationResult | null;
 }) {
   const runs = item.kind === "process" ? item.runs : null;
+  const tools = useMemo(() => (runs ? toolViewsInFold(runs) : []), [runs]);
   const digest = useMemo(
-    () => (runs ? thinkingDigest(toolViewsInFold(runs), writeMode) : null),
-    [runs, writeMode],
+    () => (runs ? thinkingDigest(tools, writeMode) : null),
+    [runs, tools, writeMode],
+  );
+  const toolCallIds = useMemo(
+    () => tools.flatMap((tool) => (tool.toolCallId ? [tool.toolCallId] : [])),
+    [tools],
   );
 
   if (item.kind === "process") {
     if (!foldHasVisibleContent(item.runs)) return null;
     return (
       <div data-turn-item-kind="process">
-        <ProcessDisclosure label={digest ?? thinkingLabel()}>
+        <ProcessDisclosure label={digest ?? thinkingLabel()} toolCallIds={toolCallIds}>
           {item.runs.map((run) => (
             <FoldRun
               key={runRenderKey(run)}

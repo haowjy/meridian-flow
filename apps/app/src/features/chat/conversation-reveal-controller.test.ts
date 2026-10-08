@@ -19,3 +19,21 @@ describe("conversation subagent block reveal", () => {
     conversationRevealController.cancel();
   });
 });
+
+describe("conversation tool call reveal", () => {
+  it("carries the tool call through thread landing to the turn stage", () => {
+    conversationRevealController.cancel();
+    conversationRevealController.request({
+      kind: "turn",
+      threadId: "chat",
+      turnId: "turn-2",
+      toolCallId: "call-7",
+    });
+    conversationRevealController.snapshot().thread?.landed();
+    expect(conversationRevealController.snapshot().turn).toMatchObject({
+      turnId: "turn-2",
+      toolCallId: "call-7",
+    });
+    conversationRevealController.cancel();
+  });
+});

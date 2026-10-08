@@ -53,4 +53,10 @@ describe("ToolRow", () => {
     expect(host.querySelector('[aria-label="Failed"]')).toBeNull();
     expect(host.querySelector("button[aria-expanded]")).toBeNull();
   });
+
+  it("marks its row with the tool call so a reveal can find it", async () => {
+    await act(async () => root.render(<ToolRow tool={refusedWrite("read_required")} />));
+
+    expect(host.querySelector('[data-tool-call-id="call-1"]')).not.toBeNull();
+  });
 });
