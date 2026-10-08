@@ -82,9 +82,6 @@ export interface DocumentModel {
   /** Apply a concurrent CRDT update with its persisted origin metadata. */
   applyUpdate(doc: DocHandle, update: Uint8Array, origin: unknown): void;
 
-  /** True if `after` reflects CRDT progress past `before`. */
-  stateVectorAdvanced(before: Uint8Array, after: Uint8Array): boolean;
-
   /**
    * Replace plain text within a block, keeping unchanged text at the span's edges.
    * Undo repair's verb; agent writes go through `applyInlineReplacements`.
