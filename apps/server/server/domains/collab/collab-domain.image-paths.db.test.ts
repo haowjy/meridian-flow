@@ -1,12 +1,7 @@
 /** Image-path scopes across draft review, Apply, and live reversal. */
 import { createDb } from "@meridian/database";
-import {
-  changeTrailDocumentDetails,
-  documentBranches,
-  documents,
-  folders,
-} from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
+import { changeTrailDocumentDetails, documents, folders } from "@meridian/database/schema";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
@@ -41,44 +36,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       },
     });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
+      createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {
       await db.$client.end();
     });
-    /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
-    async function applyDraft(
-      collab: ReturnType<typeof createTestCollab>,
-      documentId: string,
-    ): Promise<void> {
-      const [draft] = await db
-        .select({ id: documentBranches.id })
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.documentId, documentId as never),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        );
-      if (!draft) throw new Error(`missing Work draft for ${documentId}`);
-      await collab.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID as never });
-    }
-
-    async function currentDraftId(
-      collab: ReturnType<typeof createTestCollab>,
-      documentId: string,
-    ): Promise<string> {
-      const drafts = await collab.draftReview.list({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-      });
-      const draft = drafts.find((candidate) => candidate.documentId === documentId);
-      if (!draft) throw new Error(`missing reviewable draft for ${documentId}`);
-      return draft.draftId;
-    }
-
     /** A chapter showing `assets/map.png`, and the model's grant in this project. */
     async function seedChapterWithMap(collab: ReturnType<typeof createTestCollab>) {
       const ASSETS_ID = "00000000-0000-4000-8000-000000000711";
