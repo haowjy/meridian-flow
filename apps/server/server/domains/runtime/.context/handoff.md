@@ -77,3 +77,8 @@ special pending-seed query remains. Seed `modelText` appends
 `threadReferenceText` only when its bake advertises `thread_history`; source
 history is never copied into the destination. `HandoffSeedMetadataCodec` owns
 the summary telemetry and failure reason/phase.
+
+A handoff starts a new `rootThreadId` while retaining `originTurnId`.
+Its No Work Scratch starts empty; the source lineage stays reachable by its
+first-chat handle. Forks do not re-root. Credit settlement and result provenance
+use the new root, and `thread ls` excludes the handoff from the old lineage.

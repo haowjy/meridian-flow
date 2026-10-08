@@ -5,9 +5,9 @@ import { createWriterWorkSwitchedNotice, type NoticePort } from "../domains/noti
 export async function recordWriterWorkSwitchNotice(
   notices: Pick<NoticePort, "record">,
   transition: RebindThreadWorkResult,
+  previousScratchUri?: string,
 ): Promise<void> {
   if (!transition.changed) return;
-  if (transition.before.slug === null || transition.after.slug === null) return;
   await notices.record(
     createWriterWorkSwitchedNotice({
       threadId: transition.threadId,
@@ -15,6 +15,7 @@ export async function recordWriterWorkSwitchNotice(
       previousWorkName: transition.before.name,
       workId: transition.after.workId,
       workName: transition.after.name,
+      previousScratchUri,
     }),
   );
 }

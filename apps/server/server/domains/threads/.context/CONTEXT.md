@@ -334,11 +334,11 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
   target itself or a spawn ancestor, walking `parentThreadId`: foreground
   authority). Both are pure over thread rows. `rootThreadId` is authoritative on
   every create path — an organic root roots itself, a subagent takes its spawn
-  parent's root, and a fork/handoff takes its SOURCE's root — so the column is
+  parent's root, a fork takes its source's root, and a handoff roots at itself — so the column is
   never NULL; the `?? id` mapper fallback is a read guard only. A fork/handoff
   is a sibling of its source, never the source's child: `buildDerivedPrimaryThreadRow`
   gives it the source's `parentThreadId` too (null when the source is itself a
-  root) and `spawnDepth`, so `sameLineage` holds between them but `isInSubtree`
+  root) and `spawnDepth`, so `sameLineage` holds for a fork (not a handoff), but `isInSubtree`
   does not — the fork cannot foreground-drive the source's subtree, or vice
   versa. The fork-source edge is not a `threads` column; it is recovered by
   resolving `originTurnId`'s owning thread.
@@ -382,7 +382,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
 | `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug), or `Subagent` when the binding has no revision; never a threads column |
-| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; an organic root uses its own id, a fork/handoff takes its source's root |
+| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; an organic root uses its own id, a fork takes its source root; a handoff roots at itself |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.initialPromptBakeId` | `threads.initialPromptBakeId` | null means not baked; points to the first immutable bake |
 | `turns.promptBakeId` | `turns.promptBakeId` | null except on completed epoch-boundary turns |
@@ -684,13 +684,12 @@ runtime orphan repair finalizes it; see
 
 ## Connected conversation authority
 
-Every thread persists a non-null `rootThreadId`. Organic primaries root at
-themselves; spawn, fork, and handoff creation copy the source root. The root
-is consistent across a whole lineage: every thread reachable through spawn
-parents or derivation cutoffs carries it, and `spawnDepth` counts spawn hops
-from it. Anything that re-roots an existing thread must re-root its entire
-reachable subtree and shift depth in the same step (the only such path is
-`0014`'s lineage repair in `packages/database`). One stale descendant breaks
+Every thread persists a non-null `rootThreadId`. Organic primaries and
+handoffs root at themselves; spawn and fork creation copy the source root.
+A handoff keeps its cutoff provenance, parent and depth, but starts independent
+background authority, credit grouping, result provenance and No Work Scratch.
+Spawn and fork edges remain in the lineage; handoff cutoff edges cross lineages.
+One stale descendant breaks
 `listLineageChildren` (`thread_ls`), `sameLineage` (`thread_message`
 authorization), Work purge's dependent-root retention, and trash restore's
 root-primary Work check. `(project_id, root_thread_id)` is an `ON DELETE

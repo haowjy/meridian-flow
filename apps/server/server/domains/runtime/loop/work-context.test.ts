@@ -175,6 +175,7 @@ describe("createWorkContextReader", () => {
   it("treats a missing primary as corrupt", async () => {
     const reader = createWorkContextReader({
       threads: {
+        findByIdIncludingDeleted: async () => ({ ref: "c12" }) as never,
         findById: async () =>
           ({
             id: THREAD_ID,
