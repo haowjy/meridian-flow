@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Move labels retain destination section and Work when either changes.
+
 - Restore shows Restoring on both the receipt and tool row until the server confirms.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.

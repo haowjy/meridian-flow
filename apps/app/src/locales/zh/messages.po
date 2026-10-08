@@ -286,6 +286,10 @@ msgstr ""
 msgid "{remainingPercent}% remaining"
 msgstr ""
 
+#: src/features/chat/document-display-name.ts
+msgid "{section} ({work})"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of {total}"
 msgstr ""
@@ -2679,6 +2683,7 @@ msgid "No scratch notes yet."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/document-display-name.ts
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "No Work"
 msgstr ""

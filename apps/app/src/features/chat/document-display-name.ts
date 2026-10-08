@@ -5,7 +5,11 @@
  * state: context URIs already carry the document basename and location.
  */
 import { t } from "@lingui/core/macro";
-import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import {
+  documentTitleFromUri,
+  type ParsedContextAuthority,
+  parseUnifiedContextUri,
+} from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
 import { schemeLabel } from "@/features/project/context/context-schemes";
@@ -14,11 +18,14 @@ import { humanizeSkillSlug, skillFile } from "./tool-command";
 type ParsedContextLocation = {
   scheme: ProjectContextTreeScheme;
   path: string;
+  authority: ParsedContextAuthority;
 };
 
 function parseContextLocation(uriOrPath: string): ParsedContextLocation {
   const parsed = parseUnifiedContextUri(uriOrPath);
-  return parsed.ok ? parsed.value : { scheme: "manuscript", path: uriOrPath };
+  return parsed.ok
+    ? parsed.value
+    : { scheme: "manuscript", path: uriOrPath, authority: { kind: "contextual" } };
 }
 
 /**
@@ -58,9 +65,36 @@ function skillFileDisplayName(uriOrPath: string): string | null {
   return t`${name} (${skill})`;
 }
 
-/** Where a document sits in its section, the way the writer's tree shows it ("archive/ch3.md"). */
-export function documentLocationPath(uriOrPath: string): string {
-  return parseContextLocation(uriOrPath).path.replace(/^\/+/, "");
+/** Where a document sits, with its section and explicit Work when requested. */
+export function documentLocationPath(uriOrPath: string, qualified = false): string {
+  const { scheme, path, authority } = parseContextLocation(uriOrPath);
+  const location = path.replace(/^\/+/, "");
+  if (!qualified) return location;
+  const section = schemeLabel(scheme);
+  const work =
+    authority.kind === "work"
+      ? `@${authority.workSlug}`
+      : authority.kind === "none"
+        ? t`No Work`
+        : null;
+  return `${work ? t`${section} (${work})` : section}/${location}`;
+}
+
+/** A rename needs only a name; a changed section, Work or folder stays visible. */
+export function moveDestinationName(
+  from: string,
+  to: string,
+  name: (uri: string) => string,
+): string {
+  const source = parseContextLocation(from);
+  const destination = parseContextLocation(to);
+  const folder = (path: string) => path.slice(0, path.lastIndexOf("/") + 1);
+  const differentNamespace =
+    source.scheme !== destination.scheme ||
+    JSON.stringify(source.authority) !== JSON.stringify(destination.authority);
+  if (!differentNamespace && folder(source.path) === folder(destination.path)) return name(to);
+  const location = documentLocationPath(to, differentNamespace);
+  return `${folder(location)}${name(to)}`;
 }
 
 export function folderDisplayName(uriOrPath: string): string {

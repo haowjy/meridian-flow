@@ -286,6 +286,10 @@ msgstr "{name} was archived during the switch, so you're still in Draft."
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
 
+#: src/features/chat/document-display-name.ts
+msgid "{section} ({work})"
+msgstr "{section} ({work})"
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{shown} of {total}"
 msgstr "{shown} of {total}"
@@ -2679,6 +2683,7 @@ msgid "No scratch notes yet."
 msgstr "No scratch notes yet."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/chat/document-display-name.ts
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "No Work"
 msgstr "No Work"

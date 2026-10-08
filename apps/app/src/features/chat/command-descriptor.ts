@@ -1,6 +1,5 @@
 /** Maps tool commands to their transcript labels and metadata. */
 import { t } from "@lingui/core/macro";
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import {
   BookOpen,
@@ -20,7 +19,12 @@ import {
   Wrench,
 } from "lucide-react";
 
-import { documentDisplayName, documentFileName, folderDisplayName } from "./document-display-name";
+import {
+  documentDisplayName,
+  documentFileName,
+  folderDisplayName,
+  moveDestinationName,
+} from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import {
   humanizeSkillSlug,
@@ -334,31 +338,6 @@ function movingVerb(source: string): string {
 
 function movedVerb(source: string): string {
   return t`Moved ${source} to`;
-}
-
-/**
- * Where a move put the document, named by `name`. A rename keeps its folder,
- * so the new name says it all; a move to another folder keeps its name, so
- * the folder's path in front of it tells the writer where it went.
- */
-export function moveDestinationName(
-  from: string,
-  to: string,
-  name: (uriOrPath: string) => string,
-): string {
-  const destination = contextLocation(to);
-  if (contextLocation(from).folder === destination.folder) return name(to);
-  const folder = destination.path.slice(0, destination.path.lastIndexOf("/") + 1);
-  return `${folder}${name(to)}`;
-}
-
-/** A document's path without its scheme, and the folder it sits in (scheme included). */
-function contextLocation(uriOrPath: string): { path: string; folder: string } {
-  const parsed = parseUnifiedContextUri(uriOrPath);
-  const scheme = parsed.ok ? parsed.value.scheme : "";
-  const path = (parsed.ok ? parsed.value.path : uriOrPath).replace(/^\/+/, "");
-  const slash = path.lastIndexOf("/");
-  return { path, folder: `${scheme}:${slash < 0 ? "" : path.slice(0, slash)}` };
 }
 
 function documentTarget(input: Record<string, JsonValue>): string | undefined {

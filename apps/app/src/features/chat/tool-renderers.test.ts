@@ -65,6 +65,18 @@ describe("document tool rows", () => {
     expect(toolActivityPhrase(deletion)).toEqual({ verb: "Deleted", parameter: "ch3.md" });
   });
 
+  it.each([
+    ["scratch://note.md", "manuscript://note.md", "Manuscript/note"],
+    ["scratch://@first/note.md", "scratch://@second/note.md", "Scratch (@second)/note"],
+    ["scratch://@first/note.md", "scratch://@/note.md", "Scratch (No Work)/note"],
+  ])("qualifies a move from %s to %s", (from, to, destination) => {
+    const tool = documentTool({
+      toolName: "write",
+      input: { command: "move", from: { path: from }, path: to },
+    });
+    expect(toolActivityPhrase(tool)).toEqual({ verb: "Moved note to", parameter: destination });
+  });
+
   it("writes failure copy from the result's status", () => {
     const notFound = documentTool({
       toolName: "read",

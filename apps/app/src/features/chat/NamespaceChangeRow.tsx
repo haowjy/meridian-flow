@@ -19,9 +19,13 @@ import { useRestoreDeleteMutation } from "@/client/query/useRestoreDeleteMutatio
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { Button } from "@/components/ui/button";
 import { ActivityRow } from "./ActivityRow";
-import { descriptorFor, moveDestinationName } from "./command-descriptor";
+import { descriptorFor } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
-import { documentDisplayName, documentLocationPath } from "./document-display-name";
+import {
+  documentDisplayName,
+  documentLocationPath,
+  moveDestinationName,
+} from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import { sourcePath, stringInput, toolInputObject } from "./tool-command";
 
