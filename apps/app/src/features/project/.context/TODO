@@ -31,3 +31,4 @@
   advances the way the desktop `ContextTabSessionBoundary` does. Give the phone
   host the same Retry and revision retry. Found in knowledge capture for
   draft-review-repair.
+- `context/ContextTreePanel.tsx` and `mobile/MobileContextBrowser.tsx` still thread an `editorWorkId` that only Scratch and Uploads used; the Editor lists project areas alone, so it feeds no tree query. Drop it with the "Editor has no Work" drafts rework.
