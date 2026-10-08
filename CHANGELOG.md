@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- AI writes accept `<img>` without a closing slash. Image paths, alt text and widths survive read-back; other HTML void tags no longer require JSX closing slashes.
+
 - A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes, downloads and link updates keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one image-path snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading image paths no longer holds up branch edits during reads or Apply.
 - Chapter overwrites parse replacement content once, including unchanged writes. Changed writes no longer render three discarded snapshots or an unused echo.
 

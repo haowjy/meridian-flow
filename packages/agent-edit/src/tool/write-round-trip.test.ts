@@ -103,6 +103,18 @@ describe("overwrite with a document's own export", () => {
     expect(exported(ctx.doc)).toBe(markdown);
   });
 
+  it("writes an unclosed HTML image and reads its path and width back", async () => {
+    const ctx = harnessWith(fromMarkdown("Before."));
+    const content = '<img src="assets/map.png" alt="World map" width="240">';
+    const outcome = await overwrite(ctx, content);
+
+    expectOutcome(outcome, "success");
+    const read = await ctx.core.read({ file: DOC_ID }, {});
+    expectOutcome(read, "success");
+    expect(outcomeText(read)).toContain('<img src="assets/map.png" alt="World map" width="240" />');
+    expect(prosemirrorBlocksForDoc(ctx.doc, schema)[0]?.firstChild?.type.name).toBe("image");
+  });
+
   it("records nothing when a find is replaced with itself", async () => {
     const ctx = harnessWith(fromMarkdown("The sword sang."));
 

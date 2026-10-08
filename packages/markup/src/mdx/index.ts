@@ -1,8 +1,6 @@
 /** Canonical MDX plugin and convenience codec preset. */
 
 import type { Schema } from "prosemirror-model";
-import remarkMdx from "remark-mdx";
-
 import { createMarkupCodec } from "../codec.js";
 import type { ComponentRegistry } from "../components.js";
 import { escapeProseForMdxIngress } from "../escape.js";
@@ -19,6 +17,7 @@ import {
   createLayoutCodec,
   serializeLayoutBlock,
 } from "./blocks/index.js";
+import { remarkMdxWithHtmlVoidElements } from "./syntax.js";
 
 /**
  * The MDX block chain. The codecs hoisted above the JSX ones own raw tags MDX
@@ -44,7 +43,7 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
   return {
     blocks: mdxBlockCodecs(options?.components),
     marks: markdownMarkCodecs,
-    remarkPlugins: [remarkMdx],
+    remarkPlugins: [remarkMdxWithHtmlVoidElements],
     preprocess: (text) => escapeProseForMdxIngress(normalizeGfmTableHardBreaks(text)),
     postParse: (root, source) => joinBreakLines(demoteAutolinks(root, source)),
     postSerializeBlock: serializeLayoutBlock,
