@@ -304,3 +304,16 @@ function editFromFreshPeer(authority: Y.Doc, mutate: (text: Y.Text) => void): Ui
     peer.destroy();
   }
 }
+
+it("closes 3,000 sequential Yjs rows within one second", () => {
+  const doc = new Y.Doc({ gc: false });
+  const updates: { id: number; updateData: Uint8Array }[] = [];
+  doc.on("update", (updateData) => updates.push({ id: updates.length + 1, updateData }));
+  const text = doc.getText("content");
+  for (let i = 0; i < 3000; i++) text.insert(text.length, "x");
+  const start = performance.now();
+  const result = assignReviewClasses({ operations: [op("first", [1])], hunks: [], updates });
+  expect(result[0].closureUpdateIds).toHaveLength(3000);
+  expect(performance.now() - start).toBeLessThan(1000);
+  doc.destroy();
+});
