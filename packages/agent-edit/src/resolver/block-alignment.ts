@@ -1,6 +1,7 @@
 // Aligns a scope's current blocks with their replacement so equal blocks stay untouched.
 
 import type { Block } from "../codec-types.js";
+import { weightedOrderedMatches } from "../ordered-matching.js";
 
 export type BlockAlignmentStep =
   | { kind: "keep"; old: number; next: number }
@@ -49,7 +50,8 @@ export function alignBlocks(
   }
   const equal = (oldIndex: number, newIndex: number) =>
     oldBlocks[oldIndex].eq(newBlocks[newIndex]) ? 1 : 0;
-  const matches = heaviestMatches(equal, start, oldEnd, start, newEnd);
+  const matches =
+    weightedOrderedMatches(equal, start, oldEnd, start, newEnd, MAX_TABLE_CELLS) ?? [];
   let oldCursor = start;
   let newCursor = start;
   for (const [oldIndex, newIndex] of [...matches, [oldEnd, newEnd] as const]) {
@@ -94,9 +96,8 @@ function pairGap(
   // position alone, the pre-alignment behaviour. Only a rewrite of thousands
   // of blocks between unchanged ones gets here, and the equal-block LCS above
   // has then also given up, so the whole middle is this one gap.
-  const similar = tableFits(oldEnd - oldStart, newEnd - newStart)
-    ? heaviestMatches(similarity, oldStart, oldEnd, newStart, newEnd)
-    : [];
+  const similar =
+    weightedOrderedMatches(similarity, oldStart, oldEnd, newStart, newEnd, MAX_TABLE_CELLS) ?? [];
   let oldCursor = oldStart;
   let newCursor = newStart;
   for (const [oldIndex, newIndex] of [...similar, [oldEnd, newEnd] as const]) {
@@ -140,54 +141,4 @@ function edgeSimilarity(oldText: string, newText: string): number {
   }
   const shared = prefix + suffix;
   return shared * 3 >= limit ? shared + 1 : 0;
-}
-
-function tableFits(rows: number, columns: number): boolean {
-  return (rows + 1) * (columns + 1) <= MAX_TABLE_CELLS;
-}
-
-/**
- * The in-order pairs with the largest total weight (weight 0 never pairs).
- * With 0/1 weights this is the longest common subsequence.
- */
-function heaviestMatches(
-  weight: (oldIndex: number, newIndex: number) => number,
-  oldStart: number,
-  oldEnd: number,
-  newStart: number,
-  newEnd: number,
-): Array<readonly [number, number]> {
-  const rows = oldEnd - oldStart;
-  const columns = newEnd - newStart;
-  if (rows === 0 || columns === 0 || !tableFits(rows, columns)) return [];
-
-  const width = columns + 1;
-  const best = new Uint32Array((rows + 1) * width);
-  const weights = new Uint32Array(rows * columns);
-  for (let row = rows - 1; row >= 0; row -= 1) {
-    for (let column = columns - 1; column >= 0; column -= 1) {
-      const pair = weight(oldStart + row, newStart + column);
-      weights[row * columns + column] = pair;
-      const skip = Math.max(best[(row + 1) * width + column], best[row * width + column + 1]);
-      best[row * width + column] =
-        pair > 0 ? Math.max(skip, pair + best[(row + 1) * width + column + 1]) : skip;
-    }
-  }
-
-  const matches: Array<readonly [number, number]> = [];
-  let row = 0;
-  let column = 0;
-  while (row < rows && column < columns) {
-    const pair = weights[row * columns + column];
-    if (pair > 0 && best[row * width + column] === pair + best[(row + 1) * width + column + 1]) {
-      matches.push([oldStart + row, newStart + column]);
-      row += 1;
-      column += 1;
-    } else if (best[(row + 1) * width + column] >= best[row * width + column + 1]) {
-      row += 1;
-    } else {
-      column += 1;
-    }
-  }
-  return matches;
 }

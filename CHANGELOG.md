@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
+
 - An AI overwrite or replace changes only the paragraphs and words that differ. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and a paragraph the AI adds never takes over the comments of the one it edits next to it.
 
 - An AI write that changes nothing (a chapter written back as it is, or a word replaced with itself) records nothing: no write, no receipt and nothing to undo.
