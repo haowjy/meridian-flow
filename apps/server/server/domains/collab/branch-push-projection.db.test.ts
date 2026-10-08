@@ -1,4 +1,5 @@
 /** PostgreSQL regression coverage for filetype-aware branch-push projections. */
+
 import { randomUUID } from "node:crypto";
 import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
@@ -42,6 +43,7 @@ import {
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
+import { NO_DOCUMENT_ASSET_PATHS } from "./domain/ports/document-asset-paths.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -190,6 +192,7 @@ describe("branch-push durable projection", () => {
       turnId: turnId as never,
     });
     const branchPush = createBranchPushService({
+      assetPaths: NO_DOCUMENT_ASSET_PATHS,
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,
@@ -383,6 +386,7 @@ describe("branch-push durable projection", () => {
       turnId: turnId as never,
     });
     const branchPush = createBranchPushService({
+      assetPaths: NO_DOCUMENT_ASSET_PATHS,
       changeEventDelivery: { deliver() {} },
       branchStore,
       journalReadStore,

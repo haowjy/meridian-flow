@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { applyEdits } from "../apply/tiers.js";
+import { applyEdits } from "../apply/apply-edits.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
@@ -153,7 +153,14 @@ function applyAgentText(
     ctx.doc,
     model,
     codec,
-    { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(block), span, newText },
+    {
+      documentId: DOC_ID,
+      file: FILE,
+      kind: "textRanges",
+      block: toRef(block),
+      replacements: [{ span, newText }],
+      output: newText,
+    },
     threadOrigin(ctx, threadId),
   );
   expectOk(result);
@@ -218,7 +225,14 @@ function textEdit(
   span: { start: number; end: number },
   newText: string,
 ): ResolvedEdit {
-  return { documentId: DOC_ID, file: FILE, kind: "text", block: toRef(element), span, newText };
+  return {
+    documentId: DOC_ID,
+    file: FILE,
+    kind: "textRanges",
+    block: toRef(element),
+    replacements: [{ span, newText }],
+    output: newText,
+  };
 }
 
 function expectOk(result: ApplyResult): asserts result is Extract<ApplyResult, { ok: true }> {

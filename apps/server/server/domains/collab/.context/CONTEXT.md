@@ -122,6 +122,22 @@ that safe:
   (`updateBranchSnapshot`) without it, because replication creates no
   reviewable edit.
 
+## Concurrent branch attribution
+
+Each preflight and final recheck uses its own upstream cut. Before replay,
+exclude journal updates contained in the baseline Yjs snapshot (struct clocks
+**and** delete set). Equal state vectors alone do not establish equality:
+delete-only writer edits must still be attributed. An identical encoded
+baseline/upstream skips block projection only when no novel journal rows remain,
+including live rows not yet pulled into the draft. Never advance the journal
+floor to a global maximum: it is a provisional, commit-bound attribution cursor,
+not proof that every earlier row was visible in the baseline.
+
+The filter removes repeated block projection and replay, not the history scan:
+each pass still decodes every retained candidate row against the snapshot, so
+its cost grows with retained journal bytes (see the cold-start scan in
+[TODO.md](TODO.md)).
+
 ## Composition root
 
 `composition.ts` is wiring-only: adapter and service instantiation,
@@ -221,7 +237,12 @@ storage or lifecycle eligibility (the caller checks those).
 or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
 words have writer-protected birth provenance. Maintenance is excluded from both
 live overlap dependencies and reversal lineage blockers, so rewriting a link
-inside an AI paragraph does not prevent the paragraph's Undo.
+inside an AI paragraph does not prevent the paragraph's Undo. Draft attribution
+does not yet keep it neutral: `liveAttributionRows` in
+`domain/branch-agent-edit.ts` labels every non-agent live row `writer`, so a
+rewrite after a draft's baseline echoes as a writer edit
+([#719](https://github.com/haowjy/meridian-flow/issues/719)). Do not build on
+that label.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This

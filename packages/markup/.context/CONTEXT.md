@@ -6,8 +6,11 @@
 
 - Presets: `markdownCodec({ schema, assetPathResolver })` and
   `mdxCodec({ schema, components, assetPathResolver })`.
-- `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (refuses to
-  serialize an asset ref) and `createAssetPathResolver(entries)`.
+- `unresolvedAssetPathResolver`, the one exported `AssetPathResolver` adapter
+  (knows no assets: refs stay refs, paths stay literal). Project-backed
+  resolvers live with their consumers; the fixed-table
+  `createAssetPathResolver(entries)` is a test helper in
+  `src/codec-test-support.ts`, not a package export.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
   surfaces that spell a link without serializing a document (a chat
   reference, a clipboard fallback). It shares the link mark's destination rule.
@@ -72,7 +75,8 @@ Merge order:
 Build validation always rejects duplicate block names, duplicate mark names, and
 missing schema mark codecs. Required block validation is opt-in through
 `requiredBlockNames` or `requireSchemaBlockCoverage`; schema coverage excludes
-`doc`, `text`, and `hard_break`.
+`doc`, `text`, and the table's row and cell nodes. `hard_break` is a registered
+codec like any other block (see Hard breaks and emphasis).
 
 ## MDX components
 
@@ -88,7 +92,9 @@ explicit registry parameter.
 Images hold a stable `asset:<documentId>` src inside ProseMirror; markdown holds
 a project-relative path. `AssetPathResolver` is the only translation seam, and
 it is required — a consumer with no project asset namespace passes
-`unresolvedAssetPathResolver` and gets a throw rather than a silently wrong URL.
+`unresolvedAssetPathResolver`. A picture never fails its document:
+`pathForAsset` returns null for an id with no document, and the codec spells it
+as the `asset:` ref itself, which parses back to the same reference.
 `assetForPath` returns null for anything the project does not know, so external
 and unknown paths stay literal.
 
@@ -156,7 +162,7 @@ conversion. `rawTextForAst()` slices from `runtime.source`, so fallback text and
 AST positions stay self-consistent even when preprocessors rewrite input.
 MDX ingress asks CommonMark to classify raw-HTML literal ranges, then hides
 their punctuation behind character references before the MDX parse. Valid
-PascalCase components, supported HTML tables, and the hard-break spelling stay
+PascalCase components, images, supported HTML tables, and the hard-break spelling stay
 active markup; syntax-looking text inside other raw HTML stays inert prose.
 Whole-source CommonMark-classified enclosed link/image destinations likewise
 keep their `<` delimiter active when an MDX syntax probe preserves the same
@@ -164,6 +170,36 @@ resource, including multiline titles.
 If MDX cannot consume the resource (for example, a link label containing
 nested link syntax), ingress keeps the delimiter escaped and the result
 deterministic instead of exposing it as a JSX opener.
+
+Both the codec and the enclosed-destination probe use
+`remarkMdxWithHtmlVoidElements` (`mdx/syntax.ts`). Its JSX tag-exit adapter closes
+lowercase HTML void names implicitly, leaving syntax/attributes and other closing
+tags to remark-mdx. It does not rewrite source or positions. Registering stock
+remark-mdx afterward would override these handlers. Ingress escaping still owns
+which tags reach this parser: ordinary prose `<br>` and `<hr>` remain literal;
+`<img>` and the canonical `<br/>` spelling remain active.
+
+## Hard breaks and emphasis
+
+A hard break between words is `\` and a newline. A break ending a paragraph
+has no Markdown spelling (CommonMark reads a trailing `\` as a backslash), so it
+and every break directly before it escalate to `<br/>`, the way a sized picture escalates to `<img>`.
+`hardBreakCodec` (`markdown/blocks/hard-break.ts`) owns that tag in both
+dialects and is hoisted above the JSX codecs in MDX; inline parsing asks it and
+the image codec in turn, and a lone break wraps back into a paragraph. MDX
+parses one element per `<br/>`, so its `postParse` (`joinBreakLines`) regroups
+the tags on one source line into one paragraph; a paragraph of only breaks
+round-trips.
+
+Overlapping bold and italic split into adjacent sibling runs whose delimiters
+would fuse (`****`). `markdown/attention.ts` overrides the stringify handlers:
+along a chain of adjacent bold or italic runs the marker alternates, `_` after
+an odd count (`*a*__b__*c*`), and `peek` reports the same marker. Strike gets
+the edge encoding remark gives `*`, so a strike starting or ending on a space
+or punctuation writes that character, or the letter outside it, as a character
+reference (`Li&#x6E;~~&#x20;Feng~~`). The encoding is
+copied from `mdast-util-to-markdown`'s private `encodeInfo`; recheck it when
+that dependency moves.
 
 ## Links
 

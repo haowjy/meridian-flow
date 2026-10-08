@@ -152,6 +152,32 @@ export function createMarkdownSerializationAnomalyObserver(
   };
 }
 
+/**
+ * A picture serialized outside every image path scope spells as its `asset:`
+ * ref, which round-trips but is never what a reader should see. Tests fail on
+ * it; production reports it next to the other serialization anomalies.
+ */
+export function createUnscopedAssetPathObserver(
+  eventSink?: EventSink,
+): (assetDocumentId: string) => void {
+  return (assetDocumentId) => {
+    if (process.env.NODE_ENV === "test") {
+      throw new Error(`Image ${assetDocumentId} serialized outside an image path scope`);
+    }
+    if (!eventSink) return;
+    try {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.schema",
+        name: "serialize.asset_path_unscoped",
+        payload: { assetDocumentId },
+      });
+    } catch {
+      // Diagnostic delivery cannot turn a successful serialization into a failure.
+    }
+  };
+}
+
 export function createReversalNoticeDiagnostics(eventSink?: EventSink): ReversalNoticeDiagnostics {
   return {
     documentUriMissing(input) {

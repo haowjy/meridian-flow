@@ -2,9 +2,14 @@
 
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
-
-import { createAssetPathResolver } from "./asset-path-resolver.js";
-import { components, docFrom, paragraph, parsedDoc, schema } from "./codec-test-support.js";
+import {
+  components,
+  createAssetPathResolver,
+  docFrom,
+  paragraph,
+  parsedDoc,
+  schema,
+} from "./codec-test-support.js";
 import { markdownCodec, mdxCodec } from "./index.js";
 
 const assetPathResolver = createAssetPathResolver([
@@ -53,6 +58,16 @@ function spannedTable(imageWire: string, canonical = false): string {
 }
 
 describe.each(dialects)("$name image sizes", ({ codec }) => {
+  it.each([
+    '<img src="assets/map.png" alt="World map" width="240">',
+    'Before <img src="assets/map.png" alt="World map" width="240"> after.',
+  ])("reads an HTML void image without a closing slash: %s", (wire) => {
+    const closed = wire.replace('width="240">', 'width="240" />');
+    const blocks = codec.parse(wire).blocks;
+    expect(docFrom(blocks).toJSON()).toEqual(parsedDoc(codec, closed).toJSON());
+    expect(codec.serialize(blocks)).toBe(`${closed}\n`);
+  });
+
   it("de-escalates to byte-identical markdown when the size is taken away", () => {
     const sized = codec.parse(SIZED).blocks[0];
     if (!sized?.firstChild) throw new Error("expected a sized picture");

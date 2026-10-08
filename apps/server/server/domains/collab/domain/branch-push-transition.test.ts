@@ -1,4 +1,5 @@
 /** Settlement ordering over real Yjs documents and in-memory persistence ports. */
+
 import {
   createAgentEditCodec,
   toDocHandle,
@@ -21,6 +22,7 @@ import type {
   PushLineageRow,
 } from "./branch-push-contracts.js";
 import { createBranchPushTransition, fullStateFingerprint } from "./branch-push-transition.js";
+import { NO_DOCUMENT_ASSET_PATHS } from "./ports/document-asset-paths.js";
 
 const documentId = "document" as DocumentId;
 const threadId = "thread" as ThreadId;
@@ -96,6 +98,7 @@ function fixture() {
   };
   const transition = () =>
     createBranchPushTransition({
+      assetPaths: NO_DOCUMENT_ASSET_PATHS,
       commitStore: commits,
       settlementStore: store,
       liveCoordinator: coordinator,

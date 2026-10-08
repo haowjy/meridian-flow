@@ -59,8 +59,8 @@ export interface RuntimeStore {
     docId: string,
     commandName: DocumentCommandName,
     runtime: RuntimeDocumentState,
-  ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
-  markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
+  ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }>;
+  markSynced(session: ActorSession, docId: string): void;
 }
 
 export interface RuntimeEvictOptions {
@@ -117,8 +117,7 @@ export function createRuntimeStore(deps: {
   ): void {
     staleLiveDocs.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
-    const stateVector = Y.encodeStateVector(runtime.doc);
-    session.documents.set(docId, { stateVector });
+    session.documents.add(docId);
   }
 
   async function evictResponseRuntimes(
@@ -173,7 +172,7 @@ export function createRuntimeStore(deps: {
       return null;
     });
     if (isInternalWriteResult(response)) return response;
-    markSynced(session, docId, runtime);
+    markSynced(session, docId);
     return null;
   }
 
@@ -232,7 +231,7 @@ export function createRuntimeStore(deps: {
   ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
     const merged = await mergeLiveIntoRuntime(session, docId, runtime, commandName);
     if (!merged.ok) return merged;
-    markSynced(session, docId, runtime);
+    markSynced(session, docId);
     return { ok: true };
   }
 
@@ -241,24 +240,22 @@ export function createRuntimeStore(deps: {
     docId: string,
     commandName: DocumentCommandName,
     runtime: RuntimeDocumentState,
-  ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
+  ): Promise<{ ok: true } | { ok: false; response: InternalWriteResult }> {
     if (staleLiveDocs.has(docId)) {
       const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName);
       if (isInternalWriteResult(restored)) return { ok: false, response: restored };
-      return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
+      return { ok: true };
     }
 
-    const state = session.documents.get(docId);
-    if (state) return { ok: true, stateVector: state.stateVector };
+    if (session.documents.has(docId)) return { ok: true };
 
     const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName);
     if (isInternalWriteResult(restored)) return { ok: false, response: restored };
-    return { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
+    return { ok: true };
   }
 
-  function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
-    const stateVector = Y.encodeStateVector(runtime.doc);
-    session.documents.set(docId, { stateVector });
+  function markSynced(session: ActorSession, docId: string): void {
+    session.documents.add(docId);
   }
 
   async function recoverLiveDocFromJournal(

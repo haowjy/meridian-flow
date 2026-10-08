@@ -16,14 +16,12 @@ describe("response staging", () => {
     const responseId = "response-echo-summary-failure";
     await ctx.core.read({ file: "chapter.md" }, context);
     const originalSerialize = model.serializeBlockLines.bind(model);
-    const serialize = vi
-      .spyOn(model, "serializeBlockLines")
-      .mockImplementationOnce(originalSerialize)
-      .mockImplementationOnce(originalSerialize)
-      .mockImplementationOnce(originalSerialize)
-      .mockImplementationOnce(() => {
+    const serialize = vi.spyOn(model, "serializeBlockLines").mockImplementation((doc, ...args) => {
+      if (model.getBlocks(doc).some((block) => model.getText(block) === "Must not persist.")) {
         throw new Error("echo summary failed");
-      });
+      }
+      return originalSerialize(doc, ...args);
+    });
 
     const result = await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Must not persist." },
