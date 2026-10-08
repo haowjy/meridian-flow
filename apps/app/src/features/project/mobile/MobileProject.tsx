@@ -323,17 +323,24 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
     // Files root: nothing is drilled in, so "Files" is the current location.
     return [{ label: filesLabel }];
   }
+  // Scratch is browsed from its owner (a chat's Scratch menu, a Work's Files),
+  // never from the Editor's Files, so its trail names where a note lives and
+  // links nowhere.
+  const browsable = props.activeContextScheme !== "scratch";
   const segments: MobileBreadcrumbSegment[] = [
     { label: filesLabel, onSelect: () => props.onExitContextScheme() },
     {
       label: schemeLabel(props.activeContextScheme),
-      onSelect: () => props.onSelectContextFolder(""),
+      ...(browsable ? { onSelect: () => props.onSelectContextFolder("") } : {}),
     },
   ];
   // Route invariant: `folder === dirname(path)` whenever a file is open, so
   // the folder ancestry doubles as the document screen's ancestor trail.
   for (const folder of folderAncestry(props.activeContextFolder)) {
-    segments.push({ label: folder.name, onSelect: () => props.onSelectContextFolder(folder.path) });
+    segments.push({
+      label: folder.name,
+      ...(browsable ? { onSelect: () => props.onSelectContextFolder(folder.path) } : {}),
+    });
   }
   if (props.activeContextPath) {
     segments.push({ label: pathLeafName(props.activeContextPath) });

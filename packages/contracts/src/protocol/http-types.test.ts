@@ -76,6 +76,24 @@ describe("working-set route parser", () => {
     });
   });
 
+  it("names a chat's Scratch by its lineage and refuses any other owner pairing", () => {
+    const documentId = "00000000-0000-0000-0000-000000000001";
+    const rootThreadId = "00000000-0000-0000-0000-000000000002";
+    expect(
+      parseWorkingSetRoute({ documentId, scheme: "scratch", path: "/notes.md", rootThreadId }),
+    ).toEqual({
+      ok: true,
+      value: { documentId, scheme: "scratch", path: "/notes.md", rootThreadId },
+    });
+    for (const route of [
+      { documentId, scheme: "scratch", path: "/notes.md", rootThreadId, workId: null },
+      { documentId, scheme: "uploads", path: "/cover.png", rootThreadId },
+      { documentId, scheme: "manuscript", path: "/chapter.md", rootThreadId },
+      { documentId, scheme: "scratch", path: "/notes.md", rootThreadId: "chat" },
+    ])
+      expect(parseWorkingSetRoute(route).ok).toBe(false);
+  });
+
   it("rejects locator-only and malformed document identities", () => {
     expect(parseWorkingSetRoute({ scheme: "manuscript", path: "/chapter.md" }).ok).toBe(false);
     expect(

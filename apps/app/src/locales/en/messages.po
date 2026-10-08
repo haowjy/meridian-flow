@@ -139,8 +139,13 @@ msgstr "{0} finished"
 #. placeholder {0}: schemeLabel(tab.scheme)
 #. placeholder {1}: work.name
 #: src/features/project/dock/DockDocumentTitle.tsx
-msgid "{0} for {1}"
-msgstr "{0} for {1}"
+#~ msgid "{0} for {1}"
+#~ msgstr "{0} for {1}"
+
+#. placeholder {0}: schemeLabel(tab.scheme)
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "{0} for {ownerName}"
+msgstr "{0} for {ownerName}"
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/image-imports.ts
@@ -584,6 +589,7 @@ msgstr "Back"
 
 #. placeholder {0}: folder.name
 #: src/components/app/DrillInMenu.tsx
+#: src/components/app/DrillInSheet.tsx
 msgid "Back from {0}"
 msgstr "Back from {0}"
 
@@ -822,6 +828,10 @@ msgstr "Choose a home"
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
+
+#: src/components/app/DrillInSheet.tsx
+msgid "Choose a note to open."
+msgstr "Choose a note to open."
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
@@ -1695,6 +1705,10 @@ msgstr "Duplicate"
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Earlier"
 msgstr "Earlier"
+
+#: src/features/project/context/use-catalog-menu-source.ts
+msgid "Earlier notes"
+msgstr "Earlier notes"
 
 #: src/features/chat/UserTurn.tsx
 msgid "Edit"
@@ -2636,6 +2650,7 @@ msgid "Nothing here yet"
 msgstr "Nothing here yet"
 
 #: src/components/app/DrillInMenu.tsx
+#: src/components/app/DrillInSheet.tsx
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
 
@@ -3269,6 +3284,8 @@ msgstr "Saving…"
 msgid "scene break"
 msgstr "scene break"
 
+#: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/chat/ChatScratchButton.tsx
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
@@ -3277,6 +3294,14 @@ msgstr "Scratch"
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch couldn’t load"
 msgstr "Scratch couldn’t load"
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Scratch for {chatTitle}"
+msgstr "Scratch for {chatTitle}"
+
+#: src/features/project/chat/ChatScratchButton.tsx
+msgid "Scratch for {name}"
+msgstr "Scratch for {name}"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -4330,7 +4355,6 @@ msgstr "Withdraw compaction"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkCollection.tsx

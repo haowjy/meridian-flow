@@ -139,7 +139,12 @@ msgstr "{0} 已完成"
 #. placeholder {0}: schemeLabel(tab.scheme)
 #. placeholder {1}: work.name
 #: src/features/project/dock/DockDocumentTitle.tsx
-msgid "{0} for {1}"
+#~ msgid "{0} for {1}"
+#~ msgstr ""
+
+#. placeholder {0}: schemeLabel(tab.scheme)
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "{0} for {ownerName}"
 msgstr ""
 
 #. placeholder {0}: entry.filename
@@ -584,6 +589,7 @@ msgstr ""
 
 #. placeholder {0}: folder.name
 #: src/components/app/DrillInMenu.tsx
+#: src/components/app/DrillInSheet.tsx
 msgid "Back from {0}"
 msgstr ""
 
@@ -821,6 +827,10 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
+msgstr ""
+
+#: src/components/app/DrillInSheet.tsx
+msgid "Choose a note to open."
 msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
@@ -1694,6 +1704,10 @@ msgstr ""
 
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Earlier"
+msgstr ""
+
+#: src/features/project/context/use-catalog-menu-source.ts
+msgid "Earlier notes"
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx
@@ -2636,6 +2650,7 @@ msgid "Nothing here yet"
 msgstr ""
 
 #: src/components/app/DrillInMenu.tsx
+#: src/components/app/DrillInSheet.tsx
 msgid "Nothing here yet."
 msgstr ""
 
@@ -3269,6 +3284,8 @@ msgstr ""
 msgid "scene break"
 msgstr ""
 
+#: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/chat/ChatScratchButton.tsx
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
@@ -3276,6 +3293,14 @@ msgstr ""
 
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch couldn’t load"
+msgstr ""
+
+#: src/features/links/FollowOutcomeContent.tsx
+msgid "Scratch for {chatTitle}"
+msgstr ""
+
+#: src/features/project/chat/ChatScratchButton.tsx
+msgid "Scratch for {name}"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -4330,7 +4355,6 @@ msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkCollection.tsx
