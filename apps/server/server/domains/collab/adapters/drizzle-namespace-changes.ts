@@ -73,6 +73,20 @@ export function createDrizzleAgentNamespaceChanges(db: Database): AgentNamespace
         .where(inArray(agentNamespaceChanges.id, [...ids]));
     },
 
+    async hasHistory(documentId, threadId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ id: agentNamespaceChanges.id })
+        .from(agentNamespaceChanges)
+        .where(
+          and(
+            eq(agentNamespaceChanges.documentId, documentId as DocumentId),
+            eq(agentNamespaceChanges.threadId, threadId as ThreadId),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
+    },
+
     async history(documentId, threadId) {
       const tx = currentDrizzleDb(db);
       const [rows, content] = await Promise.all([

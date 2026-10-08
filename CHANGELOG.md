@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Content-only Undo/Redo skips mixed-history and draft reconstruction when no namespace writes exist.
+
 - Attribute concurrent edits incrementally, including delete-only updates, without cloning each journal row.
 
 - Settle links before model move, Undo/Redo, and reply rollback transactions.

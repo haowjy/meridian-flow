@@ -57,6 +57,8 @@ export interface AgentNamespaceChangeStore {
   recordCreate(change: NamespaceChangeOwner & { wId: number; fromUri: string }): Promise<number>;
   /** Forgets changes whose reply rolled back, so no handle names them. */
   discard(ids: readonly number[]): Promise<void>;
+  /** Indexed existence check, before loading mixed content and namespace history. */
+  hasHistory(documentId: string, threadId: string): Promise<boolean>;
   /** The recorded changes and the live content handles; the facade adds drafted ones. */
   history(documentId: string, threadId: string): Promise<WriteHandleHistory>;
   /** The turn's changes in `status`, every document, by handle. */

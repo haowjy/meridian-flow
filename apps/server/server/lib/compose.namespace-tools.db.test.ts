@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -143,6 +143,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const [row] = await db.select().from(schema.documents).where(eq(schema.documents.id, id));
       return row;
     }
+
+    it("content-only undo skips mixed history entirely", async () => {
+      const { runtime, script } = await start();
+      await script.reply(async (call) => {
+        await call("read", { path: CHAPTER });
+        await call("write", { command: "replace", path: CHAPTER, find: "one", content: "two" });
+      });
+      const history = vi.spyOn(runtime.app.documentSync.namespaceChanges, "history");
+      await script.reply(async (call) => {
+        const undone = await call("write", { command: "undo", path: CHAPTER });
+        expect(undone).toMatch(/^status: reversed;/);
+      });
+      expect(await script.text(CHAPTER)).toContain("Chapter one text.");
+      expect(history).not.toHaveBeenCalled();
+    });
 
     it("moves a chapter: same document and content, and a link to it follows", async () => {
       const { runtime, script } = await start();

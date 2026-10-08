@@ -111,10 +111,10 @@ export async function runReversal(
     start = { live: true, uri: resolved.uri };
   }
 
-  const history = await changes.history(documentId, ctx.threadId);
-  if (!isToolError(resolved) && history.namespace.length === 0) {
+  if (!isToolError(resolved) && !(await changes.hasHistory(documentId, ctx.threadId))) {
     return finishContent(deps, ctx, resolved, await content.run(resolved));
   }
+  const history = await changes.history(documentId, ctx.threadId);
   const walk = planReversalWalk({
     direction,
     selection: commandSelection(input),
