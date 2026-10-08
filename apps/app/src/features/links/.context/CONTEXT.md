@@ -44,8 +44,11 @@ a No Work chat's own, or the lineage a note in a chat's Scratch belongs to
 `uploads://`). The resolver sends it in place of `workId`, which the server
 refuses beside it. A canonical `scratch://@/c12/x` resolves by its own handle in
 any scope, from the local index when the scope's lineage holds it, else the
-server. Chips and the follow dialog name the chat by its title
-(`useLineageTitle`), never by the handle.
+server. The follow dialog names a lineage by its first chat's title
+(`useLineageTitle`, which falls back to `GET .../context/lineages/:rootThreadId`
+when the first chat is trashed) and drops the address tooltip, so the handle
+never shows. A chip's label and hover hint name no owner, as for a Work's
+Scratch.
 
 ## Resolution scope: what an answer is true of
 
@@ -171,7 +174,7 @@ resolution generation, so the resolver simply starts finding it.
 
 ## The document index
 
-`useLinkableDocuments({ projectId, workId })` walks the context catalogs the
+`useLinkableDocuments({ projectId, workId, rootThreadId })` walks the context catalogs the
 app already caches, so it costs no request. It answers three questions from one
 set: what the document holding a link is called (its address, which a relative
 link resolves against and an inserted link is spelled relative to), which
@@ -183,11 +186,15 @@ kb, and Unfiled, whatever the Work), the user catalog, the current Work's
 Uploads by row id (including No Work) and its Scratch, which is the scope's
 lineage's instead when it names one.
 These are the catalogs a contextual address resolves in on the server.
+A lineage scope has two owners in one index: Scratch reads with the lineage and
+Uploads with the Work row (`aggregateCatalogScope`, `uploadsWorkId`). Never
+narrow the index to one exclusive `ContextOwner`: Uploads then has no catalog,
+the index never completes, and the resolver refuses every local answer.
 An unresolved surface has no catalog scope; the follower waits for its Work
 rather than resolving against a guessed authority.
 
-A Work-qualified URI outside the selected Work (`scratch://@other-work/…`) is
-outside the index: it has no local match and always asks the server, which
+A Work-qualified URI outside the selected Work (`scratch://@other-work/…`), or
+another lineage's (`scratch://@/c40/…`), is outside the index: it has no local match and always asks the server, which
 resolves the slug itself.
 
 `revision` is content, not an object identity and not a counter: each

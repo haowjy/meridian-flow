@@ -413,6 +413,9 @@ and any-live-member predicate; policy exposes the same liveness even before a
 source exists. Identity lookup by ID or handle allows trashed first chats,
 while `ls scratch://@/` discovers only available notes and labels each lineage
 with its first chat’s title. Its entries have independent edit decisions.
+`GET .../context/lineages/:rootThreadId` (`lineages.byId`) gives the app the
+same handle and title, trashed first chat included, so writer chrome can name a
+lineage whose first chat has left the live chat list.
 Work purge explicitly removes sources for roots
 in its purge set, including their documents, journal and memberships.
 
