@@ -133,6 +133,11 @@ including live rows not yet pulled into the draft. Never advance the journal
 floor to a global maximum: it is a provisional, commit-bound attribution cursor,
 not proof that every earlier row was visible in the baseline.
 
+The filter removes repeated block projection and replay, not the history scan:
+each pass still decodes every retained candidate row against the snapshot, so
+its cost grows with retained journal bytes (see the cold-start scan in
+[TODO.md](TODO.md)).
+
 ## Composition root
 
 `composition.ts` is wiring-only: adapter and service instantiation,
