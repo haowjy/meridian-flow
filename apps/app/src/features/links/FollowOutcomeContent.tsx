@@ -17,7 +17,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ReactNode } from "react";
-
+import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
@@ -55,17 +55,35 @@ function targetName(outcome: LinkFollowOutcome): string {
  * menu words it, with the full address on hover. A target that names no area
  * is its plain label.
  */
-function TargetLocation({ outcome }: { outcome: LinkFollowOutcome }) {
+function TargetLocation({
+  outcome,
+  projectId,
+}: {
+  outcome: LinkFollowOutcome;
+  projectId: string | null;
+}) {
   const { address, target } = outcome;
   const parsed = address ? parseContextUri(address) : null;
+  const lineageRef =
+    parsed?.ok && parsed.value.authority.kind === "lineage"
+      ? parsed.value.authority.rootThreadRef
+      : null;
+  const chatTitle = useLineageTitle(projectId, lineageRef ? { rootThreadRef: lineageRef } : null);
   if (!address || !parsed?.ok)
     return <p className="break-words text-ink-muted text-xs">{linkTargetLabel(target)}</p>;
   const { scheme, path } = parsed.value;
-  const location = documentLocation(scheme, path.split("/").slice(0, -1).join("/"));
+  const folder = path.split("/").slice(0, -1).join("/");
+  // A chat's Scratch is named by its chat, never by the first chat's handle.
+  const location = lineageRef
+    ? [chatTitle ? t`Scratch for ${chatTitle}` : t`Scratch`, folder].filter(Boolean).join("/")
+    : documentLocation(scheme, folder);
   if (!location) return null;
   const Icon = schemeIcon(scheme);
   return (
-    <p title={address} className="flex items-center gap-1.5 text-ink-muted text-xs">
+    <p
+      title={lineageRef ? undefined : address}
+      className="flex items-center gap-1.5 text-ink-muted text-xs"
+    >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="truncate">{location}</span>
     </p>
@@ -103,7 +121,7 @@ export function FollowOutcomeContent({
         )}
       </DialogDescription>
 
-      <TargetLocation outcome={outcome} />
+      <TargetLocation outcome={outcome} projectId={projectId} />
 
       {failedToCreate ? (
         <p className="text-destructive text-xs" role="alert">

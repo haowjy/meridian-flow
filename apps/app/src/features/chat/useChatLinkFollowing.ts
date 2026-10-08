@@ -62,18 +62,29 @@ function chatLinkScope({
   projectId,
   activeWork,
   thread,
+  rootThreadId,
+  noWorkId,
   worksSettled,
 }: {
   projectId: string;
   /** The thread's Work from the Works snapshot; null when unknown or missing. */
   activeWork: Pick<Work, "id"> | null;
   thread: Pick<Thread, "workId"> | null;
+  /** The chat's lineage while it is on No Work: a bare `scratch://` is the lineage's. */
+  rootThreadId: string | null;
+  noWorkId: string | null;
   /** The Works snapshot has loaded or failed; it will not name more Works by waiting. */
   worksSettled: boolean;
 }): LinkResolutionScope | "pending" {
-  if (activeWork) return { projectId, workId: activeWork.id, baseUri: null };
+  if (activeWork) return { projectId, workId: activeWork.id, rootThreadId, baseUri: null };
   if (!worksSettled || !thread?.workId) return "pending";
-  return { projectId, workId: thread.workId, baseUri: null };
+  // A thread whose Work the snapshot lacks asks with its own binding; No Work is still its lineage.
+  return {
+    projectId,
+    workId: thread.workId,
+    rootThreadId: thread.workId === noWorkId ? rootThreadId : null,
+    baseUri: null,
+  };
 }
 
 export function useChatLinkFollowing({
@@ -92,18 +103,23 @@ export function useChatLinkFollowing({
   references: ReferenceAvailability;
   dialog: ComponentProps<typeof LinkFollowDialog>;
 } {
-  const { status: worksStatus } = useWorks(projectId);
+  const { status: worksStatus, noWork } = useWorks(projectId);
   const threadKnown = activeThread !== null;
   const threadWorkId = activeThread?.workId ?? null;
+  const noWorkId = noWork?.id ?? null;
+  // The first chat's id: a No Work chat's Scratch is its lineage's.
+  const lineageId = activeThread?.rootThreadId ?? null;
   const scope = useMemo(
     () =>
       chatLinkScope({
         projectId,
         activeWork,
         thread: threadKnown ? { workId: threadWorkId } : null,
+        rootThreadId: activeWork?.isNoWork || threadWorkId === noWorkId ? lineageId : null,
+        noWorkId,
         worksSettled: worksStatus !== "loading" && worksStatus !== "disabled",
       }),
-    [activeWork, projectId, threadKnown, threadWorkId, worksStatus],
+    [activeWork, projectId, threadKnown, threadWorkId, noWorkId, lineageId, worksStatus],
   );
   const index = useLinkableDocuments(
     scope === "pending" ? { projectId: null, workId: null } : scope,

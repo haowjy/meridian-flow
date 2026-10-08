@@ -391,14 +391,18 @@ function ActiveSessionEditorView({
   // A draft-created document has no holder record until Apply, so under review
   // its links belong to the draft's Work. Without one the scope would stay
   // pending and a followed link would wait forever.
+  // A note in a chat's Scratch has no Work; it links as No Work and names its lineage.
+  const linkRootThreadId = location?.rootThreadId ?? null;
   const linkWorkId = !location
     ? reviewWorkId
-    : location.scheme === "scratch" || location.scheme === "uploads"
-      ? location.workId
-      : (noWork?.id ?? null);
+    : linkRootThreadId
+      ? (noWork?.id ?? null)
+      : location.scheme === "scratch" || location.scheme === "uploads"
+        ? location.workId
+        : (noWork?.id ?? null);
   const scope = useMemo<EditorScope>(
-    () => ({ projectId: projectId ?? null, workId: linkWorkId }),
-    [projectId, linkWorkId],
+    () => ({ projectId: projectId ?? null, workId: linkWorkId, rootThreadId: linkRootThreadId }),
+    [projectId, linkWorkId, linkRootThreadId],
   );
 
   // Marks render before anyone clicks one. Warming their trail detail here is
@@ -451,6 +455,7 @@ function ActiveSessionEditorView({
     active ? projectId : null,
     active ? scope.workId : null,
     t`Reference a file`,
+    active ? scope.rootThreadId : null,
   );
   // Where a link to a document nobody has written goes, unless a document is
   // already there: the `@` menu's link-ahead row, and a pasted `[[Name]]` that
@@ -584,7 +589,11 @@ function ActiveSessionEditorView({
   }, []);
 
   return (
-    <EditorScopeProvider projectId={scope.projectId} workId={scope.workId}>
+    <EditorScopeProvider
+      projectId={scope.projectId}
+      workId={scope.workId}
+      rootThreadId={scope.rootThreadId}
+    >
       <section
         className={cn(
           "meridian-editor-shell relative flex h-full min-h-0 flex-col bg-background",

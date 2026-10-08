@@ -36,6 +36,8 @@ export type LinkableDocument = {
   /** Its canonical Context URI: its address, and what a relative link in it resolves against. */
   uri: string;
   workId: string | null;
+  /** A chat's Scratch note is held by its lineage instead of a Work. */
+  rootThreadId?: string;
 };
 
 export type LinkableDocumentIndex = {
@@ -54,13 +56,16 @@ export type LinkableDocumentIndex = {
 export function useLinkableDocuments({
   projectId,
   workId,
+  rootThreadId,
 }: {
   projectId: string | null;
   workId: string | null;
+  rootThreadId?: string | null;
 }): LinkableDocumentIndex {
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const scopes = linkableCatalogScopes({ projectId, workId });
+  const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId });
   const catalogWorkId = scopes?.workId ?? null;
+  const catalogRootThreadId = scopes?.rootThreadId ?? null;
   const {
     manuscript: { catalog: manuscript, isComplete: manuscriptComplete },
     kb: { catalog: knowledgeBase, isComplete: knowledgeBaseComplete },
@@ -71,6 +76,7 @@ export function useLinkableDocuments({
   } = useContextCatalogViews(scopes?.projectId ?? "", LINKABLE_SCHEMES, {
     enabled: scopes !== null,
     workId: catalogWorkId,
+    rootThreadId: catalogRootThreadId,
   });
 
   return useMemo(() => {
@@ -79,7 +85,13 @@ export function useLinkableDocuments({
       ...(knowledgeBase ? linkableDocuments(knowledgeBase, null) : []),
       ...(user ? linkableDocuments(user, null) : []),
       ...(unfiled ? linkableDocuments(unfiled, null) : []),
-      ...(scratch ? linkableDocuments(scratch, catalogWorkId) : []),
+      ...(scratch
+        ? linkableDocuments(
+            scratch,
+            catalogRootThreadId ? null : catalogWorkId,
+            catalogRootThreadId,
+          )
+        : []),
       ...(uploads ? linkableDocuments(uploads, catalogWorkId) : []),
     ];
     const next = {
@@ -111,6 +123,7 @@ export function useLinkableDocuments({
     user,
     userComplete,
     catalogWorkId,
+    catalogRootThreadId,
   ]);
 }
 
@@ -124,12 +137,17 @@ function catalogRevision(documents: readonly LinkableDocument[]): string {
   return documents.map((entry) => `${entry.documentId} ${entry.uri}`).join("\n");
 }
 
-function linkableDocuments(catalog: CatalogContextView, workId: string | null): LinkableDocument[] {
+function linkableDocuments(
+  catalog: CatalogContextView,
+  workId: string | null,
+  rootThreadId?: string | null,
+): LinkableDocument[] {
   return catalog.files().map((node) => ({
     documentId: node.documentId,
     title: documentTitle(node.name),
     uri: node.uri,
     workId,
+    ...(rootThreadId ? { rootThreadId } : {}),
   }));
 }
 

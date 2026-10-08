@@ -138,8 +138,13 @@ function LinkFields({
     setHrefInput(node);
   }, []);
   const referenceOwnerId = "link-reference-menu";
-  const { projectId, workId } = useEditorScope();
-  const referenceCatalog = useReferenceBrowserCatalog(projectId, workId, t`Link a file`);
+  const { projectId, workId, rootThreadId } = useEditorScope();
+  const referenceCatalog = useReferenceBrowserCatalog(
+    projectId,
+    workId,
+    t`Link a file`,
+    rootThreadId,
+  );
   const referenceDriver = useMemo(
     () =>
       referenceCatalog

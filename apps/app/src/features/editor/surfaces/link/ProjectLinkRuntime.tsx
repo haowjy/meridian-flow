@@ -75,7 +75,7 @@ export function ProjectLinkRuntime({
   index: LinkableDocumentIndex;
   active: boolean;
 }) {
-  const { projectId, workId } = useEditorScope();
+  const { projectId, workId, rootThreadId } = useEditorScope();
   const resolution = useMemo(() => getLinkResolution(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
@@ -89,9 +89,16 @@ export function ProjectLinkRuntime({
       !active || !projectId
         ? null
         : workId
-          ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
+          ? {
+              projectId,
+              workId,
+              rootThreadId,
+              baseUri,
+              holderDocumentId: documentId,
+              documentRevision,
+            }
           : "pending",
-    [active, baseUri, documentId, documentRevision, projectId, workId],
+    [active, baseUri, documentId, documentRevision, projectId, rootThreadId, workId],
   );
   const reporter = useMemo<FollowReporter>(
     () => ({
