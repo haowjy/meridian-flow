@@ -345,6 +345,7 @@ export function createBranchCoordinator(input: {
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
     updateToPublish?: (result: T) => Uint8Array,
     kind: "mutation" | "pull" = "mutation",
+    upstream?: Y.Doc,
   ): Promise<T> {
     let attempt = 0;
     while (true) {
@@ -352,6 +353,23 @@ export function createBranchCoordinator(input: {
         return await criticalSections.withBranches([branchId], async () => {
           const snapshot = await loadSnapshot(branchId);
           const { doc: cachedDoc } = await materialize(snapshot);
+          // A durable thread peer has already saved its writes into the Work draft.
+          // If the parent no longer contains them, a review retired their effect.
+          // Merging cannot remove those structs or undo their tombstones.
+          if (
+            snapshot.kind === "thread_peer" &&
+            upstream &&
+            !Y.snapshotContainsUpdate(Y.snapshot(upstream), snapshot.state)
+          ) {
+            const doc = cloneDoc(upstream);
+            try {
+              const result = await operation(snapshot, doc);
+              await persistReset(snapshot, upstream, snapshot.schemaVersion);
+              return result;
+            } finally {
+              doc.destroy();
+            }
+          }
           // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
           // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
@@ -485,6 +503,7 @@ export function createBranchCoordinator(input: {
         async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
         (update) => update,
         "pull",
+        upstream,
       );
     },
 

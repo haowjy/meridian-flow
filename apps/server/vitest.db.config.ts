@@ -19,6 +19,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/undo-attribution.db.test.ts",
   "apps/server/server/domains/collab/partial-apply.db.test.ts",
   "apps/server/server/domains/collab/review-disposition.db.test.ts",
+  "apps/server/server/domains/collab/review-reopen.db.test.ts",
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/chat-feed-activity.db.test.ts",
