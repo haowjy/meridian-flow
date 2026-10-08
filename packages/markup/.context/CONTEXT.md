@@ -6,8 +6,11 @@
 
 - Presets: `markdownCodec({ schema, assetPathResolver })` and
   `mdxCodec({ schema, components, assetPathResolver })`.
-- `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (knows no assets:
-  refs stay refs, paths stay literal) and `createAssetPathResolver(entries)`.
+- `unresolvedAssetPathResolver`, the one exported `AssetPathResolver` adapter
+  (knows no assets: refs stay refs, paths stay literal). Project-backed
+  resolvers live with their consumers; the fixed-table
+  `createAssetPathResolver(entries)` is a test helper in
+  `src/codec-test-support.ts`, not a package export.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
   surfaces that spell a link without serializing a document (a chat
   reference, a clipboard fallback). It shares the link mark's destination rule.
