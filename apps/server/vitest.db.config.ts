@@ -139,6 +139,8 @@ export default defineProject({
     dir: root,
     environment: "node",
     pool: "forks",
+    // Worker clones and rollback/FK resets own isolation; DB suites have no module/global mocks.
+    isolate: false,
     include: ["**/*.db.test.ts"],
     exclude: ["**/node_modules/**", "**/.{git,nx}/**"],
     setupFiles: [fileURLToPath(new URL("../../tools/ci/db-test-worker-setup.ts", import.meta.url))],

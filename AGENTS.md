@@ -116,7 +116,9 @@ Driving or inspecting the running app (threads, docs, mock model, logs): use
 below 2,000 total cases and target at most 60 seconds for that full run. New
 tests must protect a named risk; prune weaker duplicate coverage rather than
 adding another layer. Skips, exclusions, and bundling unrelated cases do not
-satisfy the budget.
+satisfy the budget. Contracts, markup, and DB suites reuse worker module caches:
+no module/global mocks there. Keep test data and connections instance-owned;
+DB rollback/FK resets, not fresh module loading, isolate persisted state.
 
 ## Git workflow
 
