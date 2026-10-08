@@ -6,6 +6,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { Database } from "@meridian/database";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -101,10 +102,13 @@ const { createMarkdownDocumentEngine } = await import("../domain/markdown-docume
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
   await import("../domain/provenance.js");
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error("DATABASE_URL is required for DB tests");
-assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
-export const db = createDb(DATABASE_URL, { max: 4 });
+/** Each suite owns its connection; importing this module allocates no database resources. */
+export function createTestDatabase(): Database {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL is required for DB tests");
+  assertThrowawayDatabaseForRunDbTests(databaseUrl);
+  return createDb(databaseUrl, { max: 4 });
+}
 const documentSchema = buildDocumentSchema();
 const markupCodec = mdxCodec({
   schema: documentSchema,
@@ -134,14 +138,15 @@ export const DEFAULT_SCENARIO_IDS = {
 };
 export type ChangeTrailScenarioIds = typeof DEFAULT_SCENARIO_IDS;
 
-export async function resetDatabase(): Promise<void> {
+export async function resetDatabase(db: Database): Promise<void> {
   // Clear the graph in this runner-owned disposable database using FK-ordered deletes.
   await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
-  await seedDatabase();
+  await seedDatabase(db);
 }
 
 /** Independent rows let warm and cold runs coexist without wiping durable evidence. */
 export async function seedDatabase(
+  db: Database,
   ids: ChangeTrailScenarioIds = DEFAULT_SCENARIO_IDS,
 ): Promise<void> {
   const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = ids;
@@ -214,7 +219,7 @@ export async function seedDatabase(
     isPrimary: true,
   });
 }
-export async function closeDatabase(): Promise<void> {
+export async function closeDatabase(db: Database): Promise<void> {
   await db.$client.end();
 }
 
@@ -250,7 +255,7 @@ export type MatrixDraftStep = {
   transientInsertDelete?: string;
 };
 
-export function createHarness(options: ChangeTrailHarnessOptions = {}) {
+export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
   const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const DRAFT_DESTINATION = {
     kind: "draft",

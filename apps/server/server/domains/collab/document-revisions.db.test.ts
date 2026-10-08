@@ -2,6 +2,7 @@
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
 import type { WorkId } from "@meridian/contracts/runtime";
+import type { Database } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -27,7 +28,7 @@ import {
   ALPHA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   PROJECT_ID,
   resetDatabase,
   schema,
@@ -37,15 +38,12 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
-beforeEach(resetDatabase);
-const harnesses: Array<ReturnType<typeof createHarness>> = [];
-afterEach(() => {
-  for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
-});
-afterAll(closeDatabase);
-
-async function fixture(mode: "direct" | "draft") {
-  const harness = createHarness();
+async function fixture(
+  db: Database,
+  harnesses: Array<ReturnType<typeof createHarness>>,
+  mode: "direct" | "draft",
+) {
+  const harness = createHarness(db);
   harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
   await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
@@ -141,9 +139,17 @@ async function fixture(mode: "direct" | "draft") {
 }
 
 describe("document revisions (postgres and collab)", () => {
+  const db = createTestDatabase();
+  const harnesses: Array<ReturnType<typeof createHarness>> = [];
+  beforeEach(() => resetDatabase(db));
+  afterEach(() => {
+    for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
+  });
+  afterAll(() => closeDatabase(db));
+
   for (const mode of ["direct", "draft"] as const) {
     it(`response-end write and staged read equal current in ${mode}; the earlier read does not`, async () => {
-      const f = await fixture(mode);
+      const f = await fixture(db, harnesses, mode);
       const before = await f.read();
       await f.stage("00000000-0000-4000-8000-000000000892");
       const stagedRead = await f.read("00000000-0000-4000-8000-000000000892");
@@ -156,14 +162,14 @@ describe("document revisions (postgres and collab)", () => {
   }
 
   it("a pure writer deletion in the Hocuspocus room invalidates a live read", async () => {
-    const f = await fixture("direct");
+    const f = await fixture(db, harnesses, "direct");
     const before = await f.read();
     await f.writerDelete();
     expect(await f.current()).not.toBe(before.revision);
   });
 
   it("captures the apply token before a writer edit and receipt rewrite", async () => {
-    const f = await fixture("direct");
+    const f = await fixture(db, harnesses, "direct");
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000893");
     let injected = false;
@@ -182,7 +188,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("resolves a new Work source after rebind when its text differs", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000894");
     await f.core.commitResponse("00000000-0000-4000-8000-000000000894");
@@ -202,7 +208,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("does not treat a deleted document's still-loaded room as a readable source", async () => {
-    const f = await fixture("direct");
+    const f = await fixture(db, harnesses, "direct");
     expect((await f.read()).revision).toMatch(/^y1:/);
     await db
       .update(schema.documents)
@@ -213,7 +219,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("PROBE3: current under the thread lock completes with a contending debounced pull", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();
     const originalPull = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
@@ -254,7 +260,7 @@ describe("document revisions (postgres and collab)", () => {
   }, 10000);
 
   it("current under the thread lock handles a cold manifest", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     const manifest = await f.branchStore.ensureProjectManifest({ projectId: PROJECT_ID });
     manifest.doc.destroy();
     await db
@@ -267,7 +273,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
       await f.branchStore.ensureWorkDraftBranch({ documentId: ALPHA_ID, workId: WORK_ID, liveDoc });
     });
@@ -300,7 +306,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("concurrent live pulls for more documents than pooled connections all finish", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     // The harness pool holds 4 connections. A pull that takes its live snapshot
     // while holding its root transaction needs a second one, so 8 at once
     // would hold every connection and wait forever.
@@ -314,7 +320,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("publishes a root-committed pull even when its caller response aborts", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();
     const broadcasts: string[] = [];
@@ -347,7 +353,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("a live manifest re-read observes its caller's uncommitted membership edit", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await runInDrizzleTransaction(db, async () => {
       await f.branchStore.recordManifestDocumentDeleted(ALPHA_ID);
       const membership = await bounded(() =>
@@ -358,7 +364,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("returns null when a document is removed from the Work manifest", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     const before = await f.read();
     await f.effective.recordManifestDocumentDeleted(ALPHA_ID, {
       projectId: PROJECT_ID,
