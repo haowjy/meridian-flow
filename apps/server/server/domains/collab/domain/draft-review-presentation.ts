@@ -70,12 +70,11 @@ function excerpt(text: string): string {
 
 export function hunkSpans(
   ranges: readonly PresentationClockRange[],
-  writerOperationIdRemap: ReadonlyMap<string, string>,
 ): DraftReviewHunkSpanInternal[] {
   return ranges.map((range) => ({
     anchorFrom: encodeClockRelativePosition(range.client, range.clock, "start"),
     anchorTo: encodeClockRelativePosition(range.client, range.clock + range.length - 1, "end"),
-    operationId: writerOperationIdRemap.get(range.operationId) ?? range.operationId,
+    operationId: range.operationId,
   }));
 }
 
