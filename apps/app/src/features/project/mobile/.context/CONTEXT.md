@@ -100,7 +100,9 @@ change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
 left" with Next draft are therefore the desktop's behaviour, not a copy of it.
 
 - **Header** (`MobileReviewHeader`): the draft switcher, the stepper and the
-  change count, in a 48px row under the top bar. Apply draft, Discard draft, Show
+  list button (with the change count when there are changes), in a 48px row under
+  the top bar. The list button stays whatever the count: the sheet is the Work's
+  file list and Apply all, and the open file is always in it. Apply draft, Discard draft, Show
   live version (Close review for a new document), the marks switch and Apply all /
   Discard all live in the switcher's menu, so the row stays short. A refused
   whole-draft command, "No changes left" and "Formatting changes remain" take a
@@ -112,9 +114,11 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
   `env(safe-area-inset-bottom)` or the on-screen keyboard
   (`--mobile-keyboard-height`, from `MobileKeyboardAware`, which the review column
   uses). The desktop's margin bar steps aside on the phone shell.
-- **Sheet** (`MobileChangeSheet`): the count opens the change list as a bottom
-  sheet over the dimmed manuscript, with the desktop dock's rows in their `touch`
-  form. A row tap closes the sheet and focuses the change; Apply and Discard act
+- **Sheet** (`MobileChangeSheet`): the list button opens the Work's files as a
+  bottom sheet over the dimmed manuscript, with the desktop dock's open-file body
+  (`dock/OpenFileChanges`: changes, Applying, No changes left with Next draft,
+  formatting-only) in its `touch` form. It opens and stays open at zero changes.
+  A row tap closes the sheet and focuses the change; Apply and Discard act
   and leave it open. The toast rides the sheet's top edge, since the scrim covers
   the manuscript's own.
 - Every control is a 44px target (`touch` on `ReviewChangeRow`, `ReviewChangeBar`,
