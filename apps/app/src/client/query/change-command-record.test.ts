@@ -181,12 +181,16 @@ describe("change command record", () => {
     it("shows the latest failure, however many times it was regrouped since", () => {
       failChangeCommand(draft, a, "apply", "stale");
       beginChangeCommand(draft, b, "discard");
-      failChangeCommand(draft, b, "discard", "refused", "The server's reason");
+      failChangeCommand(draft, b, "discard", "refused", {
+        serverCode: "work_archived",
+        serverReason: "The server's reason",
+      });
       releaseDraftCommand(draft);
       expect(changeCommandState(currentChangeCommandRecords(), draft, c)).toMatchObject({
         mode: "discard",
         code: "refused",
-        reason: "The server's reason",
+        serverCode: "work_archived",
+        serverReason: "The server's reason",
       });
     });
 

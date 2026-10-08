@@ -1,18 +1,45 @@
 /** Writer-facing copy for a review message; the controller emits codes, never localized text. */
+import type { MessageDescriptor } from "@lingui/core";
+import { msg } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { DraftCommandFailure } from "@/client/query/draft-command-record";
+import type { DraftCommandFailure, ServerRefusal } from "@/client/query/draft-command-record";
+
+/** The refusals the writer can act on, worded here (not by the server) from the server's code. */
+function knownRefusal(serverCode: string): MessageDescriptor | undefined {
+  switch (serverCode) {
+    case "work_archived":
+      return msg`This Work is archived. Unarchive it to apply or discard its drafts.`;
+    case "work_not_found":
+      return msg`This Work no longer exists.`;
+    case "draft_not_found":
+    case "not_found":
+      return msg`This draft is no longer here. It may have been applied or discarded elsewhere.`;
+    default:
+      return undefined;
+  }
+}
 
 /**
- * The reason a server gave for a refusal, as a sentence after the lead line.
- * It is the server's own text (not in our catalogs); it never decides the
- * wording around it, which comes from the failure's code.
+ * Why the server refused, as a sentence after the lead line. A code we know is
+ * worded here, in the language shown now; any other code keeps the server's own
+ * text (not in our catalogs). It never decides the wording around it, which
+ * comes from the failure's code. The one renderer for a whole-draft and a
+ * per-change refusal.
  */
-export function RefusalReason({ reason }: { reason: string | undefined }) {
+export function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
+  const { i18n } = useLingui();
+  const known = serverCode ? knownRefusal(serverCode) : undefined;
+  const reason = known ? i18n._(known) : serverReason;
   if (!reason) return null;
   return <> {/[.!?]$/.test(reason) ? reason : `${reason}.`}</>;
 }
 
-export function ReviewMessageText({ failure: { code, reason } }: { failure: DraftCommandFailure }) {
+export function ReviewMessageText({
+  failure: { code, serverCode, serverReason },
+}: {
+  failure: DraftCommandFailure;
+}) {
   switch (code) {
     case "apply-offline":
       return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
@@ -20,7 +47,7 @@ export function ReviewMessageText({ failure: { code, reason } }: { failure: Draf
       return (
         <>
           <Trans>Couldn't apply this draft.</Trans>
-          <RefusalReason reason={reason} />
+          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );
     case "apply-server-error":
@@ -37,7 +64,7 @@ export function ReviewMessageText({ failure: { code, reason } }: { failure: Draf
       return (
         <>
           <Trans>Couldn't discard this draft.</Trans>
-          <RefusalReason reason={reason} />
+          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );
     case "discard-server-error":

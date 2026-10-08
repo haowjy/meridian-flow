@@ -37,6 +37,7 @@ import {
   onDraftCommandRecordsReset,
   pendingChangeCommand,
   releaseDraftCommand,
+  type ServerRefusal,
   useDraftCommandRecords,
 } from "./draft-command-record";
 
@@ -48,7 +49,7 @@ type DraftRef = { projectId: string; workId: string; documentId: string; draftId
 export type ChangeFailureCode =
   /** The request never got an answer: the browser is offline or the connection dropped. */
   | "offline"
-  /** The server refused with a typed reason (`reason` on the record, as the server wrote it). */
+  /** The server refused with a typed reason (`serverCode` and `serverReason` on the record, as the server sent them). */
   | "refused"
   /** The server answered with an error that gave no reason. */
   | "server-error"
@@ -63,19 +64,22 @@ export type ChangeFailureCode =
 
 type ChangeCommandRecord = ChangeRef &
   (
-    | {
+    | ({
         phase: "failed";
         mode: ChangeCommandMode;
         code: ChangeFailureCode;
-        reason?: string;
         at: number;
-      }
+      } & Partial<ServerRefusal>)
     | { phase: "confirmed"; mode: ChangeCommandMode; at: number }
   );
 
 export type ChangeCommandState =
   | { phase: "pending"; mode: ChangeCommandMode }
-  | { phase: "failed"; mode: ChangeCommandMode; code: ChangeFailureCode; reason?: string };
+  | ({
+      phase: "failed";
+      mode: ChangeCommandMode;
+      code: ChangeFailureCode;
+    } & Partial<ServerRefusal>);
 
 type ChangeRecords = Readonly<Record<string, ChangeCommandRecord>>;
 
@@ -138,7 +142,7 @@ export function failChangeCommand(
   change: ChangeRef,
   mode: ChangeCommandMode,
   code: ChangeFailureCode,
-  reason?: string,
+  refusal?: ServerRefusal,
 ): void {
   setRecord(
     draft,
@@ -147,7 +151,8 @@ export function failChangeCommand(
       phase: "failed",
       mode,
       code,
-      ...(reason ? { reason } : {}),
+      ...(refusal ? { serverCode: refusal.serverCode } : {}),
+      ...(refusal?.serverReason ? { serverReason: refusal.serverReason } : {}),
       at,
       classId: change.classId,
       operationIds: change.operationIds,
@@ -362,7 +367,8 @@ export function changeCommandState(
     phase: "failed",
     mode: latest.mode,
     code: latest.code,
-    ...(latest.reason ? { reason: latest.reason } : {}),
+    ...(latest.serverCode ? { serverCode: latest.serverCode } : {}),
+    ...(latest.serverReason ? { serverReason: latest.serverReason } : {}),
   };
 }
 

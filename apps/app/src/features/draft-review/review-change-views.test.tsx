@@ -475,7 +475,8 @@ describe("ReviewChangeBar", () => {
             phase: "failed",
             mode: "apply",
             code: "refused",
-            reason: "This Work is archived and read-only.",
+            serverCode: "quota_exceeded",
+            serverReason: "This Work is archived and read-only.",
           },
         })}
       />,

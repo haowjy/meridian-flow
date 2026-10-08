@@ -12,19 +12,12 @@ const envelope = (message: string, code = "work_archived") => ({
 });
 
 describe("classifyDraftCommandRejection", () => {
-  it("words a refusal the writer can act on itself, from its code, not the server's text", () => {
+  it("keeps a refusal's code and the server's text as sent; the words are chosen when shown", () => {
     const error = new MeridianApiError(envelope("This Work is archived and read-only."), 403);
     expect(classifyDraftCommandRejection(error)).toEqual({
       kind: "refused",
-      reason: "This Work is archived. Unarchive it to apply or discard its drafts.",
-    });
-  });
-
-  it("falls back to the server's reason for a code it does not know", () => {
-    const error = new MeridianApiError(envelope("Quota exceeded.", "quota_exceeded"), 403);
-    expect(classifyDraftCommandRejection(error)).toEqual({
-      kind: "refused",
-      reason: "Quota exceeded.",
+      serverCode: "work_archived",
+      serverReason: "This Work is archived and read-only.",
     });
   });
 
@@ -33,7 +26,8 @@ describe("classifyDraftCommandRejection", () => {
       classifyDraftCommandRejection(new MeridianApiError(envelope("  ", "quota_exceeded"), 403)),
     ).toEqual({
       kind: "refused",
-      reason: undefined,
+      serverCode: "quota_exceeded",
+      serverReason: undefined,
     });
   });
 

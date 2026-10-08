@@ -8,6 +8,7 @@ import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
 
 import type { ChangeCommandMode, ChangeFailureCode } from "@/client/query/change-command-record";
+import type { ServerRefusal } from "@/client/query/draft-command-record";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
 import { RefusalReason } from "@/features/chat/ReviewMessageText";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -102,9 +103,9 @@ export function ChangeAuthor({
 
 /** Why a command on a change did not land, in the writer's words. */
 export function ChangeFailureText({
-  failure: { code, mode, reason },
+  failure: { code, mode, serverCode, serverReason },
 }: {
-  failure: { code: ChangeFailureCode; mode: ChangeCommandMode; reason?: string };
+  failure: { code: ChangeFailureCode; mode: ChangeCommandMode } & Partial<ServerRefusal>;
 }) {
   switch (code) {
     case "stale":
@@ -145,7 +146,7 @@ export function ChangeFailureText({
           ) : (
             <Trans>Couldn't discard this change.</Trans>
           )}
-          <RefusalReason reason={reason} />
+          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );
     case "server-error":
