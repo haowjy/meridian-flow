@@ -12,7 +12,6 @@ import {
   createWorkDraftFixture,
   DOC_ID,
   DRAFT_DESTINATION,
-  PROJECT_ID,
   SOURCE_ID,
   THREAD_ID,
   TURN_2_ID,
@@ -40,40 +39,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     } = await import("@meridian/database/schema");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
+      createWorkDraftFixture(db);
     afterEach(dispose);
-
-    /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
-    async function applyDraft(
-      collab: ReturnType<typeof createTestCollab>,
-      documentId: string,
-    ): Promise<void> {
-      const [draft] = await db
-        .select({ id: documentBranches.id })
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.documentId, documentId as never),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        );
-      if (!draft) throw new Error(`missing Work draft for ${documentId}`);
-      await collab.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID as never });
-    }
-
-    async function currentDraftId(
-      collab: ReturnType<typeof createTestCollab>,
-      documentId: string,
-    ): Promise<string> {
-      const drafts = await collab.draftReview.list({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-      });
-      const draft = drafts.find((candidate) => candidate.documentId === documentId);
-      if (!draft) throw new Error(`missing reviewable draft for ${documentId}`);
-      return draft.draftId;
-    }
 
     beforeEach(reset);
 
