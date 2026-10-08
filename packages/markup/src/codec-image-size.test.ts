@@ -9,9 +9,15 @@
 
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
-
-import { createAssetPathResolver } from "./asset-path-resolver.js";
-import { components, docFrom, paragraph, parsedDoc, schema, t } from "./codec-test-support.js";
+import {
+  components,
+  createAssetPathResolver,
+  docFrom,
+  paragraph,
+  parsedDoc,
+  schema,
+  t,
+} from "./codec-test-support.js";
 import { markdownCodec, mdxCodec } from "./index.js";
 
 const assetPathResolver = createAssetPathResolver([

@@ -21,8 +21,8 @@ outside it.
 - Runtime source is the preprocessed source so AST positions and fallback slicing
   agree.
 - Every codec requires an `AssetPathResolver`. A consumer with no project asset
-  namespace passes `unresolvedAssetPathResolver` and gets a throw; never supply
-  a permissive stand-in. `assetForPath` must decline anything it cannot resolve
+  namespace passes `unresolvedAssetPathResolver`, which keeps `asset:` refs as
+  refs; never supply a permissive stand-in. `assetForPath` must decline anything it cannot resolve
   to exactly one asset, because a wrong guess writes a reference into the
   document that can never render.
 

@@ -18,6 +18,7 @@ import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
+import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
@@ -38,6 +39,8 @@ export function createBranchPushTransition(input: {
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
+  /** Sweep detection and change events compare the document with itself in one scope. */
+  assetPaths: DocumentAssetPaths;
   changeEventDelivery: ChangeEventDelivery;
   writerIngressBarrier?: WriterIngressBarrier;
   sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
@@ -179,11 +182,15 @@ export function createBranchPushTransition(input: {
     }
   }
 
-  async function settle(inputSettlement: {
-    pending: PendingLiveSettlement;
-    liveDoc: Y.Doc;
-    signal?: AbortSignal;
-  }): Promise<void> {
+  type Settlement = { pending: PendingLiveSettlement; liveDoc: Y.Doc; signal?: AbortSignal };
+
+  function settle(settlement: Settlement): Promise<void> {
+    return input.assetPaths.within({ documentId: settlement.pending.push.documentId }, () =>
+      settleDocument(settlement),
+    );
+  }
+
+  async function settleDocument(inputSettlement: Settlement): Promise<void> {
     let pending = inputSettlement.pending;
     let committedProjections: readonly CommittedChangeTrailProjection[] = [];
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {

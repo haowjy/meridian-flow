@@ -1,12 +1,25 @@
+import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
-import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+
+import {
+  CREATED_DOC_ID,
+  createWorkDraftFixture,
+  DOC_ID,
+  DRAFT_DESTINATION,
+  PROJECT_ID,
+  SOURCE_ID,
+  THREAD_ID,
+  TURN_2_ID,
+  TURN_ID,
+  USER_ID,
+  WORK_ID,
+} from "./test-support/work-draft-fixture.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -18,58 +31,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const {
       branchWriteJournal,
-      contextSources,
       documentBranches,
       documentYjsReversals,
       documentYjsUpdates,
       documents,
       modelResponses,
-      projects,
-      threadWorks,
-      threads,
-      turns,
-      users,
       works,
     } = await import("@meridian/database/schema");
-    const { conformanceUserValues } = await import(
-      "@meridian/database/__test-support__/db-fixtures"
-    );
-    const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
-    const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
-      "../../test-support/drizzle-reset.js"
-    );
-
-    const USER_ID = "00000000-0000-4000-8000-000000000701";
-    const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
-    const SOURCE_ID = "00000000-0000-4000-8000-000000000703";
-    const WORK_ID = "00000000-0000-4000-8000-000000000704";
-    const DOC_ID = "00000000-0000-4000-8000-000000000705";
-    const THREAD_ID = "00000000-0000-4000-8000-000000000706";
-    const TURN_ID = "00000000-0000-4000-8000-000000000707";
-    const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
-    const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
-    const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
-
-    const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "work" } as const;
     const db = createDb(DATABASE_URL, { max: 4 });
-    const hocuspocus = fakeHocuspocus();
-    const collabs: Array<{ dispose(): void }> = [];
-    const createTestCollab = () => {
-      const collab = createCollabDomain({
-        fileAccess: createAllowAllFileAccess(),
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-      });
-      collabs.push(collab);
-      return collab;
-    };
-
-    afterEach(() => {
-      for (const collab of collabs.splice(0)) collab.dispose();
-    });
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
+    afterEach(dispose);
 
     /** The writer applies the document's Work draft (a draft write never pushes itself, D59). */
     async function applyDraft(
@@ -103,77 +75,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return draft.draftId;
     }
 
-    beforeEach(async () => {
-      hocuspocus.documents.clear();
-      await deleteDrizzleRows(db, DOCUMENT_RUNTIME_RESET_TABLES);
-      await db.insert(users).values(conformanceUserValues(USER_ID, "collab-reverse"));
-      await db
-        .insert(projects)
-        .values({ id: PROJECT_ID, userId: USER_ID, name: "Project", slug: "project" });
-      await db.insert(works).values({
-        id: WORK_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        name: "Work",
-        slug: "work",
-        aiWriteMode: "draft",
-      });
-      await db.insert(contextSources).values({
-        id: SOURCE_ID,
-        projectId: PROJECT_ID,
-        name: "Manuscript",
-        slug: "manuscript",
-        scope: "project",
-        isPrimary: true,
-      });
-      await db.insert(documents).values({
-        id: DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter",
-        extension: "md",
-        fileType: "markdown",
-      });
-      await db.insert(threads).values({
-        rootThreadId: THREAD_ID,
-        id: THREAD_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        title: "Thread",
-        kind: "primary",
-        status: "idle",
-      });
-      await db.insert(turns).values([
-        {
-          id: TURN_ID as never,
-          threadId: THREAD_ID as never,
-          position: 1,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
-        {
-          id: TURN_2_ID as never,
-          threadId: THREAD_ID as never,
-          position: 2,
-          parentTurnId: TURN_ID as never,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
-        {
-          id: TURN_3_ID as never,
-          threadId: THREAD_ID as never,
-          position: 3,
-          parentTurnId: TURN_2_ID as never,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        },
-      ]);
-      await db
-        .insert(threadWorks)
-        .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
-    });
+    beforeEach(reset);
 
     afterAll(async () => {
       await db.$client.end();
@@ -200,6 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheReason: "facts_unavailable",
       });
       const context = new ContextFS({
+        assetPaths: createDrizzleDocumentAssetPaths(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),
@@ -924,19 +827,4 @@ async function readMarkdown(
 ): Promise<string> {
   const read = await collab.readAsMarkdown(documentId);
   return read.ok ? read.value : "";
-}
-
-function fakeHocuspocus() {
-  const documents = new Map<string, Y.Doc>();
-  return {
-    documents,
-    async openDirectConnection(documentName: string) {
-      let document = documents.get(documentName);
-      if (!document) {
-        document = new Y.Doc({ gc: false });
-        documents.set(documentName, document);
-      }
-      return { document, disconnect: async () => undefined };
-    },
-  };
 }

@@ -117,11 +117,20 @@ router resolves to exact project-scoped Work authority before dispatch.
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
   one chapter cannot disturb another that references the same asset.
-- **Asset-path resolver adapter** (`adapters/asset-path-resolver.ts`) — preloads
-  persisted `manuscript://assets/` identities for codec composition and is
-  updated immediately when figure upload creates a binary asset. A path shared
-  by more than one asset resolves to nothing: the id direction is unique, the
-  path direction is not.
+- **Image path adapter** (`adapters/asset-path-resolver.ts`) — implements
+  collab's `DocumentAssetPaths` port. Each scope resolves its project (by
+  project, document or thread) and loads every image in the project's
+  manuscript, wherever it sits and including deleted ones, in one recursive
+  query kept to the project's rows by the `folders_context_root`,
+  `folders_parent` and `documents_context_images` indexes. Nothing is cached
+  between operations, and figure upload does not notify it. ContextFS search
+  binds its source document IDs to one scope, resolving their common project
+  once and reusing its image snapshot across all chapters. The factory must
+  receive the same asset-path port instance as collab. Paths are
+  manuscript-relative; parsing accepts the bare form and `manuscript://`. A
+  path held by a live image resolves to it; otherwise only a sole deleted image
+  at that path claims it. Scope rules live in collab's
+  [document authority notes](../../collab/.context/document-authority-and-schema.md).
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
   resolution boundary for standard Markdown hrefs, all six canonical Context
   schemes, and relative paths. The domain reads the existing Context catalog

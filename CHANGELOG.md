@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes, downloads and link updates keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one image-path snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading image paths no longer holds up branch edits during reads or Apply.
+
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
 - A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.
