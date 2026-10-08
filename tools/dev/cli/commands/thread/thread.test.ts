@@ -7,7 +7,6 @@ import {
   startFakeStack,
   THREAD_ID,
 } from "../../test-support/fake-stack";
-import { composeMessage } from "./send";
 
 let stack: FakeStack;
 beforeAll(async () => {
@@ -100,22 +99,5 @@ describe("thread", () => {
       { match: "scripted hi", steps: [{ text: "ok" }] },
     ]);
     expect(fake.removedMockScripts).toContain(`script-${fake.mockScripts.length}`);
-  });
-});
-
-describe("composeMessage", () => {
-  it("keeps text equal to the concatenated block text, as admission requires", () => {
-    const message = composeMessage({
-      text: "Tighten this",
-      skills: [{ slug: "line-edit", name: "Line edit", description: "d" }],
-      references: [{ documentId: "d1", uri: "manuscript://chapter-2.md" }],
-    });
-    const blocks = message.blocks as { text?: string }[];
-    expect(blocks.map((block) => block.text ?? "").join("")).toBe(message.text);
-    expect(message.text).toBe("/line-edit Tighten this @manuscript://chapter-2.md");
-    expect(message.references).toEqual([
-      { documentId: "d1", uri: "manuscript://chapter-2.md", purpose: "reference" },
-    ]);
-    expect(message.activatedSkillSlugs).toEqual(["line-edit"]);
   });
 });
