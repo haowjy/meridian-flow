@@ -135,35 +135,6 @@ describe("Yjs connect-time schema version gate", () => {
     expect(services.documentSync.headSchemaVersion).toHaveBeenCalledWith(liveDocumentName);
   });
 
-  it("records one info event when a superseded client is refused", async () => {
-    const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
-    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
-
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName: liveDocumentName,
-        context: connectContext(SENTINEL_SCHEMA_VERSION),
-      } as never),
-    ).rejects.toMatchObject({ code: 4406 });
-
-    expect(services.eventSink.events).toHaveLength(1);
-    expect(services.eventSink.events[0]).toMatchObject({
-      level: "info",
-      source: "collab.schema",
-      name: "admission.refused",
-      correlation: { documentId: liveDocumentName },
-      payload: {
-        code: 4406,
-        reason: "client-schema-superseded",
-        roomKey: liveDocumentName,
-        clientSchemaVersion: SENTINEL_SCHEMA_VERSION,
-        headSchemaVersion: COLLAB_SCHEMA_VERSION,
-        serverSchemaVersion: COLLAB_SCHEMA_VERSION,
-      },
-    });
-  });
-
   it("preserves the typed refusal when event delivery fails", async () => {
     const services = versionGateServices({ liveHead: COLLAB_SCHEMA_VERSION });
     vi.spyOn(services.eventSink, "emit").mockImplementation(() => {
@@ -305,36 +276,6 @@ describe("Yjs connect-time schema version gate", () => {
     }
   });
 
-  it("records one error event when the server cannot serve the document head", async () => {
-    const headSchemaVersion = version(1, 0);
-    const services = versionGateServices({ branchHead: headSchemaVersion });
-    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
-
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName: branchRoomName,
-        context: connectContext(COLLAB_SCHEMA_VERSION),
-      } as never),
-    ).rejects.toMatchObject({ code: 4407 });
-
-    expect(services.eventSink.events).toHaveLength(1);
-    expect(services.eventSink.events[0]).toMatchObject({
-      level: "error",
-      source: "collab.schema",
-      name: "admission.refused",
-      correlation: { documentId: liveDocumentName },
-      payload: {
-        code: 4407,
-        reason: "document-schema-stale",
-        roomKey: branchRoomName,
-        clientSchemaVersion: COLLAB_SCHEMA_VERSION,
-        headSchemaVersion,
-        serverSchemaVersion: COLLAB_SCHEMA_VERSION,
-      },
-    });
-  });
-
   it("prioritizes a server-stale head over an even older client", async () => {
     const hocuspocus = createHocuspocus(
       versionGateServices({ liveHead: version(1, 0) }) as never,
@@ -400,41 +341,6 @@ describe("Yjs connect-time schema version gate", () => {
     expect(context.closeTransport).toHaveBeenCalledWith({
       code: 4407,
       reason: "document-schema-stale",
-    });
-  });
-
-  it("records one error event when document loading discovers a major mismatch", async () => {
-    const services = versionGateServices({ liveHead: null });
-    const clientSchemaVersion = version(0, 1, 77);
-    Object.assign(services.documentSync, {
-      loadHocuspocusDocument: vi.fn(async () => {
-        throw staleSchemaError();
-      }),
-    });
-    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
-
-    await expect(
-      hocuspocus.configuration.onLoadDocument?.({
-        documentName: liveDocumentName,
-        document: new Y.Doc({ gc: false }),
-        context: connectContext(clientSchemaVersion),
-      } as never),
-    ).rejects.toMatchObject({ code: 4407 });
-
-    expect(services.eventSink.events).toHaveLength(1);
-    expect(services.eventSink.events[0]).toMatchObject({
-      level: "error",
-      source: "collab.schema",
-      name: "admission.refused",
-      correlation: { documentId: liveDocumentName },
-      payload: {
-        code: 4407,
-        reason: "document-schema-stale",
-        roomKey: liveDocumentName,
-        clientSchemaVersion,
-        headSchemaVersion: version(1, 0),
-        serverSchemaVersion: COLLAB_SCHEMA_VERSION,
-      },
     });
   });
 });

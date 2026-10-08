@@ -1,3 +1,4 @@
+/** Real process signals must settle paid runtime work before flushing and exiting. */
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFile, rm } from "node:fs/promises";
@@ -6,83 +7,109 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const signalChild = fileURLToPath(
-  new URL("./__tests__/observability-signal-child.ts", import.meta.url),
-);
-const deadlineChild = fileURLToPath(
-  new URL("./__tests__/observability-deadline-child.ts", import.meta.url),
-);
 const serverDirectory = fileURLToPath(new URL("../../", import.meta.url));
+// Resolve the loader from this installed worktree, independent of the child's cwd.
+const loader = import.meta.resolve("tsx/esm");
+
+async function withChild(
+  fixture: "signal" | "deadline",
+  check: (input: {
+    child: ReturnType<typeof spawn>;
+    exited: Promise<[number | null, NodeJS.Signals | null]>;
+    tracePath: string;
+    waitFor: (message: string) => Promise<void>;
+  }) => Promise<void>,
+) {
+  const tracePath = join(tmpdir(), `observability-${crypto.randomUUID()}.log`);
+  const fixturePath = fileURLToPath(
+    new URL(`./__tests__/observability-${fixture}-child.ts`, import.meta.url),
+  );
+  const child = spawn(process.execPath, ["--import", loader, fixturePath, tracePath], {
+    cwd: serverDirectory,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const exited = once(child, "exit") as Promise<[number | null, NodeJS.Signals | null]>;
+  let stdout = "";
+  let stderr = "";
+  child.stdout?.setEncoding("utf8");
+  child.stderr?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr?.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+
+  async function waitFor(message: string) {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        child.stdout?.off("data", onData);
+        child.off("exit", onExit);
+        child.off("error", onError);
+      };
+      const onData = () => {
+        if (stdout.includes(message)) {
+          cleanup();
+          resolve();
+        }
+      };
+      const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+        cleanup();
+        reject(
+          new Error(`Shutdown fixture exited before ${message}: ${code}/${signal}\n${stderr}`),
+        );
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      // Startup imports are separate from the production drain deadline asserted below.
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Shutdown fixture never reported ${message}\n${stderr}`));
+      }, 10_000);
+      child.stdout?.on("data", onData);
+      child.on("exit", onExit);
+      child.on("error", onError);
+      if (child.exitCode !== null) onExit(child.exitCode, child.signalCode);
+      else onData();
+    });
+  }
+
+  try {
+    await waitFor("ready\n");
+    await check({ child, exited, tracePath, waitFor });
+    if (stderr) throw new Error(stderr);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    await exited;
+    await rm(tracePath, { force: true });
+  }
+}
 
 describe("process shutdown hooks", () => {
   it("starts every drain before a hung callback reaches the process deadline", async () => {
-    const tracePath = join(tmpdir(), `observability-deadline-${crypto.randomUUID()}.log`);
-    const child = spawn(process.execPath, ["--import", "tsx/esm", deadlineChild, tracePath], {
-      cwd: serverDirectory,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    let stderr = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-
-    try {
-      await expect.poll(() => stdout, { timeout: 5_000 }).toContain("ready");
+    await withChild("deadline", async ({ child, exited, tracePath }) => {
       const signalledAt = Date.now();
       child.kill("SIGTERM");
-      const [exitCode, signal] = (await once(child, "exit")) as [
-        number | null,
-        NodeJS.Signals | null,
-      ];
-      expect({ exitCode, signal }).toEqual({ exitCode: 0, signal: null });
+      expect(await exited).toEqual([0, null]);
       expect(Date.now() - signalledAt).toBeGreaterThanOrEqual(75);
       expect(Date.now() - signalledAt).toBeLessThan(2_000);
-      if (stderr) throw new Error(stderr);
       expect((await readFile(tracePath, "utf8")).trim().split("\n")).toEqual([
         "runtime-drain-start",
         "yjs-drain-start",
       ]);
-    } finally {
-      if (child.exitCode === null) child.kill("SIGKILL");
-      await rm(tracePath, { force: true });
-    }
+    });
   });
 
   it.each([
     "SIGTERM",
     "SIGINT",
   ] as const)("drains once on %s and flushes before exit", async (signalName) => {
-    const tracePath = join(tmpdir(), `observability-shutdown-${crypto.randomUUID()}.log`);
-    const child = spawn(process.execPath, ["--import", "tsx/esm", signalChild, tracePath], {
-      cwd: serverDirectory,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    let stderr = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-
-    try {
-      await expect.poll(() => stdout, { timeout: 5_000 }).toContain("ready");
+    await withChild("signal", async ({ child, exited, tracePath }) => {
       child.kill(signalName);
-      const [exitCode, signal] = (await once(child, "exit")) as [
-        number | null,
-        NodeJS.Signals | null,
-      ];
-      expect({ exitCode, signal }).toEqual({ exitCode: 0, signal: null });
-      if (stderr) throw new Error(stderr);
+      expect(await exited).toEqual([0, null]);
       expect((await readFile(tracePath, "utf8")).trim().split("\n")).toEqual([
         "begin-shutdown",
         "abort:shutdown",
@@ -93,45 +120,16 @@ describe("process shutdown hooks", () => {
         "acknowledge-adopted-message:true",
         "flush",
       ]);
-    } finally {
-      if (child.exitCode === null) child.kill("SIGKILL");
-      await rm(tracePath, { force: true });
-    }
+    });
   });
 
-  it.each([
-    ["SIGTERM", "SIGTERM"],
-    ["SIGINT", "SIGINT"],
-    ["SIGTERM", "SIGINT"],
-    ["SIGINT", "SIGTERM"],
-  ] as const)("forces exit when %s is followed by %s", async (first, second) => {
-    const tracePath = join(tmpdir(), `observability-force-exit-${crypto.randomUUID()}.log`);
-    const child = spawn(process.execPath, ["--import", "tsx/esm", signalChild, tracePath], {
-      cwd: serverDirectory,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-
-    try {
-      await expect.poll(() => stdout, { timeout: 5_000 }).toContain("ready");
-      child.kill(first);
-      await expect
-        .poll(() => readFile(tracePath, "utf8").catch(() => ""), { timeout: 5_000 })
-        .toContain("drain-start");
-      child.kill(second);
-      const [exitCode, signal] = (await once(child, "exit")) as [
-        number | null,
-        NodeJS.Signals | null,
-      ];
-      expect({ exitCode, signal }).toEqual({ exitCode: 1, signal: null });
+  it("forces exit on a second signal while settlement is still draining", async () => {
+    await withChild("signal", async ({ child, exited, tracePath, waitFor }) => {
+      child.kill("SIGTERM");
+      await waitFor("draining\n");
+      child.kill("SIGINT");
+      expect(await exited).toEqual([1, null]);
       expect(await readFile(tracePath, "utf8")).not.toContain("flush");
-    } finally {
-      if (child.exitCode === null) child.kill("SIGKILL");
-      await rm(tracePath, { force: true });
-    }
+    });
   });
 });

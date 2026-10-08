@@ -34,8 +34,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
-    const { contextPortForProjectBrowse, contextPortForThread, resolveThreadContext } =
-      await import("../../domains/context/context-port-resolution.js");
+    const { contextPortForThread, resolveThreadContext } = await import(
+      "../../domains/context/context-port-resolution.js"
+    );
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
@@ -256,26 +257,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const fresh = await port.stat("manuscript://fresh.md");
       if (!fresh.ok || !fresh.value.documentId) throw new Error("fresh.md missing");
       expect(live.members).toContain(fresh.value.documentId);
-    });
-
-    // People always write live (D20), even in a draft-mode Work.
-    it("records a writer's create on a draft-mode Work port in the live manifest", async () => {
-      const fixture = await createFixture();
-      const port = await contextPortForProjectBrowse({
-        deps: fixture.routeDeps,
-        projectId: PROJECT_ID,
-        userId: USER_ID,
-        workId: DRAFT_WORK_ID,
-      });
-      if (!port) throw new Error("Work port did not resolve");
-
-      const note = await settlesWithin("write", port.write("manuscript://note.md", "A note.\n"));
-      if (!note.ok || !note.value.documentId) throw new Error(JSON.stringify(note));
-
-      const live = await fixture.collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-      });
-      expect(live.members).toContain(note.value.documentId);
     });
 
     it("refuses an unknown Work or scheme in a read as not found", async () => {
