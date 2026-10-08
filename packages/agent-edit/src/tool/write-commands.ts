@@ -256,7 +256,9 @@ export function createWriteCommands(deps: {
           : {
               command: "replace",
               documentAddress: address,
-              ...(copiedNodes ? { blocks: copiedNodes } : { content }),
+              ...(copiedNodes
+                ? { blocks: copiedNodes }
+                : { content, parsedContent: parsed.parsed }),
               in: [1, existingBlocks.length],
             },
       );

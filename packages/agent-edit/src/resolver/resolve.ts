@@ -24,6 +24,8 @@ export interface ResolveWriteParams {
   documentAddress: DocumentAddress;
   command: WriteCommandName;
   content?: string;
+  /** Already-parsed content, with the original source retained in `content` for semantic IR. */
+  parsedContent?: ParsedContent;
   /**
    * Blocks copied from another document (D23). They take the place of
    * `content` and are inserted as nodes, never through markup.
@@ -240,6 +242,7 @@ function validateContent(
     return { ok: true, parsed: { blocks: [] } };
   }
   if (params.command === "remove") return { ok: true, parsed: { blocks: [] } };
+  if (params.parsedContent) return { ok: true, parsed: params.parsedContent };
   try {
     return { ok: true, parsed: ctx.codec.parse(params.content) };
   } catch (cause) {

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Chapter overwrites parse replacement content once, including unchanged writes.
+
 - Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
 
 - An AI overwrite or replace changes only the paragraphs and words that differ. Single-match and find-all replacements use the same inline operation, without numeric apply tiers. Unchanged paragraphs keep their comments and attribution, pictures and line breaks are no longer duplicated, and a paragraph the AI adds never takes over the comments of the one it edits next to it.
