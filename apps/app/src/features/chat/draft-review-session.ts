@@ -248,8 +248,15 @@ export class DraftReviewSession {
           } catch (error) {
             const rejection = classifyDraftCommandRejection(error);
             const code = rejection.kind === "refused" ? "refused" : rejection.kind;
-            const reason = rejection.kind === "refused" ? rejection.reason : undefined;
-            failChangeCommand(draft, change, mode, code, reason);
+            failChangeCommand(
+              draft,
+              change,
+              mode,
+              code,
+              rejection.kind === "refused"
+                ? { serverCode: rejection.serverCode, serverReason: rejection.serverReason }
+                : undefined,
+            );
             return { kind: "change-refused", mode, code };
           }
           if (response === "unknown") {
@@ -370,7 +377,8 @@ function commandFailure(mode: "apply" | "discard", error: unknown): DraftCommand
     case "refused":
       return {
         code: `${mode}-refused`,
-        ...(rejection.reason ? { reason: rejection.reason } : {}),
+        serverCode: rejection.serverCode,
+        ...(rejection.serverReason ? { serverReason: rejection.serverReason } : {}),
       };
   }
 }
