@@ -65,3 +65,26 @@ Close only the owned browser sessions (`agent-browser --session
 catalog-sidebar close`, and the fresh session). Stop this worktree with
 `pnpm dev --stop`. Keep feeds, screenshots, command logs, and outcomes in the
 active work directory; do not clear another session or database.
+
+## Chat side panel and document menu
+
+Use the owned stack's existing project, plus `./mf thread create --project
+"$PROJECT" --title "Empty side panel probe" --json` for a chat with no touches.
+Use a chat whose `./mf api GET /api/threads/$THREAD/recent-documents --json`
+returns documents for the populated case.
+
+1. On the Chat index with no chat selected and no document open, capture the
+   right panel: only its Open document header, no hint or RECENT heading.
+2. Open the untouched chat and capture the same header-only panel.
+3. Open the chat with recent documents. Capture its RECENT section and file
+   rows; confirm they still open the document beside the chat.
+4. Open the Open document menu. Capture the root: area rows without a project
+   name heading. Drill into Manuscript and a folder if present: capture the
+   retained back row. Use it to return to the root.
+5. Open a document and repeat through its title menu. It starts at its own
+   folder; back rows still climb to a root without a heading.
+6. At phone width, confirm existing full-screen document/navigation surfaces
+   are unchanged. Do not expect a desktop right panel or add a phone equivalent.
+
+Save screenshots and the two recent-documents responses in the active work
+directory. Close only the browser session used for this probe.

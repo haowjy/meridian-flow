@@ -6,7 +6,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Clock } from "lucide-react";
-import type { ListQueryStatus } from "@/client/query/list-query";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { announceError } from "@/client/stores";
 import { fileKindIcon } from "../context/context-file-icon";
@@ -17,7 +16,7 @@ import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from
 
 /** Thread-context rail (Chat destination, right edge). */
 export type ContextSidebarProps = {
-  /** Active thread; when null, sections render their disabled empty state. */
+  /** Active thread; when null, the rail shows only its dock header. */
   threadId: string | null;
   /** Active project, which Recent documents open in. */
   projectId: string | null;
@@ -45,84 +44,34 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
         renderHeader={(args) => <DockHeader {...args} onClose={onClose} />}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
-          <DocumentRailSection
-            title={t`Recent`}
-            icon={Clock}
-            status={recent}
-            rows={recent.documents}
-            onOpen={(document) => void openRecent(document.documentId)}
-            messages={{
-              disabled: t`Open a chat to see what the AI referenced.`,
-              loading: t`Loading recent documents…`,
-              empty: t`Documents the AI reads in this chat appear here.`,
-              error: t`Couldn't load recent documents.`,
-            }}
-          />
-          <RailEmptyHint>{t`Pick a document from the left or the chat to open it here.`}</RailEmptyHint>
+          {recent.status === "loading" || recent.status === "error" || recent.documents?.length ? (
+            <CollapsibleRailSection title={t`Recent`} icon={Clock} defaultOpen>
+              {recent.status === "loading" ? (
+                <RailEmptyHint>{t`Loading recent documents…`}</RailEmptyHint>
+              ) : recent.status === "error" ? (
+                <RailErrorRow onRetry={recent.refetch} label={t`Couldn't load recent documents.`} />
+              ) : (
+                <ul>
+                  {recent.documents?.map((document) => {
+                    // The tree lists whole file names; the rail names files the same way.
+                    const fileName = `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
+                    return (
+                      <li key={document.documentId}>
+                        <RailFileRow
+                          icon={fileKindIcon(fileName)}
+                          name={fileName}
+                          title={fileName}
+                          onOpen={() => void openRecent(document.documentId)}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CollapsibleRailSection>
+          ) : null}
         </div>
       </DockShell>
     </aside>
-  );
-}
-
-/* Recent document projections share this display shape with catalog rows. */
-type RailDocument = {
-  documentId: string;
-  name: string;
-  extension: string;
-};
-
-type RailMessages = {
-  disabled: string;
-  loading: string;
-  empty: string;
-  error: string;
-};
-
-/** One state-machine for the live data rail. */
-function DocumentRailSection({
-  title,
-  icon,
-  status,
-  rows,
-  messages,
-  onOpen,
-}: {
-  title: string;
-  icon: typeof Clock;
-  status: ListQueryStatus<RailDocument>;
-  rows: RailDocument[] | null;
-  messages: RailMessages;
-  onOpen: (document: RailDocument) => void;
-}) {
-  return (
-    <CollapsibleRailSection title={title} icon={icon} defaultOpen>
-      {status.status === "disabled" ? (
-        <RailEmptyHint>{messages.disabled}</RailEmptyHint>
-      ) : status.status === "loading" ? (
-        <RailEmptyHint>{messages.loading}</RailEmptyHint>
-      ) : status.status === "error" ? (
-        <RailErrorRow onRetry={status.refetch} label={messages.error} />
-      ) : status.status === "empty" || rows == null || rows.length === 0 ? (
-        <RailEmptyHint>{messages.empty}</RailEmptyHint>
-      ) : (
-        <ul>
-          {rows.map((row) => {
-            // The tree lists whole file names; the rail names files the same way.
-            const fileName = `${row.name}${row.extension ? `.${row.extension.replace(/^\./, "")}` : ""}`;
-            return (
-              <li key={row.documentId}>
-                <RailFileRow
-                  icon={fileKindIcon(fileName)}
-                  name={fileName}
-                  title={fileName}
-                  onOpen={() => onOpen(row)}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </CollapsibleRailSection>
   );
 }
