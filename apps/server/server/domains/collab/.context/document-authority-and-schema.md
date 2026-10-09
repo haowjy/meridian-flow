@@ -155,8 +155,9 @@ spell (deleted with its path taken, or outside the project's own manuscript)
 spells its own row's last address in full, as a gone link spells its stored
 address, and the read records that showing, so a rewrite continues it. One with
 no address in this project (no row, another project's id, a snapshot miss)
-spells an empty destination, which names nothing; ref assignment keeps the
-stored picture when that empty destination is written back unchanged. Spelling outside every scope uses stored bytes and is reported
+spells an empty destination, which names nothing; the read records that
+showing at the empty address, and ref assignment keeps the stored picture when
+that empty destination is written back over it, even once it became addressable. Spelling outside every scope uses stored bytes and is reported
 (`serialize.link_unscoped`); a ref or address the snapshot never loaded is
 `serialize.link_snapshot_miss`, a throw under test only when no door prepared
 the snapshot.

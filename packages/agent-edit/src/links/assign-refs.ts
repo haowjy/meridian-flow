@@ -138,7 +138,8 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
       const uri = writtenSourceUri(href);
       return uri ? { uri, suffix: splitDocumentHrefSuffix(href).suffix } : null;
     },
-    correspondenceKey: (href) => writtenSourceUri(href),
+    // An empty source keys as the empty address a picture shown without one was shown at.
+    correspondenceKey: (href) => (href === "" ? "" : writtenSourceUri(href)),
     spell: (scope, attrs) => scope.spellSource({ src: attrs.href, ref: attrs.ref }),
     kind: "source",
   },
