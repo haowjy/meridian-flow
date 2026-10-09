@@ -214,7 +214,9 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   non-actionable classes count (`reviewChanges` lists them), so a last classified
   change beside an unclassified hunk predicts nothing. The review
   holds on "No changes left" with a Next draft button (or Back to live when no
-  draft is left) and never jumps on its own. A success with `draftClosed: false`
+  draft is left) and never jumps on its own, except to the same draft's next
+  proposal: the server reuses the id, and `useFinishedReviewReentry` re-enters the
+  review once a read made after the close lists changes. A success with `draftClosed: false`
   (another change arrived) withdraws `pending` and the review carries on. The
   draft leaves the Work's list when closed, so the hold is the review's own
   state, set from the answer before the list and preview re-reads; neither the

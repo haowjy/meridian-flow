@@ -463,6 +463,13 @@ export type DraftReviewAction =
       documentName: string | null;
     }
   | { type: "reviewReopened"; documentId: string; draftId: string }
+  | {
+      type: "reviewReentered";
+      documentId: string;
+      draftId: string;
+      /** A command already in flight on the draft's next proposal (`commandCompletion`). */
+      completion?: ReviewCompletion;
+    }
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
@@ -542,6 +549,19 @@ export function draftReviewReducer(
       if (state.surface.completion?.phase !== "pending") return state;
       const { completion: _completion, ...reopened } = state.surface;
       return { ...state, surface: reopened };
+    }
+    case "reviewReentered": {
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
+        return state;
+      }
+      // Only what the server closed is left behind: the id carries its next proposal.
+      if (state.surface.completion?.phase !== "closed") return state;
+      const { completion: _closed, focus: _focus, ...entered } = state.surface;
+      return {
+        ...state,
+        marksVisible: true,
+        surface: { ...entered, ...(action.completion ? { completion: action.completion } : {}) },
+      };
     }
     case "marksVisible":
       return state.marksVisible === action.visible
