@@ -38,7 +38,8 @@ export type ContextTargetExpectation =
 interface PreparedContextMoveBase {
   /** Source location inspected by ContextTreeMover; commit must prove it still resolves. */
   source: ContextLocationToken;
-  mover?: { userId: string; turnId?: string | null; responseId?: string | null };
+  /** Project whose holders the move note counts (contract §10); absent, the move counts nothing. */
+  linkNoteProjectId?: string;
   /** Destination context_sources.id selected by URI routing. */
   destinationSourceId: string;
   /** Final normalized target path after Unix mv basename/directory resolution. */

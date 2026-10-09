@@ -2,7 +2,6 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { extractDocumentLinkOccurrences } from "./document-link-occurrences.js";
 import { deriveDocumentLinkRows } from "./document-link-rows.js";
 import type {
   DerivationScope,
@@ -12,6 +11,7 @@ import type {
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
 import type { DurableProjectionSerializer } from "./ports/durable-projection.js";
+import { extractStoredLinks } from "./stored-link-extraction.js";
 
 export function createDocumentDerivationService(input: {
   store: DocumentDerivationStore;
@@ -89,6 +89,7 @@ export function createDocumentDerivationService(input: {
         const ids = await input.store.stale(undefined, { after: sweepCursor, limit: 100 });
         sweepCursor = ids.length === 100 ? ids.at(-1) : undefined;
         await recover(ids);
+        await input.store.recoverAheads();
         return ids.length;
       });
     },
@@ -98,9 +99,11 @@ export function createDocumentDerivationService(input: {
         while (true) {
           const ids = await input.store.stale(scope, { after, limit: 100 });
           await recover(ids);
-          if (ids.length < 100) return;
+          if (ids.length < 100) break;
           after = ids.at(-1);
         }
+        // A move waits for this: every certified ahead ref is registered before it locks.
+        await input.store.recoverAheads(scope);
       });
     },
     async stop() {
@@ -125,8 +128,11 @@ export async function deriveDocument(
     try {
       Y.applyUpdate(doc, cut.state);
       const outputs = await deriveDocumentOutputs(cut, doc, input.serializer);
-      if (await input.store.certify(cut, outputs, at))
+      if (await input.store.certify(cut, outputs, at)) {
+        // Also when the cut was already certified: a failed earlier registration retries here.
+        if (outputs.links.some((row) => row.aheadId)) await input.store.registerAheads(documentId);
         return { status: "derived", stateVector: Y.encodeStateVector(doc) };
+      }
     } finally {
       doc.destroy();
     }
@@ -146,12 +152,8 @@ export async function deriveDocumentOutputs(
       cut.kind === "manifest" || !cut.holderUri
         ? []
         : deriveDocumentLinkRows({
-            occurrences: extractDocumentLinkOccurrences(
-              doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-            ),
+            occurrences: extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
             holderUri: cut.holderUri,
-            holderProjectId: cut.holderProjectId,
-            personalProjectId: cut.personalProjectId,
           }),
   };
 }

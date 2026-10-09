@@ -1,5 +1,6 @@
 /** Drizzle ContextTreeMutationStore recursive-delete ownership and rollback proofs. */
 import { randomUUID } from "node:crypto";
+import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextAvailabilityHeads,
@@ -9,17 +10,23 @@ import {
   contextSources,
   documentPreviousLocations,
   documents,
+  documentYjsUpdates,
   folders,
   projects,
   users,
 } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { eq, sql } from "drizzle-orm";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
+import { createDrizzleCollabPersistence } from "../../../collab/adapters/drizzle-journal.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import { createDocumentAddressResolver } from "../../document-address.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
@@ -627,6 +634,101 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(events).toEqual([]);
       });
       expect(events).toEqual(["deleted"]);
+    });
+  });
+
+  // Committed rows and two connections: the barrier is only visible across sessions.
+  describe("Drizzle ContextTreeMutationStore move barrier (postgres)", () => {
+    const committed = createDb(DATABASE_URL, { max: 4 });
+    const probe = createDb(DATABASE_URL, { max: 2 });
+    const userId = randomUUID();
+    const projectId = randomUUID();
+    const sourceId = randomUUID();
+    beforeEach(async () => {
+      await deleteDrizzleRows(committed, [users]);
+      await committed.insert(users).values(conformanceUserValues(userId, "move-barrier"));
+      await committed
+        .insert(projects)
+        .values({ id: projectId, userId, name: "Barrier", slug: "barrier" });
+      await committed.insert(contextSources).values({
+        id: sourceId,
+        projectId,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
+    });
+    afterAll(async () => {
+      await deleteDrizzleRows(committed, [users]);
+      await Promise.all([committed.close(), probe.close()]);
+    });
+
+    it("a same-source move row-locks its document, and a journal FK insert still completes under it", async () => {
+      const holder = randomUUID();
+      await committed
+        .insert(documents)
+        .values({ id: holder, contextSourceId: sourceId, name: "holder", extension: "md" });
+      const persistence = createDrizzleCollabPersistence(committed);
+      await persistence.lifecycle.ensureDocument(holder as never);
+      const tree = new DrizzleContextTreeMutationStore(committed);
+      const source = await tree.inspect(sourceId, "holder.md");
+      if (source?.kind !== "file") throw new Error("Missing holder");
+      let paused!: () => void;
+      const atDestructiveWrite = new Promise<void>((resolve) => {
+        paused = resolve;
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      tree.setBeforeDestructiveWrite(async () => {
+        paused();
+        await gate;
+      });
+      const moving = tree.commitMove({
+        source,
+        destinationSourceId: sourceId,
+        destinationPath: "moved-holder.md",
+        expectedTarget: { state: "absent" },
+        overwrite: false,
+        destinationFiletype: "markdown",
+        graduateProvisionalName: false,
+      });
+      const doc = new Y.Doc();
+      try {
+        await atDestructiveWrite;
+        // Before any DML the move already holds the row: derive's NO KEY UPDATE queues on it.
+        const rowLock = await probe
+          .transaction((tx) =>
+            tx.execute(sql`SELECT id FROM documents WHERE id = ${holder} FOR NO KEY UPDATE NOWAIT`),
+          )
+          .then(
+            () => "free",
+            () => "locked",
+          );
+        expect(rowLock).toBe("locked");
+        // The journal FK takes KEY SHARE on the holder: compatible, so it never waits on a move.
+        await runInDrizzleTransaction(probe, async () => {
+          await currentDrizzleDb(probe).execute(sql`SET LOCAL lock_timeout = '2s'`);
+          await createDrizzleCollabPersistence(probe).journal.append(
+            holder as never,
+            Y.encodeStateAsUpdate(doc),
+            { origin: `human:${userId}`, seq: 0 },
+          );
+        });
+      } finally {
+        release();
+        await Promise.allSettled([moving]);
+        doc.destroy();
+      }
+      expect(await moving).toMatchObject({ ok: true });
+      expect(
+        await committed
+          .select()
+          .from(documentYjsUpdates)
+          .where(eq(documentYjsUpdates.documentId, holder)),
+      ).toHaveLength(1);
     });
   });
 }

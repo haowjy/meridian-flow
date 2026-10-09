@@ -988,7 +988,7 @@ export class ContextFS implements ContextSchemeAdapter {
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
         source,
-        mover: prepared.mover,
+        linkNoteProjectId: prepared.linkNoteProjectId,
         destinationSourceId: prepared.destinationSourceId,
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
@@ -1007,7 +1007,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const source = prepared.source;
     const committed = await this.mutationStore.commitMove({
       source,
-      mover: prepared.mover,
+      linkNoteProjectId: prepared.linkNoteProjectId,
       destinationSourceId: prepared.destinationSourceId,
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,
