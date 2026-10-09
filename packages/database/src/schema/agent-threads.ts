@@ -665,6 +665,12 @@ export const threadDocuments = pgTable(
  * turn the row keeps the greatest `seq` from the global sequence, which orders
  * showings ("latest"). Readers select the lineage's eligible rows by cutoff
  * first and only then keep the latest per key; nothing is copied.
+ *
+ * Addresses and holder URIs have no byte bound, so the key stores
+ * `showing_digest`, a SHA-256 of the exact (ref, address, holder, view) tuple,
+ * beside the exact values. Distinct tuples sharing a digest are treated as
+ * impossible; were one to occur, the writer's exact-equality guard leaves the
+ * first showing untouched rather than merging the two.
  */
 export const threadShownLinks = pgTable(
   "thread_shown_links",
@@ -682,22 +688,16 @@ export const threadShownLinks = pgTable(
     holderUri: text("holder_uri").notNull(),
     /** `live` or `draft:<workId>`. */
     view: text("view").notNull(),
+    showingDigest: text("showing_digest").notNull(),
     turnId: uuid("turn_id").$type<TurnId>().notNull(),
     seq: bigserial("seq", { mode: "number" }).notNull(),
   },
   (table) => [
     primaryKey({
       name: "thread_shown_links_pk",
-      columns: [
-        table.threadId,
-        table.documentId,
-        table.ref,
-        table.address,
-        table.holderUri,
-        table.view,
-        table.turnId,
-      ],
+      columns: [table.threadId, table.documentId, table.showingDigest, table.turnId],
     }),
+    check("thread_shown_links_digest_valid", sql`${table.showingDigest} ~ '^[0-9a-f]{64}$'`),
   ],
 );
 

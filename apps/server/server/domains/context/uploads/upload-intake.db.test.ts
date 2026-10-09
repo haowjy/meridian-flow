@@ -59,6 +59,25 @@ if (!RUN) {
       return createDrizzleUploadIntakeRepository(db);
     }
 
+    /** Deletion through the aggregate; `removed` records arrived uploads it soft-deleted. */
+    function deletion(repository: ReturnType<typeof createDrizzleUploadIntakeRepository>) {
+      const removed: string[] = [];
+      const intake = createUploadIntake({
+        repository,
+        content: {
+          prepare: async () => ({ ok: true, prepared: null }),
+          persist: async () => ({ ok: true }),
+          async remove({ reservation }) {
+            removed.push(reservation.documentId);
+            return { ok: true };
+          },
+        },
+        objectStore: createInMemoryObjectStore(),
+        eventSink: createNoopEventSink(),
+      });
+      return { removed, deleteDraft: intake.deleteDraft };
+    }
+
     const reservation = (
       intakeId: string,
       owner: "none" | "work",
@@ -94,7 +113,7 @@ if (!RUN) {
             catalogMutations: catalog,
           });
           return createUploadIntake({
-            repository: createDrizzleUploadIntakeRepository(db, catalog),
+            repository: createDrizzleUploadIntakeRepository(db),
             content: createContextUploadContentPort(contextPorts),
             objectStore,
             eventSink: createNoopEventSink(),
@@ -178,23 +197,24 @@ if (!RUN) {
         documentId: identity.documentId,
         uri: identity.canonicalUri,
       };
-      expect((await repo.deleteDraft({ ...base, expectedRevision: "wrong" }, USER)).result).toEqual(
-        { kind: "identity_mismatch" },
-      );
+      const { removed, deleteDraft } = deletion(repo);
+      expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER)).toEqual({
+        kind: "identity_mismatch",
+      });
       expect(
-        (await repo.deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER))
-          .result,
+        await deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER),
       ).toEqual({ kind: "deleted" });
       expect(
-        (await repo.deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER))
-          .result,
+        await deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER),
       ).toEqual({ kind: "already_deleted" });
+      // An arrived upload leaves through the canonical soft delete, never a hard delete.
+      expect(removed).toEqual([identity.documentId]);
       expect(
         await database.current
-          .select()
+          .select({ id: documents.id })
           .from(documents)
           .where(eq(documents.id, identity.documentId as never)),
-      ).toEqual([]);
+      ).toHaveLength(1);
     });
 
     it("refuses a draft delete under a grant its archived Work no longer holds", async () => {
@@ -230,7 +250,7 @@ if (!RUN) {
         .where(eq(works.id, WORK));
 
       const outcome = await runWithEditGrants(access, [grant], () =>
-        repo.deleteDraft(
+        deletion(repo).deleteDraft(
           {
             intakeId: "archived",
             documentId: identity.documentId,
@@ -269,7 +289,7 @@ if (!RUN) {
         catalogMutations: catalog,
       });
       const service = createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(database.current, catalog),
+        repository: createDrizzleUploadIntakeRepository(database.current),
         content: createContextUploadContentPort(contextPorts),
         objectStore: {
           async put() {

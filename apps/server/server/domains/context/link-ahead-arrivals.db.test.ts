@@ -1,5 +1,5 @@
 /** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { createDb, type Database } from "@meridian/database";
@@ -9,6 +9,7 @@ import {
   documents,
   linkAheadRefs,
   projects,
+  uploadIntakes,
   users,
   works,
 } from "@meridian/database/schema";
@@ -28,10 +29,14 @@ import {
   WORK_ID,
 } from "../collab/test-support/change-trail-postgres-harness.js";
 import { createNoopEventSink } from "../observability/index.js";
+import { createInMemoryObjectStore } from "../storage/index.js";
 import { lockNamespaceKeys } from "./adapters/context-fs/document-locations.js";
 import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 import { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
+import { createContextUploadContentPort } from "./uploads/context-upload-content.js";
+import { createDrizzleUploadIntakeRepository } from "./uploads/drizzle-upload-intake.js";
+import { createUploadIntake } from "./uploads/upload-intake.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
@@ -209,6 +214,60 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
           .where(and(eq(documents.name, "failure"), eq(documents.extension, "png"))),
       ).toEqual([]);
       expect(await settlement(failing)).toBeNull();
+
+      // Deleting a finalized upload keeps the identity it settled; a new upload at the same
+      // address never captures the ref.
+      const intake = createUploadIntake({
+        repository: createDrizzleUploadIntakeRepository(db),
+        content: createContextUploadContentPort(app.contextPorts),
+        objectStore: createInMemoryObjectStore(),
+        eventSink: createNoopEventSink(),
+      });
+      const noWorkId = (await ports.workAuthorityResolver.noWork(projectId as never))?.workId;
+      for (const [filename, mimeType] of [
+        ["delete-target.md", "text/markdown"],
+        ["delete-target.png", "image/png"],
+      ] as const) {
+        const deletedRef = await register(`uploads://@/${filename}`);
+        const bytes = new TextEncoder().encode(`Upload ${filename}`);
+        const uploadOnce = async () => {
+          const uploaded = await intake.intake({
+            intakeId: randomUUID(),
+            actorUserId: userId,
+            owner: { kind: "work", projectId, workId: noWorkId as string },
+            filename,
+            mimeType,
+            byteDigest: createHash("sha256").update(bytes).digest("hex"),
+            bytes,
+          });
+          if (!uploaded.ok) throw new Error(uploaded.error.code);
+          return uploaded.value;
+        };
+        const firstUpload = await uploadOnce();
+        expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
+        const [arrived] = await db
+          .select({ intakeId: uploadIntakes.intakeId })
+          .from(uploadIntakes)
+          .where(eq(uploadIntakes.documentId, firstUpload.documentId as never));
+        expect
+          .soft(
+            await intake.deleteDraft(
+              {
+                intakeId: arrived?.intakeId ?? "",
+                documentId: firstUpload.documentId,
+                uri: firstUpload.uri,
+                expectedRevision: firstUpload.locationRevision,
+              },
+              userId,
+            ),
+            filename,
+          )
+          .toEqual({ kind: "deleted" });
+        expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
+        const replacement = await uploadOnce();
+        expect.soft(replacement.uri, filename).toBe(firstUpload.uri);
+        expect.soft(await settlement(deletedRef), filename).toBe(firstUpload.documentId);
+      }
 
       // A personal document moved into the project arrives there: live in its manifest, and
       // the ref waiting at the destination settles on it.

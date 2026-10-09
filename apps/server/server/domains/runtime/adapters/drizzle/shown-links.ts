@@ -1,4 +1,5 @@
 /** PostgreSQL `ShownLinkStore` over `thread_shown_links` (contract §7.3). */
+import { createHash } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
@@ -44,23 +45,20 @@ export function createDrizzleShownLinkStore(db: DrizzleDatabase): ShownLinkStore
             address: link.address,
             holderUri: input.holderUri,
             view,
+            showingDigest: showingDigest(link.ref, link.address, input.holderUri, view),
             turnId: input.turnId as TurnId,
           })),
         )
         .onConflictDoUpdate({
-          target: [
-            table.threadId,
-            table.documentId,
-            table.ref,
-            table.address,
-            table.holderUri,
-            table.view,
-            table.turnId,
-          ],
+          target: [table.threadId, table.documentId, table.showingDigest, table.turnId],
           // `excluded.seq` was drawn before conflict arbitration, so a writer
-          // delayed after drawing may arrive second with the smaller value.
+          // delayed after drawing may arrive second with the smaller value. The
+          // exact-tuple guard keeps a (never observed) digest collision from
+          // merging two different showings.
           set: { seq: sql`excluded.seq` },
-          setWhere: sql`excluded.seq > ${table.seq}`,
+          setWhere: sql`excluded.seq > ${table.seq}
+            AND excluded.ref = ${table.ref} AND excluded.address = ${table.address}
+            AND excluded.holder_uri = ${table.holderUri} AND excluded.view = ${table.view}`,
         });
     },
     async forDocument(threadId, documentId) {
@@ -99,4 +97,11 @@ export function createDrizzleShownLinkStore(db: DrizzleDatabase): ShownLinkStore
       }));
     },
   };
+}
+
+/** SHA-256 of the exact showing tuple: the bounded key for unbounded addresses and holders. */
+function showingDigest(ref: string, address: string, holderUri: string, view: string): string {
+  return createHash("sha256")
+    .update(JSON.stringify([ref, address, holderUri, view]))
+    .digest("hex");
 }

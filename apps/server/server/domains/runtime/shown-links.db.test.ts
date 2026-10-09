@@ -281,6 +281,25 @@ if (!RUN_DB_TESTS || !url) {
         },
       },
       {
+        name: "an address past the index tuple limit records exactly and dedups per turn",
+        async run({ store, answer, source, show, documentId }, check) {
+          // Incompressible, so the stored key cannot shrink below PostgreSQL's B-tree limit.
+          let seed = 730;
+          const segment = () =>
+            Array.from({ length: 90 }, () => {
+              seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
+              return "abcdefghijklmnopqrstuvwxyz0123456789"[seed % 36];
+            }).join("");
+          const long = link(9, `kb://${Array.from({ length: 36 }, segment).join("/")}.md`);
+          await show(source.id, answer, [long]);
+          await show(source.id, answer, [long]);
+          check(
+            (await store.forDocument(source.id, documentId)).map((row) => row.address),
+            "one exact row",
+          ).toEqual([long.address]);
+        },
+      },
+      {
         name: "a delayed lower sequence never overwrites a greater one",
         adapters: ["drizzle"],
         async run(r, check) {
