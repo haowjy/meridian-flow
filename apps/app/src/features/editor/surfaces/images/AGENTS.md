@@ -7,8 +7,7 @@ ingress has something to say outside the document.
 
 `ImageIngressRuntime` is the seam, and it is `ProjectLinkRuntime`'s twin — both
 are ports the app registers on the running editor, mounted by `EditorView` and
-rendering nothing. It registers the upload and fetch-bytes ports and feeds the
-editor's asset index from the project tree the app already caches. Anything the
+rendering nothing. It registers the upload and fetch-bytes ports. Anything the
 writer sees goes through the chrome host instead; a runtime that rendered a Radix
 root of its own would be a surface the kernel could not subordinate.
 

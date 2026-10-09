@@ -1,9 +1,23 @@
+import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
+import type { LinkShowing } from "../links/shown.js";
 
 export interface ResolvedSpan {
   start: number;
   end: number;
+}
+
+/** Inline nodes that replace one plain-text span of a block. */
+export interface ResolvedInlineReplacement {
+  span: ResolvedSpan;
+  /** Inline content applied as given; its text is the replacement's semantic payload. */
+  content: Fragment;
+}
+
+/** The replacement's plain text, derived from its nodes for semantic IR and output. */
+export function inlineReplacementText(replacement: ResolvedInlineReplacement): string {
+  return replacement.content.textBetween(0, replacement.content.size, "");
 }
 
 /**
@@ -14,20 +28,20 @@ export type ResolvedEdit = { documentId: string; file: string } & (
   | {
       kind: "textRanges";
       block: BlockRef;
-      replacements: Array<{ span: ResolvedSpan; newText: string }>;
+      replacements: Array<ResolvedInlineReplacement>;
       /** Semantic projection of the exact replacement window; never used to drive mutation. */
       output: string;
     }
   | {
       kind: "insert";
       after?: BlockRef;
-      /** Markup of the inserted blocks; it drives the insert unless `blocks` is set. */
+      /** Provenance text for the semantic IR; it never drives the insert. */
       newText: string;
       /**
-       * Copied blocks inserted as given (D23), so no markdown round trip
-       * normalizes them. `newText` then only describes them for provenance.
+       * The nodes inserted, exactly as resolved (parsed, reconstructed or copied).
+       * No markup round trip happens between resolution and application.
        */
-      blocks?: readonly Block[];
+      blocks: readonly Block[];
     }
   | {
       kind: "delete";
@@ -97,6 +111,8 @@ export interface ConcurrentEditRun {
   blocks: string[];
   /** Explicit deletion evidence. A tombstone is never emitted without its captured body. */
   tombstones: Array<{ hash: string; capturedBody: string }>;
+  /** Host-only: what this run's rendered blocks showed the model (never in model text). */
+  showing?: LinkShowing;
 }
 
 export type ApplyResult =

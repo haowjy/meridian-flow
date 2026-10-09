@@ -640,8 +640,6 @@ function displayBlock(block: BlockInfo): { type: string; display: string } {
   if (block.type === "image") {
     const alt = stringAttr(xmlBlock, "alt");
     if (alt) return { type: block.type, display: alt };
-    const src = stringAttr(xmlBlock, "src");
-    if (src) return { type: block.type, display: src.split("/").filter(Boolean).at(-1) ?? src };
   }
   return { type: block.type, display: humanizeBlockType(block.type) };
 }

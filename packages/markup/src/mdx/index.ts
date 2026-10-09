@@ -9,7 +9,7 @@ import { joinBreakLines } from "../markdown/blocks/hard-break.js";
 import { hardBreakCodec, imageCodec, tableCodec } from "../markdown/blocks/index.js";
 import { normalizeGfmTableHardBreaks } from "../markdown/blocks/table.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
-import type { AssetPathResolver, BlockCodec, MarkupPlugin } from "../types.js";
+import type { BlockCodec, MarkupPlugin } from "../types.js";
 import {
   createFigureCodec,
   createJsxContainerCodec,
@@ -50,12 +50,8 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
   };
 }
 
-export function mdxCodec(options: {
-  schema: Schema;
-  assetPathResolver: AssetPathResolver;
-  components?: ComponentRegistry;
-}) {
-  return createMarkupCodec({ schema: options.schema, assetPathResolver: options.assetPathResolver })
+export function mdxCodec(options: { schema: Schema; components?: ComponentRegistry }) {
+  return createMarkupCodec({ schema: options.schema })
     .use(mdx({ components: options.components }))
     .build({ requireSchemaBlockCoverage: true });
 }

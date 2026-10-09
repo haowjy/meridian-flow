@@ -3,7 +3,9 @@
  *
  * Presentation and status, and nothing else: the picture, the caption and label
  * the document holds, and whether the signed URL behind the picture is loading
- * or failed. It refreshes object-store signed URLs before they expire.
+ * or failed. It refreshes object-store signed URLs before they expire. A
+ * figure whose ref names an address nothing has been uploaded to, or a
+ * document that is gone, says so, with no Retry.
  *
  * **No form.** Alt text, the caption, the label, and Replace are VERBS on the
  * registered object surface — the ⋮ over the figure, with the words themselves
@@ -29,6 +31,7 @@ import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-reac
 import { Button } from "@/components/ui/button";
 
 import { useAssetImageRenderState } from "./asset-image-render-state";
+import { mountedLinks } from "./links";
 
 type MeridianFigureExtensionOptions = {
   projectId?: string;
@@ -48,7 +51,12 @@ export function FigureNodeView(props: NodeViewProps) {
   const label = nullableTextAttr(props.node.attrs.label);
   const caption = textAttr(props.node.attrs.caption);
   const { projectId } = (props.extension.options ?? {}) as MeridianFigureExtensionOptions;
-  const [renderState, renderActions] = useAssetImageRenderState({ projectId, src });
+  const [renderState, renderActions] = useAssetImageRenderState({
+    projectId,
+    src,
+    ref: props.node.attrs.ref,
+    links: mountedLinks(props.editor),
+  });
 
   const renderUrl = renderState.url;
 
@@ -82,6 +90,11 @@ export function FigureNodeView(props: NodeViewProps) {
           <div className="meridian-figure-node__status" role="status">
             <Loader2 className="size-3 animate-spin" aria-hidden />
             <Trans>Loading signed image URL…</Trans>
+          </div>
+        ) : null}
+        {renderState.kind === "unavailable" ? (
+          <div className="meridian-figure-node__status" role="status">
+            <span>{renderState.message}</span>
           </div>
         ) : null}
         {renderState.kind === "error" ? (

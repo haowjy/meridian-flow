@@ -5,7 +5,8 @@ import {
   type SemanticEditIRV1,
   type SemanticOutputRun,
 } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -20,6 +21,13 @@ import {
   ProvenanceMaterializationError,
 } from "./provenance.js";
 import { materializeSweepEvidence } from "./sweep-policy.js";
+
+const schema = buildDocumentSchema();
+
+/** Plain inline content standing in for a resolved text replacement. */
+function inlineText(text: string): Fragment {
+  return text.length === 0 ? Fragment.empty : Fragment.from(schema.text(text));
+}
 
 const authorityId = "00000000-0000-4000-8000-000000000100" as DocumentAuthorityId;
 const emptyManifest = (): AttributionManifestV1 => ({
@@ -160,7 +168,7 @@ describe("provenance materialization", () => {
                 documentId: "document",
                 file: "document.md",
                 block: block as never,
-                replacements: [{ span: { start: 0, end: 3 }, newText: "ONE!" }],
+                replacements: [{ span: { start: 0, end: 3 }, content: inlineText("ONE!") }],
                 output: "ONE!",
               },
               outputRuns: [
@@ -625,7 +633,7 @@ function restorationTextEdit(
       documentId: "document",
       file: "document.md",
       block: block as never,
-      replacements: [{ span: { start, end: start + root.length }, newText: payload }],
+      replacements: [{ span: { start, end: start + root.length }, content: inlineText(payload) }],
       output: payload,
     },
     outputRuns: [
@@ -650,7 +658,7 @@ function restorationInsertion(
       documentId: "document",
       file: "document.md",
       block: block as never,
-      replacements: [{ span: { start: 0, end: 0 }, newText: payload }],
+      replacements: [{ span: { start: 0, end: 0 }, content: inlineText(payload) }],
       output: payload,
     },
     outputRuns: [
@@ -685,7 +693,7 @@ function mappedTextIr(
             documentId: "document",
             file: "document.md",
             block: block as never,
-            replacements: [{ span: { start: 0, end: source.length }, newText: output }],
+            replacements: [{ span: { start: 0, end: source.length }, content: inlineText(output) }],
             output: output,
           },
           outputRuns,
@@ -724,7 +732,9 @@ function appendCertifiedCarry(
               documentId: "document",
               file: "document.md",
               block: paragraph as never,
-              replacements: [{ span: { start: 0, end: source.length }, newText: value }],
+              replacements: [
+                { span: { start: 0, end: source.length }, content: inlineText(value) },
+              ],
               output: value,
             },
             outputRuns: [{ kind: "preserved", source, output: { from: 0, to: value.length } }],

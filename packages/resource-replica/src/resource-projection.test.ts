@@ -125,23 +125,19 @@ it("shows a document in a project only through that project's own catalogs or in
     intentId: "create",
     provisionalName: "Untitled",
   }).next;
-  const checkpoint = (
-    projectId: string,
-    invalidatedEntryIds: readonly string[] = [],
-  ): ResourceCatalogCheckpoint =>
+  const checkpoint = (projectId: string, listed = true): ResourceCatalogCheckpoint =>
     ({
       projectId,
-      entries: [{ kind: "file", entryId: "document" }],
-      invalidatedEntryIds,
+      entries: listed ? [{ kind: "file", entryId: "document" }] : [],
     }) as unknown as ResourceCatalogCheckpoint;
 
   expect(resourceVisibleInProject("project-a", record, [checkpoint("project-a")])).toBe(true);
   expect(resourceVisibleInProject("project-a", record, [checkpoint("project-b")])).toBe(false);
-  expect(
-    resourceVisibleInProject("project-a", record, [checkpoint("project-a", ["document"])]),
-  ).toBe(false);
-  // Invalidation is per catalog: another catalog of the same project still lists it.
-  const catalogs = [checkpoint("project-a", ["document"]), checkpoint("project-a")];
+  expect(resourceVisibleInProject("project-a", record, [checkpoint("project-a", false)])).toBe(
+    false,
+  );
+  // Subtree replacement removes entries. Another catalog may still list the document.
+  const catalogs = [checkpoint("project-a", false), checkpoint("project-a")];
   expect(resourceVisibleInProject("project-a", record, catalogs)).toBe(true);
   expect(resourceVisibleInProject("project-b", record, catalogs)).toBe(false);
   expect(resourceVisibleInProject("project-x", record, [])).toBe(true);

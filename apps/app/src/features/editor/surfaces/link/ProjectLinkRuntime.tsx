@@ -17,14 +17,19 @@
  * would be a transient surface the kernel never heard about — and this one can
  * open a quarter second late, long after the writer summoned something else.
  *
- * A holder location change, a base URI arriving, a rename, and a change to the document's
- * own text are all scope changes the follower re-registers on, so nothing here remounts the collaborative editor.
+ * A holder location change, a base URI arriving, and a rename are all scope
+ * changes the follower re-registers on, so nothing here remounts the
+ * collaborative editor.
  */
 
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo } from "react";
 
-import { getLinkResolution, getLinkSurface, type InternalLinkNavigator } from "@/core/editor/links";
+import {
+  getLinkAnswerCache,
+  getLinkSurface,
+  type InternalLinkNavigator,
+} from "@/core/editor/links";
 import {
   type FollowReporter,
   type LinkableDocumentIndex,
@@ -35,7 +40,6 @@ import {
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
-import { useDocumentRevision } from "./useDocumentRevision";
 
 /**
  * The Editor's destination: the document opens in this editor's pane, or on
@@ -64,7 +68,7 @@ export function ProjectLinkRuntime({
   active,
 }: {
   editor: Editor | null;
-  /** The document holding the links: a server fallback names it as the holder. */
+  /** The document holding the links: the scope is one document's text. */
   documentId: string;
   /**
    * The document's own address: what its relative links are relative to.
@@ -76,11 +80,9 @@ export function ProjectLinkRuntime({
   active: boolean;
 }) {
   const { projectId, workId } = useEditorScope();
-  const resolution = useMemo(() => getLinkResolution(editor), [editor]);
+  const resolution = useMemo(() => getLinkAnswerCache(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
-
-  const documentRevision = useDocumentRevision(editor);
 
   // The holder's Work arrives with its resource record. Until then the scope is
   // pending, so a click waits for the real scope instead of being dropped.
@@ -89,9 +91,9 @@ export function ProjectLinkRuntime({
       !active || !projectId
         ? null
         : workId
-          ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
+          ? { projectId, workId, baseUri, holderDocumentId: documentId }
           : "pending",
-    [active, baseUri, documentId, documentRevision, projectId, workId],
+    [active, baseUri, documentId, projectId, workId],
   );
   const reporter = useMemo<FollowReporter>(
     () => ({
@@ -105,8 +107,8 @@ export function ProjectLinkRuntime({
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;
-    const navigate: InternalLinkNavigator = ({ target, disposition }) => {
-      follower.follow(target, disposition);
+    const navigate: InternalLinkNavigator = ({ target, ref, disposition }) => {
+      follower.follow(target, disposition, ref);
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
     // What the outcome dialog's Close, Cancel, and Try again mean is the

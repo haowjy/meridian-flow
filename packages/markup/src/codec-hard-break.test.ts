@@ -1,16 +1,15 @@
 // Hard breaks round-trip in both dialects, including where Markdown has no `\` spelling.
 import { describe, expect, it } from "vitest";
-import { unresolvedAssetPathResolver } from "./asset-path-resolver.js";
 import { docFrom, paragraph, schema, t } from "./codec-test-support.js";
-import { markdownCodec, mdxCodec } from "./index.js";
+import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 
 const hardBreak = () => schema.node("hard_break");
 const codecs = [
   {
     dialect: "Markdown",
-    codec: markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+    codec: markdownCodec({ schema }),
   },
-  { dialect: "MDX", codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }) },
+  { dialect: "MDX", codec: mdxCodec({ schema }) },
 ];
 const cases = [
   { name: "a break between words", blocks: [paragraph(t("one"), hardBreak(), t("two"))] },
@@ -28,7 +27,7 @@ const cases = [
 
 describe.each(codecs)("$dialect hard breaks", ({ codec }) => {
   it.each(cases)("round-trips $name", ({ blocks }) => {
-    const wire = codec.serialize(blocks);
+    const wire = codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS);
 
     expect(docFrom(codec.parse(wire).blocks).toJSON()).toEqual(docFrom(blocks).toJSON());
   });

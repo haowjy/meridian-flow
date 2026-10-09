@@ -247,7 +247,6 @@ export function materializeRootLineageForDoc(doc: Y.Doc): RootLineageRun[] {
 export function birthClassFromAttribution(
   attribution: Pick<AttributedJournalRow, "originType" | "actorUserId">,
 ): SafetyBirthClass {
-  if (attribution.originType === "link_update") return "writer_protected";
   if (attribution.originType === "human" && attribution.actorUserId) return "writer_protected";
   return "agent";
 }
@@ -574,23 +573,6 @@ export function provenanceInstrumentation(): { enumerations: number } {
 
 export function resetProvenanceInstrumentation(): void {
   provenanceEnumerationCount = 0;
-}
-
-/**
- * Rejects client structs that enter the reserved ancestry and delete sets that
- * touch existing reserved structs. It inspects decoded ranges and the two
- * reserved subtrees only; it never scratch-applies or scans prose.
- */
-export function assertClientUpdateOutsideReservedNamespace(
-  referenceDocument: Y.Doc,
-  update: Uint8Array,
-): void {
-  const decoded = Y.decodeUpdate(update) as DecodedUpdate;
-  assertDecodedUpdateOutsideReservedNamespace(
-    referenceDocument,
-    decoded,
-    decoded.structs.map(asStruct),
-  );
 }
 
 export function validateClientUpdateAdmission(

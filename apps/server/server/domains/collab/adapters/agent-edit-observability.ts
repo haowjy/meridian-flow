@@ -1,6 +1,7 @@
 /** Event-sink adapters for agent-edit diagnostics and lifecycle observability. */
 import type {
   createAgentEditCore,
+  LinkSpliceFallbackDetail,
   ResponseLifecycleClaimDiscardedDetail,
   ReversalNoticeFailedDetail,
   ReversalNoticePort,
@@ -153,29 +154,45 @@ export function createMarkdownSerializationAnomalyObserver(
   };
 }
 
+export interface LinkScopeObserver {
+  /** `holder()` was asked with no open snapshot: the door never opened a scope. */
+  unscoped(documentId: string): void;
+  /**
+   * A ref, address or asset the snapshot never loaded. `prepared` false means
+   * no door ever prepared this snapshot (a door forgot); true is benign, since a
+   * concurrent merge between prepare and the synchronous block can add a ref.
+   */
+  snapshotMiss(input: { documentId: string; key: string; prepared: boolean }): void;
+}
+
 /**
- * A picture serialized outside every image path scope spells as its `asset:`
- * ref, which round-trips but is never what a reader should see. Tests fail on
- * it; production reports it next to the other serialization anomalies.
+ * Spelling outside a scope, or past what a door prepared, falls back to the
+ * stored bytes: consistent and round-tripping, but not what a reader should
+ * see. Tests fail on a door that forgot; production reports it next to the
+ * other serialization anomalies.
  */
-export function createUnscopedAssetPathObserver(
-  eventSink?: EventSink,
-): (assetDocumentId: string) => void {
-  return (assetDocumentId) => {
-    if (process.env.NODE_ENV === "test") {
-      throw new Error(`Image ${assetDocumentId} serialized outside an image path scope`);
-    }
+export function createLinkScopeObserver(eventSink?: EventSink): LinkScopeObserver {
+  const report = (name: string, payload: Record<string, string | boolean>) => {
     if (!eventSink) return;
     try {
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "collab.schema",
-        name: "serialize.asset_path_unscoped",
-        payload: { assetDocumentId },
-      });
+      emitEvent(eventSink, { level: "warn", source: "collab.schema", name, payload });
     } catch {
       // Diagnostic delivery cannot turn a successful serialization into a failure.
     }
+  };
+  return {
+    unscoped(documentId) {
+      if (process.env.NODE_ENV === "test") {
+        throw new Error(`Document ${documentId} spelled links outside a document link scope`);
+      }
+      report("serialize.link_unscoped", { documentId });
+    },
+    snapshotMiss({ documentId, key, prepared }) {
+      if (!prepared && process.env.NODE_ENV === "test") {
+        throw new Error(`Document ${documentId} spelled ${key} from a scope no door prepared`);
+      }
+      report("serialize.link_snapshot_miss", { documentId, key, prepared });
+    },
   };
 }
 
@@ -238,6 +255,7 @@ export function createAgentEditObservabilityOptions(input: {
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
+  | "onLinkSpliceFallback"
 > {
   return {
     ...(input.reversalNoticePort ? { reversalNoticePort: input.reversalNoticePort } : {}),
@@ -248,6 +266,27 @@ export function createAgentEditObservabilityOptions(input: {
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
     onReversalNoticeFailed: reversalNoticeFailedObserver(input.eventSink),
+    onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
+  };
+}
+
+/**
+ * A formatted find whose splice changed how its surroundings parse binds the
+ * whole block group (contract §5.4): identity still holds, but unchanged links
+ * there may churn their formatting. The only approximation in the write path.
+ */
+function linkSpliceFallbackObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onLinkSpliceFallback"]> {
+  return (event: LinkSpliceFallbackDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.agent_edit",
+      name: "write.link_splice_fallback",
+      correlation: { documentId: event.documentId },
+      payload: { reason: event.reason },
+    });
   };
 }
 

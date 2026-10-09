@@ -385,7 +385,10 @@ export const documentPreviousLocations = pgTable(
   ],
 );
 
-/** Internal hrefs derived from the same durable cut as the document projection. */
+/**
+ * Outgoing links of a holder, one row per link key, from the same durable cut as the projection.
+ * A hint from a certified cut, not link authority: target and ahead columns carry no FKs.
+ */
 export const documentLinks = pgTable(
   "document_links",
   {
@@ -393,44 +396,56 @@ export const documentLinks = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    href: text("href").notNull(),
-    targetProjectId: uuid("target_project_id").$type<ProjectId>(),
-    targetKey: text("target_key"),
+    /** `doc:<id>`, `ahead:<uuid>`, `asset:<id>`, or the contextual href itself. */
+    linkKey: text("link_key").notNull(),
+    /** `doc:` and `asset:` keys. */
+    targetDocumentId: uuid("target_document_id").$type<DocumentId>(),
+    aheadId: uuid("ahead_id"),
+    /** Decoded canonical address for ref keys (registration recovery); null for contextual. */
+    address: text("address"),
     occurrences: integer("occurrences").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.sourceDocumentId, table.href] }),
-    index("document_links_target_project").on(table.targetProjectId),
-    index("document_links_target_key").using("hash", table.targetKey),
+    primaryKey({ columns: [table.sourceDocumentId, table.linkKey] }),
+    index("document_links_target_document").on(table.targetDocumentId),
+    index("document_links_ahead").on(table.aheadId),
   ],
 );
 
-/** Pending identity redirects consumed only after collaborative link rewrites commit. */
-export const linkRedirects = pgTable(
-  "link_redirects",
+/**
+ * Durable identity for a link written before its target document arrived.
+ * Settlement is permanent: every document that arrived, finalized uploads
+ * included, leaves through the soft-delete lifecycle and keeps its row, so a
+ * settled ref answers gone and never captures a later occupant. No product
+ * path hard-deletes a document (an upload reservation that never finalized
+ * has no document row); SET NULL only lets an out-of-band row removal unsettle
+ * a ref instead of failing.
+ */
+export const linkAheadRefs = pgTable(
+  "link_ahead_refs",
   {
-    sourceDocumentId: uuid("source_document_id")
-      .$type<DocumentId>()
+    aheadId: uuid("ahead_id").primaryKey(),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
       .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    href: text("href").notNull(),
-    targetDocumentId: uuid("target_document_id")
+      .references(() => projects.id, { onDelete: "cascade" }),
+    scheme: text("scheme").notNull(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    settledDocumentId: uuid("settled_document_id")
       .$type<DocumentId>()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    intendedUri: text("intended_uri"),
-    oldFilename: text("old_filename").notNull(),
-    moverUserId: uuid("mover_user_id").$type<UserId>(),
-    moverTurnId: uuid("mover_turn_id"),
-    createdAt: createdAt(),
-    attempts: integer("attempts").notNull().default(0),
-    retryAfter: timestamp("retry_after", { withTimezone: true }),
+      .references(() => documents.id, { onDelete: "set null" }),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
   },
   (table) => [
-    primaryKey({ columns: [table.sourceDocumentId, table.href] }),
-    check(
-      "link_redirects_target",
-      sql`(${table.targetDocumentId} IS NULL) <> (${table.intendedUri} IS NULL)`,
-    ),
-    index("link_redirects_target_document").on(table.targetDocumentId),
+    // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
+    // exact path (Postgres B-tree tuples cap near 2.7 kB).
+    index("link_ahead_refs_unsettled")
+      .on(table.projectId, table.scheme, table.workId, sql`md5(${table.path})`)
+      .where(sql`${table.settledDocumentId} IS NULL`),
+    index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],
 );

@@ -12,14 +12,25 @@
  * policy's (`WikilinkPasteExtension`).
  *
  * A target resolves as Obsidian's does, with a fixed order where Obsidian's
- * last step is "the first one it finds" (`rankWikilinkMatches`). One that names
- * no document becomes the same dashed link the `@` menu's link-ahead row
- * writes, at the address that row's rule gives (`linkAhead`).
+ * last step is "the first one it finds" (`rankWikilinkMatches`). A match is
+ * assigned its document's id (`doc:`), spelled with its full address; one that
+ * names no document becomes the same dashed link the `@` menu's link-ahead row
+ * writes, with a fresh ahead ref for the address that row's rule gives
+ * (`linkAhead`), one per address per paste.
  */
 
-import { parseContextUri, spellDocumentHref } from "@meridian/contracts";
+import {
+  type AheadRef,
+  aheadAddress,
+  documentRef,
+  mintAheadRef,
+  parseContextUri,
+  storedHref,
+} from "@meridian/contracts";
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { Fragment, type MarkType, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
+
+import type { AssignedLink, LinkAssignmentDocument } from "./link-assignment";
 
 type WikilinkTarget = {
   /** Folders before the name, as written (`["Arc 1"]` for `Arc 1/Kael`). */
@@ -42,8 +53,8 @@ type WikilinkOccurrence = {
 export type WikilinkPasteCatalog = {
   /** The holder's address; null while it has none. */
   holderUri: string | null;
-  /** The addresses a pasted link may name: the Editor's link index, in the areas a link names. */
-  targets: readonly string[];
+  /** The documents a pasted link may name: the Editor's link index, in the areas a link names. */
+  targets: readonly LinkAssignmentDocument[];
   /** Where a link to a document nobody has written goes (the link-ahead row's rule). */
   linkAhead: (name: string, folders: readonly string[]) => { uri: string } | null;
 };
@@ -103,7 +114,13 @@ function scanWikilinks(text: string): (WikilinkOccurrence | EscapedWikilink)[] {
   return found.sort((left, right) => left.from - right.from);
 }
 
-type Located = { uri: string; area: string; scheme: string; segments: string[] };
+type Located = {
+  uri: string;
+  documentId: string | null;
+  area: string;
+  scheme: string;
+  segments: string[];
+};
 
 /** Fixed order for an exact path in another area; the holder's own area is first. */
 const AREA_ORDER = ["manuscript", "kb", "user", "scratch"];
@@ -125,7 +142,7 @@ function rankWikilinkMatches(
   candidates: readonly Located[],
   target: WikilinkTarget,
   holder: Located | null,
-): string | null {
+): Located | null {
   const wanted = wantedPath(target);
   const matches = candidates.filter((candidate) => endsWith(candidate.segments, wanted));
   if (!matches.length) return null;
@@ -151,7 +168,7 @@ function rankWikilinkMatches(
       : [];
   for (const prefer of preferred) {
     const hit = matches.find(prefer);
-    if (hit) return hit.uri;
+    if (hit) return hit;
   }
   const [first] = [...matches].sort(
     (left, right) =>
@@ -159,32 +176,34 @@ function rankWikilinkMatches(
       left.segments.length - right.segments.length ||
       (left.uri < right.uri ? -1 : left.uri > right.uri ? 1 : 0),
   );
-  return first?.uri ?? null;
+  return first ?? null;
 }
 
 /**
- * The href each pasted `[[…]]` becomes, spelled from the holder: the document
- * it names, or the link-ahead address when it names none; null leaves it
- * text. Built once per paste: the candidates are located once and bucketed by
- * filename, so a link only ranks the documents that share its name, and a
+ * The link each pasted `[[…]]` becomes: assigned the document it names, or
+ * a fresh ahead ref at the link-ahead address when it names none; null leaves
+ * it text. Built once per paste: the candidates are located once and bucketed
+ * by filename, so a link only ranks the documents that share its name, and a
  * target seen twice is ranked once.
  */
 function wikilinkResolver(
   catalog: WikilinkPasteCatalog,
-): (occurrence: WikilinkOccurrence) => string | null {
+): (occurrence: WikilinkOccurrence) => AssignedLink | null {
   const byName = new Map<string, Located[]>();
-  for (const uri of catalog.targets) {
-    const located = locate(uri);
+  for (const { documentId, uri } of catalog.targets) {
+    const located = locate(uri, documentId);
     const name = located?.segments.at(-1);
     if (!located || name === undefined) continue;
     const bucket = byName.get(name);
     if (bucket) bucket.push(located);
     else byName.set(name, [located]);
   }
-  const holder = catalog.holderUri ? locate(catalog.holderUri) : null;
+  const holder = catalog.holderUri ? locate(catalog.holderUri, null) : null;
   // Ranking ignores case, so its answer is cached under the lowercased path;
   // a link-ahead address keeps the writer's casing, so it is asked each time.
-  const matches = new Map<string, string | null>();
+  const matches = new Map<string, Located | null>();
+  // One address pasted twice shares one assignment, as in `assignPastedSlice`.
+  const aheadRefs = new Map<string, AheadRef>();
   return (occurrence) => {
     const { target } = occurrence;
     const wanted = wantedPath(target);
@@ -194,8 +213,20 @@ function wikilinkResolver(
       match = rankWikilinkMatches(byName.get(wanted.at(-1) ?? "") ?? [], target, holder);
       matches.set(key, match);
     }
-    const uri = match ?? catalog.linkAhead(target.name, target.folders)?.uri;
-    return uri ? spellDocumentHref(catalog.holderUri, uri) + occurrence.suffix : null;
+    if (match?.documentId)
+      return {
+        ref: documentRef(match.documentId),
+        href: storedHref(match.uri, occurrence.suffix),
+      };
+    const ahead = catalog.linkAhead(target.name, target.folders)?.uri;
+    const address = ahead ? aheadAddress(ahead, "link") : null;
+    if (!address) return null;
+    let ref = aheadRefs.get(address);
+    if (!ref) {
+      ref = mintAheadRef();
+      aheadRefs.set(address, ref);
+    }
+    return { ref, href: storedHref(address, occurrence.suffix) };
   };
 }
 
@@ -239,7 +270,7 @@ export function linkPastedWikilinks(
 function linkText(
   node: PMNode,
   link: MarkType,
-  resolve: (occurrence: WikilinkOccurrence) => string | null,
+  resolve: (occurrence: WikilinkOccurrence) => AssignedLink | null,
 ): PMNode[] {
   const text = node.text ?? "";
   if (node.marks.some((mark) => mark.type.spec.code)) return [node];
@@ -252,9 +283,12 @@ function linkText(
     let piece: PMNode | null;
     if ("literal" in occurrence) piece = schema.text(occurrence.literal, node.marks);
     else {
-      const href = linked ? null : resolve(occurrence);
-      piece = href
-        ? schema.text(occurrence.label, link.create({ href, title: null }).addToSet(node.marks))
+      const assigned = linked ? null : resolve(occurrence);
+      piece = assigned
+        ? schema.text(
+            occurrence.label,
+            link.create({ ...assigned, title: null }).addToSet(node.marks),
+          )
         : null;
     }
     if (!piece) continue;
@@ -286,11 +320,12 @@ function codeSpans(text: string): [number, number][] {
   return spans;
 }
 
-function locate(uri: string): Located | null {
+function locate(uri: string, documentId: string | null): Located | null {
   const parsed = parseContextUri(uri);
   if (!parsed.ok || !parsed.value.path) return null;
   return {
     uri,
+    documentId,
     area: `${parsed.value.scheme} ${JSON.stringify(parsed.value.authority)}`,
     scheme: parsed.value.scheme,
     segments: parsed.value.path.split("/").map(lower),

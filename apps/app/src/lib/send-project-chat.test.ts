@@ -45,6 +45,8 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "se
     accountId: ACCOUNT,
     projectId: "550e8400-e29b-41d4-a716-446655440000",
     text: "Draft the fight scene tonight",
+    blocks: [{ type: "text", text: "Draft the fight scene tonight" }],
+    references: [],
     submissionId: "sub-1",
     agent,
     workId: "no-work",

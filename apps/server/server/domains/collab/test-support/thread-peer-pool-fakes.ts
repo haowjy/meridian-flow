@@ -4,7 +4,7 @@ import type {
   ResponseCommitSuccessResult,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { vi } from "vitest";
 import * as Y from "yjs";
 import type { BranchJournalRow } from "../domain/branch-push-contracts.js";
@@ -69,6 +69,9 @@ function createFakeAgentEditCore(
   return Object.assign(fake, { asCore: () => fake as unknown as AgentEditCore });
 }
 
+/** The Work whose draft the fake history's thread peers sit under. */
+export const FAKE_DRAFT_WORK_ID = "00000000-0000-4000-8000-00000000f00d" as WorkId;
+
 /**
  * Branch history as the real `resolveBranchReversalScope` reads it. A thread has
  * no peer until `pullThreadPeer` creates one under a Work draft, and owns undo
@@ -76,7 +79,10 @@ function createFakeAgentEditCore(
  */
 function createFakeReversalHistory() {
   const peers = new Map<string, string>();
-  const branches = new Map<string, { upstreamBranchId: string | null; generation: number }>();
+  const branches = new Map<
+    string,
+    { upstreamBranchId: string | null; workId: WorkId | null; generation: number }
+  >();
   const rows: BranchJournalRow[] = [];
   const key = (documentId: string, threadId: string) => `${documentId}:${threadId}`;
 
@@ -110,8 +116,16 @@ function createFakeReversalHistory() {
       const peerKey = key(input.documentId, input.threadId);
       if (!peers.has(peerKey)) {
         const draftId = `draft:${input.documentId}`;
-        branches.set(draftId, { upstreamBranchId: null, generation: 1 });
-        branches.set(`peer:${peerKey}`, { upstreamBranchId: draftId, generation: 1 });
+        branches.set(draftId, {
+          upstreamBranchId: null,
+          workId: FAKE_DRAFT_WORK_ID,
+          generation: 1,
+        });
+        branches.set(`peer:${peerKey}`, {
+          upstreamBranchId: draftId,
+          workId: FAKE_DRAFT_WORK_ID,
+          generation: 1,
+        });
         peers.set(peerKey, `peer:${peerKey}`);
       }
       return { branchGeneration: 1, attributionBaseline: new Uint8Array() };

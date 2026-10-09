@@ -1,12 +1,12 @@
 /** Settlement ordering over real Yjs documents and in-memory persistence ports. */
 
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -15,6 +15,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createInMemoryPendingSettlementStore } from "../test-support/in-memory-pending-settlement-store.js";
 import type {
   PreparedPushCommit,
@@ -22,14 +23,12 @@ import type {
   PushLineageRow,
 } from "./branch-push-contracts.js";
 import { createBranchPushTransition, fullStateFingerprint } from "./branch-push-transition.js";
-import { NO_DOCUMENT_ASSET_PATHS } from "./ports/document-asset-paths.js";
 
 const documentId = "document" as DocumentId;
 const threadId = "thread" as ThreadId;
 const turnId = "turn" as TurnId;
 const schema = buildDocumentSchema();
-const markup = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
-const codec = createAgentEditCodec(markup);
+const markup = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 const docs: Y.Doc[] = [];
 afterEach(() => {
@@ -98,12 +97,12 @@ function fixture() {
   };
   const transition = () =>
     createBranchPushTransition({
-      assetPaths: NO_DOCUMENT_ASSET_PATHS,
+      links: createStaticDocumentLinkScopes(),
       commitStore: commits,
       settlementStore: store,
       liveCoordinator: coordinator,
       model,
-      codec,
+      codec: createAgentEditCodecFactory(markup),
       changeEventDelivery: { deliver() {} },
     });
   const owner = transition();

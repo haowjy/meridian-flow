@@ -1,10 +1,41 @@
 /** Real-Yjs draft review behavioral coverage. */
 import { toDocHandle } from "@meridian/agent-edit/integration";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { captureUpdate, cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
 
 describe("draft review hunks", () => {
+  it("uses a generic image label rather than exposing a stored source identity", () => {
+    const live = createDoc("Anchor.");
+    const draft = cloneDoc(live);
+    const image = new Y.XmlElement("image");
+    image.setAttribute("src", "asset:00000000-0000-4000-8000-000000000712");
+    const update = captureUpdate(draft, () => {
+      const fragment = draft.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+      fragment.insert(fragment.length, [image]);
+    });
+    try {
+      const review = computeDraftReviewHunks({
+        liveDoc: live,
+        draftDoc: draft,
+        model,
+        draftUpdates: [{ id: 60, actorTurnId: "turn-image", updateData: update }],
+      });
+      expect(review.hunks).toContainEqual(
+        expect.objectContaining({
+          kind: "block",
+          insertedBlock: { type: "image", display: "Image" },
+        }),
+      );
+      expect(JSON.stringify(review)).not.toContain("asset:");
+    } finally {
+      draft.destroy();
+      live.destroy();
+    }
+  });
+
   it("allows text and block hunks to coexist", () => {
     const live = createDoc("Alpha sword.\n\nOmega.");
     const draft = cloneDoc(live);

@@ -28,16 +28,20 @@ export type DocumentCreationAggregate = {
 export function createDocumentCreationAggregate(input: {
   atomic<T>(operation: () => Promise<T>): Promise<T>;
   ensureDocument(documentId: string): Promise<void>;
+  /**
+   * Arrival hook (contract §9.3), inside `atomic` once identity, membership and content exist.
+   * The command already holds the document's namespace key; draft-only membership is no arrival.
+   */
+  onArrival?(documentId: DocumentId): Promise<unknown>;
 }): DocumentCreationAggregate {
   return {
     async createDocumentAtomically<T>(creation: ImmediateDocumentCreation<T>) {
       return input.atomic(async () => {
         if (!(await creation.persistIdentity())) return { created: false } as const;
         await creation.persistMembership();
-        return {
-          created: true,
-          value: await creation.initializeContent(),
-        } as const;
+        const value = await creation.initializeContent();
+        await input.onArrival?.(creation.documentId);
+        return { created: true, value } as const;
       });
     },
 
@@ -45,6 +49,7 @@ export function createDocumentCreationAggregate(input: {
       await input.atomic(async () => {
         await repair.initializeContent();
         await repair.persistMembership();
+        await input.onArrival?.(repair.documentId);
       });
     },
 

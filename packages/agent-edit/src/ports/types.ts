@@ -10,12 +10,10 @@ export type UpdateOrigin =
 
 /** Metadata stored alongside each appended Yjs update. */
 export interface UpdateMeta {
-  /** Serialized origin: `agent:<turnId>` | `human:<userId>` | `system` | `link-update`. */
+  /** Serialized origin: `agent:<turnId>` | `human:<userId>` | `system` | `system:reconcile`. */
   origin: string;
   /** Groups updates into undo units when present. */
   actorTurnId?: string;
-  /** Maintenance attribution, independent of semantic authorship. */
-  actorUserId?: string;
   /** Successful model response that authored an agent mutation or reversal. */
   authoringResponseId?: string;
   /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */

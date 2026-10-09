@@ -1,6 +1,6 @@
 /** Real-Yjs coverage for draft live-vs-draft hunk extraction and attribution. */
 import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -8,7 +8,7 @@ import * as Y from "yjs";
 import type { IndexedDraftUpdate } from "./draft-review-operations.js";
 
 export const schema = buildDocumentSchema();
-export const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+export const codec = mdxCodec({ schema });
 export const model = yProsemirrorModel(schema);
 
 export function createDoc(markdown: string): Y.Doc {

@@ -340,7 +340,6 @@ export function ChatView({
   const dock = useDraftDock({ threadId, generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
-    const text = envelope.text;
     // Durable witness before display and dispatch: a displayed action survives
     // reload only if the intent was persisted first. If the journal refuses the
     // write, do not show a row or dispatch — keep the draft and report failure.
@@ -351,7 +350,7 @@ export function ChatView({
       threadId,
       projectId,
       createdAt: new Date().toISOString(),
-      text,
+      text: envelope.text,
       blocks: [...envelope.blocks],
       references: [...envelope.references],
       activatedSkillSlugs: [...envelope.activatedSkillSlugs],
@@ -364,7 +363,7 @@ export function ChatView({
       };
     }
     requestTailFollow();
-    const optimisticUserTurn = actions.appendUserTurn(threadId, text);
+    const optimisticUserTurn = actions.appendUserTurn(threadId, envelope.blocks);
     // Register the live row before the POST awaits admission: a thread remount
     // while the server still holds the lease must reuse it, not append a second
     // pending copy. Cleared below on acknowledgement or proved rejection.

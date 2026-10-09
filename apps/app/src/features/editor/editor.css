@@ -292,6 +292,14 @@
   color: var(--color-muted-foreground);
 }
 
+/* What a picture with nothing to draw says: an address nothing has been
+   uploaded to yet, or a document that is gone. */
+.meridian-image-node__note {
+  max-width: 16rem;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
 /* The readable box a slot with no measured frame brings, as the pending
    placeholder brings its own (`surfaces/images/image-ingress.css`). A measured
    frame is already the picture's box and a minimum would overflow it. */

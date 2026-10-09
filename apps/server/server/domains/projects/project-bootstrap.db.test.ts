@@ -3,7 +3,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
+import { writeMarkdown } from "../collab/test-support/bound-writes.js";
+import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -21,7 +22,6 @@ else
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { createProjectContextDocumentStore } = await import(
       "../context/context-source-provisioning.js"
     );
@@ -37,11 +37,10 @@ else
     });
     function collab() {
       const domain = createCollabDomain({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       domain.bindHocuspocus(
         new Hocuspocus({
@@ -54,11 +53,10 @@ else
     }
     function boundCollab() {
       const domain = createCollabDomain({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -199,7 +197,7 @@ else
       const documents = collab();
       const repository = createDrizzleProjectBootstrapRepository({ db, documents });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
-      await documents.writeDocument({
+      await writeMarkdown(documents, {
         documentId: first.documentId,
         markdown: "Durable writer draft\n",
         origin: { type: "user", actorUserId: USER_ID as never },

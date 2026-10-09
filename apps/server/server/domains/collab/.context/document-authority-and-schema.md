@@ -22,6 +22,17 @@ resolver injected in `composition.ts`) before every parse or serialization:
 verbatim (`language` = filetype), read back without fences. Checkpoint restore,
 and branch/effective reads use this document-aware surface;
 schema-blind serialization is private to the engine.
+Checkpoint restore (`restoreFromYDoc`) installs the snapshot's projected nodes
+directly, never a serialize/parse round trip, so attributes the codec does not
+spell survive; a `code` snapshot is rebuilt from its text with the current
+filetype as `language`. Every whole-document replacement serializes its staged
+copy before journal admission, so a snapshot the codec can't spell fails with
+the journal and live document untouched. Restore matches the old round trip
+only for Markdown-generated content. Native snapshots keep structure it used to
+normalize: a whitespace-only paragraph followed by an empty one stays two
+paragraphs (the old path collapsed them to one empty paragraph; both serialize
+to the same empty Markdown), and a non-string code-block `language` such as
+`42` stays numeric instead of reparsing to a string.
 Schema projection always runs on a private `gc: false` clone (with the source
 client identity restored after state copy): normalization can repair that clone,
 but serialization cannot mutate its input Y.Doc. Any clone update during
@@ -30,41 +41,128 @@ including insert-only normalization; its best-effort EventSink delivery never
 fails the projection. The event carries schema version, node types, and clock
 counts, never prose.
 
-`domain/agent-edit-runtime.ts` is the one place a `mdxCodec` is built, so it is
-also the one place image paths enter serialization. The composition root passes
-a required `DocumentAssetPaths` port (`domain/ports/document-asset-paths.ts`);
-compositions with no project tree (in-memory, tests) pass
-`NO_DOCUMENT_ASSET_PATHS`. The resolver translates `asset:<documentId>` to a
-manuscript-relative path on serialize and back on parse, so an image's identity
-survives a move while markdown keeps a readable path.
+`domain/agent-edit-runtime.ts` is the one place a `mdxCodec` is built. The
+composition root passes a required `DocumentLinkScopes` port
+(`domain/ports/document-link-scope.ts`, adapter in context's
+`adapters/document-link-scope.ts`); compositions with no project tree
+(in-memory, tests) pass `createStaticDocumentLinkScopes()`. Every serialize call
+takes a holder-bound scope that spells stored links and sources: a ref-bearing
+link as its target's current path in the holder's view, an `asset:<documentId>`
+source as its manuscript-relative path (else its last full address, else an
+empty destination: an id never reaches a reader), anything else as stored. Parse is pure
+syntax; ref assignment (agent-edit `assignLinkRefs`, which also turns a known
+manuscript image path into `asset:<id>`) gives what was written its stored refs.
 
-The codec asks synchronously, so the paths are loaded per operation, never
-cached: `within(project, op)` reads every manuscript image (deleted ones at
-their last location) in one query and binds them to the operation with
-`AsyncLocalStorage`. `domain/asset-path-scope.ts` wraps every door that
-serializes: the markdown engine, the edit core (`read`/`write` by grant
-project, reversal by document), the branch peer, the reply's save (by thread),
-live turn reversal, draft push and its settlement, and offline reconciliation.
-Draft preview returns Yjs review metadata and hunks without serializing Markdown,
-so it opens no image-path scope.
-ContextFS search owns one for all matching documents in its source; it supplies
-those document IDs with the first document as the project anchor, so nested
-reads need neither another image-tree load nor another project lookup.
-Wrappers name every method, so a new method does not compile until its scope is
-decided. A nested `within` for the same project reuses the enclosing scope only
-while that operation is still running; a timer that inherited a settled scope
-loads fresh. Effective Markdown and hashline reads load before branch locks;
-Apply resolves branch identities and paths first, then revalidates all branch
-snapshots under their locks. The snapshot precedes locks, so a move that
-lands in between, or one the operation makes itself, shows only in the next
-scope.
+**Whole-document writes bind outside, apply inside** (`domain/link-binding.ts`,
+contract §6.2). The engine's writes (`setMarkdown`, `writeDocument`,
+`seedFromMarkdown`) take a `BoundWrite`, never a Markdown string, and never
+parse. A `LinkBinder` makes it, before the caller opens any transaction:
+`bindMarkdown` opens the holder's scope (the document, or the project and the
+address a document about to be created will have), parses, prepares the scope, assigns
+fresh or against the holder's current document (`against: "current"`: every
+link that stays corresponds to itself and keeps its ref, so an overwrite
+keeps refs verbatim), and registers the ahead refs it minted.
 
-A picture never fails its document. An id with no document spells as its
-`asset:` ref. A deleted image keeps its last path only while that path reads
-back to it alone (no live image and no other deleted image there); otherwise it
-spells as its ref, so a chapter saved while the image is gone reconnects on
-restore. A picture serialized outside every scope spells as its ref and is
-reported: `serialize.asset_path_unscoped` in production, a throw under test.
+A bound write is desired state: its assigned blocks, plus the holder it was
+bound for and whether it was bound fresh. It is applied as agent-edit's
+ordinary whole-document overwrite (the correspondence a `create` with
+overwrite resolves), so unchanged blocks keep their items and so does
+unchanged prose in a changed block.
+`writeDocument` routes an actor's write in a thread (and every agent write)
+through the edit core's `create` with the nodes as `WriteContext.boundNodes`:
+the core aligns them against its runtime copy of the document, computes the
+overwrite's semantic IR and certified provenance there, and records the write
+as that actor's mutation (L21's kept-paragraph authorship holds by
+construction). Alignment and admission are separate acquisitions, so an edit
+admitted between them merges like any concurrent edit to a `create`. A writer's
+save outside a thread applies the same correspondence to the engine's
+staged copy (`overwriteWithAssigned`) and carries no certified facts, since
+fresh-authorship admission refuses the reserved provenance namespace. Do not
+lower whole-document writes with a whole-fragment `updateYFragment` diff: it
+keeps only a common prefix and suffix, so a paragraph inserted above kept
+prose re-attributes that prose to the saver (A2-1's certified-save row).
+Like any whole-document save, applying replaces whatever was admitted before
+it: anchoring the write to the state it was bound against would only protect
+the moment between bind and apply. An edit made against the old state and
+admitted after the save merges into the blocks it kept.
+A write bound fresh (seed, import, create, upload) lands only in a document
+with no blocks: the core's `create` without overwrite refuses one that has
+content, checked again at the admission that journals it
+(`PreparedMutation.refuseUnlessEmpty`), and the engine answers
+`stale_generation`.
+A bound write also certifies its holder (`document`
+by id, `new` by the canonical address it will have, or `static`): the engine
+refuses to apply it to any other document, and ContextFS checks the path's
+occupant under its namespace lock and answers `stale_target` when it changed.
+Registration opens a root transaction that takes namespace keys; inside a
+command transaction that already holds them it would wait on itself forever,
+invisibly to PostgreSQL. So `bindMarkdown` throws
+`LinkBindingInsideTransactionError` inside any transaction, and a door that
+forgot to hoist fails at once. `bindStatic` is for link-free text fixed in code
+(a project's first chapter, seeded inside the bootstrap transaction); it throws
+if the text names anything. There is no string-transform or append write. Seed, import and create bind fresh (pass 3 only).
+
+The codec asks synchronously, so the tree is read per operation, never cached.
+`within(key, op)` opens a snapshot keyed by project and reader (the account a
+door names, else its thread's account, else the project owner; and the thread
+it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each operation then calls
+`prepare({ holders, docs, stored, refs, addresses, written })` with what its next
+synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
+(markup `storedLinkKeys`), and one batch loads settlements, rows by
+id and rows at exact or extension-omitted addresses, readability through the
+file policy's list path, and manifest membership only when a row needs it.
+Membership is the same authority ContextFS lists through and is required (DB
+suites pass `everyRowMembership` or the real manifest); its failure propagates.
+A view's own manifest decides presence: a draft that removed a live document
+lacks it, and the live set only tells live from draft-only. A view whose
+membership was never loaded is a miss, not an absence.
+`holder({ documentId, view })` returns the synchronous scope only from an open
+snapshot; it keeps that snapshot, so work deferred past the operation spells
+from it.
+
+`domain/document-link-scope-doors.ts` wraps every door that serializes: the
+markdown engine (each method prepares after loading its doc), the edit core
+(`read`/`write` by grant project and principal, reversal by document in its
+thread; agent-edit binds its codec per command through `DocumentLinksPort`),
+the branch peer (effective Markdown, hashlines and revision, in the reader's
+thread), the reply's save (by thread),
+live turn reversal and offline reconciliation. Draft preview owns one
+enclosing scope for both sides and prepares the draft holder in its Work's
+view for the `y2:` revision; it does not serialize whole-document Markdown.
+Selective Apply/Discard recompute that scoped revision with their selection. ContextFS
+search owns one for all matching documents in its source. Branch push opens
+its scope before branch locks and prepares its trail docs under them; its
+settlement keeps its own scope. Wrappers name every method, so a new method
+does not compile until its scope is decided. A nested `within` for the same
+project and reader reuses the enclosing snapshot only while that operation is
+still running, and never one read as another account or in another (or no)
+thread; a timer that inherited a settled snapshot opens a fresh one. A move
+that lands after a prepare shows only in the next snapshot.
+
+The view is explicit everywhere. The engine's `serializeDocument` and
+`serializeVersionedDocument` take it, and an effective read names its version
+(`EffectiveReadVersion`: live, or draft with its Work). The thread pool routes
+each model call's view on `WriteContext.linkView`: the destination it chose
+for a read or write, and for an undo or redo the side whose history it
+reverses (a draft side in the Work whose draft holds that history). At a
+reply's save each document spells in the destination it was pinned to. A
+thread core asked to spell without a routed view throws.
+
+A picture never fails its document. The `asset:` rule reads the snapshot's
+rows but, as the shipped image rule always has, not readability or
+membership. A deleted image keeps its last path only while that path reads
+back to it alone (no live image and no other deleted image there), so a chapter
+saved while the image is gone reconnects on restore. An upload with no path to
+spell (deleted with its path taken, or outside the project's own manuscript)
+spells its own row's last address in full, as a gone link spells its stored
+address, and the read records that showing, so a rewrite continues it. One with
+no address in this project (no row, another project's id, a snapshot miss)
+spells an empty destination, which names nothing; the read records that
+showing at the empty address, and ref assignment keeps the stored picture when
+that empty destination is written back over it, even once it became addressable. Spelling outside every scope uses stored bytes and is reported
+(`serialize.link_unscoped`); a ref or address the snapshot never loaded is
+`serialize.link_snapshot_miss`, a throw under test only when no door prepared
+the snapshot.
 
 **Durable whole-document projections route through this engine.** Push
 completion and trail forward actions inject `DurableProjectionSerializer`

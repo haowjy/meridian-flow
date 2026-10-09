@@ -3,6 +3,7 @@
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -22,10 +23,13 @@ import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/threa
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
+import { scopeBranchPeer } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { runResponseTransaction } from "./domain/response-transaction.js";
 import {
   ALPHA_ID,
+  BETA_ID,
   closeDatabase,
   createHarness,
   createTestDatabase,
@@ -37,13 +41,27 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import {
+  createTestDocumentLinkScopes,
+  lateBoundManifestMembership,
+} from "./test-support/document-link-scopes.js";
+
+/** The grant names this project and its owner, as the file policy would: the read's scope key. */
+function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
+  return {
+    ...grant,
+    principal: { ...grant.principal, accountId: USER_ID },
+    facts: { ...grant.facts, projectId: PROJECT_ID },
+  };
+}
 
 async function fixture(
   db: Database,
   harnesses: Array<ReturnType<typeof createHarness>>,
   mode: "direct" | "draft",
+  options: { links?: DocumentLinkScopes } = {},
 ) {
-  const harness = createHarness(db);
+  const harness = createHarness(db, options.links ? { links: options.links } : {});
   harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
   await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
@@ -61,17 +79,24 @@ async function fixture(
     });
   });
   await f.branchStore.reconcileProjectManifest(PROJECT_ID);
-  const effective = createEffectiveDocumentReader({
-    branches: f.branchStore,
-    branchCoordinator: f.branchCoordinator,
-    branchPulls: f.branchPulls,
-    liveCoordinator: f.liveCoordinator,
-    agentEdit: f.collab.agentEdit(),
-    documents: f.runtime.markdownDocuments,
-    model: f.runtime.model,
-    codec: f.runtime.codec,
-  });
+  // The reads spell from the harness's scope, so their revisions compare with these.
+  const links = f.links;
+  const effective = scopeBranchPeer(
+    createEffectiveDocumentReader({
+      branches: f.branchStore,
+      branchCoordinator: f.branchCoordinator,
+      branchPulls: f.branchPulls,
+      liveCoordinator: f.liveCoordinator,
+      agentEdit: f.collab.agentEdit(),
+      documents: f.runtime.markdownDocuments,
+      model: f.runtime.model,
+      codec: f.runtime.codec,
+      links,
+    }),
+    links,
+  );
   const revisions = createDocumentRevisions({
+    links,
     threads: createDrizzleThreadRepository(db),
     availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
@@ -87,10 +112,12 @@ async function fixture(
     threadId: THREAD_ID,
     sessionId: THREAD_ID,
     turnId: TURN_ID,
-    grant: testFileGrant(
-      mode === "direct"
-        ? { kind: "live" }
-        : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+    grant: inProject(
+      testFileGrant(
+        mode === "direct"
+          ? { kind: "live" }
+          : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+      ),
     ),
   };
   const read = (responseId?: string) =>
@@ -168,6 +195,65 @@ describe("document revisions (postgres and collab)", () => {
     expect(await f.current()).not.toBe(before.revision);
   });
 
+  it("a tree-only move changes the view revision, so compaction does not elide the stale read", async () => {
+    // The real manifest authority, so a Work view's own membership counts.
+    const manifest = lateBoundManifestMembership();
+    const f = await fixture(db, harnesses, "direct", {
+      links: createTestDocumentLinkScopes(db, { membership: manifest.membership }),
+    });
+    manifest.bind(f.effective);
+    const doc = f.hocuspocus.documents.get(ALPHA_ID);
+    if (!doc) throw new Error("Fixture live room missing");
+    const before = Y.encodeStateVector(doc);
+    const documentSchema = buildDocumentSchema();
+    const link = documentSchema.marks.link.create({ href: "beta.md", ref: `doc:${BETA_ID}` });
+    f.model.insertBlocks(toDocHandle(doc), null, {
+      blocks: [documentSchema.node("paragraph", null, [documentSchema.text("Beta", [link])])],
+    });
+    await f.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+      origin: `human:${USER_ID}`,
+      seq: 0,
+    });
+    const shown = await f.current();
+    expect(shown).toMatch(/^y2:/);
+    expect(await f.current()).toBe(shown);
+    // The model's read and the revision-only path agree under real scopes, or
+    // compaction would never elide a copy.
+    expect((await f.read()).revision).toBe(shown);
+
+    // Nothing in alpha changes; only where its link's target sits.
+    await db
+      .update(schema.documents)
+      .set({ name: "gamma" })
+      .where(eq(schema.documents.id, BETA_ID));
+    const moved = await f.current();
+    expect(moved).not.toBe(shown);
+    expect((await f.read()).revision).toBe(moved);
+
+    // Alpha stays untouched in its Work, whose manifest drops the link's target:
+    // every effective door renders that view from the live content, none live.
+    await f.effective.recordManifestDocumentDeleted(BETA_ID, {
+      projectId: PROJECT_ID,
+      workId: WORK_ID,
+      threadId: THREAD_ID,
+    });
+    const view = {
+      documentId: ALPHA_ID,
+      threadId: THREAD_ID,
+      destination: "draft" as const,
+      workId: WORK_ID,
+    };
+    const markdown = await f.effective.readEffectiveMarkdown(view);
+    const hashlines = await f.effective.readEffectiveHashlines(view);
+    const revision = await f.effective.readEffectiveRevision(view);
+    if (!markdown.ok || !hashlines.ok) throw new Error(JSON.stringify({ markdown, hashlines }));
+    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](beta.md)");
+    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](beta.md)");
+    expect
+      .soft([markdown.value.revision, revision], "one view")
+      .toEqual([hashlines.value.revision, hashlines.value.revision]);
+  });
+
   it("captures the apply token before a writer edit and receipt rewrite", async () => {
     const f = await fixture(db, harnesses, "direct");
     await f.read();
@@ -183,7 +269,7 @@ describe("document revisions (postgres and collab)", () => {
     });
     expect(injected).toBe(true);
     const receipt = committed.documents[0]?.receipts[0];
-    expect(receipt?.revision).toMatch(/^y1:/);
+    expect(receipt?.revision).toMatch(/^y2:/);
     expect(receipt?.revision).not.toBe(await f.current());
   });
 
@@ -209,7 +295,7 @@ describe("document revisions (postgres and collab)", () => {
 
   it("does not treat a deleted document's still-loaded room as a readable source", async () => {
     const f = await fixture(db, harnesses, "direct");
-    expect((await f.read()).revision).toMatch(/^y1:/);
+    expect((await f.read()).revision).toMatch(/^y2:/);
     await db
       .update(schema.documents)
       .set({ deletedAt: new Date() })
@@ -251,7 +337,7 @@ describe("document revisions (postgres and collab)", () => {
             timer = setTimeout(() => reject(new Error("contended pull timed out")), 5000);
           }),
         ]);
-        expect(revision).toMatch(/^y1:/);
+        expect(revision).toMatch(/^y2:/);
       } finally {
         clearTimeout(timer);
       }
@@ -389,7 +475,7 @@ describe("document revisions (postgres and collab)", () => {
       threadId: THREAD_ID,
     });
     expect(membership.members).not.toContain(ALPHA_ID);
-    expect(before.revision).toMatch(/^y1:/);
+    expect(before.revision).toMatch(/^y2:/);
     expect(await f.current()).toBeNull();
   });
 });

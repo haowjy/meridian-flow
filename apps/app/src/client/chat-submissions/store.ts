@@ -26,14 +26,14 @@ type ChatSubmissionBase = {
   projectId: string | null;
   createdAt: string;
   text: string;
+  /** With `references`, the exact message payload the composer submitted. */
+  blocks: UserMessageBlock[];
+  references: SubmittedReference[];
   activatedSkillSlugs: string[];
 };
 
-/** Existing-thread send. Blocks/references are the exact fingerprint payload. */
 export type ExistingThreadChatSubmission = ChatSubmissionBase & {
   kind: "existing-thread";
-  blocks: UserMessageBlock[];
-  references: SubmittedReference[];
 };
 
 /** Project Home first send. Mirrors the `persistCreation` inputs. */
@@ -80,6 +80,10 @@ function parseCommon(
     (value.projectId !== null && typeof value.projectId !== "string") ||
     typeof value.createdAt !== "string" ||
     typeof value.text !== "string" ||
+    !Array.isArray(value.blocks) ||
+    !value.blocks.every(isObject) ||
+    !Array.isArray(value.references) ||
+    !value.references.every(isObject) ||
     !isStringArray(value.activatedSkillSlugs)
   ) {
     return null;
@@ -91,6 +95,8 @@ function parseCommon(
     projectId: value.projectId,
     createdAt: value.createdAt,
     text: value.text,
+    blocks: value.blocks as UserMessageBlock[],
+    references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
   };
 }
@@ -108,16 +114,7 @@ function parseSubmission(raw: string, accountId: string): ChatSubmission | null 
   }
   const common = parseCommon(parsed);
   if (!common) return null;
-  if (common.kind === "existing-thread") {
-    if (!Array.isArray(parsed.blocks) || !parsed.blocks.every(isObject)) return null;
-    if (!Array.isArray(parsed.references) || !parsed.references.every(isObject)) return null;
-    return {
-      ...common,
-      kind: "existing-thread",
-      blocks: parsed.blocks as UserMessageBlock[],
-      references: parsed.references as SubmittedReference[],
-    };
-  }
+  if (common.kind === "existing-thread") return { ...common, kind: "existing-thread" };
   if (common.kind === "first-send") {
     if (
       typeof common.projectId !== "string" ||

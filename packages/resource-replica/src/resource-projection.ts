@@ -131,9 +131,7 @@ function catalogDocumentIds(
   const ids = new Set<string>();
   for (const catalog of catalogs) {
     if (catalog.projectId !== projectId) continue;
-    const invalidated = new Set(catalog.invalidatedEntryIds);
-    for (const entry of catalog.entries)
-      if (entry.kind === "file" && !invalidated.has(entry.entryId)) ids.add(entry.entryId);
+    for (const entry of catalog.entries) if (entry.kind === "file") ids.add(entry.entryId);
   }
   byProject.set(projectId, ids);
   return ids;

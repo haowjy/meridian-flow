@@ -1,5 +1,4 @@
 /** One data-driven pipeline for durable branch pushes into live documents. */
-import { createAgentEditCodec } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -56,14 +55,13 @@ type BatchPipelineResult =
 export function createBranchPushService(input: BranchPushServiceInput): BranchPushService {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
-  const attributionCodec = createAgentEditCodec(input.codec);
   const transition = createBranchPushTransition({
     commitStore: input.commitStore,
     settlementStore: input.settlementStore,
     liveCoordinator: input.liveCoordinator,
     model: input.model,
-    codec: attributionCodec,
-    assetPaths: input.assetPaths,
+    codec: input.codec,
+    links: input.links,
     changeEventDelivery: input.changeEventDelivery,
     writerIngressBarrier: input.writerIngressBarrier,
     sweepProjectionDiagnostics: input.sweepProjectionDiagnostics,
@@ -135,7 +133,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     receiptId: string,
   ) =>
     preparePushUnderLiveLock(
-      { model: input.model, attributionCodec },
+      { model: input.model, codec: input.codec, links: input.links },
       {
         branch: phase.branch,
         rows: phase.candidate.rows,
@@ -267,38 +265,34 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           ).documentId,
       ),
     );
-    // Paths are independent of branch state. Load before either content or
-    // companion-manifest locks, then revalidate every branch under its lock.
-    return input.assetPaths.within(
-      { documentId: documentIds[0] as string, documentIds },
-      async () => {
-        for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-          try {
-            return await criticalSections.withBranches(branchIds, async (lease) => {
-              const branches = await Promise.all(
-                branchIds.map(async (branchId) =>
-                  assertActiveWorkDraftBranch(
-                    await input.branchStore.getBranch(branchId),
-                    branchId,
-                    refuseGone,
-                  ),
+    // Load the tree before content locks, then revalidate branches under their locks.
+    return input.links.within({ documentId: documentIds[0] as string, documentIds }, async () => {
+      for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+        try {
+          return await criticalSections.withBranches(branchIds, async (lease) => {
+            const branches = await Promise.all(
+              branchIds.map(async (branchId) =>
+                assertActiveWorkDraftBranch(
+                  await input.branchStore.getBranch(branchId),
+                  branchId,
+                  refuseGone,
                 ),
-              );
-              return run(branches, lease);
-            });
-          } catch (cause) {
-            if (cause instanceof BranchPushCommitConflictError) {
-              if (attempt >= maxCasRetries) {
-                throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
-              }
-              continue;
+              ),
+            );
+            return run(branches, lease);
+          });
+        } catch (cause) {
+          if (cause instanceof BranchPushCommitConflictError) {
+            if (attempt >= maxCasRetries) {
+              throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
             }
-            throw cause;
+            continue;
           }
+          throw cause;
         }
-        throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
-      },
-    );
+      }
+      throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
+    });
   }
 
   async function resetAutoBranchIfDrained(
