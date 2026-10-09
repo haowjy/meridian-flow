@@ -1,7 +1,7 @@
 // Mutating and query write command handlers.
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
-import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
+import { snapshotBlocks } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
@@ -13,7 +13,6 @@ import { writeHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
-import { type BoundUpdate, boundRefusalResult, mergeBoundUpdate } from "./bound-update.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { copyEdgeLines, copySummary } from "./copy-receipt.js";
@@ -80,7 +79,7 @@ export function createWriteCommands(deps: {
   } = deps;
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
 
-  return { read, create, mutate, applyBound };
+  return { read, create, mutate };
 
   function emptiedDocument(
     runtime: { doc: Y.Doc },
@@ -180,6 +179,8 @@ export function createWriteCommands(deps: {
       return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
     }
     const content = command.command === "create" ? (command.content ?? "") : "";
+    // A host's bound write (§6.2) arrives as nodes: never parsed or assigned again.
+    const boundNodes = command.command === "create" ? context.boundNodes : undefined;
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
@@ -194,8 +195,9 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const parsed: ParseForCommandResult = copiedNodes
-      ? { ok: true, parsed: { blocks: [...copiedNodes] } }
+    const given = copiedNodes ?? boundNodes;
+    const parsed: ParseForCommandResult = given
+      ? { ok: true, parsed: { blocks: [...given] } }
       : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -250,11 +252,11 @@ export function createWriteCommands(deps: {
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
     }
-    const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
+    const shown = given ? [] : await shownLinksFor(address.documentId, context);
     const links = await openCommandLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
-      ...(copiedNodes ? { stored: copiedNodes } : { written: parsed.parsed.blocks }),
+      ...(given ? { stored: given } : { written: parsed.parsed.blocks }),
       shown,
       context,
     });
@@ -273,11 +275,11 @@ export function createWriteCommands(deps: {
           doc: toDocHandle(runtime.doc),
           model: options.model,
           codec: links.codec,
-          links: assigner,
+          links: boundNodes ? "preassigned" : assigner,
         },
         address,
         copiedNodes ? { blocks: copiedNodes } : { content, parsedContent: parsed.parsed },
-        copiedNodes ? copiedNodes.length === 0 : content.length === 0,
+        given ? given.length === 0 : content.length === 0,
       );
       if (!resolved.ok) {
         return errorResponse(
@@ -290,9 +292,10 @@ export function createWriteCommands(deps: {
       if (resolved.edits.length === 0) return formatUnchangedSuccess();
       overwrite = resolved;
     }
-    // Copies carry what they name; written content into an empty document is assigned fresh.
+    // Copies and bound nodes carry what they name; written content into an empty document is
+    // assigned fresh.
     const written =
-      copiedNodes || overwrite
+      given || overwrite
         ? parsed.parsed
         : { blocks: assigner.assignSpan([], parsed.parsed.blocks) };
     await registerMinted(assigner, address.documentId, context);
@@ -470,101 +473,6 @@ export function createWriteCommands(deps: {
         ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
       }),
     );
-  }
-
-  /**
-   * A whole-document write the host bound and lowered outside its transaction
-   * (§6.2), recorded as the actor's mutation: nothing is parsed, assigned or
-   * aligned again. It stages on the runtime, and the commit admits it under
-   * the document's lock (`admitBoundUpdate`), never later: it is never
-   * part of a staged reply.
-   */
-  async function applyBound(
-    input: BoundUpdate & { documentId: string },
-    session: ActorSession,
-    context: WriteContext,
-  ): Promise<InternalWriteResult> {
-    const { documentId } = input;
-    await options.lifecycle?.ensureDocument(documentId);
-    const runtime = runtimeFor(session, documentId);
-    const restored = await runtimeStore.restoreRuntimeFromLive(
-      session,
-      documentId,
-      runtime,
-      "create",
-    );
-    if (isInternalWriteResult(restored)) return restored;
-    const links = await openCommandLinks(options, { documentId, docs: [runtime.doc], context });
-    const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = threadOrigins.getThreadOrigin(documentId, session.threadId);
-    if (!mergeBoundUpdate(runtime.doc, input, origin, true)) {
-      restorePreWriteSnapshot(runtime, preWriteSnapshot);
-      return boundRefusalResult(documentId, "base_missing");
-    }
-    if (sameBytes(Y.encodeStateAsUpdate(runtime.doc), preWriteSnapshot)) {
-      return formatUnchangedSuccess();
-    }
-    // The echo spells what the result names.
-    await options.links.prepare({ documentId, docs: [runtime.doc], context });
-    const changes = diffSnapshots(
-      before,
-      snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
-    );
-    const actor = mutationActor(session, documentId, context);
-    const turnId = actor.kind === "agent" ? actor.turnId : null;
-    const writeIdentity = await nextWriteIdentity(documentId, session, context);
-    const semanticEditIr = input.certified?.ir;
-    const committed = await submitPreparedMutation(
-      {
-        docId: documentId,
-        commandName: "create",
-        runtime,
-        links,
-        before,
-        updates: [
-          {
-            update: Y.encodeStateAsUpdate(runtime.doc, beforeVector),
-            meta: mutationMeta(actor),
-            mutation: {
-              threadId: session.threadId,
-              turnId,
-              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-              actorKind: actor.kind,
-              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-              writeId: writeIdentity.durableId,
-              wId: writeIdentity.ordinal,
-              ...(semanticEditIr ? { semanticEditIr } : {}),
-              ...mutationMode(context.interactionContext),
-            },
-          },
-        ],
-        liveOrigin: mutationUpdateOrigin(actor),
-        actor,
-        touchedHashes: new Set([...changes.changed, ...changes.inserted]),
-        deletedHashes: changes.deleted,
-        preOwnSnapshot: preWriteSnapshot,
-        bound: input,
-        ...(turnId ? { turnId } : {}),
-        interactionContext: interactionContextForAttempt(
-          context.interactionContext,
-          writeIdentity.durableId,
-        ),
-      },
-      session,
-    );
-    if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
-    runtimeStore.attachRuntime(session, documentId, runtime);
-    return formatApplySuccess({
-      phase: "committed",
-      revision: committed.ok ? committed.revision : null,
-      writeId: writeIdentity.handle,
-      echo: committed.ok ? committed.summary.echo : [],
-      ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
-      ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
-    });
   }
 
   async function mutate(
@@ -982,10 +890,6 @@ export function createWriteCommands(deps: {
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
-
-function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((byte, index) => byte === right[index]);
-}
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
   const restored = new Y.Doc({ gc: false });

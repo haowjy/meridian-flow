@@ -7,12 +7,13 @@
  */
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
-  admitBoundUpdate,
+  createAgentEditCodecFactory,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
   type MutationActor,
+  overwriteWithAssigned,
   renderAgentEditResult,
   toDocHandle,
   type UpdateJournal,
@@ -39,7 +40,6 @@ import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
 import type { BoundWrite } from "./link-binding.js";
-import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -90,7 +90,8 @@ type MarkdownDocumentEngineDeps = {
   afterWrite?: MarkdownWriteHook;
   /**
    * A whole-document write recorded as an actor's mutation (thread undo,
-   * receipts): agent-edit merges the bound update into the live document.
+   * receipts): agent-edit's `create` applies the bound nodes as its ordinary
+   * overwrite, or, bound fresh, into an empty document only.
    */
   identityPreservingWrite(input: {
     documentId: DocumentId;
@@ -101,12 +102,11 @@ type MarkdownDocumentEngineDeps = {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 };
 
-/** Stages a change on a copy of the live document; `authority` is the live document's. */
+/** Stages a change on a copy of the live document, under its lock. */
 type DraftMutation = (
   draft: Y.Doc,
   yjsOrigin: TransactionOrigin,
-  authority: Readonly<CheckpointAuthority>,
-) => Result<void, SyncError>;
+) => Result<void, SyncError> | Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
   /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
@@ -129,10 +129,9 @@ export type MarkdownDocumentEngine = {
   /**
    * Whole-document writes take a write a `LinkBinder` bound before the
    * caller's transaction (contract §6.2); none of them parses Markdown. Each
-   * applies only to the holder it was bound for, and merges its update
-   * into the document. A write whose base's authority generation was replaced
-   * (its certificate expired), or whose base clocks the document lacks, is
-   * `stale_generation`, for the caller to bind again.
+   * applies only to the holder it was bound for, as the whole-document
+   * overwrite of what the document holds under its lock. A fresh write that
+   * finds content it never saw is `stale_generation`.
    */
   setMarkdown(input: {
     documentId: DocumentId;
@@ -157,6 +156,8 @@ export type MarkdownDocumentEngine = {
 export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
+  const agentEditCodecs = createAgentEditCodecFactory(deps.codec);
+
   async function documentFormat(
     documentId: DocumentId,
   ): Promise<Result<{ schemaType: YjsTrackedSchemaType; filetype: string | null }, SyncError>> {
@@ -185,13 +186,17 @@ export function createMarkdownDocumentEngine(
     });
   }
 
-  /** Load what `docs` name, then spell as this document in `view` (default live). */
+  /**
+   * Load what `docs` (and `stored` nodes: a bound write's) name, then spell
+   * as this document in `view` (default live).
+   */
   async function spelling(
     documentId: DocumentId,
     docs: readonly Y.Doc[],
     view: LinkView = LIVE_VIEW,
+    stored: ParsedContent["blocks"] = [],
   ): Promise<HolderLinkScope> {
-    await deps.links.prepare({ holders: [{ documentId, view }], docs });
+    await deps.links.prepare({ holders: [{ documentId, view }], docs, stored });
     return deps.links.holder({ documentId, view });
   }
 
@@ -250,25 +255,38 @@ export function createMarkdownDocumentEngine(
   }
 
   /**
-   * Merge a bound update into `draft`, a copy of the live document taken
-   * under its lock, so it is admitted (`admitBoundUpdate`: certificate,
-   * clocks, fresh-needs-empty) against the generation it lands in. A writer's
-   * save outside a thread applies the update alone, without certified facts.
+   * Overwrite `draft`, a copy of the live document taken under its lock, with
+   * the bound nodes: agent-edit's whole-document correspondence, so blocks
+   * left as they were keep their items. A writer's save outside a thread
+   * carries no certified facts.
    */
-  function mergeBound(
+  async function overwriteDraft(
     documentId: DocumentId,
     draft: Y.Doc,
-    authority: Readonly<CheckpointAuthority>,
     content: BoundWrite,
     yjsOrigin: TransactionOrigin,
-  ): Result<void, SyncError> {
-    const refused = admitBoundUpdate(draft, content, {
-      authority,
+  ): Promise<Result<void, SyncError>> {
+    if (content.fresh && deps.model.getBlocks(toDocHandle(draft)).length > 0) {
+      return Err({ code: "stale_generation", documentId });
+    }
+    const links = await spelling(documentId, [draft], LIVE_VIEW, [...content.blocks]);
+    const written = overwriteWithAssigned({
+      doc: draft,
       model: deps.model,
+      codec: agentEditCodecs.forScope(links),
+      documentId,
+      content: content.markdown,
+      blocks: content.blocks,
       origin: yjsOrigin,
-      certified: false,
     });
-    return refused ? Err({ code: "stale_generation", documentId }) : Ok(undefined);
+    if (!written.ok) {
+      return Err({
+        code: "corrupt_state",
+        documentId,
+        message: `${written.code}: ${written.message}`,
+      });
+    }
+    return Ok(undefined);
   }
 
   async function replaceLiveDocumentMarkdown(
@@ -284,7 +302,7 @@ export function createMarkdownDocumentEngine(
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
     const beforeVector = Y.encodeStateVector(draft);
     const yjsOrigin = yjsTransactionOrigin(origin);
-    const mutated = mutate(draft, yjsOrigin, documentAuthority(liveDoc));
+    const mutated = await mutate(draft, yjsOrigin);
     if (!mutated.ok) {
       draft.destroy();
       return mutated;
@@ -338,8 +356,7 @@ export function createMarkdownDocumentEngine(
     if (!content.ok) return content;
     return changeDocument(
       input,
-      (draft, yjsOrigin, authority) =>
-        mergeBound(input.documentId, draft, authority, content.value, yjsOrigin),
+      (draft, yjsOrigin) => overwriteDraft(input.documentId, draft, content.value, yjsOrigin),
       format,
     );
   }
@@ -446,11 +463,13 @@ export function createMarkdownDocumentEngine(
       if (!format.ok) return format;
       const bound = checkBound(typedDocumentId, content, format.value, "seed");
       if (!bound.ok) return bound;
-      if (bound.value.base !== null) {
+      if (!bound.value.fresh) {
         throw new Error("A seed takes a fresh write; this one was bound against a document");
       }
       const seededDoc = createCollabYDoc({ gc: false });
-      Y.applyUpdate(seededDoc, bound.value.update, yjsTransactionOrigin(origin));
+      seededDoc.transact(() => {
+        deps.model.insertBlocks(toDocHandle(seededDoc), null, { blocks: [...bound.value.blocks] });
+      }, yjsTransactionOrigin(origin));
       const canonicalMarkdown = serializeForSchema(
         typedDocumentId,
         seededDoc,
@@ -496,9 +515,6 @@ export function createMarkdownDocumentEngine(
       content: input.content,
       actor,
     });
-    if (outcome.status !== "success" && outcome.error?.type === "bound_base") {
-      return Err({ code: "stale_generation", documentId: input.documentId });
-    }
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
       serializeForSchema(

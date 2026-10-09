@@ -16,8 +16,6 @@ import type { AdapterFault } from "../../ports/context-adapter.js";
 import type { ContextDocument } from "../../ports/context-document-store.js";
 
 export const DEFAULT_EDITABLE_FILETYPE = "markdown";
-/** How often a write binds again when its holder changed before it could apply. */
-const BIND_ATTEMPTS = 3;
 
 export function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
   const filetype = filetypeForPath(path);
@@ -47,23 +45,17 @@ export class BoundWrites {
   constructor(private readonly deps: BoundWritesDeps) {}
 
   /**
-   * Bind outside the command transaction, apply inside it. The bound
-   * write names the holder, generation and state it was bound against; if
-   * the path's occupant, its generation or its state changed in between
-   * (`stale_target`), bind again against what is there now.
+   * Bind outside the command transaction, apply inside it. The bound write
+   * names the holder it was bound for; if the path's occupant changed in
+   * between, `apply` answers `stale_target` and the caller decides again.
    */
   async command<T>(
     bind: () => Promise<Result<BoundWrite, AdapterFault>>,
     apply: (bound: BoundWrite) => Promise<Result<T, AdapterFault>>,
   ): Promise<Result<T, AdapterFault>> {
-    for (let attempt = 1; ; attempt++) {
-      const bound = await bind();
-      if (!bound.ok) return bound;
-      const applied = await this.deps.commandExecutor.run(() => apply(bound.value));
-      if (applied.ok || applied.error.code !== "stale_target" || attempt >= BIND_ATTEMPTS) {
-        return applied;
-      }
-    }
+    const bound = await bind();
+    if (!bound.ok) return bound;
+    return this.deps.commandExecutor.run(() => apply(bound.value));
   }
 
   /** Whether `bound` was bound for what occupies its path now (`null`: nothing). */

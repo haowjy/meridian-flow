@@ -102,9 +102,17 @@ export function createAgentEditRuntime(input: {
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
       identityPreservingWrite: ({ documentId, content, actor }) =>
-        liveUtilityCore.applyBound(
-          { documentId, base: content.base, update: content.update, certified: content.certified },
+        liveUtilityCore.write(
           {
+            command: "create",
+            file: "document.md",
+            documentId,
+            content: content.markdown,
+            // Bound against the holder's document: overwrite it. Bound fresh: an empty one only.
+            overwrite: !content.fresh,
+          },
+          {
+            boundNodes: content.blocks,
             actor,
             sessionId:
               actor.kind === "human"
@@ -126,7 +134,6 @@ export function createAgentEditRuntime(input: {
     codec: markupCodec,
     schema,
     model,
-    semanticProvenance,
     coordinator: input.coordinator,
     links: input.links,
     registrar: input.aheadRefs,
