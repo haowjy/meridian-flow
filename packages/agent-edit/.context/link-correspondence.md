@@ -10,15 +10,18 @@ assigned nodes with no Markdown round trip ([design][design]).
 `assignLinkRefs` runs after parse, over the command's prepared
 `HolderLinkScope`, in order:
 
-1. The shipped `asset:` image rule (`assignSources`); `asset:` sources leave the run.
-2. Correspondence (passes 1 and 2, below) over ref-bearing old occurrences in
-   the replaced span. Links and sources correspond separately, each under its
+1. Correspondence (passes 1 and 2, below) over ref-bearing old occurrences in
+   the replaced span. Written pictures enter it like links (L39), so a picture
+   that continues its identity is never captured by a new occupant of the path
+   it was shown at. Stored and written `asset:` sources stay out: they carry no
+   ref and no showing names them. Links and sources correspond separately, each under its
    own address grammar (holder-relative for links, manuscript-root for sources).
    A written link with no extension compares as its default-extension address
    (the `.md` ahead minting stores), so `[x](ch12)` written after a showing of
    `ch12.md` continues that ref after the document moved.
-3. Pass 3 for the rest, markup's `assignFreshLink` (the client assigns with
-   it too): classify (external and contextual keep `ref: null`), resolve in
+2. Pass 3 for the rest. A written source naming a picture the project knows
+   takes the shipped image rule (`asset:<id>`, `ref: null`); everything else
+   goes through markup's `assignFreshLink` (the client assigns with it too): classify (external and contextual keep `ref: null`), resolve in
    the command's view (`scope.documentFor`), else mint an ahead ref whose
    address always carries an extension.
 
@@ -30,7 +33,7 @@ Attribute policy, per written occurrence:
 | pass 1, title or suffix changed | old ref, written title, `storedHref(current address, written suffix)` |
 | a written link equal (href and title) to a contextual old one | that old attrs object: contextual stays contextual |
 | pass 2 | the shown ref, written title, `storedHref(current address or latest shown, suffix)` |
-| pass 3 | `doc:<id>` with the document's address, or a minted ahead ref, or `ref: null` |
+| pass 3 | `asset:<id>` for a known picture, `doc:<id>` with the document's address, a minted ahead ref, or `ref: null` |
 
 `occurrences.ts` rebuilds only the named occurrences; every other node is
 reused, so an unchanged block stays `.eq` and block alignment keeps it.

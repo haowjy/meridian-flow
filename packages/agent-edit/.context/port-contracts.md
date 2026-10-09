@@ -121,9 +121,9 @@ server's in-memory composition passes `{ preloaded: true }`.
 Markup's `storedLinkKeys` (beside the Yjs walk `extractStoredLinks`) is what
 both adapters
 load for stored occurrences (docs and `stored` nodes such as copies).
-After parse, `links/assign-refs.ts` `assignSources` applies the shipped image
-rule (a known manuscript path becomes `asset:<id>`); the write path's ref assigner runs it
-on every written node before correspondence, copies excepted.
+After parse, `links/assign-refs.ts` applies the shipped image rule (a known
+manuscript path becomes `asset:<id>`) in pass 3 of ref assignment, to written
+sources nothing old or shown continued; copies are never assigned.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
 the schema explicitly. This keeps the package host-agnostic without server/infra
 dependency leaks.

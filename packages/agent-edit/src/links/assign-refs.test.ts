@@ -9,7 +9,12 @@ import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import { codecFactory, harness, schema } from "../tool/test-support/write-tool-harness.js";
 import type { LinkSpliceFallbackDetail } from "../tool/write-deps.js";
 import { assignLinkRefs } from "./assign-refs.js";
-import { type Fixture, reviewerFixtures } from "./correspondence.fixtures.js";
+import {
+  type Fixture,
+  type FixtureDocument,
+  reviewerFixtures,
+  SHOWN_HOLDER,
+} from "./correspondence.fixtures.js";
 import type { ShownLink } from "./correspondence.js";
 import {
   catalogDocument,
@@ -27,126 +32,58 @@ import {
 const H = uuid(1);
 const D = uuid(2);
 const E = uuid(3);
-const F = uuid(4);
 const G = uuid(5);
 const ch = (path: string) => `manuscript://chapters/${path}`;
 const HOLDER = ch("holder.md");
 
-/** A1-4 row: a holder, its catalog and old block, the showings, and what the model writes. */
-interface ReviewerCase {
-  name: string;
-  holderUri?: string;
-  documents: Array<[id: string, uri: string, presence?: "deleted"]>;
-  old: Segment[];
-  shown: ShownLink[];
-  written: string;
-  /** Per written link: its label and stored ref; `"ahead"` is a fresh mint, `null` no ref. */
-  expected: Array<[label: string, ref: string | null]>;
-}
-
-/**
- * Per-fixture context the abstract r7 key space leaves out: a document that
- * took a path, and the real holder moves (`one/` to `two/`, and `user://`).
- */
-const fixtureContext: Record<
-  string,
-  { holderUri?: string; documents?: ReviewerCase["documents"] }
-> = {
-  "r1 stale label edit, E took a.md": { documents: [[F, "manuscript://a.md"]] },
-  "r1 deliberate new link to vacated path": { documents: [[F, "manuscript://a.md"]] },
-  "r4 tie on whole replacement prefers live": { documents: [[F, "manuscript://a.md"]] },
-  "r2 holder moved (written normalized against read-time holder)": {
-    holderUri: "manuscript://two/holder.md",
-  },
-  "r2 holder in user:// keeps identity (contextual form)": { holderUri: "user://notes/holder.md" },
-};
-
-/**
- * One r7 fixture on the real write path: refs become document ids, key-space
- * paths canonical addresses relative to the holder the model was shown, and
- * each ref's document sits at its current address (or latest showing), gone
- * when the fixture says it is not live. Pass 3 expects what the catalog has
- * at the written address now, else a mint (a contextual link keeps no ref).
- */
-function fromFixture(fixture: Fixture, index: number): ReviewerCase {
-  const context = fixtureContext[fixture.name] ?? {};
-  const shownHolder = "manuscript://holder.md";
-  const uri = (path: string) => (path.includes("://") ? path : `manuscript://${path}`);
-  const ids = new Map<string, string>();
-  const idOf = (ref: string) => {
-    if (!ids.has(ref)) ids.set(ref, uuid(100 + index * 10 + ids.size));
-    return ids.get(ref) as string;
-  };
-  const documents = new Map<string, [string, string, "deleted"?]>();
-  for (const old of fixture.old) {
-    const at: [string, string] = [idOf(old.ref), uri(old.current)];
-    documents.set(old.ref, old.live ? at : [...at, "deleted"]);
-  }
-  for (const ref of fixture.live) {
-    const latest = fixture.shown
-      .filter((entry) => entry.ref === ref)
-      .sort((a, b) => b.at - a.at)[0];
-    if (!documents.has(ref) && latest) documents.set(ref, [idOf(ref), uri(latest.address)]);
-  }
-  const catalog = [...documents.values(), ...(context.documents ?? [])];
-  const fresh = (href: string): string | null => {
-    const address = uri(href);
-    if (address.startsWith("scratch://")) return null;
-    const there = catalog.find(([, at, presence]) => at === address && presence !== "deleted");
-    return there ? documentRef(there[0]) : "ahead";
-  };
+/** One reviewer fixture rendered for the write path: letters become document ids. */
+function render(fixture: Fixture) {
+  const id = (name: string) => uuid(100 + name.charCodeAt(0));
+  const addressOf = (name: string) =>
+    (fixture.documents.find((document) => document.name === name) as FixtureDocument).address;
   return {
-    name: `r7 fixture: ${fixture.name}`,
-    ...(context.holderUri ? { holderUri: context.holderUri } : {}),
-    documents: catalog,
+    holderUri: fixture.holder ?? SHOWN_HOLDER,
+    documents: fixture.documents.map(({ name, address, deleted }) =>
+      catalogDocument(id(name), address, deleted ? { presence: "deleted" } : {}),
+    ),
     old:
       fixture.old.length > 0
-        ? fixture.old.flatMap((old, position) => [
+        ? fixture.old.flatMap(({ label, document }, position): Segment[] => [
             ...(position > 0 ? [" and "] : []),
-            {
-              text: old.label,
-              ref: documentRef(idOf(old.ref)),
-              href: storedHref(uri(old.current), ""),
-            },
+            docLink(label, id(document), addressOf(document)),
           ])
         : ["Plain prose."],
-    shown: fixture.shown.map((entry) => ({
-      ref: documentRef(idOf(entry.ref)),
-      address: uri(entry.address),
-      at: entry.at,
-      holderUri: shownHolder,
-    })),
-    written: fixture.written.map((link) => `[${link.label}](${link.href})`).join(" and "),
-    expected: fixture.written.map((link, position) => {
-      const match = fixture.expected[position] ?? { pass: 3 };
-      const ref =
-        match.pass === 1
-          ? documentRef(idOf((fixture.old[match.occurrence] as Fixture["old"][number]).ref))
-          : match.pass === 2
-            ? documentRef(idOf(match.ref))
-            : fresh(link.href);
-      return [link.label, ref];
+    shown: fixture.shown.map(
+      ({ document, address, at }): ShownLink => ({
+        ref: documentRef(id(document)),
+        address,
+        at,
+        holderUri: SHOWN_HOLDER,
+      }),
+    ),
+    written: fixture.written.map(({ label, href }) => `[${label}](${href})`).join(" and "),
+    expected: fixture.written.map(({ label }, position) => {
+      const name = fixture.expected[position] ?? null;
+      return [label, name === null || name === "ahead" ? name : documentRef(id(name))];
     }),
   };
 }
 
-const reviewerCases: ReviewerCase[] = reviewerFixtures.map(fromFixture);
-
 it("A1-4: reviewer counterexamples are assigned on the real write path as the model means them", async () => {
-  expect(reviewerCases).toHaveLength(28);
-  for (const testCase of reviewerCases) {
+  expect(reviewerFixtures).toHaveLength(28);
+  for (const fixture of reviewerFixtures) {
+    const testCase = render(fixture);
+    const name = `r7 fixture: ${fixture.name}`;
     const ctx = linkHarness({
-      holder: { id: H, uri: testCase.holderUri ?? "manuscript://holder.md" },
-      documents: testCase.documents.map(([id, uri, presence]) =>
-        catalogDocument(id, uri, presence ? { presence } : {}),
-      ),
+      holder: { id: H, uri: testCase.holderUri },
+      documents: testCase.documents,
       blocks: [paragraph(...testCase.old)],
     });
     const outcome = await ctx.write(
       { command: "replace", in: [1, 1], content: testCase.written },
       testCase.shown,
     );
-    expect.soft(outcome.status, testCase.name).toBe("success");
+    expect.soft(outcome.status, name).toBe("success");
     const links = storedLinks(ctx.live());
     expect
       .soft(
@@ -156,7 +93,7 @@ it("A1-4: reviewer counterexamples are assigned on the real write path as the mo
             ? "ahead"
             : link.ref,
         ]),
-        testCase.name,
+        name,
       )
       .toEqual(testCase.expected);
   }
@@ -469,6 +406,53 @@ const doors: DoorCase[] = [
         expect.soft(await ctx.markdown(), label).toBe(row.expected.markdown);
         expect.soft(ctx.links.minted, label).toEqual([]);
       }
+    },
+  },
+  {
+    name: "a picture keeps its settled identity when another picture takes its shown path",
+    async run() {
+      const A = `ahead:${uuid(44)}`;
+      const B = uuid(45);
+      const map = "manuscript://map.png";
+      const pictures = {
+        image: {
+          old: (attrs: Record<string, unknown>) =>
+            schema.node("paragraph", null, [
+              schema.text("See "),
+              schema.node("image", { alt: "Map", ...attrs }),
+            ]),
+          content: "See ![New label](map.png)",
+        },
+        figure: {
+          old: (attrs: Record<string, unknown>) =>
+            schema.node("figure", { alt: "Map", caption: "", ...attrs }),
+          content: "![New label](map.png)",
+        },
+      };
+      for (const [kind, picture] of Object.entries(pictures))
+        for (const occupied of [false, true]) {
+          const label = `${this.name}: ${kind}${occupied ? ", path reoccupied" : ""}`;
+          const ctx = linkHarness({
+            holder: { id: H, uri: "manuscript://holder.md" },
+            documents: [
+              catalogDocument(D, "manuscript://moved.png", { image: true }),
+              ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
+            ],
+            blocks: [picture.old({ src: storedHref(map, ""), ref: A })],
+            settlements: new Map([[A.slice("ahead:".length), D]]),
+          });
+          const outcome = await ctx.write(
+            { command: "replace", in: [1, 1], content: picture.content },
+            [{ ref: A, address: map, holderUri: "manuscript://holder.md", at: 1 }],
+          );
+          expect.soft(outcome.status, label).toBe("success");
+          expect.soft(storedLinks(ctx.live()), label).toEqual([
+            // Pass 1 keeps the stored attrs verbatim; the ref spells the moved path.
+            { label: "New label", ref: A, href: storedHref(map, ""), title: null },
+          ]);
+          expect.soft(ctx.links.minted, label).toEqual([]);
+          expect.soft(await ctx.markdown(), label).toBe(picture.content.replace("map", "moved"));
+        }
     },
   },
   {
