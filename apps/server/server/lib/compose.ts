@@ -540,9 +540,10 @@ export async function createProductionAppPorts(input: {
     },
   });
   boundManifestMembership = documentSync;
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, {
-    resolveManifestMembership: documentSync.resolveManifestMembership,
-  });
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
+    db,
+    documentSync.resolveManifestMembership,
+  );
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     objectStore,
