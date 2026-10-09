@@ -659,10 +659,12 @@ export const threadDocuments = pgTable(
 /**
  * Links shown to the model in a holder document, per thread (host-only
  * evidence for ref assignment). Independent of transcript blocks, so
- * compaction and restart keep it. One row per showing key; a later showing
- * of the same key takes a fresh `seq` from the global sequence, so `seq`
- * orders showings ("latest"). A fork reads its source's rows up to its cutoff
- * turn through lineage; nothing is copied.
+ * compaction and restart keep it. One row per showing key per turn: a repeat
+ * in a later turn adds a row rather than moving the earlier one, so a fork
+ * whose cutoff precedes the repeat still reads the showing it saw. Within a
+ * turn the row keeps the greatest `seq` from the global sequence, which orders
+ * showings ("latest"). Readers select the lineage's eligible rows by cutoff
+ * first and only then keep the latest per key; nothing is copied.
  */
 export const threadShownLinks = pgTable(
   "thread_shown_links",
@@ -693,6 +695,7 @@ export const threadShownLinks = pgTable(
         table.address,
         table.holderUri,
         table.view,
+        table.turnId,
       ],
     }),
   ],
