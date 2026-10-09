@@ -96,6 +96,7 @@ export function createWorkDraftReviewService(input: {
         documentId: branch.documentId,
         workId,
         status: "active",
+        draftGeneration: branch.generation,
         lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
         actorThreads: actorThreadIds.map((threadId) => ({
           threadId,
@@ -200,6 +201,7 @@ export function createWorkDraftReviewService(input: {
         return {
           status: "active" as const,
           draftId: command.draftId,
+          draftGeneration: branch.generation,
           reviewRoomName: branchRoomName(branch.branchId, branch.generation),
           isNewDocument: await isDraftOnlyManifestDocument(command),
           liveRevisionToken: liveState.revision,

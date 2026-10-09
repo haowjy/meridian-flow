@@ -122,6 +122,7 @@ export async function handleWorkDraftPreviewRequest(
   const base = {
     status: "active" as const,
     draftId: preview.draftId,
+    draftGeneration: preview.draftGeneration,
     reviewRoomName: preview.reviewRoomName,
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
@@ -244,6 +245,7 @@ function serializeThreadDraft(
     documentName: string | null;
     contextPath: string | null;
     status: "active";
+    draftGeneration: number;
     lastActorTurnId: string | null;
     actorThreads: ThreadDraftListItem["actorThreads"];
     updatedAt: Date;
@@ -261,6 +263,7 @@ function serializeThreadDraft(
     documentName: draft.documentName,
     contextPath: draft.contextPath,
     status: draft.status,
+    draftGeneration: draft.draftGeneration,
     lastActorTurnId: draft.lastActorTurnId,
     actorThreads: draft.actorThreads,
     updatedAt: draft.updatedAt.toISOString(),

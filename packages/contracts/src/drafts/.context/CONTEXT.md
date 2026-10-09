@@ -12,6 +12,12 @@ The review wire shape is intentionally JSON-natural and UI-oriented:
   `reviewRoomName`, live markdown, branch markdown, review operations, and
   hunks. Agent operations carry `actorThreadId` and `actorThreadTitle` (the
   chat title at preview time); writer operations carry neither.
+- `draftGeneration` (list row and preview) is the server's branch generation.
+  Closing a draft resets the same `draftId` one generation up, and the next
+  proposal arrives at that higher generation, so the number orders proposals of
+  one draft and never decreases. The preview's `reviewRoomName` and tokens belong
+  to its generation. `draftRevisionToken` is only the stale-command fence and is
+  not an identity.
 - Whole-document Apply and whole-branch Discard requests address only
   `draftId`. Whole Apply settles the whole current Work draft; preview operation
   ids and revision tokens are not part of its request.

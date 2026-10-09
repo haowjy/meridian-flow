@@ -53,6 +53,7 @@ function preview(
   return {
     status: "active",
     draftId: "draft",
+    draftGeneration: 1,
     reviewRoomName: "room",
 
     liveRevisionToken: "l",

@@ -45,6 +45,9 @@ export async function getDraftPreview(
   if (preview.status === "active" && !preview.reviewRoomName) {
     throw new Error("Draft preview response is missing reviewRoomName");
   }
+  if (preview.status === "active" && typeof preview.draftGeneration !== "number") {
+    throw new Error("Draft preview response is missing draftGeneration");
+  }
   return preview;
 }
 

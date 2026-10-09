@@ -1,6 +1,7 @@
 /** PostgreSQL proof for dependency-closed partial Apply settlement. */
 import { randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
+import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { asc, eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
@@ -299,11 +300,33 @@ describe("per-change Apply (postgres)", () => {
     expect((await fixture.branchStore.getBranch(branch.branchId))?.generation).toBe(
       branch.generation + 1,
     );
+    expect(preview.draftGeneration).toBe(branch.generation);
+    // The close's reset keeps the id: the same draft, one generation up, nothing to review.
+    const reset = await fixture.collab.draftReview.preview(command);
+    expect(reset).toMatchObject({
+      status: "active",
+      draftId: branch.branchId,
+      draftGeneration: branch.generation + 1,
+      reviewRoomName: branchRoomName(branch.branchId, branch.generation + 1),
+      operations: [],
+      hunks: [],
+    });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
       action === "apply" ? "Alpha base. Proposed\n" : "Alpha base.\n",
     );
     await stageText(fixture, branch.branchId, 0, " New proposal", "agent");
-    expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
+    // The next proposal shares the reset's generation and room; its changes tell them apart.
+    const rows = await fixture.collab.draftReview.list({ workId: WORK_ID });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      draftId: branch.branchId,
+      draftGeneration: branch.generation + 1,
+    });
+    const next = await fixture.collab.draftReview.preview(command);
+    if (next.status !== "active") throw new Error("missing preview");
+    expect(next.draftGeneration).toBe(branch.generation + 1);
+    expect(next.reviewRoomName).toBe(reset.status === "active" ? reset.reviewRoomName : "");
+    expect(next.operations).not.toHaveLength(0);
   });
 
   it.each([
