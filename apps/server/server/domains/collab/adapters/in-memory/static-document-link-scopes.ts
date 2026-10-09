@@ -2,7 +2,7 @@
  * Document-link scopes over a fixed catalog, for compositions with no project
  * tree (in-memory, tests): every scope answers from the catalog (preloaded), so nothing is
  * loaded and nothing is ever unscoped. An empty catalog spells every stored
- * href and `asset:` ref as stored.
+ * href as stored and every `asset:` source as an empty destination.
  */
 import {
   createStaticDocumentLinks,

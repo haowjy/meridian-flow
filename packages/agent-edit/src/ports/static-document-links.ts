@@ -11,6 +11,7 @@ import {
   splitDocumentHrefSuffix,
 } from "@meridian/contracts";
 import {
+  type AssetAddress,
   createHolderLinkScope,
   type HolderCatalog,
   type HolderLinkScope,
@@ -142,12 +143,20 @@ function staticHolderCatalog(catalog: StaticDocumentCatalog, loaded: Loaded | nu
       ifLoaded("addresses", uri, () =>
         matchDocumentPath(present().filter(reachable), uri, (entry) => entry.uri),
       ),
-    assetPath: (id) =>
-      ifLoaded("ids", id, () => {
+    assetAddress: (id) =>
+      ifLoaded("ids", id, (): AssetAddress | null | undefined => {
         const entry = byId(id);
-        if (!entry?.image || entry.presence === "deleted") return null;
+        if (!entry?.image || entry.projectId !== catalog.projectId) return null;
         const parsed = parseContextUri(entry.uri);
-        return parsed.ok && parsed.value.scheme === "manuscript" ? parsed.value.path : null;
+        const path = parsed.ok && parsed.value.scheme === "manuscript" ? parsed.value.path : null;
+        if (path !== null && entry.presence !== "deleted") return { kind: "path", path };
+        if (path !== null) {
+          // A deleted picture keeps its path only while no other image holds it.
+          if (loaded && !loaded.addresses.has(entry.uri)) return undefined;
+          const images = catalog.documents.filter((each) => each.image && each.uri === entry.uri);
+          if (images.length === 1) return { kind: "path", path };
+        }
+        return { kind: "last", uri: entry.uri };
       }),
     assetFor: (uri) =>
       ifLoaded(

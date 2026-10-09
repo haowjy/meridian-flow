@@ -8,8 +8,8 @@ const NO_HOLDER: LinkHolder = { uri: null, projectId: "", view: { kind: "live" }
 /**
  * Spells every stored href and src as written and keeps `asset:` refs: with
  * no tree loaded, a ref resolves to nothing and spells its stored fallback.
- * For the client and tests; a server read door spells through a prepared
- * holder scope instead.
+ * Only for comparing stored bytes (attribution, sweep detection) and tests,
+ * since it shows upload ids; every reader spells through a holder scope.
  */
 export const UNSCOPED_DOCUMENT_LINKS: DocumentLinkScope = {
   spellLink: ({ href, ref }) =>

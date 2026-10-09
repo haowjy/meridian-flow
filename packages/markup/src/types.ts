@@ -17,8 +17,9 @@ export type { CodecParseErrorLocation, PMNode, SpelledHref };
 export interface DocumentLinkScope {
   spellLink(attrs: { href: string; ref: string | null }): SpelledHref;
   /**
-   * `asset:` rule first (the upload's path, shown at its manuscript address),
-   * then ref spelling under the manuscript-root grammar, then stored src.
+   * `asset:` rule first (the upload's path, else its last full address, else
+   * an empty destination; never the id), then ref spelling under the
+   * manuscript-root grammar, then stored src.
    */
   spellSource(attrs: { src: string; ref: string | null }): SpelledHref;
 }

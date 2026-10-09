@@ -58,7 +58,7 @@ export function createProjectLinkCatalog(
       if (!index.complete) return undefined;
       return held(indexedDocumentAt(index.documents, uri)) ?? null;
     },
-    assetPath: () => undefined,
+    assetAddress: () => undefined,
     assetFor: () => undefined,
   };
 }

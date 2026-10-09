@@ -18,6 +18,7 @@ import {
   mintAheadRef,
   parseLinkRef,
   resolveDocumentHref,
+  type SpelledHref,
   splitDocumentHrefSuffix,
   storedHref,
 } from "@meridian/contracts";
@@ -118,7 +119,7 @@ interface Grammar {
    * that document moved. Pass 3 keeps its exact-then-unique-extension resolve.
    */
   correspondenceKey(href: string, holderUri: string | null): string | null;
-  spell(scope: HolderLinkScope, attrs: OccurrenceAttrs): string | null;
+  spell(scope: HolderLinkScope, attrs: OccurrenceAttrs): SpelledHref;
   kind: WrittenGrammar;
 }
 
@@ -129,7 +130,7 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
       const uri = resolveDocumentHref(href, holderUri)?.uri;
       return uri ? (aheadAddress(uri, "link") ?? uri) : null;
     },
-    spell: (scope, attrs) => scope.spellLink({ href: attrs.href, ref: attrs.ref }).address,
+    spell: (scope, attrs) => scope.spellLink({ href: attrs.href, ref: attrs.ref }),
     kind: "link",
   },
   source: {
@@ -138,10 +139,17 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
       return uri ? { uri, suffix: splitDocumentHrefSuffix(href).suffix } : null;
     },
     correspondenceKey: (href) => writtenSourceUri(href),
-    spell: (scope, attrs) => scope.spellSource({ src: attrs.href, ref: attrs.ref }).address,
+    spell: (scope, attrs) => scope.spellSource({ src: attrs.href, ref: attrs.ref }),
     kind: "source",
   },
 };
+
+/** An old occurrence, its identity, and what the reader was shown for it in this scope. */
+interface SpelledOld {
+  occurrence: LinkOccurrence;
+  identity: string | null;
+  spelled: SpelledHref;
+}
 
 function assignKind(input: {
   grammar: Grammar;
@@ -154,16 +162,22 @@ function assignKind(input: {
 }): OccurrenceAttrs[] {
   const { grammar, scope } = input;
   const holderUri = scope.holder.uri;
+  const old = input.old.map(
+    (occurrence): SpelledOld => ({
+      occurrence,
+      identity: occurrenceIdentity(occurrence),
+      spelled: grammar.spell(scope, occurrence.attrs),
+    }),
+  );
   // Occurrences without an identity (contextual, external) never enter correspondence.
-  const referenced = input.old.filter((occurrence) => occurrenceIdentity(occurrence) !== null);
-  const contextual = input.old.filter((occurrence) => occurrenceIdentity(occurrence) === null);
+  const referenced = old.filter(({ identity }) => identity !== null);
   const matches: LinkMatch[] = correspondLinks({
-    old: referenced.map((occurrence) => {
-      const ref = occurrenceIdentity(occurrence) as string;
+    old: referenced.map(({ occurrence, identity, spelled }) => {
+      const ref = identity as string;
       return {
         label: occurrence.label,
         ref,
-        current: grammar.spell(scope, occurrence.attrs) ?? "",
+        current: spelled.address ?? "",
         live: scope.isLive({ ref, href: occurrence.attrs.href }),
       };
     }),
@@ -176,24 +190,33 @@ function assignKind(input: {
     normalize: (href, base) => grammar.correspondenceKey(href, base),
     isLive: (ref, address) => scope.isLive({ ref, href: address }),
   });
-  const contextualTaken = new Set<number>();
+  // Old occurrences no address names: contextual ones, and an upload this reader is
+  // shown no address for. Each continues only as written exactly as it spelled.
+  const continuedByPass1 = new Set(
+    matches.flatMap((match) => (match.pass === 1 ? [referenced[match.occurrence]] : [])),
+  );
+  const unaddressed = old.filter(
+    (each) =>
+      (each.identity === null || each.spelled.address === null) && !continuedByPass1.has(each),
+  );
+  const twinTaken = new Set<number>();
   return input.written.map((occurrence, index) => {
     const match = matches[index] ?? { pass: 3 };
     const writtenSuffix = suffixOf(grammar, occurrence.attrs.href, holderUri);
     if (match.pass === 1) {
-      const old = referenced[match.occurrence] as LinkOccurrence;
-      return continued(grammar, scope, old.attrs, occurrence.attrs, writtenSuffix);
+      const continues = (referenced[match.occurrence] as SpelledOld).occurrence;
+      return continued(grammar, scope, continues.attrs, occurrence.attrs, writtenSuffix);
     }
-    // A written link equal to a contextual old one stays contextual (no churn).
-    const twin = contextual.findIndex(
-      (old, position) =>
-        !contextualTaken.has(position) &&
-        old.attrs.href === occurrence.attrs.href &&
-        old.attrs.title === occurrence.attrs.title,
+    // A written occurrence equal to an unaddressed old one keeps its attrs (no churn).
+    const twin = unaddressed.findIndex(
+      ({ occurrence: each, spelled }, position) =>
+        !twinTaken.has(position) &&
+        spelled.href === occurrence.attrs.href &&
+        each.attrs.title === occurrence.attrs.title,
     );
     if (twin >= 0) {
-      contextualTaken.add(twin);
-      return (contextual[twin] as LinkOccurrence).attrs;
+      twinTaken.add(twin);
+      return (unaddressed[twin] as SpelledOld).occurrence.attrs;
     }
     if (match.pass === 2) {
       // The match came from a showing, so a latest showing always exists.
