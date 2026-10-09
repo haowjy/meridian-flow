@@ -8,8 +8,14 @@
  * therefore agrees on which changes exist. `useDraftPreviews` reads several
  * drafts' previews the same way, and refreshes the ones no review owns.
  */
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
-import { replaceEqualDeep, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
+import {
+  type QueryFunctionContext,
+  replaceEqualDeep,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { getDraftPreview } from "@/client/api/drafts-api";
@@ -25,7 +31,16 @@ import { workDraftsQueryOptions } from "./useWorkDrafts";
 
 export type DraftPreviewState = { preview: DraftPreviewResponse | null };
 
-type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
+type DraftRef = {
+  projectId: string;
+  workId: string;
+  documentId: string;
+  draftId: string;
+  draftGeneration?: number;
+};
+
+/** Gone has no server generation; the cache retains the horizon addressed at request start. */
+export type DraftPreviewRead = DraftPreviewResponse & { draftGeneration?: number };
 
 /**
  * The cache never goes back a generation: a read that began before a close can
@@ -34,11 +49,11 @@ type DraftRef = { projectId: string; workId: string; documentId: string; draftId
  * structural sharing, which keeps the reference when a refetch changed nothing.
  */
 function keepNewerGeneration(prior: unknown, next: unknown): unknown {
-  const before = prior as DraftPreviewResponse | undefined;
-  const after = next as DraftPreviewResponse;
+  const before = prior as DraftPreviewRead | undefined;
+  const after = next as DraftPreviewRead;
   if (
-    before?.status === "active" &&
-    after.status === "active" &&
+    before?.draftGeneration !== undefined &&
+    after.draftGeneration !== undefined &&
     after.draftGeneration < before.draftGeneration
   )
     return before;
@@ -47,17 +62,32 @@ function keepNewerGeneration(prior: unknown, next: unknown): unknown {
 
 /** The one preview query, shared by every reader so each draft's preview is fetched once. */
 export function draftPreviewQueryOptions(draft: DraftRef) {
+  const queryKey = projectQueryKeys.workDraftPreview(
+    draft.projectId,
+    draft.workId,
+    draft.documentId,
+    draft.draftId,
+  );
   return {
-    queryKey: projectQueryKeys.workDraftPreview(
-      draft.projectId,
-      draft.workId,
-      draft.documentId,
-      draft.draftId,
-    ),
-    queryFn: ({ signal }: { signal: AbortSignal }) =>
-      readPreviewAfterChangeCommands(draft, () =>
+    queryKey,
+    queryFn: async ({ signal, client }: QueryFunctionContext): Promise<DraftPreviewRead> => {
+      const prior = client.getQueryData<DraftPreviewRead>(queryKey);
+      const rows = client.getQueryData<ThreadDraftListItem[]>(
+        projectQueryKeys.workDrafts(draft.projectId, draft.workId),
+      );
+      const row = rows?.find(
+        (row) => row.documentId === draft.documentId && row.draftId === draft.draftId,
+      );
+      const generation = Math.max(
+        draft.draftGeneration ?? 0,
+        prior?.draftGeneration ?? 0,
+        row?.draftGeneration ?? 0,
+      );
+      const answer = await readPreviewAfterChangeCommands(draft, () =>
         getDraftPreview(draft.projectId, draft.workId, draft.documentId, draft.draftId, signal),
-      ),
+      );
+      return answer.status === "gone" ? { ...answer, draftGeneration: generation } : answer;
+    },
     staleTime: 15_000,
     structuralSharing: keepNewerGeneration,
   };

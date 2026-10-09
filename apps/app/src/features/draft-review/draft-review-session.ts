@@ -443,6 +443,8 @@ export type DraftReviewAction =
       type: "reviewAbsent";
       documentId: string;
       draftId: string;
+      /** The generation addressed by the absent read; older absence cannot close R. */
+      draftGeneration?: number;
       evidence: ProposalEvidence | null;
       draftOnly?: boolean;
       /** A terminal session or failed rebuild is not a transient missing read. */
@@ -734,7 +736,7 @@ function observeGeneration(
 }
 
 /**
- * Row X: a read or room reports the reviewed draft absent. With no completion (the
+ * Row X: absence below the shown generation is stale. With no completion (the
  * writer's own last change explains a missing row) that is an external close,
  * unless the preview or session layer shows changes at the shown generation
  * or a newer one: the draft is alive and the list lags. A newer generation is the
@@ -749,7 +751,11 @@ function reviewAbsent(
   if (
     review.kind !== "inline" ||
     !surfaceMatchesDraft(review, action) ||
-    (review.completion && !action.terminal)
+    (!action.terminal &&
+      (review.completion ||
+        (action.draftGeneration !== undefined &&
+          review.draftGeneration !== undefined &&
+          action.draftGeneration < review.draftGeneration)))
   ) {
     return state;
   }

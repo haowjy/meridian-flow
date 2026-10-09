@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { Component, createContext, createRef, useContext, useLayoutEffect } from "react";
 
-type Hold = { kind: "idle"; paint: null } | { kind: "holding"; paint: Paint };
+type Hold = { paint: Paint | null };
 type Surface = { surface: string; state?: "painted" | "pending" | "failed" };
 type FrameProps = { status: string; className?: string; children: ReactNode };
 type Paint = { kind: "captured" | "painted"; html: string; scrolls: number[]; focused: boolean };
@@ -11,7 +11,7 @@ const ScopeContext = createContext(true);
 
 export class PaintHold extends Component<FrameProps, Hold> {
   static contextType = ScopeContext;
-  state: Hold = { kind: "idle", paint: null };
+  state: Hold = { paint: null };
   private page = createRef<HTMLDivElement>();
   private frame = createRef<HTMLDivElement>();
   private status = createRef<HTMLParagraphElement>();
@@ -23,7 +23,7 @@ export class PaintHold extends Component<FrameProps, Hold> {
 
   capture = (refresh = false) => {
     const page = this.page.current;
-    if (!page || !this.context || this.state.kind === "holding" || this.pending.size) return;
+    if (!page || !this.context || this.state.paint || this.pending.size) return;
     if (this.lastPainted?.kind === "captured" && !refresh) {
       this.lastPainted.focused = page.contains(document.activeElement);
       return;
@@ -51,14 +51,14 @@ export class PaintHold extends Component<FrameProps, Hold> {
     if (!paint && this.lastPainted && this.pending.size) {
       cancelAnimationFrame(this.raf);
       this.raf = 0;
-      this.setState({ kind: "holding", paint: this.lastPainted });
+      this.setState({ paint: this.lastPainted });
       this.timer = setTimeout(() => {
         this.lastPainted = null;
-        this.setState({ kind: "idle", paint: null });
+        this.setState({ paint: null });
       }, 10_000);
     } else if (paint && !this.pending.size) {
       clearTimeout(this.timer);
-      this.setState({ kind: "idle", paint: null });
+      this.setState({ paint: null });
     } else if (!paint && this.lastPainted && !this.raf) {
       // A synchronous layout dispatch must reuse the frame actually painted,
       // not the intermediate DOM of a commit the browser has never shown.

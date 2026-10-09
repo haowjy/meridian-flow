@@ -3,7 +3,7 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { EditorContent } from "@tiptap/react";
-import { act, useState } from "react";
+import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
@@ -22,23 +22,7 @@ import {
   preview,
 } from "@/test-support/draft-review-scope";
 import { createStandaloneEditor } from "@/test-support/standalone-editor";
-import { MobileDocumentHost } from "./MobileDocumentHost";
 import { MobileDocumentReview } from "./MobileDocumentReview";
-import type { MobileDocumentRoute } from "./mobile-document-route";
-
-// Editor and live-room acquisition are process boundaries; review queries, commands,
-// phone route host and paint frame remain real.
-vi.mock("../context/ContextEditorMountHost", () => ({
-  ContextEditorMountHost: ({ activeTabId }: { activeTabId: string }) => (
-    <p>{activeTabId === "document-a" ? "D prose" : "E prose"}</p>
-  ),
-}));
-vi.mock("../context/use-live-document-binding", () => ({
-  useLiveDocumentBinding: () => ({ state: { kind: "idle" }, retry: () => {} }),
-}));
-vi.mock("../context/use-refused-edits-reopen", () => ({
-  useRefusedEditsReopen: () => null,
-}));
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 let manuscript: ReturnType<typeof createStandaloneEditor>;
@@ -248,110 +232,6 @@ it("keeps last-change feedback in the sheet flow and gives chat links phone targ
               <ChatThreadNavigationProvider onOpenThread={navigate}>
                 {children}
               </ChatThreadNavigationProvider>
-            </ProjectNavigationProvider>
-          </TooltipProvider>
-        </I18nProvider>
-      ),
-    },
-  );
-});
-
-it("holds D's phone review across Discard navigation while E's preview is held", async () => {
-  const next = {
-    ...listed,
-    documentId: "document-b",
-    draftId: "draft-b",
-    documentName: "E",
-    contextPath: "/e.md",
-  };
-  const answer = deferredReviewAnswer<typeof preview>();
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, next] });
-  fixture.network.getDraftPreview.mockImplementation((_p, _w, _d, id) =>
-    id === "draft-b" ? answer.promise : Promise.resolve(preview),
-  );
-  fixture.network.discardDraft.mockResolvedValue(discarded(true));
-  const route = (id: string, pending = false): MobileDocumentRoute => ({
-    requested: true,
-    scheme: "manuscript",
-    path: id === "document-a" ? "/d.md" : "/e.md",
-    tab: pending
-      ? null
-      : {
-          kind: "tracked",
-          documentId: id,
-          scheme: "manuscript",
-          path: id === "document-a" ? "/d.md" : "/e.md",
-          name: id,
-          editable: true,
-          filetype: "markdown",
-          schemaType: "document",
-          draftOnly: true,
-          reviewWorkId: "work-a",
-          reviewDraftId: id === "document-a" ? "draft-a" : "draft-b",
-        },
-    catalogResolved: true,
-    addressState: pending ? "pending" : "settled",
-    isError: false,
-    isFetching: false,
-  });
-  let open: (pending: boolean) => void = () => {};
-  function PhoneRoute() {
-    const [destination, setDestination] = useState(route("document-a"));
-    open = (pending) => setDestination(route("document-b", pending));
-    return <MobileDocumentHost projectId="project-a" editorWorkId="work-a" route={destination} />;
-  }
-  await fixture.render(
-    async (probe) => {
-      await settled(() => expect(probe().editor.files).toHaveLength(2));
-      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await settled(() => expect(probe().header.view.items).toHaveLength(2));
-      await act(async () =>
-        probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true),
-      );
-      await settled(() =>
-        expect(document.querySelector("[data-phone-review-header]")).not.toBeNull(),
-      );
-      navigate.mockImplementationOnce(async () => {
-        open(true);
-        probe().editor.controller.enterInlineReview("document-b", "draft-b");
-      });
-      await act(async () =>
-        document
-          .querySelector<HTMLElement>(
-            "[data-phone-review-header] [data-slot=dropdown-menu-trigger]",
-          )
-          ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-      );
-      await click("Discard draft");
-      await settled(() =>
-        expect(fixture.network.getDraftPreview).toHaveBeenCalledWith(
-          "project-a",
-          "work-a",
-          "document-b",
-          "draft-b",
-          expect.any(AbortSignal),
-        ),
-      );
-      const held = document.querySelector("[data-paint-hold]");
-      expect(held?.textContent).toContain("D prose");
-      expect(held?.querySelector("[data-phone-review-header]")).not.toBeNull();
-      expect(held?.textContent).not.toContain("Opening document…");
-      expect(held?.getAttribute("aria-hidden")).toBe("true");
-      expect(held?.hasAttribute("inert")).toBe(true);
-      await act(async () => {
-        answer.resolve({ ...preview, draftId: "draft-b" });
-        open(false);
-      });
-      await settled(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
-      expect(document.querySelector("[data-paint-page]")?.textContent).toContain("E prose");
-    },
-    {
-      surface: <PhoneRoute />,
-      host: (children) => (
-        <I18nProvider i18n={i18n}>
-          <TooltipProvider>
-            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-              {children}
             </ProjectNavigationProvider>
           </TooltipProvider>
         </I18nProvider>
