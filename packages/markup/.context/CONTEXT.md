@@ -130,7 +130,7 @@ what it showed.
 
 Image serialization, accepted ingress shapes, placement, and raw-HTML entity
 handling live in [image-wire-format.md](image-wire-format.md). The image
-contract is separate from the generic asset-path translation seam above because
+contract is separate from the link scope above because
 it owns the markdown/MDX spelling and the exact-once HTML decoding boundary.
 
 ## Reserved wire components
