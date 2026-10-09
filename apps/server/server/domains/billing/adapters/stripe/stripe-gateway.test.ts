@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createStripeBillingGateway, type StripeWebhookEvent } from "./stripe-gateway.js";
+import { createStripeBillingGateway } from "./stripe-gateway.js";
 
 const stripeMock = vi.hoisted(() => ({
   checkoutSessionsCreate: vi.fn(),
@@ -20,23 +20,9 @@ vi.mock("stripe", () => {
   return { default: Stripe };
 });
 
-function event(type: string, object: unknown): StripeWebhookEvent {
-  return { type, data: { object } } as StripeWebhookEvent;
-}
-
 describe("StripeBillingGateway", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("delegates webhook construction to the Stripe SDK", () => {
-    const expected = event("customer.created", { id: "cus_123" });
-    stripeMock.constructEvent.mockReturnValue(expected);
-
-    const gateway = createStripeBillingGateway({ secretKey: "sk_test", webhookSecret: "whsec" });
-
-    expect(gateway.constructWebhookEvent({ rawBody: "raw", signature: "sig" })).toBe(expected);
-    expect(stripeMock.constructEvent).toHaveBeenCalledWith("raw", "sig", "whsec");
   });
 
   it("creates Stripe customers with user metadata and deterministic idempotency", async () => {

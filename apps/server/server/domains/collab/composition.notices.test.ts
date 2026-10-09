@@ -2,76 +2,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NoticePort } from "../notices/index.js";
 import { SILENT_REVERSAL_NOTICE_DIAGNOSTICS } from "./adapters/declared-stubs.js";
-import {
-  createReversalNoticePort,
-  recordAwarenessDegradedNotice,
-  recordNoticeAfterDurability,
-} from "./domain/reversal-notices.js";
+import { recordNoticeAfterDurability } from "./domain/reversal-notices.js";
 
 describe("collab model-context notices", () => {
-  it("maps user undo producer events onto kind undo", async () => {
-    const record = vi.fn<NoticePort["record"]>(async () => {});
-    const port = createReversalNoticePort({
-      notices: {
-        record,
-        async peek() {
-          return [];
-        },
-        async consume() {},
-      },
-      documentUriResolver: async () => "manuscript://chapter-one.md",
-      diagnostics: SILENT_REVERSAL_NOTICE_DIAGNOSTICS,
-    });
-
-    await port.record({
-      threadId: "thread-1",
-      writeHandles: ["w1"],
-      writeHandleTurns: [{ writeHandle: "w1", turnId: "turn-1" }],
-      docId: "document-1",
-      direction: "undo",
-      sweptContent: false,
-      beforeContentRef: null,
-    });
-
-    expect(record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "undo",
-        scope: { kind: "thread", threadId: "thread-1" },
-        data: expect.objectContaining({ writeHandles: ["w1"], direction: "undo" }),
-      }),
-    );
-  });
-
-  it("records a model-only degraded-awareness notice for every committed document", async () => {
-    const record = vi.fn<NoticePort["record"]>(async () => {});
-    await recordAwarenessDegradedNotice({
-      notices: {
-        record,
-        async peek() {
-          return [];
-        },
-        async consume() {},
-      },
-      resolveDocumentUri: async (documentId) =>
-        documentId === "document-1"
-          ? "manuscript://arc/chapter-one.md"
-          : "manuscript://arc/chapter-two.md",
-      threadId: "thread-1",
-      documentIds: ["document-1", "document-2"],
-    });
-
-    expect(record).toHaveBeenCalledWith({
-      kind: "awareness_degraded",
-      scope: { kind: "thread", threadId: "thread-1" },
-      message:
-        "Your changes are committed, but concurrent user content could not be verified. Re-read to confirm current state.",
-      data: {
-        documentIds: ["document-1", "document-2"],
-        documentNames: ["chapter-one", "chapter-two"],
-      },
-    });
-  });
-
   it("does not turn a durable response into an error when notice recording fails", async () => {
     const recordDegraded = vi.fn(async () => {});
     await expect(

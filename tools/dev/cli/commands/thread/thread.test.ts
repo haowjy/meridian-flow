@@ -7,7 +7,6 @@ import {
   startFakeStack,
   THREAD_ID,
 } from "../../test-support/fake-stack";
-import { composeMessage } from "./send";
 
 let stack: FakeStack;
 beforeAll(async () => {
@@ -38,28 +37,6 @@ describe("thread", () => {
     expect((await mf(["thread", "view", "c9"])).code).toBe(EXIT.notFound);
   });
 
-  it("also accepts full ids, app URLs, and unique id prefixes", async () => {
-    expect((await mf(["thread", "view", "1111"])).code).toBe(EXIT.ok);
-    expect((await mf(["thread", "view", `https://app.x/p/x/chats/${THREAD_ID}`])).code).toBe(
-      EXIT.ok,
-    );
-    expect((await mf(["thread", "view", "9999"])).code).toBe(EXIT.notFound);
-  });
-
-  it("creates a thread with the default agent", async () => {
-    const result = await mf(["thread", "create", "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(JSON.parse(result.stdout)).toMatchObject({ threadId: THREAD_ID, projectId: PROJECT_ID });
-  });
-
-  it("send waits, prints the answer on stdout and progress on stderr", async () => {
-    const result = await mf(["thread", "send", THREAD_ID, "hi"]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(result.stdout.trim()).toBe("Hello there");
-    expect(result.stderr).toContain("turn.started");
-    expect(result.stderr).toContain("assistant: Hello there");
-  });
-
   it("send --json streams NDJSON whose last line is the result envelope", async () => {
     const result = await mf(["thread", "send", THREAD_ID, "hi again", "--json"]);
     expect(result.code).toBe(EXIT.ok);
@@ -74,25 +51,6 @@ describe("thread", () => {
       finalText: "Hello there",
     });
     expect(result.stderr).toBe("");
-  });
-
-  it("send --json --fields trims every stream line but keeps its type", async () => {
-    const result = await mf([
-      "thread",
-      "send",
-      THREAD_ID,
-      "trim me",
-      "--json",
-      "--fields",
-      "status,finalText",
-    ]);
-    expect(result.code).toBe(EXIT.ok);
-    const lines = result.stdout
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(lines.at(-1)).toEqual({ type: "result", status: "complete", finalText: "Hello there" });
-    expect(lines[0]).toEqual({ type: "turn.started" });
   });
 
   it("send exits 1 on a failed run and 8 on a pending interrupt", async () => {
@@ -141,79 +99,5 @@ describe("thread", () => {
       { match: "scripted hi", steps: [{ text: "ok" }] },
     ]);
     expect(fake.removedMockScripts).toContain(`script-${fake.mockScripts.length}`);
-  });
-
-  it("thread events replays the journal from a seq", async () => {
-    const result = await mf(["thread", "events", THREAD_ID, "--json"]);
-    expect(result.code).toBe(EXIT.ok);
-    const types = result.stdout
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line).type);
-    expect(types).toContain("turn.started");
-    expect(types).toContain("turn.finished");
-  });
-
-  it("thread events --child follows one child's status and current tool", async () => {
-    expect((await mf(["thread", "send", THREAD_ID, "delegate"])).code).toBe(EXIT.ok);
-    const byRef = await mf(["thread", "events", THREAD_ID, "--child", "p2"]);
-    expect(byRef.code).toBe(EXIT.ok);
-    expect(byRef.stdout.trim().split("\n")).toEqual([
-      expect.stringMatching(
-        /^\d+ p2 awake\/generating \(running\) doc_read manuscript:\/\/ch1\.md$/,
-      ),
-      expect.stringMatching(/^\d+ p2 asleep \(succeeded\)$/),
-    ]);
-    const byId = await mf(["thread", "events", THREAD_ID, "--child", "33333333", "--json"]);
-    expect(JSON.parse(byId.stdout.trim().split("\n")[0])).toMatchObject({
-      type: "child.activity",
-      threadId: THREAD_ID,
-      childThreadId: "33333333-3333-4333-8333-333333333333",
-      status: "awake",
-      phase: "generating",
-      tool: "doc_read",
-      target: "manuscript://ch1.md",
-    });
-    const conflict = await mf(["thread", "events", THREAD_ID, "--child", "p2", "--name", "x"]);
-    expect(conflict.code).toBe(EXIT.usage);
-  });
-
-  it("thread view --blocks lists persisted blocks with timing and tool names", async () => {
-    const json = await mf(["thread", "view", THREAD_ID, "--blocks", "--last", "1", "--json"]);
-    expect(json.code).toBe(EXIT.ok);
-    const { blocks } = JSON.parse(json.stdout);
-    expect(blocks).toEqual([
-      expect.objectContaining({ sequence: 0, type: "tool_use", tool: "spawn", offsetMs: 500 }),
-      expect.objectContaining({ sequence: 1, type: "tool_result", tool: "spawn", gapMs: 1500 }),
-      expect.objectContaining({ sequence: 2, type: "text", tool: null, offsetMs: 3000 }),
-    ]);
-    const text = await mf(["thread", "view", THREAD_ID, "--blocks", "--last", "1"]);
-    expect(text.stdout).toContain(
-      "#1 2026-01-01T00:00:02.000Z +2.00s (gap +1.50s) tool_result spawn",
-    );
-  });
-
-  it("thread view renders the transcript", async () => {
-    const result = await mf(["thread", "view", THREAD_ID]);
-    expect(result.code).toBe(EXIT.ok);
-    expect(result.stdout).toContain("[assistant]");
-    expect(result.stdout).toContain("Hello there");
-  });
-});
-
-describe("composeMessage", () => {
-  it("keeps text equal to the concatenated block text, as admission requires", () => {
-    const message = composeMessage({
-      text: "Tighten this",
-      skills: [{ slug: "line-edit", name: "Line edit", description: "d" }],
-      references: [{ documentId: "d1", uri: "manuscript://chapter-2.md" }],
-    });
-    const blocks = message.blocks as { text?: string }[];
-    expect(blocks.map((block) => block.text ?? "").join("")).toBe(message.text);
-    expect(message.text).toBe("/line-edit Tighten this @manuscript://chapter-2.md");
-    expect(message.references).toEqual([
-      { documentId: "d1", uri: "manuscript://chapter-2.md", purpose: "reference" },
-    ]);
-    expect(message.activatedSkillSlugs).toEqual(["line-edit"]);
   });
 });

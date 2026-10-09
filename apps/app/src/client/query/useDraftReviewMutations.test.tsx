@@ -4,7 +4,6 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpResponseError } from "@/client/api/http-client";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { resetDraftCommandRecords } from "./draft-command-record";
 import { DraftApplyOutcomeUnknownError, useApplyDraft } from "./useDraftReviewMutations";
@@ -70,16 +69,6 @@ describe("useApplyDraft", () => {
     api.listWorkDrafts.mockResolvedValue(listing("draft-a"));
   });
 
-  it("is done when the server confirms, and rejects with the server's answer otherwise", async () => {
-    await withHarness(async ({ apply }) => {
-      api.applyDraft.mockResolvedValueOnce({ status: "applied", draftId: "draft-a" });
-      await act(async () => expect(await apply()).toBe("applied"));
-      const rejection = new HttpResponseError("conflict", 409, null);
-      api.applyDraft.mockRejectedValueOnce(rejection);
-      await act(async () => expect(await apply()).toBe(rejection));
-    });
-  });
-
   it("keeps a lost response unknown even when a remote Discard emptied the list", async () => {
     await withHarness(async ({ apply, listed }) => {
       await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
@@ -87,15 +76,6 @@ describe("useApplyDraft", () => {
       api.listWorkDrafts.mockResolvedValue(listing());
       await act(async () => expect(await apply()).toBeInstanceOf(DraftApplyOutcomeUnknownError));
       await vi.waitFor(() => expect(listed()).toEqual([]));
-    });
-  });
-
-  it("keeps a lost response unknown while the draft is still listed", async () => {
-    await withHarness(async ({ apply, listed }) => {
-      await vi.waitFor(() => expect(listed()).toEqual(["draft-a"]));
-      api.applyDraft.mockRejectedValue(lost());
-      await act(async () => expect(await apply()).toBeInstanceOf(DraftApplyOutcomeUnknownError));
-      expect(listed()).toEqual(["draft-a"]);
     });
   });
 

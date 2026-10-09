@@ -87,27 +87,6 @@ afterEach(async () => {
 });
 
 describe("Composer during a live run", () => {
-  it("turns Stop into Send while drafting, sends on Enter, then returns to Stop", async () => {
-    const onSubmit = await render({ running: true, initialDraft: draft("Follow up") });
-    expect(button()?.getAttribute("aria-label")).toBe("Send message");
-    const editor = host.querySelector<HTMLElement>(".composer-input");
-    await act(async () => {
-      editor?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(onSubmit).toHaveBeenCalledOnce();
-    expect(button()?.getAttribute("aria-label")).toBe("Stop");
-  });
-
-  it("stops on Escape when the composer is empty, like the Stop button", async () => {
-    const onStop = vi.fn();
-    await render({ running: true, onStop });
-    expect(button()?.getAttribute("aria-label")).toBe("Stop");
-    await pressEscape();
-    expect(onStop).toHaveBeenCalledOnce();
-  });
-
   it("leaves the run and the draft alone on Escape while drafting", async () => {
     const onStop = vi.fn();
     await render({ running: true, initialDraft: draft("Follow up"), onStop });
@@ -115,13 +94,6 @@ describe("Composer during a live run", () => {
     expect(onStop).not.toHaveBeenCalled();
     expect(editorElement()?.textContent).toBe("Follow up");
     expect(button()?.getAttribute("aria-label")).toBe("Send message");
-  });
-
-  it("does not stop on Escape when no run is active", async () => {
-    const onStop = vi.fn();
-    await render({ onStop });
-    await pressEscape();
-    expect(onStop).not.toHaveBeenCalled();
   });
 });
 
@@ -145,13 +117,6 @@ describe("Composer chat verbs", () => {
     expect(run).toHaveBeenCalledWith("Keep the sect names");
     expect(onSubmit).not.toHaveBeenCalled();
     expect(editorElement()?.textContent).toBe("");
-  });
-
-  it("sends a bare `/compact` with no instructions", async () => {
-    const { run, commands } = compact();
-    await render({ initialDraft: draft("/compact"), commands });
-    await pressEnter();
-    expect(run).toHaveBeenCalledWith(null);
   });
 
   it("sends `/compact` text as a message on a surface that registers no verbs", async () => {

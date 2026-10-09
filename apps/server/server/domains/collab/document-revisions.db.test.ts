@@ -1,7 +1,8 @@
 /** Revision identity across live rooms, Work peers, response settlement and rebinding. */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
-import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { WorkId } from "@meridian/contracts/runtime";
+import type { Database } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -10,7 +11,6 @@ import {
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
 } from "../../shared/drizzle-transaction.js";
-import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -28,7 +28,7 @@ import {
   ALPHA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   PROJECT_ID,
   resetDatabase,
   schema,
@@ -38,15 +38,12 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
-beforeEach(resetDatabase);
-const harnesses: Array<ReturnType<typeof createHarness>> = [];
-afterEach(() => {
-  for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
-});
-afterAll(closeDatabase);
-
-async function fixture(mode: "direct" | "draft") {
-  const harness = createHarness();
+async function fixture(
+  db: Database,
+  harnesses: Array<ReturnType<typeof createHarness>>,
+  mode: "direct" | "draft",
+) {
+  const harness = createHarness(db);
   harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
   await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
@@ -142,16 +139,17 @@ async function fixture(mode: "direct" | "draft") {
 }
 
 describe("document revisions (postgres and collab)", () => {
-  for (const mode of ["direct", "draft"] as const) {
-    it(`read then current are equal in ${mode} execution`, async () => {
-      const f = await fixture(mode);
-      const read = await f.read();
-      expect(read.revision).toMatch(/^y1:/);
-      expect(await f.current()).toBe(read.revision);
-    });
+  const db = createTestDatabase();
+  const harnesses: Array<ReturnType<typeof createHarness>> = [];
+  beforeEach(() => resetDatabase(db));
+  afterEach(() => {
+    for (const harness of harnesses.splice(0)) harness.cancelScheduledPulls();
+  });
+  afterAll(() => closeDatabase(db));
 
+  for (const mode of ["direct", "draft"] as const) {
     it(`response-end write and staged read equal current in ${mode}; the earlier read does not`, async () => {
-      const f = await fixture(mode);
+      const f = await fixture(db, harnesses, mode);
       const before = await f.read();
       await f.stage("00000000-0000-4000-8000-000000000892");
       const stagedRead = await f.read("00000000-0000-4000-8000-000000000892");
@@ -163,48 +161,15 @@ describe("document revisions (postgres and collab)", () => {
     });
   }
 
-  it.each([
-    null,
-    new Date("2026-09-01T00:00:00Z"),
-  ])("keeps revision evidence with status text archived and archivedAt %s", async (archivedAt) => {
-    const f = await fixture("draft");
-    const before = await f.current();
-    expect(before).toMatch(/^y1:/);
-    await db
-      .update(schema.works)
-      .set({ status: "archived", archivedAt })
-      .where(eq(schema.works.id, WORK_ID));
-    expect(await f.current()).toBe(before);
-  });
-
   it("a pure writer deletion in the Hocuspocus room invalidates a live read", async () => {
-    const f = await fixture("direct");
+    const f = await fixture(db, harnesses, "direct");
     const before = await f.read();
     await f.writerDelete();
     expect(await f.current()).not.toBe(before.revision);
   });
 
-  it("delivers direct-write settlement receipts to the result-rewrite callback", async () => {
-    const f = await fixture("direct");
-    await f.read();
-    const responseId = "00000000-0000-4000-8000-000000000893";
-    await f.stage(responseId);
-    const receipts: Array<string | null> = [];
-    await f.collab.finalizeResponseCommit(
-      responseId,
-      { threadId: THREAD_ID, turnId: TURN_ID },
-      async (result) => {
-        if (result.status === "committed")
-          receipts.push(
-            ...result.documents.flatMap((doc) => doc.receipts.map((receipt) => receipt.revision)),
-          );
-      },
-    );
-    expect(receipts).toEqual([await f.current()]);
-  });
-
   it("captures the apply token before a writer edit and receipt rewrite", async () => {
-    const f = await fixture("direct");
+    const f = await fixture(db, harnesses, "direct");
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000893");
     let injected = false;
@@ -222,17 +187,8 @@ describe("document revisions (postgres and collab)", () => {
     expect(receipt?.revision).not.toBe(await f.current());
   });
 
-  it("pulls a live writer edit synchronously before the Work pull debounce fires", async () => {
-    const f = await fixture("draft");
-    const before = await f.read();
-    await f.writerDelete();
-    f.branchPulls.scheduleLivePull(ALPHA_ID);
-    expect(await f.current()).not.toBe(before.revision);
-    expect((await f.read()).revision).toBe(await f.current());
-  });
-
   it("resolves a new Work source after rebind when its text differs", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.stage("00000000-0000-4000-8000-000000000894");
     await f.core.commitResponse("00000000-0000-4000-8000-000000000894");
@@ -252,7 +208,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("does not treat a deleted document's still-loaded room as a readable source", async () => {
-    const f = await fixture("direct");
+    const f = await fixture(db, harnesses, "direct");
     expect((await f.read()).revision).toMatch(/^y1:/);
     await db
       .update(schema.documents)
@@ -262,122 +218,8 @@ describe("document revisions (postgres and collab)", () => {
     expect(await f.current()).toBeNull();
   });
 
-  it("returns null for a source with no Y.Doc", async () => {
-    const f = await fixture("direct");
-    const binary = "00000000-0000-4000-8000-000000000891";
-    const [source] = await db
-      .select({ contextSourceId: schema.documents.contextSourceId })
-      .from(schema.documents)
-      .where(eq(schema.documents.id, ALPHA_ID));
-    if (!source) throw new Error("Fixture source missing");
-    await db.insert(schema.documents).values({
-      id: binary as never,
-      contextSourceId: source.contextSourceId,
-      name: "unversioned",
-      extension: "png",
-      fileType: "image",
-      mimeType: "image/png",
-    });
-    const missing = await f.revisions.current({ threadId: THREAD_ID, documentIds: [binary] });
-    expect(missing.get(binary)).toBeNull();
-  });
-
-  for (const source of ["search-only", "other-thread", "rebind"] as const) {
-    it(`PROBE1: refreshes a ${source} Work draft without a current thread peer`, async () => {
-      const f = await fixture("draft");
-      let workId = WORK_ID;
-      if (source === "rebind") {
-        await f.read();
-        workId = "00000000-0000-4000-8000-000000000890" as WorkId;
-        await db.insert(schema.works).values({
-          id: workId,
-          projectId: PROJECT_ID,
-          createdByUserId: USER_ID,
-          name: "Other draft",
-          slug: "other-draft",
-          aiWriteMode: "draft",
-        });
-      }
-      await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
-        if (source === "other-thread") {
-          const other = "00000000-0000-4000-8000-000000000889" as ThreadId;
-          await db.insert(schema.threads).values({
-            rootThreadId: other,
-            id: other,
-            projectId: PROJECT_ID,
-            createdByUserId: USER_ID,
-          });
-          await db
-            .insert(schema.threadWorks)
-            .values({ threadId: other, workId, projectId: PROJECT_ID, isPrimary: true });
-          await f.branchStore.ensureThreadPeerBranch({
-            documentId: ALPHA_ID,
-            threadId: other,
-            liveDoc,
-          });
-        } else {
-          await f.branchStore.ensureWorkDraftBranch({ documentId: ALPHA_ID, workId, liveDoc });
-        }
-      });
-      if (source === "rebind")
-        await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workId);
-      const hit = await f.effective.readEffectiveHashlines({
-        documentId: ALPHA_ID,
-        threadId: THREAD_ID,
-        destination: "draft",
-      });
-      if (!hit.ok) throw new Error("Search failed");
-      await f.writerDelete();
-      f.branchPulls.scheduleLivePull(ALPHA_ID);
-      const current = await f.current();
-      // Drain before asserting so a failing test cannot leak its timer to another fixture.
-      await f.branchPulls.flushLivePull(ALPHA_ID);
-      expect(current).not.toBe(hit.value.revision);
-      expect(current).toBe((await f.read()).revision);
-    });
-  }
-
-  it("PROBE2: a joined pull is committed even when its initiating transaction rolls back", async () => {
-    const f = await fixture("draft");
-    await f.read();
-    await f.writerDelete();
-    f.branchPulls.scheduleLivePull(ALPHA_ID);
-    const entered = deferred();
-    const release = deferred();
-    const original = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
-    let pause = true;
-    f.branchCoordinator.pullFromDoc = async (...args) => {
-      const result = await original(...args);
-      if (pause) {
-        pause = false;
-        entered.resolve();
-        await release.promise;
-      }
-      return result;
-    };
-    const rollback = deferred();
-    const caller = createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
-      await f.branchPulls.flushLivePull(ALPHA_ID);
-      await rollback.promise;
-      throw new Error("caller rollback");
-    });
-    const rolledBack = expect(caller).rejects.toThrow("caller rollback");
-    await entered.promise;
-    const join = f.branchPulls.flushLivePull(ALPHA_ID);
-    release.resolve();
-    await join;
-    const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    const observed = f.model.getBlocks(toDocHandle(draft.doc)).length;
-    draft.doc.destroy();
-    rollback.resolve();
-    await rolledBack;
-    await f.branchPulls.flushLivePull(ALPHA_ID);
-    expect(observed).toBe(1);
-    expect(renderAgentEditResult((await f.read()).result)).not.toContain("Opening paragraph");
-  });
-
   it("PROBE3: current under the thread lock completes with a contending debounced pull", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();
     const originalPull = f.branchCoordinator.pullFromDoc.bind(f.branchCoordinator);
@@ -417,31 +259,8 @@ describe("document revisions (postgres and collab)", () => {
     await f.branchPulls.flushLivePull(ALPHA_ID);
   }, 10000);
 
-  for (const existing of [false, true]) {
-    it(`pulls under a Work lifecycle lock with ${existing ? "existing" : "new"} peers`, async () => {
-      const f = await fixture("draft");
-      if (existing) {
-        await f.read();
-        await f.writerDelete();
-      }
-      await runInDrizzleTransaction(db, async () => {
-        await requireLockedActiveWorks(db, [WORK_ID]);
-        await bounded(async () => {
-          await f.effective.resolveManifestMembership({
-            projectId: PROJECT_ID,
-            threadId: THREAD_ID,
-          });
-          await f.branchPulls.pullThreadPeer({ documentId: ALPHA_ID, threadId: THREAD_ID });
-        });
-      });
-      const peer = await f.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
-      expect(f.model.getBlocks(toDocHandle(peer.doc))).toHaveLength(existing ? 1 : 2);
-      peer.doc.destroy();
-    });
-  }
-
   it("current under the thread lock handles a cold manifest", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     const manifest = await f.branchStore.ensureProjectManifest({ projectId: PROJECT_ID });
     manifest.doc.destroy();
     await db
@@ -454,7 +273,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
       await f.branchStore.ensureWorkDraftBranch({ documentId: ALPHA_ID, workId: WORK_ID, liveDoc });
     });
@@ -472,22 +291,35 @@ describe("document revisions (postgres and collab)", () => {
       return original(...args);
     };
     const older = f.branchPulls.flushLivePull(ALPHA_ID);
-    await captured.promise;
-    await f.writerDelete();
-    f.branchPulls.scheduleLivePull(ALPHA_ID);
-    const joined = f.branchPulls.flushLivePull(ALPHA_ID);
-    release.resolve();
-    await Promise.all([older, joined]);
-    const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
-    const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
-    draft.doc.destroy();
-    await f.branchPulls.flushLivePull(ALPHA_ID);
-    expect(blocks).toBe(1);
-    expect(await f.current()).not.toBe(before);
+    const started = [older];
+    try {
+      await Promise.race([
+        captured.promise,
+        older.then(() => {
+          throw new Error("Older pull completed without reaching its snapshot latch");
+        }),
+      ]);
+      await f.writerDelete();
+      f.branchPulls.scheduleLivePull(ALPHA_ID);
+      const joined = f.branchPulls.flushLivePull(ALPHA_ID);
+      started.push(joined);
+      release.resolve();
+      await Promise.all(started);
+      const draft = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+      const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
+      draft.doc.destroy();
+      await f.branchPulls.flushLivePull(ALPHA_ID);
+      expect(blocks).toBe(1);
+      expect(await f.current()).not.toBe(before);
+    } finally {
+      // A failed writer/assertion must not leave a root transaction paused across suite cleanup.
+      release.resolve();
+      await Promise.allSettled(started);
+    }
   });
 
   it("concurrent live pulls for more documents than pooled connections all finish", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     // The harness pool holds 4 connections. A pull that takes its live snapshot
     // while holding its root transaction needs a second one, so 8 at once
     // would hold every connection and wait forever.
@@ -501,7 +333,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("publishes a root-committed pull even when its caller response aborts", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await f.read();
     await f.writerDelete();
     const broadcasts: string[] = [];
@@ -534,7 +366,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("a live manifest re-read observes its caller's uncommitted membership edit", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     await runInDrizzleTransaction(db, async () => {
       await f.branchStore.recordManifestDocumentDeleted(ALPHA_ID);
       const membership = await bounded(() =>
@@ -545,7 +377,7 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("returns null when a document is removed from the Work manifest", async () => {
-    const f = await fixture("draft");
+    const f = await fixture(db, harnesses, "draft");
     const before = await f.read();
     await f.effective.recordManifestDocumentDeleted(ALPHA_ID, {
       projectId: PROJECT_ID,

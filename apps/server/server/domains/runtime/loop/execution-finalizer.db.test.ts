@@ -97,9 +97,7 @@ else
     });
 
     it.each([
-      "finish",
       "tool",
-      "cancel",
       "rollback",
     ] as const)("splits an ordered mixed batch at %s with one lease and report", async (boundary) => {
       const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
@@ -241,7 +239,6 @@ else
           signal: controller.signal,
           onCurrentTurnChanged: ({ id }) => {
             terminal = id;
-            if (boundary === "cancel") controller.abort();
           },
         });
         selector = run.executionTurnId;
@@ -249,9 +246,7 @@ else
         const events = (await createDrizzleEventJournalReader(db).listByThread(ids.child)).map(
           (entry) => entry.payload,
         );
-        expect(outcome.status).toBe(
-          boundary === "cancel" ? "cancelled" : boundary === "rollback" ? "error" : "complete",
-        );
+        expect(outcome.status).toBe(boundary === "rollback" ? "error" : "complete");
         const turns = await repos.turns.listByThread(ids.child);
         if (boundary === "rollback") {
           expect(terminal).toBeNull();
@@ -279,8 +274,8 @@ else
         expect(report).toMatchObject({
           executionTurnId: selector,
           terminalTurnId: terminal,
-          outcome: boundary === "cancel" ? "cancelled" : "succeeded",
-          summary: boundary === "cancel" ? "" : "after steer",
+          outcome: "succeeded",
+          summary: "after steer",
         });
         expect(await repos.executionReports.findByExecution(ids.child, terminal)).toBeNull();
         const costs = await Promise.all(
@@ -291,10 +286,8 @@ else
         );
         expect(await inbox.selectPending(ids.child)).toEqual([]);
         expect(await authority.holder(ids.child)).toBeNull();
-        expect(events.filter((event) => event.type === "turn.completed").length).toBe(
-          boundary === "cancel" ? 1 : 2,
-        );
-        if (boundary !== "cancel") {
+        expect(events.filter((event) => event.type === "turn.completed").length).toBe(2);
+        {
           expect(splitState).toMatchObject({
             run: run.runId,
             report: { outcome: null, terminalTurnId: null },

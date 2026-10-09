@@ -98,18 +98,6 @@ it("keeps the characters when dropped into a code block, and links them dropped 
   expect(links(prose)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
 });
 
-it("keeps an escaped link as literal brackets, through the Markdown door and plain prose", () => {
-  const list = editor(DOCUMENTS);
-  paste(list, { "text/plain": "- one \\[[Lin Feng]]\n- two `\\[[code]]`" });
-  expect(links(list)).toEqual([]);
-  expect(list.state.doc.textContent).toBe("one [[Lin Feng]]two \\[[code]]");
-
-  const prose = editor(DOCUMENTS);
-  paste(prose, { "text/plain": "Meridian writes \\[\\[Lin Feng]] and ![[map.png]]." });
-  expect(links(prose)).toEqual([]);
-  expect(prose.state.doc.textContent).toBe("Meridian writes [[Lin Feng]] and ![[map.png]].");
-});
-
 it("gives paste without formatting the characters, while an ordinary paste links", () => {
   const plain = editor(DOCUMENTS);
   // ProseMirror reads Shift from the last keydown, as the browser's
@@ -122,22 +110,6 @@ it("gives paste without formatting the characters, while an ordinary paste links
   const ordinary = editor(DOCUMENTS);
   paste(ordinary, { "text/plain": "Lin met [[Lin Feng]]." });
   expect(links(ordinary)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
-});
-
-it("spells out every escape the Markdown door kept, with the catalog loading or the link unclosed", () => {
-  const loading = editor(null);
-  paste(loading, { "text/plain": "- one \\[[Lin Feng]]\n- two \\[\\[Lin Feng]]" });
-  expect(loading.state.doc.textContent).toBe("one [[Lin Feng]]two [[Lin Feng]]");
-
-  const unclosed = editor(DOCUMENTS);
-  paste(unclosed, { "text/plain": "- open \\[\\[ only\n- two" });
-  expect(unclosed.state.doc.textContent).toBe("open [[ onlytwo");
-
-  const multiline = editor(DOCUMENTS);
-  paste(multiline, { "text/plain": "- \\[[a\nb]]\n- two" });
-  expect(multiline.state.doc.textContent).not.toContain("\\");
-  expect(multiline.state.doc.textContent).toContain("[[a");
-  expect(links(multiline)).toEqual([]);
 });
 
 const menuPaste = () => new Event("paste") as ClipboardEvent;

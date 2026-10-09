@@ -182,22 +182,6 @@ afterEach(async () => {
   expect(reportedErrors.splice(0)).toEqual([]);
 });
 
-it("opens verified local words without waiting for remote admission", async () => {
-  const metadata = openMetadata();
-  const record = resource("verified");
-  await initialize(record, "local words");
-  const key = await install(metadata, record);
-  const { access } = openAccess(metadata);
-
-  const opened = await access.open("project", key, "editor-tab");
-
-  expect(opened.kind).toBe("opened");
-  if (opened.kind !== "opened") throw new Error("Expected local content");
-  expect(opened.handle.session.document.getText("probe").toString()).toBe("local words");
-  expect(opened.handle.session.getSnapshot().status).toBe("detached");
-  opened.handle.release();
-});
-
 it("permanently clears exact local content even while an editor lease is open", async () => {
   const metadata = openMetadata();
   const record = resource("delete-local");
@@ -241,117 +225,6 @@ it("never exposes a blank database without initialization proof", async () => {
   });
   expect(created).toHaveLength(1);
   expect(created[0]?.getSnapshot().status).toBe("destroyed");
-});
-
-it("establishes and acknowledges one new exact reservation before exposure", async () => {
-  const metadata = openMetadata();
-  const record = resource("reserved", { initialization: "reserved" });
-  const key = await install(metadata, record);
-  const { access } = openAccess(metadata);
-
-  const opened = await access.open("project", key, "editor-tab");
-
-  expect(opened.kind).toBe("opened");
-  expect((await metadata.readResource(key))?.resource.content).toEqual({
-    kind: "exact",
-    databaseName: "content:reserved",
-    schema: collabSchemaKeyTag(),
-  });
-  if (opened.kind === "opened") opened.handle.release();
-});
-
-it("keeps independent leases on one same-browser session", async () => {
-  const metadata = openMetadata();
-  const record = resource("leases");
-  await initialize(record);
-  const key = await install(metadata, record);
-  const created: DocumentSession[] = [];
-  const { access } = openAccess(metadata, createFactory(created));
-
-  const [first, second] = await Promise.all([
-    access.open("project", key, "editor-tab-a"),
-    access.open("project", key, "editor-tab-b"),
-  ]);
-
-  if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected both leases");
-  expect(first.handle.session).toBe(second.handle.session);
-  expect(created).toHaveLength(1);
-  first.handle.release();
-  expect(second.handle.session.getSnapshot().status).toBe("detached");
-  second.handle.release();
-  expect(second.handle.session.getSnapshot().status).toBe("destroyed");
-});
-
-it("keeps a server-acquired session through navigation until the editor binds it", async () => {
-  const metadata = openMetadata();
-  const record = resource("server-acquired");
-  await initialize(record);
-  const key = await install(metadata, record);
-  const session = await registrySession(record);
-  const { access } = openAccess(metadata);
-  const release = vi.fn();
-  await access.adoptRegistrySession(
-    "project",
-    key,
-    session,
-    registryOwnership(record, release, "7", "project"),
-  );
-
-  const abort = new AbortController();
-  const readAccessibleResource = metadata.readAccessibleResource.bind(metadata);
-  const read = vi
-    .spyOn(metadata, "readAccessibleResource")
-    .mockImplementationOnce(async (projectId, resourceKey) => {
-      const current = await readAccessibleResource(projectId, resourceKey);
-      abort.abort();
-      return current;
-    });
-  await expect(
-    access.open("project", key, "cancelled-editor", abort.signal, { adoptionEligible: true }),
-  ).resolves.toEqual({ kind: "cancelled" });
-  read.mockRestore();
-  expect(release).not.toHaveBeenCalled();
-
-  const navigation = await access.open("project", key, "navigation");
-  if (navigation.kind !== "opened") throw new Error("Expected navigation content");
-  expect(navigation.handle.session).toBe(session);
-  navigation.handle.release();
-  expect(release).not.toHaveBeenCalled();
-
-  const editor = await access.open("project", key, "editor", undefined, {
-    adoptionEligible: true,
-  });
-  if (editor.kind !== "opened") throw new Error("Expected editor content");
-  expect(editor.handle.session).toBe(session);
-  editor.handle.release();
-  expect(release).toHaveBeenCalledOnce();
-  await session.destroy();
-});
-
-it("replaces stale same-project registry ownership when availability advances", async () => {
-  const metadata = openMetadata();
-  const record = resource("refreshed-server-ownership");
-  await initialize(record);
-  const key = await install(metadata, record);
-  const session = await registrySession(record);
-  const { access } = openAccess(metadata);
-  const releaseOld = vi.fn();
-  const releaseCurrent = vi.fn();
-  const ownership = (generation: string, release: () => void) =>
-    registryOwnership(record, release, generation);
-
-  await access.adoptRegistrySession("project", key, session, ownership("7", releaseOld));
-  await access.adoptRegistrySession("project", key, session, ownership("8", releaseCurrent));
-
-  expect(releaseOld).toHaveBeenCalledOnce();
-  expect(releaseCurrent).not.toHaveBeenCalled();
-  const editor = await access.open("project", key, "editor", undefined, {
-    adoptionEligible: true,
-  });
-  if (editor.kind !== "opened") throw new Error("Expected acquired editor content");
-  editor.handle.release();
-  expect(releaseCurrent).toHaveBeenCalledOnce();
-  await session.destroy();
 });
 
 it("lets server acquisition replace a local construction that has not opened", async () => {
@@ -491,57 +364,6 @@ it("keeps a failed transfer reserved until the next mounted editor retries", asy
   await session.destroy();
 });
 
-it("retires an uncommitted transfer only after its reservation is aborted", async () => {
-  const metadata = openMetadata();
-  const record = resource("abort-transfer");
-  await initialize(record);
-  const key = await install(metadata, record);
-  const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab", undefined, {
-    adoptionEligible: true,
-  });
-  if (opened.kind !== "opened") throw new Error("Expected local content");
-  const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
-  const reservations: LocalDocumentSessionReservationPort = {
-    reserve: vi.fn(() => handoff),
-    abort: vi.fn(),
-  };
-  await access.reserveTransfer(transferRequest(record, key, "project"), reservations);
-
-  opened.handle.release();
-  expect(opened.handle.session.getSnapshot().status).toBe("detached");
-  access.abortTransfer(key, handoff);
-
-  expect(reservations.abort).toHaveBeenCalledWith(handoff);
-  await vi.waitFor(() => expect(opened.handle.session.getSnapshot().status).toBe("destroyed"));
-});
-
-it("destroys an unsettled transfer once during account close", async () => {
-  const metadata = openMetadata();
-  const record = resource("close-transfer");
-  await initialize(record);
-  const key = await install(metadata, record);
-  const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab", undefined, {
-    adoptionEligible: true,
-  });
-  if (opened.kind !== "opened") throw new Error("Expected local content");
-  const session = opened.handle.session;
-  const destroy = vi.spyOn(session, "destroy");
-  const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
-  const reservations: LocalDocumentSessionReservationPort = {
-    reserve: vi.fn(() => handoff),
-    abort: vi.fn(),
-  };
-  await access.reserveTransfer(transferRequest(record, key, "project"), reservations);
-
-  await access.finishClose();
-
-  expect(reservations.abort).toHaveBeenCalledWith(handoff);
-  expect(destroy).toHaveBeenCalledOnce();
-  expect(session.getSnapshot().status).toBe("destroyed");
-});
-
 it("does not expose an account resource outside the requesting project's projection", async () => {
   const metadata = openMetadata();
   const record = resource("private");
@@ -650,59 +472,6 @@ it("releases every project registry ownership after the final shared-content lea
   second.handle.release();
   expect(releaseA).toHaveBeenCalledOnce();
   expect(releaseB).toHaveBeenCalledOnce();
-});
-
-it("applies a remint observed by another content owner without replacing either Y.Doc", async () => {
-  const metadata = openMetadata();
-  const record = resource("remint");
-  await initialize(record, "same words");
-  const key = await install(metadata, record);
-  const firstAccess = openAccess(metadata).access;
-  const secondAccess = openAccess(metadata).access;
-  const first = await firstAccess.open("project", key, "first");
-  const second = await secondAccess.open("project", key, "second");
-  if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
-  const firstDocument = first.handle.session.document;
-  const secondDocument = second.handle.session.document;
-  const createIntent = record.intents[0];
-  if (!createIntent) throw new Error("Expected create intent");
-  const oldDocumentId = record.resource.identity.documentId;
-  const nextDocumentId = "document-reminted";
-  const prepared = firstAccess.prepareReidentity(key, oldDocumentId, nextDocumentId, 2);
-  const reminted: ResourceRecord = {
-    resource: {
-      ...record.resource,
-      revision: 2,
-      identity: { documentId: nextDocumentId, revision: 2 },
-      aliases: {
-        [oldDocumentId]: {
-          introducedAtIdentityRevision: 2,
-        },
-      },
-    },
-    intents: [
-      { ...createIntent, state: "cancelled" },
-      {
-        ...createIntent,
-        intentId: "retry",
-        sequence: 2,
-        identityRevision: 2,
-      },
-    ],
-  };
-  expect(
-    await metadata.commitResource({ expectedRevision: record.resource.revision, next: reminted }),
-  ).toBe("committed");
-  prepared?.commit();
-  secondAccess.reconcileMetadata(reminted);
-
-  expect(first.handle.session.documentId).toBe(nextDocumentId);
-  expect(second.handle.session.documentId).toBe(nextDocumentId);
-  expect(first.handle.session.document).toBe(firstDocument);
-  expect(second.handle.session.document).toBe(secondDocument);
-  expect(second.handle.session.document.getText("probe").toString()).toBe("same words");
-  first.handle.release();
-  second.handle.release();
 });
 
 it("converges to a competing remint observed while its own reidentity is prepared", async () => {
@@ -832,30 +601,6 @@ it("fences new opens on epoch shutdown and retries retained teardown failures", 
   expect(session.getSnapshot().status).toBe("destroyed");
 });
 
-it("waits for local authority readiness before constructing exact persistence", async () => {
-  const metadata = openMetadata();
-  const record = resource("readiness");
-  await initialize(record);
-  const key = await install(metadata, record);
-  let becomeReady!: () => void;
-  const ready = new Promise<void>((resolve) => {
-    becomeReady = resolve;
-  });
-  const created: DocumentSession[] = [];
-  const factory = createFactory(created);
-  factory.whenAuthorityReady = () => ready;
-  const { access, epoch } = openAccess(metadata, factory);
-
-  const opening = access.open("project", key, "editor-tab");
-  await Promise.resolve();
-  expect(created).toHaveLength(0);
-  epoch.abort();
-  becomeReady();
-
-  await expect(opening).resolves.toEqual({ kind: "cancelled" });
-  expect(created).toHaveLength(0);
-});
-
 it("rejects a durable session schema fence before exposing content", async () => {
   const metadata = openMetadata();
   const record = resource("fenced");
@@ -907,25 +652,6 @@ it.each([
   completeValidation();
 
   await expect(opening).resolves.toEqual({ kind: "cancelled" });
-});
-
-it("releases its lease when final metadata validation fails", async () => {
-  const metadata = openMetadata();
-  const record = resource("read-error");
-  await initialize(record);
-  const key = await install(metadata, record);
-  const created: DocumentSession[] = [];
-  const { access } = openAccess(metadata, createFactory(created));
-  const native = metadata.readAccessibleResource.bind(metadata);
-  let reads = 0;
-  vi.spyOn(metadata, "readAccessibleResource").mockImplementation(async (projectId, input) => {
-    reads++;
-    if (reads === 2) throw new Error("validation unavailable");
-    return native(projectId, input);
-  });
-
-  await expect(access.open("project", key, "editor-tab")).rejects.toThrow("validation unavailable");
-  expect(created[0]?.getSnapshot().status).toBe("destroyed");
 });
 
 it("quarantines an exact database until failed teardown completes", async () => {

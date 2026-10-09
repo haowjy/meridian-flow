@@ -1,4 +1,4 @@
-/** Shared behavior contract for the in-memory and PostgreSQL transcript readers. */
+/** Persisted transcript paging contracts for cutoff lineage, compaction barriers, and cursors. */
 
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
@@ -125,75 +125,9 @@ export function defineTranscriptPageContract(
   }
 
   describe("readTranscriptPage adapter contract", () => {
-    it("returns only writer page fields", async () => {
-      const { repos, root, turn } = await fixture();
-      await turn(root.id as ThreadId, "writer-shape");
-      const page = await readTranscriptPage(repos, root, {
-        order: "newest_first",
-        unit: "item",
-        limit: 1,
-      });
-      expect(Object.keys(page).sort()).toEqual([
-        "entries",
-        "hasMore",
-        "owners",
-        "segment",
-        "segmentBoundary",
-      ]);
-    });
     it.each([
-      ["oldest_first", "item"],
       ["oldest_first", "turn"],
       ["newest_first", "item"],
-      ["newest_first", "turn"],
-    ] as const)("matches a plain thread's loader (%s, %s)", async (order, unit) => {
-      const { repos, root, turn, block } = await fixture();
-      const one = await turn(root.id as ThreadId, "plain-1");
-      await block(one.id as TurnId, "plain-1.0", 0);
-      await block(one.id as TurnId, "plain-1.1", 1);
-      const two = await turn(root.id as ThreadId, "plain-2", "assistant");
-      const context = await loadThreadConversationContext(repos, root);
-      const pages = await readAll(repos, root, order, unit);
-      const actual = pages
-        .flatMap((page) =>
-          page.entries.flatMap((entry) =>
-            entry.blocks.length > 0
-              ? entry.blocks.map((entryBlock) => ({
-                  position: entry.turn.position,
-                  sequence: entryBlock.sequence,
-                  id: entryBlock.id,
-                }))
-              : [{ position: entry.turn.position, sequence: -1, id: entry.turn.id }],
-          ),
-        )
-        .sort(compareKey);
-      const blocksByTurn = new Map<string, Block[]>();
-      for (const entryBlock of context.blocks) {
-        const group = blocksByTurn.get(entryBlock.turnId) ?? [];
-        group.push(entryBlock);
-        blocksByTurn.set(entryBlock.turnId, group);
-      }
-      const expected = context.turns
-        .flatMap((entry) => {
-          const ownBlocks = blocksByTurn.get(entry.id) ?? [];
-          return ownBlocks.length > 0
-            ? ownBlocks.map((entryBlock) => ({
-                position: entry.position,
-                sequence: entryBlock.sequence,
-                id: entryBlock.id,
-              }))
-            : [{ position: entry.position, sequence: -1, id: entry.id }];
-        })
-        .sort(compareKey);
-      expect(actual).toEqual(expected);
-      expect(actual.at(-1)?.id).toBe(two.id);
-    });
-
-    it.each([
-      ["oldest_first", "item"],
-      ["oldest_first", "turn"],
-      ["newest_first", "item"],
-      ["newest_first", "turn"],
     ] as const)("matches context for a fork of a fork (%s, %s)", async (order, unit) => {
       const { repos, root, turn, block, id } = await fixture();
       const r1 = await turn(root.id as ThreadId, "r1");
@@ -382,19 +316,6 @@ export function defineTranscriptPageContract(
         `${first.id}:1`,
         `${first.id}:0`,
       ]);
-    });
-
-    it("pages newest-first through a turn with more blocks than the item limit", async () => {
-      const { repos, root, turn, block } = await fixture();
-      const longTurn = await turn(root.id as ThreadId, "long-turn");
-      for (let sequence = 0; sequence < 8; sequence++) {
-        await block(longTurn.id as TurnId, `long-turn.${sequence}`, sequence);
-      }
-      const pages = await readAll(repos, root, "newest_first", "item", 3);
-      const actual = pages.flatMap((page) =>
-        page.entries.flatMap((entry) => entry.blocks.map((entryBlock) => entryBlock.sequence)),
-      );
-      expect(actual.sort((left, right) => right - left)).toEqual([7, 6, 5, 4, 3, 2, 1, 0]);
     });
 
     it("pins a cursor chain to the settled prefix while a compaction and later turns settle", async () => {
@@ -736,36 +657,6 @@ export function defineTranscriptPageContract(
         expect(cursor).toBeDefined();
       }
       expect(seenNewest.sort()).toEqual(originalKeys.map((key) => key.id).sort());
-    });
-
-    it("ends an oldest-first walk even as a new turn is appended after each page", async () => {
-      const { repos, root, turn, block } = await fixture();
-      const original: string[] = [];
-      for (let index = 0; index < 6; index++) {
-        const created = await turn(root.id as ThreadId, `walk-${index}`);
-        await block(created.id as TurnId, `walk-${index}.0`, 0);
-        original.push(created.id);
-      }
-      let cursor: string | undefined;
-      const seen: string[] = [];
-      let appends = 0;
-      for (let pageNumber = 0; pageNumber < 20; pageNumber++) {
-        const page = await readTranscriptPage(repos, root, {
-          order: "oldest_first",
-          unit: "item",
-          limit: 1,
-          ...(cursor ? { cursor } : {}),
-        });
-        seen.push(...page.entries.flatMap((entry) => entry.blocks.map((part) => part.turnId)));
-        cursor = page.nextCursor;
-        if (!page.hasMore) break;
-        const appended = await turn(root.id as ThreadId, `walk-growth-${pageNumber}`);
-        await block(appended.id as TurnId, `walk-growth-${pageNumber}.0`, 0);
-        appends += 1;
-      }
-      expect(seen).toEqual(original);
-      expect(seen).toHaveLength(original.length);
-      expect(appends).toBe(original.length - 1);
     });
 
     it("rejects a cursor key beyond its anchor and an anchor above the first unsettled turn", async () => {

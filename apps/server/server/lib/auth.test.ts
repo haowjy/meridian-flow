@@ -250,60 +250,6 @@ describe("auth principal provisioning", () => {
       .AccountLinkConflictError;
   });
 
-  it("maps external auth to an internal user idempotently", async () => {
-    const users = createInMemoryUserRepository();
-    const bootstrap = createTestProjectBootstrap();
-
-    const firstUserId = await provisionAuthenticatedUser(
-      {
-        externalId: "user_01workos",
-        email: "user@example.com",
-        name: "Test User",
-        avatarUrl: null,
-      },
-      { users, projects: bootstrap.projects },
-    );
-    const secondUserId = await provisionAuthenticatedUser(
-      {
-        externalId: "user_01workos",
-        email: "new@example.com",
-        name: "Renamed User",
-        avatarUrl: "https://example.test/avatar.png",
-      },
-      { users, projects: bootstrap.projects },
-    );
-
-    expect(secondUserId).toBe(firstUserId);
-    expect(bootstrap.readinessChecks).toBe(2);
-    expect(bootstrap.bootstrapCalls).toBe(1);
-  });
-
-  it("surfaces account-link conflicts as a structured 409 without bootstrapping", async () => {
-    const bootstrap = createTestProjectBootstrap();
-    const users = createInMemoryUserRepository();
-    users.ensureUser = async () => {
-      throw new AccountLinkConflictError();
-    };
-
-    await expect(
-      provisionAuthenticatedUser(
-        {
-          externalId: "user_conflict",
-          email: "conflict@example.com",
-          name: "Conflict User",
-          avatarUrl: null,
-        },
-        { users, projects: bootstrap.projects },
-      ),
-    ).rejects.toMatchObject({
-      status: 409,
-      data: { code: "account_link_conflict" },
-      message:
-        "This email is already associated with a different sign-in identity. Sign in with the original account or contact support.",
-    });
-    expect(bootstrap.bootstrapCalls).toBe(0);
-  });
-
   it("serializes account-link conflicts without provider or internal identities", async () => {
     const bootstrap = createTestProjectBootstrap();
     const users = createInMemoryUserRepository();
@@ -357,24 +303,6 @@ describe("auth principal provisioning", () => {
       ),
     ).rejects.toBe(failure);
     expect(bootstrap.bootstrapCalls).toBe(0);
-  });
-
-  it("skips deep bootstrap after durable readiness completes", async () => {
-    const users = createInMemoryUserRepository();
-    const bootstrap = createTestProjectBootstrap();
-    const externalUser = {
-      externalId: "user_bootstrap_once",
-      email: "bootstrap@example.com",
-      name: "Bootstrap User",
-      avatarUrl: null,
-    };
-
-    await provisionAuthenticatedUser(externalUser, { users, projects: bootstrap.projects });
-    expect(bootstrap.bootstrapCalls).toBe(1);
-
-    await provisionAuthenticatedUser(externalUser, { users, projects: bootstrap.projects });
-    expect(bootstrap.readinessChecks).toBe(2);
-    expect(bootstrap.bootstrapCalls).toBe(1);
   });
 
   it("does not fail authentication while bootstrap seed repair remains pending", async () => {

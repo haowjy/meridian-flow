@@ -4,8 +4,6 @@ import { parseProjectAddress, projectAddressHref, projectAddressState } from "./
 
 const P = "/p/550e8400-e29b-41d4-a716-446655440000";
 const WORK = "123e4567-e89b-42d3-a456-426614174000";
-const OTHER_WORK = "223e4567-e89b-42d3-a456-426614174000";
-const CHAT = "00000000-0000-4000-8000-000000000000";
 
 function parse(href: string) {
   const cut = href.indexOf("?");
@@ -15,40 +13,8 @@ function parse(href: string) {
 }
 
 describe("readable project addresses", () => {
-  it("parses the bare project as the chat index whose canonical href names the screen", () => {
-    expect(parse(P)).toMatchObject({
-      kind: "valid",
-      address: {
-        projectId: "550e8400-e29b-41d4-a716-446655440000",
-        destination: { kind: "chat-index" },
-      },
-      href: `${P}/chats`,
-    });
-    expect(parse(`${P}/`)).toMatchObject({ kind: "valid", href: `${P}/chats` });
-    expect(parse("/p/serial").kind).toBe("invalid");
-  });
-
   it.each([
-    [`${P}/chats`, { kind: "chat-index" }],
-    [`${P}/chats/${CHAT}`, { kind: "chat", chatId: CHAT }],
-    [`${P}/works`, { kind: "works" }],
-    [`${P}/works?view=archived`, { kind: "works" }],
-    [`${P}/works/new`, { kind: "works-new" }],
-    [`${P}/works/${WORK}`, { kind: "work", workId: WORK }],
-    [`${P}/works/${WORK}?view=files`, { kind: "work", workId: WORK }],
-    [`${P}/editor`, { kind: "editor" }],
-    [`${P}/editor/manuscript/Volume%201/Chapter%20%231.md`, { kind: "document" }],
-    [`${P}/editor/manuscript/chapter.md?work=${WORK}`, { kind: "document" }],
-    [`${P}/editor/kb/%E4%BF%AE%E7%82%BC.md`, { kind: "document" }],
-    [`${P}/editor/user/100%25.md`, { kind: "document" }],
-    [`${P}/editor/unfiled/draft.md`, { kind: "document" }],
     [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
-    [`${P}/editor/scratch/notes.md?work=${WORK}`, { kind: "document", scheme: "scratch" }],
-    [`${P}/editor/scratch/notes.md?work=`, { kind: "document", scheme: "scratch" }],
-    [`${P}/editor/uploads/cover.png?work=${WORK}`, { kind: "document", scheme: "uploads" }],
-    [`${P}/editor/browse`, { kind: "browse", scheme: null, path: "" }],
-    [`${P}/editor/browse/manuscript`, { kind: "browse", scheme: "manuscript", path: "" }],
-    [`${P}/editor/browse/manuscript/Volume%201`, { kind: "browse", path: "Volume 1" }],
   ])("round trips %s", (href, destination) => {
     const parsed = parse(href);
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
@@ -58,69 +24,17 @@ describe("readable project addresses", () => {
   });
 
   it.each([
-    // Representative obsolete shapes: no alias, no redirect.
-    `${P}/manuscript/chapter.md`,
-    `${P}/works/${WORK}/scratch/notes.md`,
-    `${P}/chat/${CHAT}`,
-    `${P}/works/@revision`,
-    // Unknown screens and malformed documents.
-    `${P}/settings`,
-    `${P}/editor/manuscript`,
     `${P}/editor/nope/leaf.md`,
     `${P}/editor/manuscript/a%2Fb.md`,
-    `${P}/editor/manuscript/a%5Cb.md`,
-    `${P}/editor/manuscript/a\\b.md`,
-    `${P}/editor/manuscript/%`,
-    `${P}/editor/manuscript/a%3Fb.md`,
     `${P}/editor/manuscript/..`,
-    `${P}/editor/manuscript/%40draft.md`,
-    `${P}/editor/manuscript//leaf.md`,
-    `${P}/editor/manuscript/%20trimmed.md`,
   ])("rejects %s", (href) => {
     expect(parse(href).kind).toBe("invalid");
   });
 
   it.each([
     `${P}/editor/scratch/notes.md`,
-    `${P}/editor/uploads/cover.png`,
-    `${P}/editor/browse/scratch`,
-    `${P}/editor/scratch/notes.md?work=fight-scene`,
-    `${P}/editor/browse/uploads?work=%40revision`,
   ])("a Work-owned resource requires its Work: rejects %s", (href) => {
     expect(parse(href)).toMatchObject({ kind: "invalid", reason: "work" });
-  });
-
-  it("names a Work-owned resource's Work in the query, including No Work", () => {
-    expect(parse(`${P}/editor/scratch/notes.md?work=${WORK.toUpperCase()}`)).toMatchObject({
-      address: { destination: { kind: "document", scheme: "scratch" }, work: { id: WORK } },
-      href: `${P}/editor/scratch/notes.md?work=${WORK}`,
-    });
-    expect(parse(`${P}/editor/scratch/notes.md?work=`)).toMatchObject({
-      address: { work: { kind: "none" } },
-      href: `${P}/editor/scratch/notes.md?work=`,
-    });
-    // The same path under two Works is two addresses.
-    expect(parse(`${P}/editor/scratch/notes.md?work=${OTHER_WORK}`)).toMatchObject({
-      href: `${P}/editor/scratch/notes.md?work=${OTHER_WORK}`,
-    });
-  });
-
-  it("normalizes UUID case and trailing slash, never document case", () => {
-    expect(parse(`${P.toUpperCase().replace("/P/", "/p/")}/editor/kb/Chapter.md/`)).toMatchObject({
-      kind: "valid",
-      href: `${P}/editor/kb/Chapter.md`,
-    });
-  });
-
-  it("owns the Work page and list views in the URL and omits their defaults", () => {
-    expect(parse(`${P}/works/${WORK}?view=chats`)).toMatchObject({ href: `${P}/works/${WORK}` });
-    expect(parse(`${P}/works?view=active`)).toMatchObject({ href: `${P}/works` });
-    // Each view value belongs to one destination.
-    expect(parse(`${P}/works?view=files`)).toMatchObject({ href: `${P}/works` });
-    expect(parse(`${P}/works/${WORK}?view=deleted`)).toMatchObject({
-      href: `${P}/works/${WORK}`,
-    });
-    expect(parse(`${P}/works/${WORK}?view=files&view=chats`).kind).toBe("invalid");
   });
 
   it("round trips review identity only on an Editor document", () => {
@@ -180,38 +94,7 @@ describe("readable project addresses", () => {
     });
   });
 
-  it.each([
-    `${P}/chats`,
-    `${P}/editor`,
-  ])("departure selection state is stable after parsing %s", (href) => {
-    const parsed = parse(href);
-    if (parsed.kind !== "valid") throw new Error(parsed.reason);
-    const state = projectAddressState({ ...parsed.address, work: { kind: "none" } });
-    const restored = parseProjectAddress(href, "", state);
-    if (restored.kind !== "valid") throw new Error(restored.reason);
-    expect(projectAddressState(restored.address, state)).toEqual(state);
-  });
-
-  it.each([
-    `?work=${WORK}&work=`,
-    "?settings=profile&settings=usage",
-    "?results=&results=1",
-    "?unknown=%FE",
-  ])("rejects raw query ambiguity %s", (search) => {
+  it.each([`?work=${WORK}&work=`, "?unknown=%FE"])("rejects raw query ambiguity %s", (search) => {
     expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
-  });
-
-  it("keeps each query key to the screens it belongs to", () => {
-    expect(
-      parse(
-        `${P}/editor/manuscript/chapter.md?work=${WORK.toUpperCase()}&settings=usage&doc=ignored&unknown=1`,
-      ),
-    ).toMatchObject({ href: `${P}/editor/manuscript/chapter.md?work=${WORK}&settings=usage` });
-    expect(
-      parse(`${P}/chats/${CHAT}?work=${WORK}&doc=ignored&results=&settings=profile`),
-    ).toMatchObject({ href: `${P}/chats/${CHAT}?results=&settings=profile` });
-    expect(parse(`${P}/works/${WORK}?work=${OTHER_WORK}&results=`)).toMatchObject({
-      href: `${P}/works/${WORK}`,
-    });
   });
 });

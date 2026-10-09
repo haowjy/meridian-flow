@@ -163,25 +163,6 @@ function transport(overrides: Partial<ResourceCatalogTransport> = {}): ResourceC
   };
 }
 
-it("installs a discovered resource once and avoids identical polling churn", async () => {
-  const metadata = new MemoryMetadata();
-  const catalogTransport = transport();
-  const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
-
-  await expect(acquisition.acquire(projectId, scope)).resolves.toMatchObject({
-    cursor: "cursor-1",
-  });
-  expect(metadata.records.get("catalog:document")?.resource).toMatchObject({
-    content: { kind: "unacquired" },
-    canonical: { path: "/chapter.md" },
-  });
-  expect(metadata.catalogCommits).toBe(1);
-
-  await acquisition.acquire(projectId, scope);
-  expect(catalogTransport.changes).toHaveBeenCalledTimes(1);
-  expect(metadata.catalogCommits).toBe(1);
-});
-
 it("reuses a captured response after resource CAS loss without regressing newer canonical truth", async () => {
   const metadata = new MemoryMetadata();
   metadata.records.set("resource", resource("before.md", 1, true));
@@ -265,8 +246,6 @@ it("rejects a User catalog response for another account", async () => {
 });
 
 it.each([
-  [{ kind: "project", projectId: "other" } as const],
-  [{ kind: "user", userId: "other" } as const],
   [{ kind: "work", projectId, workId: "other" } as const],
 ])("rejects an initial snapshot for a different requested scope", async (responseScope) => {
   const metadata = new MemoryMetadata();

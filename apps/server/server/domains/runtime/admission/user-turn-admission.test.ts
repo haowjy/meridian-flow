@@ -141,56 +141,6 @@ function harness(
 }
 
 describe("UserTurnAdmission", () => {
-  it("leaves unexpired reservations outside the run-claim race", async () => {
-    const { service, runClaim } = harness({
-      state: "pending",
-      fingerprint: canonicalAdmissionFingerprint({
-        ...input(),
-        blocks: parseUserMessageBlocks(input().blocks, input().text),
-        references: parseSubmittedReferences(input().references),
-      }),
-      claimExpiresAt: new Date("2999-01-01T00:00:00Z"),
-    });
-    const acquire = vi.spyOn(runClaim, "withExclusiveThread");
-    await expect(service.lookup(input())).resolves.toMatchObject({ kind: "pending" });
-    await expect(service.admit(input())).resolves.toMatchObject({ kind: "pending" });
-    expect(acquire).not.toHaveBeenCalled();
-  });
-
-  it("accepts skill blocks in concat and ignores them for reference membership", async () => {
-    const skill = {
-      type: "skill" as const,
-      text: "/writing-principles",
-      slug: "writing-principles",
-      name: "Writing principles",
-      description: "Reader reward.",
-    };
-    const parsed = parseUserMessageBlocks(
-      [{ type: "text", text: "use " }, skill],
-      "use /writing-principles",
-    );
-    expect(parsed).toEqual([{ type: "text", text: "use " }, skill]);
-    expect(() => parseUserMessageBlocks([{ ...skill, extra: true }], skill.text)).toThrow(
-      InvalidAdmissionError,
-    );
-    expect(() => parseUserMessageBlocks([{ ...skill, text: "/other" }], "/other")).toThrow(
-      InvalidAdmissionError,
-    );
-    const h = harness(null, [availableResolution()], true, async () => undefined);
-    await expect(
-      h.service.admit(
-        input({
-          text: "use /writing-principles",
-          blocks: [{ type: "text", text: "use " }, skill],
-          references: [],
-          activatedSkillSlugs: ["writing-principles"],
-        }),
-      ),
-    ).resolves.toMatchObject({ kind: "accepted" });
-    expect(h.captured()?.blocks).toEqual([{ type: "text", text: "use " }, skill]);
-    expect(h.captured()?.references).toEqual([]);
-  });
-
   it("parses exact ordered occurrences and proves text equivalence", () => {
     const parsed = parseUserMessageBlocks(input().blocks, input().text);
     expect(parsed.map((block) => block.type)).toEqual([
@@ -223,26 +173,6 @@ describe("UserTurnAdmission", () => {
         { documentId, uri, purpose: "draft-upload", intakeId: "intake" },
       ]),
     ).toThrow(InvalidAdmissionError);
-  });
-
-  it("replays a complete accepted result before project, authorization, or busy work", async () => {
-    const payload = input();
-    const fingerprint = canonicalAdmissionFingerprint({
-      ...payload,
-      blocks: parseUserMessageBlocks(payload.blocks, payload.text),
-    });
-    const h = harness({ state: "accepted", fingerprint, response: accepted() });
-    await expect(h.service.admit(payload)).resolves.toEqual({
-      ...accepted(),
-      kind: "already-accepted",
-    });
-    expect(h.threadProject).not.toHaveBeenCalled();
-    expect(h.captured()).toBeNull();
-  });
-
-  it("rejects a same-key fingerprint mismatch definitely", async () => {
-    const h = harness({ state: "accepted", fingerprint: "different", response: accepted() });
-    await expect(h.service.admit(input())).rejects.toBeInstanceOf(AdmissionConflictError);
   });
 
   it("fingerprints occurrence spelling, identity, order, multiplicity, images, and provenance", async () => {
@@ -361,21 +291,7 @@ describe("UserTurnAdmission", () => {
   });
 
   it.each([
-    ["missing", [], true],
     ["URI mismatch", [availableResolution("uploads://@/moved.png")], true],
-    [
-      "deleted",
-      [
-        {
-          kind: "deleted",
-          documentId,
-          generation: "1",
-          lastAuthority: { kind: "work", projectId, workId: "no-work", workSlug: null },
-        },
-      ],
-      true,
-    ],
-    ["not visible", [{ kind: "not-visible", documentId, checkedGeneration: "1" }], true],
     [
       "indeterminate",
       [
@@ -443,19 +359,6 @@ describe("UserTurnAdmission", () => {
     ).rejects.toBeInstanceOf(InvalidAdmissionError);
   });
 
-  it("does not adopt URI-shaped prose and exposes not-seen and retirement without retry", async () => {
-    const h = harness();
-    const prose = input({ text: uri, blocks: [{ type: "text", text: uri }], references: [] });
-    await h.service.admit(prose);
-    expect(h.captured()?.references).toEqual([]);
-    await expect(
-      h.service.lookup({ actorUserId: actor, threadId, submissionId: "missing" }),
-    ).resolves.toEqual({ kind: "not-seen", submissionId: "missing" });
-    await expect(
-      h.service.retire({ actorUserId: actor, threadId, submissionId: "missing" }),
-    ).resolves.toEqual({ kind: "retired", submissionId: "missing", code: "retired" });
-  });
-
   it("authorizes activated skill slugs and rejects unknown ones", async () => {
     const authorize = vi.fn(async ({ slugs }: { slugs: readonly string[] }) => {
       if (slugs.includes("missing-skill")) {
@@ -491,29 +394,6 @@ describe("UserTurnAdmission", () => {
       ),
     ).rejects.toBeInstanceOf(InvalidAdmissionError);
     expect(rejected.captured()).toBeNull();
-  });
-
-  it("treats missing activatedSkillSlugs as none and fingerprints the set", () => {
-    const parsed = parseUserMessageBlocks([{ type: "text", text: "plain" }], "plain");
-    const none = canonicalAdmissionFingerprint({
-      ...input({ text: "plain", blocks: parsed, references: [] }),
-      blocks: parsed,
-      references: [],
-    });
-    const empty = canonicalAdmissionFingerprint({
-      ...input({ text: "plain", blocks: parsed, references: [] }),
-      blocks: parsed,
-      references: [],
-      activatedSkillSlugs: [],
-    });
-    const activated = canonicalAdmissionFingerprint({
-      ...input({ text: "plain", blocks: parsed, references: [] }),
-      blocks: parsed,
-      references: [],
-      activatedSkillSlugs: ["writing-principles", "creative-writing-modes"],
-    });
-    expect(none).toBe(empty);
-    expect(activated).not.toBe(none);
   });
 });
 

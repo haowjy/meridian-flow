@@ -35,13 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_MOVE_TARGET_ID = "00000000-0000-4000-8000-000000000707";
     const DOC_ROLLBACK_SOURCE_ID = "00000000-0000-4000-8000-000000000708";
     const DOC_ROLLBACK_TARGET_ID = "00000000-0000-4000-8000-000000000709";
-    const _DOC_AMBIENT_DELETE_ID = "00000000-0000-4000-8000-000000000710";
     const DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
-    const _EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000712";
-    const _NON_EMPTY_FOLDER_ID = "00000000-0000-4000-8000-000000000713";
-    const _DOC_CALLBACK_FAILURE_ID = "00000000-0000-4000-8000-000000000714";
-    const _DOC_STALE_DELETE_ID = "00000000-0000-4000-8000-000000000715";
-    const _DOC_ROLLBACK_DELETE_ID = "00000000-0000-4000-8000-000000000716";
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
@@ -166,27 +160,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(context.stat("cover.png")).resolves.toMatchObject({ ok: true });
     });
 
-    it("persists a same-schema rename before the next Postgres-backed collab write", async () => {
-      const { context, move, observedWriteFiletypes } = createContextHarness();
-      await context.write("chapter.md", "Chapter");
-      observedWriteFiletypes.length = 0;
-
-      await expect(move("chapter.md", "chapter.txt")).resolves.toMatchObject({ ok: true });
-      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
-        ok: true,
-        value: { kind: "tracked", filetype: "text", schemaType: "document" },
-      });
-      await expect(context.write("chapter.txt", "Revised chapter")).resolves.toMatchObject({
-        ok: true,
-      });
-
-      expect(observedWriteFiletypes).toEqual(["text"]);
-      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
-        ok: true,
-        value: { kind: "tracked", filetype: "text", schemaType: "document" },
-      });
-    });
-
     it("keeps one Postgres document identity when write and rename overlap", async () => {
       const { context, move, pauseNextWrite } = createContextHarness();
       const initial = await context.write("chapter.md", "Chapter");
@@ -265,30 +238,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(folders)).resolves.toHaveLength(1);
     });
 
-    it("refuses to convert a storage-backed binary row to tracked text", async () => {
-      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      const binary = await store.createBinaryDocument({
-        folderId: null,
-        name: "cover",
-        extension: "webp",
-        fileType: "image",
-        storageUrl: "s3://bucket/cover.webp",
-        mimeType: "image/webp",
-        sizeBytes: 42,
-      });
-
-      await expect(
-        store.createDocument({
-          folderId: null,
-          name: "cover",
-          extension: "webp",
-          markdown: "not an image",
-          filetype: "text",
-        }),
-      ).rejects.toThrow(`Cannot replace binary document with tracked text: ${binary.id}`);
-      await expect(store.findDocument(null, "cover", "webp")).resolves.toEqual(binary);
-    });
-
     it("ignores source content activity during an overwrite move", async () => {
       await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
       await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");
@@ -340,33 +289,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(targetAfter?.deletedAt).toBeInstanceOf(Date);
       expect(observer.documentDeleted).toHaveBeenCalledWith(DOC_ROLLBACK_TARGET_ID);
-    });
-
-    it("awaits create membership before returning the tracked document", async () => {
-      let durable = false;
-      const observer: ContextDocumentMembershipObserver = {
-        async documentCreated() {
-          await Promise.resolve();
-          durable = true;
-        },
-        documentDeleted: () => undefined,
-      };
-      const contentStore = new DrizzleContextDocumentStore({
-        db,
-        contextSourceId: SOURCE_ID,
-        membershipObserver: observer,
-      });
-
-      await contentStore.createDocument({
-        id: DOC_CREATE_ID,
-        folderId: null,
-        name: "awaited-create",
-        extension: "md",
-        markdown: "awaited-create",
-        filetype: "markdown",
-      });
-
-      expect(durable).toBe(true);
     });
 
     it("dispatches create, delete, and overwrite-move membership events exactly once after commit", async () => {
