@@ -337,7 +337,7 @@ export function ChatView({
   // producing draft edits" signal available client-side (per-turn draft lineage
   // is a later server phase); auto-apply streams never light the dock.
   const generating = isStreaming && draftMode;
-  const dock = useDraftDock({ threadId, generating, work: activeWork });
+  const dock = useDraftDock({ threadId, generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
     const text = envelope.text;
