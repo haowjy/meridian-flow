@@ -34,7 +34,8 @@ async function lintMigration(name: string, sql: string, ...options: string[]) {
   }
 }
 
-describe("migration lint", () => {
+// Each case launches several real CLI processes alongside the full unit gate.
+describe("migration lint", { timeout: 15_000 }, () => {
   it("enforces populated-row safety immediately after the baseline", async () => {
     const additive = await lintMigration(
       "0001_unsafe.sql",
