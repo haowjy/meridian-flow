@@ -234,7 +234,17 @@ lookup; rendering a title does not adopt it as an attachment.
 
 `linkResolutionPlugin` scans the document for internal link marks, decorates
 each with `data-link-state`, and asks the store about anything it has no answer
-for. Both halves matter:
+for. The same scan asks about every `image` and `figure` whose source is a
+document address. `pictureKeyOfNode` reads the source through contracts'
+`classifyWrittenSource`: an internal source is keyed by its ref (or null) and
+its stored spelling; a contextual one such as `uploads://seal.png` is keyed as
+written with no ref and resolves by address, as a ref-less link does. A web,
+`data:` or `asset:` source has no key. Text copy spells a picture through
+`spellStoredLink(…, "manuscript-root")`, the speller every read door uses. Those draw no decoration, because their node views read the answer
+themselves (`../asset-image-render-state.ts`), and an edit that inserts,
+removes or rewrites one rebuilds the scan as an edit reaching a link does.
+`failed(link)` tells such a reader a failed question from one the next scan
+has not asked yet. Both halves matter:
 
 - **`apply` is pure.** It reads the cache and builds decorations. Asking is a
   side effect and lives in the plugin's `view`, which requests what the last
@@ -364,7 +374,8 @@ with. Every client producer assigns it without parsing and without the network
 | Ctrl+K, toolbar, menu Edit (`commitLinkDraft`) | a picked document's `doc:`, else `assignWrittenHref`; an unchanged destination keeps the link's attrs, any other is a retarget assigned fresh |
 | pasted `[[…]]` | the catalog row's `doc:`, else a minted ahead ref at the link-ahead address |
 | any paste (Markdown, HTML without metadata, another project's rich copy) | `assignPastedNodes` on every link still without a ref, in the link clipboard plugin's `transformPasted` |
-| same-project rich paste | the copied ref, at the copied current address |
+| same-project rich paste | the copied ref, at the copied current address (links and pictures) |
+| pasted `image`/`figure` with a manuscript address source (another project's rich copy, outside HTML) | `assignWrittenSource` (the same `assignFreshLink`, source grammar), in the image paste door after the asset-path translation |
 | image uploads | `asset:` src, no ref |
 
 `assignWrittenHref` is markup's `assignFreshLink`, the pass 3 agent-edit
@@ -394,7 +405,17 @@ when the project matches, as `data-meridian-kept-ref`, the one attribute the
 link mark's parser reads a ref from and which the sanitizer never lets through.
 Every link still unbound is then bound fresh by `transformPasted`. Metadata is
 never a capability: a kept `doc:` ref resolves through the reader's catalog
-and draws gone when they cannot read it. The chat composer takes the full
+and draws gone when they cannot read it. A ref-bearing picture travels the
+same way with its metadata on its `<img>` (a figure's own picture): the
+sanitizer admits a recorded address as the source (and a metadata-free
+document address, which binds fresh like its bare spelling), the kept ref is
+`data-meridian-kept-ref` on that `<img>`, and anything unkept is assigned by
+the image paste door. The text flavour spells a picture whose ref answers a
+document at that document's current address under the manuscript-root
+grammar (stored spelling otherwise), from the same answer rich copy records.
+It serializes a block the Markdown codec
+has no form for (a figure, a component) through the MDX codec, so copying one
+never loses the HTML flavour. The chat composer takes the full
 address. Nothing here enters the stored Markdown. The app's click handler reads the semantic
 target; native URL copying must not interpret it relative to the current route.
 The link menu copies the pointed-at slice without moving the writer's selection.

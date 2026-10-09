@@ -7,8 +7,13 @@
  * somebody ELSE is uploading right now (the same frame, no percent and no verbs,
  * because neither the bytes nor the retry are ours), a picture whose upload
  * never finished at all (a reload or a redo found the slot but not the bytes),
- * and a picture (the ordinary case, a signed read URL resolved from the stable
- * `asset:` ref).
+ * and a picture (the ordinary case, a signed read URL for the document its
+ * `asset:` source or its `ref` names).
+ *
+ * A picture whose ref names nothing it can draw says which: an address nothing
+ * has been uploaded to yet (it draws itself when a file lands there), or a
+ * document that is gone. Neither offers Retry, because nothing a press could
+ * do would change the answer.
  *
  * Which of the two empty-slot states applies is never guessed: the slot's
  * `uploadToken` plus a live owner signal says an upload is in flight, and only
@@ -35,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "../asset-image-render-state";
+import { mountedLinkAnswerCache } from "../links";
 import { objectSelectedInDecorations } from "../objects";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { imageWidthAttr } from "./image-resize";
@@ -50,7 +56,12 @@ export function ImageNodeView(props: NodeViewProps) {
   const alt = typeof props.node.attrs.alt === "string" ? props.node.attrs.alt : "";
   const width = imageWidthAttr(props.node.attrs);
   const { projectId } = (props.extension.options ?? {}) as { projectId?: string };
-  const [state, actions] = useAssetImageRenderState({ projectId, src });
+  const [state, actions] = useAssetImageRenderState({
+    projectId,
+    src,
+    ref: props.node.attrs.ref,
+    resolution: mountedLinkAnswerCache(props.editor),
+  });
   const pending = pendingUploadFromDecorations(props.decorations);
   const mine = pending?.owner === "mine" ? pending.entry : null;
 
@@ -121,6 +132,11 @@ export function ImageNodeView(props: NodeViewProps) {
         >
           {state.kind === "loading" ? (
             <Loader2 className="size-6 animate-spin" />
+          ) : state.kind === "unavailable" ? (
+            <>
+              <ImageIcon className="size-6 shrink-0" aria-hidden />
+              <span className="meridian-image-node__note">{state.message}</span>
+            </>
           ) : (
             <>
               <ImageIcon className="size-6" />

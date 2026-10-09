@@ -1,9 +1,12 @@
 /** Shared helpers for uploaded editor images and asset-backed rendering. */
+import { storedLinkRef } from "@meridian/contracts";
 import type { UploadFigureAssetResponse } from "@meridian/contracts/protocol";
 import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
 import type { AnchorRange } from "../anchors";
+import type { AssignedLink } from "../links/link-assignment";
+import { pictureKeyOfNode } from "../links/link-resolution";
 
 export function isImageFile(file: Pick<File, "type" | "name">): boolean {
   return file.type.startsWith("image/") || /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(file.name);
@@ -130,6 +133,7 @@ function resolveAssetPathsFromClipboard(slice: Slice, index: AssetClipboardIndex
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
+      if (storedLinkRef(node.attrs.ref)) return node;
       const assetDocumentId = index.assetForPath(src);
       if (!assetDocumentId) return node;
       return node.type.create({ ...node.attrs, src: `asset:${assetDocumentId}` }, null, node.marks);
@@ -147,17 +151,53 @@ function resolveAssetPathsFromClipboard(slice: Slice, index: AssetClipboardIndex
  * What a paste may do with the images it carries — the one seam, so there is
  * one answer to "which pictures can land here".
  *
- * Two kinds arrive. A picture copied from another Meridian document travels as
- * a project-relative path and comes home as the stable ref it left as. Anything
- * else is an address the project does not own, and it lands as a link until it
- * has been imported.
+ * Three kinds arrive. A picture that already names a document (a same-project
+ * rich paste kept its ref, or a drag moved it) lands as it is. An uploaded
+ * picture travels as a project-relative path and comes home as the stable
+ * `asset:` ref it left as. A source that is a manuscript address is assigned
+ * the document there (or an ahead ref) by `assign`, the shared fresh
+ * assignment under the manuscript-root grammar. Anything else is an address
+ * the project does not own, and it lands as a link until it has been imported.
  */
 export function resolveImagesFromClipboard(
   slice: Slice,
   schema: Schema,
   index: AssetClipboardIndex,
+  assign: (src: string) => AssignedLink,
 ): { slice: Slice; imports: PastedImageImport[] } {
-  return linkExternalPastedImages(resolveAssetPathsFromClipboard(slice, index), schema);
+  return linkExternalPastedImages(
+    assignPastedSources(resolveAssetPathsFromClipboard(slice, index), assign),
+    schema,
+  );
+}
+
+/** Every picture whose source is a document address, given the ref it names. */
+function assignPastedSources(slice: Slice, assign: (src: string) => AssignedLink): Slice {
+  const assignments = new Map<string, AssignedLink>();
+  const mapNode = (node: PMNode): PMNode => {
+    if (node.type.name === "image" || node.type.name === "figure") {
+      const src = String(node.attrs.src ?? "");
+      if (!src || src.startsWith("asset:") || storedLinkRef(node.attrs.ref)) return node;
+      let assigned = assignments.get(src);
+      if (!assigned) {
+        assigned = assign(src);
+        assignments.set(src, assigned);
+      }
+      if (!assigned.ref) return node;
+      return node.type.create(
+        { ...node.attrs, src: assigned.href, ref: assigned.ref },
+        null,
+        node.marks,
+      );
+    }
+    if (node.content.size === 0) return node;
+    return node.copy(Fragment.fromArray(node.content.content.map(mapNode)));
+  };
+  return new Slice(
+    Fragment.fromArray(slice.content.content.map(mapNode)),
+    slice.openStart,
+    slice.openEnd,
+  );
 }
 
 /**
@@ -176,7 +216,9 @@ export type PastedImageImport = {
  * Every image in a pasted slice that the manuscript cannot hold, turned into a
  * link to itself.
  *
- * An image's `src` is a stable `asset:<documentId>` and nothing else. Web HTML
+ * An image's `src` is a stable `asset:<documentId>`, or a document address
+ * (beside the `ref` that names its document, or resolved by itself when it has
+ * none), and nothing else. Web HTML
  * carries `<img src="https://…">`, and admitting one writes an address the
  * project does not own into the shared document: it expires, it leaks where
  * the writer was reading, and it renders as a broken figure the moment the
@@ -199,7 +241,9 @@ function linkExternalPastedImages(
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
-      if (!src || src.startsWith("asset:")) return node;
+      // A picture naming a document address (with a ref, or ref-less and
+      // resolved by its address) is the project's own, never a web import.
+      if (!src || src.startsWith("asset:") || pictureKeyOfNode(node.attrs)) return node;
       const alt = node.attrs.alt ? String(node.attrs.alt) : null;
       imports.push({ url: src, alt });
       const marks = linkType ? [...node.marks, linkType.create({ href: src })] : node.marks;

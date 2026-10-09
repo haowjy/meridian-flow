@@ -1,16 +1,121 @@
-/** Shared signed-URL lifecycle for asset-backed images rendered in React surfaces. */
+/**
+ * What an image or figure shows: which document its source names, and the
+ * signed-URL lifecycle that draws a document-backed picture.
+ *
+ * A picture names a document one of two ways. An upload stores `asset:<id>`.
+ * A picture written as an address stores a `ref` (`doc:`/`ahead:`) beside it,
+ * and that ref is answered by the editor's link cache like any link's: the
+ * same `(ref, href)` key, the same local rule and settlement memo, asked by
+ * the same document scan (`links/link-resolution-decorations.ts`). A
+ * ref-less source that is a document address (`uploads://seal.png`) is asked
+ * by its address, as a ref-less link is. A document answer draws exactly as
+ * an `asset:` picture does. A web or `data:` source renders as written.
+ */
+
 import { t } from "@lingui/core/macro";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { resolveDocumentHref } from "@meridian/contracts";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 
 import { assetDocumentIdFromSrc, signedUrlRefreshDelayMs } from "./images";
+import {
+  type LinkAnswerCache,
+  type LinkKey,
+  type LinkResolutionEntry,
+  linkCacheKey,
+  pictureKeyOfNode,
+} from "./links";
 
 export type AssetImageRenderState =
   | { kind: "idle"; url: string | null; message?: string }
   | { kind: "loading"; url: string | null; message?: string }
   | { kind: "ready"; url: string; expiresAt?: string }
-  | { kind: "error"; url: string | null; message: string };
+  | { kind: "error"; url: string | null; message: string }
+  /**
+   * Nothing to draw, and nothing to retry: an address nothing has been
+   * uploaded to yet (it draws itself when a file arrives there), or a
+   * document that is gone.
+   */
+  | { kind: "unavailable"; url: null; message: string };
+
+/** What a picture's source names, before any URL is signed. */
+type PictureTarget =
+  | { kind: "empty" }
+  | { kind: "literal"; url: string }
+  | { kind: "document"; documentId: string }
+  /** No answer yet: no resolver registered, or the question is out. */
+  | { kind: "resolving" }
+  /** The question failed. Retry asks again. */
+  | { kind: "unanswered" }
+  | { kind: "unavailable"; message: string };
+
+/**
+ * Not asked yet: no resolver is registered, or a new registration's scan has
+ * not reached this picture. Distinct from a failed question (null).
+ */
+const UNASKED = "unasked" as const;
+const noSubscription = () => () => {};
+
+function usePictureTarget(
+  src: string,
+  key: LinkKey | null,
+  resolution: LinkAnswerCache | null,
+): PictureTarget {
+  const cache = key ? resolution : null;
+  const subscribe = useMemo(() => cache?.subscribe ?? noSubscription, [cache]);
+  const entry = useSyncExternalStore<LinkResolutionEntry | null | typeof UNASKED>(subscribe, () => {
+    if (!cache || !key) return null;
+    if (!cache.available) return UNASKED;
+    return cache.read(key) ?? (cache.failed(key) ? null : UNASKED);
+  });
+  if (!src) return { kind: "empty" };
+  const assetDocumentId = assetDocumentIdFromSrc(src);
+  if (assetDocumentId) return { kind: "document", documentId: assetDocumentId };
+  // An editor with no link lane has nothing to ask, and draws the source as
+  // it always has.
+  if (!key || !cache) return { kind: "literal", url: src };
+  if (entry === UNASKED || entry?.state === "pending") return { kind: "resolving" };
+  if (!entry) return { kind: "unanswered" };
+  switch (entry.state) {
+    case "document":
+      return { kind: "document", documentId: entry.document.documentId };
+    case "missing": {
+      const path = displayedAddress(key.href);
+      return { kind: "unavailable", message: t`No image has been uploaded to ${path} yet.` };
+    }
+    case "gone":
+      return { kind: "unavailable", message: t`This image is no longer available.` };
+  }
+}
+
+/** A manuscript picture's address as the writer wrote it: its path from the root. */
+function displayedAddress(href: string): string {
+  const uri = resolveDocumentHref(href, null)?.uri ?? href;
+  return uri.startsWith("manuscript://") ? uri.slice("manuscript://".length) : uri;
+}
+
+function pictureTargetIdentity(target: PictureTarget): string {
+  switch (target.kind) {
+    case "literal":
+      return `literal\u0000${target.url}`;
+    case "document":
+      return `document\u0000${target.documentId}`;
+    case "unavailable":
+      return `unavailable\u0000${target.message}`;
+    default:
+      return target.kind;
+  }
+}
 
 export type AssetImageRetryState = {
   automaticRefreshUsed: boolean;
@@ -58,10 +163,25 @@ export type AssetImageRenderActions = {
 export function useAssetImageRenderState(input: {
   projectId?: string;
   src: string;
+  /** The picture's stored `ref`, as the node holds it. */
+  ref?: unknown;
+  /** The editor's link cache, which answers the ref. */
+  resolution?: LinkAnswerCache | null;
 }): [AssetImageRenderState, AssetImageRenderActions] {
-  const { projectId, src } = input;
-  const assetDocumentId = assetDocumentIdFromSrc(src);
-  const assetIdentity = `${projectId ?? ""}\u0000${assetDocumentId ?? src}`;
+  const { projectId, src, resolution = null } = input;
+  const stored = pictureKeyOfNode({ ref: input.ref, src });
+  // Stable across renders while the stored link is: the subscription and the
+  // retry belong to the key, not to a fresh object.
+  const keyRef = stored?.ref ?? null;
+  const keyLink = stored?.href ?? null;
+  const key = useMemo<LinkKey | null>(
+    () => (keyLink ? { ref: keyRef, href: keyLink } : null),
+    [keyRef, keyLink],
+  );
+  const target = usePictureTarget(src, key, resolution);
+  const targetIdentity = pictureTargetIdentity(target);
+  const assetDocumentId = target.kind === "document" ? target.documentId : null;
+  const assetIdentity = `${projectId ?? ""}\u0000${targetIdentity}`;
   const retryStateRef = useRef<{ identity: string; state: AssetImageRetryState }>({
     identity: assetIdentity,
     state: { automaticRefreshUsed: false },
@@ -77,16 +197,29 @@ export function useAssetImageRenderState(input: {
   // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [state, setState] = useState<AssetImageRenderState>(() => {
-    if (!src) return { kind: "idle", url: null, message: t`Missing figure source` };
-    return assetDocumentId ? { kind: "loading", url: null } : { kind: "ready", url: src };
-  });
+  // Which picture this is: its project, and its stored link or its source.
+  // A URL on screen belongs to one picture. It stays while that same picture
+  // revalidates (a catalog change, a signed-URL refresh), and a node view
+  // retargeted to another picture (a ref or source edit, undo, a peer's
+  // update) never draws the previous one while the new one loads.
+  const picture = `${projectId ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
+  const [shown, setShown] = useState<{ picture: string; state: AssetImageRenderState }>(() => ({
+    picture,
+    state: initialState(target),
+  }));
+  const state = shown.picture === picture ? shown.state : initialState(target);
 
-  const retry = useCallback(() => setRefreshToken((token) => token + 1), []);
+  const unanswered = target.kind === "unanswered";
+  const retry = useCallback(() => {
+    // A question that failed is asked again; anything else signs a fresh URL.
+    if (unanswered && key && resolution) void resolution.resolve(key);
+    else setRefreshToken((token) => token + 1);
+  }, [key, resolution, unanswered]);
   const imageDisplayed = useCallback(() => {
     retryStateRef.current.state = { automaticRefreshUsed: false };
   }, []);
   const imageLoadFailed = useCallback(() => {
+    const setState = showFor(setShown, picture);
     if (!assetDocumentId) {
       setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
       return;
@@ -102,20 +235,13 @@ export function useAssetImageRenderState(input: {
       return;
     }
     setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
-  }, [assetDocumentId]);
+  }, [assetDocumentId, picture]);
 
+  // Keyed by `targetIdentity`, the target's value: the object is rebuilt
+  // every render, and a new one with the same value must not re-sign.
   useEffect(() => {
-    if (!src) {
-      setState({ kind: "idle", url: null, message: t`Missing figure source` });
-      return;
-    }
-
-    if (!assetDocumentId) {
-      setState({ kind: "ready", url: src });
-      return;
-    }
-
-    if (!projectId) {
+    const setState = showFor(setShown, picture);
+    if (!projectId && (target.kind === "document" || target.kind === "resolving")) {
       setState({
         kind: "error",
         url: null,
@@ -124,17 +250,29 @@ export function useAssetImageRenderState(input: {
       return;
     }
 
+    // A new resolution generation (every catalog change) asks again, and the
+    // same picture stays on screen while it does, as a signed-URL refresh's does.
+    if (target.kind === "resolving") {
+      setState((kept) => ({ kind: "loading", url: kept }));
+      return;
+    }
+
+    if (target.kind !== "document" || !projectId) {
+      setState(initialState(target));
+      return;
+    }
+
     let cancelled = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const routeProjectId = projectId;
-    const routeAssetDocumentId = assetDocumentId;
+    const routeAssetDocumentId = target.documentId;
 
     async function loadSignedUrl(skipCache: boolean) {
       loadInFlightRef.current = true;
       // The previous URL stays on screen: a refresh must not blink the picture
       // out of the manuscript. It is also the URL about to expire, which is
       // why an error arriving now belongs to the request, not to the picture.
-      setState((current) => ({ kind: "loading", url: current.url }));
+      setState((kept) => ({ kind: "loading", url: kept }));
 
       try {
         const signed = await getFigureSignedUrl({
@@ -165,7 +303,42 @@ export function useAssetImageRenderState(input: {
       loadInFlightRef.current = false;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [assetDocumentId, projectId, refreshToken, src]);
+  }, [targetIdentity, picture, projectId, refreshToken]);
 
   return [state, { retry, imageLoadFailed, imageDisplayed }];
+}
+
+/**
+ * Sets the state shown for one picture. An update may keep the URL already
+ * on screen only when that URL is this same picture's.
+ */
+function showFor(
+  setShown: Dispatch<SetStateAction<{ picture: string; state: AssetImageRenderState }>>,
+  picture: string,
+) {
+  return (next: AssetImageRenderState | ((keptUrl: string | null) => AssetImageRenderState)) =>
+    setShown((current) => ({
+      picture,
+      state:
+        typeof next === "function"
+          ? next(current.picture === picture ? current.state.url : null)
+          : next,
+    }));
+}
+
+/** The state a target draws before any URL is signed. */
+function initialState(target: PictureTarget): AssetImageRenderState {
+  switch (target.kind) {
+    case "empty":
+      return { kind: "idle", url: null, message: t`Missing figure source` };
+    case "literal":
+      return { kind: "ready", url: target.url };
+    case "document":
+    case "resolving":
+      return { kind: "loading", url: null };
+    case "unanswered":
+      return { kind: "error", url: null, message: t`Image could not be displayed.` };
+    case "unavailable":
+      return { kind: "unavailable", url: null, message: target.message };
+  }
 }

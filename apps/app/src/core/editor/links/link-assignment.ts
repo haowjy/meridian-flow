@@ -5,7 +5,8 @@
  *
  * Every client producer that turns written text into a link comes through
  * here (Ctrl+K and the link form, a Markdown or HTML paste, a rich paste from
- * another project), and here goes through markup's `assignFreshLink`, the pass
+ * another project), and so does a pasted picture whose source is a manuscript
+ * address (`assignWrittenSource`); here goes through markup's `assignFreshLink`, the pass
  * 3 agent-edit assigns with, so there is one answer to "which document did the
  * writer mean". It is synchronous and reads only the editor's local document
  * index: assignment never waits on the network. An internal address the index
@@ -67,6 +68,26 @@ export function assignWrittenHref(
 }
 
 /**
+ * Assign one written `image`/`figure` source, under the manuscript-root
+ * grammar (a bare source is a manuscript path). A source that is not a
+ * document address (a web URL, `data:`) keeps `ref: null` as written; the
+ * image paste door imports it.
+ */
+export function assignWrittenSource(src: string, index: LinkAssignmentIndex | null): AssignedLink {
+  // Protocol-relative is the web, whatever the source grammar would make of it.
+  if (src.startsWith("//")) return { ref: null, href: src };
+  const assigned = assignFreshLink({
+    href: src,
+    grammar: "source",
+    holderUri: null,
+    documentFor: (uri) => (index ? indexedDocumentAt(index.documents, uri) : null),
+  });
+  return assigned.kind === "literal"
+    ? { ref: null, href: src }
+    : { ref: assigned.ref, href: assigned.href };
+}
+
+/**
  * The indexed document at an internal address, by the server's address rule
  * (`matchDocumentPath`: the exact path, else the one path that differs only by
  * an omitted extension). A contextual address means the scope's own Work,
@@ -108,9 +129,9 @@ export function indexedDocumentAtExactly<T extends LinkAssignmentDocument>(
 /**
  * Pasted nodes with every ref-less link assigned (the client's pass 3). A
  * link that already carries a ref came from a same-project rich paste or a
- * producer that knew its document, and keeps it. Images and figures keep
- * their sources: uploads carry `asset:` and nothing on the client mints a
- * source ref. Each distinct written href is assigned once per paste, so one
+ * producer that knew its document, and keeps it. Images and figures are the
+ * image paste door's (`images/image-workflow.ts`), which knows the uploads
+ * a pasted path came from and assigns the rest with `assignWrittenSource`. Each distinct written href is assigned once per paste, so one
  * address pasted twice shares an assignment.
  *
  * A mark walk rather than `walkLinkOccurrences`: a pasted slice can hold bare
