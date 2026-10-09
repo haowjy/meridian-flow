@@ -25,7 +25,7 @@ import {
   resolveDocumentHref,
   storedLinkRef,
 } from "@meridian/contracts";
-import { assignFreshLink } from "@meridian/markup";
+import { assignFreshLink } from "@meridian/markup/links";
 import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
 
 /** One document the editor's local index knows, by id and current address. */

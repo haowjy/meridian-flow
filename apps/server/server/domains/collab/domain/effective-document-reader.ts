@@ -10,7 +10,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup";
+import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {

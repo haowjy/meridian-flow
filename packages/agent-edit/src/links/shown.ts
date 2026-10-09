@@ -14,13 +14,8 @@
  * resolve, so every doubt answers "not shown".
  */
 import type { LinkView } from "@meridian/contracts";
-import {
-  type DocumentLinkScope,
-  type ParsedContentWithSpans,
-  type PMNode,
-  type SpelledLinkFact,
-  walkLinkOccurrences,
-} from "@meridian/markup";
+import type { DocumentLinkScope, ParsedContentWithSpans, PMNode } from "@meridian/markup";
+import { type SpelledLinkFact, walkLinkOccurrences } from "@meridian/markup/links";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { AgentEditBlockItem, AgentEditModelPayload } from "../tool/model-result.js";
 import { modelBlockItem } from "../tool/model-result.js";

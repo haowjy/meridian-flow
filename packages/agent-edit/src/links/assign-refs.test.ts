@@ -1,6 +1,7 @@
 // Ref assignment on the real write path: reviewer cases are assigned as the model means them, and no door loses or churns refs.
 import { documentRef, storedHref } from "@meridian/contracts";
-import { extractStoredLinks, walkLinkOccurrences } from "@meridian/markup";
+import { walkLinkOccurrences } from "@meridian/markup/links";
+import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";

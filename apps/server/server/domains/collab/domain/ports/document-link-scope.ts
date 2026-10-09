@@ -14,7 +14,8 @@
  * work that only inherited a settled snapshot, such as a timer, opens its own.
  */
 import type { LinkView } from "@meridian/contracts";
-import type { HolderLinkScope, PMNode } from "@meridian/markup";
+import type { PMNode } from "@meridian/markup";
+import type { HolderLinkScope } from "@meridian/markup/links";
 import type * as Y from "yjs";
 
 export type { HolderLinkScope };

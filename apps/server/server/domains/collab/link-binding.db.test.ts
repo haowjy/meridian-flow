@@ -17,7 +17,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { extractStoredLinks } from "@meridian/markup";
+import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";

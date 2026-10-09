@@ -8,7 +8,8 @@ import {
 import { expect, it } from "vitest";
 
 import { components, m, paragraph, schema, t } from "./codec-test-support.js";
-import { type DocumentLinkScope, mdxCodec, spelledLinks, walkLinkOccurrences } from "./index.js";
+import { type DocumentLinkScope, mdxCodec } from "./index.js";
+import { spelledLinks, walkLinkOccurrences } from "./links.js";
 
 const holder: LinkHolder = {
   uri: "manuscript://book/ch1.md",

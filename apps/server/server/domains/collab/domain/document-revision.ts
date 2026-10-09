@@ -9,7 +9,7 @@
  * apply it identifies. It is a freshness signal, never a write refusal.
  */
 import { createHash } from "node:crypto";
-import { extractStoredLinks } from "@meridian/markup";
+import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { HolderLinkScope } from "./ports/document-link-scope.js";
