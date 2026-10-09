@@ -14,8 +14,11 @@ draft keyed `(documentId, workId)`.
 ## Document revision identity
 
 `domain/document-revision.ts` hashes the encoded Yjs snapshot (state vector
-and delete set) as `y1:<base64url SHA-256>`. A state-vector-only token misses
-pure deletion. This host callback is injected into both agent-edit cores.
+and delete set), the holder's URI and the sorted `[storedRef, storedHref,
+spelledHref]` triples of every ref-bearing link and `asset:` source, as
+`y2:<base64url SHA-256>`. A state-vector-only token misses pure deletion; a
+snapshot-only token misses a tree-only move. It reaches both agent-edit cores
+as `DocumentLinksPort.revision(doc, scope)`, with the command's prepared scope.
 Reads hash the private rendered runtime doc synchronously. Applies hash the
 authority/peer doc immediately after `Y.applyUpdate`, before any await.
 Response receipts retain that token through result rewriting; an unverified
@@ -165,7 +168,8 @@ from document derivation.
 `domain/document-derivations.ts` is the sole projection pipeline. The write hook
 runs it immediately; WebSocket admissions and generation replacement schedule it
 with a two-second trailing debounce and ten-second maximum wait. The projection
-feeds search, listings and sizes, the download fallback, and the link index;
+feeds search, listings and sizes, and the link index (download serves only
+the live read: a projection can hold a pre-move path);
 the Editor and AI read live Yjs, and renames flush first. Push completion
 runs the same derive in its ambient completion transaction, so journal, projection,
 watermark, and settlement roll back together.

@@ -1,6 +1,6 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
-  type AgentEditCodec,
+  type AgentEditCodecFactory,
   type AgentEditCore,
   createAgentEditCore,
   type DocumentCoordinator,
@@ -19,7 +19,9 @@ import {
   type WriteOutcome,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirror-schema";
 import {
   type FileAccess,
@@ -54,8 +56,9 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { BranchJournalReadStore } from "./branch-push-contracts.js";
 import type { BranchReversalHistoryReader } from "./branch-reversal-history.js";
-import { documentRevision } from "./document-revision.js";
+import { createScopedDocumentLinks } from "./document-links-port.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -101,7 +104,9 @@ export function createBranchThreadPeerAgentEditCore(input: {
   afterCommit(callback: () => void | Promise<void>): void;
   enlistResponseParticipant: EnlistResponseParticipant;
   model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  links: DocumentLinkScopes;
+  aheadRefs: AheadRefRegistrar;
   semanticProvenance: SemanticProvenanceWriter;
   observability: AgentEditObservability;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
@@ -121,13 +126,17 @@ export function createBranchThreadPeerAgentEditCore(input: {
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
-    createThreadCore: (threadId) => {
+    createThreadCore: (threadId, viewFor) => {
       const pendingJournalEntries = createBranchPendingJournalEntries(
         input.enlistResponseParticipant,
         input.diagnostics,
       );
       return createAgentEditCore({
-        documentRevision,
+        links: createScopedDocumentLinks({
+          scopes: input.links,
+          registrar: input.aheadRefs,
+          viewFor,
+        }),
         journal: createBranchAgentEditJournal({
           threadId,
           liveJournal: input.journal,
@@ -150,7 +159,8 @@ export function createBranchThreadPeerAgentEditCore(input: {
           afterCommit: input.afterCommit,
           enlistResponseParticipant: input.enlistResponseParticipant,
           model: input.model,
-          codec: input.codec,
+          // Attribution compares blocks as stored: a linked document's move is no one's edit.
+          codec: input.codec.bind(UNSCOPED_DOCUMENT_LINKS),
           concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
         lifecycle: input.lifecycle,
@@ -204,7 +214,11 @@ type ResponseRecord = {
  */
 export function createThreadPeerCorePool(input: {
   liveUtilityCore: LiveAgentEditCore;
-  createThreadCore(threadId: ThreadId): AgentEditCore;
+  /** `viewFor` is the view the pool routes this thread's documents to: its pinned or last draft. */
+  createThreadCore(
+    threadId: ThreadId,
+    viewFor: (documentId: string, context: WriteContext | undefined) => LinkView,
+  ): AgentEditCore;
   /** The thread's Work-draft history: its undo and redo reverse drafted writes there. */
   reversalHistory: BranchReversalHistoryReader;
   /** The live journal's history: its undo and redo reverse live writes live. */
@@ -236,7 +250,26 @@ export function createThreadPeerCorePool(input: {
   // D41: the version of each document the model last read or wrote, per thread.
   // Process-local like the runtime docs it guards; a restart forgets it.
   const lastSeen = new Map<string, FileDestination>();
+  // The Work draft each thread core last wrote or read in: the view its links spell in.
+  const draftWorks = new Map<string, string>();
   const maxThreadCores = input.maxThreadCores ?? 128;
+
+  function threadViewFor(threadId: ThreadId) {
+    return (documentId: string, context: WriteContext | undefined): LinkView => {
+      const responseId = context?.responseId;
+      const pinned = responseId
+        ? responses.get(responseId)?.documents.get(documentId as DocumentId)
+        : undefined;
+      const destination = pinned?.grant.destination;
+      const workId = destination?.kind === "draft" ? destination.workId : draftWorks.get(threadId);
+      const reply = responseId ? { responseId } : {};
+      return workId ? { kind: "draft", workId, ...reply } : { kind: "live", ...reply };
+    };
+  }
+
+  function noteDestination(destination: FileDestination, threadId: string | undefined) {
+    if (destination.kind === "draft" && threadId) draftWorks.set(threadId, destination.workId);
+  }
 
   async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
     if (!threadId) return input.liveUtilityCore;
@@ -247,7 +280,7 @@ export function createThreadPeerCorePool(input: {
       cores.set(id, existing);
       return existing;
     }
-    const core = input.createThreadCore(id);
+    const core = input.createThreadCore(id, threadViewFor(id));
     cores.set(id, core);
     await evictIdleCores();
     return core;
@@ -306,6 +339,7 @@ export function createThreadPeerCorePool(input: {
   }
 
   function coreForDestination(destination: FileDestination, threadId: string | undefined) {
+    noteDestination(destination, threadId);
     return destination.kind === "live" ? input.liveUtilityCore : coreFor(threadId);
   }
 
@@ -427,6 +461,7 @@ export function createThreadPeerCorePool(input: {
     context: WriteContext,
     grant: FileGrant<"edit">,
   ): Promise<WriteOutcome> {
+    noteDestination(grant.destination, context.threadId);
     // Live reversals commit immediately and never join the reply's save.
     const record =
       core !== input.liveUtilityCore && context.responseId

@@ -8,7 +8,6 @@ import {
   parseComponentProps,
   stringifyBlock,
 } from "../../helpers.js";
-import { parsedSource } from "../../markdown/blocks/image.js";
 import { spelledSource } from "../../markdown/blocks/image-html.js";
 import type { BlockCodec } from "../../types.js";
 
@@ -42,7 +41,7 @@ export function createFigureCodec(): BlockCodec<MdastJsxFlow> {
         if (typeof parsed.props[key] !== "string") return invalidJsxFallback(ast, ctx);
       }
       return ctx.schema.node("figure", {
-        src: parsedSource(ctx, String(parsed.props.src ?? "")),
+        src: String(parsed.props.src ?? ""),
         alt: parsed.props.alt ?? null,
         label: parsed.props.label ?? null,
         caption: parsed.props.caption ?? "",

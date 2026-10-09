@@ -19,6 +19,7 @@ import type {
   MoveContextEntryRequest,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import type { SpelledLinkFact } from "@meridian/markup";
 import type { Result } from "../../../shared/result.js";
 import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
@@ -200,6 +201,12 @@ export interface SearchResult {
   matchCount: number;
   /** Relevance score, 0-1. Adapter-dependent. */
   score?: number;
+  /**
+   * Host-only: each ref-bearing link the returned passages spell, as spelled,
+   * computed after the passage cap. Tools strip it; the host records it as shown
+   * only for hits the reader may see.
+   */
+  shownLinks?: readonly SpelledLinkFact[];
 }
 
 export type WriteProvenance =

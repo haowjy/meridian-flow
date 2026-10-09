@@ -1,7 +1,14 @@
 // Adapts the pure markup codec to agent-edit's hash-prefixed block display contract.
-import type { DocumentLinkScope, MarkupCodec, ParsedContent, PMNode } from "@meridian/markup";
+import type {
+  DocumentLinkScope,
+  MarkupCodec,
+  ParsedContent,
+  ParsedContentWithSpans,
+  PMNode,
+} from "@meridian/markup";
 import { toHashline } from "./model/hashline.js";
 
+/** A codec bound to one holder's link scope: every serialization spells through it. */
 export interface AgentEditCodec {
   /** The underlying pure markup codec. */
   readonly markup: MarkupCodec;
@@ -18,14 +25,27 @@ export interface AgentEditCodec {
 }
 
 /**
- * `links` spells every link and image destination this codec serializes. It is
- * captured here only until lane F2 of #729/#730 turns this into a factory that
- * binds a holder scope per command.
+ * Parse is pure syntax and needs no scope; serializing does. Each command
+ * binds once at entry, after its host prepared the scope, and passes the
+ * bound codec down.
  */
-export function createAgentEditCodec(
-  markup: MarkupCodec,
-  links: DocumentLinkScope,
-): AgentEditCodec {
+export interface AgentEditCodecFactory {
+  readonly markup: MarkupCodec;
+  parse(content: string): ParsedContent;
+  parseWithSpans(content: string): ParsedContentWithSpans;
+  bind(links: DocumentLinkScope): AgentEditCodec;
+}
+
+export function createAgentEditCodecFactory(markup: MarkupCodec): AgentEditCodecFactory {
+  return {
+    markup,
+    parse: (content) => markup.parse(content),
+    parseWithSpans: (content) => markup.parseWithSpans(content),
+    bind: (links) => bindAgentEditCodec(markup, links),
+  };
+}
+
+function bindAgentEditCodec(markup: MarkupCodec, links: DocumentLinkScope): AgentEditCodec {
   return {
     markup,
     parse: (content) => markup.parse(content),

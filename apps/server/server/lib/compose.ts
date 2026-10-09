@@ -24,6 +24,7 @@ import {
   type CollabDomain,
   createCollabDomain,
   createInMemoryCollabDomain,
+  createLinkScopeObserver,
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
@@ -37,8 +38,8 @@ import {
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
   createDrizzleDocumentArrivals,
-  createDrizzleDocumentAssetPaths,
   createDrizzleDocumentLinkHistory,
+  createDrizzleDocumentLinkScopes,
   createDrizzleFigureDocumentRepository,
   createDrizzleLinkAheadRegistry,
   createDrizzleProjectContextAvailability,
@@ -56,6 +57,7 @@ import {
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
+  type LinkScopeMembership,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type ProjectDocumentCatalogRefreshPort,
@@ -492,7 +494,6 @@ export async function createProductionAppPorts(input: {
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
-  const assetPaths = createDrizzleDocumentAssetPaths(db, eventSink);
   const agentRevisions = createDrizzleAgentRevisionStore(db);
   const chainDeps = {
     threads: threadRepos.threads,
@@ -505,24 +506,34 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
-  // Built before the collab domain it serves: membership binds late, like the catalog's.
+  // Bound once the collab domain exists; neither runs before composition finishes.
+  const manifestMembership: LinkScopeMembership = (input) => {
+    if (!boundManifestMembership) {
+      throw new Error("Manifest membership resolver used before the collab domain was bound");
+    }
+    return boundManifestMembership.resolveManifestMembership(
+      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
+    );
+  };
   const linkAheadRegistry = createDrizzleLinkAheadRegistry(
     db,
-    (input) => {
-      if (!boundManifestMembership) {
-        throw new Error("Manifest membership resolver used before the collab domain was bound");
-      }
-      return boundManifestMembership.resolveManifestMembership(input);
-    },
+    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
     eventSink,
   );
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
+  const documentLinks = createDrizzleDocumentLinkScopes({
+    db,
+    fileAccess,
+    membership: manifestMembership,
+    observer: createLinkScopeObserver(eventSink),
+  });
   const documentSync = createCollabDomain({
     db,
     arrivals,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
-    assetPaths,
+    links: documentLinks,
+    aheadRefs: linkAheadRegistry,
     eventSink,
     notices,
     workAuthorityResolver,
@@ -559,7 +570,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
   });
   contextPorts = createProductionUnifiedContextPortFactory({
-    assetPaths,
+    links: documentLinks,
     db,
     documentSync,
     manifestMembership: documentSync,

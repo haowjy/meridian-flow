@@ -13,6 +13,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
+import type { SpelledLinkFact } from "@meridian/markup";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
@@ -201,6 +202,11 @@ export type TurnReversalAccess = {
 
 export type VersionedDocumentRead<T> = { content: T; revision: string | null };
 
+export type HashlineRead = VersionedDocumentRead<string[]> & {
+  /** Aligned with `content`: the ref-bearing links each block spells. */
+  links: readonly (readonly SpelledLinkFact[])[];
+};
+
 export type MarkdownDocumentStore = {
   readVersionedMarkdown(
     documentId: string,
@@ -347,6 +353,8 @@ export type BranchPeerShadowAccess = {
     threadId?: ThreadId | null;
     /** The version the caller's writes change; `live` never touches a draft (D40). */
     destination: "live" | "draft";
+    /** The draft's Work, whose view a draft read's links spell in. */
+    workId?: WorkId | null;
   }): Promise<string | null>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
@@ -356,14 +364,22 @@ export type BranchPeerShadowAccess = {
     responseId?: string | null;
     /** The version the caller's writes change; `live` never touches a draft (D40). */
     destination: "live" | "draft";
+    /** The draft's Work, whose view a draft read's links spell in. */
+    workId?: WorkId | null;
   }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
+  /**
+   * One hashline per block, and per block the ref-bearing links it spells
+   * (`spelledLinks`), computed with the same scope in the same synchronous block.
+   */
   readEffectiveHashlines(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     responseId?: string | null;
     /** The version the caller's writes change; `live` never touches a draft (D40). */
     destination: "live" | "draft";
-  }): Promise<Result<VersionedDocumentRead<string[]>, SyncError>>;
+    /** The draft's Work, whose view a draft read's links spell in. */
+    workId?: WorkId | null;
+  }): Promise<Result<HashlineRead, SyncError>>;
   resolveManifestMembership(input: {
     projectId: ProjectId;
     workId?: WorkId | null;

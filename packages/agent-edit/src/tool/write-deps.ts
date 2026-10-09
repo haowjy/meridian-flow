@@ -1,10 +1,11 @@
 // Shared dependencies bag for the write-tool command pipeline modules.
 import type * as Y from "yjs";
 
-import type { AgentEditCodec } from "../codec-adapter.js";
+import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
+import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticProvenanceWriter } from "../ports/semantic-provenance.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
@@ -21,7 +22,10 @@ export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
-  codec: AgentEditCodec;
+  /** Parses purely; each command binds it to its prepared holder scope. */
+  codec: AgentEditCodecFactory;
+  /** The host's link scope: prepare, holder scope, ahead registration and view revision. */
+  links: DocumentLinksPort;
   model: AgentEditModel;
   /** Durable lookup authority for the response that authored a mutation. */
   semanticProvenance?: SemanticProvenanceWriter;
@@ -33,8 +37,6 @@ export interface CreateWriteToolOptions {
   defaultThreadId?: string;
   undoClientId?: number;
   createRuntimeDoc?: () => Y.Doc;
-  /** Host-owned identity, captured synchronously from the document rendered or applied. */
-  documentRevision?: (doc: Y.Doc) => string;
   reversalNoticePort?: ReversalNoticePort;
   onInvariantViolation?: (message: string) => void;
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;

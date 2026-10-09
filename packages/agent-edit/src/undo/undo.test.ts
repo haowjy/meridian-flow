@@ -13,7 +13,7 @@ import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import type { ApplyResult, ResolvedEdit } from "../apply/types.js";
-import { createAgentEditCodec } from "../codec-adapter.js";
+import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
@@ -22,7 +22,7 @@ import { InMemoryAgentEditJournal } from "../test-support/index.js";
 import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 const DOC_ID = "doc-1";
 const FILE = "chapter.md";

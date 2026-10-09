@@ -1,7 +1,7 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
@@ -20,7 +20,10 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
-import { NO_DOCUMENT_ASSET_PATHS } from "../domain/ports/document-asset-paths.js";
+import {
+  createStaticDocumentLinkScopes,
+  UNSUPPORTED_AHEAD_REFS,
+} from "../adapters/in-memory/static-document-link-scopes.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -115,7 +118,7 @@ const documentSchema = buildDocumentSchema();
 const markupCodec = mdxCodec({
   schema: documentSchema,
 });
-const agentEditCodec = createAgentEditCodec(markupCodec, UNSCOPED_DOCUMENT_LINKS);
+const agentEditCodec = createAgentEditCodecFactory(markupCodec).bind(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(documentSchema);
 
 export const USER_ID = "00000000-0000-4000-8000-000000000801";
@@ -259,6 +262,8 @@ export type MatrixDraftStep = {
 };
 
 export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
+  // One link scope for every door the harness assembles, as composition shares one.
+  const links = createStaticDocumentLinkScopes();
   const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const DRAFT_DESTINATION = {
     kind: "draft",
@@ -344,7 +349,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
-    links: UNSCOPED_DOCUMENT_LINKS,
+    links,
     schema: documentSchema,
     model,
     codec: markupCodec,
@@ -437,7 +442,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const changeEvents: unknown[] = [];
   const settlementProjections: unknown[] = [];
   const realBranchPush = createBranchPushService({
-    assetPaths: NO_DOCUMENT_ASSET_PATHS,
+    links,
     changeEventDelivery: {
       deliver(message, sweptChanges) {
         changeEvents.push(projectChangeEventForRecipient(message, sweptChanges, USER_ID as UserId));
@@ -454,7 +459,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journal: persistence.journal,
     liveCoordinator,
     model,
-    codec: markupCodec,
+    codec: createAgentEditCodecFactory(markupCodec),
     resolveDocumentTitle: async (documentId) => {
       return documentId === ALPHA_ID ? "alpha" : "beta";
     },
@@ -508,7 +513,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
   const runtime = createAgentEditRuntime({
-    assetPaths: NO_DOCUMENT_ASSET_PATHS,
+    links,
+    aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
@@ -546,6 +552,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     enlistResponseParticipant,
     model: runtime.model,
     codec: runtime.codec,
+    links,
+    aheadRefs: UNSUPPORTED_AHEAD_REFS,
     semanticProvenance: runtime.semanticProvenance,
     observability,
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
@@ -600,7 +608,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
-    assetPaths: NO_DOCUMENT_ASSET_PATHS,
+    links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       db,
       branchStore,
@@ -1741,6 +1749,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
       runtime,
+      links,
       branchPulls,
       branchPush: realBranchPush,
       db,

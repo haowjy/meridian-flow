@@ -20,7 +20,9 @@ transaction; collab's pull transaction rules make that safe (see the
 [collab contract](../../collab/.context/CONTEXT.md#pull-and-provisioning-transactions)).
 It reports settled authority, not a response's staged overlay.
 
-Search results carry `documentId` and `revision` from the document scanned.
+Search results carry `documentId` and `revision` from the document scanned, and
+host-only `shownLinks`: the ref-bearing links the returned passages spell
+(after the passage cap), for the host to record as shown.
 Tool wiring moves these fields to result metadata, not model-facing search JSON.
 Each result also says which `version` it came from, `draft` or `live`.
 
@@ -130,19 +132,21 @@ router resolves to exact project-scoped Work authority before dispatch.
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
   one chapter cannot disturb another that references the same asset.
-- **Image path adapter** (`adapters/asset-path-resolver.ts`) — implements
-  collab's `DocumentAssetPaths` port. Each scope resolves its project (by
-  project, document or thread) and loads every image in the project's
-  manuscript, wherever it sits and including deleted ones, in one recursive
-  query kept to the project's rows by the `folders_context_root`,
-  `folders_parent` and `documents_context_images` indexes. Nothing is cached
-  between operations, and figure upload does not notify it. ContextFS search
-  binds its source document IDs to one scope, resolving their common project
-  once and reusing its image snapshot across all chapters. The factory must
-  receive the same asset-path port instance as collab. Paths are
-  manuscript-relative; parsing accepts the bare form and `manuscript://`. A
-  path held by a live image resolves to it; otherwise only a sole deleted image
-  at that path claims it. Scope rules live in collab's
+- **Document-link scope adapter** (`adapters/document-link-scope.ts`) —
+  implements collab's `DocumentLinkScopes` port. Each snapshot resolves its
+  project, owner and personal project once (by project, document or thread)
+  and then loads only what each `prepare` names, skipping keys it already
+  holds: settlements by ahead id, rows by id, and every row at an exact or
+  extension-omitted address, each with the canonical URI its folder chain
+  spells now (deleted rows included). Readability comes from the file
+  policy's `listAccess` for the snapshot's reader; presence from `deleted_at`
+  plus the manifest membership ContextFS lists through, read only when a
+  manifest-governed row needs it (the live set, then a draft view's, which
+  includes draft-created and same-response staged documents). Images are
+  documents: the `asset:` rule reads the same rows. Nothing is cached between
+  operations. ContextFS search binds its source document IDs to one snapshot;
+  each chapter's read prepares its own document into it. The factory must
+  receive the same scope instance as collab. Scope rules live in collab's
   [document authority notes](../../collab/.context/document-authority-and-schema.md).
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
   resolution boundary for standard Markdown hrefs, all six canonical Context
