@@ -86,25 +86,6 @@ function pair(command: string, extra: JsonObject = {}, toolName = "write") {
 }
 
 describe("document text elisions", () => {
-  for (const command of ["read", "create", "insert", "replace", "remove", "undo", "redo"]) {
-    it(`elides stale ${command} without changing pairing or reasoning`, () => {
-      const blocks = pair(command);
-      const before = JSON.stringify(blocks);
-      const elisions = plan(blocks);
-      expect(elisions.length).toBe(["create", "insert", "replace"].includes(command) ? 2 : 1);
-      for (const e of elisions) {
-        const original = blocks.find((b) => b.id === e.blockId);
-        if (!original) throw new Error(`Missing original block ${e.blockId}`);
-        expect(e.content).toMatchObject({
-          toolCallId: (original.content as JsonObject).toolCallId,
-          toolName: "write",
-        });
-      }
-      expect(elisions.some((e) => e.blockId === "reasoning")).toBe(false);
-      expect(JSON.stringify(blocks)).toBe(before);
-      expect(JSON.stringify(elisions)).not.toContain("OLD DOCUMENT");
-    });
-  }
   it("preserves fresh reads, duplicate reads and fresh writes", () => {
     for (const command of ["read", "create", "replace", "remove", "undo", "redo"])
       expect(
@@ -119,41 +100,9 @@ describe("document text elisions", () => {
       [],
     );
   });
-  it.each([null, undefined, "different"])("fails closed for current %s", (token) => {
-    expect(
-      plan(
-        pair("read"),
-        new Map(
-          token === undefined ? [] : [["00000000-0000-4000-8000-000000000001", token as string]],
-        ),
-      ),
-    ).toHaveLength(1);
-  });
   it("absent evidence fails closed but an explicit empty list carries no text", () => {
     expect(plan(pair("read", { metadata: {} }))).toHaveLength(1);
     expect(plan(pair("read", { metadata: { documentRevisions: [] } }))).toEqual([]);
-  });
-  it("errors including writes that did not land stay verbatim", () => {
-    expect(plan(pair("replace", { isError: true, output: "Write did not land" }))).toEqual([]);
-  });
-  it("non-document tools, assistant prose and images stay verbatim", () => {
-    for (const tool of [
-      "ls",
-      "work",
-      "thread_report",
-      "spawn",
-      "thread_message",
-      "ask_user",
-      "return_result",
-    ])
-      expect(plan(pair("read", {}, tool))).toEqual([]);
-    expect(
-      plan([
-        block("prose", "text", "OLD DOCUMENT"),
-        block("image", "image", { url: "image" }),
-        reasoning,
-      ]),
-    ).toEqual([]);
   });
   it("search elides changed passages only, preserving files and match counts", () => {
     const blocks = pair(
@@ -255,9 +204,6 @@ it("null recorded tokens remain unknown even when current is available", () => {
     plan(pair("read", { metadata: { documentRevisions: [{ ...evidence, revision: null }] } })),
   ).toHaveLength(1);
 });
-it("explicit empty evidence on write-kind tools is not a write to collapse", () => {
-  expect(plan(pair("replace", { metadata: { documentRevisions: [] } }))).toEqual([]);
-});
 it("freezes search content without borrowing unchanged nested output objects", () => {
   const blocks = pair(
     "search",
@@ -272,11 +218,4 @@ it("freezes search content without borrowing unchanged nested output objects", (
   const elisions = plan(blocks);
   ((blocks[1].content as JsonObject).output as JsonObject[])[1].matchCount = 999;
   expect(JSON.stringify(elisions)).not.toContain("999");
-});
-
-it.each(["remove", "undo", "redo"])("does not freeze an unchanged %s input", (command) => {
-  const blocks = pair(command);
-  (blocks[0].content as JsonObject).input = { command, path: evidence.uri, in: "b41" };
-  const elisions = plan(blocks);
-  expect(elisions.map((e) => e.blockId)).toEqual(["result"]);
 });

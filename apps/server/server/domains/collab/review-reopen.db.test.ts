@@ -1,14 +1,18 @@
 /** A settled draft must not return through the same chat's retained Yjs peer. */
-import { expect, it } from "vitest";
+import { afterAll, beforeEach, expect, it } from "vitest";
 import {
   ALPHA_ID,
+  closeDatabase,
   createHarness,
-  setupSettlementFixture,
+  createTestDatabase,
+  resetSettlementFixture,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
 import { WORK_ID } from "./test-support/change-trail-postgres-harness.js";
 
-setupSettlementFixture();
+const db = createTestDatabase();
+beforeEach(() => resetSettlementFixture(db));
+afterAll(() => closeDatabase(db));
 
 it.each([
   { action: "discard", effect: "replacement" },
@@ -19,7 +23,7 @@ it.each([
   action,
   effect,
 }) => {
-  const harness = createHarness();
+  const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("The sacred dawn.", "review-reopen");
     const f = harness.crossWorkProbeFixture();

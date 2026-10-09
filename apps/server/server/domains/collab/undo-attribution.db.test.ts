@@ -2,22 +2,25 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { captureUndoRestorationClaims, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
-import { expect, it } from "vitest";
+import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   ALPHA_ID,
+  closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
+  resetSettlementFixture,
   schema,
-  setupSettlementFixture,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
 import { THREAD_ID, TURN_ID, WORK_ID } from "./test-support/change-trail-postgres-harness.js";
 
-setupSettlementFixture();
+const db = createTestDatabase();
+beforeEach(() => resetSettlementFixture(db));
+afterAll(() => closeDatabase(db));
 
 it("Undo survives reload and retry, and Apply credits only the AI turn", async () => {
-  const warm = createHarness();
+  const warm = createHarness(db);
   let cold: ReturnType<typeof createHarness> | undefined;
   const browser = createCollabYDoc({ gc: false });
   try {
@@ -86,7 +89,7 @@ it("Undo survives reload and retry, and Apply credits only the AI turn", async (
         .where(eq(schema.branchWriteJournal.branchId, branch.branchId)),
     ).toHaveLength(beforeRetry.length);
     warm.destroyWarmState();
-    cold = createHarness();
+    cold = createHarness(db);
     const reloaded = cold.crossWorkProbeFixture();
     const command = {
       workId: WORK_ID,

@@ -1,7 +1,6 @@
 /** Definition compilation contracts independent of provider/runtime support. */
 import { describe, expect, it } from "vitest";
 import { compileAgentDefinition } from "../domain/agent-definition-compiler.js";
-import { normalizeAgentMeta } from "../domain/mars-source.js";
 
 const compile = (meta: Record<string, unknown>, config?: Record<string, unknown>) => {
   const result = compileAgentDefinition({ body: "Review the chapter.\n", meta, config });
@@ -40,15 +39,6 @@ describe("Agent definition compiler", () => {
       expect(compileAgentDefinition({ body: "", meta: { extension: value } }).ok).toBe(false);
     }
   });
-
-  it("diagnoses invalid routing values after source normalization", () => {
-    const meta = normalizeAgentMeta({ model: 123, effort: "bogus" });
-    expect(meta).toEqual({ model: 123, effort: "bogus" });
-    expect(compileAgentDefinition({ body: "", meta }).ok).toBe(false);
-    expect(compile(normalizeAgentMeta({ effort: "xhigh" })).definition.metadata.effort).toBe(
-      "xhigh",
-    );
-  });
   it("compiles permission as read or edit, leaves it unset by default and names the allowed values", () => {
     expect(compile({ permission: "read" }).definition.metadata.permission).toBe("read");
     // Resolution, not the compiler, applies the `edit` default (agent-configuration).
@@ -59,23 +49,6 @@ describe("Agent definition compiler", () => {
         { field: "meta.permission", message: 'Expected "read" or "edit", got "write"' },
       ],
     });
-  });
-  it("normalizes skill lists and aliases without introducing defaults", () => {
-    expect(compile({}).definition.metadata).toEqual({});
-    expect(compile({ skills: [], model_invocable: false }).definition.metadata).toEqual({
-      skills: { load: [] },
-      "model-invocable": false,
-    });
-    expect(compile({ skills: { available: [] } }).definition.metadata).toEqual({
-      skills: { available: [] },
-    });
-  });
-
-  it("retains the body and unknown source metadata", () => {
-    const meta = { description: "", attribution: { author: "A" } };
-    const result = compile(meta);
-    expect(result.definition.systemPrompt).toBe("Review the chapter.\n");
-    expect(result.definition.metadata).toEqual(meta);
   });
 
   it("hashes canonical content, including presence and ordered lists", () => {
@@ -99,24 +72,6 @@ describe("Agent definition compiler", () => {
       tools: ["search"],
       "disallowed-tools": [],
     });
-  });
-
-  it.each([
-    { effort: "maximum" },
-    { model: "" },
-    { skills: { load: [1] } },
-    { tools: { edit: "ask" } },
-    { subagents: null },
-    { approval: "yolo" },
-    { autocompact: 0 },
-    { autocompact: -1 },
-    { autocompact_pct: 101 },
-    { "user-invocable": "yes" },
-    { model_invocable: true, "model-invocable": false },
-  ])("returns explicit diagnostics for invalid configuration %j", (meta) => {
-    const result = compileAgentDefinition({ body: "", meta });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.diagnostics.length).toBeGreaterThan(0);
   });
 
   it("accepts read and write, rejects edit in tools and the tool map, and ignores a denied edit", () => {

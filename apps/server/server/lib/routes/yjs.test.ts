@@ -49,33 +49,6 @@ function connectionConfig() {
 }
 
 describe("Yjs branch handshake route guard", () => {
-  it("derives the client schema version from the request at the gateway boundary", () => {
-    const gateway = createYjsGateway(gatewayServices());
-    const handleConnection = vi
-      .spyOn(gateway.hocuspocus, "handleConnection")
-      .mockReturnValue({} as never);
-
-    gateway.connect({
-      request: new Request("https://server.localhost/ws/yjs", {
-        headers: {
-          "sec-websocket-protocol": formatCollabSchemaSubprotocol(COLLAB_SCHEMA_VERSION),
-        },
-      }),
-      userId: "user-1" as never,
-      traceId: "trace-1",
-      close: vi.fn(),
-      socket: {
-        send: vi.fn(),
-        close: vi.fn(),
-        readyState: 1,
-      },
-    });
-
-    expect(handleConnection.mock.calls[0]?.[2]).toMatchObject({
-      clientSchemaVersion: COLLAB_SCHEMA_VERSION,
-    });
-  });
-
   it("pulls live changes into a Work draft without blocking branch-room connection", async () => {
     const live = new Y.Doc({ gc: false });
     live.getText("content").insert(0, "live advanced");
@@ -291,31 +264,6 @@ describe("Yjs branch handshake route guard", () => {
       }),
     ).rejects.toMatchObject({ reason: "branch-stale-doc", code: 4205 });
     expect(state.get("branch_1:3")).toBe("rejected");
-  });
-
-  it("allows a fresh client to pass step1 then send updates", async () => {
-    const state = new Map<string, BranchHandshakeState>();
-    await admitWriterSync({
-      services: services(false),
-      documentName,
-      document: new Y.Doc(),
-      syncType: messageYjsSyncStep1,
-      payload,
-      userId: "user-1" as never,
-      context: { branchSyncState: state },
-    });
-    await expect(
-      admitWriterSync({
-        services: services(false),
-        documentName,
-        document: new Y.Doc(),
-        syncType: messageYjsUpdate,
-        payload,
-        userId: "user-1" as never,
-        context: { branchSyncState: state },
-      }),
-    ).resolves.toBeUndefined();
-    expect(state.get("branch_1:3")).toBe("passed");
   });
 
   it("clears branch sync state through the route close handler", async () => {

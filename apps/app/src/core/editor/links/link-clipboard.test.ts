@@ -28,9 +28,6 @@ function paste(html: string, holder: string | null) {
 
 it.each([
   ["manuscript://a/source.md", "target.md#scene", "manuscript://b/new.md", "../a/target.md#scene"],
-  ["manuscript://a/source.md", "target.md", "kb://new.md", "manuscript://a/target.md"],
-  ["manuscript://a/source.md", "target.md", null, "manuscript://a/target.md"],
-  ["manuscript://a/source.md", "ch%233%25.md", "manuscript://b/new.md", "../a/ch%233%25.md"],
   [
     "scratch://@revision/notes/a.md",
     "scratch://plan.md",

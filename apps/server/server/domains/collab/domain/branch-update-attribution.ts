@@ -2,22 +2,25 @@
 import {
   type AgentEditCodec,
   type BlockSnapshot,
+  type ConcurrentUpdateOrigin,
   snapshotBlocks,
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
 
-type BlockCoverage = { origin: "agent" | "writer"; actorTurnId?: string };
+export type AttributionRow = {
+  id: number;
+  origin: ConcurrentUpdateOrigin;
+  update: Uint8Array;
+};
+
+type BlockCoverage = ConcurrentUpdateOrigin;
 
 type PartitionByBlockCoverageInput = {
   baselineState: Uint8Array | null;
   upstreamState: Uint8Array;
-  rows: Array<{
-    source: "agent" | "writer";
-    actorTurnId?: string | null;
-    update: Uint8Array;
-  }>;
+  rows: readonly AttributionRow[];
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
 };
@@ -28,7 +31,11 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
   deletedCoverage: Map<string, BlockCoverage>;
   humanDeletedHashes: Set<string>;
 } {
-  const finalDoc = docFromState(inputs.upstreamState);
+  // A live row can reach preflight before the Work draft. Final coverage must
+  // use the CRDT join, never compare the newer baseline to an older upstream.
+  const finalDoc = docFromState(inputs.baselineState);
+  Y.applyUpdate(finalDoc, inputs.upstreamState);
+  for (const row of inputs.rows) Y.applyUpdate(finalDoc, row.update);
   const scratch = docFromState(inputs.baselineState);
   try {
     const finalBlocks = blocks(finalDoc, inputs.model, inputs.codec);
@@ -47,7 +54,7 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
       const afterByIdentity = new Map(afterBlocks.map((block) => [blockIdentity(block), block]));
       for (const block of beforeBlocks) {
         if (!afterByIdentity.has(blockIdentity(block))) {
-          deletedCoverage.set(block.hash, rowCoverage(row));
+          recordCoverage(deletedCoverage, block.hash, row.origin);
         }
       }
       for (const block of afterBlocks) {
@@ -55,7 +62,7 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
         const before = beforeByIdentity.get(identity);
         const final = finalByIdentity.get(identity);
         if ((!before || before.serialized !== block.serialized) && final) {
-          coverage.set(final.hash, rowCoverage(row));
+          recordCoverage(coverage, final.hash, row.origin);
         }
       }
     }
@@ -93,30 +100,29 @@ function humanDeletedHashes(
   return deleted;
 }
 
-function rowCoverage(row: {
-  source: "agent" | "writer";
-  actorTurnId?: string | null;
-}): BlockCoverage {
-  return row.source === "agent"
-    ? { origin: "agent", actorTurnId: row.actorTurnId ?? undefined }
-    : { origin: "writer" };
+/** Maintenance accounts for changed bytes, but never replaces an authored block's credit. */
+function recordCoverage(
+  coverage: Map<string, BlockCoverage>,
+  hash: string,
+  origin: ConcurrentUpdateOrigin,
+): void {
+  if (origin.type !== "system" || !coverage.has(hash)) coverage.set(hash, origin);
 }
 
 export function touchedHashesForCoverage(
   coverage: ReadonlyMap<string, BlockCoverage>,
-  source: "agent" | "writer",
-  actorTurnId: string | null,
+  origin: ConcurrentUpdateOrigin,
 ): { human?: readonly string[]; agent?: readonly string[] } | undefined {
-  if (source === "writer") {
-    const human = [...coverage]
-      .filter(([, value]) => value.origin === "writer")
-      .map(([hash]) => hash);
-    return human.length > 0 ? { human } : undefined;
-  }
-  const agent = [...coverage]
-    .filter(([, value]) => value.origin === "agent" && value.actorTurnId === actorTurnId)
+  if (origin.type === "system") return undefined;
+  const hashes = [...coverage]
+    .filter(
+      ([, value]) =>
+        value.type === origin.type &&
+        (value.type !== "agent" ||
+          (origin.type === "agent" && value.actorTurnId === origin.actorTurnId)),
+    )
     .map(([hash]) => hash);
-  return agent.length > 0 ? { agent } : undefined;
+  return hashes.length > 0 ? { [origin.type]: hashes } : undefined;
 }
 
 export function docFromState(state: Uint8Array | null): Y.Doc {

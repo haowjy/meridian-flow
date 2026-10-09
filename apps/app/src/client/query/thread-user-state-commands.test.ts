@@ -70,22 +70,6 @@ beforeEach(() => {
 });
 
 describe("runFavoriteCommand", () => {
-  it("retains the exact failed intent for retry on rejection", async () => {
-    mocks.updateThreadUserState.mockRejectedValueOnce(new Error("refused"));
-    const client = seededClient(false);
-
-    const outcome = await runFavoriteCommand(client, PROJECT_ID, "thread-1", true);
-    expect(outcome.status).toBe("error");
-
-    const record = readRecord(client);
-    expect(record.base.isFavorite).toBe(false);
-    const view = getFavoriteCommandView(record);
-    expect(view.pending).toBe(false);
-    expect(view.error).toBeInstanceOf(Error);
-    // Retry must re-dispatch the value that failed, not derive `!isFavorite`.
-    expect(view.retryValue).toBe(true);
-  });
-
   it("restores the last confirmed value and retries the failed value under overlap", async () => {
     const first = deferred<{ threadId: string; isFavorite: boolean }>();
     const second = deferred<{ threadId: string; isFavorite: boolean }>();

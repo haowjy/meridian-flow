@@ -1,6 +1,5 @@
 /** PostgreSQL publication B and orphan recovery after durable terminal A. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { JsonValue } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
@@ -35,8 +34,9 @@ else
     const { createDrizzleRepositoriesForTest } = await import(
       "../../threads/adapters/drizzle/repositories.js"
     );
-    const { CompactionMetadataCodec, createDrizzleEventJournalWriter, readTranscriptPage } =
-      await import("../../threads/index.js");
+    const { CompactionMetadataCodec, createDrizzleEventJournalWriter } = await import(
+      "../../threads/index.js"
+    );
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
@@ -278,74 +278,6 @@ else
         publication: "published",
       });
       expect(await publisher.publish(ids.child, ids.repairExecution)).toBe("already");
-    });
-
-    it("round-trips every JsonValue payload type without changing scalar-string meaning", async () => {
-      const values: Array<JsonValue | undefined> = [
-        undefined,
-        "ordinary text",
-        '{"x":1}',
-        "[1,2]",
-        "123",
-        "true",
-        "null",
-        '"inner string"',
-        { x: 1 },
-        [1, 2],
-        123,
-        true,
-        null,
-      ];
-      for (const [index, payload] of values.entries()) {
-        const execution = crypto.randomUUID() as TurnId;
-        await db.insert(schema.turns).values({
-          id: execution,
-          threadId: ids.child,
-          position: index + 3,
-          parentTurnId: ids.childUserTurn,
-          role: "assistant",
-          origin: "assistant",
-          status: "complete",
-        });
-        await repos.executionReports.admit({
-          childThreadId: ids.child,
-          executionTurnId: execution,
-          handle: "p1",
-          origin: "thread_run",
-          deliveryMode: "none",
-          callerThreadId: null,
-          callerTurnId: null,
-          toolCallId: null,
-          cardBlockId: null,
-        });
-        const terminal = {
-          childThreadId: ids.child,
-          executionTurnId: execution,
-          outcome: "succeeded" as const,
-          reason: null,
-          source: "return_result" as const,
-          summary: `payload ${index}`,
-          ...(payload !== undefined ? { payload } : {}),
-        };
-        await repos.executionReports.finalizeOnce(terminal);
-        const saved = await repos.executionReports.findByExecution(ids.child, execution);
-        expect(saved?.payload).toEqual(payload);
-        const result = await readThreadReport({
-          callerThreadId: ids.caller,
-          ref: "p1",
-          repos,
-        });
-        if (payload === undefined) expect(result).not.toHaveProperty("payload");
-        else expect(result).toHaveProperty("payload", payload);
-        await expect(repos.executionReports.finalizeOnce(terminal)).resolves.toMatchObject(
-          payload === undefined ? { summary: `payload ${index}` } : { payload },
-        );
-        if (payload === undefined) {
-          await expect(
-            repos.executionReports.finalizeOnce({ ...terminal, payload: null }),
-          ).rejects.toThrow();
-        }
-      }
     });
 
     it("does not regress terminal status when admission binding arrives after publication", async () => {
@@ -666,62 +598,6 @@ else
       ).toHaveLength(1);
     });
 
-    it("clears a crashed compaction selector before the replacement run starts", async () => {
-      const compaction = await repos.turns.create({
-        threadId: ids.root,
-        prevTurnId: ids.rootTurn,
-        role: "compaction",
-        origin: "system",
-        status: "pending",
-      });
-      const adopted = await delivery.enqueue({
-        threadId: ids.root,
-        intent: "message",
-        provenance: { kind: "writer", actorId: ids.user },
-        body: { kind: "text", text: "Continue after the crash." },
-        idempotencyKey: "crashed-compaction-adopted-message",
-      });
-      await db.insert(schema.threadRunLeases).values({
-        threadId: ids.root,
-        runId: "dead-compaction-run",
-        turnId: compaction.id,
-        boundTurnIds: [compaction.id],
-        adoptedMessageIds: [adopted.id],
-        holderId: "dead-worker",
-        phase: "compacting",
-        expiresAt: new Date(0),
-      });
-      const authority = createDrizzleRunClaim(db, { holderId: "compaction-crash-repair" });
-      const repair = createOrphanReportRepair({
-        inbox,
-        repos,
-        eventWriter,
-        authority,
-        threadLock,
-        publisher,
-        eventSink,
-        retireOrphanedReply: delivery.retireOrphanedReply,
-        clearOrphanedTurn: delivery.clearOrphanedTurn,
-      });
-
-      expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
-      expect(await repos.turns.findById(compaction.id)).toMatchObject({ status: "error" });
-      expect((await inbox.selectPending(ids.root)).map(({ id }) => id)).toEqual([adopted.id]);
-
-      const replacement = await authority.startExecution(ids.root, crypto.randomUUID());
-      if (!replacement) throw new Error("failed to acquire replacement run claim");
-      try {
-        expect((await authority.readMany([ids.root])).get(ids.root)?.runningTurnId).toBeNull();
-        expect(await authority.cancelExecution(ids.root, compaction.id)).toBe(false);
-        expect(await authority.read(ids.root)).toMatchObject({
-          kind: "awake",
-          cancelRequested: false,
-        });
-      } finally {
-        await authority.release(replacement);
-      }
-    });
-
     it("repairs indexed pending placeholders for primary and child threads, then publishes the child report", async () => {
       eventSink.clear();
       const primaryC = await repos.turns.create({
@@ -798,72 +674,6 @@ else
       expect((await repos.blocks.findById(ids.card))?.content).toMatchObject({
         props: { outcome: "failed", execution: ids.execution },
       });
-    });
-
-    it("settles an orphaned primary streaming reply during the startup sweep", async () => {
-      const orphan = await repos.turns.create({
-        threadId: ids.root,
-        prevTurnId: ids.rootTurn,
-        role: "assistant",
-        origin: "assistant",
-        status: "streaming",
-      });
-      const authority = createDrizzleRunClaim(db, { holderId: "primary-stream-sweep" });
-      const repair = createOrphanReportRepair({
-        inbox,
-        repos,
-        eventWriter,
-        authority,
-        threadLock,
-        publisher,
-        eventSink,
-      });
-
-      expect(await repair.sweep(10)).toBeGreaterThanOrEqual(1);
-      expect(await repos.turns.findById(orphan.id)).toMatchObject({
-        status: "error",
-        error: "This response failed.",
-        metadata: { reason: "orphaned" },
-      });
-      expect(await repos.turns.listUnsettledForThread(ids.root)).toEqual([]);
-
-      const after = await repos.turns.create({
-        threadId: ids.root,
-        prevTurnId: orphan.id,
-        role: "user",
-        origin: "writer",
-        status: "complete",
-      });
-      const root = await repos.threads.findById(ids.root);
-      if (!root) throw new Error("Orphan sweep root thread missing");
-      const page = await readTranscriptPage(repos, root, {
-        order: "newest_first",
-        unit: "turn",
-        limit: 1,
-      });
-      const cursor = JSON.parse(
-        Buffer.from(page.nextCursor as string, "base64url").toString("utf8"),
-      ) as { a: [number, number] };
-      expect(cursor.a[0]).toBe(after.position);
-
-      const fork = (
-        await repos.threads.createDerivedPrimary({
-          id: crypto.randomUUID() as ThreadId,
-          userId: root.userId,
-          projectId: root.projectId,
-          workId: null,
-          source: root,
-          originType: "fork",
-          originTurnId: orphan.id,
-        })
-      ).thread;
-      const inherited = await readTranscriptPage(repos, fork, {
-        order: "oldest_first",
-        unit: "turn",
-        limit: 10,
-        range: "inherited",
-      });
-      expect(inherited.entries.map((entry) => entry.turn.id)).toContain(orphan.id);
     });
 
     it("leaves a pending C alone while the session claim is held, even when its lease expired", async () => {

@@ -2,22 +2,27 @@
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
-import { expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { parseDraftDiscardSelection } from "../../lib/draft-review-route.js";
 import {
   ALPHA_ID,
+  closeDatabase,
   createHarness,
-  setupSettlementFixture,
+  createTestDatabase,
+  resetSettlementFixture,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
 import { THREAD_ID, TURN_ID, WORK_ID } from "./test-support/change-trail-postgres-harness.js";
 
-setupSettlementFixture();
+const db = createTestDatabase();
+beforeEach(() => resetSettlementFixture(db));
+afterAll(() => closeDatabase(db));
 it.each([
   "apply",
   "discard",
 ] as const)("retains independent formatting after final text %s", async (action) => {
-  const harness = createHarness();
+  const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha base.\n\nBeta base.", "format-loss");
     const f = harness.crossWorkProbeFixture();
@@ -92,7 +97,7 @@ it.each([
   "created-parent",
   "surviving-text",
 ] as const)("refuses stale Discard when %s dependency arrives after the displayed preview", async (shape) => {
-  const harness = createHarness();
+  const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha base.", "discard-arrival");
     const f = harness.crossWorkProbeFixture();
@@ -183,7 +188,7 @@ it.each([
 });
 
 it("keeps incomplete attribution document-only and whole Apply still publishes its full effect", async () => {
-  const harness = createHarness();
+  const harness = createHarness(db);
   try {
     await harness.seedWriterDocument("Alpha stays.", "missing-removal-owner");
     const f = harness.crossWorkProbeFixture();
@@ -260,4 +265,28 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
   } finally {
     harness.destroyWarmState();
   }
+});
+
+describe("Discard request selection", () => {
+  it.each([
+    [],
+    [123],
+    ["valid", 123],
+    null,
+    "valid",
+    [""],
+  ])("rejects malformed selection %j", (ids) => {
+    expect(() => parseDraftDiscardSelection({ operationIds: ids })).toThrow();
+  });
+  it("reserves whole Discard for a genuinely absent selection", () => {
+    expect(parseDraftDiscardSelection({})).toEqual({ status: "ready", command: {} });
+    expect(() => parseDraftDiscardSelection({ liveRevisionToken: "live" })).toThrow();
+  });
+  it("refuses missing selective revisions as stale", () => {
+    expect(parseDraftDiscardSelection({ operationIds: ["1"] })).toEqual({ status: "stale" });
+  });
+  it("keeps the complete typed selective command", () => {
+    const command = { operationIds: ["1"], liveRevisionToken: "live", draftRevisionToken: "draft" };
+    expect(parseDraftDiscardSelection(command)).toEqual({ status: "ready", command });
+  });
 });

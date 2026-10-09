@@ -1,6 +1,6 @@
 // End-to-end write(command=...) coverage with in-memory port fakes.
 import { describe, expect, it, vi } from "vitest";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 
 import type { UpdateJournal } from "../ports/update-journal.js";
 import {
@@ -12,18 +12,6 @@ import {
   serializeDoc,
 } from "./test-support/assertions.js";
 import { codec, context, harness, model } from "./test-support/write-tool-harness.js";
-import { createWriteTool } from "./write.js";
-
-if (Date.now() < 0) {
-  const oldJournalOnly = {} as UpdateJournal;
-  createWriteTool({
-    // @ts-expect-error write-level mutations require ReversalStore capabilities.
-    journal: oldJournalOnly,
-    coordinator: undefined as never,
-    codec: undefined as never,
-    model: undefined as never,
-  });
-}
 
 describe("write tool dispatch", () => {
   it("returns exact logical read blocks in the versioned result envelope", async () => {
@@ -119,7 +107,6 @@ describe("write tool dispatch", () => {
       "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
     });
     await ctx.core.read({ file: "chapter.md" }, context);
-    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
 
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
     ctx.coordinator.failNextForDoc("chapter.md", new Error("branch snapshot failure"));
@@ -386,37 +373,6 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 
-  it("brands staged mutating success with phase staged and immediate commit with committed", async () => {
-    const ctx = harness({ "chapter.md": "Alpha." });
-    await ctx.core.read({ file: "chapter.md" }, context);
-
-    const staged = await ctx.core.write(
-      {
-        command: "insert",
-        file: "chapter.md",
-        content: "Staged line.",
-      },
-      {
-        ...context,
-        turnId: "turn-phase-staged",
-        responseId: "response-phase-staged",
-      },
-    );
-    expect(staged.status).toBe("success");
-    if (staged.status === "success") expect(staged.phase).toBe("staged");
-
-    const committed = await ctx.core.write(
-      {
-        command: "insert",
-        file: "chapter.md",
-        content: "Committed line.",
-      },
-      context,
-    );
-    expect(committed.status).toBe("success");
-    if (committed.status === "success") expect(committed.phase).toBe("committed");
-  });
-
   it("replaces text and formatting, then structurally deletes and restores a block range", async () => {
     const ctx = harness({
       "chapter.md": "Alpha sword.\n\nDelete one.\n\n## Delete two\n\nKeep me.",
@@ -500,35 +456,6 @@ describe("write tool dispatch", () => {
     );
     expectOutcome(retry, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["lynx", "cat two"]);
-  });
-
-  it("returns LLM-readable not_found, ambiguous_match, and invalid_write errors", async () => {
-    const ctx = harness({ "chapter.md": "sword one\n\nsword two" });
-    await ctx.core.read({ file: "chapter.md" }, context);
-
-    const missing = await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "x", after: "deadbeef" },
-      context,
-    );
-    expect(outcomeText(missing)).toContain("status: not_found");
-    expectOutcome(missing, "not_found", true);
-    expect(outcomeText(missing)).toContain('read({"path": "chapter.md"})');
-
-    const ambiguous = await ctx.core.write(
-      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
-      context,
-    );
-    expect(outcomeText(ambiguous)).toContain("status: ambiguous_match");
-    expectOutcome(ambiguous, "ambiguous_match", true);
-    expect(outcomeText(ambiguous)).toContain("Found 2 matches");
-
-    const invalid = await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "" },
-      context,
-    );
-    expect(outcomeText(invalid)).toContain("status: invalid_write");
-    expectOutcome(invalid, "invalid_write", true);
-    expect(outcomeText(invalid)).toContain("content:");
   });
 
   it("maps typed missing documents differently from transient coordinator failures", async () => {

@@ -4,16 +4,17 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { asc, eq } from "drizzle-orm";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import {
   ALPHA_ID,
+  closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   expirePendingClaims,
+  resetSettlementFixture,
   schema,
-  setupSettlementFixture,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
 import {
@@ -23,14 +24,16 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
-setupSettlementFixture();
+const db = createTestDatabase();
+beforeEach(() => resetSettlementFixture(db));
+afterAll(() => closeDatabase(db));
 let warmHarness: ReturnType<typeof createHarness> | undefined;
 afterEach(() => {
   warmHarness?.destroyWarmState();
   warmHarness = undefined;
 });
-function createReviewHarness(options?: Parameters<typeof createHarness>[0]) {
-  warmHarness = createHarness(options);
+function createReviewHarness(options?: Parameters<typeof createHarness>[1]) {
+  warmHarness = createHarness(db, options);
   return warmHarness;
 }
 
@@ -858,7 +861,7 @@ describe("per-change Apply (postgres)", () => {
       { id: firstId, status: "pushed" },
       { id: secondId, status: "active" },
     ]);
-    await expirePendingClaims();
+    await expirePendingClaims(db);
     expect(await fixture.realBranchPush.recoverPendingLiveSettlements()).toBe(1);
     await expect(fixture.collab.draftReview.applyWorkDraft(command)).resolves.toMatchObject({
       status: "applied",

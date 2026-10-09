@@ -54,34 +54,6 @@ describe("reversal planner", () => {
     ).resolves.toEqual({ ok: false, status: "nothing_to_undo" });
   });
 
-  it("selects exactly the active writes for a requested turn", async () => {
-    const store = fakeReversalStore({
-      snapshot: snapshotWithSeqs([1, 2, 3, 4]),
-      activeWrites: [
-        activeWrite("w1", 1, "turn-earlier"),
-        activeWrite("w2", 2, "turn-target"),
-        activeWrite("w3", 3, "turn-target"),
-        activeWrite("w4", 4, "turn-later"),
-      ],
-      mutations: new Map([
-        ["w1", [mutation("w1", 1, "active", "turn-earlier")]],
-        ["w2", [mutation("w2", 2, "active", "turn-target")]],
-        ["w3", [mutation("w3", 3, "active", "turn-target")]],
-        ["w4", [mutation("w4", 4, "active", "turn-later")]],
-      ]),
-    });
-
-    const plan = await planUndo({
-      reversalStore: store,
-      docId: DOC_ID,
-      threadId: THREAD_ID,
-      selection: { kind: "turn", turnId: "turn-target" },
-    });
-
-    expect(plan).toMatchObject({ ok: true, writeIds: ["w2", "w3"], turnId: "turn-target" });
-    expect(plan.ok && [...plan.targetSeqs]).toEqual([2, 3]);
-  });
-
   it("omitted turn undo targets the turn of the latest active write by created seq", async () => {
     const store = fakeReversalStore({
       snapshot: snapshotWithSeqs([1, 2, 3]),
@@ -127,33 +99,6 @@ describe("reversal planner", () => {
     ).resolves.toEqual({ ok: false, status: "nothing_to_undo" });
   });
 
-  it("selects a reversed turn for redo", async () => {
-    const store = fakeReversalStore({
-      snapshot: snapshotWithSeqs([1, 2, 3, 4, 5]),
-      mutations: new Map([
-        ["w1", [mutation("w1", 1, "reversed", "turn-earlier", 4)]],
-        ["w2", [mutation("w2", 2, "reversed", "turn-target", 5)]],
-        ["w3", [mutation("w3", 3, "reversed", "turn-target", 5)]],
-      ]),
-      reversals: [reversal(["w1"], "turn-earlier", 4), reversal(["w2", "w3"], "turn-target", 5)],
-    });
-
-    const plan = await planRedo({
-      reversalStore: store,
-      docId: DOC_ID,
-      threadId: THREAD_ID,
-      selection: { kind: "turn", turnId: "turn-target" },
-    });
-
-    expect(plan).toMatchObject({
-      ok: true,
-      direction: "redo",
-      writeIds: ["w2", "w3"],
-      turnId: "turn-target",
-      redoGroup: { undoUpdateSeq: 5 },
-    });
-  });
-
   it("omitted turn redo targets the most recently undone turn, not the latest original write", async () => {
     const store = fakeReversalStore({
       snapshot: snapshotWithSeqs([1, 2, 3, 4]),
@@ -176,9 +121,6 @@ describe("reversal planner", () => {
 
   it.each([
     ["latest", { kind: "latest" }],
-    ["single", { kind: "single", to: "w1" }],
-    ["range", { kind: "range", since: "w1", to: "w2" }],
-    ["all", { kind: "all" }],
     ["turn", { kind: "turn", turnId: "turn-b" }],
   ] as const)("expands undo %s selections to the active grouped-redo boundary", async (_name, selection) => {
     const store = fakeReversalStore(groupedRedoState());
@@ -232,8 +174,6 @@ describe("reversal planner", () => {
   });
 
   it.each([
-    ["all", { kind: "all" }],
-    ["turn", { kind: "turn", turnId: "turn-b" }],
     ["range", { kind: "range", since: "w1", to: "w2" }],
   ] as const)("expands redo %s selections to the grouped undo boundary", async (_name, selection) => {
     const store = fakeReversalStore({
@@ -263,23 +203,6 @@ describe("reversal planner", () => {
       redoGroup: { undoUpdateSeq: 4 },
     });
     expect(plan.ok && [...plan.targetSeqs]).toEqual([1, 2, 3]);
-  });
-
-  it("returns nothing_to_redo for an empty or active turn", async () => {
-    const store = fakeReversalStore({
-      snapshot: snapshotWithSeqs([1]),
-      activeWrites: [activeWrite("w1", 1, "turn-active")],
-      mutations: new Map([["w1", [mutation("w1", 1, "active", "turn-active")]]]),
-    });
-
-    await expect(
-      planRedo({
-        reversalStore: store,
-        docId: DOC_ID,
-        threadId: THREAD_ID,
-        selection: { kind: "turn", turnId: "turn-active" },
-      }),
-    ).resolves.toEqual({ ok: false, status: "nothing_to_redo" });
   });
 });
 

@@ -15,7 +15,11 @@ export {
   snapshotBlocks,
   touchedBlockHashesBetween,
 } from "./apply/echo.js";
-export type { ConcurrentEditInfo, ConcurrentEditRun } from "./apply/types.js";
+export type {
+  ConcurrentEditInfo,
+  ConcurrentEditRun,
+  ConcurrentUpdateOrigin,
+} from "./apply/types.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";

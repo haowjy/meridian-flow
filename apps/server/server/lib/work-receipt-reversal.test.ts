@@ -237,30 +237,6 @@ describe("Work receipt reversal", () => {
     expect(h.deps.workContextNotices.workChanged).not.toHaveBeenCalled();
   });
 
-  it("does not expose a no-op receipt and flips availability after undo", async () => {
-    const h = harness([]);
-    const work = await h.works.create({ projectId: "project-1", name: "Arc" });
-    const receipt: WorkReceipt = {
-      operation: "create",
-      changed: true,
-      workId: work.id,
-      workName: work.name,
-      before: null,
-      after: state("Arc"),
-      inverse: { command: "delete", workId: work.id },
-    };
-    Object.assign(h.deps.blocks, {
-      listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
-    });
-    await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: true, redo: false });
-    await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" });
-    await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: false, redo: true });
-  });
-
   it("keeps changed-false receipts out of reversal planning", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });

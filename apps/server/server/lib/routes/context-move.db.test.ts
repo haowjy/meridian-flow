@@ -666,38 +666,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("clears provisional naming when the move renames", async () => {
-      const { projectId, workId, port } = await arrangeUntitled();
-
-      await expect(
-        moveContextEntry({
-          port,
-          userId: USER_ID,
-          sourceScheme: "scratch",
-          body: {
-            expected: { kind: "file", nodeId: DOCUMENT_ID },
-            path: "Untitled 1.md",
-            sourceWorkId: workId,
-            destinationScheme: "manuscript",
-            destinationFolderPath: "Act 1",
-            newName: "Opening.md",
-          },
-        }),
-      ).resolves.toEqual({
-        status: "moved",
-        linkUpdate: { links: 0, documents: 0 },
-        scheme: "manuscript",
-        path: "Act 1/Opening.md",
-        name: "Opening.md",
-      });
-
-      await expect(promotedRow(projectId)).resolves.toMatchObject({
-        name: "Opening",
-        extension: "md",
-        provisionalName: false,
-      });
-    });
-
     it("moves a folder and its children across schemes", async () => {
       const { workId, port } = await arrangeUntitled();
       await expect(

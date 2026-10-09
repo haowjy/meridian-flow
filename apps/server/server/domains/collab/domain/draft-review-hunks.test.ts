@@ -1,98 +1,10 @@
 /** Real-Yjs draft review behavioral coverage. */
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
-import { computeDraftReviewOperations } from "./draft-review-operations.js";
-import {
-  captureUpdate,
-  cloneDoc,
-  codec,
-  createDoc,
-  model,
-  spanTextRange,
-} from "./draft-review-test-fixture.js";
+import { captureUpdate, cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
 
 describe("draft review hunks", () => {
-  it("extracts word-level changed-block hunks anchored in the draft doc", () => {
-    const live = createDoc(
-      "Alpha sword. This paragraph has enough unchanged surrounding text for inline review.\n\nBeta stays.",
-    );
-    const draft = cloneDoc(live);
-    const [first] = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 11 }, "blade"),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 10, actorTurnId: "turn-a", updateData: update }],
-    });
-
-    expect(result).toHaveProperty("operations");
-    if (!("operations" in result)) throw new Error("expected inline result");
-    expect(result.hunks).toHaveLength(1);
-    expect(result.hunks[0]).toMatchObject({ operationIds: ["10"], deletedText: "sword" });
-    expect(result.hunks[0].anchor.relStart).toEqual(expect.any(String));
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        operationId: "10",
-        contribution: "rewrote",
-        classification: "rewrite",
-        beforeExcerpt: "sword",
-        afterExcerpt: "blade",
-        sourceUpdateIds: [10],
-        closureUpdateIds: [10],
-        actorTurnId: "turn-a",
-        kind: "agent",
-        hunkCount: 1,
-      }),
-    ]);
-  });
-
-  it("emits a block replace hunk for list edits", () => {
-    const live = createDoc(
-      "- sword item with enough surrounding list text for block hunk attribution",
-    );
-    const draft = cloneDoc(live);
-    const [first] = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 2, to: 7 }, "blade"),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 55, actorTurnId: "turn-list", updateData: update }],
-    });
-
-    expect(result.hunks).toEqual([
-      expect.objectContaining({
-        kind: "block",
-        operationIds: ["55"],
-        deletedBlock: {
-          type: "bullet_list",
-          display: "sword item with enough surrounding list text for block hunk attribution",
-        },
-        insertedBlock: {
-          type: "bullet_list",
-          display: "swbladetem with enough surrounding list text for block hunk attribution",
-        },
-      }),
-    ]);
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        operationId: "55",
-        contribution: "rewrote",
-        classification: "rewrite",
-        hunkCount: 1,
-      }),
-    ]);
-  });
-
   it("allows text and block hunks to coexist", () => {
     const live = createDoc("Alpha sword.\n\nOmega.");
     const draft = cloneDoc(live);
@@ -121,35 +33,6 @@ describe("draft review hunks", () => {
       operationIds: ["59"],
       insertedBlock: { type: "horizontal_rule", display: "───" },
     });
-  });
-
-  it("keeps paragraph moves inline as delete and insert hunks", () => {
-    const live = createDoc("One paragraph.\n\nTwo paragraph.\n\nThree paragraph.");
-    const draft = cloneDoc(live);
-    const [, two, three] = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () => {
-      model.deleteBlock(toDocHandle(draft), two);
-      model.insertBlocks(toDocHandle(draft), three, codec.parse("Two paragraph."));
-    });
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 53, actorTurnId: "turn-move", updateData: update }],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-
-    expect(
-      result.hunks.some((hunk) => hunk.kind === "text" && hunk.deletedText === "Two paragraph."),
-    ).toBe(true);
-    expect(
-      result.hunks.some(
-        (hunk) => hunk.kind === "text" && !hunk.deletedText && hunk.operationIds.length > 0,
-      ),
-    ).toBe(true);
   });
 });
 

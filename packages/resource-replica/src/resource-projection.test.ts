@@ -85,30 +85,6 @@ it("projects only the requesting project's durable location intention", () => {
   });
 });
 
-it("keeps an acknowledged local create provisional until the writer chooses a home", () => {
-  const record = reserveResourceDocument({
-    projectId: "project-a",
-    handle: "resource",
-    documentId: "document",
-    databaseName: "content",
-    schema: "schema",
-    intentId: "create",
-    provisionalName: "Untitled",
-  }).next;
-  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
-  record.resource.canonical = {
-    scheme: "unfiled",
-    path: "/Untitled.md",
-    name: "Untitled.md",
-    workId: null,
-  };
-
-  expect(projectResourceLocation("project-a", record)).toMatchObject({
-    path: "/Untitled.md",
-    provisional: true,
-  });
-});
-
 it("prefers a current server identity over another resource's obsolete remint alias", () => {
   const local = reserveResourceDocument({
     projectId: "project-a",

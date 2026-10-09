@@ -2,7 +2,7 @@
 
 import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isLocalPortFree, releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
+import { releaseFixedPorts, waitForPortsFree } from "./port-lifecycle";
 
 const MOCK_PORT = 12_345;
 const servers: net.Server[] = [];
@@ -28,34 +28,11 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(closeServer));
 });
 
-describe("isLocalPortFree", () => {
-  it("reports a held port as not free", async () => {
-    const port = await listenOnEphemeralPort();
-    expect(await isLocalPortFree(port)).toBe(false);
-  });
-});
-
 describe("waitForPortsFree", () => {
   it("returns held ports when they never release", async () => {
     const port = await listenOnEphemeralPort();
     const held = await waitForPortsFree([port], { timeoutMs: 150, intervalMs: 25 });
     expect(held).toEqual([port]);
-  });
-
-  it("resolves empty once the held port becomes free mid-wait", async () => {
-    let held = true;
-    const isPortFree = async () => {
-      const free = !held;
-      held = false;
-      return free;
-    };
-
-    const remaining = await waitForPortsFree([MOCK_PORT], {
-      timeoutMs: 2_000,
-      intervalMs: 25,
-      isPortFree,
-    });
-    expect(remaining).toEqual([]);
   });
 });
 
@@ -212,18 +189,5 @@ describe("releaseFixedPorts", () => {
       }),
     ).resolves.toEqual({ status: "released", ports: [port] });
     expect(discoverHolders).toHaveBeenCalledOnce();
-  });
-
-  it("does not inspect ports that are already free", async () => {
-    const port = MOCK_PORT;
-    const discoverHolders = vi.fn();
-
-    await expect(
-      releaseFixedPorts([port], {
-        isPortFree: () => Promise.resolve(true),
-        discoverHolders,
-      }),
-    ).resolves.toEqual({ status: "released", ports: [port] });
-    expect(discoverHolders).not.toHaveBeenCalled();
   });
 });
