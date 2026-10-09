@@ -36,7 +36,7 @@ import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
 import { linkStateAttributes } from "../links/link-resolution-decorations";
-import { LINK_SURFACE_NAME } from "../links/link-storage";
+import { mountedLinkAnswerCache } from "../links/link-storage";
 import {
   classifyLinkTarget,
   internalClipboardTarget,
@@ -284,13 +284,17 @@ export const MeridianTableCell = TableCell.extend({
 
 /**
  * The stored link target (`doc:`/`ahead:`) on images and figures. Never
- * rendered to the DOM and never read back from it: a ref is not a browser
- * attribute, and HTML from anywhere must not be able to claim one.
+ * rendered; read back only from the attribute the link clipboard plugin leaves
+ * on a same-project rich paste's `<img>` (a figure's own picture), which the
+ * paste sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
  */
-const LINK_REF_ATTRIBUTE = {
+const PICTURE_REF_ATTRIBUTE = {
   default: null,
   rendered: false,
-  parseHTML: () => null,
+  parseHTML: (element: HTMLElement) => {
+    const picture = element.localName === "img" ? element : element.querySelector("img");
+    return clipboardLinkRef(picture?.getAttribute(LINK_KEPT_REF_ATTRIBUTE) ?? null);
+  },
 };
 
 /**
@@ -367,9 +371,7 @@ export const MeridianLink = Link.extend({
         0,
       ]);
       const element = dom as HTMLElement;
-      // Storage, not `getLinkAnswerCache`: a view built while the editor is
-      // constructing sees `isDestroyed` as true, and would never subscribe.
-      const resolution = editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
+      const resolution = mountedLinkAnswerCache(editor);
       const unsubscribe = linkStateAttributes(element, mark.attrs, resolution);
       return {
         dom: element,
@@ -507,7 +509,7 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
       title: { default: null },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
       width: IMAGE_WIDTH_ATTRIBUTE,
-      ref: LINK_REF_ATTRIBUTE,
+      ref: PICTURE_REF_ATTRIBUTE,
     };
   },
 
@@ -648,7 +650,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
       label: { default: null },
       caption: { default: "" },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
-      ref: LINK_REF_ATTRIBUTE,
+      ref: PICTURE_REF_ATTRIBUTE,
     };
   },
 

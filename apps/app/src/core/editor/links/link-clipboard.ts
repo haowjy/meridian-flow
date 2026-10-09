@@ -19,6 +19,12 @@
  * never a capability: a kept `doc:` ref still resolves through the reader's
  * own catalog and draws gone when they cannot read it.
  *
+ * An `image` or `figure` with a ref travels the same way, its metadata on the
+ * picture's `<img>`: the sanitizer lets a recorded address through as the
+ * source, a same-project paste keeps the ref, and anything else reaches the
+ * image paste door with no ref, which assigns its address fresh
+ * (`images/image-workflow.ts`).
+ *
  * The text/plain flavour spells every internal link as its full address, so
  * it means the same thing in another app or through the Markdown paste door.
  * The chat composer reads the recorded address (chat has no folder).
@@ -33,11 +39,16 @@ import {
 } from "@meridian/contracts";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { type DocumentLinkScope, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { DOMSerializer, type Mark, type Schema } from "@tiptap/pm/model";
+import { DOMSerializer, type Mark, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
 import { assignPastedSlice } from "./link-assignment";
-import { type LinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
+import {
+  type LinkAnswerCache,
+  type LinkKey,
+  linkKeyOfMark,
+  pictureKeyOfNode,
+} from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
 
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
@@ -115,9 +126,8 @@ export function clipboardLinkProject(value: string | null): string | null {
   return value && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : null;
 }
 
-/** Copy, HTML flavour: what one rendered link mark names, beside its href. */
-function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkAnswerCache): void {
-  const stored = linkKeyOfMark(mark.attrs);
+/** Copy, HTML flavour: what one rendered link mark or picture names, beside its href. */
+function recordLinkMetadata(element: Element, stored: LinkKey, resolution: LinkAnswerCache): void {
   const href = stored.href;
   const ref = clipboardLinkRef(stored.ref);
   const address = currentLinkAddress({ ref, href }, resolution);
@@ -130,15 +140,17 @@ function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkAnswer
 }
 
 /**
- * Paste into an Editor: a same-project link keeps its ref at its recorded
- * address; every other recorded link pastes its address with no ref, for the
- * paste door to assign fresh.
+ * Paste into an Editor: a same-project link or picture keeps its ref at its
+ * recorded address; every other recorded one pastes its address with no ref,
+ * for the paste door to assign fresh.
  */
 function keepPastedRefs(html: string, projectId: string | null): string {
   if (!html.includes("data-meridian-")) return html;
   const container = document.createElement("template");
   container.innerHTML = html;
-  for (const element of container.content.querySelectorAll("[data-meridian-link]")) {
+  for (const element of container.content.querySelectorAll(
+    `[data-meridian-link], img[${LINK_ADDRESS_ATTRIBUTE}]`,
+  )) {
     const address = clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE));
     const ref = clipboardLinkRef(element.getAttribute(LINK_REF_ATTRIBUTE));
     const project = clipboardLinkProject(element.getAttribute(LINK_PROJECT_ATTRIBUTE));
@@ -150,7 +162,8 @@ function keepPastedRefs(html: string, projectId: string | null): string {
     ])
       element.removeAttribute(attribute);
     if (!address) continue;
-    element.setAttribute("data-meridian-link", address);
+    if (element.localName === "img") element.setAttribute("src", address);
+    else element.setAttribute("data-meridian-link", address);
     if (ref && projectId && project === projectId)
       element.setAttribute(LINK_KEPT_REF_ATTRIBUTE, ref);
   }
@@ -194,16 +207,33 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache)
         link: (mark: Mark, inline: boolean) => {
           const rendered = DOMSerializer.renderSpec(document, renderLink(mark, inline));
           if (rendered.dom instanceof Element && rendered.dom.hasAttribute("data-meridian-link"))
-            recordLinkMetadata(rendered.dom, mark, resolution);
+            recordLinkMetadata(rendered.dom, linkKeyOfMark(mark.attrs), resolution);
           return rendered;
         },
       }
     : base.marks;
+  const nodes = { ...base.nodes };
+  for (const name of ["image", "figure"]) {
+    const renderPicture = base.nodes[name];
+    if (!renderPicture) continue;
+    nodes[name] = (node: PMNode) => {
+      const rendered = DOMSerializer.renderSpec(document, renderPicture(node));
+      const picture = pictureKeyOfNode(node.attrs);
+      const image =
+        rendered.dom instanceof Element
+          ? rendered.dom.localName === "img"
+            ? rendered.dom
+            : rendered.dom.querySelector("img")
+          : null;
+      if (picture && image) recordLinkMetadata(image, picture, resolution);
+      return rendered;
+    };
+  }
   return new Plugin<LinkAnswerCache>({
     key: linkClipboardPluginKey,
     state: { init: () => resolution, apply: (_transaction, value) => value },
     props: {
-      clipboardSerializer: new DOMSerializer(base.nodes, marks),
+      clipboardSerializer: new DOMSerializer(nodes, marks),
       transformPastedHTML: (html) => keepPastedRefs(html, resolution.assignment?.projectId ?? null),
       transformPasted: (slice, view) =>
         // A drag inside the editor moves links it already holds, as stored.

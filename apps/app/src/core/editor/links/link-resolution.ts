@@ -46,7 +46,7 @@
  * generation; the next scan asks them again.
  */
 
-import { storedLinkRef } from "@meridian/contracts";
+import { classifyWrittenSource, storedHref, storedLinkRef } from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import type { LinkAssignmentIndex, LinkAssignmentScope } from "./link-assignment";
@@ -67,6 +67,22 @@ export type LinkKey = { ref: string | null; href: string };
  */
 export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }): LinkKey {
   return { ref: storedLinkRef(attrs.ref), href: String(attrs.href ?? "") };
+}
+
+/**
+ * The stored link an `image` or `figure` names, or null for a picture with no
+ * ref (an `asset:` upload or a literal source, which render as they always
+ * have). A picture's ref is answered by the same cache as a link's: its
+ * source is the href, read under the manuscript-root grammar, so a bare
+ * source names the same address a producer stores in full.
+ */
+export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown }): LinkKey | null {
+  const ref = storedLinkRef(attrs.ref);
+  if (!ref) return null;
+  const written = classifyWrittenSource(String(attrs.src ?? ""));
+  return written.kind === "internal"
+    ? { ref, href: storedHref(written.uri, written.suffix) }
+    : null;
 }
 
 /** The one string a `LinkKey` is cached and deduplicated under. */
@@ -144,6 +160,12 @@ export type LinkAnswerCache = {
    * yet. Pure — a renderer may call it as often as it likes.
    */
   read: (link: LinkKey) => LinkResolutionEntry | null;
+  /**
+   * True when this generation's last question about the link failed (or
+   * could not be asked). A link nobody has asked about yet is not failed: a
+   * renderer that reads null for one is waiting on the scan, not on a retry.
+   */
+  failed: (link: LinkKey) => boolean;
   /** Ask about every internal link here that has no answer yet. */
   request: (links: Iterable<LinkKey>) => void;
   /**
@@ -398,6 +420,12 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       if (!current) return null;
       const internal = internalLink(link);
       return internal ? (current.answers.get(internal.key) ?? null) : null;
+    },
+
+    failed(link) {
+      if (!current) return false;
+      const internal = internalLink(link);
+      return internal ? current.failed.has(internal.key) : false;
     },
 
     request(links) {

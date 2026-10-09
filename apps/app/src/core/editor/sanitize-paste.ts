@@ -43,6 +43,8 @@ const ELEMENT_NAMES = new Map<string, string>([
   ["td", "td"],
   ["hr", "hr"],
   ["img", "img"],
+  ["figure", "figure"],
+  ["figcaption", "figcaption"],
 ]);
 
 const EXPLICIT_URI_SCHEME = /^[a-z][a-z\d+.-]*:/i;
@@ -85,6 +87,7 @@ function appendSanitizedChildren(source: Node, target: Node, output: Document): 
     const clean = output.createElement(outputName);
     if (outputName === "a") copyLinkHref(child, clean);
     if (outputName === "img" && !copyImageAttributes(child, clean)) continue;
+    if (outputName === "figure") copyFigureAttributes(child, clean);
 
     appendSanitizedChildren(child, clean, output);
     target.appendChild(clean);
@@ -95,17 +98,7 @@ function copyLinkHref(source: Element, target: Element): void {
   const internal = internalClipboardTarget(source.getAttribute("data-meridian-link"));
   if (internal) {
     target.setAttribute("data-meridian-link", internal);
-    // What it named where it was copied: its address, and its ref and
-    // project. The link transform after this decides whether the ref is kept
-    // (same project) or the address is bound fresh.
-    const address = clipboardLinkAddress(source.getAttribute(LINK_ADDRESS_ATTRIBUTE));
-    if (address) target.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
-    const ref = clipboardLinkRef(source.getAttribute(LINK_REF_ATTRIBUTE));
-    const project = clipboardLinkProject(source.getAttribute(LINK_PROJECT_ATTRIBUTE));
-    if (ref && project) {
-      target.setAttribute(LINK_REF_ATTRIBUTE, ref);
-      target.setAttribute(LINK_PROJECT_ATTRIBUTE, project);
-    }
+    copyRecordedTarget(source, target);
     return;
   }
   const rawHref = source.getAttribute("href");
@@ -114,11 +107,32 @@ function copyLinkHref(source: Element, target: Element): void {
   if (href) target.setAttribute("href", href);
 }
 
+/**
+ * What an internal link or picture named where it was copied: its address,
+ * and its ref and project, each only in the shape the copy writes. The link
+ * transform after this decides whether the ref is kept (same project) or the
+ * address is bound fresh. Returns the address.
+ */
+function copyRecordedTarget(source: Element, target: Element): string | null {
+  const address = clipboardLinkAddress(source.getAttribute(LINK_ADDRESS_ATTRIBUTE));
+  if (address) target.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
+  const ref = clipboardLinkRef(source.getAttribute(LINK_REF_ATTRIBUTE));
+  const project = clipboardLinkProject(source.getAttribute(LINK_PROJECT_ATTRIBUTE));
+  if (address && ref && project) {
+    target.setAttribute(LINK_REF_ATTRIBUTE, ref);
+    target.setAttribute(LINK_PROJECT_ATTRIBUTE, project);
+  }
+  return address;
+}
+
 function copyImageAttributes(source: Element, target: Element): boolean {
+  // A picture copied from a Meridian document names a document address,
+  // which is its source here; nothing a browser would fetch on its own.
+  const address = copyRecordedTarget(source, target);
   const rawSrc = source.getAttribute("src");
-  if (rawSrc === null) return false;
-  const src = rawSrc.trim();
-  if (!isSafeImageSrc(src)) return false;
+  if (!address && rawSrc === null) return false;
+  const src = address ?? rawSrc?.trim() ?? "";
+  if (!address && !isSafeImageSrc(src)) return false;
 
   target.setAttribute("src", src);
   for (const attribute of ["alt", "title"] as const) {
@@ -126,6 +140,14 @@ function copyImageAttributes(source: Element, target: Element): boolean {
     if (value !== null) target.setAttribute(attribute, value);
   }
   return true;
+}
+
+/** A Meridian figure keeps its type and label; any other `<figure>` is just its contents. */
+function copyFigureAttributes(source: Element, target: Element): void {
+  if (source.getAttribute("data-type") !== "figure") return;
+  target.setAttribute("data-type", "figure");
+  const label = source.getAttribute("data-label");
+  if (label) target.setAttribute("data-label", label);
 }
 
 function isSafeImageSrc(src: string): boolean {
