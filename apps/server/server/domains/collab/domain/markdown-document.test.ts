@@ -57,7 +57,7 @@ function setup(filetype = "typescript") {
     resolveFiletype: async () => filetype,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(eventSink),
   });
-  // Fixed test text names nothing, so it binds without a scope.
+  // Fixed test text names nothing, so static scopes bind it.
   const binder = createLinkBinder({
     codec: mdxCodec({ schema }),
     schema,
@@ -65,18 +65,19 @@ function setup(filetype = "typescript") {
     coordinator,
     links: createStaticDocumentLinkScopes(),
     registrar: UNSUPPORTED_AHEAD_REFS,
-    resolveFiletype: async () => filetype,
+    // A png binds as a document: the engine is what must refuse it.
+    resolveFiletype: async () => (filetype === "png" ? null : filetype),
     inTransaction: () => false,
   });
   const bind = (markdown: string) =>
-    binder.bindStatic(markdown, filetype === "png" ? null : filetype);
+    binder.bindMarkdown({ holder: { documentId: DOCUMENT_ID }, markdown, against: "current" });
   return { bind, coordinator, engine, eventSink, journal };
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
   const written = await setupResult.engine.setMarkdown({
     documentId: DOCUMENT_ID,
-    content: setupResult.bind(source),
+    content: await setupResult.bind(source),
     origin: SYSTEM_ORIGIN,
   });
   expect(written.ok).toBe(true);
@@ -90,7 +91,7 @@ describe("code document serialization", () => {
     await expect(
       subject.engine.setMarkdown({
         documentId: DOCUMENT_ID,
-        content: subject.bind("not an image"),
+        content: await subject.bind("not an image"),
         origin: SYSTEM_ORIGIN,
       }),
     ).resolves.toEqual({
@@ -159,7 +160,7 @@ describe("checkpoint restore", () => {
 
     await subject.engine.setMarkdown({
       documentId: DOCUMENT_ID,
-      content: subject.bind("const changed = true;"),
+      content: await subject.bind("const changed = true;"),
       origin: SYSTEM_ORIGIN,
     });
     await expect(checkpoints.restore(DOCUMENT_ID, checkpoint.value)).resolves.toEqual({

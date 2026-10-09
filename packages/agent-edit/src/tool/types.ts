@@ -207,12 +207,13 @@ export interface WriteContext {
    */
   copiedNodes?: readonly Block[];
   /**
-   * A whole-document `create` whose content the host already bound outside
-   * its transaction (server `LinkBinder`, contract §6.2): these nodes replace
-   * the parse of `content`, which stays only for the semantic IR, and ref
-   * assignment is skipped. Overwrite still aligns them against the old blocks.
+   * A whole-document `create` the host prepared outside its transaction
+   * (server `LinkBinder`, contract §6.2): the bound result's nodes, and the
+   * Yjs update that turns the state it was prepared against into them. The
+   * update merges into the document, so edits admitted since then stay;
+   * nothing is parsed, assigned or aligned again.
    */
-  boundBlocks?: readonly Block[];
+  prepared?: { blocks: readonly Block[]; update: Uint8Array };
   /**
    * Host-only showing evidence for this thread: every link the model was
    * shown in a document, with the address shown. Ref assignment reads it;

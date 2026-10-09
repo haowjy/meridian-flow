@@ -4,6 +4,7 @@
  */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentWriteOrigin, MarkdownDocumentStore } from "../contracts.js";
+import type { BindMarkdownInput, PreparedWrite } from "../domain/link-binding.js";
 
 export async function writeMarkdown(
   documents: Pick<MarkdownDocumentStore, "bindMarkdown" | "writeDocument">,
@@ -26,4 +27,23 @@ export async function writeMarkdown(
     origin: input.origin,
     ...(input.threadId ? { threadId: input.threadId as ThreadId } : {}),
   });
+}
+
+/**
+ * A fake binder's prepared write, for ContextFS tests whose document sync is
+ * a fake: it certifies the holder as the real one does and carries only the
+ * source Markdown, which such fakes store.
+ */
+export function fakePreparedWrite({ holder, markdown }: BindMarkdownInput): PreparedWrite {
+  return {
+    holder:
+      "documentId" in holder
+        ? { kind: "document", documentId: holder.documentId }
+        : { kind: "new", uri: holder.uri },
+    base: null,
+    update: new Uint8Array(),
+    blocks: [],
+    markdown: typeof markdown === "string" ? markdown : markdown(""),
+    schemaType: "document",
+  } as unknown as PreparedWrite;
 }

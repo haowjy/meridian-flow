@@ -99,10 +99,8 @@ from a brief.
 
 Delivery: `writeUnderGrant` binds `WriteContext.shownLinks` to
 `ShownLinkStore.forDocument(threadId, ·)`. The pool spreads the context
-through, so the field survives. Whole-document agent binds (`LinkBinder`, a
-ContextFS write with agent provenance) read the same store: composition passes
-`forDocument` into the collab domain. Utility, seed and import writes pass none,
-so their links bind fresh.
+through, so the field survives. Utility, seed and import writes pass none, so
+their links bind fresh.
 
 ## Tool-owned policy
 

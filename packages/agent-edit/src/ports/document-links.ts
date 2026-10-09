@@ -45,7 +45,7 @@ export interface LinkPrepareRequest {
   written?: readonly PMNode[];
   /**
    * Nodes that already carry stored attrs and will be spelled as stored:
-   * copies, and content the host already bound (`WriteContext.boundBlocks`).
+   * copies, and content the host already prepared (`WriteContext.prepared`).
    */
   stored?: readonly PMNode[];
   /** Refs no doc carries yet that will be spelled (ahead refs this write registered). */
