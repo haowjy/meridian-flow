@@ -270,7 +270,7 @@ that keep failing rotate through instead of starving the rest.
 
 ## Stored link extraction
 
-`domain/stored-link-extraction.ts` reads `{ kind, ref, href }` occurrences from a
+Agent-edit's `ports/stored-link-extraction.ts` reads `{ kind, ref, href }` occurrences from a
 live Yjs fragment: a link occurrence is a maximal run sharing one link mark (href,
 title and ref) whatever other marks split it; a paragraph boundary ends a run.
 Image and figure `src` attributes are occurrences with their own `ref`. Derive

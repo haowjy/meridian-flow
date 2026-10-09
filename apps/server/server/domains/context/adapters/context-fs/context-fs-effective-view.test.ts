@@ -80,9 +80,6 @@ describe("ContextFS drafted-source effective view", () => {
         writeDocument: async () => {
           throw new Error("not used");
         },
-        editDocument: async () => {
-          throw new Error("not used");
-        },
       } as never,
     });
 
@@ -153,9 +150,6 @@ describe("ContextFS drafted-source effective view", () => {
         }),
         seedFromMarkdown: async () => Ok(null),
         writeDocument: async () => {
-          throw new Error("not used");
-        },
-        editDocument: async () => {
           throw new Error("not used");
         },
       } as never,

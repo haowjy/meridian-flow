@@ -52,34 +52,51 @@ source as its manuscript-relative path, anything else as stored. Parse is pure
 syntax; ref assignment (agent-edit `assignLinkRefs`, which also turns a known
 manuscript image path into `asset:<id>`) binds what was written.
 
-**Whole-document writes bind outside, apply inside** (`domain/link-binding.ts`,
+**Whole-document writes prepare outside, apply inside** (`domain/link-binding.ts`,
 contract §6.2). The engine's writes (`setMarkdown`, `writeDocument`,
-`seedFromMarkdown`) take `BoundContent`, never a Markdown string, and never
+`seedFromMarkdown`) take a `PreparedWrite`, never a Markdown string, and never
 parse. A `LinkBinder` makes it, before the caller opens any transaction:
 `bindMarkdown` opens the holder's scope (the document, or the project and the
 address a document about to be created will have), parses, prepares, assigns
 fresh or against the holder's current document (`against: "current"`: every
 link that stays corresponds to itself and keeps its ref, so an overwrite or a
 host append keeps refs verbatim), and registers the ahead refs it minted.
+
+A prepared write is a mutation, not a desired state. Prepared against the
+current document, it keeps the base it read through the coordinator (its state
+vector) and carries the Yjs update that turns that base into the bound result,
+diffed with `updateYFragment` (`applyDocumentDiff`), so unchanged blocks keep
+their items. Append keeps the current document's own nodes for the blocks the
+appended text left alone, so it is an insertion after the base's last block.
+Applying merges the update into the live document: a writer's edit, unlink or
+retarget admitted between prepare and apply stays, in either order. A
+document that no longer holds the base (`containsBase`, or unresolved
+dependencies after applying) is `stale_generation`, for the caller to prepare
+again. Fresh writes (seed, import, create, upload) have no base and need a
+document with no blocks. A prepared write also certifies its holder (`document`
+by id, `new` by the canonical address it will have, or `static`): the engine
+refuses to apply it to any other document, and ContextFS checks the path's
+occupant under its namespace lock.
 Registration opens a root transaction that takes namespace keys; inside a
 command transaction that already holds them it would wait on itself forever,
 invisibly to PostgreSQL. So `bindMarkdown` throws
 `LinkBindingInsideTransactionError` inside any transaction, and a door that
 forgot to hoist fails at once. `bindStatic` is for link-free text fixed in code
 (a project's first chapter, seeded inside the bootstrap transaction); it throws
-if the text names anything. `writeDocument` routes an actor's write through the
-edit core's create-overwrite with `WriteContext.boundBlocks`, which aligns the
-bound nodes against the old blocks and skips assignment. There is no
-string-transform write: host append binds `current + appended` itself. Seed,
-import and create bind fresh (pass 3 only).
+if the text names anything. `writeDocument` routes an actor's write in a
+thread (and every agent write) through the edit core's create-overwrite with
+`WriteContext.prepared`, which merges the prepared update into its runtime and
+records it as that actor's mutation; a writer's save outside a thread merges
+it directly. There is no string-transform write: host append binds
+`current + appended` itself. Seed, import and create bind fresh (pass 3 only).
 
 The codec asks synchronously, so the tree is read per operation, never cached.
 `within(key, op)` opens a snapshot keyed by project and reader (the account a
 door names, else its thread's account, else the project owner; and the thread
 it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each operation then calls
-`prepare({ holders, docs, nodes, refs, addresses, written })` with what its next
+`prepare({ holders, docs, stored, refs, addresses, written })` with what its next
 synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
-(`domain/stored-link-extraction.ts`), and one batch loads settlements, rows by
+(agent-edit `ports/stored-link-extraction.ts`), and one batch loads settlements, rows by
 id and rows at exact or extension-omitted addresses, readability through the
 file policy's list path, and manifest membership only when a row needs it.
 Membership is the same authority ContextFS lists through and is required (DB
