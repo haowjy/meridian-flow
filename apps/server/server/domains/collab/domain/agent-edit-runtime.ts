@@ -114,6 +114,7 @@ export function createAgentEditRuntime(input: {
             prepared: {
               blocks: content.blocks,
               update: content.update,
+              ...(content.base ? { authority: content.base.authority } : {}),
               ...(content.certified ? { certified: content.certified } : {}),
             },
             actor,

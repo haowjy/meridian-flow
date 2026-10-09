@@ -104,6 +104,7 @@ export type {
 } from "./ports/types.js";
 export type {
   ActiveWriteSummary,
+  JournalAuthority,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,

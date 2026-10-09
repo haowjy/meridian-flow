@@ -37,7 +37,8 @@ import type {
 import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
-import { containsBase, type PreparedWrite } from "./link-binding.js";
+import { containsBase, type PreparedWrite, sameAuthority } from "./link-binding.js";
+import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -99,6 +100,13 @@ type MarkdownDocumentEngineDeps = {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 };
 
+/** Stages a change on a copy of the live document; `authority` is the live document's. */
+type DraftMutation = (
+  draft: Y.Doc,
+  yjsOrigin: TransactionOrigin,
+  authority: Readonly<CheckpointAuthority>,
+) => Result<void, SyncError>;
+
 export type MarkdownDocumentEngine = {
   /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
@@ -121,7 +129,8 @@ export type MarkdownDocumentEngine = {
    * Whole-document writes take a write a `LinkBinder` prepared before the
    * caller's transaction (contract §6.2); none of them parses Markdown. Each
    * applies only to the holder it was prepared for, and merges its update
-   * into the document; a document that no longer holds the prepared base is
+   * into the document. A write whose base's authority generation was replaced
+   * (its certificate expired), or whose base clocks the document lacks, is
    * `stale_generation`, for the caller to prepare again.
    */
   setMarkdown(input: {
@@ -239,24 +248,35 @@ export function createMarkdownDocumentEngine(
     return Ok(content);
   }
 
-  function holdsBase(doc: Y.Doc, content: PreparedWrite): boolean {
+  /**
+   * Whether a prepared write may apply to `doc`, whose authority is
+   * `authority`: its base's generation certificate is still current and `doc`
+   * has every clock the base had; a fresh write needs a document with no
+   * blocks, or it would sit beside content it never saw.
+   */
+  function holdsBase(
+    doc: Y.Doc,
+    authority: Readonly<CheckpointAuthority>,
+    content: PreparedWrite,
+  ): boolean {
     if (content.base === null) return deps.model.getBlocks(toDocHandle(doc)).length === 0;
-    return containsBase(doc, content.base);
+    return sameAuthority(authority, content.base) && containsBase(doc, content.base);
   }
 
   /**
-   * Merge a prepared update into `draft`: it needs every item of the base it
-   * was prepared against, and a fresh write needs a document with no blocks,
-   * or it would sit beside content it never saw.
+   * Merge a prepared update into `draft`, a copy of the live document taken
+   * under its lock, so the certificate is checked against the generation the
+   * update is admitted into.
    */
   function mergePrepared(
     documentId: DocumentId,
     draft: Y.Doc,
+    authority: Readonly<CheckpointAuthority>,
     content: PreparedWrite,
     yjsOrigin: TransactionOrigin,
   ): Result<void, SyncError> {
     const stale = Err({ code: "stale_generation", documentId } as const);
-    if (!holdsBase(draft, content)) return stale;
+    if (!holdsBase(draft, authority, content)) return stale;
     Y.applyUpdate(draft, content.update, yjsOrigin);
     if (draft.store.pendingStructs !== null || draft.store.pendingDs !== null) return stale;
     return Ok(undefined);
@@ -265,7 +285,7 @@ export function createMarkdownDocumentEngine(
   async function replaceLiveDocumentMarkdown(
     documentId: DocumentId,
     liveDoc: Y.Doc,
-    mutate: (draft: Y.Doc, yjsOrigin: TransactionOrigin) => Result<void, SyncError>,
+    mutate: DraftMutation,
     origin: RuntimeOrigin,
     schemaType: YjsTrackedSchemaType,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
@@ -275,7 +295,7 @@ export function createMarkdownDocumentEngine(
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
     const beforeVector = Y.encodeStateVector(draft);
     const yjsOrigin = yjsTransactionOrigin(origin);
-    const mutated = mutate(draft, yjsOrigin);
+    const mutated = mutate(draft, yjsOrigin, documentAuthority(liveDoc));
     if (!mutated.ok) {
       draft.destroy();
       return mutated;
@@ -329,14 +349,15 @@ export function createMarkdownDocumentEngine(
     if (!content.ok) return content;
     return changeDocument(
       input,
-      (draft, yjsOrigin) => mergePrepared(input.documentId, draft, content.value, yjsOrigin),
+      (draft, yjsOrigin, authority) =>
+        mergePrepared(input.documentId, draft, authority, content.value, yjsOrigin),
       format,
     );
   }
 
   async function changeDocument(
     input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
-    mutate: (draft: Y.Doc, yjsOrigin: TransactionOrigin) => Result<void, SyncError>,
+    mutate: DraftMutation,
     format: { schemaType: YjsTrackedSchemaType },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     await deps.lifecycle.ensureDocument(input.documentId);
@@ -480,19 +501,21 @@ export function createMarkdownDocumentEngine(
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
     const shaped = checkPrepared(input.documentId, input.content, format.value, "write");
     if (!shaped.ok) return shaped;
-    // Agent-edit merges the update into its runtime under the same lock; check the base here
-    // so a stale preparation is the caller's to redo, not a rejected mutation.
+    const stale = Err({ code: "stale_generation", documentId: input.documentId } as const);
+    // An early answer only: the certificate can expire after this, so agent-edit checks it
+    // again where it admits the update, under that document's lock.
     await deps.lifecycle.ensureDocument(input.documentId);
     const holds = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-      holdsBase(doc, input.content),
+      holdsBase(doc, documentAuthority(doc), input.content),
     );
-    if (!holds) return Err({ code: "stale_generation", documentId: input.documentId });
+    if (!holds) return stale;
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,
       content: input.content,
       actor,
     });
+    if (outcome.status !== "success" && outcome.error?.type === "prepared_base") return stale;
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
       serializeForSchema(

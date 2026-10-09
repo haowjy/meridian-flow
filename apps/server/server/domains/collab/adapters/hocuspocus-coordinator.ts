@@ -5,6 +5,7 @@ import {
   type DocumentCoordinator,
   type DocumentLockOptions,
   DocumentNotFoundError,
+  type JournalAuthority,
   type JournalSnapshot,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
@@ -47,6 +48,8 @@ export function createHocuspocusCoordinator(deps: CoordinatorDeps): DocumentCoor
  * committed journal rows), and open editors receive the result only after
  * commit, through `recover`. A rollback therefore leaves nothing on screen.
  * The copy needs no document mutex: the room is only read, synchronously.
+ * It reports the committed authority generation, so a write certified for
+ * another generation is refused against it as against the room.
  */
 export function createDeferredLiveProjectionCoordinator(deps: {
   hocuspocus: () => Hocuspocus;
@@ -58,7 +61,10 @@ export function createDeferredLiveProjectionCoordinator(deps: {
     afterCommit(callback: () => void | Promise<void>): boolean;
   };
 }): DocumentCoordinator {
+  const copies = new WeakMap<Y.Doc, JournalAuthority | undefined>();
   return {
+    documentAuthority: (doc) =>
+      copies.has(doc) ? copies.get(doc) : deps.live.documentAuthority?.(doc),
     async withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
@@ -69,12 +75,18 @@ export function createDeferredLiveProjectionCoordinator(deps: {
       // The transaction's own rows stay out of the copy, as they stay out of
       // the room until commit; only a document created in this transaction
       // has nothing committed to start from.
-      const committed = await deps.transactions.outsideTransaction(() =>
-        loadDocumentState(deps.journal, docId),
+      const committedSnapshot = await deps.transactions.outsideTransaction(() =>
+        deps.journal.read(docId),
       );
-      const seed = loaded || committed ? committed : await loadDocumentState(deps.journal, docId);
+      const committed = await loadDocumentState(deps.journal, docId, undefined, committedSnapshot);
+      const snapshot = loaded || committed ? committedSnapshot : await deps.journal.read(docId);
+      const seed =
+        snapshot === committedSnapshot
+          ? committed
+          : await loadDocumentState(deps.journal, docId, undefined, snapshot);
       if (!loaded && !seed) throw new DocumentNotFoundError(docId);
       const copy = new Y.Doc({ gc: false });
+      copies.set(copy, snapshot.authority);
       try {
         if (loaded) Y.applyUpdate(copy, Y.encodeStateAsUpdate(loaded), RECOVERY_ORIGIN);
         if (seed)

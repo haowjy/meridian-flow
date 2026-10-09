@@ -214,8 +214,9 @@ prepare their Markdown (`documentSync.bindMarkdown`) **before**
 namespace-locked transaction (collab `document-authority-and-schema.md`). The
 existing document is looked up outside the transaction for that; the
 transaction looks it up again and checks the prepared write was made for what
-occupies the path now. If the occupant changed, or the document no longer holds
-the prepared base, the transaction answers `stale_target` and
+occupies the path now. If the occupant changed, the document was restored to
+another authority generation since the base was read, or it no longer has the
+base's clocks, the transaction answers `stale_target` and
 `preparedCommand` prepares again against what is there (three attempts). An
 edit admitted in between merges with the prepared update. An actor's overwrite
 and every append prepare against the current document; import and system

@@ -181,6 +181,10 @@ export function createWriteCommands(deps: {
     const content = command.command === "create" ? (command.content ?? "") : "";
     // Host-prepared content (§6.2) arrives bound and as an update; it is never assigned again.
     const prepared = command.command === "create" ? context.prepared : undefined;
+    if (prepared && context.responseId) {
+      // A staged reply admits later, where the prepared base's certificate is not checked.
+      return status("invalid_write", "A prepared write is admitted at once, never staged.");
+    }
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
@@ -457,6 +461,7 @@ export function createWriteCommands(deps: {
         touchedHashes,
         deletedHashes,
         preOwnSnapshot: preWriteSnapshot,
+        ...(prepared?.authority ? { expectedAuthority: prepared.authority } : {}),
         ...(turnId ? { turnId } : {}),
         interactionContext: interactionContextForAttempt(
           context.interactionContext,

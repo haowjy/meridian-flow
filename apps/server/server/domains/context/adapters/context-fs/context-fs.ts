@@ -479,9 +479,9 @@ export class ContextFS implements ContextSchemeAdapter {
 
   /**
    * Prepare outside the command transaction, apply inside it (contract §6.2).
-   * The prepared write names the holder and state it was prepared against; if
-   * the path's occupant or its state changed in between (`stale_target`),
-   * prepare again against what is there now.
+   * The prepared write names the holder, generation and state it was prepared
+   * against; if the path's occupant, its generation or its state changed in
+   * between (`stale_target`), prepare again against what is there now.
    */
   private async preparedCommand<T>(
     prepare: () => Promise<Result<PreparedWrite, AdapterFault>>,
