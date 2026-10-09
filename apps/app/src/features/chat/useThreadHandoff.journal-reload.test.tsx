@@ -45,7 +45,6 @@ const THREAD_ID = "550e8400-e29b-41d4-a716-446655440000";
 
 const mocks = vi.hoisted(() => ({
   createProjectThread: vi.fn(),
-  createThread: vi.fn(),
 }));
 const controllers: ThreadRunController[] = [];
 
@@ -54,11 +53,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useOptionalAccountEpochSignal: () => accountEpoch.signal,
 }));
 vi.mock("@/client/api/projects-api", () => ({
-  createProject: vi.fn(),
   createProjectThread: mocks.createProjectThread,
-}));
-vi.mock("@/client/api/threads-api", () => ({
-  createThread: mocks.createThread,
 }));
 vi.mock("@/client/query/project-invalidation", () => ({
   invalidateProjectThreadData: vi.fn(),
@@ -181,7 +176,6 @@ afterEach(async () => {
     cleanup = undefined;
     for (const controller of controllers.splice(0)) controller.dispose();
     mocks.createProjectThread.mockReset();
-    mocks.createThread.mockReset();
     window.localStorage.clear();
   }
 });

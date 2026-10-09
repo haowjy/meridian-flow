@@ -24,7 +24,6 @@ const harness = vi.hoisted(() => ({
   accountSignal: null as AbortSignal | null,
   pendingCreation: false,
   createProjectThread: vi.fn(),
-  createThread: vi.fn(),
   createProject: vi.fn(),
   getProject: vi.fn(),
   trace: [] as string[],
@@ -51,7 +50,6 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 vi.mock("@/client/api/threads-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/client/api/threads-api")>()),
   getThreadSnapshot: (args: unknown) => harness.snapshotRequest(args),
-  createThread: harness.createThread,
 }));
 
 vi.mock("@/client/api/projects-api", () => ({
