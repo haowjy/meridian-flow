@@ -71,8 +71,9 @@ export {
   type LocalLinkAnswer,
   linkCacheKey,
   linkKeyOfMark,
+  pictureKeyOfNode,
 } from "./link-resolution";
-export { getLinkAnswerCache, getLinkSurface } from "./link-storage";
+export { getLinkAnswerCache, getLinkSurface, mountedLinkAnswerCache } from "./link-storage";
 export {
   type LinkFollowOutcome,
   type LinkFormRequest,

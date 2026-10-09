@@ -22,7 +22,8 @@ import { Plugin } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 
 import { resolveAnchorIn } from "../anchors";
-import { wikilinkPasteParsePlugins } from "../links";
+import { getLinkAnswerCache, wikilinkPasteParsePlugins } from "../links";
+import { assignWrittenSource } from "../links/link-assignment";
 import { markdownClipboardParser, markdownClipboardSerializer } from "../markdown-paste";
 import { tableDropDecision } from "../table-drop";
 import { startImageImport } from "./image-imports";
@@ -214,7 +215,18 @@ export const ImageIngressExtension = Extension.create({
           clipboardTextSerializer: markdownClipboardSerializer,
           transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetIndex),
           transformPasted: (slice, view) => {
-            const resolved = resolveImagesFromClipboard(slice, view.state.schema, assetIndex);
+            // A drag moves pictures the editor already holds, as stored.
+            if (view.dragging) {
+              pasted = null;
+              return slice;
+            }
+            const index = getLinkAnswerCache(editor)?.assignment?.index ?? null;
+            const resolved = resolveImagesFromClipboard(
+              slice,
+              view.state.schema,
+              assetIndex,
+              (src) => assignWrittenSource(src, index),
+            );
             pasted = resolved.imports.length > 0 ? resolved.imports : null;
             return resolved.slice;
           },

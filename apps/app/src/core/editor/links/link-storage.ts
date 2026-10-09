@@ -34,3 +34,12 @@ export function getLinkAnswerCache(editor: Editor | null | undefined): LinkAnswe
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
 }
+
+/**
+ * The same cache for a view built while its editor is constructing, when
+ * `isDestroyed` still reads true: a mark or node view must subscribe at
+ * mount, or a picture already in the document never hears its answer.
+ */
+export function mountedLinkAnswerCache(editor: Editor): LinkAnswerCache | null {
+  return editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
+}
