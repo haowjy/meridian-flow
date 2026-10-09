@@ -111,10 +111,16 @@ export function createSearchHandler(deps: ToolWiringDeps) {
       return decision ? [{ hit, readonly: decision.level !== "edit" }] : [];
     });
     return {
-      output: hits.map(({ hit: { documentId: _id, revision: _revision, ...hit }, readonly }) => ({
-        ...hit,
-        readonly,
-      })),
+      // Host-only facts never reach the model; lane E records `shownLinks` as shown.
+      output: hits.map(
+        ({
+          hit: { documentId: _id, revision: _revision, shownLinks: _shown, ...hit },
+          readonly,
+        }) => ({
+          ...hit,
+          readonly,
+        }),
+      ),
       metadata: {
         documentRevisions: hits.map(
           ({ hit: { documentId, uri, revision } }) =>
