@@ -23,6 +23,9 @@
 - Unrelated No Work chats keep separate Scratch notes. Forks and subagents share their first chat's notes.
 
 - Handoffs start fresh chat lineages. No Work Scratch links name the first chat.
+- A Scratch note opened from a Work's Files now opens in the sidebar as the full editor: edit it, and it saves, works offline and freezes with an archived Work like an Editor tab. Its title menu lists the Work's other notes, with Open in Editor and Rename. Opening the same note in an Editor tab keeps your caret steady for other people.
+- Following a link inside a document the AI created and you are still reviewing now opens it, instead of waiting on "Opening the link" forever.
+- The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
 - Changed writes return mutation facts directly, without allocating discarded per-edit summaries.
 
 - Model reads, writes and recovery stop retaining unused session clock maps.
@@ -50,9 +53,6 @@
 - File moves, Apply, and Discard share one catalog repair queue instead of racing independent repairs. Repairs read file metadata without chapter prose; queued bursts append without recopying earlier moves. Lock contention logs warnings, not errors.
 
 - Draft writes filter covered history once and skip its attribution replay. Unchanged drafts avoid rebuilding retained history. Concurrent writer edits still appear in save receipts.
-- A Scratch note opened from a Work's Files now opens in the sidebar as the full editor: edit it, and it saves, works offline and freezes with an archived Work like an Editor tab. Its title menu lists the Work's other notes, with Open in Editor and Rename. Opening the same note in an Editor tab keeps your caret steady for other people.
-- Following a link inside a document the AI created and you are still reviewing now opens it, instead of waiting on "Opening the link" forever.
-- The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
