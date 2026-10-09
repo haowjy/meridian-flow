@@ -33,6 +33,11 @@
  * as JSON (D65); the typed error stays on `result`. Any other result is the
  * registration's `renderResult` text, or the value itself.
  *
+ * Either return shape may carry `shown`, the host-only shown-link candidates
+ * of what the result renders. Only a handler result the executor accepts
+ * forwards them; the timeout and abort arms drop a late handler's candidates
+ * with its result.
+ *
  * The second path exists so that handlers backed by structured error types
  * (e.g. `ContextError` from the context domain) can surface detailed error
  * information through the execution result without throwing.
@@ -183,11 +188,13 @@ function successResult(
   registration: ToolRegistration,
   input: JsonObject,
 ): ToolExecutionResult {
+  const shown = shownCandidates(output);
   if (isHandlerErrorResult(output)) {
     return {
       toolCallId,
       ...modelOutput(registration, toJsonValue(output.output), input),
       isError: true,
+      ...shown,
     };
   }
   let value = output;
@@ -203,7 +210,15 @@ function successResult(
     ...(registration.capability === "return_result" && isReturnResultOutcome(value)
       ? { returnResult: value }
       : {}),
+    ...shown,
   };
+}
+
+/** The handler's host-only shown-link candidates, kept out of every serialized field. */
+function shownCandidates(output: unknown): Pick<ToolExecutionResult, "shown"> {
+  if (typeof output !== "object" || output === null || !("shown" in output)) return {};
+  const shown = (output as { shown?: ToolExecutionResult["shown"] }).shown;
+  return shown && shown.length > 0 ? { shown } : {};
 }
 
 /**

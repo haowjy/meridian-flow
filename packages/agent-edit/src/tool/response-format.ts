@@ -164,7 +164,9 @@ export function toOutcome(
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(result.nodes ? { nodes: result.nodes } : {}),
-    ...(result.shownLinks && result.shownLinks.length > 0 ? { shownLinks: result.shownLinks } : {}),
+    ...(result.shownLinks && result.shownLinks.length > 0
+      ? { shownLinks: result.shownLinks, shownView: result.shownView }
+      : {}),
     result: model,
   };
   if (result.status === "success") {

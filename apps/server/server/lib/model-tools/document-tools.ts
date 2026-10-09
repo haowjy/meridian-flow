@@ -15,7 +15,6 @@ import {
   formatDocumentFile,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
 import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
@@ -27,6 +26,7 @@ import {
   isSkillsUri,
   readSkill,
   refuseSkillWrite,
+  type ShownLinkShowing,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
@@ -50,7 +50,7 @@ import {
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
-import { destinationView, readView, recordShown, threadShownLinks } from "./shown-link-capture.js";
+import { showing, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -172,7 +172,10 @@ async function writeUnderGrant(
   address: ResolvedDocumentAddress,
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
-): Promise<(WriteOutcome & { isError: false; view: LinkView }) | WriteToolErrorOutput> {
+): Promise<
+  | (WriteOutcome & { isError: false; shown: ShownLinkShowing[] })
+  | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
+> {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
   let written: RoutedWriteOutcome;
@@ -196,20 +199,14 @@ async function writeUnderGrant(
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
   // was a partial failure's echo. An error without echo text carries no facts.
-  const view = destinationView(grant.destination);
-  await recordShown(deps, ctx, {
-    documentId: address.documentId,
-    holderUri: address.uri,
-    view,
-    links: written.shownLinks,
-  });
-  if (written.isError) return { isError: true, output: written.result };
+  const shown = showing(address.documentId, address.uri, written);
+  if (written.isError) return { isError: true, output: written.result, shown };
   // Undo and redo go where history says, so only forward writes name a destination.
   const reversal = parsed.command === "undo" || parsed.command === "redo";
   const routed = reversal
     ? withRefusedWrites(written)
     : withDestination(written, grant.destination);
-  return { ...routed, view } as WriteOutcome & { isError: false; view: LinkView };
+  return { ...routed, shown } as WriteOutcome & { isError: false; shown: ShownLinkShowing[] };
 }
 
 export function createReadHandler(deps: ToolWiringDeps) {
@@ -234,16 +231,11 @@ export function createReadHandler(deps: ToolWiringDeps) {
       ctx,
     );
     if (outcome.isError) return { isError: true, output: outcome.result };
-    await recordShown(deps, ctx, {
-      documentId: address.documentId,
-      holderUri: address.uri,
-      view: readView(outcome, grant.destination),
-      links: outcome.shownLinks,
-    });
     recordTouchInBackground(deps, address.documentId, ctx);
     return {
       output: outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
+      shown: showing(address.documentId, address.uri, outcome),
     };
   };
 }
@@ -339,7 +331,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
       }
-      return { isError: true, output: outcome.output };
+      return { isError: true, output: outcome.output, shown: outcome.shown };
     }
     if (stagedCreate) {
       const responseId = ctx.responseId;
@@ -379,11 +371,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
               stagedWrite: true,
               ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
               ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
-              // The settled receipt and concurrent backfill record shown links in this view.
-              linkView: outcome.view,
             }
           : {}),
       },
+      shown: outcome.shown,
     };
   };
 }

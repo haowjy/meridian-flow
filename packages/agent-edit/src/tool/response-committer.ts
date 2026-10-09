@@ -7,7 +7,7 @@ import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import {
   renderedItems,
   type ShownRenderSource,
-  shownLinksForItems,
+  shownEvidence,
   withRunShownLinks,
 } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -264,12 +264,9 @@ export function createResponseCommitter(deps: {
     };
   };
   const shownLinksOf = (
-    items: Parameters<typeof shownLinksForItems>[0],
+    items: Parameters<typeof shownEvidence>[0],
     docBuffer: ResponseDocumentBuffer,
-  ) => {
-    const shownLinks = shownLinksForItems(items, shownSource(docBuffer));
-    return shownLinks.length > 0 ? { shownLinks } : {};
-  };
+  ) => shownEvidence(items, shownSource(docBuffer));
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
   const closedResponseOrder: string[] = [];
 
