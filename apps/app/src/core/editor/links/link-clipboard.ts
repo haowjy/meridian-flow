@@ -222,18 +222,13 @@ function sourceResolution(
   projectId: string,
 ): LinkResolution {
   if (entry?.state === "document") {
-    const { documentId, uri, workId } = entry.document;
+    const { documentId, uri } = entry.document;
+    // The speller reads only `document.uri`; the answer carries no presence,
+    // so the other fields are neutral fillers, not facts about the document.
     return {
       kind: "document",
-      document: {
-        documentId,
-        projectId,
-        uri,
-        presence: workId ? "draft" : "live",
-        readable: true,
-        nameable: true,
-      },
-      inDraft: workId !== null,
+      document: { documentId, projectId, uri, presence: "live", readable: true, nameable: true },
+      inDraft: false,
     };
   }
   if (entry?.state === "gone") return { kind: "gone" };
