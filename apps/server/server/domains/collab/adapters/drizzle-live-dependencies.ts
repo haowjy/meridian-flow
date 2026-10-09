@@ -153,11 +153,7 @@ function dedupeBySeq(rows: readonly LiveDependencyRow[]): LiveDependencyRow[] {
 }
 
 function isNonSystemLiveDependencyRow(row: LaterLiveDependencyRow): boolean {
-  return (
-    row.originType !== "system" &&
-    row.originType !== "reconcile" &&
-    row.originType !== "link_update"
-  );
+  return row.originType !== "system" && row.originType !== "reconcile";
 }
 
 async function latestLiveUpdateSeq(db: LiveDependencyDb, documentId: string): Promise<number> {

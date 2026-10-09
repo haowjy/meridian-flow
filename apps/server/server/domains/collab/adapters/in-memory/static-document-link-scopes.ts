@@ -21,6 +21,12 @@ export function createStaticDocumentLinkScopes(
     within: (_key, operation) => operation(),
     prepare: async () => {},
     holder: ({ documentId }) => links.scopeFor(documentId, undefined),
+    // Resolution never reads the holder, so a reader outside the catalog spells from no holder.
+    reader: ({ uri }) =>
+      links.scopeFor(
+        catalog?.documents.find((entry) => entry.uri === uri)?.documentId ?? "",
+        undefined,
+      ),
   };
 }
 

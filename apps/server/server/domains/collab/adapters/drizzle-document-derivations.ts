@@ -12,14 +12,16 @@ import {
   works,
 } from "@meridian/database";
 import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
+  deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
+  type DerivationScope,
   DOCUMENT_EXTRACTOR_VERSION,
   type DocumentDerivationCut,
   type DocumentDerivationStore,
@@ -33,7 +35,6 @@ export async function captureDocumentDerivation(
   documentId: DocumentId,
   resolveUri: (tx: DrizzleDb, documentId: DocumentId) => Promise<string | null>,
 ): Promise<DocumentDerivationCut | null> {
-  const personal = alias(projects, "owner_personal_project");
   const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
   const [row] = await tx
     .select({
@@ -41,7 +42,6 @@ export async function captureDocumentDerivation(
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
       locationVersion: documents.locationVersion,
       holderProjectId: projects.id,
-      personalProjectId: personal.id,
       kind: documents.kind,
       deletedAt: documents.deletedAt,
     })
@@ -50,14 +50,6 @@ export async function captureDocumentDerivation(
     .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
     .leftJoin(works, eq(works.id, contextSources.workId))
     .innerJoin(projects, sql`${projects.id} = ${projectId}`)
-    .leftJoin(
-      personal,
-      and(
-        eq(personal.userId, projects.userId),
-        eq(personal.isPersonal, true),
-        isNull(personal.deletedAt),
-      ),
-    )
     .where(eq(documents.id, documentId))
     .limit(1);
   // An already-staged push must still settle after a soft deletion.
@@ -80,7 +72,6 @@ export async function captureDocumentDerivation(
     documentId,
     holderUri,
     holderProjectId: row.holderProjectId,
-    personalProjectId: row.personalProjectId,
     kind: row.kind,
     state,
     watermark: {
@@ -172,11 +163,46 @@ export async function certifyDocumentDerivation(
   return true;
 }
 
+/** Registry recovery the derive step drives; the collab domain never imports the registry. */
+export type AheadRegistrationRecovery = {
+  registerUnregistered(
+    scope: { documentId: DocumentId } | DerivationScope | undefined,
+    limit: number,
+  ): Promise<number>;
+};
+
 export function createDrizzleDocumentDerivationStore(
   db: Database,
   resolveUri: (tx: DrizzleDb, documentId: DocumentId) => Promise<string | null>,
+  aheads?: { registry: AheadRegistrationRecovery; eventSink?: EventSink },
 ): DocumentDerivationStore {
+  const recover = async (
+    scope: Parameters<AheadRegistrationRecovery["registerUnregistered"]>[0],
+  ) => {
+    if (!aheads) return 0;
+    try {
+      return await aheads.registry.registerUnregistered(scope, 100);
+    } catch (cause) {
+      if (aheads.eventSink)
+        emitEvent(aheads.eventSink, {
+          level: "warn",
+          source: "collab.document_derivation",
+          name: "ahead_registration.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      return 0;
+    }
+  };
   return {
+    async registerAheads(documentId) {
+      const register = async () => {
+        await recover({ documentId });
+      };
+      // Inside create or push completion the rows are not committed yet; registration takes
+      // namespace keys in its own root transaction, so it waits for this commit (§6.1, O6).
+      if (!deferUntilDrizzleCommit(register)) await register();
+    },
+    recoverAheads: (scope) => recover(scope),
     capture(documentId) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);

@@ -178,35 +178,52 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
-| `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, holder? })` returns one canonical Context document or `null`. A target is a discriminated `scheme` or `relative` value. Pending redirects for the exact holder/href win; requests without a holder fall back to previous locations only after a current miss. |
+| `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
+| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one ref at a time, failures logged). |
+| `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources), `settle`, and `settleCommitted` for arrivals whose membership publishes after commit. |
 
-## Pending link redirects
+## Moves and the link note
 
-Moves flush the project's certified derivations before entering the namespace
-transaction. Personal moves flush every project of the owner. Failed document
-derives log and retain last-good rows rather than blocking the move.
+A move writes nothing into any holder: links carry `doc:`/`ahead:` refs and
+re-spell on read. Moves flush the project's certified derivations before
+entering the namespace transaction (personal moves flush every project of the
+owner); the flush also registers client-minted ahead refs, so every certified ref
+is registered before the move takes namespace keys. Failed derives and failed
+registrations log and never block the move.
 
-The move locks all mutated documents (moved identities plus any overwrite victim),
-sorted by identity, `FOR NO KEY UPDATE`, then redirects whose holder
-or target moved `FOR UPDATE`, ordered by holder and href (the worker's order). The weaker document lock
-keeps journal FK insertion compatible. Address candidates use the shared
-`documentAddressKey` and `matchDocumentPath`; contextual links are excluded.
-Moved holders' relative links retain their pre-move target (or intended URI).
-Moving a holder into `user://` respells project targets as contextual full URIs;
-keeping its old relative path would incorrectly resolve inside personal space.
-Existing `(source_document_id, href)` redirects win and keep their original
-mover. `linkUpdate` counts newly inserted occurrences and distinct eligible
-holders; archived/deleted Works and manifests do not count. A target moved into
-another non-personal project cannot be named from a project holder; those
-occurrences (and holders without any representable rewrites) do not count in
-the receipt. The worker drops that target's redirect
-without rewriting, leaving the old href visibly unresolved rather than silently
-naming a different document in the holder's project. If any target is unavailable,
-the worker defers the entire holder batch without rewriting, consuming, or
-setting failure backoff. Restore makes it eligible on the next sweep.
-A post-commit kick
-is a no-op until the rewrite worker is composed; no holder content is edited
-inside a move transaction.
+Inside the transaction the move row-locks every mutated document (moved
+identities plus any overwrite victim), sorted, `FOR NO KEY UPDATE`
+(`lockMovedDocumentRows`). The weaker lock keeps journal FK insertion compatible
+while ordering the move against derive certification. After all DML and history
+it settles ahead refs at the destinations once (a folder move settles against
+its final tree), then `countIncomingLinks` sums `document_links` occurrences
+whose `doc:` ref names a moved document or whose `ahead:` ref is settled on one,
+from live content holders in the request project. A moved holder's own links to
+unmoved documents are not counted; personal and other-project holders are not
+counted. The receipt shape stays `linkUpdate: { links, documents }`.
+
+## Ahead refs and arrivals
+
+`link_ahead_refs` records each `ahead:` ref with the decoded address it was
+minted for (project, scheme, Work id, path; Work by id, so a rename never
+orphans it). Rows are never deleted by link edits. Server mints register before
+the write takes any lock; client mints are registered by the certified derive
+(awaited outside a transaction, after commit inside one), and the derivation
+sweep and `flush` recover any that failed with `registerUnregistered`.
+
+An ahead ref settles on the first live document at its exact address, by
+compare-and-set on `settled_document_id IS NULL`; a later occupant never captures
+it. Arrival hooks, each once against the operation's final tree:
+
+| Arrival | Where | Locks already held |
+|---|---|---|
+| Tracked create (named, untitled, model create/copy, import) | creation aggregate, after content initialization | command transaction's namespace keys |
+| Binary upload, figure upload | `createBinaryDocument`, after its post-commit membership publish, in a root transaction that retakes the namespace keys | none else |
+| Move-in (file, overwrite, folder) | tree store, once after all DML | every participating namespace |
+| Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
+| Draft Apply (warm and recovery) | push completion that publishes membership: Work → arriving namespaces → holder lock | as listed |
+
+Draft-only rows and deleted rows are not arrivals.
 
 ## Browser document addresses
 

@@ -1,6 +1,7 @@
 /** Drizzle ContextDocumentStore for one Meridian context source. */
 
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contentDocumentPredicate, documents, folders } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -20,6 +21,7 @@ import {
   type CreateDocumentInput,
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
+import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import {
   claimDocumentLocation,
   hasOppositeContextEntry,
@@ -62,19 +64,23 @@ export interface DrizzleContextDocumentStoreDeps {
   contextSourceId: string;
   membershipObserver?: ContextDocumentMembershipObserver;
   catalogMutations?: ContextCatalogMutationPort;
+  arrivals?: DocumentArrivals;
 }
 
 export async function notifyMembershipObserver(
   observer: ContextDocumentMembershipObserver | undefined,
   method: keyof ContextDocumentMembershipObserver,
   documentId: string,
+  /** Runs after the observer, in the same post-commit callback. */
+  then?: () => Promise<unknown>,
 ): Promise<void> {
-  if (!observer) return;
+  if (!observer && !then) return;
   let deferred = false;
   const completed = new Promise<void>((resolve, reject) => {
     deferred = runAfterDrizzleCommit(async () => {
       try {
-        await observer[method](documentId);
+        await observer?.[method](documentId);
+        await then?.();
         resolve();
       } catch (cause) {
         reject(cause);
@@ -357,7 +363,15 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         renderFilename(input.name, input.extension),
       );
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
+      // A binary's live membership is published after this commit, so it arrives there: the
+      // settlement retakes the namespace key in its own transaction (contract §9.3).
+      const arrivals = this.deps.arrivals;
+      await notifyMembershipObserver(
+        this.deps.membershipObserver,
+        "documentCreated",
+        row.id,
+        arrivals && (() => arrivals.settleCommitted([row.id as DocumentId])),
+      );
       return mapDocument(row);
     });
   }

@@ -32,6 +32,7 @@ import type {
   UpsertBinaryDocumentInput,
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
+import type { DocumentArrivals } from "./ports/document-arrivals.js";
 
 const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
   manuscript: "Manuscript",
@@ -222,6 +223,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly membershipObserver?: ContextDocumentMembershipObserver,
     private readonly workId?: string | (() => Promise<string>),
     private readonly catalogMutations?: ContextCatalogMutationPort,
+    private readonly arrivals?: DocumentArrivals,
   ) {}
 
   private async resolvedWorkId(): Promise<string | undefined> {
@@ -263,6 +265,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       contextSourceId: sourceId,
       membershipObserver: this.membershipObserver,
       catalogMutations: this.catalogMutations,
+      arrivals: this.arrivals,
     });
   }
 
@@ -358,6 +361,7 @@ export function createProjectContextDocumentStore(
   userId: string,
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
+  arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
@@ -366,6 +370,7 @@ export function createProjectContextDocumentStore(
     membershipObserver,
     undefined,
     catalogMutations,
+    arrivals,
   );
 }
 
@@ -375,6 +380,7 @@ export function createWorkContextDocumentStore(
   scheme: WorkScopedContextFsScheme,
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
+  arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
@@ -383,6 +389,7 @@ export function createWorkContextDocumentStore(
     membershipObserver,
     workId,
     catalogMutations,
+    arrivals,
   );
 }
 
@@ -392,6 +399,7 @@ export function createNoWorkContextDocumentStore(
   scheme: WorkScopedContextFsScheme,
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
+  arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
   const resolveWorkId = async () => {
     const workId = await findNoWorkId(db, projectId);
@@ -408,5 +416,6 @@ export function createNoWorkContextDocumentStore(
     membershipObserver,
     resolveWorkId,
     catalogMutations,
+    arrivals,
   );
 }

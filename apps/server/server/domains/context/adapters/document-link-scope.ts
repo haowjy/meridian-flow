@@ -202,7 +202,10 @@ export function createDrizzleDocumentLinkScopes(deps: {
     );
 
     await loadReadability(snapshot);
-    await loadMembership(snapshot, request.holders);
+    await loadMembership(snapshot, [
+      ...request.holders.map((holder) => holder.view),
+      ...(request.views ?? []),
+    ]);
   }
 
   async function loadAddresses(snapshot: Snapshot, uris: readonly string[]) {
@@ -321,7 +324,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
   }
 
   /** Live membership, and a draft view's, read only once a present row needs them. */
-  async function loadMembership(snapshot: Snapshot, holders: ScopePrepareRequest["holders"]) {
+  async function loadMembership(snapshot: Snapshot, views: readonly LinkView[]) {
     const projectId = snapshot.projectId;
     if (!projectId || !deps.membership) return;
     const governed = [...snapshot.rows.values()].filter(
@@ -335,7 +338,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const live = await members(snapshot, "live", { projectId });
     const outsideLive = governed.some((row) => !live.has(row.id));
     if (!outsideLive) return;
-    for (const { view } of holders) {
+    for (const view of views) {
       if (view.kind !== "draft") continue;
       await members(snapshot, viewKey(view), {
         projectId,
@@ -419,6 +422,19 @@ export function createDrizzleDocumentLinkScopes(deps: {
         { uri: holderRow?.uri ?? null, projectId: snapshot.projectId ?? "", view },
         snapshotCatalog(snapshot, view),
         miss,
+      );
+    },
+    reader({ uri, view }) {
+      const snapshot = storage.getStore();
+      if (!snapshot) {
+        observer.unscoped(uri ?? "reader");
+        return createHolderLinkScope({ uri, projectId: "", view }, EMPTY_CATALOG);
+      }
+      return createHolderLinkScope(
+        { uri, projectId: snapshot.projectId ?? "", view },
+        snapshotCatalog(snapshot, view),
+        (key) =>
+          observer.snapshotMiss({ documentId: uri ?? "reader", key, prepared: snapshot.prepared }),
       );
     },
   };
