@@ -163,8 +163,6 @@ export type ProjectViewProps = {
   reviewDraftId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
-  /** Phone-only routed Results auxiliary surface (`?results=`). Desktop ignores it. */
-  resultsOpen: boolean;
   onSelectScreen: (screen: ScreenKey) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
@@ -174,8 +172,6 @@ export type ProjectViewProps = {
    */
   onOpenContextTarget: OpenContextRoute;
   onSetEditorReviewDraftId: (draftId: string | null) => void;
-  onOpenResults: () => void;
-  onCloseResults: () => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -436,7 +432,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
   const retainEditorWhileLoading =
     usePhone === true &&
     props.activeScreen === "context" &&
-    !props.resultsOpen &&
     props.editorScope.status === "ready" &&
     props.routeIssues?.editor === "loading" &&
     priorMobile.current?.projectId === props.projectId &&
@@ -449,7 +444,6 @@ function HydratedReviewScopes(props: ResolvedProjectViewProps & ProjectIdentityP
     if (
       usePhone === true &&
       props.activeScreen === "context" &&
-      !props.resultsOpen &&
       props.editorScope.status === "ready" &&
       !props.routeIssues?.editor &&
       (props.activeContextPath || props.activeLocalDocumentId)

@@ -163,7 +163,7 @@ it("serializes No Work uniformly without changing project content URLs", () => {
   ] as const) {
     const work = workSelectionFor(destination, workId, noWorkId);
     expect(work.kind).toBe(kind);
-    expect(projectAddressHref({ projectId: "project", destination, work, results: false })).toBe(
+    expect(projectAddressHref({ projectId: "project", destination, work })).toBe(
       `/p/project${suffix}`,
     );
   }

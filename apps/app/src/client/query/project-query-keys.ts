@@ -103,7 +103,4 @@ export const projectQueryKeys = {
     return ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const;
   },
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,
-  results: (projectId: string) => ["projects", projectId, "results"] as const,
-  resultSignedUrl: (projectId: string, resultId: string) =>
-    ["projects", projectId, "results", resultId, "signed-url"] as const,
 };

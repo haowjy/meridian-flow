@@ -117,7 +117,6 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
         destination: { kind: "editor" },
 
         work: { kind: "none" },
-        results: false,
       },
       { replace: false },
     );

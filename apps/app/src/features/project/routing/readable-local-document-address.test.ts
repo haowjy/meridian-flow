@@ -404,7 +404,6 @@ describe("projectAddressMatchesContextTarget", () => {
     projectId: "project-id",
     destination: { kind: "document", scheme: "manuscript", path: "a.md" },
     work,
-    results: false,
   });
   const target = (workId?: string) => ({ scheme: "manuscript", path: "/a.md", workId });
 

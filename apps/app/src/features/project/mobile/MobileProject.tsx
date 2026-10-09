@@ -36,7 +36,6 @@ import { MobileContextBrowser } from "./MobileContextBrowser";
 import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
-import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
 
@@ -67,9 +66,9 @@ export function MobileProject(props: MobileProjectProps) {
   // The request is immutable command identity. A route Work change must not
   // retarget a row the writer already opened.
   const [creating, setCreating] = useState<TreeCreationRequest | null>(null);
-  // Any navigation (screen switch, drill in/out, opening a file, Results)
+  // Any navigation (screen switch, drill in/out, opening a file)
   // abandons an uncommitted create row — the row is location-scoped chrome.
-  const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
+  const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}`;
   useEffect(() => setCreating(null), [contextLocation]);
   const crumbs = contextBreadcrumbSegments(props);
   const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
@@ -91,10 +90,9 @@ export function MobileProject(props: MobileProjectProps) {
       <MobileTopBar
         activeScreen={props.activeScreen}
         projectTitle={props.projectTitle}
-        title={props.resultsOpen ? t`Results` : undefined}
         onOpenDrawer={() => setDrawerOpen(true)}
         breadcrumb={
-          props.resultsOpen ? undefined : props.activeScreen === "chat" ? (
+          props.activeScreen === "chat" ? (
             <ChatBreadcrumb projectId={props.projectId} display={props.chatDisplay} />
           ) : onWorkDetail ? (
             <MobileBreadcrumb
@@ -107,7 +105,7 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        notice={!props.resultsOpen && onWorkDetail ? work.notice : undefined}
+        notice={onWorkDetail ? work.notice : undefined}
         chatAction={
           props.activeScreen !== "chat" ? (
             <PhoneIconButton aria-label={t`Open chat`} onClick={() => openChatSheet()}>
@@ -197,20 +195,6 @@ function trailingAction(
   props: ReviewScopedProjectProps,
   onRequestCreate: (kind: ContextCreateKind) => void,
 ) {
-  if (props.resultsOpen) {
-    return (
-      <PhoneIconButton onClick={props.onCloseResults} aria-label={t`Back to chat`}>
-        <MessageSquare className="size-5" aria-hidden />
-      </PhoneIconButton>
-    );
-  }
-  if (props.activeScreen === "chat" && props.chatDisplay.kind !== "index") {
-    return (
-      <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
-        <Sparkles className="size-5" aria-hidden />
-      </PhoneIconButton>
-    );
-  }
   // Same per-scheme policy as the desktop tree's `+`: Scratch and Uploads offer no creation.
   if (
     props.activeScreen === "context" &&
@@ -231,10 +215,6 @@ function renderActiveView(
   onCreateDone: () => void,
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>,
 ) {
-  if (props.resultsOpen) {
-    return <MobileResultsView projectId={props.projectId} />;
-  }
-
   switch (props.activeScreen) {
     case "work":
       return (

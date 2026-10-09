@@ -89,7 +89,6 @@ it.each([
     },
 
     work: { kind: "none" },
-    results: false,
   };
   const result = documentResult(kind);
   await withReactRoot(
@@ -168,7 +167,6 @@ it("preserves a proven local resource handle during readable-route admission", a
         destination: { kind: "document", scheme: "kb", path: "doc" },
 
         work: { kind: "none" },
-        results: false,
       }}
       result={documentResult("current")}
       localFile={localFile}
@@ -215,7 +213,6 @@ it("admits one semantic address when parent state rebuilds equivalent lookup obj
             destination: { kind: "document", scheme: "kb", path: "doc" },
 
             work: { kind: "none" },
-            results: false,
           }}
           result={documentResult("current")}
           workId={"00000000-0000-4000-8000-000000000009"}
@@ -257,7 +254,6 @@ it.each([
     destination: { kind: "document", scheme: "kb", path: "before" },
 
     work: { kind: "none" },
-    results: false,
   };
   const onAdmission = vi.fn();
   try {
@@ -319,7 +315,6 @@ it("admits a manuscript in No Work without replacing its unchanged public href",
         projectId: "550e8400-e29b-41d4-a716-446655440000",
         destination: { kind: "document", scheme: "manuscript", path: "doc" },
         work: { kind: "none" },
-        results: false,
       }}
       result={result}
       workId={noWorkId}
@@ -360,7 +355,6 @@ it("keeps a draft-only document out of the live view and repairs only its review
         projectId,
         destination: { kind: "document", scheme: "manuscript", path: "doc" },
         work: { kind: "none" },
-        results: false,
       }}
       result={result}
       draftOnlyId="draft-1"

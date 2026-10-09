@@ -46,7 +46,6 @@ export type ProjectAddress = {
   /** Pending draft projected by the current manuscript Editor address. */
   draftId?: string;
   settings?: SettingsSection;
-  results: boolean;
 };
 export type WorkView = "chats" | "files";
 export type WorksView = "active" | "archived" | "deleted";
@@ -54,7 +53,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "chat", "draft", "settings", "results", "view"]);
+const RECOGNIZED_QUERY = new Set(["work", "chat", "draft", "settings", "view"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -198,7 +197,6 @@ export function parseProjectAddress(
     ...(worksView ? { worksView } : {}),
     ...(draftId ? { draftId } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
-    results: (editor || destination.kind === "chat") && query.has("results"),
   };
   const href = projectAddressHref(address);
   const empty =
@@ -209,7 +207,7 @@ export function parseProjectAddress(
     empty &&
     typeof empty === "object" &&
     "href" in empty &&
-    empty.href === projectAddressHref({ ...address, settings: undefined, results: false })
+    empty.href === projectAddressHref({ ...address, settings: undefined })
   ) {
     if (editor && address.work.kind === "absent") address.work = { kind: "none" };
   }
@@ -275,7 +273,6 @@ export function projectAddressHref(address: ProjectAddress): string {
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   if (context) writeWork(query, address);
   if (d.kind === "document" && address.draftId) query.set("draft", address.draftId);
-  if ((context || d.kind === "chat") && address.results) query.set("results", "");
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
   if (d.kind === "works" && address.worksView) query.set("view", address.worksView);
   if (address.settings) query.set("settings", address.settings);
@@ -298,7 +295,7 @@ export function projectAddressState(
   return {
     ...state,
     meridianProjectEmptySelection: noWork
-      ? { href: projectAddressHref({ ...address, settings: undefined, results: false }) }
+      ? { href: projectAddressHref({ ...address, settings: undefined }) }
       : undefined,
   };
 }
