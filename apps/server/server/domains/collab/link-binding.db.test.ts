@@ -1,13 +1,23 @@
 /**
- * Whole-document write doors bind outside their transaction and apply bound
- * content inside it (contract §6.2, ledger A2-1).
+ * Whole-document write doors prepare outside their transaction and apply the
+ * prepared write inside it (contract §6.2, ledger A2-1): a mutation against
+ * the base it read, certified for one holder.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { extractStoredLinks } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { contextSources, linkAheadRefs, projects, users, works } from "@meridian/database/schema";
+import {
+  contextSources,
+  documents,
+  linkAheadRefs,
+  projects,
+  threads,
+  threadWorks,
+  users,
+  works,
+} from "@meridian/database/schema";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
@@ -49,22 +59,37 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       return row ? `${row.scheme}://${row.path} in ${row.projectId}` : null;
     }
 
-    it("binds before the transaction: refs survive append, import is fresh, the guard holds", async () => {
+    it("prepares before the transaction: refs survive, concurrent edits merge, holders are certified", async () => {
       await deleteDrizzleRows(db, [users]);
       const userId = randomUUID();
       const projectId = randomUUID();
+      const threadId = randomUUID();
       await db.insert(users).values(conformanceUserValues(userId, "link-binding"));
       await db.insert(projects).values({ id: projectId, userId, name: "Binding", slug: "binding" });
-      await db
+      const [noWork] = await db
         .insert(works)
-        .values({ projectId, createdByUserId: userId, name: "No Work", isNoWork: true });
-      await db.insert(contextSources).values({
+        .values({ projectId, createdByUserId: userId, name: "No Work", isNoWork: true })
+        .returning();
+      const noWorkId = noWork?.id ?? "";
+      const [source] = await db
+        .insert(contextSources)
+        .values({
+          projectId,
+          name: "Manuscript",
+          slug: "manuscript",
+          scope: "project",
+          isPrimary: true,
+        })
+        .returning();
+      await db.insert(threads).values({
+        id: threadId,
+        rootThreadId: threadId,
         projectId,
-        name: "Manuscript",
-        slug: "manuscript",
-        scope: "project",
-        isPrimary: true,
+        createdByUserId: userId,
       });
+      await db
+        .insert(threadWorks)
+        .values({ threadId, workId: noWorkId, projectId, isPrimary: true });
       const ports = await createProductionAppPorts({
         db,
         eventSink: createNoopEventSink(),
@@ -78,8 +103,19 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             ports.documentSync.storeHocuspocusDocument(documentName, document),
         }),
       );
+      // Runs once, after the next whole-document write is prepared and before it applies.
+      let afterNextPrepare: (() => Promise<void>) | null = null;
+      const bindMarkdown = ports.documentSync.bindMarkdown;
+      ports.documentSync.bindMarkdown = async (input) => {
+        const prepared = await bindMarkdown(input);
+        const between = afterNextPrepare;
+        afterNextPrepare = null;
+        await between?.();
+        return prepared;
+      };
       const port = app.contextPorts.forProject(projectId, userId, new Map());
       const writer = { origin: { type: "human" as const, userId } };
+      const writerInThread = { origin: { type: "human" as const, userId, threadId } };
       const imported = {
         origin: { type: "import" as const, userId, source: "upload", filename: "notes.md" },
       };
@@ -89,6 +125,36 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const settled = await result;
         if (!settled.ok) throw new Error(JSON.stringify(settled.error));
         return settled.value;
+      };
+      const read = async (uri: string) => (await ok(port.read(uri))).content;
+      /** An independent writer's edit, made from the document as it is now: new prose, link removed. */
+      const writerEdit = async (documentId: string) => {
+        const client = new Y.Doc({ gc: false });
+        const state = await ports.documentSync.loadHocuspocusDocument?.(documentId);
+        if (state) Y.applyUpdate(client, state);
+        const vector = Y.encodeStateVector(client);
+        const fragment = client.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+        const prose = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
+        const linked = (fragment.get(1) as Y.XmlElement).get(0) as Y.XmlText;
+        client.transact(() => {
+          prose.delete(0, prose.length);
+          prose.insert(0, "Concurrent.");
+          linked.format(0, linked.length, { link: null });
+        });
+        const update = Y.encodeStateAsUpdate(client, vector);
+        client.destroy();
+        return async () => {
+          const journal = createDrizzleJournal(db);
+          const snapshot = await journal.read(documentId);
+          if (!snapshot.authority || !journal.appendWriterUpdate) throw new Error("No writer path");
+          await journal.appendWriterUpdate(
+            documentId,
+            update,
+            { origin: `human:${userId}`, seq: 0 },
+            snapshot.authority,
+          );
+          await ports.documentSync.readAsMarkdown(documentId);
+        };
       };
 
       try {
@@ -100,11 +166,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         let soon: string | null = null;
 
         // Each door registers any ahead ref it mints. The registry refuses to run inside a
-        // transaction, so a row only exists if the door bound before opening its own.
+        // transaction, so a row only exists if the door prepared before opening its own.
         const doors: {
           door: string;
           act: () => Promise<string>;
-          expected: (refs: (string | null)[]) => unknown;
+          refs?: (refs: (string | null)[]) => unknown;
+          markdown?: string;
         }[] = [
           {
             door: "writer overwrite binds a resolved link and mints one ahead",
@@ -114,7 +181,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               );
               return holder;
             },
-            expected: (refs) => {
+            refs: (refs) => {
               soon = refs[1] ?? null;
               return [targetRef, expect.stringMatching(/^ahead:/)];
             },
@@ -132,7 +199,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               );
               return holder;
             },
-            expected: () => [targetRef, soon, expect.stringMatching(/^ahead:/)],
+            refs: () => [targetRef, soon, expect.stringMatching(/^ahead:/)],
           },
           {
             door: "import binds fresh: it resolves the moved target and mints its own ahead ref",
@@ -146,10 +213,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                   ),
                 )
               ).documentId ?? "",
-            expected: () => [targetRef, expect.not.stringMatching(soon ?? "")],
+            refs: () => [targetRef, expect.not.stringMatching(soon ?? "")],
           },
           {
-            door: "create with content (upload) binds before its transaction",
+            door: "create with content binds before its transaction",
             act: async () =>
               (
                 await ok(
@@ -160,23 +227,156 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                   ),
                 )
               ).documentId,
-            expected: () => [expect.stringMatching(/^ahead:/)],
+            refs: () => [expect.stringMatching(/^ahead:/)],
+          },
+          {
+            door: "an upload prepares before finalize's transaction and persists under its locks",
+            act: async () => {
+              const bytes = new TextEncoder().encode("# Upload\n\n[Ahead](manuscript://future.md)");
+              const uploaded = await app.uploadIntake.intake({
+                intakeId: randomUUID(),
+                actorUserId: userId,
+                owner: { kind: "work", projectId, workId: noWorkId },
+                filename: "upload.md",
+                mimeType: "text/markdown",
+                bytes,
+                byteDigest: createHash("sha256").update(bytes).digest("hex"),
+              });
+              if (!uploaded.ok) throw new Error(uploaded.error.code);
+              return uploaded.value.documentId;
+            },
+            refs: () => [expect.stringMatching(/^ahead:/)],
+            markdown: "# Upload\n\n[Ahead](manuscript://future.md)\n",
+          },
+          {
+            door: "a writer save landing between an append's prepare and apply keeps its prose and retarget",
+            act: async () => {
+              const id = (
+                await ok(
+                  port.createTrackedDocument(
+                    "manuscript://interleave.md",
+                    "Original.\n\n[T](a.md)",
+                  ),
+                )
+              ).documentId;
+              afterNextPrepare = async () => {
+                await ok(
+                  port.write("manuscript://interleave.md", "Concurrent.\n\n[T](b.md)", writer),
+                );
+              };
+              await ok(
+                port.edit(
+                  "manuscript://interleave.md",
+                  { kind: "append", content: "\n\nAppend." },
+                  writer,
+                ),
+              );
+              return id;
+            },
+            refs: () => [expect.stringMatching(/^ahead:/)],
+            markdown: "Concurrent.\n\n[T](b.md)\n\nAppend.\n",
+          },
+          ...[writer, writerInThread].flatMap((actor) =>
+            (["before", "after"] as const).map((when) => ({
+              door: `an append merges with a writer's edit and unlink admitted ${when} it applies${"threadId" in actor.origin ? " (in a thread)" : ""}`,
+              act: async () => {
+                const uri = `manuscript://merge-${when}-${"threadId" in actor.origin}.md`;
+                const id = (await ok(port.createTrackedDocument(uri, "Original.\n\n[T](c.md)")))
+                  .documentId;
+                const edit = await writerEdit(id);
+                if (when === "before") afterNextPrepare = edit;
+                await ok(port.edit(uri, { kind: "append", content: "\n\nAppend." }, actor));
+                if (when === "after") await edit();
+                return id;
+              },
+              refs: () => [],
+              markdown: "Concurrent.\n\nT\n\nAppend.\n",
+            })),
+          ),
+          {
+            door: "a write prepared for one holder never lands on the document that replaced it",
+            act: async () => {
+              const first = (
+                await ok(
+                  port.createTrackedDocument("manuscript://occupant.md", "First.\n\n[A](a.md)"),
+                )
+              ).documentId;
+              afterNextPrepare = async () => {
+                await ok(port.move("manuscript://occupant.md", "manuscript://first-moved.md"));
+                await ok(port.createTrackedDocument("manuscript://occupant.md", "Second."));
+              };
+              const appended = await ok(
+                port.edit(
+                  "manuscript://occupant.md",
+                  { kind: "append", content: "\n\nAppend." },
+                  writer,
+                ),
+              );
+              expect(await read("manuscript://first-moved.md")).toBe("First.\n\n[A](a.md)\n");
+              expect(appended.documentId).not.toBe(first);
+              return appended.documentId ?? "";
+            },
+            refs: () => [],
+            markdown: "Second.\n\nAppend.\n",
+          },
+          {
+            door: "repair never publishes an empty document over a projection with no canonical state",
+            act: async () => {
+              const half = randomUUID();
+              const surviving = "Only surviving prose.\n\n[T](target.md)";
+              await db.insert(documents).values({
+                id: half,
+                contextSourceId: source?.id ?? "",
+                name: "half",
+                extension: "md",
+                markdownProjection: surviving,
+              });
+              const repaired = await port.ensureTrackedDocument("manuscript://half.md");
+              expect(repaired).toMatchObject({ ok: false, error: { code: "io_error" } });
+              const [kept] = await db.select().from(documents).where(eq(documents.id, half));
+              expect(kept?.markdownProjection).toBe(surviving);
+              expect((await createDrizzleJournal(db).read(half)).checkpoint).toBeFalsy();
+              return half;
+            },
+          },
+          {
+            door: "a new code file is created with its content, as code",
+            act: async () =>
+              (
+                await ok(
+                  port.createTrackedDocument("manuscript://new.ts", 'const x = "[T](a.md)";'),
+                )
+              ).documentId,
+            refs: () => [],
+            markdown: 'const x = "[T](a.md)";',
           },
         ];
 
-        for (const { door, act, expected } of doors) {
-          const refs = await storedRefs(await act());
-          expect(refs, door).toEqual(expected(refs));
-          for (const ref of refs.filter((each) => each?.startsWith("ahead:"))) {
-            expect(await registeredAddress(ref), door).toMatch(new RegExp(` in ${projectId}$`));
+        // Every door runs and reports; later doors build on earlier ones' documents.
+        const failures: string[] = [];
+        for (const { door, act, refs: expectedRefs, markdown } of doors) {
+          try {
+            const documentId = await act();
+            const refs = await storedRefs(documentId);
+            if (expectedRefs) expect(refs, door).toEqual(expectedRefs(refs));
+            if (markdown !== undefined) {
+              const content = await ports.documentSync.readAsMarkdown(documentId);
+              expect(content, door).toEqual({ ok: true, value: markdown });
+            }
+            for (const ref of refs.filter((each) => each?.startsWith("ahead:"))) {
+              expect(await registeredAddress(ref), door).toMatch(new RegExp(` in ${projectId}$`));
+            }
+          } catch (error) {
+            failures.push(`${door}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
+        expect(failures).toEqual([]);
         expect(await registeredAddress(soon)).toBe(`manuscript://soon.md in ${projectId}`);
 
         // A door that forgot to hoist fails at once instead of waiting on its own locks.
         await expect(
           runInDrizzleTransaction(db, () =>
-            ports.documentSync.bindMarkdown({
+            bindMarkdown({
               holder: { documentId: holder as never },
               markdown: "[N](new.md)",
             }),
