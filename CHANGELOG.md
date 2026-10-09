@@ -2,33 +2,14 @@
 
 ## [Unreleased]
 
-- When the AI edits a link's words, rewrites the paragraph around it, or writes a link with a path it read before the target moved, the link keeps pointing at the same document. Words it unlinks stay plain, and a link it points somewhere new goes there.
-- Development: agent-edit binds every written link, image and figure to a stored ref at each write door before block alignment (correspondence, latest showing, then classify, resolve or mint), restores links outside a find splice verbatim, registers minted ahead refs before applying, and reports host-only shown-link facts on outcomes, receipts and concurrent runs. A real two-client Yjs merge matrix covers #729, #730, #728 and undo after a move in both client orders and both merge directions.
-- Renaming or moving a chapter no longer edits the chapters that link to it: their links follow the moved chapter and show its new path on the next read, with nothing written into them.
-- "Updated N links" after a move counts the links in this project that point at the moved chapters. A moved chapter's own links to chapters that stayed put are no longer counted.
-- A link to a deleted chapter stays unavailable, even if a new chapter later takes the old path, until the chapter is restored. A link written before its chapter existed connects to the first chapter created, uploaded, moved or restored at that exact path, or applied from a draft.
-- Imported files, uploads, appends and writer saves now link their documents the same way the AI's writes do: an append or save keeps every existing link on its document, and an imported link to a chapter that does not exist yet connects when that chapter appears.
-- An append, or a save from a chat, no longer undoes an edit someone made while it was being applied: their words, an unlinked link and a link pointed somewhere new all stay. An append to a file that was replaced at the same path lands on the new file and leaves the moved one untouched. Uploading a text file and creating a code file with content work again. A file whose only copy of its text is the stored copy now reports it can't be repaired instead of opening empty.
-- A save or append that was being prepared while you restored a checkpoint no longer lands in the restored document as if it had been written there: it is prepared again against what the restore left.
-- Development: a `PreparedWrite`'s base certifies the authority generation it was read in. A writer's save checks it under the live lock, and a write in a thread checks it in agent-edit's commit (`WriteContext.prepared.authority`), which also fences the journal append, including inside a transaction, where the deferred coordinator's copy now reports the committed generation. An expired certificate is `stale_generation`, which ContextFS prepares again. Clock containment stays a separate dependency check.
-- Development: whole-document writes take a `PreparedWrite`: the Yjs update from the base it was prepared against to the bound result, and the one holder it is for. ContextFS write, append and create, uploads, import and writer saves prepare before their transaction and merge it inside, so registering an ahead ref never waits on the transaction's own namespace locks; binding inside a transaction throws. ContextFS prepares again when the path's occupant or the base changed. The update is agent-edit's whole-document overwrite of the base, so a save in a thread keeps the authorship of every paragraph it kept and carries its semantic IR, as before. The string-transform edit APIs are gone, repair never reparses the stored projection, and the find-splice fallback is reported as `collab.agent_edit` / `write.link_splice_fallback`.
-- A file moved from your personal files into a project now becomes part of that project's live files, so links waiting at its new path connect to it. A link to an image waiting at an upload's path always connects to that upload, even if it moves at once.
-- Development: the resolver endpoint answers batches of `(ref, href)` links; a link to a document the reader cannot reach answers `gone` without a location. The link index is keyed by link key, the link-update worker, link redirects and the `link-update` journal origin are gone.
+- Links name the document they point at. Renaming or moving a chapter no longer edits the chapters that link to it: their links follow it and show its new path on the next read, and "Updated N links" counts the links in this project that point at what moved. When the AI edits a link's words, rewrites the paragraph around it, or writes a path it read before the target moved, the link keeps its document; words it unlinks stay plain, and a link it points somewhere new goes there.
+- Links you insert with `@`, Ctrl+K or a paste, and links in imports, uploads, appends and saves, all name their document. Pasting within a project keeps each link on its document; pasting into another project links by address. Copied plain text spells each link's current full address.
+- A link to a deleted or unreadable document stays where you wrote it, drawn dashed, and says "No longer available". It never opens a document that later takes its path, and it works again if the document is restored. A link written before its document exists connects to the first document created, uploaded, moved in, restored or applied from a draft at that exact path.
+- An append or a save from a chat no longer undoes an edit made while it was being applied, and one prepared while you restored a checkpoint is prepared again against the restored text. An append to a file replaced at the same path lands on the new file. Uploading a text file and creating a code file with content work again. A file whose only copy of its text is the stored copy says it can't be repaired instead of opening empty. Downloading a chapter whose live text can't be read fails with a retryable error (503) instead of serving a stale copy.
+- Development: links store a ref (`doc:` or `ahead:`) beside their href. agent-edit binds every written link, image and figure at each write door (correspondence, latest showing, then classify, resolve or mint), registers ahead refs before applying, and reports host-only shown-link facts; a two-client Yjs merge matrix covers #728, #729, #730 and undo after a move. Whole-document writes take a `PreparedWrite` prepared outside their transaction, whose base certifies its authority generation (`stale_generation` prepares again). Model writes and checkpoint restore apply ProseMirror nodes directly, and the string-transform edit APIs are gone.
+- Development: migration 0032 adds `link_ahead_refs` and `thread_shown_links`, recreates `document_links` keyed by link key and drops `link_redirects`; the link-update worker and the `link-update` journal origin are gone. The resolver endpoint answers batches of `(ref, href)`, and a link the reader cannot reach answers `gone` without a location. Revision tokens move from `y1:` to `y2:` and cover where linked documents and images sit.
 
-- Downloading a chapter whose live text can't be read right now fails with a retryable error (503) instead of serving a stored copy that could show a link or image at a path it has since moved from.
-- Development: document revision tokens move from `y1:` to `y2:` and now cover where each linked document and image sits, so moving a linked chapter changes the revision of the chapters that link to it.
-- A link to a deleted or unreadable document stays where you wrote it, drawn dashed, and says "No longer available" in its hint, menu and link form. It no longer opens anything, and it never jumps to another document that later takes the same path. A link to a document you have not written yet still says "Doesn't exist yet" and offers Create.
-- Links you insert with `@`, Ctrl+K or a paste name their document, so they keep pointing at it when it moves or is renamed. Copying and pasting within a project keeps each link on its document; pasting into another project links by address.
-- Copied plain text spells every internal link as its document's current full address.
-
-- Development: add pure link-ref correspondence with lexicographic matching, historical holder normalization and diagnostic bounded order completion. Reviewer fixtures and exhaustive oracle rows reuse the existing test-count budget.
-- Development: model writes and checkpoint restore apply ProseMirror nodes directly, with no Markdown round trip between resolving and applying. Markdown-generated writes are unchanged; a restored native snapshot keeps structure the old round trip normalized away. A restore that fails leaves the journal and live document untouched.
-- Development: preserve link identity across rewritten and reordered spans with exact lexicographic correspondence and historical holder normalization.
-
-- Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
-
-- Development: trim duplicate maintenance-attribution cases; retain four focused risks and one suite-owned PostgreSQL convergence witness.
-- Draft saves no longer credit automatic link rewrites or reconciliation to the writer; authored block credit survives maintenance.
+- Draft saves no longer credit reconciliation to the writer; authored block credit survives it.
 
 - Development: fold six split lifecycle tests into the scenarios they continue: one run lease from acquire through stale release, Agent catalog removal then restore, Retry then the superseded original, fork-ID replay after source trash, and nested presence suspension. Outcome checks stay beside each transition.
 - Development: reconcile the focused suite with current image-path and model-write regression contracts without restoring retired scaffolding.
@@ -41,7 +22,7 @@
 
 - AI writes accept `<img>` without a closing slash. Image paths, alt text and widths survive read-back.
 
-- A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes, downloads and link updates keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one image-path snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading image paths no longer holds up branch edits during reads or Apply.
+- A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes and downloads keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one link snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading link paths no longer holds up branch edits during reads or Apply.
 - Chapter overwrites parse replacement content once, including unchanged writes. Changed writes no longer render three discarded snapshots or an unused echo.
 
 - Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
@@ -111,14 +92,12 @@
 - An archived Work's draft offers no Apply or Discard (the review header, the chat dock and the Changes cards); Review draft still opens it read-only.
 - Switching a Work to auto-apply offers Keep beside Apply for its pending changes; an archived Work offers only Keep.
 - Development: migration 0027 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
-- Renaming or moving a document rewrites the links to it in your other documents in the background, keeping custom link words and each link's style (relative path or full address). Until a rewrite lands, the old links still open the moved document, and chat messages that linked it before the move keep opening it until another document takes the old place.
-
 
 - Documents and chat go offline promptly and retry together when the network returns, the tab wakes, or another connection recovers. Resource and working-set sync share the same recovery signals.
 - Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice, and the provider's status and message stay on the failed reply (`./mf thread view`).
 - Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
 
-- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
+- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link points at what moved or the rename is refused.
 
 - Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item. The repair field offers the latest name you typed.
 
@@ -247,9 +226,6 @@
 - Use one summary rule for compaction and handoff: known-too-large requests roll, warm source requests branch, and cold requests roll. Fail each attempt once and meter returned attempts on the owning turn.
 - Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 
-
-
-
 ### Changed
 - Regenerate the handoff migration in place; keep the inbox control schema limited to compact.
 - Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
@@ -266,7 +242,6 @@
 - Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
 - Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
 - Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events. If late arrivals make the successor too large, commit C and fail the successor reply with its normal fit error.
-
 
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 
