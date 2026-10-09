@@ -1,5 +1,5 @@
 // Whole-document overwrite: the correspondence a `create` with overwrite=true resolves, and its
-// lowering for hosts that prepare a whole-document write ahead of applying it.
+// lowering for hosts that bind a whole-document write ahead of applying it.
 import type * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
@@ -18,7 +18,7 @@ import { applyEdits } from "./apply-edits.js";
 import type { ApplyTransactionOrigin } from "./types.js";
 
 /**
- * Rewrite every block of `ctx.doc` as `written`, bound against the blocks it
+ * Rewrite every block of `ctx.doc` as `written`, assigned against the blocks it
  * replaces; `empty` content removes them all. Unchanged blocks stay as they are.
  */
 export function resolveOverwrite(
@@ -52,7 +52,7 @@ export type LoweredOverwrite =
   | { ok: false; code: string; message: string };
 
 /**
- * Lower an overwrite of `doc` with nodes the host already bound (contract
+ * Lower an overwrite of `doc` with nodes the host already assigned (contract
  * §6.2): the same correspondence and IR a `create` with overwrite=true
  * computes, so certified provenance can be written against the result. An
  * empty document takes the nodes as a plain insertion.
@@ -77,7 +77,7 @@ export function lowerOverwrite(input: {
     return { ok: true, ir: null };
   }
   const resolved = resolveOverwrite(
-    { doc: handle, model: input.model, codec: input.codec, links: "prebound" },
+    { doc: handle, model: input.model, codec: input.codec, links: "preassigned" },
     { documentId: input.documentId, filePath: "document.md" },
     { content: input.content, parsedContent: { blocks: [...input.blocks] } },
     input.blocks.length === 0,

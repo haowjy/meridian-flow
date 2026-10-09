@@ -15,7 +15,7 @@ import { applyConcurrentUpdates, computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
 const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 

@@ -1,9 +1,10 @@
 /**
  * The one traversal of stored link occurrences: link runs, `image` and `figure`.
  *
- * The server's link extractor, the client binder and agent-edit's ref
- * assignment all walk ProseMirror the same way through here, and
- * `parseWithSpans` aligns its source spans to this exact order.
+ * The client binder and agent-edit's ref assignment walk ProseMirror through
+ * here, and `parseWithSpans` aligns its source spans to this exact order.
+ * Agent-edit's `extractStoredLinks` walks live Yjs the same way; a parity row
+ * in its `assign-refs.test.ts` pins the two.
  */
 import { storedLinkRef } from "@meridian/contracts";
 import type { Mark, Node as PMNode } from "prosemirror-model";

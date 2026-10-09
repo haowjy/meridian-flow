@@ -1,5 +1,5 @@
-// A host-prepared write is admitted under the document's lock only where its base is.
-// The replaced-generation refusal and the host's re-prepare are witnessed end to end by the
+// A host-bound write is admitted under the document's lock only where its base is.
+// The replaced-generation refusal and the host's rebind are witnessed end to end by the
 // A2-R2 rows in apps/server/server/domains/collab/link-binding.db.test.ts.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -11,8 +11,8 @@ import { codec, context, harness, model } from "./test-support/write-tool-harnes
 
 const GENERATION_1: JournalAuthority = { authorityId: "authority-a", generation: 1n };
 
-/** A write prepared now: against the live document (`fresh`: against an empty one). */
-function preparedSetup(live: JournalAuthority, fresh: boolean) {
+/** A write bound now: against the live document (`fresh`: against an empty one). */
+function boundSetup(live: JournalAuthority, fresh: boolean) {
   const ctx = harness({ "chapter.md": "Alpha." });
   Object.assign(ctx.coordinator, { documentAuthority: () => live });
   const draft = new Y.Doc({ gc: false });
@@ -22,7 +22,7 @@ function preparedSetup(live: JournalAuthority, fresh: boolean) {
   const update = Y.encodeStateAsUpdate(draft, stateVector);
   draft.destroy();
   const write = () =>
-    ctx.core.applyPrepared(
+    ctx.core.applyBound(
       {
         documentId: "chapter.md",
         base: fresh ? null : { authority: live, stateVector },
@@ -34,8 +34,8 @@ function preparedSetup(live: JournalAuthority, fresh: boolean) {
   return { ctx, write };
 }
 
-describe("prepared write admission", () => {
-  it("admits a prepared write only where its base is, fencing the append", async () => {
+describe("bound write admission", () => {
+  it("admits a bound write only where its base is, fencing the append", async () => {
     const rows = [
       {
         row: "admitted into the generation its base was read in",
@@ -53,7 +53,7 @@ describe("prepared write admission", () => {
       },
     ];
     for (const { row, fresh, status, blocks, fence } of rows) {
-      const { ctx, write } = preparedSetup(GENERATION_1, fresh);
+      const { ctx, write } = boundSetup(GENERATION_1, fresh);
       const outcome = await write();
       expect.soft(outcome.status, row).toBe(status);
       expect.soft(blockTexts(ctx.liveDoc("chapter.md")), row).toEqual(blocks);

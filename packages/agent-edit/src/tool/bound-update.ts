@@ -1,4 +1,4 @@
-// Admission of a host-prepared whole-document update: one set of rules for every door that applies one.
+// Admission of a host-bound whole-document update: one set of rules for every door that applies one.
 import * as Y from "yjs";
 import { toDocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -9,14 +9,14 @@ import { status } from "./response-format.js";
 
 /**
  * A whole-document write a host bound outside its transaction (the server's
- * `PreparedWrite`, contract §6.2): a Yjs mutation against a certified base,
+ * `BoundWrite`, contract §6.2): a Yjs mutation against a certified base,
  * never a desired state, so anything admitted since the base merges with it.
  */
-export interface PreparedUpdate {
+export interface BoundUpdate {
   /**
-   * What the update was prepared against: the authority generation it was
+   * What the update was bound against: the authority generation it was
    * read in (the certificate) and its clocks (the update's dependency).
-   * Null: prepared fresh, for a document with no blocks.
+   * Null: bound fresh, for a document with no blocks.
    */
   readonly base: {
     readonly authority: JournalAuthority;
@@ -34,7 +34,7 @@ export interface PreparedUpdate {
   } | null;
 }
 
-export type PreparedRefusal =
+export type BoundRefusal =
   /** The base's generation was replaced (a restore), even if every clock survived. */
   | "authority_replaced"
   /** The document lacks clocks the update depends on. */
@@ -43,7 +43,7 @@ export type PreparedRefusal =
   | "not_empty";
 
 /**
- * Admit `prepared` into `doc`: a private copy of a document taken under its
+ * Admit `bound` into `doc`: a private copy of a document taken under its
  * lock, whose authority generation is `authority` (undefined: the host keeps
  * no generations). On a refusal `doc` may be half-changed; discard it.
  *
@@ -52,17 +52,17 @@ export type PreparedRefusal =
  * nothing of which generation it is in. `certified` admits the overwrite's
  * provenance with the update; a writer's fresh save applies the update alone.
  */
-export function admitPreparedUpdate(
+export function admitBoundUpdate(
   doc: Y.Doc,
-  prepared: PreparedUpdate,
+  bound: BoundUpdate,
   input: {
     authority: JournalAuthority | undefined;
     model: Pick<AgentEditModel, "getBlocks">;
     origin: unknown;
     certified: boolean;
   },
-): PreparedRefusal | null {
-  const { base } = prepared;
+): BoundRefusal | null {
+  const { base } = bound;
   if (base === null) {
     if (input.model.getBlocks(toDocHandle(doc)).length > 0) return "not_empty";
   } else {
@@ -71,38 +71,35 @@ export function admitPreparedUpdate(
     }
     if (!containsClocks(doc, base.stateVector)) return "base_missing";
   }
-  return mergePreparedUpdate(doc, prepared, input.origin, input.certified) ? null : "base_missing";
+  return mergeBoundUpdate(doc, bound, input.origin, input.certified) ? null : "base_missing";
 }
 
 /**
- * Merge `prepared` into `doc` without admitting it: staging on a copy whose
+ * Merge `bound` into `doc` without admitting it: staging on a copy whose
  * admission is decided under the lock. False when a dependency is missing.
  */
-export function mergePreparedUpdate(
+export function mergeBoundUpdate(
   doc: Y.Doc,
-  prepared: PreparedUpdate,
+  bound: BoundUpdate,
   origin: unknown,
   certified: boolean,
 ): boolean {
-  Y.applyUpdate(doc, prepared.update, origin);
-  if (certified && prepared.certified) Y.applyUpdate(doc, prepared.certified.provenance, origin);
+  Y.applyUpdate(doc, bound.update, origin);
+  if (certified && bound.certified) Y.applyUpdate(doc, bound.certified.provenance, origin);
   return doc.store.pendingStructs === null && doc.store.pendingDs === null;
 }
 
-/** A refused prepared write's result: its host prepares the write again. */
-export function preparedRefusalResult(
-  documentId: string,
-  refusal: PreparedRefusal,
-): InternalWriteResult {
+/** A refused bound write's result: its host binds the write again. */
+export function boundRefusalResult(documentId: string, refusal: BoundRefusal): InternalWriteResult {
   return status("invalid_write", REFUSAL_MESSAGES[refusal], {
-    error: { type: "prepared_base", code: refusal, documentId },
+    error: { type: "bound_base", code: refusal, documentId },
   });
 }
 
-const REFUSAL_MESSAGES: Record<PreparedRefusal, string> = {
-  authority_replaced: "The document was restored; prepare the write again.",
-  base_missing: "The document lacks the state this write was prepared against; prepare it again.",
-  not_empty: "The document has content this fresh write never saw; prepare it again.",
+const REFUSAL_MESSAGES: Record<BoundRefusal, string> = {
+  authority_replaced: "The document was restored; bind the write again.",
+  base_missing: "The document lacks the state this write was bound against; bind it again.",
+  not_empty: "The document has content this fresh write never saw; bind it again.",
 };
 
 function sameAuthority(left: JournalAuthority, right: JournalAuthority): boolean {

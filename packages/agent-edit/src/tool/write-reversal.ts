@@ -25,9 +25,9 @@ import {
 } from "../undo/reversal-plan.js";
 import { reconstructReversalUpdate, reversalBaselineDoc } from "../undo/reversal-reconstruction.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
+import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { type BoundLinks, bindLinks } from "./link-binding.js";
 import type {
   DestructiveSweepReport,
   MutationCommit,
@@ -83,7 +83,7 @@ export interface WriteReversal {
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
 }
 
-/** The context a reversal's links bind in: its thread, and the view its history lives in. */
+/** The context a reversal's links are opened in: its thread, and the view its history lives in. */
 function linkContext(input: { session: ActorSession; linkView?: LinkView }): WriteContext {
   return {
     threadId: input.session.threadId,
@@ -293,7 +293,7 @@ export function createWriteReversal(deps: {
     linkView?: LinkView;
     filePath?: string;
   }): Promise<InternalWriteResult> {
-    const links = await bindLinks(deps, {
+    const links = await openCommandLinks(deps, {
       documentId: input.docId,
       docs: [input.runtime.doc],
       context: linkContext(input),
@@ -343,7 +343,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
-    links: BoundLinks;
+    links: CommandLinks;
     linkView?: LinkView;
     direction: "undo" | "redo";
     selection: ReversalSelection;
@@ -386,7 +386,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
-    links: BoundLinks;
+    links: CommandLinks;
     linkView?: LinkView;
     direction: "undo" | "redo";
     selection: ReversalSelection;
@@ -517,7 +517,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
-    links: BoundLinks;
+    links: CommandLinks;
     commandName: DocumentCommandName;
     direction: "undo" | "redo";
     actor: ReversalActor;
@@ -707,7 +707,7 @@ export function createWriteReversal(deps: {
   function otherEditsCheck(
     direction: "undo" | "redo",
     plans: readonly PreparedReversal[],
-    links: BoundLinks,
+    links: CommandLinks,
   ): (after: readonly BlockSnapshot[]) => boolean {
     const baseline = reversalBaselineDoc(
       direction,

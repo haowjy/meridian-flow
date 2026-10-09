@@ -102,7 +102,7 @@ export function createAgentEditRuntime(input: {
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
       identityPreservingWrite: ({ documentId, content, actor }) =>
-        liveUtilityCore.applyPrepared(
+        liveUtilityCore.applyBound(
           { documentId, base: content.base, update: content.update, certified: content.certified },
           {
             actor,

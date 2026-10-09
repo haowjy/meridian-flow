@@ -238,7 +238,7 @@ export function createEffectiveDocumentReader(input: {
       return readEffective(command, async (handle): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
         const scope = await spelling(command, doc);
-        const codec = input.codec.bind(scope);
+        const codec = input.codec.forScope(scope);
         const read = versioned(doc, scope, (doc) =>
           input.model.serializeBlockLines(toDocHandle(doc), codec),
         );

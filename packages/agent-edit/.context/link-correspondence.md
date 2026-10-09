@@ -3,14 +3,14 @@
 A stored link, `image` or `figure` carries a `ref` (`doc:<id>` or
 `ahead:<uuid>`); Markdown never does. Every door that turns written Markdown
 into nodes decides which ref each written occurrence means, then applies the
-bound nodes with no Markdown round trip ([design][design]).
+assigned nodes with no Markdown round trip ([design][design]).
 
 ## Ref assignment (`src/links/assign-refs.ts`)
 
 `assignLinkRefs` runs after parse, over the command's prepared
 `HolderLinkScope`, in order:
 
-1. The shipped `asset:` image rule (`bindSources`); `asset:` sources leave the run.
+1. The shipped `asset:` image rule (`assignSources`); `asset:` sources leave the run.
 2. Correspondence (passes 1 and 2, below) over ref-bearing old occurrences in
    the replaced span. Links and sources correspond separately, each under its
    own address grammar (holder-relative for links, manuscript-root for sources).
@@ -23,7 +23,7 @@ bound nodes with no Markdown round trip ([design][design]).
 
 Attribute policy, per written occurrence:
 
-| Binding | Stored attrs |
+| Match | Stored attrs |
 |---|---|
 | pass 1, title and suffix unchanged | the old attrs verbatim: no format item is emitted |
 | pass 1, title or suffix changed | old ref, written title, `storedHref(current address, written suffix)` |
@@ -36,13 +36,14 @@ reused, so an unchanged block stays `.eq` and block alignment keeps it.
 
 ## Doors
 
-`createWriteLinkAssigner` is the per-command binder the handler builds after
-`prepare` and hands the resolver's plan to bind. It collects the ahead refs
+`createWriteLinkAssigner` is the per-command ref assigner the handler builds after
+`prepare` and hands the resolver's plan to assign with (`assignSpan`,
+`assignSplice`). It collects the ahead refs
 it mints.
 
 | Door | Old occurrences | Notes |
 |---|---|---|
-| block replace (`replaceScope`) | the old scope | bound before `alignBlocks` and no-op detection |
+| block replace (`replaceScope`) | the old scope | assigned before `alignBlocks` and no-op detection |
 | insert, append | none | |
 | create, create-overwrite | none / the whole document | overwrite is whole-document correspondence |
 | formatted or cross-block find | inside the splice only | `restoreOutsideSplice` (below) |
@@ -52,9 +53,9 @@ it mints.
 
 Handler order: load `context.shownLinks`, `links.prepare` (docs, `shown`, and
 `stored` for copies), `scopeFor`, then `planWrite` (`resolver/resolve.ts`):
-scope, matches, splices and every node binding will see, a find's
+scope, matches, splices and every node assignment will see, a find's
 reconstructed groups included, parsed with spans. The planned nodes load in a
-second, incremental `prepare` (`written`), then `plan.bind` assigns and
+second, incremental `prepare` (`written`), then `plan.assign` assigns and
 aligns synchronously. A create parses up front and prepares once. Then
 `links.registerAhead(minted)` before the write reserves an ordinal, applies,
 stages or takes any lock. A registration failure fails the write before
@@ -70,14 +71,14 @@ pre-splice text and one union splice over every match. Occurrences whose
 source span ends before the splice, or starts after it, keep their old
 twin's attrs verbatim; only inside occurrences are assigned. When the
 surrounding syntax reparses differently, or ingress rewrote the text so every
-span is the whole text, the whole group is bound instead and
+span is the whole text, the whole group is assigned instead and
 `onLinkSpliceFallback` reports it: identity still follows correspondence, but
 unchanged links in that group may churn their formatting.
 
 ## Shown-link facts (`src/links/shown.ts`)
 
 Host-only evidence of what the model saw: `{ ref, address }` per ref-bearing
-occurrence actually rendered. The bound codec keeps a ledger of every
+occurrence actually rendered. The command's scoped codec keeps a ledger of every
 link-bearing hashline it renders (the hash and body it emitted, and each
 ref-bearing occurrence's address spelled in that scope), and `codec.shownLinks(items)`
 reads a result's items back by the hash they carry, never the document's
@@ -88,7 +89,7 @@ whose links carry no ref is kept as one, so it clears an earlier ref; an item th
 codec never rendered, or a reparse that disagrees, counts nothing. They ride on `WriteOutcome.shownLinks` (reads, echoes, undo
 and redo), `ResponseCommitWriteReceipt.shownLinks`, and each
 `ConcurrentEditRun.shownLinks` (per run, because the request budget may drop
-runs), each with `shownView`, the view the binding spelled them in
+runs), each with `shownView`, the view the command links spelled them in
 (`shownEvidence` in `links/shown.ts`). None of them reaches `result`. `WriteContext.shownLinks(documentId)`
 delivers the thread's stored showings back to assignment; agent-edit never
 reads thread history.

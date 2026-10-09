@@ -98,7 +98,7 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
   ];
   for (const row of rows) expect.soft(await row.facts(), row.name).toEqual(row.expected);
 
-  // Unit level: facts come from what one bound codec rendered, never the current state.
+  // Unit level: facts come from what one scoped codec rendered, never the current state.
   const links = createStaticDocumentLinks({
     projectId: PROJECT,
     documents: [
@@ -119,7 +119,7 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
     })),
   });
   const scope = links.scopeFor(H, undefined);
-  const render = (doc: Y.Doc, codec = codecFactory.bind(scope)) => ({
+  const render = (doc: Y.Doc, codec = codecFactory.forScope(scope)) => ({
     codec,
     items: model.serializeBlockLines(toDocHandle(doc), codec).map(modelBlockItem),
   });
@@ -135,7 +135,9 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
   expect
     .soft(codec.shownLinks([{ hash: item.hash, body: "different text" }]), "never rendered")
     .toEqual([]);
-  expect.soft(codecFactory.bind(scope).shownLinks(items), "rendered by another codec").toEqual([]);
+  expect
+    .soft(codecFactory.forScope(scope).shownLinks(items), "rendered by another codec")
+    .toEqual([]);
 
   // A later block whose id collides with the rendered hash widens every hash; the
   // item still names the block it was rendered from.

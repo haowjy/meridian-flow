@@ -2,9 +2,9 @@
 import { expect, it } from "vitest";
 import { reviewerFixtures } from "./correspondence.fixtures.js";
 import {
-  type Binding,
   type CorrespondenceInput,
   correspondLinks,
+  type LinkMatch,
   type ShownLink,
 } from "./correspondence.js";
 
@@ -33,7 +33,7 @@ const input = (values: Partial<CorrespondenceInput>): CorrespondenceInput => ({
 });
 
 /** Independent exhaustive ranking: no components, assignment duals or alternating paths. */
-function exhaustive(values: CorrespondenceInput): Binding[] {
+function exhaustive(values: CorrespondenceInput): LinkMatch[] {
   const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   const showingOrder = (a: ShownLink, b: ShownLink) =>
     b.at - a.at ||
@@ -140,13 +140,13 @@ function exhaustive(values: CorrespondenceInput): Binding[] {
   });
 }
 
-it("preserves r7 reviewer bindings, stated ambiguities and historical holder normalization", () => {
+it("preserves r7 reviewer matches, stated ambiguities and historical holder normalization", () => {
   expect(reviewerFixtures).toHaveLength(28);
   for (const fixture of reviewerFixtures) {
     const values = input({ ...fixture, isLive: (ref) => fixture.live.includes(ref) });
     expect.soft(correspondLinks(values), fixture.name).toEqual(fixture.expected);
   }
-  const cases: Array<{ name: string; values: CorrespondenceInput; expected: Binding[] }> = [
+  const cases: Array<{ name: string; values: CorrespondenceInput; expected: LinkMatch[] }> = [
     {
       name: "r7 strong precedence sacrifices two weak historical continuations",
       values: input({

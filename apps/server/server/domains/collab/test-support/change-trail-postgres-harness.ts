@@ -121,7 +121,7 @@ const documentSchema = buildDocumentSchema();
 const markupCodec = mdxCodec({
   schema: documentSchema,
 });
-const agentEditCodec = createAgentEditCodecFactory(markupCodec).bind(UNSCOPED_DOCUMENT_LINKS);
+const agentEditCodec = createAgentEditCodecFactory(markupCodec).forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(documentSchema);
 
 export const USER_ID = "00000000-0000-4000-8000-000000000801";

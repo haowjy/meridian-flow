@@ -33,18 +33,21 @@ export interface SpliceRestoreInput {
   /** `newText` parsed with spans. */
   parsed: ParsedContentWithSpans;
   splice: FindSplice;
-  /** Prepares freshly parsed nodes for binding (the `asset:` rule); occurrence order is kept. */
-  prepare(blocks: readonly PMNode[]): PMNode[];
+  /** Applies the `asset:` rule to freshly parsed nodes; occurrence order is kept. */
+  assignSources(blocks: readonly PMNode[]): PMNode[];
   /** Ref assignment for the inside occurrences, index-aligned with `written`. */
-  bind(old: readonly LinkOccurrence[], written: readonly LinkOccurrence[]): OccurrenceAttrs[];
+  assignOccurrences(
+    old: readonly LinkOccurrence[],
+    written: readonly LinkOccurrence[],
+  ): OccurrenceAttrs[];
 }
 
-/** Why the splice could not be restored precisely; the caller binds the whole group. */
+/** Why the splice could not be restored precisely; the caller assigns the whole group. */
 export type SpliceFallback = "misaligned" | "coarse-spans" | "surroundings-reparsed";
 
 /**
  * The new group's nodes with outside occurrences restored and inside ones
- * bound, or a fallback reason when the outside cannot be told apart: the
+ * assigned, or a fallback reason when the outside cannot be told apart: the
  * splice changed how the surrounding syntax parses (prefix or suffix counts
  * differ), or ingress rewrote the text so every span is the whole text.
  */
@@ -55,7 +58,7 @@ export function restoreOutsideSplice(
   const oldOccurrences = walkLinkOccurrences(input.oldGroup);
   const { oldSpans, parsed } = input;
   const { newText } = input;
-  const blocks = input.prepare(parsed.blocks);
+  const blocks = input.assignSources(parsed.blocks);
   const newOccurrences = walkLinkOccurrences(blocks);
   // The serialized old group must reparse into the same occurrences, or its spans name nothing.
   if (oldSpans.length !== oldOccurrences.length || parsed.spans.length !== newOccurrences.length)
@@ -88,8 +91,8 @@ export function restoreOutsideSplice(
   }
   const insideOld = oldOccurrences.slice(oldPrefix, oldOccurrences.length - oldSuffix);
   const insideWritten = newOccurrences.slice(newPrefix, newOccurrences.length - newSuffix);
-  const bound = input.bind(insideOld, insideWritten);
-  bound.forEach((value, offset) => {
+  const assigned = input.assignOccurrences(insideOld, insideWritten);
+  assigned.forEach((value, offset) => {
     attrs[newPrefix + offset] = value;
   });
   return { nodes: rebuildOccurrences(blocks, newOccurrences, attrs) };
@@ -97,7 +100,7 @@ export function restoreOutsideSplice(
 
 /**
  * Ingress rewrote the text, so every span is the whole text and none tells
- * the outside apart (a lone link that is the whole text binds the same way
+ * the outside apart (a lone link that is the whole text is assigned the same way
  * either path).
  */
 function coarse(spans: readonly { start: number; end: number }[], text: string): boolean {

@@ -11,6 +11,7 @@ import {
   splitDocumentHrefSuffix,
 } from "@meridian/contracts";
 import * as Y from "yjs";
+import { storedLinkKeys } from "../links/stored-links.js";
 import {
   createHolderLinkScope,
   type DocumentLinksPort,
@@ -18,7 +19,6 @@ import {
   type HolderLinkScope,
   writtenAddresses,
 } from "./document-links.js";
-import { storedLinkKeys } from "./stored-link-extraction.js";
 
 export interface StaticCatalogDocument extends CatalogDocument {
   /** An image the shipped `asset:` rule may claim. */

@@ -36,7 +36,7 @@ export interface CorrespondenceInput {
   /** Current liveness of a shown ref at the address it was shown, for pass 2 ties. */
   isLive(ref: string, address: string): boolean;
 }
-export type Binding = { pass: 1; occurrence: number } | { pass: 2; ref: string } | { pass: 3 };
+export type LinkMatch = { pass: 1; occurrence: number } | { pass: 2; ref: string } | { pass: 3 };
 function continuity(a: string, b: string) {
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
@@ -61,7 +61,7 @@ function showingOrder(a: ShownLink, b: ShownLink) {
 }
 
 /** Passes 1 and 2 of ref assignment; classification and fresh resolution remain the caller's. */
-export function correspondLinks(input: CorrespondenceInput): Binding[] {
+export function correspondLinks(input: CorrespondenceInput): LinkMatch[] {
   const history = new Map<string, ShownLink[]>();
   for (const showing of input.shown) {
     const entries = history.get(showing.ref) ?? [];
@@ -114,7 +114,7 @@ export function correspondLinks(input: CorrespondenceInput): Binding[] {
     latest.map((showing) => [showing.ref, input.isLive(showing.ref, showing.address)]),
   );
   latest.sort((a, b) => Number(live.get(b.ref)) - Number(live.get(a.ref)) || showingOrder(a, b));
-  const bindings = input.written.map((_, j): Binding => {
+  const matches = input.written.map((_, j): LinkMatch => {
     const occurrence = matching[j];
     if (occurrence >= 0) return { pass: 1, occurrence };
     const showing = latest.find((candidate) => {
@@ -123,5 +123,5 @@ export function correspondLinks(input: CorrespondenceInput): Binding[] {
     });
     return showing ? { pass: 2, ref: showing.ref } : { pass: 3 };
   });
-  return bindings;
+  return matches;
 }

@@ -161,7 +161,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
           enlistResponseParticipant: input.enlistResponseParticipant,
           model: input.model,
           // Attribution compares blocks as stored: a linked document's move is no one's edit.
-          codec: input.codec.bind(UNSCOPED_DOCUMENT_LINKS),
+          codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
           concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
         lifecycle: input.lifecycle,

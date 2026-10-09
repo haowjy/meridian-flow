@@ -71,7 +71,7 @@ function harness() {
     },
   };
   const content = {
-    prepare: vi.fn(async () => ({ ok: true as const, prepared: null })),
+    bind: vi.fn(async () => ({ ok: true as const, bound: null })),
     persist: vi.fn<() => Promise<{ ok: true } | { ok: false; definite: boolean }>>(async () => ({
       ok: true,
     })),

@@ -51,7 +51,7 @@ const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
 const schema = buildDocumentSchema();
 const codecFactory = createAgentEditCodecFactory(mdxCodec({ schema }));
-const codec = codecFactory.bind(UNSCOPED_DOCUMENT_LINKS);
+const codec = codecFactory.forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {

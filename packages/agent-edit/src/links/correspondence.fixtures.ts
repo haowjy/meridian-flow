@@ -1,5 +1,5 @@
 // Round-7 reviewer fixtures; fresh resolution is deliberately left to the caller.
-import type { Binding, OldOccurrence, ShownLink, WrittenLink } from "./correspondence.js";
+import type { LinkMatch, OldOccurrence, ShownLink, WrittenLink } from "./correspondence.js";
 
 export interface Fixture {
   name: string;
@@ -7,7 +7,7 @@ export interface Fixture {
   written: WrittenLink[];
   shown: ShownLink[];
   live: string[];
-  expected: Binding[];
+  expected: LinkMatch[];
 }
 const old = (label: string, ref: string, current: string, live = true): OldOccurrence => ({
   label,
@@ -28,7 +28,7 @@ const fixture = (
   written: WrittenLink[],
   shown: ShownLink[],
   live: string[],
-  expected: Binding[],
+  expected: LinkMatch[],
 ): Fixture => ({ name, old, written, shown, live, expected });
 
 export const reviewerFixtures: Fixture[] = [

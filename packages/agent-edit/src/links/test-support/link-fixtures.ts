@@ -157,7 +157,7 @@ export function linkHarness(input: {
     async markdown(of: Y.Doc = live()) {
       await links.prepare({ documentId: input.holder.id, docs: [of] });
       return codecFactory
-        .bind(links.scopeFor(input.holder.id, undefined))
+        .forScope(links.scopeFor(input.holder.id, undefined))
         .serialize(prosemirrorBlocksForDoc(of, schema))
         .trim();
     },

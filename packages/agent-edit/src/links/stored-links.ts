@@ -3,6 +3,11 @@
  * straight from the Yjs tree (never a ProseMirror projection) so the scope's
  * `prepare({ docs })`, the view-revision digest and derive stay cheap; and the
  * keys a host must load before spelling them (every adapter's `prepare`).
+ *
+ * The Yjs twin of markup's `walkLinkOccurrences`, which ref assignment and
+ * shown facts walk: both must yield the same `(kind, ref, href)` sequence for
+ * one document, or the note count and revision digest drift from what
+ * assignment sees. `assign-refs.test.ts` pins that parity.
  */
 import { resolveDocumentHref, storedLinkRef } from "@meridian/contracts";
 import { type PMNode, walkLinkOccurrences } from "@meridian/markup";

@@ -65,7 +65,7 @@ if (!RUN) {
       const intake = createUploadIntake({
         repository,
         content: {
-          prepare: async () => ({ ok: true, prepared: null }),
+          bind: async () => ({ ok: true, bound: null }),
           persist: async () => ({ ok: true }),
           async remove({ reservation }) {
             removed.push(reservation.documentId);

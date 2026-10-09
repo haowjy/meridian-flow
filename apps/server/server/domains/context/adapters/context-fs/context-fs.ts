@@ -18,6 +18,7 @@ import type { SpelledLinkFact } from "@meridian/markup";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
+  BoundWrite,
   BranchPeerShadowAccess,
   DocumentCreationAggregate,
   DocumentLinkScopes,
@@ -25,7 +26,6 @@ import type {
   EffectiveReadVersion,
   HashlineRead,
   MarkdownDocumentStore,
-  PreparedWrite,
   SyncError,
 } from "../../../collab/index.js";
 import { countWords, createDocumentCreationAggregate } from "../../../collab/index.js";
@@ -67,13 +67,13 @@ import type {
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
 import { resolveVisibleDocumentMembership } from "../../visible-document-membership.js";
-import { matchDocument } from "./match.js";
 import {
+  BoundWrites,
   binaryTrackedWriteFault,
   DEFAULT_EDITABLE_FILETYPE,
-  PreparedWrites,
   trackedFiletypeForPath,
-} from "./prepared-writes.js";
+} from "./bound-writes.js";
+import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
   /** Search spells its source's chapters from one snapshot; each read prepares its own. */
@@ -190,7 +190,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly readView?: ThreadContextView;
   private readonly scheme: ContextScheme;
   private readonly holder: ContextFSDeps["holder"];
-  private readonly preparedWrites: PreparedWrites;
+  private readonly boundWrites: BoundWrites;
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
@@ -230,7 +230,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.scheme = deps.scheme;
     this.holder = deps.holder;
     this.name = deps.scheme;
-    this.preparedWrites = new PreparedWrites({
+    this.boundWrites = new BoundWrites({
       documentSync: deps.documentSync,
       commandExecutor: this.commandExecutor,
       projectId: deps.holder.projectId,
@@ -269,7 +269,7 @@ export class ContextFS implements ContextSchemeAdapter {
     extension: string;
     filetype: Filetype;
     /** Bound before the command transaction; null creates an empty document. */
-    content: PreparedWrite | null;
+    content: BoundWrite | null;
     provisionalName?: boolean;
     options?: ContextWriteOptions;
   }): Promise<Result<{ document: ContextDocument; markdown: string }, AdapterFault>> {
@@ -465,18 +465,13 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
     // An actor's overwrite keeps the refs of links it leaves in place; import and system writes bind fresh.
     const actor = options?.origin?.type === "agent" || options?.origin?.type === "human";
-    return this.preparedWrites.command(
+    return this.boundWrites.command(
       async () => {
-        const existing = await this.preparedWrites.lookup(path);
+        const existing = await this.boundWrites.lookup(path);
         if (!existing.ok) return existing;
-        return this.preparedWrites.prepare(
-          path,
-          existing.value,
-          content,
-          actor ? "current" : undefined,
-        );
+        return this.boundWrites.bind(path, existing.value, content, actor ? "current" : undefined);
       },
-      (prepared) => this.writeInTransaction(path, prepared, options),
+      (bound) => this.writeInTransaction(path, bound, options),
     );
   }
 
@@ -486,7 +481,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   private async writeInTransaction(
     path: string,
-    content: PreparedWrite,
+    content: BoundWrite,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
@@ -501,7 +496,7 @@ export class ContextFS implements ContextSchemeAdapter {
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
     }
-    if (!this.preparedWrites.preparedFor(path, content, existing)) {
+    if (!this.boundWrites.boundFor(path, content, existing)) {
       return Err({ code: "stale_target" });
     }
     if (existing && !(await this.isVisibleDocument(existing.id))) {
@@ -535,14 +530,14 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * Prepare content for a document about to be created at `path`, before the
-   * caller's transaction opens (an upload prepares before finalizing).
+   * Bind content for a document about to be created at `path`, before the
+   * caller's transaction opens (an upload binds before finalizing).
    */
-  async prepareTrackedDocument(
+  async bindTrackedDocument(
     path: string,
     content: string,
-  ): Promise<Result<PreparedWrite, AdapterFault>> {
-    return this.preparedWrites.prepare(path, null, content);
+  ): Promise<Result<BoundWrite, AdapterFault>> {
+    return this.boundWrites.bind(path, null, content);
   }
 
   async createTrackedDocument(
@@ -550,33 +545,33 @@ export class ContextFS implements ContextSchemeAdapter {
     markdown: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
-    let prepared: PreparedWrite | null = null;
+    let bound: BoundWrite | null = null;
     if (markdown.length > 0) {
-      const preparing = await this.preparedWrites.prepare(path, null, markdown);
-      if (!preparing.ok) return preparing;
-      prepared = preparing.value;
+      const binding = await this.boundWrites.bind(path, null, markdown);
+      if (!binding.ok) return binding;
+      bound = binding.value;
     }
     return this.commandExecutor.run(() =>
-      this.createTrackedDocumentInTransaction(path, prepared, options),
+      this.createTrackedDocumentInTransaction(path, bound, options),
     );
   }
 
-  async createPreparedDocument(
+  async createBoundDocument(
     path: string,
-    prepared: PreparedWrite | null,
+    bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
-    if (prepared && !this.preparedWrites.preparedFor(path, prepared, null)) {
-      return Err({ code: "io_error", message: `Content was prepared for another document` });
+    if (bound && !this.boundWrites.boundFor(path, bound, null)) {
+      return Err({ code: "io_error", message: `Content was bound for another document` });
     }
     return this.commandExecutor.run(() =>
-      this.createTrackedDocumentInTransaction(path, prepared, options),
+      this.createTrackedDocumentInTransaction(path, bound, options),
     );
   }
 
   private async createTrackedDocumentInTransaction(
     path: string,
-    content: PreparedWrite | null,
+    content: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);

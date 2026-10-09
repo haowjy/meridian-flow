@@ -1,18 +1,18 @@
 /** ContextFS-backed upload content adapter. */
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkSlug } from "@meridian/contracts/works";
-import type { PreparedWrite } from "../../collab/index.js";
+import type { BoundWrite } from "../../collab/index.js";
 import { resolvedWorkAuthority } from "../../projects/index.js";
 import type { ContextPort } from "../ports/context-port.js";
 import type { UnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import type { UploadContentPort, UploadReservation } from "./upload-intake.js";
 
-/** Tracked text prepared before finalize; binary and empty uploads need nothing prepared. */
-type PreparedUpload = PreparedWrite | null;
+/** Tracked text bound before finalize; binary and empty uploads need nothing bound. */
+type BoundUpload = BoundWrite | null;
 
 export function createContextUploadContentPort(
   contextPorts: UnifiedContextPortFactory,
-): UploadContentPort<PreparedUpload> {
+): UploadContentPort<BoundUpload> {
   function portFor(reservation: UploadReservation, actorUserId: string): ContextPort | null {
     const owner = reservation.owner;
     const workSlug = owner.workSlug === null ? null : decodeWorkSlug(owner.workSlug);
@@ -29,13 +29,13 @@ export function createContextUploadContentPort(
     classifyFiletype(reservation.fileType).kind === "tracked";
 
   return {
-    async prepare({ reservation, actorUserId, bytes }) {
+    async bind({ reservation, actorUserId, bytes }) {
       const text = Buffer.from(bytes).toString("utf8");
-      if (!isTracked(reservation) || text.length === 0) return { ok: true, prepared: null };
+      if (!isTracked(reservation) || text.length === 0) return { ok: true, bound: null };
       const port = portFor(reservation, actorUserId);
       if (!port) return { ok: false, definite: true };
-      const prepared = await port.prepareTrackedDocument(reservation.canonicalUri, text);
-      return prepared.ok ? { ok: true, prepared: prepared.value } : { ok: false, definite: true };
+      const bound = await port.bindTrackedDocument(reservation.canonicalUri, text);
+      return bound.ok ? { ok: true, bound: bound.value } : { ok: false, definite: true };
     },
 
     async persist(input) {
@@ -51,7 +51,7 @@ export function createContextUploadContentPort(
       const classification = classifyFiletype(input.reservation.fileType);
       const result =
         classification.kind === "tracked"
-          ? await port.createPreparedDocument(input.reservation.canonicalUri, input.prepared, {
+          ? await port.createBoundDocument(input.reservation.canonicalUri, input.bound, {
               documentId: input.reservation.documentId,
               origin,
             })

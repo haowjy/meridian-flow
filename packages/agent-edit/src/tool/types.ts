@@ -150,16 +150,16 @@ export interface ResponseCommitterTransitionDetail {
 }
 
 /**
- * A host-prepared write (`AgentEditCore.applyPrepared`) refused under the
- * document's lock; the host prepares it again against the document as it is now.
+ * A host-bound write (`AgentEditCore.applyBound`) refused under the
+ * document's lock; the host binds it again against the document as it is now.
  */
-export interface PreparedBaseExpiredDetail {
-  type: "prepared_base";
-  code: import("./prepared-update.js").PreparedRefusal;
+export interface BoundBaseExpiredDetail {
+  type: "bound_base";
+  code: import("./bound-update.js").BoundRefusal;
   documentId: string;
 }
 
-export type WriteErrorDetail = ResponseLifecycleErrorDetail | PreparedBaseExpiredDetail;
+export type WriteErrorDetail = ResponseLifecycleErrorDetail | BoundBaseExpiredDetail;
 
 interface InteractionContextBase {
   /** Durable peer state captured before the host pulls concurrent upstream changes. */
@@ -219,7 +219,7 @@ export interface WriteContext {
    * Host-only showing evidence for this thread: every link the model was
    * shown in a document, with the address shown. Ref assignment reads it;
    * agent-edit never reads thread history itself. Absent for utility, seed
-   * and import writes (fresh binding by design).
+   * and import writes (fresh ref assignment by design).
    */
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
   /**
@@ -230,8 +230,8 @@ export interface WriteContext {
   linkView?: LinkView;
 }
 
-/** Who a host-prepared write is recorded for (`WriteTool.applyPrepared`). */
-export type PreparedWriteContext = Pick<WriteContext, "sessionId" | "threadId"> & {
+/** Who a host-bound write is recorded for (`WriteTool.applyBound`). */
+export type BoundWriteContext = Pick<WriteContext, "sessionId" | "threadId"> & {
   actor: MutationActor;
 };
 
@@ -266,7 +266,7 @@ export interface ResponseCommitWriteReceipt {
   writeId: string;
   settlementId: string;
   result: AgentEditResultV1;
-  /** Host-only: what the settled receipt's echo showed the model, from the commit's own binding. */
+  /** Host-only: what the settled receipt's echo showed the model, from the commit's own links. */
   showing?: LinkShowing;
 }
 

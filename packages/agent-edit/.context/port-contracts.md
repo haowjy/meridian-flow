@@ -95,9 +95,10 @@ and multiline blocks as `hash|\nbody`.
 Markdown/MDX BlockCodec and MarkCodec registration, unified/remark assembly, and
 component registry types live in `@meridian/markup`. Codec factories require the
 host's ProseMirror `Schema`. `createAgentEditCodecFactory(markup)` parses
-purely; every command binds it once at entry (`tool/link-binding.ts`
-`bindLinks`: `links.prepare` then `links.scopeFor`, then `codec.bind(scope)`)
-and passes the bound `AgentEditCodec` everywhere it serializes. agent-edit has
+purely; every command takes its codec once at entry (`tool/command-links.ts`
+`openCommandLinks`: `links.prepare` then `links.scopeFor`, then
+`codec.forScope(scope)`) and passes that scoped `AgentEditCodec` everywhere it
+serializes. agent-edit has
 no default Meridian schema and no project tree of its own.
 
 ### DocumentLinksPort (`src/ports/document-links.ts`)
@@ -106,8 +107,8 @@ The host's link scope: `prepare` (one batched load per synchronous block),
 `registerAhead` (durable, outside any transaction) and `revision`. A host that
 routes between versions names the view on every command it routes
 (`WriteContext.linkView`, and the `linkView` argument of `undo`/`redo` and
-`ReverseInput`): reversals bind in the view of the history they reverse. A
-reply's save binds each document's before sides (`preOwnSnapshot`) with its
+`ReverseInput`): reversals open their links in the view of the history they
+reverse. A reply's save prepares each document's before sides (`preOwnSnapshot`) with its
 runtime, since receipts spell links the reply removed.
 `createHolderLinkScope(holder, catalog)` applies the contracts' resolution and
 spelling rules over any `HolderCatalog`, so hosts cannot disagree;
@@ -116,10 +117,11 @@ catalog. It loads keys on `prepare` the way the server's batched loader does
 and answers an unprepared id, settlement or address as a snapshot miss
 (recorded in `misses`), so tests catch a door that forgot to prepare; the
 server's in-memory composition passes `{ preloaded: true }`.
-`storedLinkKeys` (`ports/stored-link-extraction.ts`) is what both adapters
+`storedLinkKeys` (`links/stored-links.ts`, beside the Yjs walk
+`extractStoredLinks`) is what both adapters
 load for stored occurrences (docs and `stored` nodes such as copies).
-After parse, `links/assign-refs.ts` `bindSources` applies the shipped image
-rule (a known manuscript path becomes `asset:<id>`); the write binder runs it
+After parse, `links/assign-refs.ts` `assignSources` applies the shipped image
+rule (a known manuscript path becomes `asset:<id>`); the write path's ref assigner runs it
 on every written node before correspondence, copies excepted.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
 the schema explicitly. This keeps the package host-agnostic without server/infra

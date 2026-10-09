@@ -43,9 +43,15 @@ export {
   subtractLineageRanges,
 } from "./lineage/range-set.js";
 export type { AssignInput, AssignResult } from "./links/assign-refs.js";
-export { assignLinkRefs, bindSources } from "./links/assign-refs.js";
+export { assignLinkRefs, assignSources } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
 export type { LinkShowing } from "./links/shown.js";
+export {
+  extractStoredLinks,
+  type StoredLinkKeys,
+  type StoredLinkOccurrence,
+  storedLinkKeys,
+} from "./links/stored-links.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
@@ -87,12 +93,6 @@ export {
   createStaticDocumentLinks,
   type StaticDocumentLinksOptions,
 } from "./ports/static-document-links.js";
-export {
-  extractStoredLinks,
-  type StoredLinkKeys,
-  type StoredLinkOccurrence,
-  storedLinkKeys,
-} from "./ports/stored-link-extraction.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -133,12 +133,12 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
-export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
 export {
-  admitPreparedUpdate,
-  type PreparedRefusal,
-  type PreparedUpdate,
-} from "./tool/prepared-update.js";
+  admitBoundUpdate,
+  type BoundRefusal,
+  type BoundUpdate,
+} from "./tool/bound-update.js";
+export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";

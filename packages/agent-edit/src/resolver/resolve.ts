@@ -59,9 +59,9 @@ export interface ResolveWriteContext {
   codec: AgentEditCodec;
   /**
    * Ref assignment over the command's prepared link scope; parse itself is
-   * pure syntax. Every door that turns written Markdown into nodes binds
+   * pure syntax. Every door that turns written Markdown into nodes assigns
    * through it before block alignment and no-op detection. Copies never do:
-   * their nodes already carry what they name. `"prebound"`: the caller
+   * their nodes already carry what they name. `"preassigned"`: the caller
    * already assigned refs (a host's lowered overwrite), so nodes stay as given.
    */
   links: WriteLinks;
@@ -69,8 +69,8 @@ export interface ResolveWriteContext {
   inputRevision?: string;
 }
 
-/** Ref assignment for a write, or `"prebound"` for nodes whose refs are already assigned. */
-export type WriteLinks = WriteLinkAssigner | "prebound";
+/** Ref assignment for a write, or `"preassigned"` for nodes whose refs are already assigned. */
+export type WriteLinks = WriteLinkAssigner | "preassigned";
 
 export type ResolveWriteResult =
   | { ok: true; edits: ResolvedEdit[]; ir: SemanticEditIRV1 }
@@ -90,17 +90,17 @@ interface NormalizedParams extends ResolveWriteParams {
 }
 
 /**
- * A write resolved up to binding: scope, find matches and splices are fixed,
- * and `written` holds every parsed node binding will see (a find's
+ * A write resolved up to ref assignment: scope, find matches and splices are fixed,
+ * and `written` holds every parsed node assignment will see (a find's
  * reconstructed groups included), so the host can load what they name
- * before `bind` runs synchronously over the prepared scope.
+ * before `assign` runs synchronously over the prepared scope.
  */
 export type WritePlan =
   | {
       ok: true;
       written: readonly Block[];
       /** Ref assignment, then block alignment and no-op detection. */
-      bind(links: WriteLinks): ResolveWriteResult;
+      assign(links: WriteLinks): ResolveWriteResult;
     }
   | ResolveWriteFailure;
 
@@ -145,12 +145,12 @@ export function planWrite(
     written: steps.flatMap((step) =>
       step.kind === "spliced"
         ? step.parsed.blocks
-        : step.kind === "edits" || (step.kind === "insert" && !step.bind)
+        : step.kind === "edits" || (step.kind === "insert" && !step.assign)
           ? []
           : step.blocks,
     ),
-    bind(links) {
-      const resolved = bindPlannedWrite(concreteCtx, normalized, steps, links);
+    assign(links) {
+      const resolved = assignPlannedWrite(concreteCtx, normalized, steps, links);
       if (!resolved.ok) return resolved;
       return {
         ok: true,
@@ -161,21 +161,21 @@ export function planWrite(
   };
 }
 
-/** Plan and bind in one go, for callers whose written content was prepared up front. */
+/** Plan and assign in one go, for callers whose written content is known up front. */
 export function resolveWrite(
   ctx: ResolveWriteContext,
   params: ResolveWriteParams,
 ): ResolveWriteResult {
   const plan = planWrite(ctx, params);
-  return plan.ok ? plan.bind(ctx.links) : plan;
+  return plan.ok ? plan.assign(ctx.links) : plan;
 }
 
 /** One planned piece of a write, in edit order. */
 type PlannedStep =
-  /** Edits that need no binding: removes, copies, the plain-text find shortcut. */
+  /** Edits that need no ref assignment: removes, copies, the plain-text find shortcut. */
   | { kind: "edits"; edits: ResolvedEdit[] }
-  | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; bind: boolean }
-  /** Rewrite `scope` as `blocks`, bound against the scope's old nodes. */
+  | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; assign: boolean }
+  /** Rewrite `scope` as `blocks`, assigned against the scope's old nodes. */
   | { kind: "replace"; scope: BlockScope; blocks: Block[] }
   /** A formatted find's reconstructed group: only the splice's occurrences are assigned. */
   | {
@@ -193,7 +193,7 @@ interface PlannedWrite {
   steps: PlannedStep[];
 }
 
-function bindPlannedWrite(
+function assignPlannedWrite(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   steps: readonly PlannedStep[],
@@ -207,13 +207,13 @@ function bindPlannedWrite(
         edits.push(...step.edits);
         break;
       case "insert": {
-        const blocks = step.bind ? bindSpan(links, [], step.blocks) : step.blocks;
+        const blocks = step.assign ? assignSpan(links, [], step.blocks) : step.blocks;
         edits.push(insertEdit(params, step.after, blocks));
         break;
       }
       case "replace":
       case "spliced": {
-        const lowered = replaceScope(ctx, params, step.scope, bindScope(ctx, step, links));
+        const lowered = replaceScope(ctx, params, step.scope, assignScope(ctx, step, links));
         edits.push(...lowered.edits);
         keptBlocks ||= lowered.keptBlocks === true;
         break;
@@ -223,15 +223,15 @@ function bindPlannedWrite(
   return { ok: true, edits, ...(keptBlocks ? { keptBlocks: true } : {}) };
 }
 
-/** Bound before alignment, so an unchanged block stays `.eq` and is kept. */
-function bindScope(
+/** Assigned before alignment, so an unchanged block stays `.eq` and is kept. */
+function assignScope(
   ctx: ConcreteResolveContext,
   step: Extract<PlannedStep, { kind: "replace" | "spliced" }>,
   links: WriteLinks,
 ): Block[] {
-  if (step.kind === "replace") return bindSpan(links, scopeNodes(ctx, step.scope), step.blocks);
-  if (links === "prebound") return step.parsed.blocks;
-  return links.bindSplice({
+  if (step.kind === "replace") return assignSpan(links, scopeNodes(ctx, step.scope), step.blocks);
+  if (links === "preassigned") return step.parsed.blocks;
+  return links.assignSplice({
     oldGroup: step.oldGroup,
     oldText: step.oldText,
     oldSpans: step.oldSpans,
@@ -277,7 +277,9 @@ function planInsert(
   const lowered = lowerInsertPosition(ctx, params);
   if (!lowered.ok) return lowered;
   return {
-    steps: [{ kind: "insert", after: lowered.after, blocks: parsed.blocks, bind: !params.blocks }],
+    steps: [
+      { kind: "insert", after: lowered.after, blocks: parsed.blocks, assign: !params.blocks },
+    ],
   };
 }
 
@@ -382,8 +384,8 @@ function normalizeParams(
   return { ...params, content };
 }
 
-function bindSpan(links: WriteLinks, old: readonly Block[], written: readonly Block[]): Block[] {
-  return links === "prebound" ? [...written] : links.bindSpan(old, written);
+function assignSpan(links: WriteLinks, old: readonly Block[], written: readonly Block[]): Block[] {
+  return links === "preassigned" ? [...written] : links.assignSpan(old, written);
 }
 
 function validateContent(
@@ -516,7 +518,7 @@ function lowerPlainTextFindMatches(
     if (match.elements.length !== 1) return null;
     const [element] = match.elements;
     if (match.rangeSource !== ctx.model.getText(element)) return null;
-    // A block holding a link goes through binding, so a ref- or title-only
+    // A block holding a link goes through ref assignment, so a ref- or title-only
     // change is never filtered out as equal text.
     const node = ctx.projectedBlocks()[match.startIndex];
     if (!node || walkLinkOccurrences([node]).length > 0) return null;
@@ -612,7 +614,7 @@ function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
 }
 
 /**
- * Parse a group's spliced text with source spans, so binding can tell the
+ * Parse a group's spliced text with source spans, so ref assignment can tell the
  * splice's occurrences from the untouched ones around it (§5.4).
  */
 function planSplicedGroup(
@@ -642,7 +644,7 @@ function planSplicedGroup(
 }
 
 /**
- * Rewrite a scope as bound `newBlocks`: blocks equal to their replacement are
+ * Rewrite a scope as assigned `newBlocks`: blocks equal to their replacement are
  * left alone, a changed block keeps its identity and is diffed in place, and
  * only blocks with no counterpart are inserted or removed. Atoms (pictures,
  * hard breaks) are matched as nodes, never through flat text offsets.

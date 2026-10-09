@@ -50,7 +50,7 @@ export async function preparePushUnderLiveLock(
     Y.applyUpdate(afterDoc, phase.pushUpdate);
     const holder = { documentId: phase.branch.documentId, view: LIVE_VIEW };
     await input.links.prepare({ holders: [holder], docs: [lockCutDoc, afterDoc] });
-    const codec = input.codec.bind(input.links.holder(holder));
+    const codec = input.codec.forScope(input.links.holder(holder));
     const before = snapshotBlocks(toDocHandle(lockCutDoc), input.model, codec);
     const after = snapshotBlocks(toDocHandle(afterDoc), input.model, codec);
     const attribution = journalAttributionByChangedBlock({

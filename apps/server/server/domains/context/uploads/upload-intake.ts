@@ -85,19 +85,19 @@ export interface UploadIntakeRepository {
 
 /**
  * ContextFS adapter seam; it is the only content/catalog mutation dependency.
- * `prepare` runs before finalize's transaction opens: preparing tracked text
- * binds its links and may register ahead refs, which must not wait on the
- * locks finalize holds (contract §6.2). `persist` applies what it prepared.
+ * `bind` runs before finalize's transaction opens: binding tracked text
+ * assigns its link refs and may register ahead refs, which must not wait on the
+ * locks finalize holds (contract §6.2). `persist` applies what it bound.
  */
-export interface UploadContentPort<Prepared = unknown> {
-  prepare(input: {
+export interface UploadContentPort<Bound = unknown> {
+  bind(input: {
     reservation: UploadReservation;
     actorUserId: string;
     bytes: Uint8Array;
-  }): Promise<{ ok: true; prepared: Prepared } | { ok: false; definite: boolean }>;
+  }): Promise<{ ok: true; bound: Bound } | { ok: false; definite: boolean }>;
   persist(input: {
     reservation: UploadReservation;
-    prepared: Prepared;
+    bound: Bound;
     actorUserId: string;
     mimeType: string;
     bytes: Uint8Array;
@@ -207,9 +207,9 @@ async function cleanupObject(
   }
 }
 
-export function createUploadIntake<Prepared>(deps: {
+export function createUploadIntake<Bound>(deps: {
   repository: UploadIntakeRepository;
-  content: UploadContentPort<Prepared>;
+  content: UploadContentPort<Bound>;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
 }): UploadIntake {
@@ -282,18 +282,18 @@ export function createUploadIntake<Prepared>(deps: {
       }
 
       try {
-        const prepared = await deps.content.prepare({
+        const bound = await deps.content.bind({
           reservation,
           actorUserId: raw.actorUserId,
           bytes: raw.bytes,
         });
-        if (!prepared.ok) throw Object.assign(new Error("upload preparation failed"), prepared);
+        if (!bound.ok) throw Object.assign(new Error("upload binding failed"), bound);
         const finalized = await deps.repository.transaction(async () => {
           const current = await deps.repository.lockForFinalize(raw.owner.projectId, raw.intakeId);
           if (current.state === "finalized") return current;
           const persisted = await deps.content.persist({
             reservation: current,
-            prepared: prepared.prepared,
+            bound: bound.bound,
             actorUserId: raw.actorUserId,
             mimeType,
             bytes: raw.bytes,

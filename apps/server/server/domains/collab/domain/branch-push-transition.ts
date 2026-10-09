@@ -172,7 +172,7 @@ export function createBranchPushTransition(input: {
         prePushDoc,
         model: input.model,
         // Sweep detection compares the document with itself: stored bytes are its identity.
-        codec: input.codec.bind(UNSCOPED_DOCUMENT_LINKS),
+        codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
       });
     } catch (cause) {
       input.sweepProjectionDiagnostics?.unavailable({
