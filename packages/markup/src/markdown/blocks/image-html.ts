@@ -15,6 +15,7 @@
  * shapes arrive here and leave as the same handful of facts.
  */
 
+import { storedLinkRef } from "@meridian/contracts";
 import type { MdastJsxFlow, MdastJsxText, MdxJsxAttribute } from "../../ast.js";
 import type { PMNode, SerializeContext } from "../../types.js";
 import { decodeHtmlAttribute, escapeHtmlAttribute, parseHtml } from "../html-tag.js";
@@ -29,22 +30,29 @@ export type ImageHtmlAttributes = {
 };
 
 /**
- * The picture as the wire spells it: the `asset:` ref resolved to the path this
- * project knows it by, and any other source left exactly as it stands. A ref
- * with no document behind it stays the ref: a picture never fails the document.
+ * The picture as the wire spells it: whatever the serialize scope spells for
+ * the stored source (an `asset:` ref as the address this project knows it by
+ * or an empty destination, a stored `ref` as its target's current path,
+ * anything else as it stands): a picture never fails the document.
  *
  * Shared by the two places a picture is serialized — alone as a block, and
  * among the words of a paragraph — so both climb the same ladder.
  */
 export function imageWireAttributes(node: PMNode, ctx: SerializeContext): ImageHtmlAttributes {
-  const src = String(node.attrs.src ?? "");
-  const assetId = src.startsWith("asset:") ? src.slice("asset:".length) : null;
   return {
-    url: (assetId && ctx.assetPathResolver.pathForAsset(assetId)) || src,
+    url: spelledSource(node, ctx),
     alt: attrStringOrNull(node.attrs.alt),
     title: attrStringOrNull(node.attrs.title),
     width: imageWidth(node.attrs.width),
   };
+}
+
+/** The wire spelling of an `image` or `figure` source. */
+export function spelledSource(node: PMNode, ctx: SerializeContext): string {
+  return ctx.links.spellSource({
+    src: String(node.attrs.src ?? ""),
+    ref: storedLinkRef(node.attrs.ref),
+  }).href;
 }
 
 function attrStringOrNull(value: unknown): string | null {

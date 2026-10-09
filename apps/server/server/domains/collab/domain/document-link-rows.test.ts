@@ -1,32 +1,69 @@
-/** Address-index rules apply equally to text runs, images, and figures. */
-import type { ProjectId } from "@meridian/contracts/runtime";
+/** Link-index keys for every stored occurrence kind (contract §11, L5). */
 import { expect, it } from "vitest";
 import { deriveDocumentLinkRows } from "./document-link-rows.js";
 
-const project = "project" as ProjectId;
-const personal = "personal" as ProjectId;
-it.each([
-  ["kb://base.md", "scratch://@arc/next.md", "scratch://@arc/next.md", project],
-  ["kb://base.md", "user://preferences.md", "user://preferences.md", personal],
-  ["kb://base.md", "scratch://next.md", null, null],
-  ["user://base.md", "manuscript://next.md", null, null],
-])("indexes %s → %s", (holderUri, href, targetKey, targetProjectId) => {
+const DOC = "00000000-0000-4000-8000-0000000000d1";
+const AHEAD = "00000000-0000-4000-8000-0000000000a1";
+const ASSET = "00000000-0000-4000-8000-0000000000f1";
+
+it("keys doc, ahead, asset and contextual occurrences, counting repeats once per key", () => {
   expect(
     deriveDocumentLinkRows({
-      occurrences: [{ href }, { href }],
-      holderUri,
-      holderProjectId: project,
-      personalProjectId: personal,
+      holderUri: "kb://base.md",
+      occurrences: [
+        { kind: "link", ref: `doc:${DOC}`, href: "manuscript://ch%201.md#top" },
+        { kind: "link", ref: `doc:${DOC}`, href: "manuscript://ch%201.md" },
+        { kind: "link", ref: `ahead:${AHEAD}`, href: "scratch://@arc/next.md" },
+        { kind: "image", ref: `ahead:${AHEAD}`, href: "scratch://@arc/next.md" },
+        { kind: "image", ref: null, href: `asset:${ASSET}` },
+        { kind: "figure", ref: null, href: `asset:${ASSET}` },
+        { kind: "link", ref: null, href: "scratch://notes.md" },
+      ],
     }),
-  ).toEqual([{ href, targetProjectId, targetKey, occurrences: 2 }]);
+  ).toEqual([
+    {
+      linkKey: `doc:${DOC}`,
+      targetDocumentId: DOC,
+      aheadId: null,
+      address: "manuscript://ch 1.md",
+      occurrences: 2,
+    },
+    {
+      linkKey: `ahead:${AHEAD}`,
+      targetDocumentId: null,
+      aheadId: AHEAD,
+      address: "scratch://@arc/next.md",
+      occurrences: 2,
+    },
+    {
+      linkKey: `asset:${ASSET}`,
+      targetDocumentId: ASSET,
+      aheadId: null,
+      address: null,
+      occurrences: 2,
+    },
+    {
+      linkKey: "scratch://notes.md",
+      targetDocumentId: null,
+      aheadId: null,
+      address: null,
+      occurrences: 1,
+    },
+  ]);
 });
-it("skips external, asset, and malformed hrefs", () => {
+
+it("skips external hrefs, malformed refs and ref-less internal hrefs", () => {
   expect(
     deriveDocumentLinkRows({
-      occurrences: ["https://example.com", "asset:123", "%ZZ"].map((href) => ({ href })),
       holderUri: "manuscript://base.md",
-      holderProjectId: project,
-      personalProjectId: personal,
+      occurrences: [
+        { kind: "link", ref: null, href: "https://example.com" },
+        { kind: "link", ref: "doc:not-a-uuid", href: "manuscript://next.md" },
+        { kind: "link", ref: `ahead:${AHEAD}`, href: "https://example.com" },
+        { kind: "link", ref: null, href: "next.md" },
+        { kind: "image", ref: null, href: "asset:not-a-uuid" },
+        { kind: "link", ref: null, href: "%ZZ" },
+      ],
     }),
   ).toEqual([]);
 });

@@ -2,7 +2,10 @@
 
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createDrizzleDocumentAssetPaths } from "../../domains/context/adapters/asset-path-resolver.js";
+import {
+  createTestDocumentLinkScopes,
+  testLinkDeps,
+} from "../../domains/collab/test-support/document-link-scopes.js";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -103,11 +106,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createBoundCollab() {
       const collab = createCollabDomain({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -160,7 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "current-work",
       });
       const contextPorts = createProductionUnifiedContextPortFactory({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
         manifestMembership: collab,
@@ -747,6 +749,147 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(port.list(`scratch://@current-work/Source`)).resolves.toMatchObject({
         ok: true,
       });
+    });
+
+    it("writes nothing into holders and counts only incoming links that name the moved documents", async () => {
+      const { projectId, port } = await arrangeUntitled();
+      const write = async (uri: string) => {
+        const written = await port.write(uri, "Text.", {
+          origin: { type: "human", userId: USER_ID },
+        });
+        if (!written.ok || !written.value.documentId) throw new Error(`write failed: ${uri}`);
+        return written.value.documentId;
+      };
+      const target = await write("manuscript://Act 1/target.md");
+      const unmoved = await write("manuscript://unmoved.md");
+      const holder = await write("manuscript://holder.md");
+      const aheadHolder = await write("manuscript://ahead-holder.md");
+      const otherProject = crypto.randomUUID();
+      const otherSource = crypto.randomUUID();
+      const otherHolder = crypto.randomUUID();
+      await db
+        .insert(schema.projects)
+        .values({ id: otherProject, userId: USER_ID, name: "Other", slug: "other-project" });
+      await db.insert(schema.contextSources).values({
+        id: otherSource,
+        projectId: otherProject,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+      });
+      await db
+        .insert(schema.documents)
+        .values({ id: otherHolder, contextSourceId: otherSource, name: "other", extension: "md" });
+      // A certified holder row the live manifest does not hold (draft-only, as between an
+      // Apply's content and manifest pushes): not live, not counted.
+      const nonLiveHolder = crypto.randomUUID();
+      const [manuscript] = await db
+        .select({ id: schema.contextSources.id })
+        .from(schema.contextSources)
+        .where(
+          and(
+            eq(schema.contextSources.projectId, projectId),
+            eq(schema.contextSources.slug, "manuscript"),
+          ),
+        );
+      if (!manuscript) throw new Error("fixture Manuscript missing");
+      await db.insert(schema.documents).values({
+        id: nonLiveHolder,
+        contextSourceId: manuscript.id,
+        name: "draft-only",
+        extension: "md",
+      });
+      const ahead = crypto.randomUUID();
+      await db.insert(schema.linkAheadRefs).values({
+        aheadId: ahead,
+        projectId: projectId as never,
+        scheme: "manuscript",
+        path: "Act 1/target.md",
+        settledDocumentId: target as never,
+      });
+      // Index rows as the certified derive writes them.
+      const row = (sourceDocumentId: string, documentId: string, occurrences = 1) => ({
+        sourceDocumentId: sourceDocumentId as never,
+        linkKey: `doc:${documentId}`,
+        targetDocumentId: documentId as never,
+        address: "manuscript://x.md",
+        occurrences,
+      });
+      await db.insert(schema.documentLinks).values([
+        row(holder, target, 2),
+        row(target, unmoved), // the moved document's own outgoing link
+        row(otherHolder, target), // another project
+        row(nonLiveHolder, target), // not in the live manifest
+        {
+          sourceDocumentId: aheadHolder as never,
+          linkKey: `ahead:${ahead}`,
+          aheadId: ahead,
+          address: "manuscript://Act 1/target.md",
+          occurrences: 1,
+        },
+      ]);
+      const holderState = await yjsState(holder);
+      const otherState = await yjsState(otherHolder);
+
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "manuscript",
+          body: {
+            expected: { kind: "file", nodeId: target },
+            path: "Act 1/target.md",
+            destinationScheme: "manuscript",
+            destinationFolderPath: "",
+            name: "renamed.md",
+          },
+        }),
+      ).resolves.toMatchObject({ status: "moved", linkUpdate: { links: 3, documents: 2 } });
+      expect(await yjsState(holder)).toEqual(holderState);
+      expect(await yjsState(otherHolder)).toEqual(otherState);
+
+      // A personal document moved into the project: only this project's holders count.
+      const cast = await write("user://cast.md");
+      await db.insert(schema.documentLinks).values([row(holder, cast), row(otherHolder, cast)]);
+      await expect(port.move("user://cast.md", "kb://cast.md")).resolves.toMatchObject({
+        ok: true,
+        value: { linkUpdate: { links: 1, documents: 1 } },
+      });
+
+      // Renumber two linked chapters in sequence: the first takes the address the second
+      // vacated. Each move counts its own incoming link; the holder and its index stay put.
+      const chapterOne = await write("manuscript://Chapter 1.md");
+      const chapterTwo = await write("manuscript://Chapter 2.md");
+      await db
+        .insert(schema.documentLinks)
+        .values([row(holder, chapterOne), row(holder, chapterTwo, 2)]);
+      const renumberState = await yjsState(holder);
+      const holderLinks = () =>
+        db
+          .select({
+            key: schema.documentLinks.linkKey,
+            target: schema.documentLinks.targetDocumentId,
+          })
+          .from(schema.documentLinks)
+          .where(eq(schema.documentLinks.sourceDocumentId, holder as never))
+          .orderBy(schema.documentLinks.linkKey);
+      const linksBefore = await holderLinks();
+      await expect(
+        port.move("manuscript://Chapter 2.md", "manuscript://Chapter 3.md"),
+      ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 2, documents: 1 } } });
+      await expect(
+        port.move("manuscript://Chapter 1.md", "manuscript://Chapter 2.md"),
+      ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 1, documents: 1 } } });
+      await expect(port.stat("manuscript://Chapter 2.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: chapterOne },
+      });
+      await expect(port.stat("manuscript://Chapter 3.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: chapterTwo },
+      });
+      expect(await yjsState(holder)).toEqual(renumberState);
+      expect(await holderLinks()).toEqual(linksBefore);
     });
   });
 }

@@ -20,7 +20,10 @@ transaction; collab's pull transaction rules make that safe (see the
 [collab contract](../../collab/.context/CONTEXT.md#pull-and-provisioning-transactions)).
 It reports settled authority, not a response's staged overlay.
 
-Search results carry `documentId` and `revision` from the document scanned.
+Search results carry `documentId` and `revision` from the document scanned, and
+host-only `shown` (`SearchShowing`: the holder URI and view the read spelled
+from, and each returned passage's ref-bearing links, after the passage cap),
+for the host to record the passages the model received whole.
 Tool wiring moves these fields to result metadata, not model-facing search JSON.
 Each result also says which `version` it came from, `draft` or `live`.
 
@@ -41,7 +44,12 @@ Plain markdown convenience reads and versioned reads share collab serialization.
 - **Authoritative metadata catalog** — one normalized catalog beside ContextFS
   with per-scope heads, complete repeatable-read snapshots, bounded whole-commit
   replay/reset from an explicit captured head, direct children, and ID/path
-  lookup. Project Manuscript entries use live-manifest membership. ContextFS
+  lookup. `invalidate-subtree` clears the cached root and descendants; the same
+  commit re-upserts every authoritative survivor from the union of old and new
+  affected subtrees, including unchanged entries and children moved out of the
+  root. Never rely on a separate repair to restore visibility. An absent root
+  means the subtree is gone from this scope, not pending refetch.
+  Project Manuscript entries use live-manifest membership. ContextFS
   observations fail closed when membership cannot be read, while catalog
   reconciliation aborts and preserves its last good tree. Mutation-triggered
   Manuscript reconciliation reserves an availability generation, then publishes
@@ -115,9 +123,9 @@ router resolves to exact project-scoped Work authority before dispatch.
 - **Collab-aware markdown bridge** (`context/collab-document-sync.ts`) — maps
   ContextFS provenance to collab origins. Agent/human writes use the richer
   collab write APIs that return attribution metadata; system/import writes use
-  the markdown write API directly. The certified `ContextPort.edit` boundary is
-  a closed command surface; its current command is a fresh end-of-document
-  append. Opaque caller callbacks do not cross the boundary.
+  the markdown write API directly. There is no host edit or append door: a
+  host changes a document by writing it whole (or the model edits it through
+  agent-edit).
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
   for `move`/`delete` operations. Callers may request exact-target moves so an
   existing destination folder is a collision rather than a Unix-style container.
@@ -130,19 +138,21 @@ router resolves to exact project-scoped Work authority before dispatch.
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
   one chapter cannot disturb another that references the same asset.
-- **Image path adapter** (`adapters/asset-path-resolver.ts`) — implements
-  collab's `DocumentAssetPaths` port. Each scope resolves its project (by
-  project, document or thread) and loads every image in the project's
-  manuscript, wherever it sits and including deleted ones, in one recursive
-  query kept to the project's rows by the `folders_context_root`,
-  `folders_parent` and `documents_context_images` indexes. Nothing is cached
-  between operations, and figure upload does not notify it. ContextFS search
-  binds its source document IDs to one scope, resolving their common project
-  once and reusing its image snapshot across all chapters. The factory must
-  receive the same asset-path port instance as collab. Paths are
-  manuscript-relative; parsing accepts the bare form and `manuscript://`. A
-  path held by a live image resolves to it; otherwise only a sole deleted image
-  at that path claims it. Scope rules live in collab's
+- **Document-link scope adapter** (`adapters/document-link-scope.ts`) —
+  implements collab's `DocumentLinkScopes` port. Each snapshot resolves its
+  project, owner and personal project once (by project, document or thread)
+  and then loads only what each `prepare` names, skipping keys it already
+  holds: settlements by ahead id, rows by id, and every row at an exact or
+  extension-omitted address, each with the canonical URI its folder chain
+  spells now (deleted rows included). Readability comes from the file
+  policy's `listAccess` for the snapshot's reader; presence from `deleted_at`
+  plus the manifest membership ContextFS lists through, read only when a
+  manifest-governed row needs it (the live set, then a draft view's, which
+  includes draft-created and same-response staged documents). Images are
+  documents: the `asset:` rule reads the same rows. Nothing is cached between
+  operations. ContextFS search binds its source document IDs to one snapshot;
+  each chapter's read prepares its own document into it. The factory must
+  receive the same scope instance as collab. Scope rules live in collab's
   [document authority notes](../../collab/.context/document-authority-and-schema.md).
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
   resolution boundary for standard Markdown hrefs, all six canonical Context
@@ -169,40 +179,99 @@ router resolves to exact project-scoped Work authority before dispatch.
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `bindTrackedDocument` + `createBoundDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
-| `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, holder? })` returns one canonical Context document or `null`. A target is a discriminated `scheme` or `relative` value. Pending redirects for the exact holder/href win; requests without a holder fall back to previous locations only after a current miss. |
+| `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
+| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
+| `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
 
-## Pending link redirects
+## Moves and the link note
 
-Moves flush the project's certified derivations before entering the namespace
-transaction. Personal moves flush every project of the owner. Failed document
-derives log and retain last-good rows rather than blocking the move.
+A move writes nothing into any holder: links carry `doc:`/`ahead:` refs and
+re-spell on read. Moves flush the project's certified derivations before
+entering the namespace transaction (personal moves flush every project of the
+owner); the flush also registers client-minted ahead refs, so every certified ref
+is registered before the move takes namespace keys. Failed derives and failed
+registrations log and never block the move.
 
-The move locks all mutated documents (moved identities plus any overwrite victim),
-sorted by identity, `FOR NO KEY UPDATE`, then redirects whose holder
-or target moved `FOR UPDATE`, ordered by holder and href (the worker's order). The weaker document lock
-keeps journal FK insertion compatible. Address candidates use the shared
-`documentAddressKey` and `matchDocumentPath`; contextual links are excluded.
-Moved holders' relative links retain their pre-move target (or intended URI).
-Moving a holder into `user://` respells project targets as contextual full URIs;
-keeping its old relative path would incorrectly resolve inside personal space.
-Existing `(source_document_id, href)` redirects win and keep their original
-mover. `linkUpdate` counts newly inserted occurrences and distinct eligible
-holders; archived/deleted Works and manifests do not count. A target moved into
-another non-personal project cannot be named from a project holder; those
-occurrences (and holders without any representable rewrites) do not count in
-the receipt. The worker drops that target's redirect
-without rewriting, leaving the old href visibly unresolved rather than silently
-naming a different document in the holder's project. If any target is unavailable,
-the worker defers the entire holder batch without rewriting, consuming, or
-setting failure backoff. Restore makes it eligible on the next sweep.
-A post-commit kick
-is a no-op until the rewrite worker is composed; no holder content is edited
-inside a move transaction.
+Inside the transaction the move row-locks every mutated document (moved
+identities plus any overwrite victim), sorted, `FOR NO KEY UPDATE`
+(`lockMovedDocumentRows`). The weaker lock keeps journal FK insertion compatible
+while ordering the move against derive certification. After all DML and history
+a cross-project move (personal to project or back) moves the documents' live
+manifest membership to the destination project, then it settles ahead refs at the
+destinations once (a folder move settles against its final tree), then
+`countIncomingLinks` sums `document_links` occurrences whose `doc:` ref names a
+moved document or whose `ahead:` ref is settled on one, from live content holders
+in the request project. A drafted holder is live only while the project's live
+manifest holds it. A moved holder's own links to unmoved documents are not
+counted; personal and other-project holders are not counted. The receipt shape
+stays `linkUpdate: { links, documents }`.
+
+## Whole-document writes
+
+`ContextFS.write` and `createTrackedDocument` with content (the layer is
+`context-fs/bound-writes.ts`)
+bind their Markdown (`documentSync.bindMarkdown`) **before**
+`commandExecutor.run`, then apply the `BoundWrite` inside the
+namespace-locked transaction (collab `document-authority-and-schema.md`). The
+existing document is looked up outside the transaction for that; the
+transaction looks it up again and checks the bound write was made for what
+occupies the path now; if the occupant changed, it answers `stale_target`
+and nothing is written. The bound write is desired state: it overwrites what
+the document holds when it applies, like any whole-document save. An actor's
+overwrite binds against the current document; import and system
+writes bind fresh. A new document binds as the canonical URI it will have
+(`ContextFSDeps.holder`: the port's project and the source's Work authority).
+
+A caller that creates inside its own transaction binds first:
+`ContextPort.bindTrackedDocument`, then `createBoundDocument` with the
+bound write. Upload intake does this (`UploadContentPort.bind` runs
+before finalize's transaction, `persist` applies under its locks).
+
+Repair (`repairTrackedDocument`) restores membership and, if the document has
+no Yjs state, an empty one; it never reparses the stored projection, whose
+links spell pre-move paths. A document whose only content is a non-empty
+projection is incomplete, not repairable: repair fails with that message and
+leaves the row and its bytes as they are for recovery.
+
+## Ahead refs and arrivals
+
+`link_ahead_refs` records each `ahead:` ref with the decoded address it was
+minted for (project, scheme, Work id, path; Work by id, so a rename never
+orphans it). Rows are never deleted by link edits. Server mints register before
+the write takes any lock; client mints are registered by the certified derive
+(awaited outside a transaction, after commit inside one), and the derivation
+sweep and `flush` recover any that failed with `registerUnregistered`. A soft-deleted
+Work keeps its identity (slugs stay reserved), so a ref to its address registers
+and waits for the restore.
+
+An ahead ref settles on the first live document at its exact address, by
+compare-and-set on `settled_document_id IS NULL`; a later occupant never captures
+it. Arrival hooks, each once against the operation's final tree:
+
+| Arrival | Where | Locks already held |
+|---|---|---|
+| Tracked create (named, untitled, model create/copy, import) | creation aggregate, after content initialization | command transaction's namespace keys |
+| Binary upload, figure upload | `createBinaryDocument`, after publishing live membership in the same transaction | the store transaction's namespace keys |
+| Move-in (file, overwrite, folder) | tree store, once after all DML and any cross-project membership transfer | every participating namespace |
+| Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
+| Draft Apply (warm and recovery) | push completion that publishes membership: Work → arriving namespaces → holder lock | as listed |
+
+Draft-only rows and deleted rows are not arrivals.
+
+`adapters/document-address.ts` owns server document addresses: the canonical
+address a document's folder chain spells now, a canonical address resolved to
+storage coordinates (project, scheme, Work, No Work lock coordinate, path), the
+document at an exact address (rendered path compared byte for byte), and
+`listsThroughLiveManifest(scheme)`, the one rule for which sources are live only
+through the project manifest. A document under a deleted folder reads as deleted
+at its address. The link scope, the ahead-ref registry, the move note, and the
+browser address lookup all read through it.
 
 ## Browser document addresses
 
@@ -220,6 +289,13 @@ locks **before** source provisioning, preflight, or catalog publication. Logical
 keys exist before lazy source rows; direct Drizzle stores derive the same keys
 from backing ownership. Do not enter a single-source transaction and then issue
 a multi-source command with a larger lock set.
+
+Ahead-ref registration uses the exported `lockNamespaceKeys` seam when it opens
+its independent root transaction. It takes only the sorted, deduplicated logical
+namespace keys: no Work lifecycle or holder lock is acquired. Arrival settlement
+runs in the caller's already-locked transaction and acquires no lock, so the
+Work → namespace → holder order used by authored moves and creates cannot form a
+cycle with registration.
 
 Full paths can exceed the PostgreSQL B-tree tuple limit. History uses a hash
 index with exact equality rechecks, and namespace-locked replacement owns

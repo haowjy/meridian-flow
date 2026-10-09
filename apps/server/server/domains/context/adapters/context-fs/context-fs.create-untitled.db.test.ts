@@ -12,8 +12,10 @@ import {
 } from "../../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createCollabDomain } from "../../../collab/index.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../../projects/index.js";
-import { createDrizzleDocumentAssetPaths } from "../asset-path-resolver.js";
+import {
+  createTestDocumentLinkScopes,
+  testLinkDeps,
+} from "../../../collab/test-support/document-link-scopes.js";
 import { ContextFS } from "./context-fs.js";
 import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
@@ -56,11 +58,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("persists and reloads a live document with zero CRDT structs", async () => {
       const collab = createCollabDomain({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -71,7 +72,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        holder: { projectId: PROJECT_ID },
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db),
         documentSync: collab,

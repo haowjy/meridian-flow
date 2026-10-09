@@ -16,6 +16,14 @@ Y.XmlElement CRDT item ID (`clientID`, `clock`); the displayed prefix is unique
 within the current sibling set and is not durable identity. Kernel callers see
 only the neutral `BlockRef`.
 
+### Ref assignment (`src/links/`)
+Parse is pure syntax: every parsed link, `image` and `figure` has `ref: null`.
+The handler prepares the host's link scope, the resolver plans the write
+(`planWrite`), the handler prepares the planned nodes, and the plan assigns
+their refs through the command's `WriteLinkAssigner` before block
+alignment, so assigned nodes are the resolver→apply currency. Serialization
+spells through the command's scoped codec (`tool/command-links.ts`). See [link identity](link-correspondence.md).
+
 ### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/apply-edits.ts`)
 The resolver emits `SemanticEditIRV1` bound to the exact input Yjs revision. It
 declares scope and deletion ranges plus a disjoint, exhaustive partition of
@@ -61,7 +69,14 @@ summaries. The write/commit owner takes
 its own snapshots, merges concurrent updates, and produces the final echo.
 Preflight-before-mutate discipline: the write owner validates semantic IR,
 then apply validates all block references. Each edit is preflighted (content
-and offsets) before its transaction mutates the document. Every agent
+and offsets) before its transaction mutates the document.
+ProseMirror nodes are the resolver→apply currency: `insert` carries its
+`blocks`, `textRanges` replacements carry an inline `content` fragment, and
+`block` carries its replacement node. The resolver parses each write once
+(formatted finds parse their spliced range once); apply never parses or
+serializes, so a node attribute the markup codec does not spell survives to
+Yjs. Edit text (`insert.newText`, `textRanges.output`) is semantic-IR
+provenance only. Every agent
 text edit lowers through ProseMirror (`applyInlineReplacements`), the single
 inline mutation seam. `applyTextEdit` remains as the
 model's plain-text verb for undo repair and trims unchanged edge text before

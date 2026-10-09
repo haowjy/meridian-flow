@@ -1,7 +1,10 @@
 // Engine-facing read and write contract types for the agent editing core.
 
+import type { LinkView } from "@meridian/contracts";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
+import type { ShownLink } from "../links/correspondence.js";
+import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
 import type {
@@ -44,6 +47,13 @@ interface WriteOutcomeBase {
   result: AgentEditResultV1;
   /** Host-only: the blocks a read selected, when the read asked for `includeNodes`. */
   nodes?: readonly Block[];
+  /**
+   * Host-only showing evidence: each link the rendered result showed the
+   * model, with the address shown (truncated blocks count only links ending
+   * inside the shown prefix), and the holder URI and view it was spelled
+   * from. Never copied into `result`.
+   */
+  showing?: LinkShowing;
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -195,6 +205,26 @@ export interface WriteContext {
    * source (D23, D24). They become the command's content as nodes.
    */
   copiedNodes?: readonly Block[];
+  /**
+   * A host's whole-document write, bound outside its transaction (§6.2): the
+   * `create` command's content as nodes whose refs are assigned and whose
+   * ahead refs are registered. Nothing is parsed or assigned again; an
+   * overwrite aligns them against the document as it is when applied.
+   */
+  boundNodes?: readonly Block[];
+  /**
+   * Host-only showing evidence for this thread: every link the model was
+   * shown in a document, with the address shown. Ref assignment reads it;
+   * agent-edit never reads thread history itself. Absent for utility, seed
+   * and import writes (fresh ref assignment by design).
+   */
+  shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
+  /**
+   * The link view the host routed this command to: the Work draft or live
+   * version its destination names. A host that routes between versions sets
+   * it on every command; links, sources and the revision spell in it.
+   */
+  linkView?: LinkView;
 }
 
 export type MutationActor =
@@ -228,6 +258,8 @@ export interface ResponseCommitWriteReceipt {
   writeId: string;
   settlementId: string;
   result: AgentEditResultV1;
+  /** Host-only: what the settled receipt's echo showed the model, from the commit's own links. */
+  showing?: LinkShowing;
 }
 
 export interface ResponseStagedCreateOutcome {

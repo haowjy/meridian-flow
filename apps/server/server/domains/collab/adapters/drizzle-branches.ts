@@ -30,6 +30,7 @@ import {
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -296,7 +297,7 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     const existing = await activeWorkDraft(input.documentId, input.workId);
     if (existing) return existing;
-    await assertDraftedSource(input.documentId);
+    await assertDraftableUnderWork(input.documentId, input.workId);
     const seed = await replicatedSnapshotFrom(input.liveDoc);
     return insertBranch({
       id: `branch_${randomUUID()}`,
@@ -311,16 +312,35 @@ export function createDrizzleBranchStore(
     });
   }
 
-  /** Callers route scratch and uploads live (D9); reaching here with one is a routing bug. */
-  async function assertDraftedSource(documentId: DocumentId): Promise<void> {
+  /**
+   * Callers route scratch and uploads live (D9), and pick a Work of the document's own
+   * project; reaching here otherwise is a routing or authorization bug. Every Work draft
+   * is created here, so no entry point can pair a document with another project's Work.
+   */
+  async function assertDraftableUnderWork(documentId: DocumentId, workId: WorkId): Promise<void> {
+    const sourceWork = alias(works, "source_work");
     const [row] = await currentDrizzleDb(db)
-      .select({ scheme: contextSources.slug })
+      .select({
+        scheme: contextSources.slug,
+        projectId: sql<
+          string | null
+        >`coalesce(${contextSources.projectId}, ${sourceWork.projectId})`,
+      })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .leftJoin(sourceWork, eq(sourceWork.id, contextSources.workId))
       .where(eq(documents.id, documentId))
       .limit(1);
     if (row && isContextUriScheme(row.scheme) && !isDrafted(row.scheme)) {
       throw new Error(`Document ${documentId} is in ${row.scheme}://, which is never drafted`);
+    }
+    const [work] = await currentDrizzleDb(db)
+      .select({ projectId: works.projectId })
+      .from(works)
+      .where(eq(works.id, workId))
+      .limit(1);
+    if (!row || !work || row.projectId !== work.projectId) {
+      throw new Error(`Work ${workId} cannot draft document ${documentId} outside its project`);
     }
   }
 
@@ -845,6 +865,38 @@ export function createDrizzleBranchStore(
     });
   }
 
+  /**
+   * A cross-project move: the documents leave `from`'s live manifest and join `to`'s, in the
+   * caller's transaction. Both manifest holders lock in id order first, so opposite transfers
+   * cannot wait on each other.
+   */
+  async function transferLiveManifestMembership(
+    documentIds: readonly DocumentId[],
+    projects: { from: ProjectId; to: ProjectId },
+  ): Promise<void> {
+    if (documentIds.length === 0 || projects.from === projects.to) return;
+    await runInDrizzleTransaction(db, async () => {
+      const manifests = [];
+      for (const projectId of [projects.from, projects.to]) {
+        const manifest = await loadProjectManifest({ projectId });
+        manifest.doc.destroy();
+        manifests.push(manifest.documentId);
+      }
+      for (const manifestId of [...manifests].sort()) {
+        await lockDocumentMutation(currentDrizzleDb(db), manifestId);
+      }
+      const [fromManifest, toManifest] = manifests as [DocumentId, DocumentId];
+      await mutateLiveManifestDocument(fromManifest, (doc) => {
+        const map = doc.getMap<{ present: true }>("documents");
+        for (const id of documentIds) if (map.has(id)) map.delete(id);
+      });
+      await mutateLiveManifestDocument(toManifest, (doc) => {
+        const map = doc.getMap<{ present: true }>("documents");
+        for (const id of documentIds) if (!map.has(id)) map.set(id, { present: true });
+      });
+    });
+  }
+
   return {
     deferUntilCommit: deferUntilDrizzleCommit,
 
@@ -1062,6 +1114,7 @@ export function createDrizzleBranchStore(
     reconcileProjectManifest,
 
     resolveManifestMembership,
+    transferLiveManifestMembership,
     recordManifestDocumentCreated: (documentId, view) =>
       view?.threadId
         ? mutateThreadManifest(documentId, true, {

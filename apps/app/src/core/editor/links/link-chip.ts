@@ -4,15 +4,17 @@
  *
  * Pure presentation rules, shared by every surface that shows a link (the
  * transcript, the composer, the Editor). A surface emits the two attributes
- * from `linkChipAttributes` (or `linkChipPartAttributes`) and nothing else; the one look keyed by them is
+ * from `linkChipAttributes` and nothing else; the one look keyed by them is
  * the app's link-chip stylesheet, and the icon images keyed by the icon
  * attribute come from the app's family icon data. Core names the family and
  * never draws it, so it imports no icons.
  *
- * Dashed means one thing: nothing is at that address. Every state that is
- * not settled yet (asking, failed) draws filled, because
- * guessing "not written" and correcting it a moment later is worse than
- * waiting.
+ * Dashed means the link reaches no document: nothing is at its address yet,
+ * or the document it named is gone. Every state that is not settled yet
+ * (asking, failed) draws filled, because guessing "not written" and
+ * correcting it a moment later is worse than waiting. A gone link is drawn
+ * like chat's unavailable reference: dashed, and the surface gives it no
+ * hover and no follow.
  */
 
 import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
@@ -47,9 +49,10 @@ export function linkChip(
   baseUri: string | null = null,
 ): LinkChip | null {
   if (target.kind === "external") return null;
-  if (entry?.state === "resolved") return { state: "filled", icon: entry.document.scheme };
+  if (entry?.state === "document") return { state: "filled", icon: entry.document.scheme };
   const icon = targetFamily(target, baseUri) ?? "file";
-  return { state: entry?.state === "unresolved" ? "dashed" : "filled", icon };
+  const reachesNothing = entry?.state === "missing" || entry?.state === "gone";
+  return { state: reachesNothing ? "dashed" : "filled", icon };
 }
 
 /**
@@ -58,20 +61,6 @@ export function linkChip(
  */
 export function referenceChip(uri: string, available = true): LinkChip {
   return { state: available ? "filled" : "dashed", icon: uriFamily(uri) ?? "file" };
-}
-
-/**
- * For a chip whose box is an ancestor the surface cannot attribute: the
- * Editor's link mark renders one `<a>` around the whole label, while its
- * resolution decorations are spans inside it, one per text node. Each span
- * carries the part; the stylesheet draws the chip on the `<a>` through
- * `:has()`, so mixed formatting inside a label is still one chip.
- */
-export function linkChipPartAttributes(chip: LinkChip): {
-  "data-link-chip-part": LinkChip["state"];
-  "data-link-chip-icon": LinkChipIcon;
-} {
-  return { "data-link-chip-part": chip.state, "data-link-chip-icon": chip.icon };
 }
 
 /** The rendered-only attributes the link-chip stylesheet is keyed by. */

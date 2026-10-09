@@ -19,6 +19,8 @@ import { isBranchNotFoundError } from "./branch-resolver.js";
 
 export type BranchReversalScope = {
   branchId: string;
+  /** The Work whose draft holds this history. */
+  workId: string;
   generation: number;
   state: Uint8Array;
   rows: BranchJournalRow[];
@@ -33,7 +35,7 @@ export type BranchReversalHistoryReader = {
     ): Promise<{ branchId: string; doc: Y.Doc }>;
     getBranch(
       branchId: string,
-    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "generation" | "state"> | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "workId" | "generation" | "state"> | null>;
   };
   branchRows: {
     listJournalRowsForBranch(input: {
@@ -59,7 +61,7 @@ export async function resolveBranchReversalScope(
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
   if (!peerSnapshot?.upstreamBranchId) return null;
   const workDraft = await input.branches.getBranch(peerSnapshot.upstreamBranchId);
-  if (!workDraft) return null;
+  if (!workDraft?.workId) return null;
   const rows = (
     await input.branchRows.listJournalRowsForBranch({
       branchId: peerSnapshot.upstreamBranchId,
@@ -76,6 +78,7 @@ export async function resolveBranchReversalScope(
   return ownsHistory
     ? {
         branchId: peerSnapshot.upstreamBranchId,
+        workId: workDraft.workId,
         generation: workDraft.generation,
         state: workDraft.state,
         rows,

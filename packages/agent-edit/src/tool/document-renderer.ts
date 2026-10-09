@@ -1,7 +1,7 @@
 // Turns document blocks into agent-facing text and parses agent input.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { AgentEditCodec } from "../codec-adapter.js";
+import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
@@ -29,8 +29,13 @@ export interface DocumentRenderer {
     command: ReadCommand,
     address: DocumentRenderAddress,
   ): ReadBlockSelection;
-  renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[];
-  renderRead(doc: DocHandle, blocks: readonly BlockRef[], format: "full" | "outline"): RenderedRead;
+  renderBlockLines(doc: DocHandle, codec: AgentEditCodec, blocks?: readonly BlockRef[]): string[];
+  renderRead(
+    doc: DocHandle,
+    codec: AgentEditCodec,
+    blocks: readonly BlockRef[],
+    format: "full" | "outline",
+  ): RenderedRead;
   parseForCommand(content: string): ParseForCommandResult;
 }
 
@@ -49,7 +54,7 @@ export type ParseForCommandResult =
 
 export function createDocumentRenderer(deps: {
   model: AgentEditModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
 }): DocumentRenderer {
   const { model, codec } = deps;
 
@@ -87,12 +92,17 @@ export function createDocumentRenderer(deps: {
     return result;
   }
 
-  function renderBlockLines(doc: DocHandle, blocks?: readonly BlockRef[]): string[] {
+  function renderBlockLines(
+    doc: DocHandle,
+    codec: AgentEditCodec,
+    blocks?: readonly BlockRef[],
+  ): string[] {
     return model.serializeBlockLines(doc, codec, blocks);
   }
 
   function renderRead(
     doc: DocHandle,
+    codec: AgentEditCodec,
     blocks: readonly BlockRef[],
     format: "full" | "outline",
   ): RenderedRead {

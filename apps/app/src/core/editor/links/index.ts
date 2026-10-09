@@ -6,12 +6,7 @@
  * which is where a link surface actually renders.
  */
 
-export {
-  getLinkResolution,
-  getLinkSurface,
-  LinkSurfaceExtension,
-  openLinkForm,
-} from "./LinkSurfaceExtension";
+export { LinkSurfaceExtension, openLinkForm } from "./LinkSurfaceExtension";
 export {
   addressDocumentName,
   type CreatableLinkScheme,
@@ -22,13 +17,31 @@ export {
   linkTargetAddress,
 } from "./link-address";
 export {
+  type AssignedLink,
+  assignWrittenHref,
+  indexedDocumentAt,
+  type LinkAssignmentDocument,
+  type LinkAssignmentIndex,
+  type LinkAssignmentScope,
+} from "./link-assignment";
+export {
   LINK_CHIP_ICONS,
   type LinkChipIcon,
   linkChip,
   linkChipAttributes,
   referenceChip,
 } from "./link-chip";
-export { clipboardLinkAddress, LINK_ADDRESS_ATTRIBUTE, linksAsAddresses } from "./link-clipboard";
+export {
+  clipboardLinkAddress,
+  clipboardLinkProject,
+  clipboardLinkRef,
+  clipboardLinkScope,
+  clipboardPictureRef,
+  clipboardUploadRef,
+  LINK_ADDRESS_ATTRIBUTE,
+  LINK_PROJECT_ATTRIBUTE,
+  LINK_REF_ATTRIBUTE,
+} from "./link-clipboard";
 export {
   commitLinkDraft,
   type LinkAnchor,
@@ -47,11 +60,25 @@ export {
 } from "./link-navigation";
 export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {
-  createLinkResolution,
+  createLinkAnswerCache,
+  type DocumentAnswer,
   type InternalLinkResolver,
-  type LinkResolution,
+  type LinkAnswer,
+  type LinkAnswerCache,
+  type LinkKey,
+  type LinkQuestion,
   type LinkResolutionEntry,
+  type LocalLinkAnswer,
+  linkCacheKey,
+  linkKeyOfMark,
+  pictureKeyOfNode,
 } from "./link-resolution";
+export {
+  getLinkAnswerCache,
+  getLinkSurface,
+  type MountedLinks,
+  mountedLinks,
+} from "./link-storage";
 export {
   type LinkFollowOutcome,
   type LinkFormRequest,
@@ -63,7 +90,6 @@ export {
 } from "./link-surface";
 export {
   classifyLinkTarget,
-  documentLinkTarget,
   internalClipboardTarget,
   isInternalLinkTarget,
   type LinkTarget,

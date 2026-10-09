@@ -4,6 +4,8 @@ import type { Database } from "@meridian/database";
 import { documents, threads, turns } from "@meridian/database/schema";
 import { eq, inArray } from "drizzle-orm";
 
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+
 export function createDrizzleCollabLookups(db: Database) {
   return {
     async resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
@@ -15,7 +17,7 @@ export function createDrizzleCollabLookups(db: Database) {
       return new Map(rows.map((row) => [row.id, row.title]));
     },
     async resolveDocumentFiletype(documentId: string): Promise<string | null> {
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .select({ filetype: documents.fileType })
         .from(documents)
         .where(eq(documents.id, documentId as never))

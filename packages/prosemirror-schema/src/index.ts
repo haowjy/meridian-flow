@@ -52,6 +52,15 @@ const basicNodeDefaults = {
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;
 
+/**
+ * The stable target of an internal link, `image` or `figure` source: `doc:<id>`
+ * or `ahead:<id>` (`@meridian/contracts` `document-ref.ts`), null for external,
+ * contextual and `asset:` sources. Stored state only: no serializer, DOM
+ * renderer or wire format ever emits or reads it; every read spells the
+ * target's current path from it.
+ */
+const linkRefAttr = { default: null };
+
 // ─── Nodes from basic, customized ───────────────────────────────────
 const basicNodeOverrides = {
   paragraph: {
@@ -88,6 +97,7 @@ const basicNodeOverrides = {
       title: { default: null },
       uploadToken: { default: null },
       width: { default: null },
+      ref: linkRefAttr,
     },
     draggable: true,
   },
@@ -180,6 +190,7 @@ const customNodes = {
       // Replace aims an upload at an existing figure, so a figure holds the same
       // in-flight slot identity as an `image`.
       uploadToken: { default: null },
+      ref: linkRefAttr,
     },
     atom: true,
     defining: true,
@@ -211,6 +222,7 @@ const customMarks = {
     attrs: {
       href: { default: "" },
       title: { default: null },
+      ref: linkRefAttr,
     },
     inclusive: false,
   },
@@ -220,7 +232,7 @@ const customMarks = {
 
 // ─── Exports ────────────────────────────────────────────────────────
 
-export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
+export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
 /**
  * Reserved clientID band [0, RESERVED_CLIENT_ID_MAX] is owned by server-authored

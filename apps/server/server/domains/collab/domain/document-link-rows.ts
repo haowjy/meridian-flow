@@ -1,52 +1,72 @@
-/** Derive address-index rows without resolving whether their target exists. */
+/** Map a holder's stored link occurrences to link-index rows, one per link key (contract §11). */
 
-import { documentAddressKey, resolveDocumentHref } from "@meridian/contracts";
-import { isProjectScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
-import type { ProjectId } from "@meridian/contracts/runtime";
+import {
+  classifyWrittenLink,
+  classifyWrittenSource,
+  parseLinkRef,
+  type WrittenLinkClass,
+} from "@meridian/contracts";
+import type { DocumentId } from "@meridian/contracts/runtime";
+import type { StoredLinkOccurrence } from "@meridian/markup/stored-links";
 
 export type DocumentLinkRow = {
-  href: string;
-  targetProjectId: ProjectId | null;
-  targetKey: string | null;
+  /** `doc:<id>`, `ahead:<uuid>`, `asset:<id>`, or the contextual href itself. */
+  linkKey: string;
+  targetDocumentId: DocumentId | null;
+  aheadId: string | null;
+  /** Decoded canonical address the ref was stored with; null for contextual keys. */
+  address: string | null;
   occurrences: number;
 };
 
+const ASSET = /^asset:(.+)$/;
+
+/**
+ * Never resolves whether a target exists: the index is a hint from a certified cut. External
+ * hrefs, malformed refs and ref-less internal hrefs (which no producer writes) have no row.
+ */
 export function deriveDocumentLinkRows(input: {
-  occurrences: readonly { href: string }[];
+  occurrences: readonly StoredLinkOccurrence[];
   holderUri: string;
-  holderProjectId: ProjectId;
-  personalProjectId: ProjectId | null;
 }): DocumentLinkRow[] {
-  const holder = parseContextUri(input.holderUri);
-  if (!holder.ok) throw new RangeError(`Invalid holder URI: ${input.holderUri}`);
   const rows = new Map<string, DocumentLinkRow>();
-  for (const { href } of input.occurrences) {
-    const existing = rows.get(href);
-    if (existing) {
-      existing.occurrences++;
-      continue;
-    }
-    const resolved = resolveDocumentHref(href, input.holderUri);
-    if (!resolved) continue;
-    const target = parseContextUri(resolved.uri);
-    if (!target.ok) continue;
-    const { scheme, authority } = target.value;
-    const contextual = !isProjectScopedScheme(scheme)
-      ? authority.kind === "contextual"
-      : holder.value.scheme === "user" && scheme !== "user";
-    const targetProjectId = contextual
-      ? null
-      : scheme === "user"
-        ? input.personalProjectId
-        : input.holderProjectId;
-    if (!contextual && !targetProjectId)
-      throw new Error("A user link requires the holder owner's personal project");
-    rows.set(href, {
-      href,
-      targetProjectId,
-      targetKey: contextual ? null : documentAddressKey(resolved.uri),
-      occurrences: 1,
-    });
+  for (const occurrence of input.occurrences) {
+    const row = rowFor(occurrence, input.holderUri);
+    if (!row) continue;
+    const existing = rows.get(row.linkKey);
+    if (existing) existing.occurrences++;
+    else rows.set(row.linkKey, row);
   }
   return [...rows.values()];
+}
+
+function rowFor(occurrence: StoredLinkOccurrence, holderUri: string): DocumentLinkRow | null {
+  const written: WrittenLinkClass =
+    occurrence.kind === "link"
+      ? classifyWrittenLink(occurrence.href, holderUri)
+      : classifyWrittenSource(occurrence.href);
+  if (occurrence.ref === null) {
+    const asset = occurrence.kind === "link" ? null : ASSET.exec(occurrence.href);
+    if (asset?.[1]) {
+      const target = parseLinkRef(`doc:${asset[1]}`);
+      return target?.kind === "doc"
+        ? row(`asset:${target.documentId}`, target.documentId as DocumentId, null, null)
+        : null;
+    }
+    return written.kind === "contextual" ? row(occurrence.href, null, null, null) : null;
+  }
+  const ref = parseLinkRef(occurrence.ref);
+  if (!ref || written.kind !== "internal") return null;
+  return ref.kind === "doc"
+    ? row(`doc:${ref.documentId}`, ref.documentId as DocumentId, null, written.uri)
+    : row(`ahead:${ref.aheadId}`, null, ref.aheadId, written.uri);
+}
+
+function row(
+  linkKey: string,
+  targetDocumentId: DocumentId | null,
+  aheadId: string | null,
+  address: string | null,
+): DocumentLinkRow {
+  return { linkKey, targetDocumentId, aheadId, address, occurrences: 1 };
 }

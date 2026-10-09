@@ -1,9 +1,15 @@
-/** Reference loading resolves the mention and calls `readDocument`, as the `read` tool does (D18). */
+/**
+ * Reference loading resolves the mention and calls `readDocument`, as the
+ * `read` tool does (D18). The read returns its shown-link candidates beside
+ * the result; run preparation carries them to the commit that persists the
+ * reference block, so only an accepted attempt leaves evidence.
+ */
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ReferenceReader } from "../../domains/runtime/index.js";
 import { resolveDocumentAddress } from "./document-tools.js";
 import { documentGrant } from "./file-access.js";
 import { readDocument } from "./read-document.js";
+import { showingOf } from "./shown-link-capture.js";
 import {
   isToolError,
   recordTouchInBackground,
@@ -39,8 +45,14 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
       const grant = await documentGrant(deps, call.principal, "read", address, "read");
       if (isToolError(grant)) return { result: asJson(grant.output), revision: null };
       const outcome = await readDocument(deps, grant, address, {}, ctx);
-      if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
-      return { result: asJson(outcome.result), revision: outcome.revision };
+      if (outcome.isError) return { result: asJson(outcome.result), revision: outcome.revision };
+      recordTouchInBackground(deps, address.documentId, ctx);
+      return {
+        result: asJson(outcome.result),
+        revision: outcome.revision,
+        // The attachment's read text goes to the model as the reference block.
+        shown: showingOf(address.documentId, outcome),
+      };
     },
   };
 }

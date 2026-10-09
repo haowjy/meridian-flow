@@ -24,7 +24,7 @@ import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { cellInteriorPressPlugin } from "../cell-interior-press";
@@ -32,8 +32,12 @@ import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
 import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
+import { browserPictureSource } from "../images/image-workflow";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
+import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
+import { drawLinkAnswer } from "../links/link-mark-view";
+import { mountedLinks } from "../links/link-storage";
 import {
   classifyLinkTarget,
   internalClipboardTarget,
@@ -279,8 +283,67 @@ export const MeridianTableCell = TableCell.extend({
   },
 });
 
+/**
+ * The stored link target (`doc:`/`ahead:`) on images and figures. Never
+ * rendered; read back only from the attribute the link clipboard plugin leaves
+ * on a same-project rich paste's `<img>` (a figure's own picture), which the
+ * paste sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
+ */
+/**
+ * A picture's stored source. Rendered only when the browser may fetch it as
+ * written; anything else is named on the clipboard by its metadata
+ * (`links/link-clipboard.ts`), never by an `<img src>` the browser would load.
+ */
+const PICTURE_SOURCE_ATTRIBUTE = {
+  default: "",
+  renderHTML: (attrs: Record<string, unknown>) => {
+    const src = browserPictureSource(typeof attrs.src === "string" ? attrs.src : "");
+    return src === null ? {} : { src };
+  },
+};
+
+const PICTURE_REF_ATTRIBUTE = {
+  default: null,
+  rendered: false,
+  parseHTML: (element: HTMLElement) => {
+    const picture = element.localName === "img" ? element : element.querySelector("img");
+    return clipboardLinkRef(picture?.getAttribute(LINK_KEPT_REF_ATTRIBUTE) ?? null);
+  },
+};
+
+/**
+ * The link mark's ref. Never rendered; read back only from the attribute the
+ * link clipboard plugin leaves on a same-project rich paste, which the paste
+ * sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
+ */
+const LINK_MARK_REF_ATTRIBUTE = {
+  default: null,
+  rendered: false,
+  parseHTML: (element: HTMLElement) =>
+    clipboardLinkRef(element.getAttribute(LINK_KEPT_REF_ATTRIBUTE)),
+};
+
 // ─── Customized extensions ──────────────────────────────────────────
 // Extensions that add behavior beyond what TipTap defaults provide.
+
+/**
+ * A link mark's `<a>` attributes. Internal targets are semantic references,
+ * not browser URLs: they keep their exact spelling in clipboard HTML, and only
+ * external targets get a live href.
+ */
+function linkElementAttributes(HTMLAttributes: Record<string, unknown>): Record<string, unknown> {
+  const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
+  return target
+    ? {
+        ...HTMLAttributes,
+        href: isInternalLinkTarget(target) ? undefined : linkTargetHref(target),
+        "data-meridian-link": isInternalLinkTarget(target) ? HTMLAttributes.href : undefined,
+        role: "link",
+        tabindex: "0",
+        "data-link-kind": target.kind,
+      }
+    : { ...HTMLAttributes, href: "" };
+}
 
 // What a link IS. What pressing one DOES belongs to the link surface
 // (`core/editor/links/`), which owns the click, the hover, and the menu.
@@ -289,10 +352,10 @@ export const MeridianLink = Link.extend({
 
   /**
    * Rendered, not stored: `data-link-kind` is what lets CSS give an external
-   * link its trailing arrow. An internal link's chip comes from the
-   * resolution decorations inside this `<a>`, never from the mark. It is
-   * absent from `addAttributes`, so it never reaches the schema, the wire
-   * format, or another peer's document.
+   * link its trailing arrow. An internal link's chip is drawn by the mark
+   * view (`addMarkView`), never from the mark. It is absent from
+   * `addAttributes`, so it never reaches the schema, the wire format, or
+   * another peer's document.
    *
    * It replaces TipTap's own renderHTML, so it also carries TipTap's fence:
    * an href the classifier does not recognize renders with no destination.
@@ -300,20 +363,37 @@ export const MeridianLink = Link.extend({
    * and it must not become a live link when it does.
    */
   renderHTML({ HTMLAttributes }) {
-    const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
-    // Internal targets are semantic references, not browser URLs. Keep their
-    // exact spelling in clipboard HTML; only external targets get a live href.
-    const attributes = target
-      ? {
-          ...HTMLAttributes,
-          href: isInternalLinkTarget(target) ? undefined : linkTargetHref(target),
-          "data-meridian-link": isInternalLinkTarget(target) ? HTMLAttributes.href : undefined,
-          role: "link",
-          tabindex: "0",
-          "data-link-kind": target.kind,
-        }
-      : { ...HTMLAttributes, href: "" };
-    return ["a", mergeAttributes(this.options.HTMLAttributes, attributes), 0];
+    return [
+      "a",
+      mergeAttributes(this.options.HTMLAttributes, linkElementAttributes(HTMLAttributes)),
+      0,
+    ];
+  },
+
+  /**
+   * The same `<a>` as `renderHTML` (which clipboard HTML still uses), plus
+   * its answer: the chip and its accessible state (`drawLinkAnswer`), the
+   * only place a link's answer is drawn. Those attributes are set on the live
+   * element, so its own attribute mutations are not a document change.
+   */
+  addMarkView() {
+    const { editor, options } = this;
+    return ({ mark, HTMLAttributes }) => {
+      const { dom, contentDOM } = DOMSerializer.renderSpec(document, [
+        "a",
+        mergeAttributes(options.HTMLAttributes, linkElementAttributes(HTMLAttributes)),
+        0,
+      ]);
+      const element = dom as HTMLElement;
+      // A changed ref or href is a different mark, and a new view.
+      const release = drawLinkAnswer(element, mark.attrs, mountedLinks(editor));
+      return {
+        dom: element,
+        contentDOM,
+        ignoreMutation: (mutation) => mutation.type === "attributes" && mutation.target === element,
+        destroy: release,
+      };
+    };
   },
 
   parseHTML() {
@@ -338,6 +418,7 @@ export const MeridianLink = Link.extend({
           element.getAttribute("href"),
       },
       title: { default: null },
+      ref: LINK_MARK_REF_ATTRIBUTE,
     };
   },
 }).configure({
@@ -437,11 +518,12 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
 
   addAttributes() {
     return {
-      src: { default: "" },
+      src: PICTURE_SOURCE_ATTRIBUTE,
       alt: { default: null },
       title: { default: null },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
       width: IMAGE_WIDTH_ATTRIBUTE,
+      ref: PICTURE_REF_ATTRIBUTE,
     };
   },
 
@@ -577,11 +659,12 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
 
   addAttributes() {
     return {
-      src: { default: "" },
+      src: { default: "", rendered: false },
       alt: { default: null },
       label: { default: null },
       caption: { default: "" },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
+      ref: PICTURE_REF_ATTRIBUTE,
     };
   },
 
@@ -608,9 +691,9 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
     return ReactNodeViewRenderer(FigureNodeView);
   },
 
-  renderHTML({ HTMLAttributes }) {
+  renderHTML({ node, HTMLAttributes }) {
     const attrs = HTMLAttributes as RenderAttrs;
-    const src = typeof attrs.src === "string" ? attrs.src : "";
+    const src = browserPictureSource(typeof node.attrs.src === "string" ? node.attrs.src : "");
     const alt = typeof attrs.alt === "string" ? attrs.alt : null;
     const label = typeof attrs.label === "string" ? attrs.label : null;
     const caption = typeof attrs.caption === "string" ? attrs.caption : "";
@@ -618,7 +701,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
     return [
       "figure",
       mergeAttributes(HTMLAttributes, { "data-type": "figure", "data-label": label }),
-      ["img", { src, alt }],
+      ["img", src === null ? { alt } : { src, alt }],
       ["figcaption", caption],
     ];
   },

@@ -1,4 +1,4 @@
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
@@ -7,6 +7,8 @@ import {
   createBranchPendingJournalEntries,
 } from "./branch-agent-edit.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
+
+const WORK_ID = "00000000-0000-4000-8000-0000000000aa" as WorkId;
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 
@@ -59,8 +61,8 @@ describe("branch agent-edit journal appendBatch", () => {
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", generation: 2, state: new Uint8Array() }
-            : { upstreamBranchId: null, generation: 2, state: new Uint8Array() },
+            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 2, state: new Uint8Array() }
+            : { upstreamBranchId: null, workId: WORK_ID, generation: 2, state: new Uint8Array() },
       },
       branchRows: {
         listJournalRowsForBranch: async () => [
@@ -105,6 +107,7 @@ describe("branch agent-edit journal appendBatch", () => {
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async () => ({
           upstreamBranchId: "work",
+          workId: WORK_ID,
           generation: 1,
           state: new Uint8Array(),
         }),
@@ -137,8 +140,8 @@ describe("branch agent-edit journal appendBatch", () => {
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", generation: 1, state: new Uint8Array() }
-            : { upstreamBranchId: null, generation: 1, state: new Uint8Array() },
+            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 1, state: new Uint8Array() }
+            : { upstreamBranchId: null, workId: WORK_ID, generation: 1, state: new Uint8Array() },
       },
       branchRows: {
         listJournalRowsForBranch: async () => [
@@ -235,8 +238,8 @@ describe("branch agent-edit journal appendBatch", () => {
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", generation: 1, state: branchState }
-            : { upstreamBranchId: null, generation: 1, state: branchState },
+            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 1, state: branchState }
+            : { upstreamBranchId: null, workId: WORK_ID, generation: 1, state: branchState },
       },
       branchRows: {
         listJournalRowsForBranch: async () => [
@@ -321,8 +324,8 @@ describe("branch agent-edit journal appendBatch", () => {
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", generation: 1, state: branchState }
-            : { upstreamBranchId: null, generation: 1, state: branchState },
+            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 1, state: branchState }
+            : { upstreamBranchId: null, workId: WORK_ID, generation: 1, state: branchState },
       },
       branchRows: { listJournalRowsForBranch: listRows },
     });

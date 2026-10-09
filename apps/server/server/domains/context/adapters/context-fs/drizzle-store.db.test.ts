@@ -9,8 +9,10 @@ import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
+import type { BindMarkdownInput } from "../../../collab/index.js";
+import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
+import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
-import { createDrizzleDocumentAssetPaths } from "../asset-path-resolver.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { ContextFS } from "./context-fs.js";
 import {
@@ -80,7 +82,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let beforeCollabWrite: (() => Promise<void>) | null = null;
       const mutationStore = new DrizzleContextTreeMutationStore(db);
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        holder: { projectId: PROJECT_ID },
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore,
         scheme: "kb",
@@ -88,7 +91,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ensureDocument: async () => {},
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
-          seedFromMarkdown: async (documentId: string, markdown: string) => {
+          bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
+          seedFromMarkdown: async (documentId: string, { markdown }: { markdown: string }) => {
             await beforeCollabWrite?.();
             const [row] = await db
               .select({ filetype: documents.fileType })

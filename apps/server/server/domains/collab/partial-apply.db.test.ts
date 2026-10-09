@@ -7,6 +7,7 @@ import { asc, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
+import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -326,7 +327,7 @@ describe("per-change Apply (postgres)", () => {
     );
     const pendingId = await stageText(fixture, branch.branchId, 0, " Pending proposal", "agent");
     if (source === "writer") {
-      await fixture.collab.writeDocument({
+      await writeMarkdown(fixture.collab, {
         documentId: ALPHA_ID,
         markdown: "Alpha rewritten. Live writer.\n\nBeta base.",
         origin: { type: "user", actorUserId: USER_ID },

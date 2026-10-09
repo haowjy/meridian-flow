@@ -32,6 +32,7 @@ export {
   renderInvalidArguments,
 } from "./invalid-arguments.js";
 export { type LsEntry, type LsResult, sortLsEntries } from "./ls-result.js";
+export { searchPassage } from "./search-result.js";
 export {
   createSkillToolRegistrations,
   readSkill,

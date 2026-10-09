@@ -119,7 +119,6 @@ function overlayResourceCatalogView(
   isKnownVisible: (record: ResourceRecord) => boolean,
 ): CatalogCacheView {
   const entries = new Map(view.entries);
-  const invalidatedEntryIds = new Set(view.invalidatedEntryIds);
   for (const record of records) {
     const documentId = record.resource.identity.documentId;
     const location = projectResourceLocation(projectId, record);
@@ -129,7 +128,7 @@ function overlayResourceCatalogView(
         (intent) => intent.projectId === projectId && intent.state !== "cancelled",
       ) ||
       location?.scheme === "user" ||
-      (entries.has(documentId) && !invalidatedEntryIds.has(documentId));
+      entries.has(documentId);
     if (!visible) continue;
     const installed = entries.get(documentId);
     const installedMatches =
@@ -142,10 +141,7 @@ function overlayResourceCatalogView(
 
     const sourceId =
       [...entries.values()].find(
-        (entry) =>
-          entry.kind === "source" &&
-          entry.scheme === location.scheme &&
-          !invalidatedEntryIds.has(entry.entryId),
+        (entry) => entry.kind === "source" && entry.scheme === location.scheme,
       )?.entryId ?? `local-source:${location.scheme}:${JSON.stringify(scope)}`;
     if (!entries.has(sourceId)) {
       entries.set(sourceId, {
@@ -157,7 +153,6 @@ function overlayResourceCatalogView(
         uri: catalogUri(location, ""),
       });
     }
-    invalidatedEntryIds.delete(sourceId);
     const path = location.path.split("/").filter(Boolean);
     let parentId = sourceId;
     for (let depth = 1; depth < path.length; depth += 1) {
@@ -166,8 +161,7 @@ function overlayResourceCatalogView(
         (entry) =>
           entry.kind === "folder" &&
           entry.sourceId === sourceId &&
-          entry.path.join("/") === folderPath.join("/") &&
-          !invalidatedEntryIds.has(entry.entryId),
+          entry.path.join("/") === folderPath.join("/"),
       );
       if (existing?.kind === "folder") {
         parentId = existing.entryId;
@@ -185,7 +179,6 @@ function overlayResourceCatalogView(
         uri: catalogUri(location, folderPath.join("/")),
         hasChildren: true,
       });
-      invalidatedEntryIds.delete(folderId);
       parentId = folderId;
     }
     const uri = catalogUri(location, path.join("/"));
@@ -202,9 +195,8 @@ function overlayResourceCatalogView(
       provisionalName: location.provisional,
       ...record.resource.classification,
     } satisfies CatalogFileEntry);
-    invalidatedEntryIds.delete(documentId);
   }
-  return indexCatalogView({ ...view, entries, invalidatedEntryIds });
+  return indexCatalogView({ ...view, entries });
 }
 
 /** Rebase every folder with a pending or settled local move, and its descendants, at once. */
@@ -390,7 +382,7 @@ export function projectCatalogView(
   };
   const node = (entryId: string): CatalogNode | null => {
     const entry = view.entries.get(entryId);
-    if (!entry || view.invalidatedEntryIds.has(entryId)) return null;
+    if (!entry) return null;
     if (entry.kind === "file") return fileFromEntry(entry);
     if (entry.kind === "folder" && entry.sourceId === sourceId)
       return projectCatalogDirectory(entry, foldersById.get(entry.entryId));
@@ -398,7 +390,7 @@ export function projectCatalogView(
   };
   const files = () =>
     [...view.entries.values()].flatMap((entry) =>
-      entry.kind === "file" && !view.invalidatedEntryIds.has(entry.entryId)
+      entry.kind === "file"
         ? (() => {
             const file = fileFromEntry(entry);
             return file ? [file] : [];
@@ -419,7 +411,6 @@ export function projectCatalogView(
       [...view.entries.values()].flatMap((entry) =>
         entry.kind === "folder" &&
         entry.sourceId === sourceId &&
-        !view.invalidatedEntryIds.has(entry.entryId) &&
         `/${entry.path.join("/")}` === path
           ? [projectCatalogDirectory(entry, foldersById.get(entry.entryId))]
           : [],

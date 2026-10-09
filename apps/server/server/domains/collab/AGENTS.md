@@ -52,12 +52,15 @@ editor UI or transport-shell policy.
 - Route schema-aware content reads, seeds, and writes through
   `domain/markdown-document.ts`.
 - Build the markup codec once, in `domain/agent-edit-runtime.ts`, where the
-  composition root injects `DocumentAssetPaths`. Image paths are read from the
-  document tree per operation (`domain/asset-path-scope.ts`), never cached; a
-  new door that hands Markdown to a reader joins that scope. A picture
-  serialized outside every scope throws under test and logs
-  `serialize.asset_path_unscoped` in production. A second
-  `mdxCodec(...)` silently loses it.
+  composition root injects `DocumentLinkScopes`. Links and image sources spell
+  from the document tree per operation (`domain/document-link-scope-doors.ts`
+  opens the scope, the operation prepares it before its synchronous
+  serialize), never cached; a new door that hands Markdown to a reader joins
+  that scope and prepares. Spelling outside every scope, or from a scope no
+  door prepared, throws under test and logs `serialize.link_unscoped` /
+  `serialize.link_snapshot_miss` in production. Parse is pure syntax: writes
+  assign written image paths' `asset:` srcs in agent-edit's ref assignment
+  (`assignLinkRefs`) after it.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`](.context/collab-domain.html).

@@ -3,8 +3,8 @@
 Images preserve their asset identity in ProseMirror while selecting the smallest
 Markdown or MDX spelling that retains the writer's image attributes. This page
 owns the image codec's accepted syntax and its raw-HTML entity boundary; see
-[CONTEXT.md](CONTEXT.md) for the package's public API and the generic asset-path
-resolver contract.
+[CONTEXT.md](CONTEXT.md) for the package's public API and the link scope that
+spells sources.
 
 ## Minimal serialization
 
@@ -35,7 +35,7 @@ already was.
 ## Raw HTML entity boundary
 
 Raw HTML image attributes cross one entity-decoding boundary in
-`parseRawImageHtmlAttributes()` before asset-path resolution. MDX JSX attributes
+`parseRawImageHtmlAttributes()` before the asset rule claims a known path. MDX JSX attributes
 skip that boundary because the MDX parser has already decoded them. Images
 inside raw HTML tables use the same raw boundary, then pass the decoded image
 facts directly to `imageNodeFromAttributes()`; they are never

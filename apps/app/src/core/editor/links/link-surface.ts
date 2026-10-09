@@ -28,6 +28,8 @@ export type LinkHint = {
   /** The rendered anchor, so the hint travels with it as the pane scrolls. */
   element: HTMLElement;
   target: LinkTarget;
+  /** The link's ref, read from its mark: what it names, for the hint's answer. */
+  ref: string | null;
 };
 
 /** The Ctrl+K form. One field over a selection, two at a bare caret (law 5). */
@@ -53,6 +55,8 @@ export type LinkMenuTarget = {
   /** Where the link is, pinned so it can be found again after a remote write. */
   anchor: LinkAnchor;
   href: string;
+  /** The mark's ref: with the href, the link's identity for its answer. */
+  ref: string | null;
   target: LinkTarget | null;
   /**
    * The mark this menu opened on. Coordinates outlive the thing that was at

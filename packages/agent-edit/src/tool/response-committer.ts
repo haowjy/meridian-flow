@@ -2,20 +2,22 @@
 import * as Y from "yjs";
 import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
+import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
+import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
+import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { internalResultError, isInternalWriteResult } from "./internal-result.js";
-import { modelResult } from "./model-result.js";
+import { type AgentEditBlockItem, modelResult } from "./model-result.js";
 import type {
   CommitPreflightInput,
   DestructiveSweepReport,
@@ -221,7 +223,8 @@ export function createResponseCommitter(deps: {
   mutationCommit: MutationCommit;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  links: import("../ports/document-links.js").DocumentLinksPort;
   ensureDocument?: (docId: string) => Promise<void>;
   onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
@@ -238,6 +241,18 @@ export function createResponseCommitter(deps: {
     onTransition,
   } = deps;
   const responses = new Map<string, ResponseState>();
+  /** Each document's command links for the commit attempt that renders its receipts. */
+  const commitLinks = new WeakMap<ResponseDocumentBuffer, CommandLinks>();
+  const linksOf = (docBuffer: ResponseDocumentBuffer): CommandLinks => {
+    const links = commitLinks.get(docBuffer);
+    if (!links)
+      throw new Error(`Response document ${docBuffer.docId} has no links opened for commit.`);
+    return links;
+  };
+  /** Receipts and concurrent runs: what the commit links' codec rendered them as, in its view. */
+  const shownSource = (docBuffer: ResponseDocumentBuffer) => linksOf(docBuffer);
+  const shownLinksOf = (items: readonly AgentEditBlockItem[], docBuffer: ResponseDocumentBuffer) =>
+    shownEvidence(items, shownSource(docBuffer));
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
   const closedResponseOrder: string[] = [];
 
@@ -361,6 +376,27 @@ export function createResponseCommitter(deps: {
     let recoveryRecheckInputs: ReadonlyMap<string, CommitPreflightInput> | null = null;
 
     try {
+      for (const docBuffer of docBuffers) {
+        // Receipts and deleted bodies also spell each write's before side,
+        // which can still hold links the reply removed.
+        const before = docBuffer.updates.map(({ preOwnSnapshot }) => {
+          const doc = new Y.Doc({ gc: false });
+          Y.applyUpdate(doc, preOwnSnapshot);
+          return doc;
+        });
+        try {
+          commitLinks.set(
+            docBuffer,
+            await openCommandLinks(deps, {
+              documentId: docBuffer.docId,
+              docs: [docBuffer.runtime.doc, ...before],
+              context: { responseId, threadId: docBuffer.session.threadId },
+            }),
+          );
+        } finally {
+          for (const doc of before) doc.destroy();
+        }
+      }
       const preflights = new Map<
         string,
         import("./mutation-commit.js").CapturedConcurrentDetection | undefined
@@ -380,6 +416,7 @@ export function createResponseCommitter(deps: {
             return mutationCommit.captureCommitPreflight(liveDoc, {
               docId: docBuffer.docId,
               runtime: docBuffer.runtime,
+              links: linksOf(docBuffer),
               deletedHashes: hashes.deletedHashes,
               touchedHashes: hashes.touchedHashes,
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -416,6 +453,7 @@ export function createResponseCommitter(deps: {
             {
               docId: docBuffer.docId,
               runtime: docBuffer.runtime,
+              links: linksOf(docBuffer),
               deletedHashes: new Set(hashes.deletedHashes),
               touchedHashes: new Set(hashes.touchedHashes),
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -446,6 +484,7 @@ export function createResponseCommitter(deps: {
               {
                 docId: docBuffer.docId,
                 runtime: docBuffer.runtime,
+                links: linksOf(docBuffer),
                 deletedHashes: hashes.deletedHashes,
                 touchedHashes: hashes.touchedHashes,
                 preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -479,13 +518,13 @@ export function createResponseCommitter(deps: {
                       applied.concurrent.detectionSnapshot,
                       applied.lateSweep.affectedBlockHashes,
                       deps.model,
-                      deps.codec,
+                      linksOf(docBuffer).codec,
                     ),
                     captureDeletedBodies(
                       docBuffer.updates[0]?.preOwnSnapshot,
                       applied.lateSweep.affectedBlockHashes,
                       deps.model,
-                      deps.codec,
+                      linksOf(docBuffer).codec,
                     ),
                   ),
                 ),
@@ -498,7 +537,12 @@ export function createResponseCommitter(deps: {
           updateCount: docBuffer.updates.length,
           receipts: settledWriteReceipts(docBuffer, applied.revision, lateSweep),
           ...(applied.concurrent.detection.info
-            ? { concurrentEdits: applied.concurrent.detection.info }
+            ? {
+                concurrentEdits: withRunShownLinks(
+                  applied.concurrent.detection.info,
+                  shownSource(docBuffer),
+                ),
+              }
             : {}),
           ...(lateSweep ? { lateSweep } : {}),
         };
@@ -686,7 +730,12 @@ export function createResponseCommitter(deps: {
       documentsById.set(docBuffer.docId, {
         ...current,
         ...(rechecked.concurrent.detection.info
-          ? { concurrentEdits: rechecked.concurrent.detection.info }
+          ? {
+              concurrentEdits: withRunShownLinks(
+                rechecked.concurrent.detection.info,
+                shownSource(docBuffer),
+              ),
+            }
           : {}),
         ...(rechecked.lateSweep ? { lateSweep: rechecked.lateSweep } : {}),
       });
@@ -707,7 +756,8 @@ export function createResponseCommitter(deps: {
     revision: string | null,
     lateSweep?: DestructiveSweepReport,
   ): ResponseCommitDocumentResult["receipts"] {
-    const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, deps.codec);
+    const links = linksOf(docBuffer);
+    const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, links.codec);
     const lastIndex = docBuffer.updates.length - 1;
     return docBuffer.updates.map((update, index) => {
       const beforeDoc = new Y.Doc({ gc: false });
@@ -715,7 +765,8 @@ export function createResponseCommitter(deps: {
         Y.applyUpdate(beforeDoc, update.preOwnSnapshot);
         const summary = mutationCommit.summarizeMutationEcho({
           runtime: docBuffer.runtime,
-          before: snapshotBlocks(toDocHandle(beforeDoc), deps.model, deps.codec),
+          links,
+          before: snapshotBlocks(toDocHandle(beforeDoc), deps.model, links.codec),
           touchedHashes: update.touchedHashes,
           deletedHashes: update.deletedHashes,
           afterSnapshot: after,
@@ -738,7 +789,7 @@ export function createResponseCommitter(deps: {
           ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
           ...(lateSweep && index === lastIndex ? { lateSweep } : {}),
           ...(index === lastIndex &&
-          isDocumentEmpty(deps.model, deps.codec, toDocHandle(docBuffer.runtime.doc))
+          isDocumentEmpty(deps.model, links.codec, toDocHandle(docBuffer.runtime.doc))
             ? { documentEmpty: true }
             : {}),
           ...(update.copied
@@ -757,6 +808,7 @@ export function createResponseCommitter(deps: {
             phase: "committed",
             ...(receipt.model ? { payload: receipt.model } : {}),
           }),
+          ...shownLinksOf(renderedItems(receipt.model), docBuffer),
         };
       } finally {
         beforeDoc.destroy();

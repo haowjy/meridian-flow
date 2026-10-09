@@ -101,7 +101,7 @@ export class ContextTreeMover {
     private readonly receipts?: ContextOperationReceipts,
     private readonly moveLinks?: {
       flush(source: ContextTreeDispatch): Promise<void>;
-      mover: { userId: string; turnId?: string | null; responseId?: string | null };
+      linkNoteProjectId: string;
     },
   ) {
     this.commandExecutor = createResultAwareCommandExecutor({
@@ -192,7 +192,7 @@ export class ContextTreeMover {
             () =>
               destination.adapter.tree?.commitPreparedMove({
                 ...prepared.value,
-                mover: this.moveLinks?.mover,
+                linkNoteProjectId: this.moveLinks?.linkNoteProjectId,
               }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
           );
           if (!result.ok) return result;

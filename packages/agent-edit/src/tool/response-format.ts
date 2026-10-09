@@ -125,11 +125,12 @@ export function formatReversalSuccess(input: ReversalSuccessResponseInput): Inte
 }
 
 export function truncateCreateEcho(
-  renderer: { renderBlockLines: (doc: DocHandle) => string[] },
+  renderer: { renderBlockLines: (doc: DocHandle, codec: AgentEditCodec) => string[] },
+  codec: AgentEditCodec,
   doc: Y.Doc,
   toDocHandle: (doc: Y.Doc) => DocHandle,
 ): string[] {
-  return renderer.renderBlockLines(toDocHandle(doc)).map(truncateSerializedBlock);
+  return renderer.renderBlockLines(toDocHandle(doc), codec).map(truncateSerializedBlock);
 }
 
 export function status(
@@ -163,6 +164,7 @@ export function toOutcome(
     ...(result.settlementId ? { settlementId: result.settlementId } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(result.nodes ? { nodes: result.nodes } : {}),
+    ...(result.showing ? { showing: result.showing } : {}),
     result: model,
   };
   if (result.status === "success") {

@@ -5,6 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
+import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   classifyFiletype,
   type Filetype,
@@ -12,20 +13,25 @@ import {
   filetypeForPath,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
+  BoundWrite,
   BranchPeerShadowAccess,
-  DocumentAssetPaths,
   DocumentCreationAggregate,
+  DocumentLinkScopes,
   DocumentSeedOrigin,
+  EffectiveReadVersion,
+  HashlineRead,
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
 import { countWords, createDocumentCreationAggregate } from "../../../collab/index.js";
 import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
-import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
+import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import {
   createResultAwareCommandExecutor,
@@ -61,10 +67,17 @@ import type {
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
 import { resolveVisibleDocumentMembership } from "../../visible-document-membership.js";
+import {
+  BoundWrites,
+  binaryTrackedWriteFault,
+  DEFAULT_EDITABLE_FILETYPE,
+  trackedFiletypeForPath,
+} from "./bound-writes.js";
 import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
-  assetPaths: Pick<DocumentAssetPaths, "within">;
+  /** Search spells its source's chapters from one snapshot; each read prepares its own. */
+  links: Pick<DocumentLinkScopes, "within">;
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
@@ -76,6 +89,12 @@ export interface ContextFSDeps {
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
+  /**
+   * The project a document created here belongs to, and the URI authority of
+   * this source (a Work-scoped scheme's Work): content written into a new
+   * document binds its links as that document's address (contract §6.2).
+   */
+  holder: { projectId: string; authority?: CanonicalContextAuthority };
   /** The project manifest that decides which documents of a drafted source exist (D20). */
   manifestView?: {
     projectId: string;
@@ -95,22 +114,8 @@ class DocumentCreationFault extends Error {
 
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
 const MISSING = Symbol("missing-folder");
-const DEFAULT_EDITABLE_FILETYPE = "markdown";
 const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
 const UNTITLED_ALLOCATION_ATTEMPTS = 32;
-
-function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
-  const filetype = filetypeForPath(path);
-  if (classifyFiletype(filetype).kind === "tracked") return Ok(filetype);
-  return Err(binaryTrackedWriteFault(path));
-}
-
-function binaryTrackedWriteFault(path: string): AdapterFault {
-  return {
-    code: "invalid_operation",
-    message: `Cannot create or write ${path} as a tracked text document; binary content must use the upload flow`,
-  };
-}
 
 function trackedSchemaForPersistedFiletype(
   filetype: string | null | undefined,
@@ -175,7 +180,7 @@ export class ContextFS implements ContextSchemeAdapter {
   readonly name: string;
   readonly capabilities: SchemeCapabilities;
 
-  private readonly assetPaths: ContextFSDeps["assetPaths"];
+  private readonly links: ContextFSDeps["links"];
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: ContextFSDeps["documentSync"];
@@ -184,6 +189,8 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly manifestView?: ContextFSDeps["manifestView"];
   private readonly readView?: ThreadContextView;
   private readonly scheme: ContextScheme;
+  private readonly holder: ContextFSDeps["holder"];
+  private readonly boundWrites: BoundWrites;
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
@@ -193,7 +200,7 @@ export class ContextFS implements ContextSchemeAdapter {
   };
 
   constructor(deps: ContextFSDeps) {
-    this.assetPaths = deps.assetPaths;
+    this.links = deps.links;
     this.capabilities = schemeCapabilities(deps.scheme);
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
@@ -221,7 +228,22 @@ export class ContextFS implements ContextSchemeAdapter {
     this.manifestView = deps.manifestView;
     this.readView = deps.threadView;
     this.scheme = deps.scheme;
+    this.holder = deps.holder;
     this.name = deps.scheme;
+    this.boundWrites = new BoundWrites({
+      documentSync: deps.documentSync,
+      commandExecutor: this.commandExecutor,
+      projectId: deps.holder.projectId,
+      holderUri: (path) => this.holderUri(path),
+      findDocument: async (path) => {
+        const { dir, filename } = splitPath(path);
+        if (!filename) return null;
+        const folderId = await this.findFolderId(dir);
+        if (folderId === MISSING) return null;
+        const { name, extension } = parseFilename(filename);
+        return this.store.findDocument(folderId, name, extension);
+      },
+    });
   }
 
   private syncFault(error: SyncError): AdapterFault {
@@ -246,7 +268,8 @@ export class ContextFS implements ContextSchemeAdapter {
     name: string;
     extension: string;
     filetype: Filetype;
-    content: string;
+    /** Bound before the command transaction; null creates an empty document. */
+    content: BoundWrite | null;
     provisionalName?: boolean;
     options?: ContextWriteOptions;
   }): Promise<Result<{ document: ContextDocument; markdown: string }, AdapterFault>> {
@@ -270,7 +293,7 @@ export class ContextFS implements ContextSchemeAdapter {
         },
         persistMembership: () => this.store.recordDocumentMembership(documentId),
         initializeContent: async () => {
-          if (input.content.length === 0) {
+          if (input.content === null || input.content.markdown.length === 0) {
             await this.documentCreation.ensureDocument(documentId);
             return "";
           }
@@ -293,7 +316,7 @@ export class ContextFS implements ContextSchemeAdapter {
           if (!seeded.ok) {
             throw new DocumentCreationFault(this.syncFault(seeded.error));
           }
-          return input.content;
+          return input.content.markdown;
         },
       });
       if (!created.created) return Err({ code: "conflict" });
@@ -307,6 +330,14 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
+  /**
+   * Restores a half-created document's membership and, if it has no Yjs state,
+   * an empty one. The stored projection is never reparsed: it spells links as
+   * they were addressed when it was written, and a move since then would turn
+   * a stale path back into a link. So a document whose only content is that
+   * projection is incomplete, not repairable: it stays as it is, bytes kept,
+   * rather than becoming an empty document that reads as a successful repair.
+   */
   private async repairTrackedDocument(
     document: ContextDocument,
   ): Promise<Result<void, AdapterFault>> {
@@ -314,10 +345,19 @@ export class ContextFS implements ContextSchemeAdapter {
       await this.documentCreation.repairDocumentAtomically({
         documentId: document.id as never,
         initializeContent: async () => {
-          const seeded = await this.documentSync.seedFromMarkdown(document.id, document.markdown, {
-            type: "system",
-          });
-          if (!seeded.ok) throw new DocumentCreationFault(this.syncFault(seeded.error));
+          if (document.markdown.length > 0) {
+            const canonical = await this.documentSync.readAsMarkdown(document.id);
+            if (!canonical.ok && canonical.error.code === "not_found") {
+              throw new DocumentCreationFault(
+                this.syncFault({
+                  code: "corrupt_state",
+                  documentId: document.id,
+                  message: `Document ${document.id} has stored text but no canonical state; it was left as it is for recovery`,
+                }),
+              );
+            }
+          }
+          await this.documentCreation.ensureDocument(document.id);
         },
         persistMembership: () => this.store.recordDocumentMembership(document.id),
       });
@@ -423,12 +463,25 @@ export class ContextFS implements ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
-    return this.commandExecutor.run(() => this.writeInTransaction(path, content, options));
+    // An actor's overwrite keeps the refs of links it leaves in place; import and system writes bind fresh.
+    const actor = options?.origin?.type === "agent" || options?.origin?.type === "human";
+    return this.boundWrites.command(
+      async () => {
+        const existing = await this.boundWrites.lookup(path);
+        if (!existing.ok) return existing;
+        return this.boundWrites.bind(path, existing.value, content, actor ? "current" : undefined);
+      },
+      (bound) => this.writeInTransaction(path, bound, options),
+    );
+  }
+
+  private holderUri(path: string): string {
+    return canonicalContextUri(this.scheme, path, this.holder.authority);
   }
 
   private async writeInTransaction(
     path: string,
-    content: string,
+    content: BoundWrite,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
@@ -442,6 +495,9 @@ export class ContextFS implements ContextSchemeAdapter {
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
+    }
+    if (!this.boundWrites.boundFor(path, content, existing)) {
+      return Err({ code: "stale_target" });
     }
     if (existing && !(await this.isVisibleDocument(existing.id))) {
       const repaired = await this.repairTrackedDocument(existing);
@@ -473,19 +529,49 @@ export class ContextFS implements ContextSchemeAdapter {
     });
   }
 
-  async createTrackedDocument(
+  /**
+   * Bind content for a document about to be created at `path`, before the
+   * caller's transaction opens (an upload binds before finalizing).
+   */
+  async bindTrackedDocument(
     path: string,
     content: string,
+  ): Promise<Result<BoundWrite, AdapterFault>> {
+    return this.boundWrites.bind(path, null, content);
+  }
+
+  async createTrackedDocument(
+    path: string,
+    markdown: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    let bound: BoundWrite | null = null;
+    if (markdown.length > 0) {
+      const binding = await this.boundWrites.bind(path, null, markdown);
+      if (!binding.ok) return binding;
+      bound = binding.value;
+    }
     return this.commandExecutor.run(() =>
-      this.createTrackedDocumentInTransaction(path, content, options),
+      this.createTrackedDocumentInTransaction(path, bound, options),
+    );
+  }
+
+  async createBoundDocument(
+    path: string,
+    bound: BoundWrite | null,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    if (bound && !this.boundWrites.boundFor(path, bound, null)) {
+      return Err({ code: "io_error", message: `Content was bound for another document` });
+    }
+    return this.commandExecutor.run(() =>
+      this.createTrackedDocumentInTransaction(path, bound, options),
     );
   }
 
   private async createTrackedDocumentInTransaction(
     path: string,
-    content: string,
+    content: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
@@ -590,7 +676,7 @@ export class ContextFS implements ContextSchemeAdapter {
         name,
         extension: "md",
         filetype: "markdown",
-        content: "",
+        content: null,
         provisionalName: true,
         options: { origin: options.origin },
       });
@@ -662,63 +748,10 @@ export class ContextFS implements ContextSchemeAdapter {
       name,
       extension,
       filetype,
-      content: "",
+      content: null,
       options,
     });
     return created.ok ? Ok({ documentId: created.value.document.id, created: true }) : created;
-  }
-
-  async edit(
-    path: string,
-    command: import("../../ports/context-port.js").ContextEditCommand,
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
-    return this.commandExecutor.run(() => this.editInTransaction(path, command, options));
-  }
-
-  private async editInTransaction(
-    path: string,
-    command: import("../../ports/context-port.js").ContextEditCommand,
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) {
-      return { ok: false, error: { code: "io_error", message: "Cannot edit source root" } };
-    }
-    const folderId = await this.findFolderId(dir);
-    if (folderId === MISSING) {
-      return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
-    }
-
-    const { name, extension } = parseFilename(filename);
-    const doc = await this.store.findDocument(folderId, name, extension);
-    if (!doc) {
-      return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
-    }
-    if (doc.fileType !== null) {
-      return {
-        ok: false,
-        error: { code: "io_error", message: `Cannot edit binary file as markdown: ${path}` },
-      };
-    }
-    if (!(await this.isVisibleDocument(doc.id))) {
-      const repaired = await this.repairTrackedDocument(doc);
-      if (!repaired.ok) return repaired;
-    }
-
-    const edited = await editCollabMarkdown({
-      documentSync: this.documentSync,
-      documentId: doc.id,
-      command,
-      provenance: options?.origin,
-    });
-    if (!edited.ok) return edited;
-
-    return Ok({
-      documentId: doc.id,
-      markdown: edited.markdown,
-      updateSeq: edited.updateSeq,
-    });
   }
 
   async writeBinary(
@@ -819,23 +852,36 @@ export class ContextFS implements ContextSchemeAdapter {
     );
     const first = searchable[0];
     if (!first) return Ok([]);
-    // One source has one project association, including personal and Work sources.
-    return this.assetPaths.within(
-      { documentId: first.document.id, documentIds: searchable.map(({ document }) => document.id) },
+    // One source has one project association, including personal and Work sources; its
+    // chapters' reads join this snapshot, so it is read in their thread.
+    const threadId = this.threadView()?.threadId;
+    return this.links.within(
+      {
+        documentId: first.document.id,
+        documentIds: searchable.map(({ document }) => document.id),
+        ...(threadId ? { viewer: { threadId } } : {}),
+      },
       async () => {
         const hits: AdapterSearchHit[] = [];
         for (const row of searchable) {
           const read = await this.searchableLines(row.document.id);
           if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-          const match = matchDocument(read.value.entries, query, {
+          const found = matchDocument(read.value.entries, query, {
             hashlines: read.value.hashlines,
           });
-          if (!match) continue;
+          if (!found) continue;
+          const { entries: passageEntries, ...match } = found;
+          // Only the returned passages can be shown, never the matches past the cap.
+          const passages = passageEntries.map((entry) => read.value.links[entry] ?? []);
+          const { holder } = read.value;
           hits.push({
             path: row.path,
             documentId: row.document.id,
             revision: read.value.revision,
             ...match,
+            ...(holder?.uri && passages.some((links) => links.length > 0)
+              ? { shown: { holderUri: holder.uri, view: holder.view, passages } }
+              : {}),
           });
         }
         return Ok(hits);
@@ -861,30 +907,25 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
-  private threadView(): {
-    threadId: string;
-    responseId?: string | null;
-    version: "draft" | "live";
-  } | null {
+  private threadView():
+    | ({ threadId: ThreadId; responseId?: string | null } & EffectiveReadVersion)
+    | null {
     const view = this.readView;
     if (!view) return null;
+    const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
     // Without a separate draft both versions are the same document (D3).
-    const ownVersion = sourceDestination(this.scheme, view.draftWork).kind;
-    return {
-      threadId: view.threadId,
-      responseId: view.responseId,
-      version: view.version === "live" ? "live" : ownVersion,
-    };
+    const drafted = sourceDestination(this.scheme, view.draftWork).kind === "draft";
+    return view.version !== "live" && drafted && view.draftWork
+      ? { ...reader, destination: "draft", workId: view.draftWork.id as WorkId }
+      : { ...reader, destination: "live" };
   }
 
   private async readVisibleMarkdown(documentId: string): Promise<Result<string, SyncError>> {
     const view = this.threadView();
     if (view) {
       const read = await this.documentSync.readEffectiveMarkdown({
-        documentId: documentId as never,
-        threadId: view.threadId as never,
-        responseId: view.responseId,
-        destination: view.version,
+        ...view,
+        documentId: documentId as DocumentId,
       });
       return read.ok ? Ok(read.value.content) : read;
     }
@@ -898,24 +939,31 @@ export class ContextFS implements ContextSchemeAdapter {
    * thread view falls back to plain markdown and would otherwise be parsed as
    * hashlines it does not have.
    */
-  private async searchableLines(
-    documentId: string,
-  ): Promise<
-    Result<{ entries: string[]; hashlines: boolean; revision: string | null }, SyncError>
+  private async searchableLines(documentId: string): Promise<
+    Result<
+      {
+        entries: string[];
+        hashlines: boolean;
+        revision: string | null;
+        links: readonly (readonly SpelledLinkFact[])[];
+        holder?: HashlineRead["holder"];
+      },
+      SyncError
+    >
   > {
     const view = this.threadView();
     if (view) {
       const hashlines = await this.documentSync.readEffectiveHashlines({
-        documentId: documentId as never,
-        threadId: view.threadId as never,
-        responseId: view.responseId,
-        destination: view.version,
+        ...view,
+        documentId: documentId as DocumentId,
       });
       return hashlines.ok
         ? Ok({
             entries: hashlines.value.content,
             hashlines: true,
             revision: hashlines.value.revision,
+            links: hashlines.value.links,
+            holder: hashlines.value.holder,
           })
         : hashlines;
     }
@@ -925,6 +973,8 @@ export class ContextFS implements ContextSchemeAdapter {
           entries: read.value.content.split("\n"),
           hashlines: false,
           revision: read.value.revision,
+          // Plain lines are not blocks; outside a thread no model is shown anything.
+          links: [],
         })
       : read;
   }
@@ -988,7 +1038,7 @@ export class ContextFS implements ContextSchemeAdapter {
       if (!destinationFiletype.ok) return destinationFiletype;
       const committed = await this.mutationStore.commitMove({
         source,
-        mover: prepared.mover,
+        linkNoteProjectId: prepared.linkNoteProjectId,
         destinationSourceId: prepared.destinationSourceId,
         destinationPath: prepared.destinationPath,
         expectedTarget: prepared.expectedTarget,
@@ -1007,7 +1057,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const source = prepared.source;
     const committed = await this.mutationStore.commitMove({
       source,
-      mover: prepared.mover,
+      linkNoteProjectId: prepared.linkNoteProjectId,
       destinationSourceId: prepared.destinationSourceId,
       destinationPath: prepared.destinationPath,
       expectedTarget: prepared.expectedTarget,

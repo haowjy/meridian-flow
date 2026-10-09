@@ -4,6 +4,7 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
@@ -17,6 +18,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
@@ -42,6 +44,7 @@ import type {
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -204,33 +207,39 @@ export type TurnReversalAccess = {
 
 export type VersionedDocumentRead<T> = { content: T; revision: string | null };
 
-export type MarkdownDocumentStore = {
+export type HashlineRead = VersionedDocumentRead<string[]> & {
+  /** Aligned with `content`: the ref-bearing links each block spells. */
+  links: readonly (readonly SpelledLinkFact[])[];
+  /** The holder `links` were spelled from, as the read's own binding named it. */
+  holder: { uri: string | null; view: LinkView };
+};
+
+/**
+ * Whole-document reads and writes. Writes take `BoundWrite`: bind it with
+ * `bindMarkdown` before opening any transaction, then apply it inside one
+ * (contract §6.2).
+ */
+export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
   ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
+  /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
     documentId: string,
-    markdown: string,
+    content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
-    markdown: string;
+    content: BoundWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
-  editDocument(input: {
-    documentId: DocumentId;
-    transform: (markdown: string) => string;
-    origin: DocumentWriteOrigin;
-    threadId?: ThreadId;
-  }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
 };
 
 export type DocumentProjectionRefresher = {
-  rewriteDocumentLinks: import("./domain/ports/document-link-rewrite.js").RewriteDocumentLinks;
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
@@ -352,36 +361,62 @@ export type BranchPushAccess = {
   }): Promise<unknown>;
 };
 
+/**
+ * The version an effective read reads, and so the view its links spell in:
+ * the version the caller's writes change. `live` never touches a draft (D40);
+ * a draft read names its Work.
+ */
+export type EffectiveReadVersion =
+  | { destination: "live"; workId?: never }
+  | { destination: "draft"; workId: WorkId };
+
 export type BranchPeerShadowAccess = {
-  readEffectiveRevision(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-    /** The version the caller's writes change; `live` never touches a draft (D40). */
-    destination: "live" | "draft";
-  }): Promise<string | null>;
+  readEffectiveRevision(
+    input: {
+      documentId: DocumentId;
+      /** The reading thread: its peer, manifest peer and reply's staged creates count. */
+      threadId?: ThreadId | null;
+    } & EffectiveReadVersion,
+  ): Promise<string | null>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
-  readEffectiveMarkdown(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-    responseId?: string | null;
-    /** The version the caller's writes change; `live` never touches a draft (D40). */
-    destination: "live" | "draft";
-  }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
-  readEffectiveHashlines(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-    responseId?: string | null;
-    /** The version the caller's writes change; `live` never touches a draft (D40). */
-    destination: "live" | "draft";
-  }): Promise<Result<VersionedDocumentRead<string[]>, SyncError>>;
+  readEffectiveMarkdown(
+    input: {
+      documentId: DocumentId;
+      threadId?: ThreadId | null;
+      responseId?: string | null;
+    } & EffectiveReadVersion,
+  ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
+  /**
+   * One hashline per block, and per block the ref-bearing links it spells
+   * (`spelledLinks`), computed with the same scope in the same synchronous block.
+   */
+  readEffectiveHashlines(
+    input: {
+      documentId: DocumentId;
+      threadId?: ThreadId | null;
+      responseId?: string | null;
+    } & EffectiveReadVersion,
+  ): Promise<Result<HashlineRead, SyncError>>;
+  /**
+   * A view's manifest members. With `responseId` and `threadId`, that reply's
+   * staged creates count too, but only those staged for `destination` when it
+   * is given. `destination: "live"` reads the live manifest even in a thread:
+   * thread and response then only name whose staged creates count.
+   */
   resolveManifestMembership(input: {
     projectId: ProjectId;
     workId?: WorkId | null;
     threadId?: ThreadId | null;
     responseId?: string | null;
+    destination?: "live" | "draft";
   }): Promise<{ documentId: DocumentId; members: string[] }>;
   reconcileProjectManifest(projectId: ProjectId): Promise<void>;
+  /** A cross-project move's live membership, inside the move transaction. */
+  transferLiveManifestMembership(
+    documentIds: readonly DocumentId[],
+    projects: { from: ProjectId; to: ProjectId },
+  ): Promise<void>;
   recordManifestDocumentCreated(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },

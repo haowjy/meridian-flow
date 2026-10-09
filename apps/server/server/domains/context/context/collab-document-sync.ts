@@ -1,11 +1,19 @@
 /**
- * Collab-backed markdown helpers for ContextFS. The adapter keeps ContextFS
+ * Collab-backed whole-document writes for ContextFS. The adapter keeps ContextFS
  * provenance vocabulary out of the collab domain while routing agent/human
  * writes through the richer write APIs that return attribution metadata.
+ *
+ * Content arrives bound (`BoundWrite`): ContextFS binds it before
+ * opening its command transaction, and this runs inside that transaction. A
+ * fresh write that finds the document already holds content is `stale_target`.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { DocumentMutationRejectedError } from "../../collab/domain/markdown-document.js";
+import {
+  DocumentMutationRejectedError,
+  DocumentSyncError,
+} from "../../collab/domain/markdown-document.js";
 import type {
+  BoundWrite,
   DocumentSeedOrigin,
   DocumentWriteOrigin,
   MarkdownDocumentStore,
@@ -70,6 +78,9 @@ function thrownFault(error: unknown): AdapterFault {
   if (error instanceof DocumentMutationRejectedError) {
     return { code: "invalid_operation" };
   }
+  if (error instanceof DocumentSyncError && error.code === "stale_generation") {
+    return { code: "stale_target" };
+  }
   return {
     code: "io_error",
     message: error instanceof Error ? error.message : String(error),
@@ -79,7 +90,7 @@ function thrownFault(error: unknown): AdapterFault {
 export async function writeCollabMarkdown(input: {
   documentSync: MarkdownDocumentStore;
   documentId: string;
-  content: string;
+  content: BoundWrite;
   provenance?: WriteProvenance;
 }): Promise<CollabMarkdownResult> {
   const { documentSync, documentId, content, provenance } = input;
@@ -89,7 +100,7 @@ export async function writeCollabMarkdown(input: {
     try {
       const result = await documentSync.writeDocument({
         documentId,
-        markdown: content,
+        content,
         origin: collabOrigin,
         threadId: threadIdFromProvenance(provenance),
       });
@@ -109,48 +120,4 @@ export async function writeCollabMarkdown(input: {
   const readBack = await documentSync.readAsMarkdown(documentId);
   if (!readBack.ok) return { ok: false, error: syncFault(readBack.error) };
   return { ok: true, markdown: readBack.value, updateSeq: write.value?.updateSeq };
-}
-
-export async function editCollabMarkdown(input: {
-  documentSync: MarkdownDocumentStore;
-  documentId: string;
-  command: import("../ports/context-port.js").ContextEditCommand;
-  provenance?: WriteProvenance;
-}): Promise<CollabMarkdownResult> {
-  const { documentSync, documentId, command, provenance } = input;
-  const resolve = (markdown: string) => {
-    switch (command.kind) {
-      case "append":
-        return `${markdown}${command.content}`;
-    }
-  };
-  const collabOrigin = provenance ? provenanceToWriteOrigin(provenance) : null;
-
-  if (collabOrigin) {
-    try {
-      const result = await documentSync.editDocument({
-        documentId,
-        transform: resolve,
-        origin: collabOrigin,
-        threadId: threadIdFromProvenance(provenance),
-      });
-      return { ok: true, markdown: result.markdown, updateSeq: result.updateSeq };
-    } catch (error) {
-      return { ok: false, error: thrownFault(error) };
-    }
-  }
-
-  const before = await documentSync.readAsMarkdown(documentId);
-  if (!before.ok) return { ok: false, error: syncFault(before.error) };
-
-  const write = await documentSync.seedFromMarkdown(
-    documentId,
-    resolve(before.value),
-    provenanceToSeedOrigin(provenance),
-  );
-  if (!write.ok) return { ok: false, error: syncFault(write.error) };
-
-  const after = await documentSync.readAsMarkdown(documentId);
-  if (!after.ok) return { ok: false, error: syncFault(after.error) };
-  return { ok: true, markdown: after.value, updateSeq: write.value?.updateSeq };
 }

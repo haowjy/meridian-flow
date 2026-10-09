@@ -1,6 +1,6 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
-  type AgentEditCodec,
+  type AgentEditCodecFactory,
   type AgentEditCore,
   createAgentEditCore,
   type DocumentCoordinator,
@@ -19,7 +19,9 @@ import {
   type WriteOutcome,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirror-schema";
 import {
   type FileAccess,
@@ -54,8 +56,9 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import type { BranchJournalReadStore } from "./branch-push-contracts.js";
 import type { BranchReversalHistoryReader } from "./branch-reversal-history.js";
-import { documentRevision } from "./document-revision.js";
+import { createScopedDocumentLinks } from "./document-links-port.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -85,6 +88,7 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
+  | "onLinkSpliceFallback"
 >;
 
 export function createBranchThreadPeerAgentEditCore(input: {
@@ -101,7 +105,9 @@ export function createBranchThreadPeerAgentEditCore(input: {
   afterCommit(callback: () => void | Promise<void>): void;
   enlistResponseParticipant: EnlistResponseParticipant;
   model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  links: DocumentLinkScopes;
+  aheadRefs: AheadRefRegistrar;
   semanticProvenance: SemanticProvenanceWriter;
   observability: AgentEditObservability;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
@@ -121,13 +127,17 @@ export function createBranchThreadPeerAgentEditCore(input: {
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
-    createThreadCore: (threadId) => {
+    createThreadCore: (threadId, viewFor) => {
       const pendingJournalEntries = createBranchPendingJournalEntries(
         input.enlistResponseParticipant,
         input.diagnostics,
       );
       return createAgentEditCore({
-        documentRevision,
+        links: createScopedDocumentLinks({
+          scopes: input.links,
+          registrar: input.aheadRefs,
+          viewFor,
+        }),
         journal: createBranchAgentEditJournal({
           threadId,
           liveJournal: input.journal,
@@ -150,7 +160,8 @@ export function createBranchThreadPeerAgentEditCore(input: {
           afterCommit: input.afterCommit,
           enlistResponseParticipant: input.enlistResponseParticipant,
           model: input.model,
-          codec: input.codec,
+          // Attribution compares blocks as stored: a linked document's move is no one's edit.
+          codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
           concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
         lifecycle: input.lifecycle,
@@ -204,7 +215,15 @@ type ResponseRecord = {
  */
 export function createThreadPeerCorePool(input: {
   liveUtilityCore: LiveAgentEditCore;
-  createThreadCore(threadId: ThreadId): AgentEditCore;
+  /**
+   * `viewFor` is the view a command on this thread's core spells in: the one
+   * the pool routed it to (`WriteContext.linkView`), or at a reply's save its
+   * document's pinned destination.
+   */
+  createThreadCore(
+    threadId: ThreadId,
+    viewFor: (documentId: string, context: WriteContext | undefined) => LinkView,
+  ): AgentEditCore;
   /** The thread's Work-draft history: its undo and redo reverse drafted writes there. */
   reversalHistory: BranchReversalHistoryReader;
   /** The live journal's history: its undo and redo reverse live writes live. */
@@ -238,6 +257,25 @@ export function createThreadPeerCorePool(input: {
   const lastSeen = new Map<string, FileDestination>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
+  /**
+   * Every call the pool routes carries its view; a reply's save names only
+   * the reply, so its documents spell in the destination each was pinned to.
+   */
+  function threadViewFor(threadId: ThreadId) {
+    return (documentId: string, context: WriteContext | undefined): LinkView => {
+      if (context?.linkView) return context.linkView;
+      const responseId = context?.responseId;
+      const record = responseId ? responses.get(responseId) : undefined;
+      const pinned =
+        record?.documents.get(documentId as DocumentId) ??
+        record?.reversals.get(documentId as DocumentId);
+      if (pinned) return linkViewAt(pinned.grant.destination, responseId);
+      throw new Error(
+        `Thread ${threadId} spelled ${documentId} without a routed link view; route the call through the pool.`,
+      );
+    };
+  }
+
   async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
     if (!threadId) return input.liveUtilityCore;
     const id = threadId as ThreadId;
@@ -247,7 +285,7 @@ export function createThreadPeerCorePool(input: {
       cores.set(id, existing);
       return existing;
     }
-    const core = input.createThreadCore(id);
+    const core = input.createThreadCore(id, threadViewFor(id));
     cores.set(id, core);
     await evictIdleCores();
     return core;
@@ -370,7 +408,10 @@ export function createThreadPeerCorePool(input: {
       ? ({ kind: "live" } as const)
       : (pinned?.grant.destination ?? requested);
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
-    const outcome = await core.read(command, await threadPeerContext(core, documentId, context));
+    const outcome = await core.read(
+      command,
+      await threadPeerContext(core, documentId, routedTo(context, destination)),
+    );
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
       lastSeen.set(seenKey(context.threadId, documentId), destination);
@@ -410,7 +451,10 @@ export function createThreadPeerCorePool(input: {
       if (documentId && !pinned) record.documents.set(documentId, { core, grant });
     }
     const call = async () =>
-      core.write(command, await threadPeerContext(core, documentId, context));
+      core.write(
+        command,
+        await threadPeerContext(core, documentId, routedTo(context, destination)),
+      );
     const outcome = record
       ? await call()
       : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
@@ -744,4 +788,16 @@ function versionPhrase(destination: FileDestination, preposition: "in" | "to"): 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {
   const address = parseDocumentAddress(command.file, command.documentId);
   return address.ok ? (address.documentId as DocumentId) : null;
+}
+
+/** The link view of a destination, for a call (or reply) the pool routed there. */
+function linkViewAt(destination: FileDestination, responseId: string | undefined): LinkView {
+  const reply = responseId ? { responseId } : {};
+  return destination.kind === "draft"
+    ? { kind: "draft", workId: destination.workId, ...reply }
+    : { kind: "live", ...reply };
+}
+
+function routedTo(context: WriteContext, destination: FileDestination): WriteContext {
+  return { ...context, linkView: linkViewAt(destination, context.responseId) };
 }

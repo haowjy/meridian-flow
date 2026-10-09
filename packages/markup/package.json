@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./links": "./src/links.ts",
+    "./stored-links": "./src/stored-links.ts"
   },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
@@ -12,6 +14,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@meridian/contracts": "workspace:*",
+    "@meridian/prosemirror-schema": "workspace:*",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-to-markdown": "^2.1.2",
     "micromark-util-classify-character": "^2.0.1",
@@ -21,10 +25,10 @@
     "remark-mdx": "^3.1.1",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "yjs": "13.6.31"
   },
   "devDependencies": {
-    "@meridian/prosemirror-schema": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
