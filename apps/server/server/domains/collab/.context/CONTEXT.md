@@ -231,8 +231,9 @@ A certified derive whose rows hold `ahead:` refs registers the ones the registry
 lacks (client mints): awaited when the derive runs outside a transaction (debounce,
 move flush), after commit when it runs inside one (create, push completion),
 because registration takes namespace keys in its own root transaction. A cut that
-was already certified still registers, so an earlier failure retries. Failures are
-logged, never thrown; the sweep and `flush` recover them by anti-join.
+was already certified still registers, so an earlier failure retries. Registration
+drains every page of the holder's refs. Failures are logged, never thrown; the
+sweep and `flush` recover them by anti-join.
 
 Nothing maintains links inside documents: a move or rename writes no bytes into
 any holder, because links carry stable refs and re-spell on read. Draft
@@ -250,9 +251,12 @@ limits derivation work, not query scan work: an entirely current corpus is
 scanned in full on every idle pass. Scoped `flush` pages all stale
 documents in a project, or every project owned by `personalOwnerId`. Both ignore
 caller transactions and timer queues. Failed derives log and retain last-good
-output without advancing certification; a later sweep retries them. Each sweep
-and `flush` then registers up to 100 index ahead refs that have no registry row
-(a failed client-mint registration does not depend on the projection changing).
+output without advancing certification; a later sweep retries them. Then come
+index ahead refs with no registry row (a failed client-mint registration does
+not depend on the projection changing): `flush` drains every one in scope, so a
+move finds them registered; each sweep attempts one page of 100 with its own
+wraparound cursor, advanced by refs attempted rather than registered, so refs
+that keep failing rotate through instead of starving the rest.
 
 ## Reference map
 

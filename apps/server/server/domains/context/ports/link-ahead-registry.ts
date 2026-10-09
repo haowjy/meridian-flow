@@ -14,6 +14,15 @@ export type AheadRecoveryScope =
   | { documentId: DocumentId }
   | { projectId: ProjectId; personalOwnerId?: UserId };
 
+/** One page of recovery, in ahead-id order, strictly after `after`. */
+export type AheadRecoveryPage = { after?: string; limit: number };
+
+/**
+ * `next` is the last ahead id attempted when the page was full (more may follow), else null.
+ * Attempted, not registered: a permanently failing ref is passed over, never retried in place.
+ */
+export type AheadRecoveryProgress = { registered: number; next: string | null };
+
 /** Raised when registration would open a root transaction under a caller's transaction (§6.1). */
 export class RegistrationInsideTransactionError extends Error {
   constructor() {
@@ -35,9 +44,12 @@ export interface LinkAheadRegistry {
    */
   settleArrivals(documentIds: readonly DocumentId[]): Promise<number>;
   /**
-   * Client-minted refs (contract §11.3): registers up to `limit` ahead ids the link index holds
+   * Client-minted refs (contract §11.3): registers one page of ahead ids the link index holds
    * with no registry row, each independently, in scope (everywhere when absent). Logs and skips
-   * a failing ref, so one bad address never blocks the rest. Returns refs registered.
+   * a failing ref, so one bad address never blocks the rest.
    */
-  registerUnregistered(scope: AheadRecoveryScope | undefined, limit: number): Promise<number>;
+  registerUnregistered(
+    scope: AheadRecoveryScope | undefined,
+    page: AheadRecoveryPage,
+  ): Promise<AheadRecoveryProgress>;
 }

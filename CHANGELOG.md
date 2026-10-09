@@ -5,6 +5,7 @@
 - Renaming or moving a chapter no longer edits the chapters that link to it: their links follow the moved chapter and show its new path on the next read, with nothing written into them.
 - "Updated N links" after a move counts the links in this project that point at the moved chapters. A moved chapter's own links to chapters that stayed put are no longer counted.
 - A link to a deleted chapter stays unavailable, even if a new chapter later takes the old path, until the chapter is restored. A link written before its chapter existed connects to the first chapter created, uploaded, moved or restored at that exact path, or applied from a draft.
+- A file moved from your personal files into a project now becomes part of that project's live files, so links waiting at its new path connect to it. A link to an image waiting at an upload's path always connects to that upload, even if it moves at once.
 - Development: the resolver endpoint answers batches of `(ref, href)` links; a link to a document the reader cannot reach answers `gone` without a location. The link index is keyed by link key, the link-update worker, link redirects and the `link-update` journal origin are gone.
 
 - Downloading a chapter whose live text can't be read right now fails with a retryable error (503) instead of serving a stored copy that could show a link or image at a path it has since moved from.

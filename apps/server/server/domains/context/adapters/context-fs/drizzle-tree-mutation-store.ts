@@ -5,8 +5,10 @@ import type { Database } from "@meridian/database";
 import {
   contentDocumentKindSql,
   contentDocumentPredicate,
+  contextSources,
   documents,
   folders,
+  works,
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../../shared/document-mutation-lock.js";
@@ -32,6 +34,7 @@ import {
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
+import type { LiveMembership } from "../../ports/live-membership.js";
 import {
   claimDocumentLocation,
   hasOppositeContextEntry,
@@ -107,6 +110,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly eventSink?: EventSink,
     private readonly arrivals?: Pick<DocumentArrivals, "settle">,
+    private readonly liveMembership?: LiveMembership,
   ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
@@ -120,8 +124,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
   /**
    * Move-in arrival (contract §9.3): once per move, after all DML and history, so a folder
-   * move settles against its final tree. Every participating namespace is already locked.
-   * Then the note's count, which includes refs this settlement just bound (contract §10).
+   * move settles against its final tree. Every participating namespace is already locked. A
+   * cross-project move (personal ↔ project) first carries live membership to the destination
+   * project, so the arrival is live there. Then the note's count, which includes refs this
+   * settlement just bound (contract §10).
    */
   private async settleMovedIn(
     input: ContextTreeMoveCommand,
@@ -130,13 +136,33 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     const moved = previous.flatMap((entry) =>
       entry.kind === "file" ? [entry.id as DocumentId] : [],
     );
-    if (moved.length > 0) await this.arrivals?.settle(moved);
+    if (moved.length > 0) {
+      if (input.source.sourceId !== input.destinationSourceId && this.liveMembership) {
+        const from = await this.sourceProjectId(input.source.sourceId);
+        const to = await this.sourceProjectId(input.destinationSourceId);
+        if (from !== to) await this.liveMembership.transfer(moved, { from, to });
+      }
+      await this.arrivals?.settle(moved);
+    }
     return input.linkNoteProjectId
-      ? countIncomingLinks(this.db, {
-          projectId: input.linkNoteProjectId as ProjectId,
-          movedDocumentIds: moved,
-        })
+      ? countIncomingLinks(
+          this.db,
+          { projectId: input.linkNoteProjectId as ProjectId, movedDocumentIds: moved },
+          this.liveMembership,
+        )
       : { links: 0, documents: 0 };
+  }
+
+  private async sourceProjectId(sourceId: string): Promise<ProjectId> {
+    const [row] = await currentDrizzleDb(this.db)
+      .select({
+        projectId: sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`,
+      })
+      .from(contextSources)
+      .leftJoin(works, eq(works.id, contextSources.workId))
+      .where(eq(contextSources.id, sourceId));
+    if (!row?.projectId) throw new Error(`Context source ${sourceId} has no project`);
+    return row.projectId;
   }
 
   private async withMutationTransaction<T>(

@@ -106,10 +106,12 @@ re-spells on read. Moves flush durable link derivation (which also registers
 client-minted ahead refs) before namespace locking, then row-lock every mutated
 document (moved identities and any overwrite victim) with
 `lockMovedDocumentRows`, sorted, `FOR NO KEY UPDATE`. Never use `FOR UPDATE`
-there: journal FK inserts must remain compatible. After the DML the move settles
-ahead refs waiting at its destinations (move-in arrival), then counts the note's
-`linkUpdate`: occurrences in the request project's live holders whose ref names a
-moved document (`links/move-link-count.ts`).
+there: journal FK inserts must remain compatible. After the DML a cross-project
+move carries live manifest membership to its destination project, then the move
+settles ahead refs waiting at its destinations (move-in arrival), then counts the
+note's `linkUpdate`: occurrences in the request project's live holders (live
+manifest members, for drafted sources) whose ref names a moved document
+(`links/move-link-count.ts`).
 
 Every arrival (tracked create, upload, move-in, Work restore, Apply) settles ahead
 refs once, against its final tree, through `DocumentArrivals`; see

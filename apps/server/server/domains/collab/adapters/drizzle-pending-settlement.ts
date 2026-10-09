@@ -405,8 +405,9 @@ async function pushWorkIds(db: DrizzleDb, pushId: number): Promise<string[]> {
 }
 
 /**
- * Documents whose live manifest entry this push publishes, from its immutable journal rows,
- * read before any lock. Only a draft's manifest push carries them; content pushes have none.
+ * Documents whose live manifest entry this push publishes, from its immutable journal rows.
+ * Read after the Work locks and before the namespace and holder locks; the rows never change, so
+ * the read needs no lock of its own. Only a draft's manifest push carries them.
  */
 async function arrivingDocumentIds(db: DrizzleDb, pushId: number): Promise<DocumentId[]> {
   const [push] = await db
