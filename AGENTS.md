@@ -2,7 +2,9 @@
 
 > **v3 full-stack rebuild.** TypeScript with Yjs + TipTap, Drizzle over Postgres,
 > WorkOS AuthKit, and credits-only billing. There are no real users or data.
-> Change schemas freely, delete unused code, and never add compatibility shims.
+> Change schemas freely, delete unused code, and never add compatibility shims;
+> write migrations as if production data exists (no data loss, online-safe DDL,
+> and no skips that rely on empty tables).
 
 ## Mission
 

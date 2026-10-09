@@ -126,6 +126,71 @@ function lintFile(filePath: string): Finding[] {
     }
   }
 
+  // Preserve offsets for diagnostics while ignoring comments (including the marker).
+  const sql = content.replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, (comment) =>
+    comment.replace(/[^\n]/g, " "),
+  );
+  const noTransaction = lines[0] === "-- migration: no-transaction";
+  const onlineRules = [
+    {
+      id: "CONCURRENTLY_IN_TRANSACTION",
+      pattern: /\bCONCURRENTLY\b/gi,
+      severity: "error" as const,
+      message: "CONCURRENTLY requires -- migration: no-transaction on the first line.",
+      enabled: !noTransaction,
+    },
+    {
+      id: "ADD_CHECK_NOT_VALID",
+      pattern:
+        /ADD\s+CONSTRAINT\s+(?:"(?:[^"]|"")+"|[a-z_][\w$]*)\s+CHECK\b(?![^;]*\bNOT\s+VALID\b)/gi,
+      severity: "warning" as const,
+      message:
+        "ADD CHECK scans the table under an ACCESS EXCLUSIVE lock. Add NOT VALID, then VALIDATE in a later migration.",
+      enabled: true,
+    },
+    {
+      id: "DROP_INDEX_NOT_CONCURRENTLY",
+      pattern: /DROP\s+INDEX\b(?!\s+CONCURRENTLY\b)/gi,
+      severity: "warning" as const,
+      message: "DROP INDEX without CONCURRENTLY can block writes. Use a no-transaction migration.",
+      enabled: true,
+    },
+    {
+      id: "CONCURRENT_INDEX_NOT_RERUNNABLE",
+      pattern:
+        /CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?:IF\s+NOT\s+EXISTS\s+)?("(?:[^"]|"")+")/gi,
+      severity: "error" as const,
+      message:
+        "Precede each concurrent index build with DROP INDEX CONCURRENTLY IF EXISTS of the same name so retries remove INVALID indexes.",
+      enabled: noTransaction,
+    },
+  ];
+  if (!isInitialSchema) {
+    for (const rule of onlineRules) {
+      if (!rule.enabled) continue;
+      for (const match of sql.matchAll(rule.pattern)) {
+        const line = content.slice(0, match.index).split("\n").length;
+        if (lines[line - 1].includes("-- migration-lint: skip")) continue;
+        if (rule.id === "CONCURRENT_INDEX_NOT_RERUNNABLE") {
+          const name = match[1];
+          const drops = sql
+            .slice(0, match.index)
+            .matchAll(
+              /DROP\s+INDEX\s+CONCURRENTLY\s+IF\s+EXISTS\s+(?:"(?:[^"]|"")+"\s*\.\s*)?("(?:[^"]|"")+")/gi,
+            );
+          if ([...drops].some((drop) => drop[1] === name)) continue;
+        }
+        findings.push({
+          ruleId: rule.id,
+          severity: rule.severity,
+          message: rule.message,
+          file: filePath,
+          line,
+        });
+      }
+    }
+  }
+
   return findings;
 }
 

@@ -153,6 +153,20 @@ grant_reason)` for `source_type = 'grant'` and `grant_reason LIKE
 
 ## Migration workflow
 
+Write migrations as if production data exists: never delete writer data; move
+it, and never skip a rule because tables are empty. Add CHECKs and FKs `NOT
+VALID`, then `VALIDATE CONSTRAINT` in a later migration. Build and drop indexes
+`CONCURRENTLY` in a file whose first line is exactly
+`-- migration: no-transaction`. Every statement must be re-runnable: precede
+concurrent builds with `DROP INDEX CONCURRENTLY IF EXISTS` of the same name.
+Swap an index by building under a temporary name, dropping the old index
+concurrently, then `ALTER INDEX ... RENAME`. The runner holds a session advisory
+lock throughout and commits ordinary migrations individually; marker files
+autocommit and are recorded only after all statements succeed. Earlier
+migrations remain applied on failure; a marker file restarts from its first
+statement on retry. Reapply online-safety hand-edits to generated SQL whenever
+a branch regenerates migrations after merging the base.
+
 Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
 
 1. `pnpm db:generate` — drizzle-kit appends the next migration to
@@ -198,7 +212,8 @@ separate ETL, not universal schema migrations.
 
 For generated migrations, when two branches add at the same ordinal, **regenerate the
 incoming branch's migration from the merged schema; never renumber, rename, or
-hand-edit it.** Never touch a migration already present on the target branch
+hand-edit its identity.** Reapply the online-safety SQL edits after regeneration.
+Never touch a migration already present on the target branch
 (or on `main`).
 
 1. Keep the target branch's migrations, snapshots, and journal entries as
