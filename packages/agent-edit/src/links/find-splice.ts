@@ -26,10 +26,13 @@ export interface SpliceRestoreInput {
   oldGroup: readonly PMNode[];
   /** The exact serialized group the splice was applied to. */
   oldText: string;
+  /** `oldText` reparsed: each old occurrence's source span. */
+  oldSpans: ParsedContentWithSpans["spans"];
   /** The group text after the splice. */
   newText: string;
+  /** `newText` parsed with spans. */
+  parsed: ParsedContentWithSpans;
   splice: FindSplice;
-  parseWithSpans(text: string): ParsedContentWithSpans;
   /** Prepares freshly parsed nodes for binding (the `asset:` rule); occurrence order is kept. */
   prepare(blocks: readonly PMNode[]): PMNode[];
   /** Ref assignment for the inside occurrences, index-aligned with `written`. */
@@ -50,14 +53,14 @@ export function restoreOutsideSplice(
 ): { nodes: PMNode[] } | { fallback: SpliceFallback } {
   const { splice } = input;
   const oldOccurrences = walkLinkOccurrences(input.oldGroup);
-  const oldSpans = input.parseWithSpans(input.oldText).spans;
-  const parsed = input.parseWithSpans(input.newText);
+  const { oldSpans, parsed } = input;
+  const { newText } = input;
   const blocks = input.prepare(parsed.blocks);
   const newOccurrences = walkLinkOccurrences(blocks);
   // The serialized old group must reparse into the same occurrences, or its spans name nothing.
   if (oldSpans.length !== oldOccurrences.length || parsed.spans.length !== newOccurrences.length)
     return { fallback: "misaligned" };
-  if (coarse(oldSpans, input.oldText) || coarse(parsed.spans, input.newText))
+  if (coarse(oldSpans, input.oldText) || coarse(parsed.spans, newText))
     return { fallback: "coarse-spans" };
 
   const oldPrefix = countWhile(oldSpans, (span) => span.end <= splice.start);

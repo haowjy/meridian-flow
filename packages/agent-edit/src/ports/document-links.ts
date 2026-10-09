@@ -43,6 +43,8 @@ export interface LinkPrepareRequest {
   docs: readonly Y.Doc[];
   /** Freshly parsed nodes whose written addresses binding may resolve. */
   written?: readonly PMNode[];
+  /** Nodes that already carry stored attrs (copies) and will be spelled as stored. */
+  stored?: readonly PMNode[];
   shown?: readonly ShownLink[];
   context?: WriteContext;
 }
