@@ -150,15 +150,27 @@ export function createMarkdownDocumentEngine(
     });
   }
 
-  /**
-   * The serializer cannot mutate its input, by construction: schema projection
-   * always runs against a private clone.
-   */
   function serializeForSchema(
     documentId: DocumentId,
     doc: Y.Doc,
     schemaType: YjsTrackedSchemaType,
   ): string {
+    return projectBlocks(documentId, doc, (blocks) => {
+      if (blocks.length === 0) return "";
+      if (schemaType === "code") return blocks[0]?.textContent ?? "";
+      return deps.codec.serialize(blocks);
+    });
+  }
+
+  /**
+   * Projection cannot mutate its input, by construction: it always runs against
+   * a private clone, and `read` sees the blocks before that clone is destroyed.
+   */
+  function projectBlocks<T>(
+    documentId: DocumentId,
+    doc: Y.Doc,
+    read: (blocks: ParsedContent["blocks"]) => T,
+  ): T {
     const state = Y.encodeStateAsUpdate(doc);
     const nodeSpans = xmlNodeSpans(state);
     const clone = createCollabYDoc({ gc: false });
@@ -171,10 +183,7 @@ export function createMarkdownDocumentEngine(
     clone.on("update", observeRepair);
 
     try {
-      const blocks = deps.model.projectBlocks(toDocHandle(clone));
-      if (blocks.length === 0) return "";
-      if (schemaType === "code") return blocks[0]?.textContent ?? "";
-      return deps.codec.serialize(blocks);
+      return read(deps.model.projectBlocks(toDocHandle(clone)));
     } finally {
       clone.off("update", observeRepair);
       const anomaly = serializationAnomaly(repairUpdates, nodeSpans);
@@ -272,7 +281,14 @@ export function createMarkdownDocumentEngine(
     const format = resolvedFormat.value;
     const parsed = parseMarkdown(input.documentId, input.markdown, format);
     if (!parsed.ok) return parsed;
+    return replaceDocument(input, parsed.value, format);
+  }
 
+  async function replaceDocument(
+    input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
+    content: ParsedContent,
+    format: { schemaType: YjsTrackedSchemaType },
+  ): Promise<Result<MarkdownSetResult, SyncError>> {
     await deps.lifecycle.ensureDocument(input.documentId);
 
     try {
@@ -280,7 +296,7 @@ export function createMarkdownDocumentEngine(
         replaceLiveDocumentMarkdown(
           input.documentId,
           liveDoc,
-          parsed.value,
+          content,
           input.origin,
           format.schemaType,
         ),
@@ -359,11 +375,15 @@ export function createMarkdownDocumentEngine(
     async restoreFromYDoc(documentId, snapshot, origin) {
       const format = await documentFormat(documentId);
       if (!format.ok) return format;
-      return setMarkdown({
-        documentId,
-        markdown: serializeForSchema(documentId, snapshot, format.value.schemaType),
-        origin,
-      });
+      // Restore the snapshot's nodes as projected: a Markdown round trip would
+      // drop every attribute the codec does not spell.
+      const blocks = projectBlocks(documentId, snapshot, (blocks) => blocks);
+      const content =
+        format.value.schemaType === "code"
+          ? parseMarkdown(documentId, blocks[0]?.textContent ?? "", format.value)
+          : Ok({ blocks });
+      if (!content.ok) return content;
+      return replaceDocument({ documentId, origin }, content.value, format.value);
     },
 
     async readAsMarkdown(documentId) {

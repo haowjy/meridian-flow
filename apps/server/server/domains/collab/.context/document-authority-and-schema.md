@@ -22,6 +22,10 @@ resolver injected in `composition.ts`) before every parse or serialization:
 verbatim (`language` = filetype), read back without fences. Checkpoint restore,
 branch/effective reads, and review previews use this document-aware surface;
 schema-blind serialization is private to the engine.
+Checkpoint restore (`restoreFromYDoc`) installs the snapshot's projected nodes
+directly, never a serialize/parse round trip, so attributes the codec does not
+spell survive; a `code` snapshot is rebuilt from its text with the current
+filetype as `language`.
 Schema projection always runs on a private `gc: false` clone (with the source
 client identity restored after state copy): normalization can repair that clone,
 but serialization cannot mutate its input Y.Doc. Any clone update during
