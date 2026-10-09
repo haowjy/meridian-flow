@@ -621,8 +621,7 @@ msgstr ""
 msgid "Apply draft or Discard draft handles this."
 msgstr ""
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Applying"
 msgstr ""
 
@@ -678,8 +677,7 @@ msgstr ""
 msgid "Back to chat"
 msgstr ""
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Back to live"
 msgstr ""
@@ -974,7 +972,7 @@ msgid "Close chat"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Close review"
 msgstr ""
 
@@ -1781,8 +1779,7 @@ msgstr ""
 msgid "Discarded"
 msgstr ""
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Discarding"
 msgstr ""
 
@@ -2097,11 +2094,11 @@ msgstr ""
 msgid "Form payload is malformed."
 msgstr ""
 
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Formatting changes remain"
 msgstr ""
 
-#: src/features/draft-review/DocumentChanges.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr ""
 
@@ -2726,8 +2723,7 @@ msgstr ""
 msgid "Next change"
 msgstr ""
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Next draft"
 msgstr ""
 
@@ -2749,8 +2745,7 @@ msgstr ""
 msgid "No billing activity yet."
 msgstr ""
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/project/work/WorkChangeFile.tsx
 msgid "No changes left"
 msgstr ""

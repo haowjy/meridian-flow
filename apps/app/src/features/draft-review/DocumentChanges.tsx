@@ -8,10 +8,8 @@
  * manuscript. `touch` raises the rows and buttons to 44px.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { DocumentChangeRows } from "./DocumentChangeRows";
+import { ReviewNextAction, ReviewStatusContent } from "./ReviewCompletion";
 import type { ReviewFileTarget } from "./review-files";
 import type { DraftReviewController } from "./useDraftReviewController";
 import type { ReviewChangesView } from "./useReviewChanges";
@@ -40,21 +38,30 @@ export function DocumentChanges({
   onFocused?: () => void;
 }) {
   const stateLine = () => {
-    if (view.completing) return <ReviewCompleting mode={view.completing} />;
-    if (view.finished) {
+    if (view.finished && !view.completing) {
       return (
-        <ReviewDone
-          next={next}
-          onOpenNext={onOpenNext}
-          onBack={controller.exitInlineReview}
-          touch={touch}
-        />
+        <div className="flex flex-col items-start gap-2 px-2 py-2" role="status">
+          <p className="text-caption text-muted-foreground">
+            <ReviewStatusContent finished />
+          </p>
+          <ReviewNextAction
+            next={next}
+            onOpenNext={onOpenNext}
+            onShowLive={controller.exitInlineReview}
+            size={touch ? "default" : "xs"}
+            className={touch ? "min-h-11" : undefined}
+          />
+        </div>
       );
     }
-    if (view.unlisted) {
+    if (view.completing || view.unlisted) {
       return (
-        <p className="px-2 py-2 text-caption text-muted-foreground" role="status">
-          <Trans>Formatting changes remain. Apply draft or Discard draft finishes them.</Trans>
+        <p
+          className="flex items-center gap-2 px-2 py-2 text-caption text-muted-foreground"
+          role="status"
+          aria-busy={!!view.completing}
+        >
+          <ReviewStatusContent completing={view.completing} finished={false} explainFormatting />
         </p>
       );
     }
@@ -71,57 +78,5 @@ export function DocumentChanges({
         view.focus(change, { scroll: true });
       }}
     />
-  );
-}
-
-/** The last change's command is in flight: what the writer did shows, and nothing says it is finished. */
-function ReviewCompleting({ mode }: { mode: "apply" | "discard" }) {
-  return (
-    <p
-      className="flex items-center gap-2 px-2 py-2 text-caption text-muted-foreground"
-      role="status"
-      aria-busy
-    >
-      <Loader2 className="size-3 animate-spin" aria-hidden />
-      {mode === "apply" ? <Trans>Applying</Trans> : <Trans>Discarding</Trans>}
-    </p>
-  );
-}
-
-function ReviewDone({
-  next,
-  onOpenNext,
-  onBack,
-  touch,
-}: {
-  next: ReviewFileTarget | null;
-  onOpenNext: (row: ReviewFileTarget) => void;
-  onBack: () => void;
-  touch: boolean;
-}) {
-  return (
-    <div className="flex flex-col items-start gap-2 px-2 py-2">
-      <p className="text-caption text-muted-foreground">
-        <Trans>No changes left</Trans>
-      </p>
-      {next ? (
-        <Button
-          size={touch ? "default" : "xs"}
-          className={touch ? "min-h-11" : undefined}
-          onClick={() => onOpenNext(next)}
-        >
-          <Trans>Next draft</Trans>
-        </Button>
-      ) : (
-        <Button
-          size={touch ? "default" : "xs"}
-          className={touch ? "min-h-11" : undefined}
-          variant="outline"
-          onClick={onBack}
-        >
-          <Trans>Back to live</Trans>
-        </Button>
-      )}
-    </div>
   );
 }
