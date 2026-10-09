@@ -5,6 +5,7 @@
  */
 import type { DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { type LinkView, parseLinkRef } from "@meridian/contracts";
+import { isUuid } from "../../../shared/uuid.js";
 import { documentRevision } from "./document-revision.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -38,6 +39,12 @@ export function createScopedDocumentLinks(input: {
             documentId: mint.holderDocumentId,
             view: { kind: "live" },
           });
+          // An empty or non-UUID project would only fail later as a registry query error.
+          if (!isUuid(scope.holder.projectId)) {
+            throw new RangeError(
+              `Ahead ref ${mint.ref} has no holder project: ${mint.holderDocumentId} is not a prepared project document`,
+            );
+          }
           return {
             aheadId: parsed.aheadId,
             holderProjectId: scope.holder.projectId,

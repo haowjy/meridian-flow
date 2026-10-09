@@ -431,8 +431,13 @@ export function createDrizzleDocumentLinkScopes(deps: {
         observer.snapshotMiss({ documentId, key, prepared: snapshot.prepared });
       const holderRow = snapshot.rows.get(documentId);
       if (holderRow === undefined) miss(`holder:${documentId}`);
+      // The holder's own row owns its project; a key that named no project leaves it empty.
       return createHolderLinkScope(
-        { uri: holderRow?.uri ?? null, projectId: snapshot.projectId ?? "", view },
+        {
+          uri: holderRow?.uri ?? null,
+          projectId: holderRow?.projectId ?? snapshot.projectId ?? "",
+          view,
+        },
         snapshotCatalog(snapshot, view, miss),
         miss,
       );
