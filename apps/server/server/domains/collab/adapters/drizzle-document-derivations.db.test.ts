@@ -542,9 +542,9 @@ describe("durable document derivations", () => {
       (tx, id) => resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
       {
         registry: {
-          async registerUnregistered(scope, limit) {
+          async registerUnregistered(scope, page) {
             if (failRegistration) throw new Error("registry unavailable");
-            return real.registerUnregistered(scope, limit);
+            return real.registerUnregistered(scope, page);
           },
         },
       },
@@ -579,6 +579,56 @@ describe("durable document derivations", () => {
     expect(await registered()).toEqual([
       expect.objectContaining({ scheme: "manuscript", path: "later.md", settledDocumentId: null }),
     ]);
+
+    // More refs than one page: the holder's registration drains them all before a move locks.
+    const backlog = Array.from(
+      { length: 150 },
+      (_, i) => `10000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+    );
+    for (const [i, id] of backlog.entries()) {
+      text.insert(text.length, ` bulk ${i}`, {
+        link: { href: `manuscript://bulk-${i}.md`, ref: `ahead:${id}` },
+      });
+    }
+    await append(doc, " More");
+    expect(await aheadService.derive(documentId)).toMatchObject({ status: "derived" });
+    const unregistered = async () => {
+      const [row] = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM document_links l
+        LEFT JOIN link_ahead_refs a ON a.ahead_id = l.ahead_id
+        WHERE l.ahead_id IS NOT NULL AND a.ahead_id IS NULL`);
+      return row?.n;
+    };
+    expect(await unregistered()).toBe(0);
+
+    // A full page of refs that can never register (no such Work) ahead of a valid one: the
+    // sweep advances past what it attempted, so the valid ref registers on the next pass.
+    const poison = Array.from({ length: 100 }, (_, i) => {
+      const id = `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
+      return {
+        sourceDocumentId: documentId,
+        linkKey: `ahead:${id}`,
+        aheadId: id,
+        address: "scratch://@missing/later.md",
+        occurrences: 1,
+      };
+    });
+    const valid = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    await db.insert(documentLinks).values([
+      ...poison,
+      {
+        sourceDocumentId: documentId,
+        linkKey: `ahead:${valid}`,
+        aheadId: valid,
+        address: "manuscript://recoverable.md",
+        occurrences: 1,
+      },
+    ]);
+    await aheadService.sweep();
+    await aheadService.sweep();
+    expect(
+      await db.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, valid)),
+    ).toHaveLength(1);
     await aheadService.stop();
     doc.destroy();
   });

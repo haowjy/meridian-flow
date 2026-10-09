@@ -179,8 +179,9 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one ref at a time, failures logged). |
-| `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources), `settle`, and `settleCommitted` for arrivals whose membership publishes after commit. |
+| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
+| `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
 
 ## Moves and the link note
 
@@ -195,12 +196,15 @@ Inside the transaction the move row-locks every mutated document (moved
 identities plus any overwrite victim), sorted, `FOR NO KEY UPDATE`
 (`lockMovedDocumentRows`). The weaker lock keeps journal FK insertion compatible
 while ordering the move against derive certification. After all DML and history
-it settles ahead refs at the destinations once (a folder move settles against
-its final tree), then `countIncomingLinks` sums `document_links` occurrences
-whose `doc:` ref names a moved document or whose `ahead:` ref is settled on one,
-from live content holders in the request project. A moved holder's own links to
-unmoved documents are not counted; personal and other-project holders are not
-counted. The receipt shape stays `linkUpdate: { links, documents }`.
+a cross-project move (personal to project or back) moves the documents' live
+manifest membership to the destination project, then it settles ahead refs at the
+destinations once (a folder move settles against its final tree), then
+`countIncomingLinks` sums `document_links` occurrences whose `doc:` ref names a
+moved document or whose `ahead:` ref is settled on one, from live content holders
+in the request project. A drafted holder is live only while the project's live
+manifest holds it. A moved holder's own links to unmoved documents are not
+counted; personal and other-project holders are not counted. The receipt shape
+stays `linkUpdate: { links, documents }`.
 
 ## Ahead refs and arrivals
 
@@ -209,7 +213,9 @@ minted for (project, scheme, Work id, path; Work by id, so a rename never
 orphans it). Rows are never deleted by link edits. Server mints register before
 the write takes any lock; client mints are registered by the certified derive
 (awaited outside a transaction, after commit inside one), and the derivation
-sweep and `flush` recover any that failed with `registerUnregistered`.
+sweep and `flush` recover any that failed with `registerUnregistered`. A soft-deleted
+Work keeps its identity (slugs stay reserved), so a ref to its address registers
+and waits for the restore.
 
 An ahead ref settles on the first live document at its exact address, by
 compare-and-set on `settled_document_id IS NULL`; a later occupant never captures
@@ -218,8 +224,8 @@ it. Arrival hooks, each once against the operation's final tree:
 | Arrival | Where | Locks already held |
 |---|---|---|
 | Tracked create (named, untitled, model create/copy, import) | creation aggregate, after content initialization | command transaction's namespace keys |
-| Binary upload, figure upload | `createBinaryDocument`, after its post-commit membership publish, in a root transaction that retakes the namespace keys | none else |
-| Move-in (file, overwrite, folder) | tree store, once after all DML | every participating namespace |
+| Binary upload, figure upload | `createBinaryDocument`, after publishing live membership in the same transaction | the store transaction's namespace keys |
+| Move-in (file, overwrite, folder) | tree store, once after all DML and any cross-project membership transfer | every participating namespace |
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
 | Draft Apply (warm and recovery) | push completion that publishes membership: Work → arriving namespaces → holder lock | as listed |
 

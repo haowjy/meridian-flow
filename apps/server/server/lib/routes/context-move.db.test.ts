@@ -781,6 +781,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db
         .insert(schema.documents)
         .values({ id: otherHolder, contextSourceId: otherSource, name: "other", extension: "md" });
+      // A certified holder row the live manifest does not hold (draft-only, as between an
+      // Apply's content and manifest pushes): not live, not counted.
+      const nonLiveHolder = crypto.randomUUID();
+      const [manuscript] = await db
+        .select({ id: schema.contextSources.id })
+        .from(schema.contextSources)
+        .where(
+          and(
+            eq(schema.contextSources.projectId, projectId),
+            eq(schema.contextSources.slug, "manuscript"),
+          ),
+        );
+      if (!manuscript) throw new Error("fixture Manuscript missing");
+      await db.insert(schema.documents).values({
+        id: nonLiveHolder,
+        contextSourceId: manuscript.id,
+        name: "draft-only",
+        extension: "md",
+      });
       const ahead = crypto.randomUUID();
       await db.insert(schema.linkAheadRefs).values({
         aheadId: ahead,
@@ -801,6 +820,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         row(holder, target, 2),
         row(target, unmoved), // the moved document's own outgoing link
         row(otherHolder, target), // another project
+        row(nonLiveHolder, target), // not in the live manifest
         {
           sourceDocumentId: aheadHolder as never,
           linkKey: `ahead:${ahead}`,

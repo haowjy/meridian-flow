@@ -15,10 +15,4 @@ export interface DocumentArrivals {
    * against the transaction's current tree; draft-only and deleted rows are not arrivals.
    */
   settle(documentIds: readonly DocumentId[]): Promise<number>;
-  /**
-   * For arrivals whose live membership is published after their own commit (binary uploads):
-   * a root transaction that retakes the namespace keys, then settles. Never call it inside a
-   * transaction.
-   */
-  settleCommitted(documentIds: readonly DocumentId[]): Promise<number>;
 }

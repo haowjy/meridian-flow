@@ -29,6 +29,7 @@ import {
 } from "../collab/test-support/change-trail-postgres-harness.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { lockNamespaceKeys } from "./adapters/context-fs/document-locations.js";
+import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 import { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 
@@ -120,6 +121,110 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
         .where(and(eq(documents.name, "map"), eq(documents.extension, "png")));
       expect(await settlement(image)).toBe(map?.id);
 
+      // The upload's first arrival keeps its ref when the document moves the moment it is live:
+      // membership and settlement publish together, so a move cannot slip in between.
+      const [manuscript] = await db
+        .select({ id: contextSources.id })
+        .from(contextSources)
+        .where(and(eq(contextSources.projectId, projectId), eq(contextSources.slug, "manuscript")));
+      if (!manuscript) throw new Error("Fixture Manuscript missing");
+      const realArrivals = createDrizzleDocumentArrivals(db, app.linkAheadRegistry);
+      const raced = await register("manuscript://race.png");
+      let published!: () => void;
+      const publication = new Promise<void>((resolve) => {
+        published = resolve;
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const racing = new DrizzleContextDocumentStore({
+        db,
+        contextSourceId: manuscript.id,
+        membershipObserver: {
+          async documentCreated(documentId) {
+            await ports.documentSync.recordManifestDocumentCreated(documentId as DocumentId, {
+              projectId: projectId as never,
+            });
+            published();
+            await gate;
+          },
+          documentDeleted: () => undefined,
+        },
+        arrivals: realArrivals,
+      });
+      const binary = { fileType: "image", mimeType: "image/png", sizeBytes: 1 } as const;
+      const uploading = racing.createBinaryDocument({
+        ...binary,
+        folderId: null,
+        name: "race",
+        extension: "png",
+        storageUrl: "memory://race.png",
+      });
+      await publication;
+      let moveDone = false;
+      const moving = port.move("manuscript://race.png", "manuscript://raced.png").finally(() => {
+        moveDone = true;
+      });
+      // The move either finishes in the gap (the defect) or queues behind the upload.
+      await until(async () => moveDone || (await lockWaiters(probe)) > 0);
+      release();
+      const firstUpload = await uploading;
+      expect(await moving).toMatchObject({ ok: true });
+      expect(await settlement(raced)).toBe(firstUpload.id);
+
+      // A settlement failure fails the upload: nothing is live that a later occupant could
+      // take the ref from.
+      const failing = await register("manuscript://failure.png");
+      const unavailable = async () => {
+        throw new Error("settlement unavailable");
+      };
+      await expect(
+        new DrizzleContextDocumentStore({
+          db,
+          contextSourceId: manuscript.id,
+          membershipObserver: {
+            documentCreated: (documentId) =>
+              ports.documentSync.recordManifestDocumentCreated(documentId as DocumentId, {
+                projectId: projectId as never,
+              }),
+            documentDeleted: () => undefined,
+          },
+          arrivals: Object.assign({}, realArrivals, {
+            settle: unavailable,
+            settleCommitted: unavailable,
+          }),
+        }).createBinaryDocument({
+          ...binary,
+          folderId: null,
+          name: "failure",
+          extension: "png",
+          storageUrl: "memory://failure.png",
+        }),
+      ).rejects.toThrow("settlement unavailable");
+      expect(
+        await db
+          .select({ id: documents.id })
+          .from(documents)
+          .where(and(eq(documents.name, "failure"), eq(documents.extension, "png"))),
+      ).toEqual([]);
+      expect(await settlement(failing)).toBeNull();
+
+      // A personal document moved into the project arrives there: live in its manifest, and
+      // the ref waiting at the destination settles on it.
+      const castRef = await register("kb://cast.md");
+      const cast = await create("user://cast.md");
+      expect(await port.move("user://cast.md", "kb://cast.md")).toMatchObject({ ok: true });
+      const [personal] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.userId, userId), eq(projects.isPersonal, true)));
+      const members = async (id: string | undefined) =>
+        (await ports.documentSync.resolveManifestMembership({ projectId: id as never })).members;
+      expect(await members(projectId)).toContain(cast);
+      expect(await members(personal?.id)).not.toContain(cast);
+      expect(await settlement(castRef)).toBe(cast);
+
       // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
       const moved = await create("manuscript://drafts/ch2.md");
       const vacated = await register("manuscript://drafts/ch2.md");
@@ -134,15 +239,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       // Work restore: the hidden document reappears at its address and settles the waiting ref.
       const notes = await create("scratch://@draft/notes.md");
       await ports.workRepo.softDelete(workId as WorkId);
-      // A ref that missed the arrival (client window): unsettled while the Work was deleted.
-      const waiting = randomUUID();
-      await db.insert(linkAheadRefs).values({
-        aheadId: waiting,
-        projectId: projectId as never,
-        scheme: "scratch",
-        workId: workId as WorkId,
-        path: "notes.md",
-      });
+      // Registered while the Work is deleted: it keeps its identity, so the ref registers
+      // against it and stays unsettled until the restore makes the address live again.
+      const waiting = await register("scratch://@draft/notes.md");
+      expect(await settlement(waiting)).toBeNull();
       await ports.workRepo.restore(workId as WorkId);
       expect(await settlement(waiting)).toBe(notes);
     } finally {
@@ -322,15 +422,31 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
   });
 });
 
-async function waitForNamespaceWaiter(db: Database, key: string) {
+async function namespaceWaiters(db: Database, key: string): Promise<number> {
+  const rows = await db.execute<{ waiting: number }>(sql`
+    SELECT count(*)::int AS waiting FROM pg_locks l
+    WHERE l.locktype = 'advisory' AND NOT l.granted
+      AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+      AND ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended(${key}, 0::bigint)`);
+  return rows[0]?.waiting ?? 0;
+}
+
+async function lockWaiters(db: Database): Promise<number> {
+  const rows = await db.execute<{ waiting: number }>(sql`
+    SELECT count(*)::int AS waiting FROM pg_locks
+    WHERE NOT granted
+      AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`);
+  return rows[0]?.waiting ?? 0;
+}
+
+async function until(condition: () => Promise<boolean>) {
   for (let attempt = 0; attempt < 250; attempt++) {
-    const rows = await db.execute<{ waiting: number }>(sql`
-      SELECT count(*)::int AS waiting FROM pg_locks l
-      WHERE l.locktype = 'advisory' AND NOT l.granted
-        AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
-        AND ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended(${key}, 0::bigint)`);
-    if ((rows[0]?.waiting ?? 0) > 0) return;
+    if (await condition()) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error(`nothing queued behind ${key}`);
+  throw new Error("condition never held");
+}
+
+async function waitForNamespaceWaiter(db: Database, key: string) {
+  await until(async () => (await namespaceWaiters(db, key)) > 0);
 }

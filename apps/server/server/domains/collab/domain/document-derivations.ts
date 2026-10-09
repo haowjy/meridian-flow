@@ -25,6 +25,7 @@ export function createDocumentDerivationService(input: {
   const rerun = new Set<DocumentId>();
   let stopped = false;
   let sweepCursor: DocumentId | undefined;
+  let aheadCursor: string | undefined;
 
   const derive = async (documentId: DocumentId, at?: Date) => {
     const result = await deriveDocument(input, documentId, at);
@@ -89,7 +90,8 @@ export function createDocumentDerivationService(input: {
         const ids = await input.store.stale(undefined, { after: sweepCursor, limit: 100 });
         sweepCursor = ids.length === 100 ? ids.at(-1) : undefined;
         await recover(ids);
-        await input.store.recoverAheads();
+        // Bounded and fair: resumes after the last ref attempted, so failing refs rotate through.
+        aheadCursor = (await input.store.recoverAheads(aheadCursor)).next ?? undefined;
         return ids.length;
       });
     },
@@ -103,7 +105,7 @@ export function createDocumentDerivationService(input: {
           after = ids.at(-1);
         }
         // A move waits for this: every certified ahead ref is registered before it locks.
-        await input.store.recoverAheads(scope);
+        await input.store.drainAheads(scope);
       });
     },
     async stop() {

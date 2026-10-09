@@ -95,6 +95,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         manifestMembership: {
           async recordManifestDocumentCreated() {},
           async recordManifestDocumentDeleted() {},
+          async resolveManifestMembership() {
+            return { members: [] };
+          },
+          async transferLiveManifestMembership() {},
         },
       });
       const service = createFigureAssetService({

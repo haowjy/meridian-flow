@@ -149,6 +149,7 @@ export function scopeBranchPeer(
       ),
     resolveManifestMembership: access.resolveManifestMembership,
     reconcileProjectManifest: access.reconcileProjectManifest,
+    transferLiveManifestMembership: access.transferLiveManifestMembership,
     recordManifestDocumentCreated: access.recordManifestDocumentCreated,
     recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
     readEffectiveHashlines: (command) =>
