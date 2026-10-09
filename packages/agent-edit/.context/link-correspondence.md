@@ -87,7 +87,11 @@ unchanged links in that group may churn their formatting.
 Host-only evidence of what the model saw: `{ ref, address }` per
 identity-bearing occurrence actually rendered (`SpelledLinkFact`: `ref` is the
 identity shown, `doc:`, `ahead:` or an upload's `asset:<id>`; `address` is
-where it was spelled). The command's scoped codec keeps a ledger of every
+where it was spelled, empty for an upload shown as an empty destination).
+An empty written source keys as that empty address, so an unchanged `![alt]()`
+continues the picture it was shown as in pass 1 (tuple ranking and positions
+tell several apart) even after it became addressable; pass 2 ignores empty
+showings, so a fresh `![alt]()` never claims a picture it was not written over. The command's scoped codec keeps a ledger of every
 link-bearing hashline it renders (the hash and body it emitted, and each
 identity-bearing occurrence's fact, from markup's `spelledFact`), and `codec.shownLinks(items)`
 reads a result's items back by the hash they carry, never the document's
