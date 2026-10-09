@@ -229,22 +229,8 @@
     {
       "idx": 32,
       "version": "7",
-      "when": 1791522843337,
-      "tag": "0032_curved_doctor_spectrum",
-      "breakpoints": true
-    },
-    {
-      "idx": 33,
-      "version": "7",
-      "when": 1791530097479,
-      "tag": "0033_link_index_keys",
-      "breakpoints": true
-    },
-    {
-      "idx": 34,
-      "version": "7",
-      "when": 1791533189811,
-      "tag": "0034_thread_shown_links",
+      "when": 1791539282049,
+      "tag": "0032_link_identity",
       "breakpoints": true
     }
   ]
