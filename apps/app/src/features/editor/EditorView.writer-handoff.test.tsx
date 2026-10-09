@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Real editor, controller, sessions and handoff: only HTTP and the held wire are fake. */
+/** Real editor, controller, sessions and handoff with held reads and wire acknowledgements. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
@@ -133,6 +133,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetDraftCommandRecords();
   review = null;
+  heldCarryLookup = null;
   mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
 });
@@ -142,10 +143,14 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { branchHandoffHarness } from "@/test-support/branch-handoff-harness";
 
 let testQueryClient: QueryClient;
+let heldCarryLookup: (() => Promise<string | null>) | null = null;
 let runtime: ReturnType<typeof branchHandoffHarness>;
 const realRegistry = {
   retainBranchRooms: (owner: string, rooms: Parameters<typeof runtime.pool.retain>[1]) =>
-    runtime.pool.retain(owner, rooms),
+    runtime.pool.retain(
+      owner,
+      rooms.map((room) => (heldCarryLookup ? { ...room, currentRoom: heldCarryLookup } : room)),
+    ),
   releaseBranchRooms: (owner: string) => runtime.pool.release(owner),
   getBranchRoom: (room: string) => {
     const session = runtime.pool.get(room);
@@ -176,6 +181,14 @@ it.each([
   runtime = branchHandoffHarness();
   const oldRoom = branchRoomName("writer-loss", 1);
   const newRoom = reason === "branch-stale-doc" ? oldRoom : branchRoomName("writer-loss", 2);
+  let releaseCarry!: (room: string) => void;
+  if (reason === "remote whole Discard") {
+    // The handoff's successor lookup stays pending while the review read reports gone.
+    const successorRead = new Promise<string>((resolve) => {
+      releaseCarry = resolve;
+    });
+    heldCarryLookup = () => successorRead;
+  }
   mocks.getDraftPreview.mockResolvedValue({ ...previewOf("2"), reviewRoomName: oldRoom });
   try {
     await renderEditor(async () => {
@@ -197,6 +210,7 @@ it.each([
         drafts: reason === "remote whole Discard" ? [] : [{ ...listed, draftGeneration: 2 }],
       });
       if (reason === "remote whole Discard") {
+        mocks.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
         await act(async () => {
           await testQueryClient.invalidateQueries({
             queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
@@ -253,8 +267,19 @@ it.each([
         await act(async () => {
           await vi.advanceTimersByTimeAsync(0);
         });
+        expect(
+          testQueryClient.getQueryData(
+            projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a"),
+          ),
+        ).toMatchObject({ status: "gone" });
         expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
         expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+        mocks.getDraftPreview.mockResolvedValue({
+          ...previewOf(),
+          draftGeneration: 2,
+          reviewRoomName: newRoom,
+        });
+        releaseCarry(newRoom);
       }
       await act(async () => {
         await vi.advanceTimersByTimeAsync(20);
@@ -269,9 +294,10 @@ it.each([
         runtime.wire(newRoom).sync();
         await vi.advanceTimersByTimeAsync(20);
       });
-      expect(surfaces()).toEqual(reason === "list" ? [] : ["review"]);
+      if (reason !== "remote whole Discard")
+        expect(surfaces()).toEqual(reason === "list" ? [] : ["review"]);
       expect(old.document.isDestroyed).toBe(true);
-      if (reason !== "list")
+      if (reason !== "list" && reason !== "remote whole Discard")
         expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
       if (reason === "successor typing")
         expect(branchEditor().getText()).toContain("SUCCESSOR WORDS");
@@ -296,6 +322,11 @@ it.each([
       if (reason === "remote whole Discard") {
         expect(surfaces()).toEqual(["review"]);
         expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
+        expect(
+          testQueryClient.getQueryData(
+            projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a"),
+          ),
+        ).toMatchObject({ operations: [expect.objectContaining({ kind: "writer" })] });
         expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
         expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
       }
