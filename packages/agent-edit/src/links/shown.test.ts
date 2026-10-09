@@ -167,4 +167,19 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
   expect
     .soft(render(same).codec.shownLinks(live.items), "a render of the live state alone")
     .toEqual([{ ref: documentRef(C), address: "kb://same.md" }]);
+
+  // Live C, then the same block as an address-only link: the ref-null render clears the fact.
+  const unbound = docFromBlocks([paragraph(docLink("Target", C, "kb://same.md"))], 7200);
+  const withRef = render(unbound);
+  updateYFragment(
+    unbound,
+    unbound.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement,
+    paragraph({ text: "Target", href: "kb://same.md", ref: null }),
+    { mapping: new Map(), isOMark: new Map() } as never,
+  );
+  const withoutRef = render(unbound, withRef.codec);
+  expect.soft(withoutRef.items, "same hash and Markdown without a ref").toEqual(withRef.items);
+  expect
+    .soft(withRef.codec.shownLinks(withoutRef.items), "never claims the cleared ref")
+    .toEqual([]);
 });

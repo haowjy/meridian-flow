@@ -78,12 +78,13 @@ unchanged links in that group may churn their formatting.
 
 Host-only evidence of what the model saw: `{ ref, address }` per ref-bearing
 occurrence actually rendered. The bound codec keeps a ledger of every
-hashline it renders (the immutable node, the hash and body it emitted, and
-each occurrence's address spelled in that scope), and `codec.shownLinks(items)`
+link-bearing hashline it renders (the hash and body it emitted, and each
+ref-bearing occurrence's address spelled in that scope), and `codec.shownLinks(items)`
 reads a result's items back by the hash they carry, never the document's
 current state. A whole item counts all its links; a prefix counts only links
 whose `parseWithSpans` span ends inside it. Equal text rendered from
-different states counts only what every such render showed; an item this
+different states counts only what every such render showed, and a render
+whose links carry no ref is kept as one, so it clears an earlier ref; an item this
 codec never rendered, or a reparse that disagrees, counts nothing. They ride on `WriteOutcome.shownLinks` (reads, echoes, undo
 and redo), `ResponseCommitWriteReceipt.shownLinks`, and each
 `ConcurrentEditRun.shownLinks` (per run, because the request budget may drop
