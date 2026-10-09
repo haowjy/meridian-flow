@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Draft authority across real Editor/Chat scopes and immutable Work-bound batches. */
+import { notifyManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
@@ -27,6 +28,10 @@ async function open(p: () => ScopeProbe, draft = draftA) {
   await vi.waitFor(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
+  // Keep real query notification timing, but flush each scheduled React update under act.
+  notifyManager.setNotifyFunction((notify) => {
+    act(notify);
+  });
   resetDraftCommandRecords();
   fixture = createReviewScopeFixture();
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
@@ -36,6 +41,7 @@ beforeEach(() => {
   }));
 });
 afterEach(() => {
+  notifyManager.setNotifyFunction((notify) => notify());
   vi.restoreAllMocks();
   fixture.dispose();
 });

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Read-order witnesses retained until T731 crosses the real query/provider boundary. */
+import { notifyManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
@@ -25,13 +26,20 @@ async function reviewOpened(probe: () => ScopeProbe) {
   await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
+  // Keep real query notification timing, but flush each scheduled React update under act.
+  notifyManager.setNotifyFunction((notify) => {
+    act(notify);
+  });
   fixture = createReviewScopeFixture();
   mocks = fixture.network;
   resetDraftCommandRecords();
   mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   mocks.getDraftPreview.mockResolvedValue(preview);
 });
-afterEach(() => fixture.dispose());
+afterEach(() => {
+  fixture.dispose();
+  notifyManager.setNotifyFunction((notify) => notify());
+});
 
 describe("the room-opening read", () => {
   it("cannot bring back a change handled while it was in flight", async () => {
