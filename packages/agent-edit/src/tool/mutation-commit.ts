@@ -22,7 +22,6 @@ import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
-  JournalAuthority,
   JournalBatchAppendEntry,
   JournalCommitKind,
   UpdateJournal,
