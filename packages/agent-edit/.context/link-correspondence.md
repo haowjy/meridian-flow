@@ -10,11 +10,14 @@ assigned nodes with no Markdown round trip ([design][design]).
 `assignLinkRefs` runs after parse, over the command's prepared
 `HolderLinkScope`, in order:
 
-1. Correspondence (passes 1 and 2, below) over ref-bearing old occurrences in
-   the replaced span. Written pictures enter it like links (L39), so a picture
-   that continues its identity is never captured by a new occupant of the path
-   it was shown at. Stored and written `asset:` sources stay out: they carry no
-   ref and no showing names them. Links and sources correspond separately, each under its
+1. Correspondence (passes 1 and 2, below) over identity-bearing old
+   occurrences in the replaced span. An identity is a stored ref, or an uploaded
+   picture's `asset:<id>` src (markup's `occurrenceIdentity`, the link index's
+   key space); reads record showings of both (L41). Written pictures enter it
+   like links (L39), so a picture that continues its identity is never captured
+   by a new occupant of the path it was shown at. A written `asset:` source
+   stays out: the model is shown a path, so only an unspellable upload ever
+   reaches it, kept as written. Links and sources correspond separately, each under its
    own address grammar (holder-relative for links, manuscript-root for sources).
    A written link with no extension compares as its default-extension address
    (the `.md` ahead minting stores), so `[x](ch12)` written after a showing of
@@ -30,9 +33,9 @@ Attribute policy, per written occurrence:
 | Match | Stored attrs |
 |---|---|
 | pass 1, title and suffix unchanged | the old attrs verbatim: no format item is emitted |
-| pass 1, title or suffix changed | old ref, written title, `storedHref(current address, written suffix)` |
+| pass 1, title or suffix changed | old ref, written title, `storedHref(current address, written suffix)`; an upload keeps `asset:<id>`, `ref: null` and takes only the title |
 | a written link equal (href and title) to a contextual old one | that old attrs object: contextual stays contextual |
-| pass 2 | the shown ref, written title, `storedHref(current address or latest shown, suffix)` |
+| pass 2 | the shown ref, written title, `storedHref(current address or latest shown, suffix)`; a shown upload stores `asset:<id>`, `ref: null` |
 | pass 3 | `asset:<id>` for a known picture, `doc:<id>` with the document's address, a minted ahead ref, or `ref: null` |
 
 `occurrences.ts` rebuilds only the named occurrences; every other node is
@@ -81,15 +84,17 @@ unchanged links in that group may churn their formatting.
 
 ## Shown-link facts (`src/links/shown.ts`)
 
-Host-only evidence of what the model saw: `{ ref, address }` per ref-bearing
-occurrence actually rendered. The command's scoped codec keeps a ledger of every
+Host-only evidence of what the model saw: `{ ref, address }` per
+identity-bearing occurrence actually rendered (`SpelledLinkFact`: `ref` is the
+identity shown, `doc:`, `ahead:` or an upload's `asset:<id>`; `address` is
+where it was spelled). The command's scoped codec keeps a ledger of every
 link-bearing hashline it renders (the hash and body it emitted, and each
-ref-bearing occurrence's address spelled in that scope), and `codec.shownLinks(items)`
+identity-bearing occurrence's fact, from markup's `spelledFact`), and `codec.shownLinks(items)`
 reads a result's items back by the hash they carry, never the document's
 current state. A whole item counts all its links; a prefix counts only links
 whose `parseWithSpans` span ends inside it. Equal text rendered from
 different states counts only what every such render showed, and a render
-whose links carry no ref is kept as one, so it clears an earlier ref; an item this
+whose links carry no identity is kept as one, so it clears an earlier ref; an item this
 codec never rendered, or a reparse that disagrees, counts nothing. They ride
 as one `showing: { holderUri, view, links }` (`LinkShowing`): the facts with
 the holder URI and view the command's links spelled them from

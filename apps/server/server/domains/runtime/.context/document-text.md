@@ -38,7 +38,9 @@ failed edits with only a historical path.
 
 Each tool result that shows the model a document's links also records them as
 shown-link evidence ([`ports/shown-links.ts`](../ports/shown-links.ts), table
-`thread_shown_links`). A row holds the link's ref, the absolute address shown,
+`thread_shown_links`). A row holds the identity shown (`ref`: a link's
+`doc:`/`ahead:` ref or an uploaded picture's `asset:<id>`, the link index's key
+space; never in model text), the absolute address shown,
 the holder URI, the view (`live` or `draft:<workId>`) and the turn. When a
 write rewrites links, ref assignment binds them to these rows. The model
 never sees them: agent-edit's `showing { holderUri, view, links }` stays
