@@ -4,6 +4,7 @@ import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { testFileGrant } from "../test-support/file-grants.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -153,7 +154,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const eventSink = createInMemoryEventSink();
       const runtime = await runtimes.compose({ eventSink });
-      await runtime.ports.documentSync.writeDocument({
+      await writeMarkdown(runtime.ports.documentSync, {
         documentId: DOC_ID,
         markdown: "Writer live content.",
         origin: { type: "user", actorUserId: USER_ID },
@@ -232,7 +233,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let runtime = await runtimes.compose();
       let { ports, app } = runtime;
 
-      await ports.documentSync.writeDocument({
+      await writeMarkdown(ports.documentSync, {
         documentId: DOC_ID,
         markdown: "Writer V1 observed.",
         origin: { type: "user", actorUserId: USER_ID },

@@ -1,4 +1,4 @@
-import { createDrizzleDocumentAssetPaths } from "../adapters/asset-path-resolver.js";
+import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 /** Postgres-backed coverage for independent figure asset identity. */
 
 import { createDb } from "@meridian/database";
@@ -89,12 +89,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("creates a distinct binary asset without changing the host document", async () => {
       const contextPorts = createProductionUnifiedContextPortFactory({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        links: createTestDocumentLinkScopes(db),
         db,
         documentSync: createInMemoryCollabDomain(),
         manifestMembership: {
           async recordManifestDocumentCreated() {},
           async recordManifestDocumentDeleted() {},
+          async resolveManifestMembership() {
+            return { members: [] };
+          },
+          async transferLiveManifestMembership() {},
         },
       });
       const service = createFigureAssetService({

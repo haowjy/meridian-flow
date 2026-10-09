@@ -73,7 +73,7 @@ export type ProjectBootstrapRepository = {
 
 export function createDrizzleProjectBootstrapRepository(deps: {
   db: Database;
-  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
+  documents: Pick<MarkdownDocumentStore, "seedFromMarkdown" | "bindStatic"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
   catalogLifecycle: ContextCatalogLifecyclePort;
@@ -177,9 +177,12 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   ): Promise<DocumentId> {
     async function seedDocument(documentId: DocumentId): Promise<void> {
       try {
-        const seeded = await deps.documents.seedFromMarkdown(documentId, "# Chapter 1\n\n", {
-          type: "system",
-        });
+        // Seeded inside the bootstrap transaction: fixed text with no links, so nothing to register.
+        const seeded = await deps.documents.seedFromMarkdown(
+          documentId,
+          deps.documents.bindStatic("# Chapter 1\n\n"),
+          { type: "system" },
+        );
         if (!seeded.ok) {
           throw new Error(`Failed to seed chapter document: ${seeded.error.code}`);
         }

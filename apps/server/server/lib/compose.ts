@@ -20,10 +20,13 @@ import {
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
   createCollabDomain,
   createInMemoryCollabDomain,
+  createLinkScopeObserver,
+  type DocumentLinkScopes,
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
@@ -36,10 +39,12 @@ import {
   createDocumentRevisions,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
-  createDrizzleDocumentAssetPaths,
+  createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
+  createDrizzleDocumentLinkScopes,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
+  createDrizzleLinkAheadRegistry,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
   createDrizzleScratchLineages,
@@ -48,7 +53,6 @@ import {
   createFigureAssetService,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
-  createLinkUpdateWorker,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createUploadIntake,
@@ -56,7 +60,8 @@ import {
   type DocumentLinkResolver,
   type FigureAssetService,
   InMemoryContextCatalog,
-  type LinkUpdateWorker,
+  type LinkAheadRegistry,
+  type LinkScopeMembership,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type ProjectDocumentCatalogRefreshPort,
@@ -144,6 +149,7 @@ import {
   createDrizzleHandoffStatusReader,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
+  createDrizzleShownLinkStore,
   createDrizzleThreadLock,
   createGatewayFromEnv,
   createInMemoryInbox,
@@ -175,6 +181,7 @@ import {
   readChainPermission,
   readPendingInbox,
   requireWritableThread,
+  type ShownLinkStore,
   sweepWakes,
   type ToolExecutor,
   type ToolRegistry,
@@ -257,7 +264,9 @@ export type AppServices = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
-  linkUpdates: LinkUpdateWorker;
+  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
+  linkScopes: DocumentLinkScopes;
+  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -344,7 +353,12 @@ export type ProductionAppPorts = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
-  linkUpdates: LinkUpdateWorker;
+  /**
+   * Per-(project, reader) link snapshots: every serializing door spells
+   * through them and the resolver endpoint answers ref links from one.
+   */
+  linkScopes: DocumentLinkScopes;
+  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -372,6 +386,8 @@ export type ProductionAppPorts = {
   activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
   statusReader: ThreadStatusReader;
+  /** Links shown to the model per thread and document (contract §7). */
+  shownLinks: ShownLinkStore;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -496,7 +512,6 @@ export async function createProductionAppPorts(input: {
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
-  const assetPaths = createDrizzleDocumentAssetPaths(db, eventSink);
   const agentRevisions = createDrizzleAgentRevisionStore(db);
   const chainDeps = {
     threads: threadRepos.threads,
@@ -510,13 +525,36 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
-  const documentSync = createCollabDomain({
+  // Bound once the collab domain exists; neither runs before composition finishes.
+  const manifestMembership: LinkScopeMembership = (input) => {
+    if (!boundManifestMembership) {
+      throw new Error("Manifest membership resolver used before the collab domain was bound");
+    }
+    return boundManifestMembership.resolveManifestMembership(
+      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
+    );
+  };
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
+    db,
+    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
+    eventSink,
+  );
+  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
+  const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
-    assetPaths,
+    membership: manifestMembership,
+    observer: createLinkScopeObserver(eventSink),
+  });
+  const documentSync = createCollabDomain({
+    db,
+    arrivals,
+    aheadRegistrations: linkAheadRegistry,
+    fileAccess,
+    links: documentLinks,
+    aheadRefs: linkAheadRegistry,
     eventSink,
     notices,
-    workAuthorityResolver,
     workProjectionMutation,
     threadContext: {
       async requireThreadOwner(input) {
@@ -550,23 +588,18 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     eventSink,
   });
-  const linkUpdates = createLinkUpdateWorker({
-    db,
-    rewriteDocumentLinks: documentSync.rewriteDocumentLinks,
-    eventSink,
-  });
   contextPorts = createProductionUnifiedContextPortFactory({
-    assetPaths,
+    links: documentLinks,
     db,
     documentSync,
     manifestMembership: documentSync,
     documentDerivations: documentSync.documentDerivations,
-    kickLinkUpdates: linkUpdates.kick,
     catalogMutations: contextCatalog,
     eventSink,
+    arrivals,
   });
   const uploadIntake = createUploadIntake({
-    repository: createDrizzleUploadIntakeRepository(db, contextCatalog),
+    repository: createDrizzleUploadIntakeRepository(db),
     content: createContextUploadContentPort(contextPorts),
     objectStore,
     eventSink,
@@ -603,6 +636,7 @@ export async function createProductionAppPorts(input: {
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
     lineageScratch,
+    arrivals,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
@@ -642,7 +676,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
-    linkUpdates,
+    linkAheadRegistry,
     contextPorts,
     contextCatalog,
     projectContextAvailability,
@@ -657,6 +691,7 @@ export async function createProductionAppPorts(input: {
       history: createDrizzleDocumentLinkHistory(db),
       lineages: createDrizzleScratchLineages(db),
     }),
+    linkScopes: documentLinks,
     projects,
     works: workRepo,
     projectRepo,
@@ -684,6 +719,7 @@ export async function createProductionAppPorts(input: {
     activeDocuments,
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
+    shownLinks: createDrizzleShownLinkStore(db),
   };
 }
 
@@ -773,6 +809,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
+    shownLinks: ports.shownLinks,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
@@ -977,7 +1014,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
+    shownLinks: ports.shownLinks,
     documentRevisions: createDocumentRevisions({
+      links: ports.linkScopes,
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,
@@ -1052,6 +1091,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readPending,
     }),
     documentSync: ports.documentSync,
+    linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
     contextCatalogRefresh: ports.contextCatalog,
@@ -1059,7 +1099,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
-    linkUpdates: ports.linkUpdates,
+    linkScopes: ports.linkScopes,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -1111,7 +1151,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
       ports.documentSync.dispose();
-      await ports.linkUpdates.stop();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);
@@ -1256,6 +1295,16 @@ export function createInMemoryAppServices(): AppServices {
     },
   };
 
+  // Nothing in the in-memory composition registers or settles ahead refs; fail loudly, never pretend.
+  const unsupported = (): never => {
+    throw new Error("Ahead-ref registry is unsupported in the in-memory composition");
+  };
+  const linkAheadRegistry: LinkAheadRegistry = {
+    register: async () => unsupported(),
+    settleArrivals: async () => unsupported(),
+    registerUnregistered: async () => unsupported(),
+  };
+
   return {
     gateway: {
       async *stream(request) {
@@ -1333,7 +1382,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
-    linkUpdates: { sweep: async () => 0, kick() {}, stop: async () => {} },
+    linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
     contextCatalogRefresh: {
@@ -1361,6 +1410,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    linkScopes: createStaticDocumentLinkScopes(),
     projects: {
       async ensureDefaultBootstrapReady() {
         return false;

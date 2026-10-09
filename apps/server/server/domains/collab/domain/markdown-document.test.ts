@@ -1,7 +1,8 @@
 /** Schema-aware read and restore contracts for the collab document engine. */
-import { fragmentOf, yProsemirrorModel } from "@meridian/agent-edit/integration";
+
+import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -16,21 +17,28 @@ import {
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "../adapters/in-memory/agent-edit.js";
+import {
+  createStaticDocumentLinkScopes,
+  UNSUPPORTED_AHEAD_REFS,
+} from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCheckpointService } from "../checkpoints.js";
+import { createLinkBinder } from "./link-binding.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
 
 const DOCUMENT_ID = "code-document" as DocumentId;
 const SYSTEM_ORIGIN = { type: "system" as const };
 
+const schema = buildDocumentSchema();
+const model = yProsemirrorModel(schema);
+
 function setup(filetype = "typescript") {
-  const schema = buildDocumentSchema();
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
-    schema,
-    codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-    model: yProsemirrorModel(schema),
+    links: createStaticDocumentLinkScopes(),
+    codec: mdxCodec({ schema }),
+    model,
     journal,
     coordinator,
     lifecycle: createInMemoryDocumentLifecycle(coordinator),
@@ -49,13 +57,27 @@ function setup(filetype = "typescript") {
     resolveFiletype: async () => filetype,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(eventSink),
   });
-  return { coordinator, engine, eventSink, journal };
+  // Fixed test text names nothing, so static scopes bind it.
+  const binder = createLinkBinder({
+    codec: mdxCodec({ schema }),
+    schema,
+    model,
+    coordinator,
+    links: createStaticDocumentLinkScopes(),
+    registrar: UNSUPPORTED_AHEAD_REFS,
+    // A png binds as a document: the engine is what must refuse it.
+    resolveFiletype: async () => (filetype === "png" ? null : filetype),
+    inTransaction: () => false,
+  });
+  const bind = (markdown: string) =>
+    binder.bindMarkdown({ holder: { documentId: DOCUMENT_ID }, markdown, against: "current" });
+  return { bind, coordinator, engine, eventSink, journal };
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
   const written = await setupResult.engine.setMarkdown({
     documentId: DOCUMENT_ID,
-    markdown: source,
+    content: await setupResult.bind(source),
     origin: SYSTEM_ORIGIN,
   });
   expect(written.ok).toBe(true);
@@ -69,7 +91,7 @@ describe("code document serialization", () => {
     await expect(
       subject.engine.setMarkdown({
         documentId: DOCUMENT_ID,
-        markdown: "not an image",
+        content: await subject.bind("not an image"),
         origin: SYSTEM_ORIGIN,
       }),
     ).resolves.toEqual({
@@ -80,15 +102,52 @@ describe("code document serialization", () => {
         message: "Tracked document has registered binary filetype: png",
       },
     });
-    await expect(subject.engine.serializeDocument(DOCUMENT_ID, projection)).rejects.toMatchObject({
+    await expect(
+      subject.engine.serializeDocument(DOCUMENT_ID, projection, { kind: "live" }),
+    ).rejects.toMatchObject({
       code: "corrupt_state",
     });
     projection.destroy();
   });
+});
 
-  it("restores a code checkpoint without turning fences into literal code", async () => {
-    const subject = setup();
-    await seedCode(subject, "const original = true;");
+describe("checkpoint restore", () => {
+  type Subject = ReturnType<typeof setup>;
+
+  it.each<
+    [string, string, (subject: Subject) => Promise<void>, (subject: Subject) => Promise<void>]
+  >([
+    [
+      "a code checkpoint without turning fences into literal code",
+      "typescript",
+      (subject) => seedCode(subject, "const original = true;"),
+      async (subject) => {
+        await expect(subject.engine.readAsMarkdown(DOCUMENT_ID)).resolves.toEqual({
+          ok: true,
+          value: "const original = true;",
+        });
+      },
+    ],
+    [
+      "a document checkpoint's nodes, including attributes Markdown can't spell",
+      "md",
+      async (subject) => {
+        const live = subject.coordinator.ensureEmpty(DOCUMENT_ID);
+        model.insertBlocks(toDocHandle(live), null, { blocks: [uploadingImageParagraph()] });
+      },
+      async (subject) => {
+        const [paragraph] = model.projectBlocks(
+          toDocHandle(subject.coordinator.ensureEmpty(DOCUMENT_ID)),
+        );
+        expect(paragraph?.firstChild?.attrs).toMatchObject({
+          src: "pending.png",
+          uploadToken: "upload-1",
+        });
+      },
+    ],
+  ])("restores %s", async (_name, filetype, seed, expectRestored) => {
+    const subject = setup(filetype);
+    await seed(subject);
     const checkpoints = createCheckpointService({
       coordinator: subject.coordinator,
       store: subject.journal,
@@ -101,19 +160,45 @@ describe("code document serialization", () => {
 
     await subject.engine.setMarkdown({
       documentId: DOCUMENT_ID,
-      markdown: "const changed = true;",
+      content: await subject.bind("const changed = true;"),
       origin: SYSTEM_ORIGIN,
     });
     await expect(checkpoints.restore(DOCUMENT_ID, checkpoint.value)).resolves.toEqual({
       ok: true,
       value: undefined,
     });
-    await expect(subject.engine.readAsMarkdown(DOCUMENT_ID)).resolves.toEqual({
-      ok: true,
-      value: "const original = true;",
-    });
+    await expectRestored(subject);
+  });
+
+  // Risk: a restore that reports failure must not have journaled or installed its content.
+  it("leaves the journal and live document untouched when the snapshot can't serialize", async () => {
+    const subject = setup("md");
+    await seedCode(subject, "Before.");
+    const live = subject.coordinator.ensureEmpty(DOCUMENT_ID);
+    const liveBefore = Y.encodeStateAsUpdate(live);
+    const journalBefore = (await subject.journal.read(DOCUMENT_ID)).updates.length;
+    const snapshot = createCollabYDoc({ gc: false });
+    model.insertBlocks(toDocHandle(snapshot), null, { blocks: [invalidWidthTable()] });
+
+    await expect(
+      subject.engine.restoreFromYDoc(DOCUMENT_ID, snapshot, SYSTEM_ORIGIN),
+    ).rejects.toThrow(/colwidth/);
+    expect((await subject.journal.read(DOCUMENT_ID)).updates).toHaveLength(journalBefore);
+    expect(Y.encodeStateAsUpdate(live)).toEqual(liveBefore);
   });
 });
+
+function uploadingImageParagraph() {
+  const image = schema.nodes.image.create({ src: "pending.png", uploadToken: "upload-1" });
+  return schema.nodes.paragraph.create(null, [image]);
+}
+
+function invalidWidthTable() {
+  const cell = schema.nodes.table_cell.create({ colwidth: "wrong" }, [
+    schema.nodes.paragraph.create(null, [schema.text("cell")]),
+  ]);
+  return schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [cell])]);
+}
 
 describe("schema-aware serialization purity", () => {
   it("returns the repaired projection without mutating its source when the anomaly sink throws", async () => {
@@ -131,9 +216,9 @@ describe("schema-aware serialization purity", () => {
     const beforeXml = fragmentOf(input).toString();
 
     try {
-      await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe(
-        "kept prose\n",
-      );
+      await expect(
+        subject.engine.serializeDocument(DOCUMENT_ID, input, { kind: "live" }),
+      ).resolves.toBe("kept prose\n");
 
       expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
       expect(fragmentOf(input).toString()).toBe(beforeXml);
@@ -150,7 +235,9 @@ describe("schema-aware serialization purity", () => {
     fragmentOf(input).insert(0, [paragraph]);
     const beforeState = Y.encodeStateAsUpdate(input);
 
-    await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe("ab\n");
+    await expect(
+      subject.engine.serializeDocument(DOCUMENT_ID, input, { kind: "live" }),
+    ).resolves.toBe("ab\n");
 
     expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
     expect(subject.eventSink.events).toHaveLength(1);

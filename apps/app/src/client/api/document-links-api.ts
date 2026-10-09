@@ -1,25 +1,25 @@
 /**
- * document-links-api — HTTP client for internal link resolution.
+ * document-links-api — HTTP client for stored-link resolution.
  *
- * One call: hand the server a Context URI or a relative path and get back the
- * project document at that address. `{ document: null }` is a normal answer,
- * not an error: nothing is there yet.
+ * One batched call: hand the server up to 200 links, each its ref (or null)
+ * and its href, and get back one answer per link in request order. `missing`
+ * and `gone` are normal answers, not errors.
  */
 
-import {
-  apiProjectLinksResolvePath,
-  type ResolveDocumentLinkRequest,
-  type ResolveDocumentLinkResponse,
-} from "@meridian/contracts/protocol";
+import type {
+  ResolveDocumentLinksRequest,
+  ResolveDocumentLinksResponse,
+} from "@meridian/contracts";
+import { apiProjectLinksResolvePath } from "@meridian/contracts/protocol";
 
 import { postJson } from "./http-client";
 
-export async function resolveDocumentLink(
+export async function resolveDocumentLinks(
   projectId: string,
-  body: ResolveDocumentLinkRequest,
+  body: ResolveDocumentLinksRequest,
   init?: { signal?: AbortSignal },
-): Promise<ResolveDocumentLinkResponse> {
-  return postJson<ResolveDocumentLinkResponse>(apiProjectLinksResolvePath(projectId), body, {
+): Promise<ResolveDocumentLinksResponse> {
+  return postJson<ResolveDocumentLinksResponse>(apiProjectLinksResolvePath(projectId), body, {
     signal: init?.signal,
   });
 }

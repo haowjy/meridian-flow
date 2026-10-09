@@ -1,8 +1,8 @@
 /** Focused contract coverage for post-completion branch-push broadcasts. */
 
-import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit/integration";
+import { createAgentEditCodecFactory, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -10,6 +10,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
   PreparedPushCommit,
@@ -18,7 +19,6 @@ import type {
 } from "./branch-push-contracts.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
-import { NO_DOCUMENT_ASSET_PATHS } from "./ports/document-asset-paths.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 
 const DOCUMENT_A = "00000000-0000-4000-8000-000000000001" as DocumentId;
@@ -28,9 +28,6 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000004" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000005" as TurnId;
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
 const model = yProsemirrorModel(schema);
 
 function projectedChange(
@@ -231,7 +228,7 @@ describe("branch push change-event broadcast", () => {
       },
     });
     const transition = createBranchPushTransition({
-      assetPaths: NO_DOCUMENT_ASSET_PATHS,
+      links: createStaticDocumentLinkScopes(),
       ...storeDeps,
       liveCoordinator: coordinator(
         new Map([
@@ -240,7 +237,7 @@ describe("branch push change-event broadcast", () => {
         ]),
       ),
       model,
-      codec,
+      codec: createAgentEditCodecFactory(mdxCodec({ schema })),
       changeEventDelivery: {
         deliver(message) {
           expect(completed).toContain(message.documentId);

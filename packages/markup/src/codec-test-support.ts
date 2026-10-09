@@ -2,7 +2,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { expect } from "vitest";
 
-import type { AssetPathResolver, ComponentRegistry, mdxCodec } from "./index.js";
+import { type ComponentRegistry, type mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 
 export const schema = buildDocumentSchema();
 export const components = {
@@ -67,24 +67,8 @@ export function sorted(names: readonly string[]): string[] {
 
 export function expectStable(codec: ReturnType<typeof mdxCodec>, input: string): void {
   const first = codec.parse(input).blocks;
-  const serialized = codec.serialize(first);
+  const serialized = codec.serialize(first, UNSCOPED_DOCUMENT_LINKS);
   const second = codec.parse(serialized).blocks;
   expect(docFrom(second).toJSON()).toEqual(docFrom(first).toJSON());
-  expect(codec.serialize(second)).toBe(serialized);
-}
-
-/** A fixed id ↔ path table, for codec fixtures. */
-export function createAssetPathResolver(
-  entries: Iterable<readonly [string, string]>,
-): AssetPathResolver {
-  const pathById = new Map(entries);
-  const idByPath = new Map(Array.from(pathById, ([id, path]) => [path, id]));
-  return {
-    pathForAsset(assetDocumentId) {
-      return pathById.get(assetDocumentId) ?? null;
-    },
-    assetForPath(path) {
-      return idByPath.get(path) ?? null;
-    },
-  };
+  expect(codec.serialize(second, UNSCOPED_DOCUMENT_LINKS)).toBe(serialized);
 }

@@ -137,14 +137,18 @@ function validateBump(
   }
   const nextMinor =
     current.major === previous.major && current.minor === previous.minor + 1 && current.patch === 0;
+  const nextMajor =
+    current.major === previous.major + 1 && current.minor === 0 && current.patch === 0;
   if (bump === "addition") {
-    if (!nextMinor) {
-      throw new Error("Additive schema surface changes require an x.(y+1).0 version bump.");
+    // A defaulted attr is additive to the surface, but a ruling may still make
+    // it a major when it changes what stored content means.
+    if (!nextMinor && !nextMajor) {
+      throw new Error(
+        "Additive schema surface changes require an x.(y+1).0 or ruled (x+1).0.0 version bump.",
+      );
     }
     return;
   }
-  const nextMajor =
-    current.major === previous.major + 1 && current.minor === 0 && current.patch === 0;
   if (bump === "mutation") {
     if (!nextMinor && !nextMajor) {
       throw new Error("Schema surface mutations require an x.(y+1).0 or (x+1).0.0 version bump.");
@@ -243,6 +247,12 @@ describe("collaboration schema shape", () => {
         bump === "mutation" &&
         current.version.major === previous.version.major &&
         current.version.minor === previous.version.minor + 1;
+      if (current.version.major !== previous.version.major) {
+        expect(
+          current.compatibilityNote,
+          "A major bump records its human ruling and migration plan in the compatibility note.",
+        ).toBeTruthy();
+      }
       if (isMinorMutation) {
         expect(
           current.compatibilityNote,

@@ -1,7 +1,8 @@
 # components/app/link-chip — the one look for links
 
 How a link looks in every surface that shows one: internal links as a tag chip
-(soft fill, family icon, name; dashed when nothing is at that address),
+(soft fill, family icon, name; dashed when nothing is at that address or the
+document a link named is gone),
 external links as underlined text with an outbound arrow. What a link *means*
 and which state it is in is [`core/editor/links/`](../../../core/editor/links/AGENTS.md);
 this directory only draws.
@@ -16,11 +17,10 @@ Three pieces, one owner each:
   `linkChipAttributes()` onto the element and does nothing else.
 - **The look** is `link-chip.css`, keyed by `data-link-chip` and
   `data-link-chip-icon`, imported once by `styles/globals.css`. Unlayered, so
-  it beats `.prose-tokens a` wherever a chip is an anchor in prose. A chip has
-  two forms: the element carrying the attributes (transcript, composer), or an
-  `<a>` whose descendants carry `data-link-chip-part` (the Editor, where the
-  link mark is one `<a>` around a label its decorations split per text node).
-  Every rule names both.
+  it beats `.prose-tokens a` wherever a chip is an anchor in prose. A chip is
+  the element carrying the attributes: a transcript or composer span, or in
+  the Editor the link mark's `<a>`, one element around the whole label, whose
+  mark view sets them (`core/editor/links/link-mark-view.ts`).
 - **The icons** are `family-icons.ts`: lucide `IconNode` data held once.
   `schemeIcon()` (sidebar, menus, identity bar) builds React components from
   it, and `LINK_CHIP_ICON_CSS` derives one mask-image rule per family, which
@@ -46,7 +46,9 @@ them back. A new surface whose tone is the recess does the same.
 
 - **No surface restyles a chip.** A local class on a chip is a second look.
   Change `link-chip.css`, and every surface changes together.
-- **Dashed means nothing is at that address.** Asking and failed draw
+- **Dashed means the link reaches no document**: nothing is at that address
+  yet, or the document it named is gone. A gone chip is `aria-disabled` and
+  loses the hover, as chat's unavailable reference does. Asking and failed draw
   filled; a guess that corrects itself is worse than waiting. The dashed
   border carries the quietness, never the ink: a dashed name stays at 4.5:1
   on every surface (`--color-muted-foreground`).
@@ -54,8 +56,8 @@ them back. A new surface whose tone is the recess does the same.
   `Record<LinkChipIcon, …>` makes a missing image a type error.
 - **Hover is for chips that go somewhere.** A transcript or composer chip
   goes somewhere when it is an enabled `role="link"`; an Editor chip always
-  does (a plain click follows it), so the anchor form (`a:has(...)`) hovers
-  on its own. Do not make Editor hover depend on a role on the `<a>`. Skills
+  does unless it is gone (a plain click follows it), so its `<a>` hovers on
+  its own. Do not make Editor hover depend on a role on the `<a>`. Skills
   (`/slug` atoms) are not document links and keep their own underline.
 
 → [Internal Links Are Link Chips][link-chips] (KB): the owner decision, the

@@ -1,7 +1,7 @@
 /** Destination and display-text editing over the anchored link commands. */
 
 import { t } from "@lingui/core/macro";
-import { spellDocumentHref } from "@meridian/contracts";
+import { type DocumentRef, documentRef, storedHref } from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
@@ -25,11 +25,11 @@ import {
 import {
   classifyLinkTarget,
   commitLinkDraft,
-  getLinkResolution,
   type LinkDraft,
   type LinkFormRequest,
   type LinkSurface,
   linkInputStepsAsideFromReferences,
+  linkKeyOfMark,
   linkTargetLabel,
   mapLinkDraft,
   normalizeLinkHref,
@@ -111,19 +111,28 @@ function LinkFields({
 }) {
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
-  const [query, setQuery] = useState("");
-  const [choosing, setChoosing] = useState(!draft.href);
-  const [selectedDestination, setSelectedDestination] = useState<{
+  // The document picked from search, assigned by its id at commit, and how the
+  // form names it.
+  const [selected, setSelected] = useState<{
+    ref: DocumentRef;
     label: string;
     location: string;
   } | null>(null);
+  const draftLinkRef = draft.identity ? linkKeyOfMark(draft.identity.attrs).ref : null;
+  const [query, setQuery] = useState("");
+  const [choosing, setChoosing] = useState(!draft.href);
   const [invalid, setInvalid] = useState(false);
   const [refused, setRefused] = useState(false);
-  const resolution = useLinkResolution(editor, href || null);
+  // The existing link's own answer while its destination is unchanged; a
+  // destination the writer typed has no ref until it is committed.
+  const resolution = useLinkResolution(
+    editor,
+    href ? { ref: selected?.ref ?? (href === draft.href ? draftLinkRef : null), href } : null,
+  );
   const target = classifyLinkTarget(href);
   const destinationLabel =
-    selectedDestination?.label ??
-    (resolution?.state === "resolved"
+    selected?.label ??
+    (resolution?.state === "document"
       ? resolution.document.title
       : target
         ? linkTargetLabel(target)
@@ -154,11 +163,14 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              // Spelled from the holder the way the Editor's `@` spells it:
-              // relative within its area, a full Context URI across areas.
-              const holderUri = getLinkResolution(editor)?.baseUri ?? null;
-              setHref(spellDocumentHref(holderUri, row.action.reference.uri));
-              setSelectedDestination({ label: row.label, location: row.location });
+              // Assigned the way the Editor's `@` assigns it: by the document's id,
+              // spelled with its full address.
+              setHref(storedHref(row.action.reference.uri, ""));
+              setSelected({
+                ref: documentRef(row.action.reference.documentId),
+                label: row.label,
+                location: row.location,
+              });
               setText((current) => current || row.label);
               setChoosing(false);
               setInvalid(false);
@@ -224,7 +236,11 @@ function LinkFields({
       setInvalid(true);
       return;
     }
-    const result = commitLinkDraft(editor, readDraft(), { text, href: normalized });
+    const result = commitLinkDraft(editor, readDraft(), {
+      text,
+      href: normalized,
+      ...(selected && !choosing ? { ref: selected.ref } : {}),
+    });
     if (result === "invalid") {
       setInvalid(true);
       return;
@@ -276,14 +292,17 @@ function LinkFields({
               }}
             >{t`Change`}</Button>
           </div>
-          {selectedDestination || resolution?.state === "resolved" ? (
+          {selected || resolution?.state === "document" ? (
             <span className="text-xs text-muted-foreground">
-              {selectedDestination?.location ??
-                (resolution?.state === "resolved" ? resolution.document.path : "")}
+              {selected?.location ??
+                (resolution?.state === "document" ? resolution.document.path : "")}
             </span>
           ) : null}
-          {resolution?.state === "unresolved" ? (
+          {resolution?.state === "missing" ? (
             <span className="text-xs text-muted-foreground">{t`Doesn't exist yet`}</span>
+          ) : null}
+          {resolution?.state === "gone" ? (
+            <span className="text-xs text-muted-foreground">{t`No longer available`}</span>
           ) : null}
         </div>
       )}

@@ -87,12 +87,7 @@ function heldUploadPort(): { port: ImageUploadPort; held: HeldUpload[] } {
 }
 
 function asset(id: string): UploadedImage {
-  return {
-    src: `asset:${id}`,
-    alt: "Cover art",
-    assetDocumentId: id,
-    assetPath: `assets/${id}.png`,
-  };
+  return { src: `asset:${id}`, alt: "Cover art" };
 }
 
 function imageFile(name = "cover art.png"): File {

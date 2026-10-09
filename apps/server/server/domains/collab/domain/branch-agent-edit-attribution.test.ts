@@ -3,13 +3,13 @@ import { renderAgentEditResult } from "@meridian/agent-edit";
 import {
   applyConcurrentUpdates,
   cloneYDoc,
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { blockTexts, createWriteToolHarness, humanText } from "@meridian/agent-edit/test-support";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -28,9 +28,7 @@ afterEach(() => {
 });
 
 function fixture(existingUpstream?: Y.Doc) {
-  const codec = createAgentEditCodec(
-    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-  );
+  const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
   const serialize = vi.spyOn(codec, "serializeBlockBodies");
   const upstream = existingUpstream ?? new Y.Doc({ gc: false });
   if (!existingUpstream)
@@ -119,54 +117,6 @@ function fixture(existingUpstream?: Y.Doc) {
 }
 
 describe("branch concurrent attribution", () => {
-  it("converges link-update bytes without writer credit or authored lineage", async () => {
-    const f = fixture();
-    const before = Y.encodeStateVector(f.upstream);
-    humanText(f.upstream, 0, { from: 5, to: 5 }, " maintenance");
-    f.liveUpdates.push({
-      seq: 1,
-      update: Y.encodeStateAsUpdate(f.upstream, before),
-      meta: { origin: "link-update", seq: 1 },
-    });
-    const changes = await f.check();
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
-    const codec = createAgentEditCodec(
-      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-    );
-    const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
-    expect(blockTexts(f.baseline)).toEqual(blockTexts(f.upstream));
-    expect(echo.humanTouchedHashes.size).toBe(0);
-    expect(echo.touchedHashes.size).toBe(0);
-    expect(echo.lineageOrigins).toEqual([]);
-    expect(echo.info).toBeUndefined();
-  });
-
-  it("preserves agent credit when maintenance follows on the same block", async () => {
-    const f = fixture();
-    let before = Y.encodeStateVector(f.upstream);
-    humanText(f.upstream, 0, { from: 5, to: 5 }, " authored");
-    f.rows.push({ ...f.row(Y.encodeStateAsUpdate(f.upstream, before)), source: "agent" });
-    before = Y.encodeStateVector(f.upstream);
-    humanText(f.upstream, 0, { from: 5, to: 5 }, " maintenance");
-    f.liveUpdates.push({
-      seq: 1,
-      update: Y.encodeStateAsUpdate(f.upstream, before),
-      meta: { origin: "link-update", seq: 1 },
-    });
-    const changes = await f.check();
-    expect(changes[0]).toMatchObject({
-      touchedHashes: { agent: [expect.any(String)] },
-    });
-    expect(changes[1]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
-    const codec = createAgentEditCodec(
-      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-    );
-    const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
-    expect(echo.info?.agent).toHaveLength(1);
-    expect(echo.info?.human).toEqual([]);
-  });
-
   it("does not credit system:reconcile deletions to the writer", async () => {
     const f = fixture();
     const before = Y.encodeStateVector(f.upstream);
@@ -180,8 +130,8 @@ describe("branch concurrent attribution", () => {
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
     expect(changes[0]?.deletedHashes).toBeUndefined();
-    const codec = createAgentEditCodec(
-      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(
+      UNSCOPED_DOCUMENT_LINKS,
     );
     const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
     expect(blockTexts(f.baseline)).toEqual(["Beta."]);
@@ -195,7 +145,7 @@ describe("branch concurrent attribution", () => {
     const before = Y.encodeStateVector(live);
     humanText(live, 0, { from: 5, to: 5 }, " maintenance");
     const update = Y.encodeStateAsUpdate(live, before);
-    f.liveUpdates.push({ seq: 1, update, meta: { origin: "link-update", seq: 1 } });
+    f.liveUpdates.push({ seq: 1, update, meta: { origin: "system:reconcile", seq: 1 } });
     expect((await f.check())[0]?.origin).toEqual({ type: "system" });
     Y.applyUpdate(f.baseline, update);
     expect(await f.check()).toEqual([]);
@@ -268,8 +218,8 @@ describe("branch concurrent attribution", () => {
     const live = cloneYDoc(f.baseline);
     docs.push(live);
     const before = Y.encodeStateVector(live);
-    const codec = createAgentEditCodec(
-      mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(
+      UNSCOPED_DOCUMENT_LINKS,
     );
     model.insertBlocks(toDocHandle(live), null, codec.parse("Writer."));
     f.liveUpdates.push({

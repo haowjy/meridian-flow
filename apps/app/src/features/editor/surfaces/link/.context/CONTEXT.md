@@ -17,7 +17,7 @@ project documents use No Work; a note in a chat's Scratch adds its lineage
 
 - the scope `{ projectId, workId, rootThreadId, baseUri }`, or null while the
   editor is not active or has no project;
-- `getLinkResolution(editor)`, the cache the decorations draw from;
+- `getLinkAnswerCache(editor)`, the cache the decorations draw from;
 - the link store's `reportFollow` and `clearFollow` as the reporter;
 - `useEditorLinkDestination()`: `useOpenProjectDocument` with the holder's link Work,
   `current` or `background` from the gesture.

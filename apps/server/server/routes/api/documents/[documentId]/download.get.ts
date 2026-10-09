@@ -40,8 +40,18 @@ export default defineEventHandler(async (event) => {
   const document = await services.uploadIdentity.lookupDocument(documentId);
   if (!document) throw createError({ statusCode: 404, message: "Document not found" });
   if (!document.storageUrl) {
+    // Only the live read spells links where their targets sit now; the stored
+    // projection can hold a path from before a move, so it is never served.
     const read = await services.documentSync.readAsMarkdown(documentId);
-    const markdown = read.ok ? read.value : document.markdownProjection;
+    if (!read.ok) {
+      setHeader(event, "Retry-After", "5");
+      throw createError({
+        statusCode: 503,
+        message: "The document couldn't be read right now. Try the download again.",
+        data: { retryable: true },
+      });
+    }
+    const markdown = read.value;
     setHeader(event, "Content-Type", "text/markdown; charset=utf-8");
     setHeader(
       event,

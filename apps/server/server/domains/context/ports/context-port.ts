@@ -3,6 +3,7 @@
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
+import type { LinkView } from "@meridian/contracts";
 import type {
   ContextUriScheme,
   ProjectScopedContextUriScheme,
@@ -19,7 +20,9 @@ import type {
   MoveContextEntryRequest,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { Result } from "../../../shared/result.js";
+import type { BoundWrite } from "../../collab/index.js";
 import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 
@@ -186,6 +189,14 @@ export interface SearchMatch {
   blockHash?: string;
 }
 
+/** What a search hit's passages spell, from the read binding that spelled them. */
+export interface SearchShowing {
+  holderUri: string;
+  view: LinkView;
+  /** Aligned with {@link SearchResult.matches}. */
+  passages: readonly (readonly SpelledLinkFact[])[];
+}
+
 /** Every passage one file contributed to a {@link ContextPort.search}. */
 export interface SearchResult {
   /** Host-only source identity; tools strip it from model-facing output. */
@@ -202,6 +213,14 @@ export interface SearchResult {
   matchCount: number;
   /** Relevance score, 0-1. Adapter-dependent. */
   score?: number;
+  /**
+   * Host-only: each ref-bearing link the returned passages spell, aligned with
+   * `matches`, and the holder URI and view the read's binding spelled them
+   * from. Tools strip it; the host records a passage's links only when the
+   * text the model receives shows that passage whole, and only for hits the
+   * reader may see.
+   */
+  shown?: SearchShowing;
 }
 
 export type WriteProvenance =
@@ -237,9 +256,6 @@ export interface ContextDeleteOptions extends ContextWriteOptions {
   expected: DeleteContextEntryRequest["expected"];
 }
 
-/** Certified context edits are closed semantic commands, never opaque callbacks. */
-export type ContextEditCommand = { kind: "append"; content: string };
-
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
 export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   fileType: DocumentFileType;
@@ -270,10 +286,31 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
 
-  /** Claim and seed a new tracked URI without ever replacing an existing path. */
+  /**
+   * Bind content for a tracked document about to be created at `uri`.
+   * Runs outside any transaction (it may register ahead refs); a caller that
+   * creates inside its own transaction binds first (contract §6.2).
+   */
+  bindTrackedDocument(uri: string, content: string): Promise<Result<BoundWrite, ContextError>>;
+
+  /**
+   * Claim and seed a new tracked URI without ever replacing an existing path.
+   * Its Markdown is bound here, outside any transaction; a caller inside
+   * its own transaction binds first and uses `createBoundDocument`.
+   */
   createTrackedDocument(
     uri: string,
-    content: string,
+    markdown: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
+
+  /**
+   * `createTrackedDocument` with content `bindTrackedDocument` made for
+   * this URI (null: empty); safe inside a transaction.
+   */
+  createBoundDocument(
+    uri: string,
+    bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
@@ -288,15 +325,6 @@ export interface ContextPort {
     uri: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
-
-  /**
-   * Resolve and apply one semantic edit under the document collab mutex.
-   */
-  edit(
-    uri: string,
-    command: ContextEditCommand,
-    options?: ContextWriteOptions,
-  ): Promise<Result<ContextWriteResult, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

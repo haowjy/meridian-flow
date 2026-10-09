@@ -1,4 +1,5 @@
 // Thin facade wiring the read and mutation entry points, idempotency, and response lifecycle.
+import type { LinkView } from "@meridian/contracts";
 import * as Y from "yjs";
 import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -65,8 +66,9 @@ export interface WriteTool {
   withResponseDocument: ResponseCommitter["withResponseDocument"];
   responseDocuments: ResponseCommitter["responseDocuments"];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
-  undo(docId: string, threadId: string): Promise<UndoResult>;
-  redo(docId: string, threadId: string): Promise<RedoResult>;
+  /** `linkView`: the view of the destination whose history the host routed this to. */
+  undo(docId: string, threadId: string, linkView?: LinkView): Promise<UndoResult>;
+  redo(docId: string, threadId: string, linkView?: LinkView): Promise<RedoResult>;
   reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
   invalidateThread(docId: string, threadId: string): Promise<void>;
 }
@@ -81,11 +83,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const reversalStore = options.journal;
   const mutationCommit = createMutationCommit({
-    documentRevision: options.documentRevision,
+    links: options.links,
     journal: options.journal,
     coordinator: options.coordinator,
     model: options.model,
-    codec: options.codec,
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
@@ -98,6 +99,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
+    links: options.links,
     ensureDocument: lifecyclePort ? (docId) => lifecyclePort.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
@@ -112,6 +114,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     model: options.model,
     codec: options.codec,
+    links: options.links,
     undoClientId,
     reversalNoticePort: options.reversalNoticePort,
     deferUntilCommit: options.deferUntilCommit,
@@ -126,8 +129,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       coordinator: options.coordinator,
       lifecycle: options.lifecycle,
       createRuntimeDoc: options.createRuntimeDoc,
-      documentRevision: options.documentRevision,
+      links: options.links,
       semanticProvenance: options.semanticProvenance,
+      onLinkSpliceFallback: options.onLinkSpliceFallback,
     },
     threadOrigins,
     autoTurnCounter,
@@ -244,8 +248,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     withResponseDocument: responseCommitter.withResponseDocument,
     responseDocuments: responseCommitter.responseDocuments,
     getAvailability: writeReversal.getAvailability,
-    undo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
-    redo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
+    undo: (docId, threadId, linkView) =>
+      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo", linkView),
+    redo: (docId, threadId, linkView) =>
+      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo", linkView),
     reverse: reversalEndpoints.reverse,
     invalidateThread: reversalEndpoints.invalidateThread,
   };

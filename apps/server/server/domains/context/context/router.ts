@@ -12,6 +12,7 @@ import {
 import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import type { BoundWrite } from "../../collab/index.js";
 import type {
   AdapterFault,
   AdapterFileEntry,
@@ -149,6 +150,7 @@ function toSearchResult(
     matches: hit.matches,
     matchCount: hit.matchCount,
     score: hit.score,
+    ...(hit.shown ? { shown: hit.shown } : {}),
   };
 }
 
@@ -351,6 +353,25 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     });
   }
 
+  /** Claim a new tracked URI through its adapter: the checks both create entries share. */
+  async function createDocument(
+    uri: string,
+    options: ContextWriteOptions | undefined,
+    create: (
+      adapter: ContextSchemeAdapter,
+      path: string,
+    ) => Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
+    const r = await resolveMutation(uri);
+    if (!r.ok) return r;
+    const { adapter, path, canonical } = r.value;
+    if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
+    if (!adapter.capabilities.creatable && !options?.documentId) {
+      return entryCreationDenied(canonical);
+    }
+    return callAdapter(canonical, () => create(adapter, path));
+  }
+
   return {
     lookupOperation: (operationId) =>
       deps.operationReceipts?.lookup(operationId) ?? Promise.resolve(null),
@@ -412,18 +433,27 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return ensured.ok ? Ok({ ...ensured.value, uri: canonical }) : ensured;
     },
 
-    async createTrackedDocument(
+    async bindTrackedDocument(
       uri: string,
       content: string,
-      options?: ContextWriteOptions,
-    ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
-      const r = await resolveMutation(uri, options?.origin);
+    ): Promise<Result<BoundWrite, ContextError>> {
+      const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      const creation = r.value.requireCreation(options?.documentId ? "intake" : "entry");
+      const creation = r.value.requireCreation("entry");
       if (!creation.ok) return creation;
-      return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
+      return callAdapter(canonical, () => adapter.bindTrackedDocument(path, content));
     },
+
+    createTrackedDocument: (uri, markdown, options) =>
+      createDocument(uri, options, (adapter, path) =>
+        adapter.createTrackedDocument(path, markdown, options),
+      ),
+
+    createBoundDocument: (uri, bound, options) =>
+      createDocument(uri, options, (adapter, path) =>
+        adapter.createBoundDocument(path, bound, options),
+      ),
 
     async createUntitledDocument(
       homeUri,
@@ -518,21 +548,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             name: created.value.name,
             ...(r.value.workScopeId ? { workId: r.value.workScopeId } : {}),
           });
-    },
-
-    async edit(
-      uri: string,
-      command: import("../ports/context-port.js").ContextEditCommand,
-      options?: ContextWriteOptions,
-    ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolveMutation(uri, options?.origin);
-      if (!r.ok) return r;
-      const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
-      const result = await callAdapter(canonical, () => adapter.edit(path, command, options));
-      return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 
     async writeBinary(

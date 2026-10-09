@@ -2,7 +2,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
+import type { BindMarkdownInput } from "../../../collab/index.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
+import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
 import { ContextFS, type ContextFSDeps } from "./context-fs.js";
 import {
@@ -35,7 +37,8 @@ function createUntitledFs(input: {
   const mutationStore = new InMemoryContextTreeMutationStore(backing);
   return {
     fs: new ContextFS({
-      assetPaths: { within: (_project, operation) => operation() },
+      holder: { projectId: "test-project" },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
       documentSync,
@@ -57,7 +60,8 @@ function createKbFs(documentSync: object = {}) {
     store,
     mutationStore,
     context: new ContextFS({
-      assetPaths: { within: (_project, operation) => operation() },
+      holder: { projectId: "test-project" },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
       scheme: "kb",
@@ -83,9 +87,6 @@ function documentSyncProbe() {
     writeDocument: async () => {
       throw new Error("not used");
     },
-    editDocument: async () => {
-      throw new Error("not used");
-    },
   };
   return { documentSync, ensured, seeded };
 }
@@ -94,7 +95,8 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
-    assetPaths: { within: (_project, operation) => operation() },
+    holder: { projectId: "test-project" },
+    links: { within: (_key, operation) => operation() },
     store,
     mutationStore: new InMemoryContextTreeMutationStore(backing),
     documentSync,
@@ -176,15 +178,17 @@ describe("ContextFS rename filetype invariant", () => {
     const markdownByDocument = new Map<string, string>();
     const mutationStore = new InMemoryContextTreeMutationStore(backing);
     const context = new ContextFS({
-      assetPaths: { within: (_project, operation) => operation() },
+      holder: { projectId: "test-project" },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
       scheme: "kb",
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
-        seedFromMarkdown: async (documentId: string, markdown: string) => {
-          markdownByDocument.set(documentId, markdown);
+        bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
+        seedFromMarkdown: async (documentId: string, content: { markdown: string }) => {
+          markdownByDocument.set(documentId, content.markdown);
           return Ok({ updateSeq: 1 });
         },
       } as never,

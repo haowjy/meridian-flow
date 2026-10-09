@@ -1,6 +1,14 @@
 /** Shared types for the per-thread store. */
 import type { AgentSelection } from "@meridian/contracts/agents";
-import type { Block, Thread, ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
+import type {
+  Block,
+  SubmittedReference,
+  Thread,
+  ThreadListItem,
+  Turn,
+  TurnStatus,
+  UserMessageBlock,
+} from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   InterruptResponseEntry,
@@ -15,13 +23,14 @@ export type PendingStreamStart = {
     projectId: string;
     title: string;
     text: string;
+    blocks: readonly UserMessageBlock[];
+    references: readonly SubmittedReference[];
     agentSelection: AgentSelection;
     workId?: string | null;
     optimisticUserTurnId?: string;
     workingTurnId?: string;
     submissionId?: string;
     activatedSkillSlugs?: readonly string[];
-    createProject?: boolean;
   };
 };
 
@@ -79,7 +88,7 @@ export type ThreadStoreActions = {
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
   markHandoffPending(threadId: string): void;
-  appendUserTurn(threadId: string, text: string): Turn;
+  appendUserTurn(threadId: string, blocks: readonly UserMessageBlock[]): Turn;
   acknowledgeUserTurn(
     threadId: string,
     optimisticTurnId: string,

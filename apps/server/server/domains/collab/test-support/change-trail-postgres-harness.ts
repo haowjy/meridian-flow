@@ -1,13 +1,13 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
@@ -15,11 +15,16 @@ import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
-import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
+import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
+import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
-import { NO_DOCUMENT_ASSET_PATHS } from "../domain/ports/document-asset-paths.js";
+import {
+  createStaticDocumentLinkScopes,
+  UNSUPPORTED_AHEAD_REFS,
+} from "../adapters/in-memory/static-document-link-scopes.js";
+import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
+import { writeMarkdown } from "./bound-writes.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -73,6 +78,7 @@ const {
   createReversalNoticeDiagnostics,
 } = await import("../adapters/agent-edit-observability.js");
 const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
+const { scopeAgentEdit } = await import("../domain/document-link-scope-doors.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
@@ -113,9 +119,8 @@ export function createTestDatabase(): Database {
 const documentSchema = buildDocumentSchema();
 const markupCodec = mdxCodec({
   schema: documentSchema,
-  assetPathResolver: unresolvedAssetPathResolver,
 });
-const agentEditCodec = createAgentEditCodec(markupCodec);
+const agentEditCodec = createAgentEditCodecFactory(markupCodec).forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(documentSchema);
 
 export const USER_ID = "00000000-0000-4000-8000-000000000801";
@@ -235,6 +240,8 @@ export function markdownFromUpdate(update: Uint8Array): string {
 }
 export type ChangeTrailHarnessOptions = {
   ids?: ChangeTrailScenarioIds;
+  /** Default: a static scope, whose tokens ignore the tree. */
+  links?: DocumentLinkScopes;
   afterDurableCommit?: (input: {
     documentIds: readonly DocumentId[];
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
@@ -245,6 +252,8 @@ export type ChangeTrailHarnessOptions = {
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
   afterLiveApply?: () => void;
+  /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
+  arrivals?: DocumentArrivals;
 };
 
 export type MatrixDraftStep = {
@@ -257,6 +266,8 @@ export type MatrixDraftStep = {
 };
 
 export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
+  // One link scope for every door the harness assembles, as composition shares one.
+  const links = options.links ?? createStaticDocumentLinkScopes();
   const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const DRAFT_DESTINATION = {
     kind: "draft",
@@ -342,7 +353,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
-    schema: documentSchema,
+    links,
     model,
     codec: markupCodec,
     journal: persistence.journal,
@@ -375,10 +386,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     durableProjectionSerializer,
     createDrizzleDocumentProjectionEffects(db),
     changeTrails,
-    createDrizzleDocumentDerivationStore(db, (tx, id) =>
-      resolvePersistedDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-    ),
+    createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     notices,
+    undefined,
+    options.arrivals,
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
     const doc = hocuspocus.documents.get(documentId);
@@ -432,7 +443,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const changeEvents: unknown[] = [];
   const settlementProjections: unknown[] = [];
   const realBranchPush = createBranchPushService({
-    assetPaths: NO_DOCUMENT_ASSET_PATHS,
+    links,
     changeEventDelivery: {
       deliver(message, sweptChanges) {
         changeEvents.push(projectChangeEventForRecipient(message, sweptChanges, USER_ID as UserId));
@@ -449,7 +460,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journal: persistence.journal,
     liveCoordinator,
     model,
-    codec: markupCodec,
+    codec: createAgentEditCodecFactory(markupCodec),
     resolveDocumentTitle: async (documentId) => {
       return documentId === ALPHA_ID ? "alpha" : "beta";
     },
@@ -503,7 +514,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
   const runtime = createAgentEditRuntime({
-    assetPaths: NO_DOCUMENT_ASSET_PATHS,
+    links,
+    aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
     coordinator: liveCoordinator,
     agentCoordinator: createDeferredLiveProjectionCoordinator({
@@ -521,38 +533,45 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
+    inTransaction: isInDrizzleTransaction,
   });
   const projections = { refresh: runDocumentWriteHook };
-  const agentEdit = createBranchThreadPeerAgentEditCore({
-    fileAccess: createAllowAllFileAccess(),
-    lockWorks: async () => {},
-    lockLiveDocuments: async () => {},
-    liveUtilityCore: runtime.liveUtilityCore,
-    journal: persistence.journal,
-    liveCoordinator,
-    lifecycle: persistence.lifecycle,
-    branches: branchStore,
-    branchCoordinator,
-    branchPulls,
-    branchJournal: durableBranchJournalReadStore,
-    concurrentJournalWatermarks: watermarks,
-    diagnostics: createBranchAgentEditDiagnostics(eventSink),
-    afterCommit: runAfterDrizzleCommit,
-    enlistResponseParticipant,
-    model: runtime.model,
-    codec: runtime.codec,
-    semanticProvenance: runtime.semanticProvenance,
-    observability,
-    commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
-    responseTransactionSettlement: {
-      deferUntilCommit: deferUntilDrizzleCommit,
-      deferUntilRollback: deferUntilDrizzleRollback,
-    },
-    responseTransactions: {
-      enlist: enlistResponseParticipant,
-      run: runResponseTransaction,
-    },
-  });
+  // Scoped as composition scopes it, so a real link scope sees every model call.
+  const agentEdit = scopeAgentEdit(
+    createBranchThreadPeerAgentEditCore({
+      fileAccess: createAllowAllFileAccess(),
+      lockWorks: async () => {},
+      lockLiveDocuments: async () => {},
+      liveUtilityCore: runtime.liveUtilityCore,
+      journal: persistence.journal,
+      liveCoordinator,
+      lifecycle: persistence.lifecycle,
+      branches: branchStore,
+      branchCoordinator,
+      branchPulls,
+      branchJournal: durableBranchJournalReadStore,
+      concurrentJournalWatermarks: watermarks,
+      diagnostics: createBranchAgentEditDiagnostics(eventSink),
+      afterCommit: runAfterDrizzleCommit,
+      enlistResponseParticipant,
+      model: runtime.model,
+      codec: runtime.codec,
+      links,
+      aheadRefs: UNSUPPORTED_AHEAD_REFS,
+      semanticProvenance: runtime.semanticProvenance,
+      observability,
+      commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
+      responseTransactionSettlement: {
+        deferUntilCommit: deferUntilDrizzleCommit,
+        deferUntilRollback: deferUntilDrizzleRollback,
+      },
+      responseTransactions: {
+        enlist: enlistResponseParticipant,
+        run: runResponseTransaction,
+      },
+    }),
+    links,
+  );
   const noLiveDependents = async () => ({
     hasDependents: false,
     blockingActorTypes: [] as Array<"agent" | "human" | "unknown">,
@@ -595,7 +614,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
-    assetPaths: NO_DOCUMENT_ASSET_PATHS,
+    links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       db,
       branchStore,
@@ -620,6 +639,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     agentEdit: () => agentEdit,
     reverseTurn: turnReversal.reverseTurn,
     writeDocument: runtime.markdownDocuments.writeDocument,
+    bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...responseFinalizer,
     ...drafts,
   };
@@ -631,13 +651,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
    * write records its authoring response, so `responseId` must then be a UUID.
    */
   async function seedAndStage(responseId: string, options: { liveBeta?: boolean } = {}) {
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId: ALPHA_ID,
       markdown: "Alpha base.",
       origin: { type: "user", actorUserId: USER_ID as never },
       threadId: THREAD_ID,
     });
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId: BETA_ID,
       markdown: "Beta base.",
       origin: { type: "user", actorUserId: USER_ID as never },
@@ -741,7 +761,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     sameIdentityRewrite = false,
   ) {
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId,
       markdown,
       origin: { type: "user", actorUserId: USER_ID as never },
@@ -1597,7 +1617,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedDiscardedDependencyPush() {
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId: ALPHA_ID,
       markdown: "Dependency base.",
       origin: { type: "user", actorUserId: USER_ID as never },
@@ -1736,6 +1756,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     seedDiscardedDependencyPush,
     crossWorkProbeFixture: () => ({
       runtime,
+      links,
       branchPulls,
       branchPush: realBranchPush,
       db,
@@ -2122,7 +2143,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
 
 function serializeMarkdown(doc: Y.Doc): string {
   const blocks = model.getBlocks(toDocHandle(doc));
-  return blocks.length === 0 ? "" : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)));
+  return blocks.length === 0
+    ? ""
+    : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
 }
 
 function replaceMarkdown(doc: Y.Doc, markdown: string): void {

@@ -1,22 +1,20 @@
-/** Authorized pending-link identities and chat-only previous-location fallback. */
+/** Chat-only previous-location fallback, authorized against the reader's projects. */
 import { matchDocumentPath } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentPreviousLocations,
   documents,
-  linkRedirects,
   projects,
   works,
 } from "@meridian/database/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
-import { resolveDocumentUri } from "../document-uri-resolver.js";
+import { createDocumentUriResolver } from "../document-uri-resolver.js";
 import type { DocumentLinkHistory } from "../ports/document-link-resolver.js";
 
 export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHistory {
-  const authorities = createDrizzleProjectWorkAuthorityResolver(db);
+  const currentUri = createDocumentUriResolver(db);
   async function authorizedUri(documentId: string, input: { projectId: string; userId: string }) {
     const tx = currentDrizzleDb(db);
     const [row] = await tx
@@ -36,28 +34,9 @@ export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHist
           or(eq(projects.id, input.projectId), eq(projects.isPersonal, true)),
         ),
       );
-    return row ? resolveDocumentUri(tx, authorities, documentId) : null;
+    return row ? currentUri(documentId) : null;
   }
   return {
-    async redirect(input) {
-      if (!input.holder || !(await authorizedUri(input.holder.documentId, input))) return null;
-      const [row] = await currentDrizzleDb(db)
-        .select()
-        .from(linkRedirects)
-        .where(
-          and(
-            eq(linkRedirects.sourceDocumentId, input.holder.documentId),
-            eq(linkRedirects.href, input.holder.href),
-          ),
-        )
-        .limit(1);
-      if (!row) return null;
-      return {
-        uri: row.targetDocumentId
-          ? await authorizedUri(row.targetDocumentId, input)
-          : row.intendedUri,
-      };
-    },
     async previous(input, address) {
       const scope = address.scope;
       const rows = await currentDrizzleDb(db)

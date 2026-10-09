@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { unresolvedAssetPathResolver } from "./asset-path-resolver.js";
 import {
   blocksOf,
   docFrom,
@@ -12,10 +11,10 @@ import {
   schema,
   t,
 } from "./codec-test-support.js";
-import { markdownCodec } from "./index.js";
+import { markdownCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 
 describe("markdown codec round-trip corpus", () => {
-  const codec = markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+  const codec = markdownCodec({ schema });
 
   // Tab is a key a writer presses in prose (the editor inserts one), so the
   // wire has to carry it. A tab in the middle of a line is literal; a LEADING
@@ -27,7 +26,7 @@ describe("markdown codec round-trip corpus", () => {
       paragraph(t("\tleading tab")),
       schema.node("heading", { level: 2 }, [t("\tindented heading")]),
     ];
-    const wire = codec.serialize(withTabs);
+    const wire = codec.serialize(withTabs, UNSCOPED_DOCUMENT_LINKS);
 
     expect(wire).toBe("mid\tsentence tab\n\n&#x9;leading tab\n\n## &#x9;indented heading\n");
     expect(docFrom(codec.parse(wire).blocks).toJSON()).toEqual(docFrom(withTabs).toJSON());
@@ -40,14 +39,14 @@ describe("markdown codec round-trip corpus", () => {
     "a\\<b> c.md",
   ])("carries destination %j through the wire unchanged", (href) => {
     const doc = [paragraph(t("x", [m("link", { href, title: null })]))];
-    const wire = codec.serialize(doc);
+    const wire = codec.serialize(doc, UNSCOPED_DOCUMENT_LINKS);
     expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
     expectStable(codec, wire);
   });
 
   it("never lets a destination span lines", () => {
     const doc = [paragraph(t("x", [m("link", { href: "a\nb\r\nc.md", title: null })]))];
-    const wire = codec.serialize(doc);
+    const wire = codec.serialize(doc, UNSCOPED_DOCUMENT_LINKS);
     expect(wire).toBe("[x](a%0Ab%0D%0Ac.md)\n");
     expect(codec.parse(wire).blocks[0]?.firstChild?.marks[0]?.attrs.href).toBe("a%0Ab%0D%0Ac.md");
   });
@@ -63,7 +62,7 @@ describe("markdown codec round-trip corpus", () => {
 
   it("stabilizes empty paragraphs through the NBSP wire sentinel", () => {
     const doc = docFrom([paragraph(t("a")), emptyParagraph(), emptyParagraph(), paragraph(t("b"))]);
-    const serialized = codec.serialize(blocksOf(doc));
+    const serialized = codec.serialize(blocksOf(doc), UNSCOPED_DOCUMENT_LINKS);
     expect(serialized.split("\n").filter((line) => line === "\u00a0")).toHaveLength(2);
     expect(parsedDoc(codec, serialized).toJSON()).toEqual(doc.toJSON());
   });
@@ -75,9 +74,9 @@ describe("markdown codec round-trip corpus", () => {
   });
 
   it("serializes all-empty documents to an empty string", () => {
-    expect(codec.serialize([emptyParagraph()])).toBe("");
-    expect(codec.serialize([emptyParagraph(), emptyParagraph()])).toBe("");
-    expect(codec.serializeBlocks([emptyParagraph()])).toEqual([""]);
+    expect(codec.serialize([emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toBe("");
+    expect(codec.serialize([emptyParagraph(), emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toBe("");
+    expect(codec.serializeBlocks([emptyParagraph()], UNSCOPED_DOCUMENT_LINKS)).toEqual([""]);
   });
 
   it("keeps [[name]] literal text, never a link", () => {
@@ -85,8 +84,10 @@ describe("markdown codec round-trip corpus", () => {
     const parsed = codec.parse(input).blocks;
     expect(parsed[0]?.textContent).toBe(input);
     expect(parsed[0]?.rangeHasMark(0, parsed[0].content.size, schema.marks.link)).toBe(false);
-    expect(codec.parse(codec.serialize(parsed)).blocks[0]?.textContent).toBe(input);
-    expectStable(codec, codec.serialize(parsed));
+    expect(
+      codec.parse(codec.serialize(parsed, UNSCOPED_DOCUMENT_LINKS)).blocks[0]?.textContent,
+    ).toBe(input);
+    expectStable(codec, codec.serialize(parsed, UNSCOPED_DOCUMENT_LINKS));
   });
 
   it("keeps HTAB-containing and enclosed destinations parseable", () => {
@@ -96,10 +97,10 @@ describe("markdown codec round-trip corpus", () => {
       paragraph(t("label", [m("link", { href: "A\tB.md", title: "t" })])),
       paragraph(schema.node("image", { src: "A\tB.png", alt: "alt", title: "t" })),
     ]) {
-      const serialized = codec.serialize([block]);
+      const serialized = codec.serialize([block], UNSCOPED_DOCUMENT_LINKS);
       const reparsed = codec.parse(serialized).blocks;
       expect(docFrom(reparsed).toJSON()).toEqual(docFrom([block]).toJSON());
-      expect(codec.serialize(reparsed)).toBe(serialized);
+      expect(codec.serialize(reparsed, UNSCOPED_DOCUMENT_LINKS)).toBe(serialized);
     }
 
     for (const input of [
@@ -115,7 +116,9 @@ describe("markdown codec round-trip corpus", () => {
 
   it("does not rewrite link-looking text in code or raw HTML", () => {
     for (const input of ["`[label](<A B.md>)`", "```md\n[label](<A B.md>)\n```"]) {
-      expect(codec.serialize(codec.parse(input).blocks)).toBe(`${input}\n`);
+      expect(codec.serialize(codec.parse(input).blocks, UNSCOPED_DOCUMENT_LINKS)).toBe(
+        `${input}\n`,
+      );
     }
 
     const indented = "    [label](<A B.md>)";
@@ -161,7 +164,7 @@ describe("markdown codec round-trip corpus", () => {
     // The opener escapes so it cannot be read back as a link; the text the
     // writer sees comes back byte for byte.
     const prose = 'Brackets [] and [[]], parens (), and "quotes".';
-    const wire = codec.serialize([paragraph(t(prose))]);
+    const wire = codec.serialize([paragraph(t(prose))], UNSCOPED_DOCUMENT_LINKS);
 
     expect(wire).toBe('Brackets \\[] and \\[\\[]], parens (), and "quotes".\n');
     expect(codec.parse(wire).blocks[0]?.textContent).toBe(prose);

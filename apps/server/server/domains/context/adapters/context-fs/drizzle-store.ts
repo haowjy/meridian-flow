@@ -1,6 +1,7 @@
 /** Drizzle ContextDocumentStore for one Meridian context source. */
 
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contentDocumentPredicate, documents, folders } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -20,6 +21,7 @@ import {
   type CreateDocumentInput,
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
+import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import {
   claimDocumentLocation,
   hasOppositeContextEntry,
@@ -62,6 +64,7 @@ export interface DrizzleContextDocumentStoreDeps {
   contextSourceId: string;
   membershipObserver?: ContextDocumentMembershipObserver;
   catalogMutations?: ContextCatalogMutationPort;
+  arrivals?: DocumentArrivals;
 }
 
 export async function notifyMembershipObserver(
@@ -357,7 +360,11 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         renderFilename(input.name, input.extension),
       );
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
+      // The upload is an arrival (contract §9.3): its membership and the settlement of a ref
+      // waiting at this address publish together, under the namespace key this command holds,
+      // before the manifest holder lock the publication takes.
+      await this.deps.membershipObserver?.documentCreated(row.id);
+      await this.deps.arrivals?.settle([row.id as DocumentId]);
       return mapDocument(row);
     });
   }

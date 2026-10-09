@@ -1,11 +1,12 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
 
 import {
-  type AgentEditCodec,
+  type AgentEditCodecFactory,
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createAllowAllFileAccess } from "../../../file-policy/index.js";
@@ -26,8 +27,8 @@ import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
-import { NO_DOCUMENT_ASSET_PATHS } from "../../domain/ports/document-asset-paths.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
+import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import {
   enlistResponseParticipant,
@@ -51,6 +52,10 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
+import {
+  createStaticDocumentLinkScopes,
+  UNSUPPORTED_AHEAD_REFS,
+} from "./static-document-link-scopes.js";
 
 export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
@@ -66,8 +71,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
     hook: async () => {},
     diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
+  const links = createStaticDocumentLinkScopes();
   const runtime = createAgentEditRuntime({
-    assetPaths: NO_DOCUMENT_ASSET_PATHS,
+    links,
+    aheadRefs: UNSUPPORTED_AHEAD_REFS,
+    inTransaction: () => false,
     journal,
     coordinator,
     lifecycle: documentCreation,
@@ -201,13 +209,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
-      editDocument: runtime.markdownDocuments.editDocument,
+      bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindStatic: runtime.linkBinder.bindStatic,
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
-      rewriteDocumentLinks: async () => {
-        throw new Error("Link maintenance requires durable transactions");
-      },
       documentDerivations: {
         derive: async (documentId) => {
           await projections.refresh({ documentId });
@@ -237,6 +243,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       coordinator,
       runtime.model,
       runtime.codec,
+      links,
     ),
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
     documentCreation,
@@ -273,7 +280,8 @@ function createInMemoryBranchPeerStub(
     withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
   },
   model: YProsemirrorDocumentModel,
-  codec: AgentEditCodec,
+  codec: AgentEditCodecFactory,
+  links: DocumentLinkScopes,
 ): BranchPeerShadowAccess {
   return {
     async readEffectiveRevision(input) {
@@ -284,13 +292,26 @@ function createInMemoryBranchPeerStub(
     async flushBranchLivePull() {},
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
-      coordinator.withDocument(input.documentId, async (doc) =>
-        Ok(versioned(doc, (doc) => model.serializeBlockLines(toDocHandle(doc), codec))),
-      ),
+      coordinator.withDocument(input.documentId, async (doc) => {
+        const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
+        const bound = codec.forScope(scope);
+        const read = versioned(doc, scope, (doc) =>
+          model.serializeBlockLines(toDocHandle(doc), bound),
+        );
+        const blockLinks = model
+          .projectBlocks(toDocHandle(doc))
+          .map((block) => spelledLinks([block], scope));
+        return Ok({
+          ...read,
+          links: blockLinks,
+          holder: { uri: scope.holder.uri, view: LIVE_VIEW },
+        });
+      }),
     async resolveManifestMembership() {
       return { documentId: "" as DocumentId, members: [] };
     },
     async reconcileProjectManifest() {},
+    async transferLiveManifestMembership() {},
     async recordManifestDocumentCreated() {},
     async recordManifestDocumentDeleted() {},
   };

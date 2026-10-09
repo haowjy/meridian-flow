@@ -46,17 +46,13 @@ export const imageCodec: BlockCodec<MdastImage> = {
 };
 
 /**
- * The node a wire spelling means.
- *
- * A picture the project owns is held by identity (`asset:<id>`), never by the
- * path it happens to sit at today: paths move and the reference must not. A
- * path this project cannot claim stays the path it was written as, because
- * guessing an id would write a reference that can never render.
+ * The node a wire spelling means. Parse is pure syntax: the source stays as
+ * written, and the host's ref assignment claims a known picture as its
+ * `asset:` src (agent-edit `assignLinkRefs`).
  */
 export function imageNodeFromAttributes(ctx: ParseContext, tag: ImageHtmlAttributes): PMNode {
-  const assetDocumentId = tag.url === "" ? null : ctx.assetPathResolver.assetForPath(tag.url);
   return ctx.schema.node("image", {
-    src: assetDocumentId ? `asset:${assetDocumentId}` : tag.url,
+    src: tag.url,
     alt: tag.alt,
     title: tag.title,
     width: tag.width,

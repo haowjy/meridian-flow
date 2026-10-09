@@ -282,12 +282,12 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           }));
         },
 
-        appendUserTurn(threadId, text) {
+        appendUserTurn(threadId, blocks) {
           const { now, turnCounter } = get();
           const { id, next } = nextTurnId(turnCounter);
           const existing = get().turnsByThread[threadId] ?? [];
           const prevTurnId = existing.length > 0 ? existing[existing.length - 1].id : null;
-          const turn = buildOptimisticUserTurn({ id, threadId, text, now, prevTurnId });
+          const turn = buildOptimisticUserTurn({ id, threadId, blocks, now, prevTurnId });
 
           set((state) => {
             const existing = state.turnsByThread[threadId] ?? [];

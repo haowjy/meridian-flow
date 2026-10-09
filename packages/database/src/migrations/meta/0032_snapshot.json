@@ -1,5 +1,5 @@
 {
-  "id": "df90e687-21d2-4377-b3df-c116ec1d79c8",
+  "id": "2e16024a-70f7-46d2-8a88-4e313e03e640",
   "prevId": "7087b9f2-1541-4a6d-a776-3b6125f008e8",
   "version": "7",
   "dialect": "postgresql",
@@ -2213,6 +2213,115 @@
       },
       "isRLSEnabled": false
     },
+    "public.thread_shown_links": {
+      "name": "thread_shown_links",
+      "schema": "",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ref": {
+          "name": "ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "holder_uri": {
+          "name": "holder_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "view": {
+          "name": "view",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "showing_digest": {
+          "name": "showing_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "bigserial",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "thread_shown_links_thread_id_threads_id_fk": {
+          "name": "thread_shown_links_thread_id_threads_id_fk",
+          "tableFrom": "thread_shown_links",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "thread_shown_links_document_id_documents_id_fk": {
+          "name": "thread_shown_links_document_id_documents_id_fk",
+          "tableFrom": "thread_shown_links",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "thread_shown_links_pk": {
+          "name": "thread_shown_links_pk",
+          "columns": [
+            "thread_id",
+            "document_id",
+            "showing_digest",
+            "turn_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "thread_shown_links_digest_valid": {
+          "name": "thread_shown_links_digest_valid",
+          "value": "\"thread_shown_links\".\"showing_digest\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.thread_user_state": {
       "name": "thread_user_state",
       "schema": "",
@@ -3922,12 +4031,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "root_thread_id": {
-          "name": "root_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "name": {
           "name": "name",
           "type": "text",
@@ -4031,8 +4134,8 @@
           "method": "btree",
           "with": {}
         },
-        "context_sources_project_scope_slug": {
-          "name": "context_sources_project_scope_slug",
+        "context_sources_project_slug": {
+          "name": "context_sources_project_slug",
           "columns": [
             {
               "expression": "project_id",
@@ -4048,7 +4151,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
+          "where": "\"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4071,28 +4174,6 @@
           ],
           "isUnique": true,
           "where": "\"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"deleted_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "context_sources_lineage_slug": {
-          "name": "context_sources_lineage_slug",
-          "columns": [
-            {
-              "expression": "root_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"context_sources\".\"root_thread_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4167,15 +4248,15 @@
       "checkConstraints": {
         "context_sources_exactly_one_scope": {
           "name": "context_sources_exactly_one_scope",
-          "value": "(\"context_sources\".\"scope\" = 'project' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'work' AND \"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL AND \"context_sources\".\"root_thread_id\" IS NULL) OR (\"context_sources\".\"scope\" = 'lineage' AND \"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL AND \"context_sources\".\"root_thread_id\" IS NOT NULL AND \"context_sources\".\"slug\" = 'scratch')"
+          "value": "(\"context_sources\".\"project_id\" IS NOT NULL AND \"context_sources\".\"work_id\" IS NULL) OR (\"context_sources\".\"project_id\" IS NULL AND \"context_sources\".\"work_id\" IS NOT NULL)"
         },
         "context_sources_scope_valid": {
           "name": "context_sources_scope_valid",
-          "value": "\"context_sources\".\"scope\" IN ('project', 'work', 'lineage')"
+          "value": "\"context_sources\".\"scope\" IN ('project', 'work')"
         },
         "context_sources_scope_work_fk": {
           "name": "context_sources_scope_work_fk",
-          "value": "\"context_sources\".\"scope\" <> 'work' OR \"context_sources\".\"work_id\" IS NOT NULL"
+          "value": "\"context_sources\".\"scope\" = 'project' OR \"context_sources\".\"work_id\" IS NOT NULL"
         },
         "context_sources_scope_project_fk": {
           "name": "context_sources_scope_project_fk",
@@ -4198,20 +4279,26 @@
           "primaryKey": false,
           "notNull": true
         },
-        "href": {
-          "name": "href",
+        "link_key": {
+          "name": "link_key",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "target_project_id": {
-          "name": "target_project_id",
+        "target_document_id": {
+          "name": "target_document_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "target_key": {
-          "name": "target_key",
+        "ahead_id": {
+          "name": "ahead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -4224,11 +4311,11 @@
         }
       },
       "indexes": {
-        "document_links_target_project": {
-          "name": "document_links_target_project",
+        "document_links_target_document": {
+          "name": "document_links_target_document",
           "columns": [
             {
-              "expression": "target_project_id",
+              "expression": "target_document_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4239,11 +4326,11 @@
           "method": "btree",
           "with": {}
         },
-        "document_links_target_key": {
-          "name": "document_links_target_key",
+        "document_links_ahead": {
+          "name": "document_links_ahead",
           "columns": [
             {
-              "expression": "target_key",
+              "expression": "ahead_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4251,7 +4338,7 @@
           ],
           "isUnique": false,
           "concurrently": false,
-          "method": "hash",
+          "method": "btree",
           "with": {}
         }
       },
@@ -4271,11 +4358,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "document_links_source_document_id_href_pk": {
-          "name": "document_links_source_document_id_href_pk",
+        "document_links_source_document_id_link_key_pk": {
+          "name": "document_links_source_document_id_link_key_pk",
           "columns": [
             "source_document_id",
-            "href"
+            "link_key"
           ]
         }
       },
@@ -5002,79 +5089,100 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.link_redirects": {
-      "name": "link_redirects",
+    "public.link_ahead_refs": {
+      "name": "link_ahead_refs",
       "schema": "",
       "columns": {
-        "source_document_id": {
-          "name": "source_document_id",
+        "ahead_id": {
+          "name": "ahead_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "href": {
-          "name": "href",
+        "scheme": {
+          "name": "scheme",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "target_document_id": {
-          "name": "target_document_id",
+        "work_id": {
+          "name": "work_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "intended_uri": {
-          "name": "intended_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "old_filename": {
-          "name": "old_filename",
+        "path": {
+          "name": "path",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "mover_user_id": {
-          "name": "mover_user_id",
+        "settled_document_id": {
+          "name": "settled_document_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "mover_turn_id": {
-          "name": "mover_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
+        "registered_at": {
+          "name": "registered_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "retry_after": {
-          "name": "retry_after",
+        "settled_at": {
+          "name": "settled_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }
       },
       "indexes": {
-        "link_redirects_target_document": {
-          "name": "link_redirects_target_document",
+        "link_ahead_refs_unsettled": {
+          "name": "link_ahead_refs_unsettled",
           "columns": [
             {
-              "expression": "target_document_id",
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scheme",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "md5(\"path\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"link_ahead_refs\".\"settled_document_id\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "link_ahead_refs_settled_document": {
+          "name": "link_ahead_refs_settled_document",
+          "columns": [
+            {
+              "expression": "settled_document_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5087,12 +5195,12 @@
         }
       },
       "foreignKeys": {
-        "link_redirects_source_document_id_documents_id_fk": {
-          "name": "link_redirects_source_document_id_documents_id_fk",
-          "tableFrom": "link_redirects",
-          "tableTo": "documents",
+        "link_ahead_refs_project_id_projects_id_fk": {
+          "name": "link_ahead_refs_project_id_projects_id_fk",
+          "tableFrom": "link_ahead_refs",
+          "tableTo": "projects",
           "columnsFrom": [
-            "source_document_id"
+            "project_id"
           ],
           "columnsTo": [
             "id"
@@ -5100,37 +5208,37 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "link_redirects_target_document_id_documents_id_fk": {
-          "name": "link_redirects_target_document_id_documents_id_fk",
-          "tableFrom": "link_redirects",
-          "tableTo": "documents",
+        "link_ahead_refs_work_id_works_id_fk": {
+          "name": "link_ahead_refs_work_id_works_id_fk",
+          "tableFrom": "link_ahead_refs",
+          "tableTo": "works",
           "columnsFrom": [
-            "target_document_id"
+            "work_id"
           ],
           "columnsTo": [
             "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "link_ahead_refs_settled_document_id_documents_id_fk": {
+          "name": "link_ahead_refs_settled_document_id_documents_id_fk",
+          "tableFrom": "link_ahead_refs",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "settled_document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "link_redirects_source_document_id_href_pk": {
-          "name": "link_redirects_source_document_id_href_pk",
-          "columns": [
-            "source_document_id",
-            "href"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "link_redirects_target": {
-          "name": "link_redirects_target",
-          "value": "(\"link_redirects\".\"target_document_id\" IS NULL) <> (\"link_redirects\".\"intended_uri\" IS NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.projects": {
@@ -8584,7 +8692,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 5000
+          "default": 1000000
         },
         "generation": {
           "name": "generation",
@@ -9034,7 +9142,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 5000
+          "default": 1000000
         },
         "latest_update_seq": {
           "name": "latest_update_seq",

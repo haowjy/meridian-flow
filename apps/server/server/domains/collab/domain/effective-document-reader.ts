@@ -1,16 +1,24 @@
 /** Effective branch reads with staged-response overlays and manifest projection. */
 import {
-  type AgentEditCodec,
+  type AgentEditCodecFactory,
   type DocHandle,
   type DocumentCoordinator,
+  isDocumentNotFoundError,
   toDocHandle,
   unwrapDoc,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
-import { Ok, type Result } from "../../../shared/result.js";
-import type { BranchPeerShadowAccess, SyncError } from "../contracts.js";
+import { Err, Ok, type Result } from "../../../shared/result.js";
+import type {
+  BranchPeerShadowAccess,
+  EffectiveReadVersion,
+  HashlineRead,
+  SyncError,
+} from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
@@ -18,13 +26,13 @@ import { BranchNotFoundError } from "./branch-resolver.js";
 import { documentRevision, versioned } from "./document-revision.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
   documentId: DocumentId;
   threadId?: ThreadId | null;
   responseId?: string | null;
-  destination: "live" | "draft";
-};
+} & EffectiveReadVersion;
 
 export function createEffectiveDocumentReader(input: {
   branches: ApplicationBranchStore;
@@ -32,10 +40,26 @@ export function createEffectiveDocumentReader(input: {
   branchPulls: BranchPullService;
   liveCoordinator: DocumentCoordinator;
   agentEdit: ThreadPeerAgentEditCore;
-  documents: Pick<MarkdownDocumentEngine, "readVersionedMarkdown" | "serializeVersionedDocument">;
+  documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  links: DocumentLinkScopes;
 }): BranchPeerShadowAccess {
+  /** The view a read spells in: the version it reads. */
+  function viewOf(command: EffectiveReadInput): LinkView {
+    const responseId = command.responseId ?? undefined;
+    const reply = responseId ? { responseId } : {};
+    return command.destination === "draft"
+      ? { kind: "draft", workId: command.workId, ...reply }
+      : { kind: "live", ...reply };
+  }
+
+  async function spelling(command: EffectiveReadInput, doc: Y.Doc) {
+    const holder = { documentId: command.documentId, view: viewOf(command) };
+    await input.links.prepare({ holders: [holder], docs: [doc] });
+    return input.links.holder(holder);
+  }
+
   /**
    * Whether this reply's staged writes to the document belong to the version
    * being read. A reply that drafted a document must not show those writes in
@@ -76,11 +100,17 @@ export function createEffectiveDocumentReader(input: {
       });
   }
 
-  async function readEffective<T, E>(
+  /**
+   * Reads the document's effective Y.Doc for this command: the reply's staged
+   * create, its thread peer, its Work draft, or else live content. Choosing
+   * the content source never chooses the view: every source renders through
+   * the same `read`, which spells in the command's own view.
+   */
+  async function readEffective<T>(
     command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
-    fallback: () => Promise<Result<T, E>>,
-  ): Promise<Result<T, E>> {
+  ): Promise<Result<T, SyncError>> {
+    const fallback = () => readLive(command, read);
     const isStagedOnlyCreatedDocument = Boolean(
       command.responseId &&
         input.agentEdit
@@ -145,6 +175,24 @@ export function createEffectiveDocumentReader(input: {
     return fallback();
   }
 
+  /** Live content, rendered by the same reader as every branch. */
+  async function readLive<T>(
+    command: EffectiveReadInput,
+    read: (doc: DocHandle) => Promise<T>,
+  ): Promise<Result<T, SyncError>> {
+    try {
+      return Ok(
+        await input.liveCoordinator.withDocument(command.documentId, (doc) =>
+          read(toDocHandle(doc)),
+        ),
+      );
+    } catch (cause) {
+      if (isDocumentNotFoundError(cause))
+        return Err({ code: "not_found", documentId: command.documentId });
+      throw cause;
+    }
+  }
+
   async function readEffectiveBranch<T>(
     branch: { branchId: string; doc: Y.Doc },
     command: EffectiveReadInput,
@@ -162,14 +210,10 @@ export function createEffectiveDocumentReader(input: {
   return {
     async readEffectiveRevision(command) {
       try {
-        const result = await readEffective(
-          command,
-          async (doc) => documentRevision(unwrapDoc(doc)),
-          () =>
-            input.liveCoordinator.withDocument(command.documentId, async (doc) =>
-              Ok(documentRevision(doc)),
-            ),
-        );
+        const result = await readEffective(command, async (handle) => {
+          const doc = unwrapDoc(handle);
+          return documentRevision(doc, await spelling(command, doc));
+        });
         return result.ok ? result.value : null;
       } catch {
         return null;
@@ -182,61 +226,68 @@ export function createEffectiveDocumentReader(input: {
       return input.branchPulls.flushLivePull(documentId);
     },
     readEffectiveMarkdown(command) {
-      return readEffective(
-        command,
-        (doc) => input.documents.serializeVersionedDocument(command.documentId, unwrapDoc(doc)),
-        () => input.documents.readVersionedMarkdown(command.documentId),
-      ) as Promise<Result<{ content: string; revision: string | null }, SyncError>>;
+      return readEffective(command, (doc) =>
+        input.documents.serializeVersionedDocument(
+          command.documentId,
+          unwrapDoc(doc),
+          viewOf(command),
+        ),
+      );
     },
     readEffectiveHashlines(command) {
-      return readEffective(
-        command,
-        async (doc) =>
-          versioned(unwrapDoc(doc), (doc) =>
-            input.model.serializeBlockLines(toDocHandle(doc), input.codec),
-          ),
-        () =>
-          input.liveCoordinator.withDocument(command.documentId, async (doc) =>
-            Ok(
-              versioned(doc, (doc) =>
-                input.model.serializeBlockLines(toDocHandle(doc), input.codec),
-              ),
-            ),
-          ),
-      ) as Promise<Result<{ content: string[]; revision: string | null }, SyncError>>;
+      return readEffective(command, async (handle): Promise<HashlineRead> => {
+        const doc = unwrapDoc(handle);
+        const scope = await spelling(command, doc);
+        const codec = input.codec.forScope(scope);
+        const read = versioned(doc, scope, (doc) =>
+          input.model.serializeBlockLines(toDocHandle(doc), codec),
+        );
+        const links = input.model
+          .projectBlocks(toDocHandle(doc))
+          .map((block) => spelledLinks([block], scope));
+        return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
+      });
     },
     async resolveManifestMembership(command) {
-      if (command.threadId || command.workId) {
+      const { destination, ...view } = command;
+      // A live view's manifest is the live one; its thread only names whose creates count.
+      const manifestView = destination === "live" ? { projectId: view.projectId } : view;
+      if (manifestView.threadId || manifestView.workId) {
         const manifest = await input.branches.ensureProjectManifest({
           projectId: command.projectId,
         });
         try {
-          if (command.threadId) {
+          if (manifestView.threadId) {
             await input.branchPulls.pullThreadPeer({
               documentId: manifest.documentId,
-              threadId: command.threadId,
+              threadId: manifestView.threadId,
             });
-          } else if (command.workId) {
+          } else if (manifestView.workId) {
             await input.branchPulls.flushLivePull(manifest.documentId);
           }
         } finally {
           manifest.doc.destroy();
         }
       }
-      const membership = await input.branches.resolveManifestMembership(command);
-      if (!command.responseId || !command.threadId) return membership;
-      return {
-        ...membership,
-        members: [
-          ...new Set([
-            ...membership.members,
-            ...input.agentEdit.responseDocuments(command.responseId, command.threadId).created,
-          ]),
-        ],
-      };
+      const membership = await input.branches.resolveManifestMembership(manifestView);
+      const { responseId, threadId } = view;
+      if (!responseId || !threadId) return membership;
+      // A create staged for the other destination is not this view's.
+      const created = input.agentEdit
+        .responseDocuments(responseId, threadId)
+        .created.filter(
+          (documentId) =>
+            !destination ||
+            (input.agentEdit.responseDestination(responseId, documentId)?.kind ?? destination) ===
+              destination,
+        );
+      return { ...membership, members: [...new Set([...membership.members, ...created])] };
     },
     reconcileProjectManifest(projectId: ProjectId) {
       return input.branches.reconcileProjectManifest(projectId);
+    },
+    transferLiveManifestMembership(documentIds, projects) {
+      return input.branches.transferLiveManifestMembership(documentIds, projects);
     },
     async recordManifestDocumentCreated(
       documentId: DocumentId,

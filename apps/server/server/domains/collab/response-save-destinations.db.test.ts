@@ -7,11 +7,11 @@
  */
 
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
-import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -22,6 +22,12 @@ import {
   isFileAccessDenied,
   type Principal,
 } from "../file-policy/index.js";
+import { createInMemoryEventSink } from "../observability/index.js";
+import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
+import { writeMarkdown } from "./test-support/bound-writes.js";
+import { createTestDocumentLinkScopes, testLinkDeps } from "./test-support/document-link-scopes.js";
+
+const documentSchema = buildDocumentSchema();
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -36,7 +42,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
@@ -120,20 +125,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
     const hocuspocus = fakeHocuspocus();
     const collabs: Array<{ dispose(): void }> = [];
-    const createTestCollab = (options: { livePullDebounceMs?: number } = {}) => {
+    const createTestCollab = (
+      options: { livePullDebounceMs?: number; links?: DocumentLinkScopes } = {},
+    ) => {
+      const { links, ...rest } = options;
       const collab = createCollabDomain({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        ...testLinkDeps(db),
+        ...(links ? { links } : {}),
         db,
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         threadContext: {
           requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
           resolveContextDocument: async () => {
             throw new Error("Turn reversals here name no document");
           },
         },
-        ...options,
+        ...rest,
       });
       collab.bindHocuspocus(hocuspocus as never);
       collabs.push(collab);
@@ -223,7 +231,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [KB_ID, "Lore base."],
         [SCRATCH_ID, "Notes base."],
       ] as const) {
-        await collab.writeDocument({
+        await writeMarkdown(collab, {
           documentId: documentId as never,
           markdown,
           origin: { type: "user", actorUserId: USER_ID as never },
@@ -268,6 +276,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: documentId as never,
         threadId: THREAD_ID as never,
         destination: "draft",
+        workId: WORK_ID as never,
       });
       return read.ok ? read.value.content : "";
     }
@@ -409,7 +418,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("shows a moved image at its new path in the reply's settled receipt", async () => {
-      const collab = createTestCollab();
+      const sink = createInMemoryEventSink();
+      const collab = createTestCollab({
+        links: createTestDocumentLinkScopes(db, { eventSink: sink }),
+      });
       await db
         .update(schema.works)
         .set({ aiWriteMode: "direct" })
@@ -439,7 +451,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "image",
         mimeType: "image/png",
       });
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: KB_ID as never,
         markdown: "![Map](assets/map.png)",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -467,16 +479,87 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
       const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
 
-      const receipts = JSON.stringify(committed.documents.map((document) => document.receipts));
+      // What the model reads of a receipt is its result; its showing is host-only.
+      const receipts = JSON.stringify(
+        committed.documents.map((document) => document.receipts.map(({ result }) => result)),
+      );
       expect(receipts).toContain("![Map](art/map.png) The pass.");
       expect(receipts).not.toContain("asset:");
+
+      // A later reply removes a link whose target moved since it was written. Only
+      // the receipt's before side still holds it, so the save loads it too.
+      const CHAPTER_ID = "00000000-0000-4000-8000-000000000a24";
+      await db.insert(schema.documents).values({
+        id: CHAPTER_ID,
+        contextSourceId: MANUSCRIPT_ID,
+        name: "chapter",
+        extension: "md",
+      });
+      const reply = async (sequence: number) => {
+        const id = `00000000-0000-4000-8000-000000000a${30 + sequence}`;
+        await db.insert(schema.modelResponses).values({
+          id: id as never,
+          turnId: TURN_ID as never,
+          sequence,
+          provider: "fixture",
+          model: "fixture",
+          requestMessageCount: 1,
+          predictedCacheState: "cold",
+          predictedCacheReason: "facts_unavailable",
+        });
+        return id;
+      };
+      const linked = documentSchema.node("paragraph", null, [
+        documentSchema.text("See the chapter", [
+          documentSchema.marks.link.create({
+            ref: `doc:${CHAPTER_ID}`,
+            href: "manuscript://chapter.md",
+          }),
+        ]),
+      ]);
+      const linking = await reply(2);
+      await expect(
+        agentEdit.write(
+          {
+            command: "copy",
+            from: { path: "chapter.md" },
+            file: "lore.md",
+            documentId: KB_ID,
+            overwrite: true,
+          },
+          { ...lore, responseId: linking, createdDocument: false, copiedNodes: [linked] },
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      await collab.finalizeResponseCommit(linking, ctx);
+      await db
+        .update(schema.documents)
+        .set({ name: "moved" })
+        .where(eq(schema.documents.id, CHAPTER_ID));
+      const unlinking = await reply(3);
+      await expect(
+        agentEdit.write(
+          {
+            command: "create",
+            file: "lore.md",
+            documentId: KB_ID,
+            overwrite: true,
+            content: "Lore kept.",
+          },
+          { ...lore, responseId: unlinking, createdDocument: false },
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      sink.clear();
+      await collab.finalizeResponseCommit(unlinking, ctx);
+      expect(sink.events.filter((event) => event.name === "serialize.link_snapshot_miss")).toEqual(
+        [],
+      );
     });
 
     it("saves two mixed replies whose Works overlap in opposite orders", async () => {
       const collab = createTestCollab();
       await addSecondWorkAndThread();
       await seed(collab);
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: SCRATCH_B_ID as never,
         markdown: "B notes base.",
         origin: { type: "user", actorUserId: USER_ID as never },
