@@ -86,6 +86,31 @@ describe("review-room transition table", () => {
       ],
       result: { draftId: "draft-a", generation: 2, completion: null, room: null },
     },
+    ...[1, 2].map((readGeneration) => ({
+      name:
+        readGeneration === 1
+          ? "cached G1 gone cannot cancel the adopted G2 row"
+          : "fresh G2 gone closes despite a stale G2 row",
+      actions: [
+        enter(),
+        closed,
+        ...reviewRoomObservations(
+          [{ ...listed, draftGeneration: 2 }],
+          { status: "gone" as const, draftId: draftA.draftId, draftGeneration: readGeneration },
+          draftA,
+        ),
+        // The next layout pass sees completion cleared by the G2 observation.
+        ...reviewRoomObservations(
+          [{ ...listed, draftGeneration: 2 }],
+          { status: "gone" as const, draftId: draftA.draftId, draftGeneration: readGeneration },
+          draftA,
+        ),
+      ],
+      result:
+        readGeneration === 1
+          ? { draftId: "draft-a", generation: 2, completion: null, room: null }
+          : null,
+    })),
     { name: "genuine external absence exits", actions: [enter(), ...missing(2)], result: null },
     {
       name: "confirmed close is held through absence",

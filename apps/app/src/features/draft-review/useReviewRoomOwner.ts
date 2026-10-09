@@ -3,7 +3,7 @@ import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { isCancelledError, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
+import { type DraftPreviewRead, draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
@@ -36,7 +36,7 @@ export function useReviewRoomOwner({
   const draftId = review?.draftId ?? "";
   const generation = review?.draftGeneration;
   const roomName = review?.roomName ?? null;
-  const draft = { projectId, workId, documentId, draftId };
+  const draft = { projectId, workId, documentId, draftId, draftGeneration: generation };
   const key = JSON.stringify([projectId, workId, documentId, draftId, generation, roomName]);
   const horizon = useRef({ key, queryClient, registry });
   horizon.current = { key, queryClient, registry };
@@ -68,13 +68,14 @@ export function useReviewRoomOwner({
   if (draftOnly || row) kind.current.draftOnly = draftOnly || row?.isNewDocument === true;
   const selected = useRef({ review, pendingWriterGeneration });
   selected.current = { review, pendingWriterGeneration };
-  const observeAbsence = (terminal = false) => {
+  const observeAbsence = (terminal = false, absenceGeneration = generation) => {
     const generation = selected.current.pendingWriterGeneration;
     dispatch({
       type: "reviewAbsent",
       documentId,
       draftId,
       terminal,
+      draftGeneration: absenceGeneration,
       draftOnly: kind.current.draftOnly,
       evidence: generation === null ? null : { draftGeneration: generation, proposal: true },
     });
@@ -160,14 +161,14 @@ export function useReviewRoomOwner({
       if (!current()) return;
       const shown = selected.current.review;
       if (
-        answer.status === "active" &&
+        answer.draftGeneration !== undefined &&
         shown?.draftGeneration !== undefined &&
         answer.draftGeneration < shown.draftGeneration
       )
         answer = await read();
       if (!current()) return;
       setEntryAnswered(target);
-      if (answer.status === "gone") observeAbsence();
+      if (answer.status === "gone") observeAbsence(false, answer.draftGeneration);
       else
         dispatch({
           type: "generationObserved",
@@ -309,7 +310,7 @@ export function useReviewRoomOwner({
 /** Addressed cache observations, without interpreting an empty reset as a proposal. */
 export function reviewRoomObservations(
   rows: import("@meridian/contracts/drafts").ThreadDraftListItem[] | undefined,
-  preview: import("@meridian/contracts/drafts").DraftPreviewResponse | undefined,
+  preview: DraftPreviewRead | undefined,
   draft: { documentId: string; draftId: string },
   pendingWriterGeneration: number | null = null,
   draftOnly = false,
@@ -343,6 +344,7 @@ export function reviewRoomObservations(
     actions.push({
       type: "reviewAbsent",
       ...draft,
+      draftGeneration: preview?.draftGeneration,
       evidence: changesEvidence,
       draftOnly: draftOnly && preview?.status === "gone",
     });
