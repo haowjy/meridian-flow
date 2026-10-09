@@ -109,7 +109,3 @@ describe("device chat submission journal", () => {
     expect(journal.entries()).toEqual([]);
   });
 });
-
-it("CI probe: a failing shard fails the required quality aggregate", () => {
-  expect("deliberate shard failure").toBe("success");
-});
