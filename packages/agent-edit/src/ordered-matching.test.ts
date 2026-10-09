@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { weightedOrderedMatches } from "./ordered-matching.js";
 
 describe("weighted ordered matching", () => {
-  it("maximizes weight, not pair count, with absolute index bounds", () => {
+  it("preserves weighted ranking, explicit tie policy and bounded matching contracts", () => {
+    // Absolute index bounds and score precedence.
     const weights = [
       [0, 5],
       [1, 0],
@@ -11,12 +12,12 @@ describe("weighted ordered matching", () => {
     expect(weightedOrderedMatches((i, j) => weights[i - 2][j - 3], 2, 4, 3, 5, 9)).toEqual([
       [2, 4],
     ]);
-  });
-  it("prefers matching then skipping old on ties", () => {
+
+    // Match-first, then skip-old ties.
     expect(weightedOrderedMatches(() => 1, 0, 2, 0, 1, 6)).toEqual([[0, 0]]);
     expect(weightedOrderedMatches((i, j) => (i !== j ? 1 : 0), 0, 2, 0, 2, 9)).toEqual([[1, 0]]);
-  });
-  it("leaves over-limit fallback to the caller and never pairs zero scores", () => {
+
+    // Table budget, ineligible pairs and empty spans.
     expect(weightedOrderedMatches(() => 1, 0, 2, 0, 2, 8)).toBeNull();
     expect(weightedOrderedMatches(() => 0, 0, 2, 0, 2, 9)).toEqual([]);
     expect(weightedOrderedMatches(() => 1, 0, 0, 0, 2, 0)).toEqual([]);
