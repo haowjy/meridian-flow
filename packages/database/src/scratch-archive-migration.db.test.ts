@@ -41,6 +41,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       const before =
         await target`SELECT id, markdown_projection, metadata, deleted_at FROM documents ORDER BY id`;
       const yjs = await target`SELECT * FROM document_yjs_heads`;
+      const checkpoints = await target`SELECT * FROM document_yjs_checkpoints ORDER BY id`;
       const updates = await target`SELECT * FROM document_yjs_updates`;
       for (const entry of journal.entries.slice(32, 34))
         await cp(
@@ -57,9 +58,11 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       ).toEqual(before);
       expect(await target`SELECT * FROM document_yjs_heads`).toEqual(yjs);
       expect(await target`SELECT * FROM document_yjs_updates`).toEqual(updates);
-      expect((await target`SELECT state FROM document_yjs_checkpoints`)[0]?.state).toEqual(
-        archiveNoteState,
-      );
+      expect(await target`SELECT * FROM document_yjs_checkpoints ORDER BY id`).toEqual(checkpoints);
+      expect(
+        (await target`SELECT state FROM document_yjs_checkpoints WHERE document_id = ${id(14)}`)[0]
+          ?.state,
+      ).toEqual(archiveNoteState);
       expect(await target`SELECT document_id FROM user_recent_documents`).toEqual([
         { document_id: id(14) },
       ]);

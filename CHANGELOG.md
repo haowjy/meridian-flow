@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Ignore legacy No Work Scratch rows during the app swap and include Unfiled notes among the Editor’s document-link paste targets.
+
 - Preserve existing No Work Scratch notes and upload intakes under Unfiled during the lineage Scratch upgrade, with retryable concurrent index migrations.
 
 - "View projects" moves below your account at the foot of the left sidebar, so a near miss on Scratch no longer leaves the project.

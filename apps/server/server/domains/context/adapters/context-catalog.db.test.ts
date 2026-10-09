@@ -742,6 +742,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const FILE = "00000000-0000-4000-8000-00000000080d";
       const UPLOAD_FILE = "00000000-0000-4000-8000-00000000080e";
       const NAMED_FILE = "00000000-0000-4000-8000-00000000080f";
+      const STRAY_SCRATCH = "00000000-0000-4000-8000-000000000810";
+      const STRAY_FILE = "00000000-0000-4000-8000-000000000811";
       await seedProject(db, "catalog-no-work", []);
       await db.insert(works).values([
         {
@@ -762,6 +764,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       await db.insert(contextSources).values([
         { id: UPLOADS, workId: NO_WORK, scope: "work", name: "Uploads", slug: "uploads" },
+        { id: STRAY_SCRATCH, workId: NO_WORK, scope: "work", name: "Scratch", slug: "scratch" },
         {
           id: NAMED_SCRATCH,
           workId: NAMED,
@@ -780,6 +783,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileType: "image",
         },
         { id: NAMED_FILE, contextSourceId: NAMED_SCRATCH, name: "arc", extension: "md" },
+        { id: STRAY_FILE, contextSourceId: STRAY_SCRATCH, name: "ignored", extension: "md" },
       ]);
       const catalog = createDrizzleContextCatalog(db);
       const fileUris = async (scope: { kind: "work"; projectId: string; workId: string }) =>
@@ -793,6 +797,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId: NO_WORK,
         }),
       ).toEqual(["uploads://@/notes.md", "uploads://@/shot.png"]);
+      await catalog.refreshSources([STRAY_SCRATCH]);
+      const stray = await createDrizzleProjectContextAvailability(db).lookup(
+        { projectId: PROJECT_ID as never, documentIds: [STRAY_FILE] as never },
+        { userId: USER_ID },
+      );
+      expect(stray.resolutions).toEqual([
+        expect.objectContaining({ kind: "not-visible", documentId: STRAY_FILE }),
+      ]);
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);
