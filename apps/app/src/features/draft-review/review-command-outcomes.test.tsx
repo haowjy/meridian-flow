@@ -46,6 +46,7 @@ afterEach(() => {
   onlineManager.setOnline(true);
   vi.useRealTimers();
   fixture.dispose();
+  vi.restoreAllMocks();
 });
 
 /** Drain reconnect notifications without an elapsed-time assumption or a repeating-loop runAllTimers. */
@@ -170,6 +171,45 @@ it.each([
     await reconnect();
     expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     expect(fixture.network.discardDraft).not.toHaveBeenCalled();
+  });
+});
+
+it.each([
+  "apply",
+  "discard",
+] as const)("offline whole %s batch refuses every file before reconnect", async (mode) => {
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
+  await fixture.render(async (p) => {
+    await open(p);
+    vi.useFakeTimers();
+    // Browser reachability can change before TanStack receives the online/offline event.
+    const reachability = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    try {
+      onlineManager.setOnline(true);
+      fixture.network.listWorkDrafts.mockReturnValue(new Promise(() => {}));
+      let outcomes: unknown;
+      await act(async () => {
+        void p()
+          .editor.controller.disposeDrafts(mode, [draftA, draftB])
+          .then((result) => {
+            outcomes = result;
+          });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(outcomes).toEqual([
+        { kind: "failed", failure: { code: `${mode}-offline` } },
+        { kind: "failed", failure: { code: `${mode}-offline` } },
+      ]);
+      expect(p().editor.controller.isDisposing).toBe(false);
+      expect(p().editor.files).toHaveLength(2);
+      reachability.mockReturnValue(true);
+      await reconnect();
+      expect(fixture.network.applyDraft).not.toHaveBeenCalled();
+      expect(fixture.network.discardDraft).not.toHaveBeenCalled();
+    } finally {
+      reachability.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 

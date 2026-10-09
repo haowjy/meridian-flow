@@ -60,6 +60,7 @@ export function ReviewChangeBar({
       >
         <div className={touch ? "flex min-w-0 flex-1 flex-col items-start" : "contents"}>
           <ChangeAuthor
+            touch={touch}
             attribution={change.attribution}
             className={
               touch
