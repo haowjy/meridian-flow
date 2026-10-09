@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.
+
 - Links name the document they point at. Renaming or moving a chapter no longer edits the chapters that link to it: their links follow it and show its new path on the next read, and "Updated N links" counts the links in this project that point at what moved. When the AI edits a link's words, rewrites the paragraph around it, or writes a path it read before the target moved, the link keeps its document; words it unlinks stay plain, and a link it points somewhere new goes there.
 - Links you insert with `@`, Ctrl+K or a paste, and links in imports, uploads and saves, all name their document. Pasting within a project keeps each link on its document; pasting into another project links by address. Copied plain text spells each link's current full address.
 - A link to a deleted or unreadable document stays where you wrote it, drawn dashed, and says "No longer available"; clicking it places the cursor, like any text. It never opens a document that later takes its path, and it works again if the document is restored. A link written before its document exists connects to the first document created, uploaded, moved in, restored or applied from a draft at that exact path, and from then on stays with that document, even when another document later takes that path.
