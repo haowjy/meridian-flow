@@ -27,6 +27,7 @@ let manuscript: ReturnType<typeof createStandaloneEditor>;
 let room: Doc;
 const navigate = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
+  vi.useFakeTimers();
   resetDraftCommandRecords();
   navigate.mockClear();
   i18n.loadAndActivate({ locale: "en", messages: {} });
@@ -47,6 +48,7 @@ afterEach(() => {
   manuscript.destroy();
   room.destroy();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 const sheet = () => document.querySelector<HTMLElement>("[data-phone-change-sheet]");
 const button = (label: string, within: ParentNode = document) =>
@@ -58,6 +60,21 @@ const click = (label: string, within: ParentNode = document) =>
     expect(button(label, within)).toBeDefined();
     button(label, within)?.click();
   });
+
+/** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
+async function settled(check: () => void) {
+  for (let attempt = 0; ; attempt += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25);
+    });
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (attempt === 19) throw error;
+    }
+  }
+}
 
 it("focuses and discards through this document's sheet, keeping its editor through whole Discard", async () => {
   const network = fixture.network;
@@ -85,9 +102,9 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       const editor = manuscript.editor;
       const dom = editor.view.dom;
       expect(document.querySelector(".ProseMirror")).toBe(dom);
-      await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(2));
+      await settled(() => expect(probe().editor.groups).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await vi.waitFor(() => expect(probe().header.view.items).toHaveLength(2));
+      await settled(() => expect(probe().header.view.items).toHaveLength(2));
       // Chrome's painted-review admission is a real controller operation, not invented controller state.
       await act(async () =>
         probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true),
@@ -123,7 +140,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         ],
       ]);
       await act(async () => selective.resolve(discarded(false)));
-      await vi.waitFor(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
       expect(sheet()?.querySelector("[data-review-toast]")?.textContent).toContain("Discarded");
       expect(document.querySelectorAll("[data-review-toast]")).toHaveLength(1);
       expect(probe().header.view.focused?.classId).toBe("class-2");
@@ -143,7 +160,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         { draftId: "draft-a" },
       ]);
       await act(async () => whole.resolve(discarded(true)));
-      await vi.waitFor(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
       expect(document.querySelector(".ProseMirror")).toBe(dom);
       expect(editor.isDestroyed).toBe(false);
       await act(async () => editor.commands.insertContent(" Still writing."));

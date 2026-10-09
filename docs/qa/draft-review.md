@@ -222,8 +222,18 @@ and inspect the surfaces.
    same destination. Repeat in No Work: its own chat strip and document list
    still work, but neither offers a Work-wide footer or list.
 
-8. **First paint and generation.** Hold previews for a new-document-only chat. Before release, only Review is offered; no selective Apply/Discard flashes. Then stage an ordinary file beside it and hold that preview: selective commands stay unavailable until its authority is known. While a scripted mock turn is actively generating, attempt strip commands: no disposition request. Release the turn and previews; commands reflect actual actionable changes. Capture DOM mutations, not just the final screenshot.
-9. **Retry and discard scope.** Fail one owned preview read. Its file shows Retry, not empty-success; retry restores it. With two files, Cancel/Keep in the strip's Discard confirmation sends nothing, then confirm and inspect both files' selections. With one remaining file, Discard sends immediately and affects only that file/chat. Verify foreign-chat live/draft content.
+8. **First paint and generation.** Hold previews for a new-document-only chat. Before
+   release, only Review is offered; no selective Apply/Discard flashes. Then stage an
+   ordinary file beside it and hold that preview: selective commands stay unavailable
+   until its authority is known. While a scripted mock turn is actively generating,
+   attempt strip commands: no disposition request. Release the turn and previews;
+   commands reflect actual actionable changes. Capture DOM mutations, not just the
+   final screenshot.
+9. **Retry and discard scope.** Fail one owned preview read. Its file shows Retry, not
+   empty-success; retry restores it. With two files, Cancel/Keep in the strip's
+   Discard confirmation sends nothing, then confirm and inspect both files'
+   selections. With one remaining file, Discard sends immediately and affects only
+   that file/chat. Verify foreign-chat live/draft content.
 
 ## Probe H — the document list on both shells
 
@@ -258,11 +268,42 @@ from CLI success. Record screenshots and the fresh API reads per action.
    its scrim. Whole-draft Discard lives in the version menu and dispatches without
    an approval dialog. The list button remains usable while review enters/leaves and marks hide.
 
-6. **Marks, rows and arrivals.** With list open, hide marks, step Previous/Next through wrap, and focus a row by keyboard: it closes and the selected change is focused. Reopen and command a row: it stays open and does not treat the command click as a focus-row click. Send a new AI change while watching: count grows, new row pulses once, pulse expires; type a writer edit and confirm it gets no AI-arrival pulse. Reopen the list during loading, pending, finished and formatting-only states: button remains reachable.
-7. **Refusal language and toast.** Cause a typed known refusal on a row/bar; it is a refusal, not connection loss. Switch language without another request: known refusal words change. For a run-scoped intercepted unknown refusal, preserve its server reason verbatim. Dismiss the failure/toast and check it leaves; transient success toast has no Undo and expires. API category correctness remains automated.
-8. **Versions and held failure navigation.** On desktop and phone, open Live/Draft menus with another file and Work present: only this document's offered versions appear. Whole Apply immediately moves to the next sorted file; reject its answer after moving: failure identifies the original file and never pulls navigation back. Explicit Open goes to the failed file. Finish a middle file and use Next: it follows the removed file's former sorted position, wrapping; alone, Back to live. Repeat No Work: no Work-page footer. While command is held, menu commands cannot run again.
-9. **Rename/new document/phone lifetime.** Desktop Rename closes the version menu before opening rename UI. On a draft-only review, no Live choice exists; Close review does not open a live room. On phone, enter/leave review and another document while watching editor identity, scroll and selection: no unrelated document header or remount-induced loss. Discard a row with the sheet open: its confirmation toast appears inside the sheet, above the scrim. Close the sheet and use the version menu's whole Discard; it dispatches immediately and moves on without an approval dialog. Verify the manuscript editor survives both interactions and the keyboard does not intercept controls.
-10. **Real bar placement and neutral display.** At desktop wide/narrow/scrolled pane sizes, resize repeatedly: bar moves margin ↔ block, does not cover or clip prose, and keyboard activation reaches actual commands. On phone open the keyboard; verify 44px targets, home indicator clearance and scrim stacking. Inspect a shared class, writer-only edit and unattributed removal: only server-flagged merge artifacts get merged treatment; neutral removal stays visible without an invented author. Use screenshot plus fresh preview, not guessed geometry.
+6. **Marks, rows and arrivals.** With list open, hide marks, step Previous/Next
+   through wrap, and focus a row by keyboard: it closes and the selected change is
+   focused. Reopen and command a row: it stays open and does not treat the command
+   click as a focus-row click. Send a new AI change while watching: count grows, new
+   row pulses once, pulse expires; type a writer edit and confirm it gets no
+   AI-arrival pulse. Reopen the list during loading, pending, finished and
+   formatting-only states: button remains reachable.
+7. **Refusal language and toast.** Cause a typed known refusal on a row/bar; it is a
+   refusal, not connection loss. Switch language without another request: known
+   refusal words change. For a run-scoped intercepted unknown refusal, preserve its
+   server reason verbatim. Dismiss the failure/toast and check it leaves; transient
+   success toast has no Undo and expires. API category correctness remains automated.
+8. **Versions and held failure navigation.** On desktop and phone, open Live/Draft
+   menus with another file and Work present: only this document's offered versions
+   appear. Whole Apply immediately moves to the next sorted file; reject its answer
+   after moving: failure identifies the original file and never pulls navigation back.
+   Explicit Open goes to the failed file. Finish a middle file and use Next: it
+   follows the removed file's former sorted position, wrapping; alone, Back to live.
+   Repeat No Work: no Work-page footer. While command is held, menu commands cannot
+   run again.
+9. **Rename/new document/phone lifetime.** Desktop Rename closes the version menu
+   before opening rename UI. On a draft-only review, no Live choice exists; Close
+   review does not open a live room. On phone, enter/leave review and another document
+   while watching editor identity, scroll and selection: no unrelated document header
+   or remount-induced loss. Discard a row with the sheet open: its confirmation toast
+   appears inside the sheet, above the scrim. Close the sheet and use the version
+   menu's whole Discard; it dispatches immediately and moves on without an approval
+   dialog. Verify the manuscript editor survives both interactions and the keyboard
+   does not intercept controls.
+10. **Real bar placement and neutral display.** At desktop wide/narrow/scrolled pane
+   sizes, resize repeatedly: bar moves margin ↔ block, does not cover or clip prose,
+   and keyboard activation reaches actual commands. On phone open the keyboard; verify
+   44px targets, home indicator clearance and scrim stacking. Inspect a shared class,
+   writer-only edit and unattributed removal: only server-flagged merge artifacts get
+   merged treatment; neutral removal stays visible without an invented author. Use
+   screenshot plus fresh preview, not guessed geometry.
 
 ## Probe I — Work page commands and held failures
 
@@ -293,8 +334,19 @@ Continue with Probe G's fixture (recreate affected proposals between actions).
    the previous answer/list read lands late. Leave for another document and repeat:
    a late answer cannot reopen the previous review. Capture request/response order.
 
-6. **Scope choices and no-scope interval.** Visit Files when its Work matches Editor, matches Chat only, matches neither, and matches both. Command one run-owned change each time and verify exact Work/document authority in requests and fresh reads. Hold scope resolution: no actionable stale Work list appears. While a batch waits, switch Work then archive its original Work; later requests remain bound to the original Work, controls lock and late answers do not navigate back.
-7. **Work failures and offline batch.** Fail an expanded preview, Retry successfully, then repeat with a response lacking selective preview authority: no selective command is sent. From a Work with multiple files go offline and attempt whole Apply/Discard; each affected file reports its own failure, no successful completion or navigation. Reconnect and verify no queued command fires. For a held online batch, refuse one file: later files run, failed-file reason remains until explicit action/dismissal.
+6. **Scope choices and no-scope interval.** Visit Files when its Work matches Editor,
+   matches Chat only, matches neither, and matches both. Command one run-owned change
+   each time and verify exact Work/document authority in requests and fresh reads.
+   Hold scope resolution: no actionable stale Work list appears. While a batch waits,
+   switch Work then archive its original Work; later requests remain bound to the
+   original Work, controls lock and late answers do not navigate back.
+7. **Work failures and offline batch.** Fail an expanded preview, Retry successfully,
+   then repeat with a response lacking selective preview authority: no selective
+   command is sent. From a Work with multiple files go offline and attempt whole
+   Apply/Discard; each affected file reports its own failure, no successful completion
+   or navigation. Reconnect and verify no queued command fires. For a held online
+   batch, refuse one file: later files run, failed-file reason remains until explicit
+   action/dismissal.
 
 ## Probe J — chat links from Work rows and cold history
 

@@ -20,6 +20,7 @@ import { DraftReviewBand } from "./DraftReviewBand";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 beforeEach(() => {
+  vi.useFakeTimers();
   resetDraftCommandRecords();
   i18n.loadAndActivate({ locale: "en", messages: {} });
   fixture = createReviewScopeFixture();
@@ -28,6 +29,7 @@ beforeEach(() => {
 afterEach(() => {
   fixture.dispose();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 const list = () => document.querySelector<HTMLElement>("[data-draft-change-list]");
 const row = (id: string) =>
@@ -38,6 +40,21 @@ const open = () =>
       .querySelector<HTMLButtonElement>("[data-draft-review-controls] [data-slot=popover-trigger]")
       ?.click(),
   );
+
+/** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
+async function settled(check: () => void) {
+  for (let attempt = 0; ; attempt += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25);
+    });
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (attempt === 19) throw error;
+    }
+  }
+}
 
 it("focuses this document, then applies and discards its classes without closing the list", async () => {
   const network = fixture.network;
@@ -58,9 +75,9 @@ it("focuses this document, then applies and discards its classes without closing
   const navigate = vi.fn();
   await fixture.render(
     async (probe) => {
-      await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(2));
+      await settled(() => expect(probe().editor.groups).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await vi.waitFor(() => expect(probe().header.view.items).toHaveLength(2));
+      await settled(() => expect(probe().header.view.items).toHaveLength(2));
       await open();
       expect(list()?.querySelectorAll("[data-review-change-row]")).toHaveLength(2);
       expect(list()?.textContent).not.toContain("Other chapter");
@@ -88,7 +105,7 @@ it("focuses this document, then applies and discards its classes without closing
       ]);
       expect(probe().header.view.focused?.classId).toBe("class-2");
       await act(async () => answer.resolve(applied(false, "1")));
-      await vi.waitFor(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
       await act(async () =>
         row("2")?.querySelector<HTMLButtonElement>('[aria-label="Discard"]')?.click(),
       );
@@ -107,7 +124,7 @@ it("focuses this document, then applies and discards its classes without closing
       ]);
       expect(list()).not.toBeNull();
       expect(row("2")).toBeNull();
-      await vi.waitFor(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().editor.controller.isDisposing).toBe(false));
       expect(navigate).not.toHaveBeenCalled();
     },
     {
