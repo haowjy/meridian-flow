@@ -130,8 +130,8 @@ export type MarkdownDocumentEngine = {
    * Whole-document writes take a write a `LinkBinder` bound before the
    * caller's transaction (contract §6.2); none of them parses Markdown. Each
    * applies only to the holder it was bound for, as the whole-document
-   * overwrite of what the document holds under its lock. A fresh write that
-   * finds content it never saw is `stale_generation`.
+   * overwrite of what the document holds. A fresh write that finds content
+   * it never saw is `stale_generation`.
    */
   setMarkdown(input: {
     documentId: DocumentId;
