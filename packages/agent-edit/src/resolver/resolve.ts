@@ -1,5 +1,11 @@
 import { CodecParseError, type ParsedContent } from "@meridian/markup";
-import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
+import { Fragment } from "prosemirror-model";
+import {
+  type EditResolutionErrorCode,
+  inlineReplacementText,
+  type ResolvedEdit,
+  type ResolvedInlineReplacement,
+} from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import type { DocumentAddress } from "../document-address.js";
@@ -131,24 +137,29 @@ function resolveInsert(
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return lowerFindMatches(ctx, params, found.matches, "insert");
+    return lowerFindMatches(ctx, params, parsed, found.matches, "insert");
   }
 
   const lowered = lowerInsertPosition(ctx, params);
   if (!lowered.ok) return lowered;
-  return { ok: true, edits: [insertEdit(params, lowered.after)] };
+  return { ok: true, edits: [insertEdit(params, lowered.after, parsed.blocks)] };
 }
 
 const COPY_WITH_FIND_MESSAGE = "from copies whole blocks, so it can't be combined with find";
 
-function insertEdit(params: NormalizedParams, after: BlockRef | undefined): ResolvedEdit {
+function insertEdit(
+  params: NormalizedParams,
+  after: BlockRef | undefined,
+  blocks: readonly Block[],
+  newText = params.content,
+): ResolvedEdit {
   return {
     documentId: params.documentAddress.documentId,
     file: params.documentAddress.filePath,
     kind: "insert",
     ...(after ? { after } : {}),
-    newText: params.content,
-    ...(params.blocks ? { blocks: params.blocks } : {}),
+    newText,
+    blocks,
   };
 }
 
@@ -161,12 +172,13 @@ function replaceScopeWithCopies(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   scope: BlockScope,
+  copies: readonly Block[],
 ): ResolveWriteResultWithoutIr {
   const anchor =
     scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   return {
     ok: true,
-    edits: [insertEdit(params, anchor), ...deleteEdits(params, scope)],
+    edits: [insertEdit(params, anchor, copies), ...deleteEdits(params, scope)],
   };
 }
 
@@ -186,7 +198,7 @@ function resolveReplace(
     if (!scope.ok) return scopeError(scope);
     const found = findTextMatches(ctx, scope.scope, params.find, params.all === true);
     if (!found.ok) return findError(found);
-    return lowerFindMatches(ctx, params, found.matches, "replace");
+    return lowerFindMatches(ctx, params, parsed, found.matches, "replace");
   }
 
   const target = params.in ?? fragmentScope(params);
@@ -197,7 +209,7 @@ function resolveReplace(
   if (!scope.ok) return scopeError(scope);
   if (params.blocks) {
     if (params.blocks.length === 0) return error("invalid_write", "from selected no blocks");
-    return replaceScopeWithCopies(ctx, params, scope.scope);
+    return replaceScopeWithCopies(ctx, params, scope.scope, params.blocks);
   }
   if (params.content.length === 0) {
     return error("invalid_write", "Use `remove` to remove blocks");
@@ -319,10 +331,11 @@ interface FindMatchGroup {
 function lowerFindMatches(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
+  parsed: ParsedContent,
   matches: readonly TextFindMatch[],
   command: WriteCommandName,
 ): ResolveWriteResultWithoutIr {
-  const plainTextEdits = lowerPlainTextFindMatches(ctx, params, matches, command);
+  const plainTextEdits = lowerPlainTextFindMatches(ctx, params, parsed, matches, command);
   if (plainTextEdits) return { ok: true, edits: plainTextEdits };
 
   const edits: ResolvedEdit[] = [];
@@ -339,8 +352,8 @@ function lowerFindMatches(
       params.content,
       command,
     );
-    const parsed = parseReplacementRange(ctx, replacedSource);
-    if (!parsed.ok) return parsed;
+    const reconstructed = parseReplacementRange(ctx, replacedSource);
+    if (!reconstructed.ok) return reconstructed;
     const lowered = replaceScope(
       ctx,
       params,
@@ -350,7 +363,7 @@ function lowerFindMatches(
         startIndex: group.startIndex,
         endIndex: group.endIndex,
       },
-      parsed.parsed,
+      reconstructed.parsed,
     );
     if (!lowered.ok) return lowered;
     edits.push(...lowered.edits);
@@ -361,10 +374,12 @@ function lowerFindMatches(
 function lowerPlainTextFindMatches(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
+  parsed: ParsedContent,
   matches: readonly TextFindMatch[],
   command: WriteCommandName,
 ): ResolvedEdit[] | null {
-  if (!isPlainTextContent(ctx, params.content)) return null;
+  const content = plainTextInline(ctx, params.content, parsed);
+  if (!content) return null;
   const byBlock = new Map<BlockRef, TextFindMatch[]>();
   for (const match of matches) {
     if (match.elements.length !== 1) return null;
@@ -383,10 +398,10 @@ function lowerPlainTextFindMatches(
           start: command === "insert" ? match.matchEnd : match.matchStart,
           end: match.matchEnd,
         },
-        newText: params.content,
+        content,
       }))
       // Replacing a match with itself changes nothing, so it makes no edit.
-      .filter(({ span, newText }) => blockText.slice(span.start, span.end) !== newText);
+      .filter(({ span }) => blockText.slice(span.start, span.end) !== params.content);
     if (replacements.length === 0) continue;
     edits.push({
       documentId: params.documentAddress.documentId,
@@ -402,7 +417,7 @@ function lowerPlainTextFindMatches(
 
 function replacementWindowOutput(
   source: string,
-  replacements: readonly { span: { start: number; end: number }; newText: string }[],
+  replacements: readonly ResolvedInlineReplacement[],
 ): string {
   const first = replacements[0];
   if (!first) return "";
@@ -410,22 +425,29 @@ function replacementWindowOutput(
   let output = "";
   for (const replacement of replacements) {
     output += source.slice(sourceCursor, replacement.span.start);
-    output += replacement.newText;
+    output += inlineReplacementText(replacement);
     sourceCursor = replacement.span.end;
   }
   return output;
 }
 
-function isPlainTextContent(ctx: ConcreteResolveContext, content: string): boolean {
-  if (content.length === 0) return true;
-  const parsed = parseReplacementRange(ctx, content);
-  if (!parsed.ok || parsed.parsed.blocks.length !== 1) return false;
-  const [block] = parsed.parsed.blocks;
-  return (
+/**
+ * The parsed write's inline content when it is one plain-text paragraph whose
+ * markup is its text; null when the write needs structural lowering.
+ */
+function plainTextInline(
+  ctx: ConcreteResolveContext,
+  content: string,
+  parsed: ParsedContent,
+): Fragment | null {
+  if (content.length === 0) return Fragment.empty;
+  if (parsed.blocks.length !== 1) return null;
+  const [block] = parsed.blocks;
+  const plain =
     block.isTextblock &&
     block.textContent === content &&
-    serializePmBlockBody(ctx, block) === content
-  );
+    serializePmBlockBody(ctx, block) === content;
+  return plain ? block.content : null;
 }
 
 function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
@@ -513,13 +535,9 @@ function replaceScope(
 
   const flushStructural = () => {
     if (pendingInsert.length > 0) {
-      edits.push({
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "insert",
-        ...(anchor ? { after: anchor } : {}),
-        newText: serializeReplacementBlocks(ctx, pendingInsert),
-      });
+      edits.push(
+        insertEdit(params, anchor, pendingInsert, serializeReplacementBlocks(ctx, pendingInsert)),
+      );
     }
     for (const block of pendingDelete) {
       edits.push({
@@ -669,13 +687,14 @@ function semanticRunsForTextRanges(
       });
       outputCursor += source.length;
     }
-    if (replacement.newText.length > 0) {
+    const text = inlineReplacementText(replacement);
+    if (text.length > 0) {
       runs.push({
         kind: "fresh",
-        payload: replacement.newText,
-        output: { from: outputCursor, to: outputCursor + replacement.newText.length },
+        payload: text,
+        output: { from: outputCursor, to: outputCursor + text.length },
       });
-      outputCursor += replacement.newText.length;
+      outputCursor += text.length;
     }
     sourceCursor = replacement.span.end;
   }
