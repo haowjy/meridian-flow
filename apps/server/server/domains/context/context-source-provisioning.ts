@@ -97,7 +97,7 @@ export async function findNoWorkId(db: Database, projectId: string): Promise<str
  * rather than the project being browsed. Its documents belong to that
  * project's manifest, not this one's.
  */
-export function storedInPersonalProject(scheme: ProjectContextFsScheme): boolean {
+function storedInPersonalProject(scheme: ProjectContextFsScheme): boolean {
   return scheme === "user";
 }
 

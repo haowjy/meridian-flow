@@ -21,7 +21,7 @@ import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { DocumentDerivationService } from "../collab/domain/ports/document-derivations.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
-import { isDrafted, sourceDestination } from "../file-policy/index.js";
+import { sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
@@ -29,6 +29,7 @@ import { lockContextNamespaces } from "./adapters/context-fs/document-locations.
 import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
+import { listsThroughLiveManifest } from "./adapters/document-address.js";
 import { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
 import { createContextPortRouter } from "./context/router.js";
@@ -38,7 +39,6 @@ import {
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
   findNoWorkId,
-  storedInPersonalProject,
 } from "./context-source-provisioning.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
@@ -156,15 +156,6 @@ function contextFsAdapter(
   });
 }
 
-/**
- * Drafted sources list through this project's manifest, so a draft-only
- * create appears and a draft-deleted one doesn't (D14). User files live in
- * the personal project's manifest, so they list their live rows.
- */
-function listsThroughProjectManifest(scheme: ProjectContextFsScheme): boolean {
-  return isDrafted(scheme) && !storedInPersonalProject(scheme);
-}
-
 function buildProjectContextFsAdapters(
   assembly: AdapterAssembly,
   projectId: string,
@@ -191,7 +182,7 @@ function buildProjectContextFsAdapters(
         },
         scheme,
         holder: { projectId },
-        ...(listsThroughProjectManifest(scheme) ? { manifestView: schemeView } : {}),
+        ...(listsThroughLiveManifest(scheme) ? { manifestView: schemeView } : {}),
       }),
     );
   }
