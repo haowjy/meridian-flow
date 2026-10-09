@@ -14,9 +14,10 @@
  */
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { DocumentPaneChrome } from "../context/DocumentPaneChrome";
@@ -40,14 +41,23 @@ export function DockDocumentView({
   const openInEditor = useOpenDocumentInEditor();
   const { works } = useWorks(projectId);
   const { controller } = useDraftReview();
+  const resources = useAccountResourceReplica();
   const { tab, gone } = useDockDocumentTab(projectId, dockDocument);
   useEffect(() => {
     if (gone) closeDocument();
   }, [gone, closeDocument]);
+  const onUntitledBecameNonEmpty = useCallback(async () => {
+    if (tab.kind === "new") await resources.markCreateEligible({ handle: tab.resourceHandle });
+  }, [resources, tab]);
   if (gone) return null;
 
-  const work = tab.workId ? works?.find((candidate) => candidate.id === tab.workId) : undefined;
-  const archived = work && isWorkArchived(work) && isWorkScopedProjectContextScheme(tab.scheme);
+  const ownerWorkId = tab.kind === "new" ? null : tab.workId;
+  const work = ownerWorkId ? works?.find((candidate) => candidate.id === ownerWorkId) : undefined;
+  const archived =
+    work &&
+    tab.kind !== "new" &&
+    isWorkArchived(work) &&
+    isWorkScopedProjectContextScheme(tab.scheme);
   const reviewDraftId =
     controller.inlineReview?.documentId === tab.documentId ? controller.inlineReview.draftId : null;
 
@@ -55,7 +65,7 @@ export function DockDocumentView({
     <div className="relative flex min-h-0 flex-1 flex-col">
       <DocumentPaneChrome
         projectId={projectId}
-        editorWorkId={tab.workId ?? null}
+        editorWorkId={ownerWorkId ?? null}
         tab={tab}
         reviewDraftId={reviewDraftId}
         archivedWork={archived ? work : null}
@@ -68,13 +78,14 @@ export function DockDocumentView({
           openInEditor({ scheme, path, ...owner });
         }}
       />
-      {tab.kind === "tracked" ? (
+      {tab.kind !== "viewer" ? (
         <div className="relative min-h-0 flex-1">
           <ContextDocumentHost
             key={tab.documentId}
             projectId={projectId}
             tab={tab}
             active={visible}
+            onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
             readOnly={Boolean(archived)}
             editorClassName="bg-transparent"
           />
@@ -83,7 +94,7 @@ export function DockDocumentView({
         <div className="flex min-h-0 flex-1 flex-col">
           <ContextViewerBareHost
             projectId={projectId}
-            editorWorkId={tab.workId ?? null}
+            editorWorkId={ownerWorkId ?? null}
             tab={tab}
           />
         </div>

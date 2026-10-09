@@ -51,7 +51,11 @@ vi.mock("./chat-navigation", () => ({
   chatSurfaceThreadId: () => null,
   ChatNavigationProvider: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../context/account-feature-context", () => ({ useContextRemovalCoordinator: () => ({}) }));
+vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => false }));
+vi.mock("../context/account-feature-context", () => ({
+  useAccountResourceProjection: () => ({ records: [], folders: [] }),
+  useContextRemovalCoordinator: () => ({}),
+}));
 vi.mock("../context/use-context-removal-project", () => ({
   useContextRemovalProject: () => ({ selection: null }),
 }));

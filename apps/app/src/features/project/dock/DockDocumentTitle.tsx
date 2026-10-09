@@ -42,6 +42,7 @@ export function DockDocumentTitle({
   document: DockDocument;
 }) {
   const { tab } = useDockDocumentTab(projectId, dockDocument);
+  if (tab.kind === "new") return <PaneTitle>{tab.name}</PaneTitle>;
   return <DockTitleMenu projectId={projectId} tab={tab} />;
 }
 

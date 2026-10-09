@@ -23,12 +23,18 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import { readRecentRoutes, type WorkingSetHydrationPlan } from "@/client/working-set";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { originalBrowserSearch } from "@/router-search";
-import { useContextRemovalCoordinator } from "../context/account-feature-context";
+import {
+  useAccountResourceProjection,
+  useContextRemovalCoordinator,
+} from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
+import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
+import { handOffVisibleDocument } from "../dock/hand-off-visible-document";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
 import {
@@ -76,6 +82,7 @@ import {
   type RouteWorkResolution,
   routeWorkIssue,
 } from "./project-route";
+import { openDocumentInEditor } from "./use-open-document-in-editor";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
 const NONE: AddressSelection = { kind: "none" };
@@ -114,6 +121,8 @@ export function ReadableProjectRoute({
 }) {
   const projectId = project.id;
   const contextRemoval = useContextRemovalCoordinator();
+  const phone = usePhoneShell() === true;
+  const { records, folders } = useAccountResourceProjection(projectId);
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
   const parsed = parseProjectAddress(
@@ -752,6 +761,37 @@ export function ReadableProjectRoute({
   };
   const selectScreen = (next: ScreenKey) => {
     if (next === activeScreen && next !== "chat") return Promise.resolve();
+    const workspace = getContextTabs(projectId);
+    const visibleEditor = resolveWorkspaceRoute({
+      tabs: workspace.tabs,
+      selectedDocumentId:
+        localDocumentId ?? (workId ? workspace.selectedTabIdByWork[workId] : undefined),
+      locator:
+        workId && (documentDestination || localDocumentId)
+          ? {
+              scheme: documentDestination?.scheme ?? "unfiled",
+              path: documentDestination?.path ?? "",
+              workId,
+              ...(address.lineage ? { rootThreadId: address.lineage } : {}),
+            }
+          : null,
+      boundDocumentId,
+    });
+    const handOff = handOffVisibleDocument({
+      projectId,
+      source: activeScreen,
+      destination: next,
+      phone,
+      editorTab: visibleEditor.kind !== "unowned" ? visibleEditor.tab : null,
+      records,
+      folders,
+      revealDock: chat.revealDock,
+      openInEditor: (tab) =>
+        openDocumentInEditor(openContext, tab).then((result) => {
+          if (result.kind === "failed") throw result.error;
+        }),
+    });
+    if (handOff) return handOff;
     // Chat reopens the current chat; with none, its index.
     if (next === "chat") return chat.showChatScreen();
     // Work reopens the last opened Work while it still exists; else the collection.
