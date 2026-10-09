@@ -106,7 +106,9 @@ check, not by a shared slot. Both read the same `shown` flag, so the swap
 happens in one frame.
 
 **Paint hold.** Pane continuity belongs to the shared
-[`PaintHold`](../../../components/app/PaintHold.md). `EditorView` chooses terminal
+[`PaintHold`](../../../components/app/PaintHold.md). Capture points declare
+painted/pending/failed surfaces; only finished paint replaces its retained
+snapshot, never a loading status or a pending-token gap. `EditorView` chooses terminal
 notices before settled live, painted review, requested-but-pending review, or
 ordinary live. Warm live and constructing review surfaces stay mounted in
 inactive paint scopes. A requested review waits for its editor and marks (or

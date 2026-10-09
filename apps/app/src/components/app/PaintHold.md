@@ -6,19 +6,26 @@ navigate at the click outside the frame. Destination failures are terminal and
 release the hold. The patience bound is 10 seconds from the first capture;
 another move never extends it. Preloading and a shorter bound belong to #740.
 
-A component that switches the pane between finished and loading content renders
-`PaintCapture` keyed by what it chose. Include precursor commits: an incoming
-proposal projects loading in review chrome before the room observation dispatch.
-A copy dropped unseen survives until the next animation frame so synchronous
-commits reuse the frame actually painted, not intermediate DOM.
+Only a finished, painted surface can replace the last-painted snapshot. A
+pending-token retirement gap retains it; loading/status content cannot become
+the copy. A failure is finished content and releases the hold.
 
-Capture points are the desktop pane kind/document, each tab's acquiring/failed/
-editor choice, `EditorView`'s live/review mount key or pending/error choice, the
+A component that switches the pane between finished and loading content renders
+`PaintCapture` keyed by what it chose, with `state="pending"` for loading,
+`state="failed"` for errors, or `state="painted"` (the default) for finished content. Include precursor commits: an incoming
+proposal projects loading in review chrome before the room observation dispatch.
+The snapshot survives until a finished surface replaces it, the writer leaves,
+or the bound expires. Synchronous precursor commits reuse the same snapshot;
+the next animation frame admits a replacement only if the pane is finished.
+
+Capture points are the desktop pane kind/document, each tab's pending/failed/
+painted choice, `EditorView`'s live/review mount key or pending/error choice, the
 phone host kind/document and opening/error/viewer/editor choice, and each in-pane
 review header's changes status. Ordinary cold document switches use the same rule;
-warm finished-to-finished switches drop the copy unseen.
+warm finished-to-finished switches show no cover.
 
-`usePaintPending` belongs only to visible loading content, including the delayed
+`PaintCapture` declares loading itself; `usePaintPending` belongs to additional
+visible loading content without a capture point, including the delayed
 skeleton's quiet period and TipTap's construction gap. Commands over finished
 prose are not loading. `PaintScope` excludes warm hidden tabs, the parked Editor
 pane (by visible screen, never route acquisition readiness), warm live under review and a constructing hidden review from pending and

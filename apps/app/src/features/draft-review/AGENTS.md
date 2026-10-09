@@ -159,6 +159,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   `previewWithoutOperations` never hides a hunk no operation owns.
 - **Pane continuity is generic**, owned by
   [`PaintHold`](../../components/app/PaintHold.md), not the review or launch.
+  Chrome declares its capture state pending while loading; token retirement
+  cannot replace the last-painted snapshot with a loading status.
   `EditorView` declares its chosen surface and keeps warm live and constructing
   review editors in inactive scopes. The room owner's paint receipt remains
   the input contract even without a hold. Schema-reset sessions remain bound
