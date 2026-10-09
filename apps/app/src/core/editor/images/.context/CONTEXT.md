@@ -173,10 +173,15 @@ onto nothing.
 
 ## The paste-import seam
 
-A pasted picture that already names a document (a same-project rich paste kept
-its ref, or a drag moved it) lands as stored. One whose source is a manuscript
-address is assigned the document there, or an ahead ref, through the link
-lane's `assignWrittenSource`, after the asset-path translation has had its turn.
+The clipboard restores identity first: a same-project rich paste keeps a
+picture's recorded ref (an upload gets its `asset:` source back), and every
+other recorded picture arrives as its address with no ref
+(`link-clipboard.ts`). The link lane's `assignPastedSlice` then walks the
+pasted slice once, for links and picture sources together: a picture that
+already names a document lands as stored, and one whose source is a manuscript
+address is assigned the document there, or an ahead ref
+(`assignWrittenSource`). External images are the one case ingress owns, and it
+executes their imports.
 A pasted `<img src="https://…">` never becomes a document `src`. The transform
 lands a link to the address (`image-workflow.ts`) and the import replaces that
 link with the picture once the bytes belong to the project. The link is both the
