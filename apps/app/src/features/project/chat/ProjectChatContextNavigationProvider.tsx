@@ -25,7 +25,8 @@ import {
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
-import { BesideChatContext, claimDock, useOpenChatDocument } from "../context/open-chat-document";
+import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
+import { useDockViewStore } from "../dock/dock-view-store";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
@@ -94,7 +95,8 @@ export function ProjectChatContextNavigationProvider({
       }
       // The chat is in the middle: the document opens beside it and the route stays on the
       // chat. The door claims the dock now, so the lookup is inside the claim.
-      const claim = claimDock();
+      const dock = useDockViewStore.getState();
+      const claim = dock.claim();
       void lookupContextCatalogFile(
         projectId,
         target.scheme,
@@ -102,14 +104,18 @@ export function ProjectChatContextNavigationProvider({
         { uri: catalogUri },
       ).then(
         (file) => {
-          if (!claim()) return;
+          if (!dock.isCurrent(claim)) return;
           if (!file) {
             // Nothing is there: the route says so in place, as it always has.
             route();
             doorOpened({ ...target, uri: catalogUri }, passage);
           } else if (passage && file.editable) {
             // The passage door opens the document itself, once, and lands on the passage.
-            doorOpened({ ...target, uri: catalogUri }, passage, claim);
+            doorOpened({ ...target, uri: catalogUri }, passage, {
+              documentId: file.documentId,
+              editable: true,
+              claim,
+            });
           } else {
             void openChatDocument({
               documentId: file.documentId,
@@ -120,7 +126,7 @@ export function ProjectChatContextNavigationProvider({
           }
         },
         () => {
-          if (claim()) route();
+          if (dock.isCurrent(claim)) route();
         },
       );
     },

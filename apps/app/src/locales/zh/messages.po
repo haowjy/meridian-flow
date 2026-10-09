@@ -1242,7 +1242,7 @@ msgstr ""
 msgid "Couldn't open this document."
 msgstr ""
 
-#: src/features/project/dock/use-open-document-id-in-dock.ts
+#: src/features/project/shell/ContextSidebar.tsx
 msgid "Couldn’t open this document."
 msgstr ""
 
@@ -3261,12 +3261,13 @@ msgid "Scratch for {chatTitle}"
 msgstr ""
 
 #: src/features/project/chat/use-chat-scratch-source.ts
+#: src/features/project/dock/use-dock-browse-scratch.ts
 msgid "Scratch for {workName}"
 msgstr ""
 
 #: src/features/project/dock/DockDocumentTitle.tsx
-msgid "Scratch for {workScratchName}"
-msgstr ""
+#~ msgid "Scratch for {workScratchName}"
+#~ msgstr ""
 
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"

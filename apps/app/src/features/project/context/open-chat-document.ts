@@ -1,14 +1,14 @@
 /**
  * Opens a document from a chat door (a link chip, a receipt row, a passage or
- * tool-result door, an `@` reference).
+ * tool-result door, an `@` reference, a Recent row).
  *
- * Every chat door opens a document through `useOpenProjectDocument`; this is the
- * one wrapper they share. It offers the resolved tab to whatever the project
- * shell has registered as "beside the chat" (`ChatDocumentsBesideProvider`):
- * on the Chat screen that is the dock's document slot, so the URL stays on the
- * chat. With nothing registered (the chat rendered outside a project shell, or a
- * screen where the dock is the chat) the open is the ordinary one. A new-tab
- * gesture keeps its background tab.
+ * Every id-keyed door opens through the navigation adapter; this is the one
+ * wrapper they share. It claims the dock at the start of the intent and offers
+ * the resolved tab to whatever the project shell registered as "beside the chat"
+ * (`ChatDocumentsBesideProvider`): on the Chat screen that is the dock, so the
+ * address stays on the chat, and a newer intent makes the older one `cancelled`.
+ * With nothing registered the open is the ordinary one. A new-tab gesture keeps
+ * its background tab.
  */
 import { createContext, useCallback, useContext } from "react";
 import type { ServerContextTab } from "@/client/stores";
@@ -19,30 +19,14 @@ import {
   useOpenProjectDocument,
 } from "./open-project-document";
 
-export type OpenBesideChat = (tab: ServerContextTab) => boolean;
+/** Shows the tab beside the chat under a claim; `cancelled` if a newer intent won. */
+export type OpenBesideChat = (tab: ServerContextTab, claim: number) => "opened" | "cancelled";
 
 export const BesideChatContext = createContext<OpenBesideChat | null>(null);
 
-/**
- * A claim on the dock as it is now: still true until anything else changes what
- * the dock shows (a pick, a Close, a view, a scope change). A slow door that
- * finds its claim gone stands down instead of reversing the writer's newer choice.
- */
-export type DockClaim = () => boolean;
-
-export function claimDock(): DockClaim {
-  const { revision } = useDockViewStore.getState();
-  return () => useDockViewStore.getState().revision === revision;
-}
-
-/** Whether chat doors (and the left tree) open documents beside the chat here: the Chat screen, wide. */
-export function useOpensBesideChat(): boolean {
-  return useContext(BesideChatContext) !== null;
-}
-
 export type ChatDocumentRequest = OpenProjectDocumentRequest & {
-  /** Claimed when the door began, so a lookup before this open is inside the claim. */
-  claim?: DockClaim;
+  /** A claim the caller took when its intent began (a URI door claims before its lookup). */
+  claim?: number;
 };
 
 export function useOpenChatDocument(
@@ -53,8 +37,8 @@ export function useOpenChatDocument(
   return useCallback(
     ({ claim, ...request }) => {
       if (request.disposition === "background" || !beside) return open(request);
-      const stillLatest = claim ?? claimDock();
-      return open({ ...request, beside: (tab) => (stillLatest() ? beside(tab) : true) });
+      const attempt = claim ?? useDockViewStore.getState().claim();
+      return open({ ...request, beside: (tab) => beside(tab, attempt) });
     },
     [beside, open],
   );

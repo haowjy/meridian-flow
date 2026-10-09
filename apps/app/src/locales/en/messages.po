@@ -1242,7 +1242,7 @@ msgstr "Couldn't open review mode."
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
-#: src/features/project/dock/use-open-document-id-in-dock.ts
+#: src/features/project/shell/ContextSidebar.tsx
 msgid "Couldn’t open this document."
 msgstr "Couldn’t open this document."
 
@@ -3261,12 +3261,13 @@ msgid "Scratch for {chatTitle}"
 msgstr "Scratch for {chatTitle}"
 
 #: src/features/project/chat/use-chat-scratch-source.ts
+#: src/features/project/dock/use-dock-browse-scratch.ts
 msgid "Scratch for {workName}"
 msgstr "Scratch for {workName}"
 
 #: src/features/project/dock/DockDocumentTitle.tsx
-msgid "Scratch for {workScratchName}"
-msgstr "Scratch for {workScratchName}"
+#~ msgid "Scratch for {workScratchName}"
+#~ msgstr "Scratch for {workScratchName}"
 
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
