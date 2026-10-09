@@ -1,16 +1,21 @@
 /**
- * Where an editor keeps its link runtime: the surface store and the
- * resolution cache, read by everything that acts on a link in that editor.
+ * Where an editor keeps its link runtime: the surface store, the resolution
+ * cache, and the one requester every rendered link and picture asks through,
+ * read by everything that acts on a link in that editor.
  */
 
 import type { Editor } from "@tiptap/core";
 
+import type { LinkRequester } from "./link-requester";
 import type { LinkAnswerCache } from "./link-resolution";
 import type { LinkSurface } from "./link-surface";
 
 export const LINK_SURFACE_NAME = "meridianLinkSurface";
 
-export type LinkSurfaceStorage = { surface: LinkSurface; resolution: LinkAnswerCache };
+/** What a link or picture view needs: the answers, and the asker for its key. */
+export type MountedLinks = { resolution: LinkAnswerCache; requester: LinkRequester };
+
+export type LinkSurfaceStorage = MountedLinks & { surface: LinkSurface };
 
 declare module "@tiptap/core" {
   interface Storage {
@@ -36,10 +41,11 @@ export function getLinkAnswerCache(editor: Editor | null | undefined): LinkAnswe
 }
 
 /**
- * The same cache for a view built while its editor is constructing, when
- * `isDestroyed` still reads true: a mark or node view must subscribe at
- * mount, or a picture already in the document never hears its answer.
+ * The cache and requester for a view built while its editor is constructing,
+ * when `isDestroyed` still reads true: a mark or node view must watch its key
+ * at mount, or a link already in the document is never asked about.
  */
-export function mountedLinkAnswerCache(editor: Editor): LinkAnswerCache | null {
-  return editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
+export function mountedLinks(editor: Editor): MountedLinks | null {
+  const storage = editor.storage[LINK_SURFACE_NAME];
+  return storage ? { resolution: storage.resolution, requester: storage.requester } : null;
 }

@@ -31,7 +31,7 @@ import { AlertCircle, Image as ImageIcon, Loader2, RefreshCw } from "lucide-reac
 import { Button } from "@/components/ui/button";
 
 import { useAssetImageRenderState } from "./asset-image-render-state";
-import { mountedLinkAnswerCache } from "./links";
+import { mountedLinks } from "./links";
 
 type MeridianFigureExtensionOptions = {
   projectId?: string;
@@ -55,7 +55,7 @@ export function FigureNodeView(props: NodeViewProps) {
     projectId,
     src,
     ref: props.node.attrs.ref,
-    resolution: mountedLinkAnswerCache(props.editor),
+    links: mountedLinks(props.editor),
   });
 
   const renderUrl = renderState.url;

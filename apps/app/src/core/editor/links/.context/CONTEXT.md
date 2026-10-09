@@ -159,9 +159,9 @@ link names one document or none.
 Each question meets the port's `local` half first, synchronously, so what
 the scope can answer without the network is cached before any request goes
 out and no failed request can touch it. The rest go to `remote` in batches:
-the decoration scan's `request()` queues every unanswered link and pumps
-once, so one scan is one batch of up to 200; a click's `resolve()` pumps at
-once. Four batches are in flight at most, and a batch that throws fails only
+the requester's `request()` queues every unanswered watched link and pumps
+once, so a page of links is one batch of up to 200; a click's `resolve()`
+pumps at once. Four batches are in flight at most, and a batch that throws fails only
 its own questions. A provisional local answer stands through the request and
 is replaced only by `gone` or a different document (`settledOver`). A click
 on a provisional link waits for that request, or asks again if it failed, so
@@ -207,8 +207,9 @@ nothing can reach. What happens to the waiter depends on who is waiting:
   its own, and settles with that answer. The writer asked to go somewhere, and a
   catalog moving underneath them is not an answer; mapping retirement to "could
   not be checked" would also blur a failed request with an unasked one.
-- A `request()` question (the decorations) settles null and is dropped. The new
-  generation publishes, and the decoration scan asks again.
+- A `request()` question (a shown link or picture) settles null and is
+  dropped. The new generation publishes, and the requester asks about
+  everything still watched.
 - Unregistering or destroying the port leaves no generation to carry anything
   into, so every waiter settles null.
 
@@ -232,43 +233,37 @@ lookup; rendering a title does not adopt it as an attachment.
 
 ## Rendering a state nobody stored
 
-`linkResolutionPlugin` scans the document for internal link marks, decorates
-each with `data-link-state`, and asks the store about anything it has no answer
-for. The same scan asks about every `image` and `figure` whose source is a
-document address. `pictureKeyOfNode` reads the source through contracts'
-`classifyWrittenSource`: an internal source is keyed by its ref (or null) and
-its stored spelling; a contextual one such as `uploads://seal.png` is keyed as
-written with no ref and resolves by address, as a ref-less link does. A web,
-`data:` or `asset:` source has no key. Text copy spells a picture through
-`spellStoredLink(…, "manuscript-root")`, the speller every read door uses. Those draw no decoration, because their node views read the answer
-themselves (`../asset-image-render-state.ts`), and an edit that inserts,
-removes or rewrites one rebuilds the scan as an edit reaching a link does.
-`failed(link)` tells such a reader a failed question from one the next scan
-has not asked yet. Both halves matter:
+Each editor has one `LinkRequester` (`link-requester.ts`, in the link
+storage beside the cache), and the views that draw answers are the only ones
+that ask. A link mark's view (`link-mark-view.ts`) and every `image` and
+`figure` node view (`../asset-image-render-state.ts`) `watch` their key while
+mounted and release it on destruction; a changed ref or href is a new mark
+view, and a picture's effect re-watches when its key changes. The requester
+asks the cache about the whole watched set in one microtask-coalesced
+`request()` when a key starts being watched and on every publish, so a page
+of links is one batch, and a key with an answer or a failure is never asked
+again, which ends the loop. Asking per view would cost views × publishes.
+Chat's transcript keeps its own requester the same way.
 
-- **`apply` is pure.** It reads the cache and builds decorations. Asking is a
-  side effect and lives in the plugin's `view`, which requests what the last
-  scan found and redraws when an answer lands. A href with an answer is never
-  asked about again, which is what terminates the loop.
-- **The redraw is deferred by a microtask.** An answer can land while the same
-  view is asking the question, and a transaction dispatched from inside a view
-  update is the one ProseMirror refuses to apply. The delay also coalesces a
-  burst of answers into one redraw.
+A picture is keyed by `pictureKeyOfNode`, which reads the source through
+contracts' `classifyWrittenSource`: an internal source is keyed by its ref (or
+null) and its stored spelling; a contextual one such as `uploads://seal.png`
+is keyed as written with no ref and resolves by address, as a ref-less link
+does. A web, `data:` or `asset:` source has no key. Text copy spells a picture
+through `spellStoredLink(…, "manuscript-root")`, the speller every read door
+uses. `failed(link)` tells a picture a failed question from one the requester
+has not asked yet.
 
-ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`,
-one span per text node, while the link mark (priority 1000, outermost) renders
-one `<a>` around the whole label. The chip is drawn on the `<a>`: each span
-carries `data-link-chip-part` and `data-link-chip-icon`, and the link chip
-stylesheet reaches the anchor through `a:has([data-link-chip-part])`. So
-`[Lin **Feng**]` is one chip with a bold word in it, not two. That nesting is
-load-bearing: a mark ranked above the link would split the `<a>`, and a change
-to the decoration shape is a silently undrawn chip.
-
-A React surface with no document to scan (the chat transcript) does the same
-through `createLinkRequester`: each shown link `watch`es its key, one
-requester per surface asks about the whole watched set in one microtask-
-coalesced `request()` on mount and on every publish, and each link only reads
-its answer. Asking per link costs links × publishes.
+The link mark (priority 1000, outermost) renders one `<a>` around the whole
+label, and its view writes the chip and the accessible state on that element
+and subscribes to the cache to keep them current. So `[Lin **Feng**]` is one
+chip with a bold word in it, not two. That nesting is load-bearing: a mark
+ranked above the link would split the `<a>`. The attribute writes are the
+view's own (`ignoreMutation`), so they are never a document change, and a
+peer's whole-document replace keeps or rebuilds the view with its answer
+drawn at creation. The view reads the cache and requester through
+`mountedLinks`, not `getLinkAnswerCache`, because a view built while the
+editor is constructing sees the editor as destroyed.
 
 Nothing here is stored. Law 9 is the reason: an LLM's
 `[Chapter 214](chapter-214.md)` needs zero extra attributes, and no peer ever
@@ -277,9 +272,8 @@ receives a resolution.
 ## Which chip a link draws
 
 `link-chip.ts` is the one presentation rule for internal links, and every
-surface draws from it: the transcript and the composer on their own element
-(`linkChipAttributes`), the Editor on the decoration spans inside its `<a>`
-(`linkChipPartAttributes`).
+surface draws from it by setting `linkChipAttributes` on its own element: the
+transcript and the composer on their span, the Editor on the link mark's `<a>`.
 
 | Answer | Chip | Icon |
 |---|---|---|
@@ -288,15 +282,12 @@ surface draws from it: the transcript and the composer on their own element
 | gone | dashed, no hover, not followable | the target's own family |
 | pending, failed, not asked | filled | the target's own family |
 
-Gone draws like chat's unavailable reference. The decoration span carries
-`data-link-state="gone"`, which the stylesheet uses to drop the hover. The
-accessible state sits on the focusable `<a>` itself, as on chat's
-reference: the link mark's view (`linkStateAttributes`) sets an
-`aria-description` of "No longer available" (a missing link's is "Doesn't
-exist yet") and, for gone, `aria-disabled`, which also drops the pointer
-cursor. The view reads the resolution from the extension's storage, not
-`getLinkAnswerCache`, because a view built while the editor is constructing
-sees the editor as destroyed. The hint, the menu and the form say the same words, and the menu
+Gone draws like chat's unavailable reference. The accessible state sits on
+the focusable `<a>` itself, as on chat's reference: the link mark's view
+(`drawLinkAnswer`) sets an `aria-description` of "No longer available" (a
+missing link's is "Doesn't exist yet") and, for gone, `aria-disabled`, which
+also drops the pointer cursor and the stylesheet's hover. An editor with no
+registered resolver draws its internal links as plain anchors. The hint, the menu and the form say the same words, and the menu
 offers no Open link. A press on a link already known to be gone is the
 editor's: a click places the caret, and Enter and Alt+Enter fall through
 (`followUnlessGone`); a press before the answer arrives still follows, and
@@ -312,12 +303,13 @@ gone. External targets get no chip.
 
 The seam: core emits the chip attributes, never an image. The app owns the
 icon data and turns each family into a `--link-chip-icon` mask image keyed by
-the icon attribute, on the element or on the `<a>` holding it
-(`components/app/link-chip/`). The alternatives were an image passed into
-core (core would import app icon data), a per-element inline style (the
-Editor's decorations could not carry it without a second hook), and a link
-mark view writing state onto its own `<a>` (a second drawing path beside the
-decorations, and attribute writes ProseMirror's DOM observer would see).
+the icon attribute (`components/app/link-chip/`). The alternatives were an
+image passed into core (core would import app icon data) and a per-element
+inline style (a second place the family-to-image map would live). Inline
+decorations were the Editor's first drawing path; they put spans inside the
+`<a>`, needed a second CSS form reaching back up through `:has()`, and a
+whole-document rescan with a synthetic transaction per answer, all of which
+the mark view replaces.
 
 Drawing changes nothing about editing. The label stays ordinary marked text;
 the icon is a pseudo-element, so it is not in the document, the clipboard, or

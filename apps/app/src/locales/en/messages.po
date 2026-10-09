@@ -1622,7 +1622,7 @@ msgstr "Document name and location"
 msgid "Documents the AI reads in this chat appear here."
 msgstr "Documents the AI reads in this chat appear here."
 
-#: src/core/editor/links/link-resolution-decorations.ts
+#: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -2544,7 +2544,7 @@ msgstr "No files in {containerLabel}."
 msgid "No image has been uploaded to {path} yet."
 msgstr "No image has been uploaded to {path} yet."
 
-#: src/core/editor/links/link-resolution-decorations.ts
+#: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx

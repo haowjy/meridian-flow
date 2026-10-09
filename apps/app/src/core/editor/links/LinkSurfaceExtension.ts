@@ -3,8 +3,9 @@
  *
  * It owns the click (follow or caret, `link-navigation.ts` decides), the hover
  * that reveals the destination, Ctrl+K, Alt+Enter, the right-click claim, and
- * the decoration that says whether an internal link has landed anywhere yet,
- * and how an internal link keeps its document across the clipboard.
+ * how an internal link keeps its document across the clipboard. Whether a
+ * link has landed anywhere is drawn by the link mark's own view
+ * (`link-mark-view.ts`), which asks through the requester stored here.
  * Everything it decides is decided by the pure modules beside it; this file
  * reads the document, watches the pointer, and calls the stores.
  *
@@ -44,8 +45,8 @@ import {
   linkClickIntent,
   MIDDLE_BUTTON,
 } from "./link-navigation";
+import { createLinkRequester } from "./link-requester";
 import { createLinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
-import { linkResolutionPlugin } from "./link-resolution-decorations";
 import {
   getLinkAnswerCache,
   getLinkSurface,
@@ -103,7 +104,12 @@ export const LinkSurfaceExtension = Extension.create({
   name: LINK_SURFACE_NAME,
 
   addStorage(): LinkSurfaceStorage {
-    return { surface: createLinkSurface(), resolution: createLinkAnswerCache() };
+    const resolution = createLinkAnswerCache();
+    return {
+      surface: createLinkSurface(),
+      resolution,
+      requester: createLinkRequester(resolution),
+    };
   },
 
   onDestroy() {
@@ -159,7 +165,6 @@ export const LinkSurfaceExtension = Extension.create({
     };
 
     return [
-      linkResolutionPlugin(resolution),
       linkClipboardPlugin(editor.schema, resolution),
 
       new Plugin({

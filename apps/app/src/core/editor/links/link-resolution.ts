@@ -42,8 +42,9 @@
  * A click outlives a generation. A question someone is waiting on through
  * `resolve()` is asked again in the generation that replaced its own, because
  * the writer asked to go somewhere and a catalog moving underneath them is not
- * an answer. Questions only the decorations asked are dropped with their
- * generation; the next scan asks them again.
+ * an answer. Questions only a shown link or picture asked are dropped with
+ * their generation; the editor's requester asks them again when the new one
+ * publishes.
  */
 
 import { classifyWrittenSource, storedHref, storedLinkRef } from "@meridian/contracts";
