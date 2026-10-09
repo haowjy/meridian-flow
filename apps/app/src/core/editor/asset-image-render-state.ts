@@ -9,8 +9,9 @@
  * through the editor's one requester while the picture is mounted. A
  * ref-less source that is a document address (`uploads://seal.png`) is asked
  * by its address, as a ref-less link is. A document answer draws exactly as
- * an `asset:` picture does. A web or `data:` source renders as written; no
- * other source is ever handed to the browser as a URL.
+ * an `asset:` picture does. A source that is neither draws only if
+ * `browserPictureSource` allows it (http, https, protocol-relative, image
+ * `data:`); anything else is an error, never handed to the browser as a URL.
  *
  * Whether a document is gone is the server's answer, never a guess: the link
  * resolver's for a ref, the signed-URL route's 404 for a document (which also
@@ -34,7 +35,7 @@ import {
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 import { httpErrorStatus } from "@/client/api/http-client";
 
-import { assetDocumentIdFromSrc, signedUrlRefreshDelayMs } from "./images";
+import { assetDocumentIdFromSrc, browserPictureSource, signedUrlRefreshDelayMs } from "./images";
 import {
   type LinkAnswerCache,
   type LinkKey,
@@ -65,6 +66,8 @@ type PictureTarget =
   | { kind: "resolving" }
   /** The question failed. Retry asks again. */
   | { kind: "unanswered" }
+  /** Neither a document nor a URL the browser may fetch. */
+  | { kind: "unusable" }
   | { kind: "unavailable"; message: string };
 
 /**
@@ -89,7 +92,12 @@ function usePictureTarget(
   if (!src) return { kind: "empty" };
   const assetDocumentId = assetDocumentIdFromSrc(src);
   if (assetDocumentId) return { kind: "document", documentId: assetDocumentId };
-  if (!key) return { kind: "literal", url: src };
+  if (!key) {
+    // Not a document, so only a supported web URL draws as written. Anything
+    // else is a source nothing can draw, not a gone document.
+    const url = browserPictureSource(src);
+    return url ? { kind: "literal", url } : { kind: "unusable" };
+  }
   // A document address is not a URL: an editor with no link lane has no way
   // to ask about it, which is a question that could not be asked.
   if (!cache) return { kind: "unanswered" };
@@ -382,6 +390,7 @@ function initialState(target: PictureTarget): AssetImageRenderState {
     case "resolving":
       return { kind: "loading", url: null };
     case "unanswered":
+    case "unusable":
       return { kind: "error", url: null, message: t`Image could not be displayed.` };
     case "unavailable":
       return { kind: "unavailable", url: null, message: target.message };

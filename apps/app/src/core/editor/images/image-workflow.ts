@@ -236,14 +236,20 @@ export function assetDocumentIdFromSrc(src: string): string | null {
 }
 
 /**
- * A picture source the browser may fetch as written (a web or `data:` URL),
- * or null. An `asset:` upload or a document address names a document, and
- * only a signed URL draws it: put in an `<img src>` (a node view, clipboard
- * or drag HTML) it is a request for a URL that does not exist.
+ * The web URL families a picture may be fetched from as written: an absolute
+ * http(s) URL, a protocol-relative one, or an image `data:` URL.
+ */
+const BROWSER_PICTURE_SOURCE = /^(?:https?:\/\/|\/\/|data:image\/)/i;
+
+/**
+ * A picture source the browser may fetch as written, or null. A positive
+ * allowlist: an `asset:` upload or a document address names a document that
+ * only a signed URL draws, and anything else (`/map.png`, `../map.png`, a
+ * malformed scheme) would be fetched from the app's own origin. Put in an
+ * `<img src>` (a node view, clipboard or drag HTML) none of those is a picture.
  */
 export function browserPictureSource(src: string): string | null {
-  if (!src || src.startsWith("asset:") || pictureKeyOfNode({ src })) return null;
-  return src;
+  return BROWSER_PICTURE_SOURCE.test(src) ? src : null;
 }
 
 export function signedUrlRefreshDelayMs(signedUrlExpiresAt: string, nowMs = Date.now()): number {
