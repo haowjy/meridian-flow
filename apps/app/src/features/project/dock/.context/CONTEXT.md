@@ -46,10 +46,6 @@ inert underneath the viewer. `ProjectView` owns route reconciliation and calls
 collection, or any other destination. Pending creation routes use their client
 Work identity too. No file view is persisted across reloads.
 
-`useAiDraftLauncher` takes `screen` from the route-owned
-`ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
-recreate the removed project query grammar to choose a dock view.
-
 ### Dock view store
 
 `useDockViewStore` is a Zustand store holding the transient `workFile` slot:
@@ -136,14 +132,6 @@ Never:
 This trap applies anywhere `border-subtle` (or any custom color token class) is
 combined with a standard Tailwind border-color class in a `cn()` call.
 
-### Change row text is DOM-only
-
-A row shows a short excerpt extracted from preview hunks and operation excerpts.
-It is a **display artifact**, not editable content: plain `<span>` elements,
-never TipTap nodes. A row's click focuses the change through the controller
-(`focusReviewChange`); the row never manipulates editor state itself. Keep row
-interactions as focus + verbs.
-
 ### Selective Discard needs a real branch journal
 
 Selective Discard reconstructs a peer from the individually addressable,
@@ -166,19 +154,5 @@ stable and the browser from wasting layout work on hidden content.
 
 ### Session-only view store
 
-Persisting the view choice means a writer who opens the app in a fresh session
-gets a stale view. The default (occupant's native view) is the right starting
-point every time. The writer's explicit choice is remembered within a session
-so switching screens and coming back restores it.
-
-### Combined region unit = change unit
-
-Every change list renders the closure classes the server hands it. Combining dependent
-regions into one unit happens upstream. `reviewChanges` groups directly by the
-required `closureClassId` and never repairs or reconstructs class membership.
-One server closure class = one change = one Apply and one Discard, sent with
-every operation of the class. Whole-draft Apply and Discard stay in the review
-header. The exceptions are changes with no per-change commands: an unclassified
-hunk with no operation (listed as "Unattributed") and a class the server flags
-`canApplyOrDiscard: false`. Their rows carry no Apply or Discard, and Apply draft
-or Discard draft handles them.
+Persisting the transient file slot would reopen a stale file in a fresh session;
+the occupant is the right starting point.

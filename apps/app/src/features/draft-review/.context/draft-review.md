@@ -41,6 +41,26 @@ reversal-peer sync. Whole-draft Discard sends neither. The mutation awaits the
 draft-list and preview refreshes before the session releases its lock, so no
 second preview-settlement timer or local pending copy is needed.
 
+### Change row text is DOM-only
+
+A row shows a short excerpt extracted from preview hunks and operation excerpts.
+It is a **display artifact**, not editable content: plain `<span>` elements,
+never TipTap nodes. A row's click delegates to its caller: focus through the
+controller (`focusReviewChange`) in the document's list, or open that file's review from
+the Work page. The row never manipulates editor state itself.
+
+### Combined region unit = change unit
+
+Every change list renders the closure classes the server hands it. Combining
+dependent regions into one unit happens upstream. `reviewChanges` groups directly by the
+required `closureClassId` and never repairs or reconstructs class membership.
+One server closure class = one change = one Apply and one Discard, sent with
+every operation of the class. Whole-draft Apply and Discard stay in the identity
+row. The exceptions are changes with no per-change commands: an unclassified
+hunk with no operation (listed as "Unattributed") and a class the server flags
+`canApplyOrDiscard: false`. Their rows carry no Apply or Discard, and Apply draft
+or Discard draft handles them.
+
 ### Per-change commands
 
 `DraftReviewSession.applySelection` and `discardSelection` run a selection of
@@ -216,13 +236,13 @@ rejected commands are never advertised to the claimant. This owner sits above de
 selection, so a phone Chat-to-Editor transition cannot destroy the intent or
 either scope controller. The phone document host publishes its resolved editable
 document to that Editor value and binds the selected review room back into its
-read-only `EditorView`, just as the desktop host binds its active editor. The editor's review chrome is
-`features/editor/DraftReviewHeader` (above the identity bar, review-only), one
-row: the draft switcher (the Work's drafts with change counts,
-Show live version or Close review, Apply all and Discard all), the stepper,
-Show changes, Discard draft and Apply draft, all delegating to the controller.
-Apply draft and Discard draft open the next draft in the switcher at once (or
-leave the review for live when none is left). The server owns one active Work-draft branch per
+read-only `EditorView`, just as the desktop host binds its active editor. The editor's review controls are
+`features/editor/DraftReviewBand`, inside the identity row: the Draft chip
+(versions of this document, Rename; Close review for a new document), the list
+button (this document's `DocumentChanges` in a popover), the stepper, Show
+changes, Discard draft and Apply draft, all delegating to the controller.
+Apply draft and Discard draft open the Work's next draft file at once (or leave
+the review for live when none is left). The server owns one active Work-draft branch per
 `(documentId, workId)` and aggregates every contributing thread into that
 branch, so review has one active row per document. The document's own change list
 (`DocumentChanges`, in the identity row's popover and the phone's sheet) lists the
@@ -288,8 +308,8 @@ not a manuscript is mounted. After a settle window of 500 ms (and at least every
 
 - the active draft preview query, so the editor rail/hunks re-derive from the
   latest server review model; and
-- the work draft list query, so the composer dock reflects updated draft counts
-  without closing and reopening review.
+- the work draft list query, so the composer strip and the Work page reflect
+  updated drafts without closing and reopening review.
 
 This subscription is a freshness seam only. The TipTap/Yjs session remains the
 single document-sync path; the refresh never interprets update contents or builds
@@ -369,8 +389,8 @@ admission may enrich only the overlay with resolved live-resource metadata.
   error, exactly as for any document.
 - **The draft command record.** `client/query/draft-command-record.ts` holds one
   record per draft (project, Work, documentId, draftId), outside any review
-  scope, so every surface (composer strip, editor header, Work Files) reads the
-  same state. It is bounded: `bindDraftCommandAccount` empties it when the
+  scope, so every surface (composer strip, identity row, document change list,
+  Work page) reads the same state. It is bounded: `bindDraftCommandAccount` empties it when the
   account changes, and the entries below retire as described.
   - `pending`: an Apply or Discard is dispatched, whole-draft or one change with
     its operation set. `controller.isDisposing` is the
@@ -391,10 +411,10 @@ admission may enrich only the overlay with resolved live-resource metadata.
     (`review-failed`, recorded by the editor handoff and never over a pending
     command), shown on the draft by the header (the open draft's own line, or
     the `failedElsewhere` notice with Open for the Work's other drafts), the
-    switcher row, the composer strip, the Work page's Changes to review row, and
+    composer strip, the Work page's Changes to review row, and
     the identity-bar chip (which turns into a retry). It
     clears on the next Apply or Discard on that draft; opening Review clears
-    only a failed launch, so Open on a refused draft keeps its message. The Work page and the strip also offer Dismiss. A later list read
+    only a failed launch, so Open on a refused draft keeps its message. The Work page also offers Dismiss. A later list read
     that no longer lists the draft drops it too, so it never reaches a later
     proposal that reuses the draft id.
 - **Rejected and unknown Apply.** A response with a status is a rejection

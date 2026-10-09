@@ -95,19 +95,18 @@ review is open, so entering and leaving never remounts the warm live editor;
 the review editor mounts beside it and swaps in, as on desktop (`EditorView`). Nothing here owns
 review state: the header runs `useReviewHeader`, the bar and sheet run
 `useReviewChanges`, both over the Editor scope's controller, the same hooks the
-desktop header and dock use. Optimistic Apply and Discard, refusals held on the
-change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
+desktop identity row and its change-list popover use. Optimistic Apply and
+Discard, refusals held on the change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
 left" with Next draft are therefore the desktop's behaviour, not a copy of it.
 
-- **Header** (`MobileReviewHeader`): the draft switcher, the stepper and the
-  list button (with the change count when there are changes), in a 48px row under
-  the top bar. The list button stays whatever the count: the sheet is the Work's
-  file list and Apply all, and the open file is always in it. Apply draft, Discard
-  draft and Show changes live in the switcher's menu (with this document's Live
-  and Draft versions and Rename), so the row stays short; Apply all and Discard
-  all are the sheet's menu. A refused
-  whole-draft command, "No changes left" and "Formatting changes remain" take a
-  line under it.
+- **Header** (`MobileReviewHeader`): the Draft chip (`DraftSwitcher`), the
+  stepper and the list button (with the change count when there are changes),
+  in a 48px row under the top bar. The list button stays whatever the count,
+  because the sheet holds the state lines and the way to the Work's other
+  changes. Apply draft, Discard draft and Show changes live in the chip's menu
+  (with this document's Live and Draft versions and Close review for a new
+  document), so the row stays short. Refusals, "No changes left" and
+  "Formatting changes remain" take a line under it.
 - **Bar** (`MobileChangeBar`): a tap on a change selects it (the inline-review
   plugin's mousedown handler, reached by the compatibility mousedown a tap fires;
   verified in Chromium touch emulation, not on an iPhone) and its bar sits at the bottom of the
@@ -184,7 +183,7 @@ the document session registry.
   project title inline without closing, and offers an explicit View projects link.
 - Outside Chat, a separate Open chat action opens a local Sheet without
   changing the destination. The registered dock reveal and pending first-send
-  reload recovery open the same Sheet and select its Chat tab. The Sheet renders
+  reload recovery open the same Sheet on the chat. The Sheet renders
   `ChatSurface` with `renderHeader` supplying `MobileChatSheetHeader`: a 56px
   status-bar-aware header carrying the chat switcher and a 44px close, built
   from `MobileTopBar`'s chrome primitives rather than the desktop `DockHeader`.
