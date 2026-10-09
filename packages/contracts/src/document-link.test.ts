@@ -266,7 +266,7 @@ it("resolves and spells stored links by rule", () => {
   for (const row of rows) {
     const link = { ref: row.ref, href: row.href };
     const at = row.holderUri === undefined ? holder : { ...holder, uri: row.holderUri };
-    const resolution = resolveStoredLink(link, at, catalog);
+    const resolution = resolveStoredLink(link, catalog);
     expect.soft(resolution.kind, row.name).toBe(row.kind);
     if (row.inDraft !== undefined && resolution.kind === "document")
       expect.soft(resolution.inDraft, row.name).toBe(row.inDraft);
@@ -424,7 +424,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
       },
     };
     const ahead = { ref: `ahead:${U.open}`, href: stored };
-    const unsettled = resolveStoredLink(ahead, holder, empty);
+    const unsettled = resolveStoredLink(ahead, empty);
     expect.soft(asked, `${row.written} looks up the exact address`).toEqual([row.address]);
     expect
       .soft(spellStoredLink(ahead, holder, unsettled, grammar), `${row.written} ahead spelling`)
@@ -432,7 +432,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
 
     const arrived = doc(U.sibling, row.address);
     const atAddress: LinkCatalog = { ...empty, documentAt: () => arrived };
-    const resolved = resolveStoredLink(ahead, holder, atAddress);
+    const resolved = resolveStoredLink(ahead, atAddress);
     expect
       .soft(spellStoredLink(ahead, holder, resolved, grammar), `${row.written} arrived spelling`)
       .toEqual({ href: row.spelled, address: row.address });

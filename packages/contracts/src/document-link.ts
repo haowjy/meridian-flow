@@ -63,10 +63,13 @@ export type LinkResolution =
   /** A snapshot miss: spell the stored href and report. */
   | { kind: "unknown" };
 
-/** The resolution rules, in order (design "Resolution"). */
+/**
+ * The resolution rules, in order (design "Resolution"). They do not depend on
+ * the holder: what a reader may name is the catalog's `nameable`, and only
+ * spelling (`spellStoredLink`) reads the holder.
+ */
 export function resolveStoredLink(
   link: { ref: string | null; href: string },
-  _holder: LinkHolder,
   catalog: LinkCatalog,
 ): LinkResolution {
   if (link.ref === null) return { kind: "address" };

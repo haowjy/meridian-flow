@@ -105,7 +105,7 @@ export function createHolderLinkScope(
   onMiss: (what: string) => void = () => {},
 ): HolderLinkScope {
   const resolve = (link: { ref: string | null; href: string }): LinkResolution => {
-    const resolution = resolveStoredLink(link, holder, catalog);
+    const resolution = resolveStoredLink(link, catalog);
     if (resolution.kind === "unknown") onMiss(link.ref ?? link.href);
     return resolution;
   };
