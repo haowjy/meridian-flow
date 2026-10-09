@@ -41,14 +41,17 @@ shown-link evidence ([`ports/shown-links.ts`](../ports/shown-links.ts), table
 `thread_shown_links`). A row holds the link's ref, the absolute address shown,
 the holder URI, the view (`live` or `draft:<workId>`) and the turn. When a
 write rewrites links, ref assignment binds them to these rows. The model
-never sees them: agent-edit's facts stay host-only on `WriteOutcome`, receipts,
-concurrent runs and search hits, and handlers send only `result` or the
-stripped hit.
+never sees them: agent-edit's `showing { holderUri, view, links }` stays
+host-only on `WriteOutcome`, receipts and concurrent runs, a search hit's
+`shown` (holder URI, view, and each passage's links) on the hit, and handlers
+send only `result` or the stripped hit. The executor also strips `shown` and
+`showing` from every handler's value before it computes the persisted
+`result`, so no transcript row, history summary or browser event carries them.
 
-The view recorded is the one the facts were actually spelled in, never one
-rebuilt from the grant: agent-edit reports it as `shownView` beside every
-`shownLinks` (its binding's `scope.holder.view`), and a search hit carries
-ContextFS's `shownView`.
+The holder URI and view recorded are the ones the facts were actually spelled
+from, never ones rebuilt from the grant: agent-edit's `showing` carries its
+command links' `scope.holder`, and a search hit's `shown` carries the holder
+ContextFS's read spelled from.
 
 Ordinary tool evidence commits only with the result the model is shown.
 Handlers compute facts but never record: they return them as host-only

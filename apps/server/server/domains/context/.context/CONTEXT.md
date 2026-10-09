@@ -21,8 +21,9 @@ transaction; collab's pull transaction rules make that safe (see the
 It reports settled authority, not a response's staged overlay.
 
 Search results carry `documentId` and `revision` from the document scanned, and
-host-only `shownLinks`: the ref-bearing links the returned passages spell
-(after the passage cap), for the host to record as shown.
+host-only `shown` (`SearchShowing`: the holder URI and view the read spelled
+from, and each returned passage's ref-bearing links, after the passage cap),
+for the host to record the passages the model received whole.
 Tool wiring moves these fields to result metadata, not model-facing search JSON.
 Each result also says which `version` it came from, `draft` or `live`.
 

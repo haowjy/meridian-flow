@@ -86,11 +86,13 @@ current state. A whole item counts all its links; a prefix counts only links
 whose `parseWithSpans` span ends inside it. Equal text rendered from
 different states counts only what every such render showed, and a render
 whose links carry no ref is kept as one, so it clears an earlier ref; an item this
-codec never rendered, or a reparse that disagrees, counts nothing. They ride on `WriteOutcome.shownLinks` (reads, echoes, undo
-and redo), `ResponseCommitWriteReceipt.shownLinks`, and each
-`ConcurrentEditRun.shownLinks` (per run, because the request budget may drop
-runs), each with `shownView`, the view the command links spelled them in
-(`shownEvidence` in `links/shown.ts`). None of them reaches `result`. `WriteContext.shownLinks(documentId)`
+codec never rendered, or a reparse that disagrees, counts nothing. They ride
+as one `showing: { holderUri, view, links }` (`LinkShowing`): the facts with
+the holder URI and view the command's links spelled them from
+(`shownEvidence` in `links/shown.ts`), on `WriteOutcome.showing` (reads,
+echoes, undo and redo), `ResponseCommitWriteReceipt.showing`, and each
+`ConcurrentEditRun.showing` (per run, because the request budget may drop
+runs). None of them reaches `result`. `WriteContext.shownLinks(documentId)`
 delivers the thread's stored showings back to assignment; agent-edit never
 reads thread history.
 
