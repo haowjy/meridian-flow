@@ -26,7 +26,8 @@
  * (`images/image-workflow.ts`).
  *
  * The text/plain flavour spells every internal link as its full address, so
- * it means the same thing in another app or through the Markdown paste door.
+ * it means the same thing in another app or through the Markdown paste door;
+ * a picture's source is spelled from the same answer, under its own grammar.
  * The chat composer reads the recorded address (chat has no folder).
  */
 
@@ -34,6 +35,7 @@ import {
   parseContextUri,
   parseLinkRef,
   resolveDocumentHref,
+  spellDocumentHref,
   splitDocumentHrefSuffix,
   storedHref,
 } from "@meridian/contracts";
@@ -47,6 +49,7 @@ import {
   type LinkAnswerCache,
   type LinkKey,
   linkKeyOfMark,
+  PICTURE_SOURCE_HOLDER,
   pictureKeyOfNode,
 } from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
@@ -174,7 +177,10 @@ function keepPastedRefs(html: string, projectId: string | null): string {
  * Copy, text/plain flavour: the Markdown codec's link scope for this editor.
  * Every internal link is spelled as its full current address (a resolved ref
  * at its document's address now, otherwise the address its href names), so
- * the text means the same thing wherever it lands, holder or not.
+ * the text means the same thing wherever it lands, holder or not. A picture
+ * whose ref answers a document is spelled at that document's current address
+ * under the manuscript-root grammar, as rich copy records it; any other
+ * source (gone, missing, `asset:`, ref-less) as stored.
  */
 export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
   const resolution = linkClipboardPluginKey.getState(state) ?? null;
@@ -186,7 +192,19 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
         address: ref && address ? (resolveDocumentHref(address, null)?.uri ?? null) : null,
       };
     },
-    spellSource: UNSCOPED_DOCUMENT_LINKS.spellSource,
+    spellSource: (attrs) => {
+      const picture = pictureKeyOfNode(attrs);
+      const entry = picture?.ref && resolution ? resolution.read(picture) : null;
+      if (!picture || entry?.state !== "document")
+        return UNSCOPED_DOCUMENT_LINKS.spellSource(attrs);
+      const { uri } = entry.document;
+      return {
+        href:
+          spellDocumentHref(PICTURE_SOURCE_HOLDER, uri) +
+          splitDocumentHrefSuffix(picture.href).suffix,
+        address: uri,
+      };
+    },
   };
 }
 

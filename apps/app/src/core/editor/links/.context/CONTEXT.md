@@ -234,9 +234,11 @@ lookup; rendering a title does not adopt it as an attachment.
 
 `linkResolutionPlugin` scans the document for internal link marks, decorates
 each with `data-link-state`, and asks the store about anything it has no answer
-for. The same scan asks about every `image` and `figure` that carries a ref
-(`pictureKeyOfNode`: the ref, and the source under the manuscript-root
-grammar); those draw no decoration, because their node views read the answer
+for. The same scan asks about every `image` and `figure` whose source is a
+document address (`pictureKeyOfNode`: the ref, or null for a ref-less one
+such as a contextual `uploads://seal.png`, which resolves by address as a
+ref-less link does; and the source under the manuscript-root grammar). A web,
+`data:` or `asset:` source has no key. Those draw no decoration, because their node views read the answer
 themselves (`../asset-image-render-state.ts`), and an edit that inserts,
 removes or rewrites one rebuilds the scan as an edit reaching a link does.
 `failed(link)` tells such a reader a failed question from one the next scan
@@ -403,9 +405,13 @@ Every link still unbound is then bound fresh by `transformPasted`. Metadata is
 never a capability: a kept `doc:` ref resolves through the reader's catalog
 and draws gone when they cannot read it. A ref-bearing picture travels the
 same way with its metadata on its `<img>` (a figure's own picture): the
-sanitizer admits a recorded address as the source, the kept ref is
+sanitizer admits a recorded address as the source (and a metadata-free
+document address, which binds fresh like its bare spelling), the kept ref is
 `data-meridian-kept-ref` on that `<img>`, and anything unkept is assigned by
-the image paste door. The text flavour serializes a block the Markdown codec
+the image paste door. The text flavour spells a picture whose ref answers a
+document at that document's current address under the manuscript-root
+grammar (stored spelling otherwise), from the same answer rich copy records.
+It serializes a block the Markdown codec
 has no form for (a figure, a component) through the MDX codec, so copying one
 never loses the HTML flavour. The chat composer takes the full
 address. Nothing here enters the stored Markdown. The app's click handler reads the semantic

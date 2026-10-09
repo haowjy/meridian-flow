@@ -46,7 +46,12 @@
  * generation; the next scan asks them again.
  */
 
-import { classifyWrittenSource, storedHref, storedLinkRef } from "@meridian/contracts";
+import {
+  IMAGE_SOURCE_BASE,
+  resolveDocumentHref,
+  storedHref,
+  storedLinkRef,
+} from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import type { LinkAssignmentIndex, LinkAssignmentScope } from "./link-assignment";
@@ -70,20 +75,28 @@ export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }):
 }
 
 /**
- * The stored link an `image` or `figure` names, or null for a picture with no
- * ref (an `asset:` upload or a literal source, which render as they always
- * have). A picture's ref is answered by the same cache as a link's: its
- * source is the href, read under the manuscript-root grammar, so a bare
- * source names the same address a producer stores in full.
+ * The stored link an `image` or `figure` names, or null for a source that is
+ * no document address (an `asset:` upload, a web or `data:` URL), which
+ * renders as it always has. A picture is answered by the same cache as a
+ * link: its source is the href, read under the manuscript-root grammar, so a
+ * bare source names the same address a producer stores in full. A picture
+ * with no ref (the binder leaves a contextual `uploads://seal.png` ref-less)
+ * resolves by that address, as a ref-less link does.
  */
 export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown }): LinkKey | null {
-  const ref = storedLinkRef(attrs.ref);
-  if (!ref) return null;
-  const written = classifyWrittenSource(String(attrs.src ?? ""));
-  return written.kind === "internal"
-    ? { ref, href: storedHref(written.uri, written.suffix) }
-    : null;
+  const src = String(attrs.src ?? "");
+  // Protocol-relative is the web, whatever the source grammar would make of it.
+  if (src.startsWith("//")) return null;
+  const resolved = resolveDocumentHref(src, PICTURE_SOURCE_HOLDER);
+  if (!resolved) return null;
+  return { ref: storedLinkRef(attrs.ref), href: storedHref(resolved.uri, resolved.suffix) };
 }
+
+/**
+ * A holder at the manuscript root, the grammar picture sources are read and
+ * spelled in: only its directory is ever read.
+ */
+export const PICTURE_SOURCE_HOLDER = `${IMAGE_SOURCE_BASE}_`;
 
 /** The one string a `LinkKey` is cached and deduplicated under. */
 export function linkCacheKey(key: LinkKey): string {

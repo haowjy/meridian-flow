@@ -6,6 +6,7 @@ import type { Transaction } from "@tiptap/pm/state";
 
 import type { AnchorRange } from "../anchors";
 import type { AssignedLink } from "../links/link-assignment";
+import { pictureKeyOfNode } from "../links/link-resolution";
 
 export function isImageFile(file: Pick<File, "type" | "name">): boolean {
   return file.type.startsWith("image/") || /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(file.name);
@@ -215,8 +216,9 @@ export type PastedImageImport = {
  * Every image in a pasted slice that the manuscript cannot hold, turned into a
  * link to itself.
  *
- * An image's `src` is a stable `asset:<documentId>`, or an address beside the
- * `ref` that names its document, and nothing else. Web HTML
+ * An image's `src` is a stable `asset:<documentId>`, or a document address
+ * (beside the `ref` that names its document, or resolved by itself when it has
+ * none), and nothing else. Web HTML
  * carries `<img src="https://…">`, and admitting one writes an address the
  * project does not own into the shared document: it expires, it leaks where
  * the writer was reading, and it renders as a broken figure the moment the
@@ -239,7 +241,9 @@ function linkExternalPastedImages(
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
-      if (!src || src.startsWith("asset:") || storedLinkRef(node.attrs.ref)) return node;
+      // A picture naming a document address (with a ref, or ref-less and
+      // resolved by its address) is the project's own, never a web import.
+      if (!src || src.startsWith("asset:") || pictureKeyOfNode(node.attrs)) return node;
       const alt = node.attrs.alt ? String(node.attrs.alt) : null;
       imports.push({ url: src, alt });
       const marks = linkType ? [...node.marks, linkType.create({ href: src })] : node.marks;
