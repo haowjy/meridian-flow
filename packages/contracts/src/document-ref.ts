@@ -35,11 +35,13 @@ export function parseLinkRef(value: unknown): ParsedLinkRef | null {
 
 /**
  * A stored `ref` attr as every reader takes it (codec, occurrence walks, Yjs
- * extraction, the editor): the ref as stored when it parses, else null, so an
- * empty or malformed attr is a link with no ref everywhere alike.
+ * extraction, the editor): null only when absent or empty, else the attr as
+ * stored. A present malformed ref stays a ref, so `resolveStoredLink` answers
+ * it gone instead of whatever sits at its address; `parseLinkRef` still
+ * guards every lookup.
  */
 export function storedLinkRef(value: unknown): string | null {
-  return parseLinkRef(value) ? (value as string) : null;
+  return value === null || value === undefined || value === "" ? null : String(value);
 }
 
 export function documentRef(documentId: string): DocumentRef {
@@ -54,10 +56,20 @@ export function mintAheadRef(): AheadRef {
 }
 
 /**
+ * Whether a filename has a real extension: a nonempty one after a stem with
+ * something besides dots (`.hidden` and `chapter.` have none). The one rule
+ * for what an ahead ref may be registered at, minted and registry alike.
+ */
+export function hasFileExtension(filename: string): boolean {
+  return /^[^/]*[^/.][^/]*\.[^/.]+$/.test(filename);
+}
+
+/**
  * The address an ahead ref is minted for: canonical, absolute, suffix-free,
  * decoded (a catalog/registry key, not a stored href; store it with
- * `storedHref`), always with an extension. A link without one gets `.md` (the default the app
- * creates). Image and figure sources without an extension return null: an
+ * `storedHref`), always with a real extension (`hasFileExtension`). A link
+ * without one gets `.md` appended (the default the app creates, so `chapter.`
+ * becomes `chapter..md`). Image and figure sources without one return null: an
  * upload always has one, so such a ref could never settle, and the caller
  * treats the source as a literal (no ref).
  */
@@ -65,6 +77,6 @@ export function aheadAddress(uri: string, kind: "link" | "source"): string | nul
   const parsed = parseContextUri(uri);
   if (!parsed.ok || !parsed.value.path || !/^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) return null;
   const filename = parsed.value.path.slice(parsed.value.path.lastIndexOf("/") + 1);
-  if (filename.lastIndexOf(".") > 0) return parsed.value.normalized;
+  if (hasFileExtension(filename)) return parsed.value.normalized;
   return kind === "link" ? `${parsed.value.normalized}.md` : null;
 }

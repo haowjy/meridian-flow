@@ -12,6 +12,8 @@ import {
   createLinkAnswerCache,
   type LinkKey,
   type LinkResolutionEntry,
+  linkKeyOfMark,
+  pictureKeyOfNode,
 } from "@/core/editor/links";
 
 import { followProjectLink } from "./follow-link";
@@ -109,10 +111,13 @@ const ROWS: Row[] = [
     asked: [],
   },
   {
-    rule: "a malformed ref is gone locally and never falls back to its address",
-    links: [{ ref: "doc:kael", href: "manuscript://Kael.md" }],
-    before: ["gone"],
-    after: ["gone"],
+    rule: "a malformed stored ref is gone locally and never falls back to its address",
+    links: [
+      linkKeyOfMark({ ref: "doc:kael", href: "manuscript://Kael.md" }),
+      pictureKeyOfNode({ ref: "doc:kael", src: "Nine.md" }) ?? { ref: null, href: "" },
+    ],
+    before: ["gone", "gone"],
+    after: ["gone", "gone"],
     asked: [],
   },
   {
