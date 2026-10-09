@@ -2,7 +2,12 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { expect } from "vitest";
 
-import type { AssetPathResolver, ComponentRegistry, mdxCodec } from "./index.js";
+import {
+  type ComponentRegistry,
+  type DocumentLinkScope,
+  type mdxCodec,
+  UNSCOPED_DOCUMENT_LINKS,
+} from "./index.js";
 
 export const schema = buildDocumentSchema();
 export const components = {
@@ -67,24 +72,32 @@ export function sorted(names: readonly string[]): string[] {
 
 export function expectStable(codec: ReturnType<typeof mdxCodec>, input: string): void {
   const first = codec.parse(input).blocks;
-  const serialized = codec.serialize(first);
+  const serialized = codec.serialize(first, UNSCOPED_DOCUMENT_LINKS);
   const second = codec.parse(serialized).blocks;
   expect(docFrom(second).toJSON()).toEqual(docFrom(first).toJSON());
-  expect(codec.serialize(second)).toBe(serialized);
+  expect(codec.serialize(second, UNSCOPED_DOCUMENT_LINKS)).toBe(serialized);
 }
 
-/** A fixed id ↔ path table, for codec fixtures. */
-export function createAssetPathResolver(
-  entries: Iterable<readonly [string, string]>,
-): AssetPathResolver {
+/**
+ * A fixed id ↔ path table, for codec fixtures: the parse-side image rule and a
+ * serialize scope that spells known `asset:` refs as their paths.
+ */
+export function createAssetFixture(entries: Iterable<readonly [string, string]>): {
+  assetForPath(path: string): string | null;
+  links: DocumentLinkScope;
+} {
   const pathById = new Map(entries);
   const idByPath = new Map(Array.from(pathById, ([id, path]) => [path, id]));
   return {
-    pathForAsset(assetDocumentId) {
-      return pathById.get(assetDocumentId) ?? null;
-    },
-    assetForPath(path) {
-      return idByPath.get(path) ?? null;
+    assetForPath: (path) => idByPath.get(path) ?? null,
+    links: {
+      spellLink: UNSCOPED_DOCUMENT_LINKS.spellLink,
+      spellSource(attrs) {
+        const path = attrs.src.startsWith("asset:")
+          ? pathById.get(attrs.src.slice("asset:".length))
+          : undefined;
+        return path ? { href: path, address: null } : UNSCOPED_DOCUMENT_LINKS.spellSource(attrs);
+      },
     },
   };
 }

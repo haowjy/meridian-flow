@@ -54,11 +54,16 @@ export const imageCodec: BlockCodec<MdastImage> = {
  * guessing an id would write a reference that can never render.
  */
 export function imageNodeFromAttributes(ctx: ParseContext, tag: ImageHtmlAttributes): PMNode {
-  const assetDocumentId = tag.url === "" ? null : ctx.assetPathResolver.assetForPath(tag.url);
   return ctx.schema.node("image", {
-    src: assetDocumentId ? `asset:${assetDocumentId}` : tag.url,
+    src: parsedSource(ctx, tag.url),
     alt: tag.alt,
     title: tag.title,
     width: tag.width,
   });
+}
+
+/** A written `image`/`figure` source as stored: a known manuscript path becomes its `asset:` ref. */
+export function parsedSource(ctx: ParseContext, url: string): string {
+  const assetDocumentId = url === "" ? null : ctx.assetForPath(url);
+  return assetDocumentId ? `asset:${assetDocumentId}` : url;
 }

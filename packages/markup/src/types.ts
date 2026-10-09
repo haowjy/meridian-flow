@@ -1,23 +1,23 @@
 /** Public codec, plugin, and context contracts for @meridian/markup. */
 
+import type { SpelledHref } from "@meridian/contracts";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import type { PluggableList } from "unified";
 
 import type { MdastRoot } from "./ast.js";
 import type { CodecParseErrorLocation } from "./error.js";
 
-export type { CodecParseErrorLocation, PMNode };
+export type { CodecParseErrorLocation, PMNode, SpelledHref };
 
-/** Stable asset identity ↔ current project-relative path translation boundary. */
-export interface AssetPathResolver {
-  /**
-   * The current (or, once deleted, last) path of an asset document, or null for
-   * an id with no document at all. The codec spells null as the `asset:` ref
-   * itself, which parses back to the same reference.
-   */
-  pathForAsset(assetDocumentId: string): string | null;
-  /** Return an asset document id only for a path known to the current project. */
-  assetForPath(path: string): string | null;
+/**
+ * Synchronous spelling for one holder in one view, over a snapshot prepared
+ * before the call. Serialization asks it for every link, image and figure
+ * destination; the stored `ref` never reaches the wire, only what this spells.
+ */
+export interface DocumentLinkScope {
+  spellLink(attrs: { href: string; ref: string | null }): SpelledHref;
+  /** `asset:` rule first, then ref spelling under the manuscript-root grammar, then stored src. */
+  spellSource(attrs: { src: string; ref: string | null }): SpelledHref;
 }
 
 /** ProseMirror mark attribute bag — JSON-serializable values only. */
@@ -28,16 +28,37 @@ export interface ParsedContent {
   blocks: PMNode[];
 }
 
+/** Where one link occurrence was written, as offsets into the parsed text. */
+export interface OccurrenceSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * Parsed blocks plus one span per `walkLinkOccurrences(blocks)` entry, in the
+ * same order. A link, image or figure gets its own source position; an
+ * occurrence the codec cannot place precisely (inside a raw-HTML table, or
+ * text the ingress preprocessor rewrote) gets a span enclosing it.
+ */
+export interface ParsedContentWithSpans extends ParsedContent {
+  spans: OccurrenceSpan[];
+}
+
 /** Context threaded through block/mark serialize calls. */
 export interface SerializeContext {
   schema: Schema;
-  assetPathResolver: AssetPathResolver;
+  links: DocumentLinkScope;
 }
 
 /** Context threaded through block/mark parse calls. */
 export interface ParseContext {
   schema: Schema;
-  assetPathResolver: AssetPathResolver;
+  /**
+   * Transitional (#729/#730 lane F2 removes it): the shipped image rule, a
+   * known manuscript path parses as `asset:<id>`. F2 moves the rule into the
+   * binding pass after parse, which leaves parse pure syntax.
+   */
+  assetForPath(path: string): string | null;
 }
 
 /** Block-level: one registration per PM block node type. */
@@ -88,8 +109,10 @@ export interface MarkupCodecBuilder {
 
 /** Assembled text ↔ ProseMirror codec. */
 export interface MarkupCodec {
+  /** Pure syntax: every link `ref` is null and every href is as written. */
   parse(content: string): ParsedContent;
-  serialize(blocks: PMNode[]): string;
-  serializeBlock(block: PMNode): string;
-  serializeBlocks(blocks: readonly PMNode[]): string[];
+  parseWithSpans(content: string): ParsedContentWithSpans;
+  serialize(blocks: PMNode[], links: DocumentLinkScope): string;
+  serializeBlock(block: PMNode, links: DocumentLinkScope): string;
+  serializeBlocks(blocks: readonly PMNode[], links: DocumentLinkScope): string[];
 }

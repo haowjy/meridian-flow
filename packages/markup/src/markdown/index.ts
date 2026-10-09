@@ -5,7 +5,7 @@ import type { PluggableList } from "unified";
 
 import { createMarkupCodec } from "../codec.js";
 import { demoteAutolinks } from "../helpers.js";
-import type { AssetPathResolver, BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
+import type { BlockCodec, MarkCodec, MarkupPlugin, ParseContext } from "../types.js";
 import {
   blockquoteCodec,
   bulletListCodec,
@@ -69,7 +69,8 @@ export function markdown(): MarkupPlugin {
  */
 export function markdownCodec(options: {
   schema: Schema;
-  assetPathResolver: AssetPathResolver;
+  /** Transitional image rule; see `ParseContext.assetForPath`. */
+  assetForPath?: ParseContext["assetForPath"];
   remarkPlugins?: PluggableList;
 }) {
   const { remarkPlugins, ...codecOptions } = options;

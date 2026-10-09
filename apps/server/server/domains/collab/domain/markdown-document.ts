@@ -21,7 +21,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { MarkupCodec, ParsedContent } from "@meridian/markup";
+import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
@@ -68,6 +68,8 @@ export type MarkdownSerializationAnomalyObserver = (anomaly: MarkdownSerializati
 
 type MarkdownDocumentEngineDeps = {
   codec: MarkupCodec;
+  /** Spells every serialized link and image destination (lane F2 makes it per holder). */
+  links: DocumentLinkScope;
   schema: Schema;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
@@ -158,7 +160,7 @@ export function createMarkdownDocumentEngine(
     return projectBlocks(documentId, doc, (blocks) => {
       if (blocks.length === 0) return "";
       if (schemaType === "code") return blocks[0]?.textContent ?? "";
-      return deps.codec.serialize(blocks);
+      return deps.codec.serialize(blocks, deps.links);
     });
   }
 

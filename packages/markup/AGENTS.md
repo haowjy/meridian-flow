@@ -23,10 +23,12 @@ outside it.
   code and prose escaping do not pass through a tag-rewriting preprocessor.
 - Runtime source is the preprocessed source so AST positions and fallback slicing
   agree.
-- Every codec requires an `AssetPathResolver`. A consumer with no project asset
-  namespace passes `unresolvedAssetPathResolver`, which keeps `asset:` refs as
-  refs; never supply a permissive stand-in. `assetForPath` must decline anything it cannot resolve
-  to exactly one asset, because a wrong guess writes a reference into the
-  document that can never render.
+- Every serialize call takes a `DocumentLinkScope`. A consumer with no document
+  tree passes `UNSCOPED_DOCUMENT_LINKS`, which spells stored hrefs and keeps
+  `asset:` refs as refs; never supply a permissive stand-in. A stored link `ref`
+  is never read from or written to Markdown, HTML or MDX.
+- The transitional `assetForPath` parse option (removed by #729/#730 lane F2)
+  must decline anything it cannot resolve to exactly one asset, because a wrong
+  guess writes a reference into the document that can never render.
 
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the public API contract.

@@ -8,6 +8,7 @@ export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export type { DocumentLinkSubstitution } from "./domain/document-link-occurrences.js";
 export type {
   AssetPathProject,
+  AssetPathResolver,
   DocumentAssetPaths,
 } from "./domain/ports/document-asset-paths.js";
 export type {
