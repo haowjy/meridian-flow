@@ -235,10 +235,12 @@ lookup; rendering a title does not adopt it as an attachment.
 `linkResolutionPlugin` scans the document for internal link marks, decorates
 each with `data-link-state`, and asks the store about anything it has no answer
 for. The same scan asks about every `image` and `figure` whose source is a
-document address (`pictureKeyOfNode`: the ref, or null for a ref-less one
-such as a contextual `uploads://seal.png`, which resolves by address as a
-ref-less link does; and the source under the manuscript-root grammar). A web,
-`data:` or `asset:` source has no key. Those draw no decoration, because their node views read the answer
+document address. `pictureKeyOfNode` reads the source through contracts'
+`classifyWrittenSource`: an internal source is keyed by its ref (or null) and
+its stored spelling; a contextual one such as `uploads://seal.png` is keyed as
+written with no ref and resolves by address, as a ref-less link does. A web,
+`data:` or `asset:` source has no key. Text copy spells a picture through
+`spellStoredLink(…, "manuscript-root")`, the speller every read door uses. Those draw no decoration, because their node views read the answer
 themselves (`../asset-image-render-state.ts`), and an edit that inserts,
 removes or rewrites one rebuilds the scan as an edit reaching a link does.
 `failed(link)` tells such a reader a failed question from one the next scan

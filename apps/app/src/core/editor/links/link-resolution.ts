@@ -46,12 +46,7 @@
  * generation; the next scan asks them again.
  */
 
-import {
-  IMAGE_SOURCE_BASE,
-  resolveDocumentHref,
-  storedHref,
-  storedLinkRef,
-} from "@meridian/contracts";
+import { classifyWrittenSource, storedHref, storedLinkRef } from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import type { LinkAssignmentIndex, LinkAssignmentScope } from "./link-assignment";
@@ -80,23 +75,19 @@ export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }):
  * renders as it always has. A picture is answered by the same cache as a
  * link: its source is the href, read under the manuscript-root grammar, so a
  * bare source names the same address a producer stores in full. A picture
- * with no ref (the binder leaves a contextual `uploads://seal.png` ref-less)
- * resolves by that address, as a ref-less link does.
+ * with no ref resolves by its address, as a ref-less link does; a contextual
+ * source (`uploads://seal.png`) is keyed as written with no ref, exactly as a
+ * contextual link mark is.
  */
 export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown }): LinkKey | null {
   const src = String(attrs.src ?? "");
   // Protocol-relative is the web, whatever the source grammar would make of it.
   if (src.startsWith("//")) return null;
-  const resolved = resolveDocumentHref(src, PICTURE_SOURCE_HOLDER);
-  if (!resolved) return null;
-  return { ref: storedLinkRef(attrs.ref), href: storedHref(resolved.uri, resolved.suffix) };
+  const written = classifyWrittenSource(src);
+  if (written.kind === "external") return null;
+  if (written.kind === "contextual") return { ref: null, href: src };
+  return { ref: storedLinkRef(attrs.ref), href: storedHref(written.uri, written.suffix) };
 }
-
-/**
- * A holder at the manuscript root, the grammar picture sources are read and
- * spelled in: only its directory is ever read.
- */
-export const PICTURE_SOURCE_HOLDER = `${IMAGE_SOURCE_BASE}_`;
 
 /** The one string a `LinkKey` is cached and deduplicated under. */
 export function linkCacheKey(key: LinkKey): string {
