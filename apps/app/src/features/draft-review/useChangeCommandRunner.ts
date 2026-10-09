@@ -46,16 +46,26 @@ export function useChangeCommandRunner(caller: DraftReviewController): ChangeCom
   const scopes = useRef({ caller, editor });
   scopes.current = { caller, editor };
 
+  // `from` is the scope the command was started from: a batch keeps it for
+  // every draft, so a caller that moves to another Work mid-batch cannot
+  // redirect the remaining commands (its commands are bound to its own Work and
+  // session). The Editor's scope is read fresh, and owns a draft only within
+  // that Work.
   const run = useCallback(
-    (mode: "apply" | "discard", draft: DraftReviewSelection, selection: ChangeSelection) => {
-      const { caller, editor } = scopes.current;
+    (
+      from: DraftReviewController,
+      mode: "apply" | "discard",
+      draft: DraftReviewSelection,
+      selection: ChangeSelection,
+    ) => {
+      const { editor } = scopes.current;
       const open = editor.inlineReview;
       const opensInEditor =
-        editor.projectId === caller.projectId &&
-        editor.workId === caller.workId &&
+        editor.projectId === from.projectId &&
+        editor.workId === from.workId &&
         open?.documentId === draft.documentId &&
         open.draftId === draft.draftId;
-      const owner = opensInEditor ? editor : caller;
+      const owner = opensInEditor ? editor : from;
       return mode === "apply"
         ? owner.applyChanges(draft, selection)
         : owner.discardChanges(draft, selection);
@@ -65,9 +75,10 @@ export function useChangeCommandRunner(caller: DraftReviewController): ChangeCom
 
   const batch = useCallback(
     async (mode: "apply" | "discard", items: readonly DraftSelection[]) => {
+      const from = scopes.current.caller;
       const outcomes: DraftSelectionOutcome[] = [];
       for (const { draft, selection } of items) {
-        outcomes.push({ draft, outcome: await run(mode, draft, selection) });
+        outcomes.push({ draft, outcome: await run(from, mode, draft, selection) });
       }
       return outcomes;
     },
@@ -75,8 +86,14 @@ export function useChangeCommandRunner(caller: DraftReviewController): ChangeCom
   );
 
   return {
-    applyChanges: useCallback((draft, selection) => run("apply", draft, selection), [run]),
-    discardChanges: useCallback((draft, selection) => run("discard", draft, selection), [run]),
+    applyChanges: useCallback(
+      (draft, selection) => run(scopes.current.caller, "apply", draft, selection),
+      [run],
+    ),
+    discardChanges: useCallback(
+      (draft, selection) => run(scopes.current.caller, "discard", draft, selection),
+      [run],
+    ),
     applyBatch: useCallback((items) => batch("apply", items), [batch]),
     discardBatch: useCallback((items) => batch("discard", items), [batch]),
   };

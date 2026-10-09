@@ -89,9 +89,6 @@ export type DraftCommandOutcome =
   | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
   | { kind: "failed"; failure: DraftCommandFailure };
 
-/** What a batch (Apply all, Discard all) says it left behind: the first failure it held. */
-export type DraftBatchError = DraftCommandFailure;
-
 export type ChangeApplyRequest = {
   operationIds: string[];
   liveRevisionToken: string;
@@ -133,7 +130,7 @@ export type DraftReviewCommandPorts = {
     mode: "apply" | "discard",
   ) => void;
   batchStarted: (mode: "apply" | "discard") => void;
-  batchSettled: (error: DraftBatchError | null) => void;
+  batchSettled: () => void;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
@@ -165,8 +162,9 @@ export class DraftReviewSession {
     draft: DraftReviewSelection,
     changes: ChangeSelection,
     tokens: ChangeTokens,
+    completesDraft = false,
   ): Promise<DraftCommandOutcome> {
-    return this.changeCommand("apply", draft, changes, tokens, (ports, request) =>
+    return this.changeCommand("apply", draft, changes, tokens, completesDraft, (ports, request) =>
       ports.applyChanges(draft, request),
     );
   }
@@ -181,8 +179,9 @@ export class DraftReviewSession {
     draft: DraftReviewSelection,
     changes: ChangeSelection,
     tokens: ChangeTokens,
+    completesDraft = false,
   ): Promise<DraftCommandOutcome> {
-    return this.changeCommand("discard", draft, changes, tokens, (ports, request) =>
+    return this.changeCommand("discard", draft, changes, tokens, completesDraft, (ports, request) =>
       ports.discardChanges(draft, request),
     );
   }
@@ -216,7 +215,7 @@ export class DraftReviewSession {
       }
     } finally {
       this.disposition.release(reservation);
-      ports.batchSettled(batchErrorCode(outcomes));
+      ports.batchSettled();
     }
     return outcomes;
   }
@@ -233,6 +232,7 @@ export class DraftReviewSession {
     selection: DraftReviewSelection,
     change: ChangeSelection,
     tokens: ChangeTokens,
+    completesDraft: boolean,
     send: (
       ports: DraftReviewCommandPorts,
       request: ChangeApplyRequest,
@@ -242,7 +242,7 @@ export class DraftReviewSession {
       { kind: `${mode}-change`, ...selection, classIds: change.classIds },
       async (_reservation, ports) => {
         const draft = { ...ports.scope, ...selection };
-        if (!beginChangeCommand(draft, change, mode)) return { kind: "blocked" };
+        if (!beginChangeCommand(draft, change, mode, completesDraft)) return { kind: "blocked" };
         try {
           let response: { status: string } | "unknown";
           try {
@@ -361,13 +361,6 @@ export class DraftReviewSession {
   }
 }
 
-function batchErrorCode(outcomes: readonly DraftCommandOutcome[]): DraftBatchError | null {
-  for (const outcome of outcomes) if (outcome.kind === "failed") return outcome.failure;
-  return outcomes.some((outcome) => outcome.kind === "apply-outcome-unknown")
-    ? { code: "apply-unknown" }
-    : null;
-}
-
 /** The failure a whole-draft Apply or Discard leaves, from the error its request threw. */
 function commandFailure(mode: "apply" | "discard", error: unknown): DraftCommandFailure {
   const rejection = classifyDraftCommandRejection(error);
@@ -437,7 +430,6 @@ export type ReviewToast = { id: number; code: ReviewToastCode; tone: "info" | "e
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
-  dockDispositionError: DraftBatchError | null;
   /** The header's "Show changes": false hides every mark in the manuscript. */
   marksVisible: boolean;
   toast: ReviewToast | null;
@@ -445,7 +437,13 @@ export type DraftReviewState = {
 };
 
 export type DraftReviewAction =
-  | { type: "enterInline"; documentId: string; draftId: string }
+  | {
+      type: "enterInline";
+      documentId: string;
+      draftId: string;
+      /** A command already in flight on this draft that handles its last changes (`commandCompletion`). */
+      completion?: ReviewCompletion;
+    }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
   | { type: "applySucceeded"; documentId: string; draftId: string }
@@ -467,15 +465,12 @@ export type DraftReviewAction =
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
-  | { type: "batchStarted" }
-  | { type: "batchSettled"; error: DraftBatchError | null }
   | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
 
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
-  dockDispositionError: null,
   marksVisible: true,
   toast: null,
   toastSeq: 0,
@@ -559,10 +554,6 @@ export function draftReviewReducer(
       };
     case "toastDismissed":
       return state.toast?.id === action.id ? { ...state, toast: null } : state;
-    case "batchStarted":
-      return { ...state, dockDispositionError: null };
-    case "batchSettled":
-      return { ...state, dockDispositionError: action.error };
     case "discardSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
@@ -596,10 +587,15 @@ function sameFocus(left: ReviewFocus | null, right: ReviewFocus | null): boolean
 
 function inlineSurfaceForEnter(
   current: DraftReviewSurface,
-  selection: DraftReviewSelection,
+  selection: DraftReviewSelection & { completion?: ReviewCompletion },
 ): DraftReviewSurface {
   if (surfaceMatchesDraft(current, selection)) return current;
-  return { kind: "inline", documentId: selection.documentId, draftId: selection.draftId };
+  return {
+    kind: "inline",
+    documentId: selection.documentId,
+    draftId: selection.draftId,
+    ...(selection.completion ? { completion: selection.completion } : {}),
+  };
 }
 
 function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftReviewState {

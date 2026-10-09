@@ -126,12 +126,14 @@ export function beginChangeCommand(
   draft: DraftRef,
   selection: ChangeSelection,
   mode: ChangeCommandMode,
+  completesDraft = false,
 ): boolean {
   if (
     !beginDraftCommand(draft, {
       classIds: selection.classIds,
       operationIds: selection.operationIds,
       mode,
+      ...(completesDraft ? { completesDraft: true as const } : {}),
     })
   ) {
     return false;

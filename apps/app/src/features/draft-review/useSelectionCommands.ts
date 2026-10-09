@@ -4,10 +4,9 @@
  *
  * The command reads the draft's cached preview for the revision tokens the
  * writer saw; with no active preview there is nothing they saw to send, and the
- * selection is refused as out of date. Completion (`reviewCompleting`, `reviewReopened`,
- * and the answer's `reviewClosed` through the mutation's `onAnswered`) runs
- * only when the draft is this controller's open inline review: any other draft
- * has no review state to settle, and its rows leave through the command record.
+ * selection is refused as out of date. The command's coverage of the draft's
+ * last changes rides on its claim, so any review showing the draft follows it
+ * (`useReviewCommandCompletion`). The toast is this controller's open review's.
  */
 import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -57,29 +56,14 @@ export function useSelectionCommands({
       const cached = queryClient.getQueryData<DraftPreviewResponse>(
         projectQueryKeys.workDraftPreview(projectId, workId, draft.documentId, draft.draftId),
       );
-      const surface = stateRef.current.surface;
-      const open =
-        surface.kind === "inline" &&
-        surface.documentId === draft.documentId &&
-        surface.draftId === draft.draftId;
-      // Read before the command: it may be the one that takes the draft out of the list.
-      const documentName = open
-        ? listedDocumentName(queryClient, projectId, workId, draft.draftId)
-        : null;
       // The last changes handled: nothing is finished until the command's own
-      // answer says so (`settleAnsweredCommand`), but the writer's click shows
-      // at once as a pending completion. A last Discard leaves live as it is,
-      // so the finished text is already on screen: hold that inert at the
-      // click, since waiting would show the review room merging the server's
-      // reset (the discarded text doubled). A last Apply keeps the review
-      // room, marks gone, until the answer: live has no change in it until then.
+      // answer says so, but the writer's click shows at once as a pending
+      // completion, on whichever review has the draft open. It rides on the
+      // draft's claim (`useReviewCommandCompletion`), so a refused duplicate
+      // never holds or withdraws it.
       const handlesLast =
-        open &&
         cached?.status === "active" &&
         coversEveryChange(selection, reviewChanges(cached.operations, cached.hunks));
-      if (handlesLast) {
-        dispatch({ type: "reviewCompleting", ...draft, mode, documentName });
-      }
       let outcome: DraftCommandOutcome;
       if (cached?.status === "active") {
         const tokens = {
@@ -87,20 +71,20 @@ export function useSelectionCommands({
           draftRevisionToken: cached.draftRevisionToken,
         };
         outcome = await (mode === "apply"
-          ? session.applySelection(draft, selection, tokens)
-          : session.discardSelection(draft, selection, tokens));
+          ? session.applySelection(draft, selection, tokens, handlesLast)
+          : session.discardSelection(draft, selection, tokens, handlesLast));
       } else {
         // Without a preview there is nothing the writer saw to apply or discard: out of date.
         outcome = { kind: "change-refused", mode, code: "stale" };
       }
       if (!activeRef.current) return outcome;
-      if (handlesLast && outcome.kind !== "change-settled") {
-        // The command did not land (or the change was already gone): the
-        // change is back, and so is the review of it. A change that landed was
-        // answered by `settleAnsweredCommand`, closed or not.
-        dispatch({ type: "reviewReopened", ...draft });
-      }
-      // The toast belongs to the review the writer is in; a row elsewhere shows its own result.
+      // The toast belongs to the review the writer is in when the answer comes,
+      // not the one they were in at the click; a row elsewhere shows its own result.
+      const surface = stateRef.current.surface;
+      const open =
+        surface.kind === "inline" &&
+        surface.documentId === draft.documentId &&
+        surface.draftId === draft.draftId;
       if (open && outcome.kind === "change-settled") {
         dispatch({
           type: "toast",

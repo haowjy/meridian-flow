@@ -45,12 +45,15 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   joins a review room; for the Editor's open review it reads the Editor's model).
   A command acts on a `ChangeSelection` (`{ classIds, operationIds }`; one change
   is a selection of one class) of any draft of the controller's Work
-  (`controller.applyChanges(draft, selection)`), and completion (Applying, "No
-  changes left") runs only when the draft is that controller's open review.
-  Surfaces send through `useChangeCommandRunner(callerController)`, which routes
-  a draft that is the Editor's open review to the Editor's controller and any
-  other to the caller's, and runs a batch as one command per draft (every draft
-  gets its turn). That is not `disposeDrafts`, the whole-draft Apply all and
+  (`controller.applyChanges(draft, selection)`). The command's coverage of the
+  draft's last changes and the server's `draftClosed` answer live in the draft's
+  claim (`draft-command-record`), and whichever review has the draft open follows
+  them (`useReviewCommandCompletion`; a review that opens mid-command adopts the
+  pending completion), whoever sent it. Surfaces send through
+  `useChangeCommandRunner(callerController)`, which routes a draft that is the
+  Editor's open review (in the caller's project and Work) to the Editor's
+  controller and any other to the caller's, and runs a batch as one command per
+  draft (every draft gets its turn, in the Work the batch began in). That is not `disposeDrafts`, the whole-draft Apply all and
   Discard all with their batch lifecycle.
 - **A refusal's words are chosen when shown.** A typed refusal is stored as the
   server's code and text (`serverCode`, `serverReason`); `RefusalReason` words the
@@ -257,7 +260,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   `clearDraftReviewLaunchFailure`); it is then that draft's own header message
   until the writer acts on it again. **A batch (Apply all, Discard all) never stops at
   a refusal**: drafts are independent documents, so each gets its turn, each
-  failure is held on its own draft, and `dockDispositionError` names the kind.
+  failure is held on its own draft.
   **A batch never navigates**: the writer stays where they are (nothing is
   decided from an answer, which can arrive after they went elsewhere), and Open
   on a refused draft's notice is the only way to it. The review the writer is in

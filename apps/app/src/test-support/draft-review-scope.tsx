@@ -116,6 +116,8 @@ export type ScopeProbe = {
   mountLateReader: () => Promise<() => ReviewChangesView>;
   /** The transport as the Chat's scope uses it: the strip's and a Work row's way to send. */
   chatRunner: ChangeCommandRunner;
+  /** The chat moves to another Work (the writer opens a chat of it); the Editor stays. */
+  moveChatToWork: (to: Work) => Promise<void>;
   /** A change list of any draft, read through the Chat's scope (an unopened draft's rows). */
   mountDraftChanges: (
     target: DraftChangesTarget,
@@ -198,7 +200,13 @@ export function renderReviewScopes(
   }
   function Scopes(): ReactNode {
     const editor = useDraftReviewScopeValue({ projectId: "project-a", work });
-    const chat = useDraftReviewScopeValue({ projectId: "project-a", work, threadId: "thread-a" });
+    const [chatWork, setChatWork] = useState(work);
+    current.moveChatToWork = (to) => act(async () => setChatWork(to));
+    const chat = useDraftReviewScopeValue({
+      projectId: "project-a",
+      work: chatWork,
+      threadId: "thread-a",
+    });
     const third = useDraftReviewScopeValue({ projectId: "project-a", work: workC });
     current.editor = editor;
     current.chat = chat;

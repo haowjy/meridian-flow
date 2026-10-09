@@ -66,8 +66,18 @@ export type ChangeCommandMode = "apply" | "discard";
  */
 export type ChangeSelection = { classIds: readonly string[]; operationIds: readonly string[] };
 
-/** A selection command in flight, with the operation set it sends. */
-export type PendingChangeCommand = ChangeSelection & { mode: ChangeCommandMode };
+/**
+ * A selection command in flight, with the operation set it sends. This is the
+ * one place its identity, mode and coverage are readable from, by whichever
+ * review has the draft open (`completesDraft`: the selection handles every
+ * change the draft shows, so the draft may close), and where the server's
+ * answer lands (`draftClosed`) before any list read follows it.
+ */
+export type PendingChangeCommand = ChangeSelection & {
+  mode: ChangeCommandMode;
+  completesDraft?: true;
+  draftClosed?: true;
+};
 
 type DraftCommandRecord =
   | { phase: "pending"; change?: PendingChangeCommand }
@@ -120,6 +130,18 @@ export function beginDraftCommand(draft: DraftRef, change?: PendingChangeCommand
   if (recordFor(draft)?.phase === "pending") return false;
   setRecord(draft, () => ({ phase: "pending", ...(change ? { change } : {}) }));
   return true;
+}
+
+/**
+ * The server answered the selection command in flight on this draft and
+ * closed the draft. Reviews showing it settle on this before the draft list is
+ * re-read (`subscribeDraftCommandRecords`).
+ */
+export function answerDraftCommandClosed(draft: DraftRef): void {
+  const record = recordFor(draft);
+  if (record?.phase !== "pending" || !record.change) return;
+  const change = { ...record.change, draftClosed: true as const };
+  setRecord(draft, () => ({ phase: "pending", change }));
 }
 
 /** Release a claim that ended without a confirmation or a held failure. */
@@ -258,6 +280,19 @@ export function onDraftCommandRecordsReset(listener: () => void): void {
 export function resetDraftCommandRecords(): void {
   useDraftCommandStore.setState({ records: {} });
   for (const listener of resetListeners) listener();
+}
+
+/**
+ * Be told, synchronously, of every change to the records and what they were.
+ * For state that must follow a command's claim and answer in the same tick
+ * (a review's completion), which a render cannot promise.
+ */
+export function subscribeDraftCommandRecords(
+  listener: (records: DraftCommandRecords, previous: DraftCommandRecords) => void,
+): () => void {
+  return useDraftCommandStore.subscribe((state, previous) => {
+    if (state.records !== previous.records) listener(state.records, previous.records);
+  });
 }
 
 /** The records right now, for code that is not a render (commands, tests). */

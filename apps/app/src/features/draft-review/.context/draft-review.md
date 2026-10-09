@@ -49,11 +49,19 @@ hold; one change is a selection of one class). The controller exposes them as
 `applyChanges(draft, selection)` and `discardChanges(draft, selection)` for any
 draft of its Work (`useSelectionCommands`): they read that draft's cached preview
 for the two revision tokens (with no active preview the selection is refused
-`stale` without sending) and run completion only when the draft is the
-controller's open review. `useChangeCommandRunner` is the transport surfaces use:
-the Editor's controller owns a draft it has open, so its pending state, answer
-and completion (and the last Discard's freeze of the finished text) stay with
-the review; every other draft runs in the caller's scope. A selection batch is
+`stale` without sending). Whether the command handles the draft's last changes
+(`completesDraft`) and the server's `draftClosed` answer are recorded on the
+draft's command claim, so any review showing the draft follows them
+(`useReviewCommandCompletion`, synchronously from the record store): a review
+opened while the command is in flight adopts its pending completion in
+`enterInline`, the answer closes the review currently showing the draft before
+the list is re-read, and the claim ending any other way withdraws the prediction.
+The claim, not the sender, owns this; a refused duplicate never begins it.
+`useChangeCommandRunner` is the transport surfaces use: the Editor's controller
+runs a draft it has open in the caller's Work (the toast and focus belong to the
+review the writer is in); every other draft runs in the caller's scope. A batch
+keeps the caller it began with, so a caller that moves to another Work mid-batch
+cannot redirect the remaining drafts (a session keeps its own Work's ports). A selection batch is
 one command per draft, each with its union and tokens; a refusal on one does not
 stop the next. Each claims
 the draft's **command claim** (`beginDraftCommand` with the change and its
@@ -87,7 +95,7 @@ Apply and Discard are not queued offline: their mutations run with `networkMode:
 Apply and Discard send the live and draft revision tokens of the cached preview
 the writer saw (opaque strings), so a change updated under them is refused,
 never applied or discarded. Only an answered `discarded` / `applied` reaches
-`settleAnsweredCommand`; a `stale` Discard says nothing about the draft.
+the draft's claim (`answerDraftCommandClosed`); a `stale` Discard says nothing about the draft.
 The toast ("Applied", "Discarded", "That change is no longer in the draft.") is
 controller state (`toast`), rendered by `ReviewToast`. The server closes a draft
 in the command that handles its last change (the response carries `draftClosed`
@@ -138,7 +146,7 @@ command scope; per-change Apply is the one command that sends them. Apply/Discar
 are session outcomes rendered by the review header rather than ignored
 promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
 (`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
-the draft's rows, and named in the batch's typed error state (`dockDispositionError`). It never navigates (no answer moves
+the draft's rows, and nowhere else. It never navigates (no answer moves
 the writer). The review the writer is in is part of the batch: `batchStarted` sets its completion to
 `pending` (the header says "Applying"/"Discarding"), its own answer closes it (`completion: closed`,
 "No changes left") instead of clearing it, and a batch that ends without closing it withdraws the
