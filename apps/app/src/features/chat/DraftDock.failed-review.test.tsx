@@ -100,8 +100,10 @@ describe("DraftDock failed Review", () => {
       await vi.waitFor(() => expect(document.querySelector("[data-draft-dock]")).not.toBeNull());
       expect(document.querySelector("[role=alert]")).toBeNull();
       await clickReview();
-      expect(document.querySelector("[role=alert]")?.textContent).toBe(
-        "Couldn't open this draft. Try again.",
+      await vi.waitFor(() =>
+        expect(document.querySelector("[role=alert]")?.textContent).toBe(
+          "Couldn't open this draft. Try again.",
+        ),
       );
       await clickReview();
       expect(document.querySelector("[role=alert]")).toBeNull();

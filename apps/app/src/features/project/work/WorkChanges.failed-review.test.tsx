@@ -62,7 +62,9 @@ describe("WorkChanges failed Review", () => {
     await render(open, async () => {
       expect(document.querySelector("[role=alert]")).toBeNull();
       await clickRow();
-      expect(document.querySelector("[role=alert]")?.textContent).toBe(MESSAGE);
+      await vi.waitFor(() =>
+        expect(document.querySelector("[role=alert]")?.textContent).toBe(MESSAGE),
+      );
       expect(console.error).toHaveBeenCalled();
       await clickRow();
       expect(document.querySelector("[role=alert]")).toBeNull();
