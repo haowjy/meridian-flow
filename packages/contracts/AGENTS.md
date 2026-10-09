@@ -40,6 +40,13 @@ runtime shapes, and observability records.
   spelling call it. Never format a destination from a raw URI or
   re-implement relative resolution: two copies of it once disagreed, and a raw
   `#` or `%` in a filename silently names another document.
+- `document-ref.ts` owns the stored link ref grammar (`doc:<id>`, `ahead:<id>`),
+  the only ahead-ref mint, and `aheadAddress`. `document-link.ts` owns the one
+  stored-link resolution (`resolveStoredLink` over a host `LinkCatalog`), the
+  one written-link classifier (`classifyWrittenLink`/`classifyWrittenSource`;
+  the single definition of "contextual"), and the speller (`spellStoredLink`).
+  A ref never appears in Markdown, HTML, URIs or model text; a ref the reader
+  cannot reach spells its stored href, never its target's new location.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.
