@@ -4,8 +4,10 @@ This directory owns image ingress end to end: the picker, the drop, the pasted
 file, the pasted address, the asset index the clipboard translates through, and
 the pending lifecycle the writer sees. It does not own project asset storage,
 the figure endpoint, or signed-URL rendering policy (`asset-image-render-state.ts`,
-which draws an `asset:` source and a ref-bearing one alike: a ref is answered by
-the link lane's cache, and its document signs exactly as an upload does).
+which draws an `asset:` source and a document-address one alike: the address
+(and its ref, if any) is answered by the link lane's cache, and its document
+signs exactly as an upload does. A node view retargeted to another picture
+never keeps drawing the previous one).
 
 ## Mental model
 

@@ -6,14 +6,24 @@
  * A picture written as an address stores a `ref` (`doc:`/`ahead:`) beside it,
  * and that ref is answered by the editor's link cache like any link's: the
  * same `(ref, href)` key, the same local rule and settlement memo, asked by
- * the same document scan (`links/link-resolution-decorations.ts`). A document
- * answer draws exactly as an `asset:` picture does. A picture with neither
- * renders its source as written.
+ * the same document scan (`links/link-resolution-decorations.ts`). A
+ * ref-less source that is a document address (`uploads://seal.png`) is asked
+ * by its address, as a ref-less link is. A document answer draws exactly as
+ * an `asset:` picture does. A web or `data:` source renders as written.
  */
 
 import { t } from "@lingui/core/macro";
 import { resolveDocumentHref } from "@meridian/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
 
@@ -22,6 +32,7 @@ import {
   type LinkAnswerCache,
   type LinkKey,
   type LinkResolutionEntry,
+  linkCacheKey,
   pictureKeyOfNode,
 } from "./links";
 
@@ -164,7 +175,7 @@ export function useAssetImageRenderState(input: {
   const keyRef = stored?.ref ?? null;
   const keyLink = stored?.href ?? null;
   const key = useMemo<LinkKey | null>(
-    () => (keyRef && keyLink ? { ref: keyRef, href: keyLink } : null),
+    () => (keyLink ? { ref: keyRef, href: keyLink } : null),
     [keyRef, keyLink],
   );
   const target = usePictureTarget(src, key, resolution);
@@ -186,7 +197,17 @@ export function useAssetImageRenderState(input: {
   // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [state, setState] = useState<AssetImageRenderState>(() => initialState(target));
+  // Which picture this is: its project, and its stored link or its source.
+  // A URL on screen belongs to one picture. It stays while that same picture
+  // revalidates (a catalog change, a signed-URL refresh), and a node view
+  // retargeted to another picture (a ref or source edit, undo, a peer's
+  // update) never draws the previous one while the new one loads.
+  const picture = `${projectId ?? ""}\u0000${key ? linkCacheKey(key) : src}`;
+  const [shown, setShown] = useState<{ picture: string; state: AssetImageRenderState }>(() => ({
+    picture,
+    state: initialState(target),
+  }));
+  const state = shown.picture === picture ? shown.state : initialState(target);
 
   const unanswered = target.kind === "unanswered";
   const retry = useCallback(() => {
@@ -198,6 +219,7 @@ export function useAssetImageRenderState(input: {
     retryStateRef.current.state = { automaticRefreshUsed: false };
   }, []);
   const imageLoadFailed = useCallback(() => {
+    const setState = showFor(setShown, picture);
     if (!assetDocumentId) {
       setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
       return;
@@ -213,11 +235,12 @@ export function useAssetImageRenderState(input: {
       return;
     }
     setState({ kind: "error", url: null, message: t`Image could not be displayed.` });
-  }, [assetDocumentId]);
+  }, [assetDocumentId, picture]);
 
   // Keyed by `targetIdentity`, the target's value: the object is rebuilt
   // every render, and a new one with the same value must not re-sign.
   useEffect(() => {
+    const setState = showFor(setShown, picture);
     if (!projectId && (target.kind === "document" || target.kind === "resolving")) {
       setState({
         kind: "error",
@@ -228,9 +251,9 @@ export function useAssetImageRenderState(input: {
     }
 
     // A new resolution generation (every catalog change) asks again, and the
-    // picture on screen stays while it does, as a signed-URL refresh's does.
+    // same picture stays on screen while it does, as a signed-URL refresh's does.
     if (target.kind === "resolving") {
-      setState((current) => ({ kind: "loading", url: current.url }));
+      setState((kept) => ({ kind: "loading", url: kept }));
       return;
     }
 
@@ -249,7 +272,7 @@ export function useAssetImageRenderState(input: {
       // The previous URL stays on screen: a refresh must not blink the picture
       // out of the manuscript. It is also the URL about to expire, which is
       // why an error arriving now belongs to the request, not to the picture.
-      setState((current) => ({ kind: "loading", url: current.url }));
+      setState((kept) => ({ kind: "loading", url: kept }));
 
       try {
         const signed = await getFigureSignedUrl({
@@ -280,9 +303,27 @@ export function useAssetImageRenderState(input: {
       loadInFlightRef.current = false;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [targetIdentity, projectId, refreshToken]);
+  }, [targetIdentity, picture, projectId, refreshToken]);
 
   return [state, { retry, imageLoadFailed, imageDisplayed }];
+}
+
+/**
+ * Sets the state shown for one picture. An update may keep the URL already
+ * on screen only when that URL is this same picture's.
+ */
+function showFor(
+  setShown: Dispatch<SetStateAction<{ picture: string; state: AssetImageRenderState }>>,
+  picture: string,
+) {
+  return (next: AssetImageRenderState | ((keptUrl: string | null) => AssetImageRenderState)) =>
+    setShown((current) => ({
+      picture,
+      state:
+        typeof next === "function"
+          ? next(current.picture === picture ? current.state.url : null)
+          : next,
+    }));
 }
 
 /** The state a target draws before any URL is signed. */

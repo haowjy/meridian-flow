@@ -80,9 +80,10 @@ pointer, and calls into it.
   document is now, and whether the reader can reach it, rides a decoration
   keyed by ref and href (law 9), so no peer receives an answer that was true
   in someone else's project. A move writes nothing into linking documents.
-- **A picture's ref is a link's question.** An `image` or `figure` with a ref
-  is answered by this cache under the same key (`pictureKeyOfNode`), asked by
-  the same document scan; its node view draws the answer. No second cache.
+- **A picture's source is a link's question.** An `image` or `figure` whose
+  source is a document address, with a ref or without, is answered by this
+  cache under the same key (`pictureKeyOfNode`), asked by the same document
+  scan; its node view draws the answer. No second cache.
 - **The decorations are mapped on an ordinary keystroke and rebuilt only when
   something reached a link** — a mark step, an edit inside one, an answer
   landing. The exception is a remote write: mapping across the whole-document

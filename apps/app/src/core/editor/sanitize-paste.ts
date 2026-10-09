@@ -1,6 +1,7 @@
 /** Sanitizes clipboard HTML down to the elements understood by the editor schema. */
 
 import {
+  classifyLinkTarget,
   clipboardLinkAddress,
   clipboardLinkProject,
   clipboardLinkRef,
@@ -155,6 +156,9 @@ function isSafeImageSrc(src: string): boolean {
   if (/^data:/i.test(src)) return /^data:image\/[a-z\d.+-]+(?:;[^,]*)?,/i.test(src);
   if (src.startsWith("//")) return true;
   if (!EXPLICIT_URI_SCHEME.test(src)) return true;
+  // A document address with no Meridian metadata (`manuscript://art/map.png`)
+  // is a source like its bare-path spelling: the image door assigns it fresh.
+  if (classifyLinkTarget(src)?.kind === "scheme") return true;
 
   try {
     const url = new URL(src);

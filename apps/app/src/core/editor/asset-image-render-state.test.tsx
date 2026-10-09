@@ -14,7 +14,7 @@ import { getFigureSignedUrl } from "@/client/api/figures-api";
 
 import { type AssetImageRenderState, useAssetImageRenderState } from "./asset-image-render-state";
 import { createStandaloneEditorExtensions } from "./config";
-import type { LinkAnswer, LinkAnswerCache, LinkQuestion } from "./links";
+import { type LinkAnswer, type LinkAnswerCache, type LinkQuestion, linkTargetHref } from "./links";
 import { LINK_SURFACE_NAME } from "./links/link-storage";
 
 vi.mock("@/client/api/figures-api", () => ({ getFigureSignedUrl: vi.fn() }));
@@ -26,6 +26,8 @@ const MAP_ID = "00000000-0000-4000-8000-0000000000d1";
 const PLATE_ID = "00000000-0000-4000-8000-0000000000d2";
 const GONE = "doc:00000000-0000-4000-8000-0000000000d3";
 const ASSET_ID = "00000000-0000-4000-8000-0000000000d4";
+const SEAL_ID = "00000000-0000-4000-8000-0000000000d5";
+const NEXT = "ahead:00000000-0000-4000-8000-0000000000a3";
 
 function documentAnswer(documentId: string, path: string): LinkAnswer {
   return {
@@ -46,6 +48,8 @@ const ANSWERS: Record<string, LinkAnswer> = {
   [`doc:${PLATE_ID}`]: documentAnswer(PLATE_ID, "art/plate.png"),
   [UNSETTLED]: { state: "missing", document: null },
   [GONE]: { state: "gone", document: null },
+  // A ref-less question is answered by its address.
+  "uploads://seal.png": documentAnswer(SEAL_ID, "seal.png"),
 };
 
 function Probe(props: {
@@ -115,6 +119,20 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       ref: null,
       drawn: { kind: "ready", url: "https://cdn.example/map.png" },
     },
+    {
+      row: "a protocol-relative source stays literal",
+      src: "//cdn.example/map.png",
+      ref: null,
+      drawn: { kind: "ready", url: "//cdn.example/map.png" },
+    },
+    {
+      // The binder leaves a contextual source ref-less; it resolves by address
+      // like a ref-less link, never drawn as a literal URL that cannot load.
+      row: "a ref-less internal picture renders the document at its address",
+      src: "uploads://seal.png",
+      ref: null,
+      drawn: { kind: "ready", url: `https://signed.example/${SEAL_ID}` },
+    },
   ];
 
   const editor = new Editor({
@@ -141,15 +159,18 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
     resolution.registerResolver({
       remote: async (questions) => {
         asked.push(...questions);
-        return questions.map(({ ref }) => (ref ? (ANSWERS[ref] ?? null) : null));
+        return questions.map(({ ref, target }) => ANSWERS[ref ?? linkTargetHref(target)] ?? null);
       },
     });
     // The editor's own scan asks about every ref-bearing picture, figures
     // included; nothing else in the test requests a key.
-    await vi.waitFor(() => expect(asked.map(({ ref }) => ref).sort()).toHaveLength(4));
+    await vi.waitFor(() => expect(asked).toHaveLength(5));
     expect
-      .soft(asked.map(({ ref }) => ref).sort(), "the scan asks about picture refs")
-      .toEqual([SETTLED, UNSETTLED, GONE, `doc:${PLATE_ID}`].sort());
+      .soft(
+        asked.map(({ ref, target }) => ref ?? linkTargetHref(target)).sort(),
+        "the scan asks about picture refs, and ref-less internal sources by address",
+      )
+      .toEqual([SETTLED, UNSETTLED, GONE, `doc:${PLATE_ID}`, "uploads://seal.png"].sort());
 
     const drawn = new Map<string, AssetImageRenderState>();
     await act(async () => {
@@ -169,6 +190,32 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       for (const { row, drawn: expected } of rows)
         expect(drawn.get(row), row).toMatchObject(expected as object);
     });
+
+    // A retarget (a ref or source update, undo, a peer's edit) reuses the node
+    // view: the previous picture must not stay drawn while the new one is out.
+    const retargeted: AssetImageRenderState[] = [];
+    const retarget = (src: string, pictureRef: string) => (
+      <Probe
+        src={src}
+        pictureRef={pictureRef}
+        resolution={resolution}
+        report={(state) => retargeted.push(state)}
+      />
+    );
+    await act(async () => root.render(retarget("manuscript://art/map.png", SETTLED)));
+    await vi.waitFor(() => expect(retargeted.at(-1)).toMatchObject({ kind: "ready" }));
+    // A catalog change is a new generation whose answers have not arrived.
+    await act(async () => {
+      resolution.registerResolver({ remote: () => new Promise(() => {}) });
+    });
+    expect
+      .soft(retargeted.at(-1), "the same picture stays drawn while it revalidates")
+      .toEqual({ kind: "loading", url: `https://signed.example/${MAP_ID}` });
+    resolution.request([{ ref: NEXT, href: "manuscript://art/next.png" }]);
+    await act(async () => root.render(retarget("manuscript://art/next.png", NEXT)));
+    expect
+      .soft(retargeted.at(-1), "a retargeted picture loads without the previous one")
+      .toEqual({ kind: "loading", url: null });
   } finally {
     act(() => root.unmount());
     editor.destroy();
