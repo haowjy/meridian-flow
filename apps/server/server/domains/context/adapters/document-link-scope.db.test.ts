@@ -52,6 +52,7 @@ const OLD_CREST = id(20);
 const CREST = id(21);
 const THREAD = id(22);
 const UNKNOWN_THREAD = id(23);
+const MISSING_ASSET = id(24);
 const RESPONSE = "response-f2";
 const LIVE = { kind: "live" } as const;
 const DRAFT = { kind: "draft", workId: WORK, responseId: RESPONSE } as const;
@@ -180,7 +181,14 @@ if (!RUN) {
       await scopes.within({ documentId: HOLDER }, async () => {
         await scopes.prepare({
           holders: [{ documentId: HOLDER, view: LIVE }],
-          docs: [holderDoc(stored, [`asset:${MAP}`, `asset:${SEAL}`, `asset:${OLD_CREST}`])],
+          docs: [
+            holderDoc(stored, [
+              `asset:${MAP}`,
+              `asset:${SEAL}`,
+              `asset:${OLD_CREST}`,
+              `asset:${MISSING_ASSET}`,
+            ]),
+          ],
           addresses: [
             "manuscript://part1/target",
             "manuscript://part1/map.png",
@@ -219,6 +227,13 @@ if (!RUN) {
           .soft(scope.spellSource({ src: `asset:${OLD_CREST}`, ref: null }).href, "path reused")
           .toBe(`asset:${OLD_CREST}`);
         expect.soft(scope.assetFor("crest.png"), "the live picture holds the path").toBe(CREST);
+        // A picture whose asset row is gone entirely is spelled as its ref, which reads back as itself.
+        expect
+          .soft(
+            scope.spellSource({ src: `asset:${MISSING_ASSET}`, ref: null }).href,
+            "missing asset",
+          )
+          .toBe(`asset:${MISSING_ASSET}`);
         // A written path outside assets/ binds to the picture there; an unknown one stays literal.
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
