@@ -7,7 +7,7 @@
  * back with it; a writer delayed after drawing its sequence never rewinds a
  * key's order.
  */
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import { sql } from "drizzle-orm";
@@ -25,29 +25,38 @@ const link = (n: number, address = `kb://target-${n}.md`): SpelledLinkFact => ({
 if (!RUN_DB_TESTS || !url) {
   describe.skip("shown links (postgres)", () => {});
 } else {
+  type Adapter = "drizzle" | "in-memory";
   describe("shown links (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
+    const { conformanceUserValues } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { createCompactionFixture } = await import("./loop/__tests__/compaction-db-fixture.js");
     const { createDrizzleShownLinkStore } = await import("./adapters/drizzle/shown-links.js");
     const { createInMemoryShownLinkStore } = await import("./adapters/in-memory/shown-links.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../threads/adapters/drizzle/repositories.js"
+    );
+    const { createInMemoryRepositories } = await import("../threads/adapters/in-memory/index.js");
     const { InMemoryTransactionOwner } = await import("../../shared/in-memory-transaction.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });
     afterAll(() => db.close());
-    const fixture = createCompactionFixture(db);
+    const compactionFixture = createCompactionFixture(db);
+    type Repos = ReturnType<typeof createDrizzleRepositoriesForTest>;
 
-    async function rig(adapter: "drizzle" | "in-memory") {
-      const rig = await fixture();
+    /** A PostgreSQL project with one document; the in-memory adapter needs neither row. */
+    async function seedDocument(projectId: string) {
       const sourceId = crypto.randomUUID();
       const documentId = crypto.randomUUID();
       await db.insert(schema.contextSources).values({
         id: sourceId,
-        projectId: rig.ids.project,
+        projectId,
         name: "Knowledge",
         slug: "kb",
         scope: "project",
@@ -59,21 +68,76 @@ if (!RUN_DB_TESTS || !url) {
         extension: "md",
         fileType: "markdown",
       });
+      return documentId;
+    }
+
+    /** A thread with an answer turn and a spawned child, on `adapter`'s repositories. */
+    async function storeScene(
+      adapter: Adapter,
+      owner: InstanceType<typeof InMemoryTransactionOwner>,
+    ) {
+      const userId = crypto.randomUUID() as UserId;
+      const projectId = crypto.randomUUID() as ProjectId;
+      let repos: Repos;
+      let documentId: string = crypto.randomUUID();
+      if (adapter === "drizzle") {
+        await db.insert(schema.users).values(conformanceUserValues(userId, "shown-links"));
+        await db
+          .insert(schema.projects)
+          .values({ id: projectId, userId, name: "Shown", slug: "shown" });
+        repos = createDrizzleRepositoriesForTest(db);
+        documentId = await seedDocument(projectId);
+      } else {
+        repos = createInMemoryRepositories({ transactionOwner: owner }) as unknown as Repos;
+      }
+      const thread = await repos.threads.create({ userId, projectId });
+      const answer = await repos.turns.create({
+        threadId: thread.id as ThreadId,
+        role: "assistant",
+        origin: "assistant",
+        status: "complete",
+      });
+      const child = await repos.threads.createSubagent({
+        userId,
+        projectId,
+        parentThreadId: thread.id as ThreadId,
+        rootThreadId: thread.id as ThreadId,
+        originTurnId: answer.id as TurnId,
+        spawnDepth: 1,
+      });
+      return { repos, threadId: thread.id, childId: child.id, documentId, compaction: undefined };
+    }
+
+    /** The real runtime composition, only for the row that compacts. */
+    async function compactionScene() {
+      const compaction = await compactionFixture();
+      return {
+        repos: compaction.repos,
+        threadId: compaction.threadId,
+        childId: compaction.ids.child,
+        documentId: await seedDocument(compaction.ids.project),
+        compaction,
+      };
+    }
+
+    async function rig(adapter: Adapter, scene: "store" | "compaction") {
       const owner = new InMemoryTransactionOwner();
+      const { repos, threadId, childId, documentId, compaction } =
+        scene === "compaction" ? await compactionScene() : await storeScene(adapter, owner);
       const store: ShownLinkStore =
         adapter === "drizzle"
           ? createDrizzleShownLinkStore(db)
           : createInMemoryShownLinkStore({
               transactionOwner: owner,
-              threads: rig.repos.threads,
-              turns: rig.repos.turns,
+              threads: repos.threads,
+              turns: repos.turns,
             });
       // The transaction the adapter's repositories commit through.
       const transaction = <T>(operation: () => Promise<T>) =>
-        adapter === "drizzle" ? rig.repos.transaction(operation) : owner.run(operation);
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
+        adapter === "drizzle" ? repos.transaction(operation) : owner.run(operation);
+      const turns = await repos.turns.listByThread(threadId as ThreadId);
       const answer = turns.at(-1) as Turn;
-      const source = (await rig.repos.threads.findById(rig.threadId)) as Thread;
+      const source = (await repos.threads.findById(threadId as ThreadId)) as Thread;
       const show = (threadId: string, turn: Turn, links: SpelledLinkFact[]) =>
         store.record({
           threadId,
@@ -89,7 +153,7 @@ if (!RUN_DB_TESTS || !url) {
           .sort();
       const derive = async (originType: "fork" | "handoff", origin: Turn, from = source) =>
         (
-          await rig.repos.threads.createDerivedPrimary({
+          await repos.threads.createDerivedPrimary({
             id: crypto.randomUUID(),
             source: from,
             workId: from.workId,
@@ -100,17 +164,28 @@ if (!RUN_DB_TESTS || !url) {
           })
         ).thread;
       const next = (thread: Thread, prev: Turn) =>
-        rig.repos.turns.create({
+        repos.turns.create({
           threadId: thread.id as ThreadId,
           prevTurnId: prev.id as TurnId,
           role: "user",
           origin: "writer",
           status: "complete",
         });
-      return { rig, store, answer, source, show, seen, derive, next, documentId, transaction };
+      return {
+        compaction,
+        childId,
+        store,
+        answer,
+        source,
+        show,
+        seen,
+        derive,
+        next,
+        documentId,
+        transaction,
+      };
     }
     type Rig = Awaited<ReturnType<typeof rig>>;
-    type Adapter = "drizzle" | "in-memory";
     type Check = (actual: unknown, what: string) => ReturnType<typeof expect.soft>;
 
     /** Refs in showing order, latest last: the order correspondence ranks them. */
@@ -190,6 +265,7 @@ if (!RUN_DB_TESTS || !url) {
     const rows: Array<{
       name: string;
       adapters?: readonly Adapter[];
+      scene?: "compaction";
       run(r: Rig, check: Check): Promise<void>;
     }> = [
       {
@@ -211,16 +287,18 @@ if (!RUN_DB_TESTS || !url) {
       },
       {
         name: "rows survive a real compaction",
-        async run({ rig, answer, source, show, seen }, check) {
+        scene: "compaction",
+        async run({ compaction, answer, source, show, seen }, check) {
+          if (!compaction) throw new Error("the compaction scene builds the runtime");
           await show(source.id, answer, [link(1), link(2)]);
-          const run = await rig.orchestrator.prepare({
-            threadId: rig.threadId,
+          const run = await compaction.orchestrator.prepare({
+            threadId: compaction.threadId,
             tools: [],
             userText: "Continue.",
           });
           await run.execute();
-          const compaction = await rig.repos.turns.findById(run.executionTurnId);
-          check(compaction?.role, "the run compacted").toBe("compaction");
+          const turn = await compaction.repos.turns.findById(run.executionTurnId);
+          check(turn?.role, "the run compacted").toBe("compaction");
           check(await seen(source.id), "rows after compaction").toEqual([
             "00000001@kb://target-1.md",
             "00000002@kb://target-2.md",
@@ -229,7 +307,7 @@ if (!RUN_DB_TESTS || !url) {
       },
       {
         name: "a fork sees source showings up to its cutoff; handoffs and children inherit none",
-        async run({ rig, answer, source, show, seen, derive, next }, check) {
+        async run({ childId, answer, source, show, seen, derive, next }, check) {
           await show(source.id, answer, [link(1)]);
           const later = await next(source, answer);
           await show(source.id, later, [link(2)]);
@@ -251,7 +329,7 @@ if (!RUN_DB_TESTS || !url) {
             "00000003@kb://target-3.md",
           ]);
           check(await seen(handoff.id), "handoff").toEqual([]);
-          check(await seen(rig.ids.child), "spawned child").toEqual([]);
+          check(await seen(childId), "spawned child").toEqual([]);
         },
       },
       {
@@ -338,7 +416,7 @@ if (!RUN_DB_TESTS || !url) {
             expect.soft(actual, `${row.name} (${adapter}): ${what}`);
           try {
             await deleteDrizzleRows(db, [schema.users]);
-            await row.run(await rig(adapter), check);
+            await row.run(await rig(adapter, row.scene ?? "store"), check);
           } catch (error) {
             check(error, "row threw").toBeUndefined();
           }
