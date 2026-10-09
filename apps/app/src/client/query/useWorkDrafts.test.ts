@@ -10,6 +10,7 @@ function item(draftId: string, updatedAt: string): ThreadDraftListItem {
     documentName: "Chapter one",
     contextPath: "chapters/one.md",
     status: "active",
+    draftGeneration: 1,
     lastActorTurnId: null,
     actorThreads: [],
     updatedAt,

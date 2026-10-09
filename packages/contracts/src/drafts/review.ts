@@ -6,6 +6,11 @@ export interface ThreadDraftListItem {
   documentName: string | null;
   contextPath: string | null;
   status: "active";
+  /**
+   * The draft's generation: it rises with each close, and the same `draftId`
+   * carries the next proposal at the higher generation. Never decreases.
+   */
+  draftGeneration: number;
   lastActorTurnId: string | null;
   /** Chats with pending agent writes in this draft, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
@@ -29,6 +34,8 @@ export interface ThreadDraftListResponse {
 type ActiveDraftPreviewBase = {
   status: "active";
   draftId: string;
+  /** The draft's generation (see `ThreadDraftListItem.draftGeneration`) that `reviewRoomName` and the tokens belong to. */
+  draftGeneration: number;
   /** Hocuspocus room name for inline branch review; already generation-fenced. */
   reviewRoomName: string;
   liveRevisionToken: string;

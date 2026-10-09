@@ -9,6 +9,7 @@ export type ReviewableDraft = {
   documentId: DocumentId;
   workId: WorkId;
   status: "active";
+  draftGeneration: number;
   lastActorTurnId: TurnId | null;
   actorThreads: ThreadDraftListItem["actorThreads"];
   updatedAt: Date;
@@ -21,6 +22,7 @@ export type ReviewableDraft = {
 
 export type DraftReviewPreview = {
   draftId: string;
+  draftGeneration: number;
   reviewRoomName: string;
   isNewDocument?: boolean;
   liveRevisionToken: string;
