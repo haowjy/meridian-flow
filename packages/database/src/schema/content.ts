@@ -405,6 +405,39 @@ export const documentLinks = pgTable(
   ],
 );
 
+/**
+ * Durable identity for a link written before its target document arrived.
+ * `settled_document_id` is SET NULL because the only hard document delete is
+ * upload-intake cleanup for an upload that never finalized; that document
+ * never arrived, so the ahead ref must become unsettled again.
+ */
+export const linkAheadRefs = pgTable(
+  "link_ahead_refs",
+  {
+    aheadId: uuid("ahead_id").primaryKey(),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    scheme: text("scheme").notNull(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    settledDocumentId: uuid("settled_document_id")
+      .$type<DocumentId>()
+      .references(() => documents.id, { onDelete: "set null" }),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("link_ahead_refs_unsettled")
+      .on(table.projectId, table.scheme, table.workId, table.path)
+      .where(sql`${table.settledDocumentId} IS NULL`),
+    index("link_ahead_refs_settled_document").on(table.settledDocumentId),
+  ],
+);
+
 /** Pending identity redirects consumed only after collaborative link rewrites commit. */
 export const linkRedirects = pgTable(
   "link_redirects",

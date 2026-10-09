@@ -39,6 +39,7 @@ import {
   createDrizzleDocumentAssetPaths,
   createDrizzleDocumentLinkHistory,
   createDrizzleFigureDocumentRepository,
+  createDrizzleLinkAheadRegistry,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
   createDrizzleUploadIdentityPort,
@@ -54,6 +55,7 @@ import {
   type DocumentLinkResolver,
   type FigureAssetService,
   InMemoryContextCatalog,
+  type LinkAheadRegistry,
   type LinkUpdateWorker,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
@@ -257,6 +259,7 @@ export type AppServices = {
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
   linkUpdates: LinkUpdateWorker;
+  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -345,6 +348,7 @@ export type ProductionAppPorts = {
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
   linkUpdates: LinkUpdateWorker;
+  linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
@@ -536,6 +540,9 @@ export async function createProductionAppPorts(input: {
     },
   });
   boundManifestMembership = documentSync;
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, {
+    resolveManifestMembership: documentSync.resolveManifestMembership,
+  });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     objectStore,
@@ -635,6 +642,7 @@ export async function createProductionAppPorts(input: {
     eventQuery: input.eventQuery,
     documentSync,
     linkUpdates,
+    linkAheadRegistry,
     contextPorts,
     contextCatalog,
     projectContextAvailability,
@@ -1043,6 +1051,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readPending,
     }),
     documentSync: ports.documentSync,
+    linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
     contextCatalogRefresh: ports.contextCatalog,
@@ -1248,6 +1257,13 @@ export function createInMemoryAppServices(): AppServices {
     },
   };
 
+  const linkAheadRegistry: LinkAheadRegistry = {
+    async register() {},
+    async settleArrivals() {
+      return 0;
+    },
+  };
+
   return {
     gateway: {
       async *stream(request) {
@@ -1325,6 +1341,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    linkAheadRegistry,
     linkUpdates: { sweep: async () => 0, kick() {}, stop: async () => {} },
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
