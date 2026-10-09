@@ -178,7 +178,7 @@ input arrives as an action addressed to the draft and compares its generation wi
 | O3 | Read above R that lists changes (a list row always does) | Re-enter it, over any K (the writer's "Applying" included) |
 | O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
 | P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
-| X | The Work's list has no row for the draft | With no K the review ends, unless the newest preview lists changes at R or above (the list lags); K keeps it |
+| X | The Work's list has no row for the draft | With no K the review ends, unless the newest preview lists changes at R or above, or the session layer holds writer updates for this draft at R or above (an outbox or pending successor carry); K keeps it |
 | S | The editor's room is reset as `superseded` (`branch-generation-stale`, named server close or denial) | The room is cleared and read afresh; the review stays |
 | L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
 | B | Whole-draft batch | Its pending and closed actions carry R at batch start |
@@ -210,7 +210,12 @@ list behind a re-entered proposal cannot end it from a second place.
 Unacknowledged writer edits survive retirement through the session layer's
 `BranchWriterHandoff` ([#731](https://github.com/haowjy/meridian-flow/issues/731)).
 The pool drains released outboxes and carries reset outboxes; the handoff filters
-against the synchronized successor before replay. Review lifetime does not own
+against the synchronized successor before replay. The room owner observes its outbox
+and pending carry as generation-tagged changes evidence, not as a proposal or
+permission to adopt an empty reset. The carry remains evidence through the
+post-acknowledgement list/preview refresh; dropping it withdraws that evidence.
+Callbacks are fenced by selection and account, so delivery never reopens a
+departed review. Review lifetime does not own
 or gate that delivery, including when the writer has left the review. Option A
 is the current lead default, not a permanent human-confirmed ruling: same-tab
 whole Discard replays unacknowledged writer edits whose anchors survive the

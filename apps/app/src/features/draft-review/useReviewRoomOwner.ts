@@ -1,4 +1,5 @@
 /** The review's acquisition, generation observations and retained session binding. */
+import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import { isCancelledError, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -52,6 +53,22 @@ export function useReviewRoomOwner({
   const { data: rows } = useQuery({ ...workDraftsQueryOptions(projectId, workId), enabled: false });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
   const target = JSON.stringify([projectId, workId, documentId, draftId]);
+  const writerScope = useRef({ target, queryClient, registry });
+  if (
+    writerScope.current.target !== target ||
+    writerScope.current.queryClient !== queryClient ||
+    writerScope.current.registry !== registry
+  )
+    writerScope.current = { target, queryClient, registry };
+  const scope = writerScope.current;
+  const [writerChanges, setWriterChanges] = useState({ scope, generation: null as number | null });
+  const [outbox, setOutbox] = useState({ scope, generation: null as number | null });
+  const pendingGenerations = [writerChanges, outbox]
+    .filter((evidence) => evidence.scope === scope && evidence.generation !== null)
+    .map((evidence) => evidence.generation as number);
+  const pendingWriterGeneration = pendingGenerations.length
+    ? Math.max(...pendingGenerations)
+    : null;
   const kind = useRef({ target, queryClient, draftOnly });
   if (kind.current.target !== target || kind.current.queryClient !== queryClient)
     kind.current = { target, queryClient, draftOnly };
@@ -78,7 +95,7 @@ export function useReviewRoomOwner({
   useLayoutEffect(() => {
     if (!documentId || !draftId) return;
     const claim = draftClaim(queryClient, draft);
-    const observations = reviewRoomObservations(rows, preview, draft);
+    const observations = reviewRoomObservations(rows, preview, draft, pendingWriterGeneration);
     for (const action of observations) {
       if (
         action.type === "generationObserved" &&
@@ -104,6 +121,7 @@ export function useReviewRoomOwner({
   }, [
     rows,
     preview,
+    pendingWriterGeneration,
     projectId,
     workId,
     documentId,
@@ -195,7 +213,15 @@ export function useReviewRoomOwner({
     };
     let rebuilding = false;
     let unsubscribe: (() => void) | undefined;
-    registry.retainBranchRooms(owner.current, [reviewRoomRef(queryClient, draft, roomName)]);
+    registry.retainBranchRooms(owner.current, [
+      {
+        ...reviewRoomRef(queryClient, draft, roomName),
+        writerChanges: (generation) => {
+          // A carry outlives this binding, but never its addressed selection or account.
+          if (writerScope.current === scope) setWriterChanges({ scope, generation });
+        },
+      },
+    ]);
     const bind = (session: DocumentSession) => {
       if (!current()) return;
       setBinding((prior) =>
@@ -204,6 +230,16 @@ export function useReviewRoomOwner({
       unsubscribe = session.subscribe((snapshot) => {
         if (!current() || rebuilding) return;
         const connection = snapshot.connectionState;
+        const room = parseYjsRoomName(roomName);
+        setOutbox({
+          scope,
+          generation:
+            room?.kind === "branch" &&
+            connection?.kind !== "reset" &&
+            session.hasUnacknowledgedEdits()
+              ? room.generation
+              : null,
+        });
         if (connection?.kind === "reset") {
           prepareReplacement();
           switch (connection.disposition) {
@@ -261,6 +297,7 @@ export function useReviewRoomOwner({
     draftId,
     roomName,
     key,
+    scope,
     registry,
     queryClient,
     dispatch,
@@ -288,6 +325,7 @@ export function reviewRoomObservations(
   rows: import("@meridian/contracts/drafts").ThreadDraftListItem[] | undefined,
   preview: import("@meridian/contracts/drafts").DraftPreviewResponse | undefined,
   draft: { documentId: string; draftId: string },
+  pendingWriterGeneration: number | null = null,
 ): DraftReviewAction[] {
   const actions: DraftReviewAction[] = [];
   const row = rows?.find(
@@ -308,7 +346,14 @@ export function reviewRoomObservations(
         }
       : null;
   if (evidence) actions.push({ type: "generationObserved", ...draft, ...evidence });
-  if (rows && !row) actions.push({ type: "draftAbsentFromList", ...draft, evidence });
+  // Delivery is changes evidence, not a listed proposal that adopts a generation.
+  const changesEvidence =
+    pendingWriterGeneration !== null &&
+    (!evidence?.proposal || pendingWriterGeneration > evidence.draftGeneration)
+      ? { draftGeneration: pendingWriterGeneration, proposal: true }
+      : evidence;
+  if (rows && !row)
+    actions.push({ type: "draftAbsentFromList", ...draft, evidence: changesEvidence });
   return actions;
 }
 

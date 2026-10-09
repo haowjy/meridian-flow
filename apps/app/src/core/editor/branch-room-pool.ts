@@ -12,7 +12,8 @@ import type { DocumentSessionTeardownOwner } from "./document-session-teardown-o
 export type BranchRoomRef = Readonly<{
   roomKey: string;
   currentRoom(): Promise<string | null>;
-  changed(): void;
+  changed(): void | Promise<void>;
+  writerChanges?(generation: number | null): void;
 }>;
 export type BranchRoomCarry = Readonly<{
   ref: BranchRoomRef;
