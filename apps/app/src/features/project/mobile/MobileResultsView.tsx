@@ -2,7 +2,7 @@
  * MobileResultsView — full-screen Results surface for the phone shell.
  *
  * Lists the project's promoted artifacts by reusing the shared
- * `ResultsRailBody` (single source of result-listing logic) and opens rows in
+ * `ResultsList` (single source of result-listing logic) and opens rows in
  * `MobileResultViewerOverlay`, which owns phone full-screen chrome. Results are
  * project-scoped, not per-thread, so this view is identical regardless of
  * which chat the user arrived from. It is reached from the chat top bar's
@@ -11,12 +11,12 @@
 import { useState } from "react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
-import { ResultsRailBody, useResultsRailModel } from "../shell/ResultsRailSection";
 import { MobileResultViewerOverlay } from "./MobileResultViewerOverlay";
+import { ResultsList, useResultsListModel } from "./ResultsList";
 
 export function MobileResultsView({ projectId }: { projectId: string }) {
   const [openResult, setOpenResult] = useState<ProjectResultItem | null>(null);
-  const results = useResultsRailModel(projectId);
+  const results = useResultsListModel(projectId);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -25,7 +25,7 @@ export function MobileResultsView({ projectId }: { projectId: string }) {
             so its rows/hover states read the same here. The top bar already
             titles this screen "Results". */}
         <div className="min-h-full bg-sidebar px-2 py-3">
-          <ResultsRailBody projectId={projectId} model={results} onOpenResult={setOpenResult} />
+          <ResultsList projectId={projectId} model={results} onOpenResult={setOpenResult} />
         </div>
       </div>
       {openResult ? (

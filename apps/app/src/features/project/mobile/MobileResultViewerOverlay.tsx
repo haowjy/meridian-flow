@@ -11,8 +11,8 @@ import { X } from "lucide-react";
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { useEscapeToClose } from "@/hooks/use-escape-to-close";
-import { displayName } from "../shell/ResultsRailSection";
-import { ResultViewerContent } from "../shell/ResultViewerOverlay";
+import { displayName } from "./ResultsList";
+import { ResultViewerContent } from "./ResultViewerContent";
 
 export function MobileResultViewerOverlay({
   projectId,

@@ -8,22 +8,22 @@ import { useProjectResults } from "@/client/query/useProjectResults";
 import { Badge } from "@/components/ui/badge";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { relativeTime } from "@/features/project/relative-time";
-import { RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
+import { RailEmptyHint, RailErrorRow, RailFileRow } from "../shell/RailSection";
 
-export type ResultsRailModel = {
+export type ResultsListModel = {
   status: ReturnType<typeof useProjectResults>;
 };
 
-export function useResultsRailModel(projectId: string | null): ResultsRailModel {
+export function useResultsListModel(projectId: string | null): ResultsListModel {
   return { status: useProjectResults(projectId) };
 }
 
-export function ResultsRailBody({
+export function ResultsList({
   model,
   onOpenResult,
 }: {
   projectId: string | null;
-  model: ResultsRailModel;
+  model: ResultsListModel;
   onOpenResult: (result: ProjectResultItem) => void;
 }) {
   const { status } = model;

@@ -2,8 +2,8 @@
 
 ## [Unreleased]
 
-- On the Chat screen, clicking a row in the right context rail opens it beside the chat: a Recent document opens in the editor, and a Result opens in a viewer, both in the side panel that covers the rail until you close it. The rail now looks like the left sidebar, with the same rows and section heads, and no longer shows file sizes.
-- A Scratch control at the bottom of the left sidebar lists the notes the AI keeps for the chat on screen, even before its first note. It opens upwards. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the control sits at the bottom of the menu drawer and opens a bottom sheet. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
+- On the Chat screen, clicking a Recent document in the right context rail opens it in the editor beside the chat, in the side panel that covers the rail until you close it. The rail now looks like the left sidebar, with the same rows and section head, and no longer shows file sizes. The rail's Results section is gone from the desktop (Results remain on the phone).
+- A one-line Scratch control at the bottom of the left sidebar lists the notes the AI keeps for the chat on screen, even before its first note. It opens upwards. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the control sits at the bottom of the menu drawer and opens a bottom sheet. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
 
 - A chat's Scratch keeps its name, and links and doors to its notes keep opening, after the chat that started it is deleted while a fork continues.
 

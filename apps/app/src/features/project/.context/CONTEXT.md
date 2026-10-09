@@ -179,7 +179,7 @@ passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and `NavigationDr
 It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
 chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
 control (it hides) when no chat is on screen, such as the chat index. The row shows
-the Scratch icon, the label and an up chevron (one line; the menu heading names the chat). A collapsed rail
+the Scratch icon, the label and an up chevron (one line; the rail always means the chat on screen, so it names no chat). The menu heading is "Scratch for this chat" for a chat's own notes and "Scratch for <Work>" for a named Work. A collapsed rail
 hides with its control. Its owner is `chatScratchOwner` (`features/chat`): the
 chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
 is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
@@ -191,17 +191,16 @@ notes; there is no New note). On desktop the control opens `DrillInMenu` upwards
 pick opens beside the chat (`dock/use-open-scratch-note.ts`). On a phone it sits at
 the foot of the drawer: a tap closes the drawer and `MobileProject` opens
 `ChatScratchSheet` (`components/app/DrillInSheet`, hosted outside the drawer so it
-outlives it), and a pick opens the note full screen. The lineage is named by its first chat's title (`useLineageTitle`), never by
-its handle.
+outlives it), and a pick opens the note full screen. Wherever else a lineage is named (a missing-link
+dialog, the dock title chip's menu) it is by its first chat's title (`useLineageTitle`), never its handle.
 
 The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with the left tree's
 parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), rows are
 `RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its
-file name only (no size). A Recent row opens in the dock's document slot
-(`dock/use-open-document-id-in-dock.ts`) and a Results row opens there as a viewer
-(`DockResultView`); the rail stays mounted under the slot, so no "current row" mark is shown.
-The phone has no such rail: its Results view (`MobileResultsView`) shares the Results rows and
-keeps its full-screen viewer.
+file name only (no size). The rail is Recent only. A Recent row opens in the dock's document slot
+(`dock/use-open-document-id-in-dock.ts`); the rail stays mounted under the slot, so no "current
+row" mark is shown. The phone has no such rail. Results appear only on the phone, as its own
+`?results=` surface (`mobile/MobileResultsView`).
 
 The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a

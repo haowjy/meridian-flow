@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { type DockOccupant, useDockViewStore } from "./dock-view-store";
+import { type DockDocument, useDockViewStore } from "./dock-view-store";
 
 const tab = (path: string, workId = "work-a") => ({
   kind: "viewer" as const,
@@ -16,23 +16,13 @@ const document = (
   path: string,
   screen: "work" | "chat" = "work",
   projectId = "project-a",
-): DockOccupant => ({ kind: "document", projectId, screen, tab: tab(path) });
+): DockDocument => ({ projectId, screen, tab: tab(path) });
 
-const result = (projectId = "project-a"): DockOccupant => ({
-  kind: "result",
-  projectId,
-  screen: "chat",
-  result: { id: "result-1" } as Extract<DockOccupant, { kind: "result" }>["result"],
-});
-
-const path = () => {
-  const { occupant } = useDockViewStore.getState();
-  return occupant?.kind === "document" ? occupant.tab.path : null;
-};
+const path = () => useDockViewStore.getState().occupant?.tab.path ?? null;
 
 afterEach(() => useDockViewStore.setState({ byScreen: {}, occupant: null, revision: 0 }));
 
-describe("dock occupant", () => {
+describe("dock document slot", () => {
   it("opens, replaces, and closes without disturbing the writer's view choice", () => {
     const store = useDockViewStore.getState();
     store.setDockView("work", "changes");
@@ -55,7 +45,7 @@ describe("dock occupant", () => {
     expect(useDockViewStore.getState().occupant).toBeNull();
   });
 
-  it("drops a Work note when the Work or screen changes, and keeps a Chat occupant on the Chat screen", () => {
+  it("drops a Work note when the Work or screen changes, and keeps a Chat note on the Chat screen", () => {
     const store = useDockViewStore.getState();
     store.open(document("first.md"));
     store.syncOccupantScope("project-a", "work", "work-a");
@@ -70,18 +60,11 @@ describe("dock occupant", () => {
     store.open(document("first.md", "chat"));
     store.syncOccupantScope("project-a", "chat", null);
     expect(useDockViewStore.getState().occupant).not.toBeNull();
-    store.open(result());
-    store.syncOccupantScope("project-a", "chat", null);
-    expect(useDockViewStore.getState().occupant?.kind).toBe("result");
     store.syncOccupantScope("project-a", "work", "work-a");
     expect(useDockViewStore.getState().occupant).toBeNull();
   });
 
-  it("is cleared when the project changes, a result included", () => {
-    useDockViewStore.getState().open(result("project-a"));
-    useDockViewStore.getState().syncOccupantScope("project-b", "chat", null);
-    expect(useDockViewStore.getState().occupant).toBeNull();
-
+  it("is cleared when the project changes", () => {
     useDockViewStore.getState().open(document("first.md", "chat", "project-a"));
     useDockViewStore.getState().syncOccupantScope("project-b", "chat", null);
     expect(useDockViewStore.getState().occupant).toBeNull();
@@ -94,7 +77,7 @@ describe("dock occupant", () => {
     useDockViewStore.getState().syncOccupantScope("project-a", "chat", null);
     expect(revision()).toBe(start + 1);
 
-    useDockViewStore.getState().open(result());
+    useDockViewStore.getState().open(document("second.md", "chat"));
     useDockViewStore.getState().closeDocument();
     useDockViewStore.getState().syncOccupantScope("project-b", "chat", null);
     expect(revision()).toBe(start + 3);

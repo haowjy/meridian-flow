@@ -1,22 +1,20 @@
 /**
- * ContextSidebar — the Chat screen's right rail: the chat's Recent documents and
- * the project's Results, drawn with the left tree's rows and section heads.
- * A click opens the row in the dock's document slot, which covers the rail
+ * ContextSidebar — the Chat screen's right rail: the chat's Recent documents,
+ * drawn with the left tree's rows and section heads. A click opens the row in
+ * the dock's document slot, which covers the rail
  * (it stays mounted underneath) until the document is closed.
  */
 import { t } from "@lingui/core/macro";
 import type { DocumentFileType } from "@meridian/contracts/protocol";
-import { Clock, Sparkles } from "lucide-react";
+import { Clock } from "lucide-react";
 
 import type { ListQueryStatus } from "@/client/query/list-query";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { fileKindIcon } from "../context/context-file-icon";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import { useDockViewStore } from "../dock/dock-view-store";
 import { useOpenDocumentIdInDock } from "../dock/use-open-document-id-in-dock";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
-import { ResultsRailBody, useResultsRailModel } from "./ResultsRailSection";
 
 /** Thread-context rail (Chat destination, right edge). */
 export type ContextSidebarProps = {
@@ -31,10 +29,6 @@ export type ContextSidebarProps = {
 
 export function ContextSidebar({ threadId, projectId, visible, onClose }: ContextSidebarProps) {
   const recent = useThreadRecentDocuments(threadId);
-  // Results live at the project scope (artifact persistence outlives any
-  // single chat), so the rail tracks `projectId` independently of the thread.
-  const results = useResultsRailModel(projectId);
-  const openOccupant = useDockViewStore((state) => state.open);
   const openDocumentId = useOpenDocumentIdInDock(projectId ?? "");
 
   return (
@@ -60,17 +54,6 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
               error: t`Couldn't load recent documents.`,
             }}
           />
-          <CollapsibleRailSection title={t`Results`} icon={Sparkles} defaultOpen>
-            <ResultsRailBody
-              projectId={projectId}
-              model={results}
-              onOpenResult={(result) =>
-                projectId
-                  ? openOccupant({ kind: "result", projectId, screen: "chat", result })
-                  : undefined
-              }
-            />
-          </CollapsibleRailSection>
         </div>
       </DockShell>
     </aside>

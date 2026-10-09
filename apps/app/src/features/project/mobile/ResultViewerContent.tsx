@@ -1,63 +1,22 @@
 /**
- * ResultViewerOverlay — desktop dialog viewer surface for one Results row.
+ * ResultViewerContent — the viewer body for one Results row.
  *
  * Resolves a short-lived signed URL through `useProjectResultSignedUrl` and
  * composes the shared read-only viewer frame around the appropriate viewer
- * body. This module owns desktop dialog chrome only; phone full-screen chrome
- * lives beside the phone shell in `mobile/MobileResultViewerOverlay`.
+ * body. The phone's full-screen chrome around it is `MobileResultViewerOverlay`.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { AlertCircle, Loader2, X } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { useProjectResultSignedUrl } from "@/client/query/useProjectResultSignedUrl";
-import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { IconButton } from "@/components/ui/icon-button";
 
 import { BinaryFallbackViewer } from "../context/viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "../context/viewers/ImageViewer";
 import { PdfViewer } from "../context/viewers/PdfViewer";
 import { ReadOnlyViewerFrame } from "../context/viewers/ReadOnlyViewerFrame";
-import { displayName } from "./ResultsRailSection";
-
-export type ResultViewerOverlayProps = {
-  projectId: string;
-  result: ProjectResultItem;
-  onClose: () => void;
-};
-
-export function ResultViewerOverlay({ projectId, result, onClose }: ResultViewerOverlayProps) {
-  const name = displayName(result);
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[min(90vh,900px)] w-[min(96vw,1100px)] max-w-none flex-col gap-0 overflow-hidden rounded-lg border-border bg-card p-0"
-      >
-        <DialogTitle className="sr-only">{name}</DialogTitle>
-        <DialogClose asChild>
-          <IconButton
-            size="sm"
-            variant="outline"
-            className="absolute right-3 top-3 z-10 bg-card text-muted-foreground hover:text-foreground"
-            aria-label={t`Close`}
-          >
-            <X className="size-4" aria-hidden />
-          </IconButton>
-        </DialogClose>
-        <ResultViewerContent projectId={projectId} result={result} name={name} />
-      </DialogContent>
-    </Dialog>
-  );
-}
+import { displayName } from "./ResultsList";
 
 export function ResultViewerContent({
   projectId,
@@ -65,7 +24,6 @@ export function ResultViewerContent({
   name = displayName(result),
   fitImagesToWidth = false,
   statusStyle,
-  bare = false,
 }: {
   projectId: string;
   result: ProjectResultItem;
@@ -73,8 +31,6 @@ export function ResultViewerContent({
   fitImagesToWidth?: boolean;
   /** Host-owned padding for status-only states before viewer frame mounts. */
   statusStyle?: CSSProperties;
-  /** The host's own chrome already names the result, so the viewer shows no header. */
-  bare?: boolean;
 }) {
   const signed = useProjectResultSignedUrl(projectId, result.id);
 
@@ -102,7 +58,6 @@ export function ResultViewerContent({
       mimeType={result.mimeType}
       name={name}
       path={result.workspacePath}
-      bare={bare}
       fitImagesToWidth={fitImagesToWidth}
     />
   );
@@ -113,17 +68,15 @@ function ViewerPicker({
   mimeType,
   name,
   path,
-  bare,
   fitImagesToWidth = false,
 }: {
   url: string;
   mimeType: string;
   name: string;
   path: string;
-  bare: boolean;
   fitImagesToWidth?: boolean;
 }) {
-  const header = bare ? undefined : { name, path };
+  const header = { name, path };
   if (mimeType.startsWith("image/")) {
     return (
       <ReadOnlyViewerFrame header={header} footer={imageViewerFooter({ url, name })}>

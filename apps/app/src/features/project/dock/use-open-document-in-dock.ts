@@ -33,7 +33,7 @@ export function useOpenDocumentInDock() {
         return;
       }
       if (!projectId) return;
-      open({ kind: "document", projectId, screen, tab });
+      open({ projectId, screen, tab });
       revealDock("document");
     },
     [openContextRoute, open, phone, projectId, revealDock, screen],
