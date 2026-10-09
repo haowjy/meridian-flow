@@ -1,13 +1,13 @@
 /** Draft-only authorship boundaries, independent of whether review marks are shown. */
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import { isRemoteDocumentRebuild } from "../../anchors";
 import {
   relativePositionForIndex,
   relativePositionRuntimeFromState,
   resolveRelativePosition,
 } from "../../relative-position-runtime";
+import { rotateWriterClient } from "../../writer-client";
 import type { InlineReviewModel } from "./model";
 
 type Range = { from: number; to: number };
@@ -75,15 +75,7 @@ export function reviewWriterClient(document: Y.Doc, adoptDocumentClient?: () => 
       // The presence owner migrates the awareness identity too: upstream
       // Hocuspocus and cursor plugins compare it with document.clientID.
       // Never reuse an integrated client, including the previous local one.
-      const used = Y.decodeStateVector(Y.encodeStateVector(document));
-      let next = createCollabYDoc();
-      while (next.clientID === document.clientID || used.has(next.clientID)) {
-        next.destroy();
-        next = createCollabYDoc();
-      }
-      document.clientID = next.clientID;
-      adoptDocumentClient?.();
-      next.destroy();
+      rotateWriterClient(document, adoptDocumentClient);
     }
     const boundary = { from, to, operations };
     if (sameChange && previous && from <= previous.to && to >= previous.from) {

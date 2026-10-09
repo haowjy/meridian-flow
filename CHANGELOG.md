@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Unacknowledged typing follows a draft into its replacement room when its anchors survive, including after Discard in the same tab. Leaving review does not cancel delivery; edits anchored in discarded text are not replayed.
+
 - Development: document transports retain unacknowledged writer updates across reconnects and freeze them at terminal resets. Shared reset dispositions distinguish superseded drafts, same-generation rebuilds, refused edits and schema fences.
 
 - Work batch commands say "Apply all changes" and "Discard all changes" without counting drafts. Discard confirmation covers every document in the Work; review refusal summaries count documents, not drafts.
