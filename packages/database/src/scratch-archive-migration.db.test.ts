@@ -74,8 +74,25 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         [],
       );
       expect(
-        await target`SELECT context_source_id, path, document_id FROM document_previous_locations`,
-      ).toEqual([{ context_source_id: id(8), path: "unrelated-alias.md", document_id: id(18) }]);
+        await target`SELECT context_source_id, path, document_id FROM document_previous_locations ORDER BY path`,
+      ).toEqual([
+        {
+          context_source_id: id(8),
+          path: "Scratch (2)/nested/deep/trashed-leaf.md",
+          document_id: id(18),
+        },
+        {
+          context_source_id: id(8),
+          path: "Scratch (2)/trashed-folder/hidden-note.md",
+          document_id: id(18),
+        },
+        {
+          context_source_id: id(8),
+          path: "Scratch (2)/trashed-folder/trashed-note.md",
+          document_id: id(18),
+        },
+        { context_source_id: id(8), path: "unrelated-alias.md", document_id: id(18) },
+      ]);
       expect(await target`SELECT * FROM context_catalog_scope_heads`).toEqual([]);
       expect(await target`SELECT * FROM context_catalog_entries`).toEqual([]);
       expect(await target`SELECT * FROM context_catalog_commits`).toEqual([]);
