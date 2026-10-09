@@ -92,8 +92,9 @@ DELETE FROM document_previous_locations l USING occupied o
 WHERE l.context_source_id = o.context_source_id AND l.path = o.path;
 --> statement-breakpoint
 -- Object keys are project/document-ID-based, not source/path-based. Keep them,
--- fingerprints, bytes and intake identities; invalidate stale location tokens.
-UPDATE upload_intakes u SET context_source_id = m.destination_id, work_id = NULL,
+-- fingerprints, bytes, intake identities and Work lifecycle ownership; invalidate
+-- stale location tokens. Unfiled is the destination, not a new intake owner.
+UPDATE upload_intakes u SET context_source_id = m.destination_id,
   final_path = m.folder_name || '/' || u.final_path,
   canonical_uri = 'unfiled://' || m.folder_name || '/' || u.final_path,
   location_revision = gen_random_uuid(), updated_at = now()
