@@ -149,6 +149,29 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       drawn: { kind: "ready", url: "//cdn.example/map.png" },
     },
     {
+      row: "an image data: source stays literal",
+      src: "data:image/png;base64,iVBORw0KGgo=",
+      ref: null,
+      drawn: { kind: "ready", url: "data:image/png;base64,iVBORw0KGgo=" },
+    },
+    // A source that is neither a document nor a supported web URL is never
+    // handed to the browser (it would be fetched from the app's own origin),
+    // and draws with no Retry: retrying cannot change a stored source.
+    ...[
+      "../map.png",
+      "art/../../map.png",
+      "/map.png",
+      "ASSET:abc",
+      "asset:",
+      "data:text/html,<p>x</p>",
+      "javascript:alert(1)",
+    ].map((src) => ({
+      row: `a refused source is unavailable, never a URL: ${src}`,
+      src,
+      ref: null,
+      drawn: { kind: "unavailable", url: null, message: "Image could not be displayed." },
+    })),
+    {
       // The binder leaves a contextual source ref-less; it resolves by address
       // like a ref-less link, never drawn as a literal URL that cannot load.
       row: "a ref-less internal picture renders the document at its address",

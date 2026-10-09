@@ -327,6 +327,23 @@ it("carries what a copied link names across the clipboard", async () => {
     html: earlyFigure.view.serializeForClipboard(earlyFigure.state.doc.slice(0)).dom.innerHTML,
   };
   earlyFigure.destroy();
+  // Escaping, root-relative and malformed spellings are no web URL either:
+  // in an `<img src>` they would be fetched from the app's own origin.
+  const unusableSources = ["../map.png", "art/../../map.png", "/map.png", "ASSET:abc", "asset:"];
+  const unusable = pictureEditor(
+    "project-a",
+    [],
+    [
+      {
+        type: "paragraph",
+        content: unusableSources.map((src) => ({ type: "image", attrs: { src } })),
+      },
+      ...unusableSources.map((src) => ({ type: "figure", attrs: { src, caption: "Plate" } })),
+    ],
+  );
+  const unusableCopied = unusable.view.serializeForClipboard(unusable.state.doc.slice(0)).dom
+    .innerHTML;
+  unusable.destroy();
   // A stored source is never a browser URL: the copy names its picture in the
   // metadata, and an `<img src>` the clipboard serializer builds is fetched.
   for (const [label, html] of [
@@ -334,6 +351,7 @@ it("carries what a copied link names across the clipboard", async () => {
     ["an upload", uploadSerialized.dom.innerHTML],
     ["an early upload", earlyCopied.html],
     ["an early upload figure", earlyFigureCopied.html],
+    ["escaping, root-relative and malformed sources", unusableCopied],
   ])
     expect.soft(html, `${label}: no fetchable source`).not.toMatch(/\ssrc=/);
   const pictureRows: {
