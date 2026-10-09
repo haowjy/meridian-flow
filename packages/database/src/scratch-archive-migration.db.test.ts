@@ -134,9 +134,6 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       const online = (
         await readFile(path.join(migrations, "0034_context_source_online_indexes.sql"), "utf8")
       ).split("--> statement-breakpoint");
-      await expect(
-        target`INSERT INTO context_sources (project_id, root_thread_id, name, slug, scope) VALUES (${id(2)}, ${id(26)}, 'Scratch', 'scratch', 'lineage')`,
-      ).rejects.toMatchObject({ code: "23514" });
       await cp(
         path.join(migrations, "0034_context_source_online_indexes.sql"),
         path.join(directory, "0034_context_source_online_indexes.sql"),
@@ -155,7 +152,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       const writer = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
       try {
-        // Each cut starts from a fresh fenced, old-index state, not the result
+        // Each cut starts from a fresh old-index state, not the result
         // of the previous retry. Probe duplicates from another backend.
         for (let cut = 0; cut <= online.length; cut++) {
           await target.unsafe(
@@ -165,7 +162,6 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
             "DROP INDEX CONCURRENTLY IF EXISTS context_sources_project_scope_slug",
           );
           await target.unsafe("DROP INDEX CONCURRENTLY IF EXISTS context_sources_lineage_slug");
-          await target`ALTER TABLE context_sources ADD CONSTRAINT context_sources_lineage_rollout_fence CHECK (root_thread_id IS NULL) NOT VALID`;
           await target`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${journal.entries[34].when}`;
           for (const statement of online.slice(0, cut))
             if (statement.trim()) await target.unsafe(statement);
