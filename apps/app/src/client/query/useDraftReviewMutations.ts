@@ -37,7 +37,7 @@ type DraftReviewMutationBase = {
   draftId: string;
 };
 
-export type DraftApplyMutationInput = DraftReviewMutationBase;
+export type DraftApplyMutationInput = DraftReviewMutationBase & { onAnswered?: () => void };
 
 /**
  * A command's request got no HTTP answer, so the server may or may not have
@@ -146,6 +146,7 @@ export function useApplyDraft() {
         void invalidateDraftReviewQueries(queryClient, variables).catch(() => undefined);
         throw error;
       }
+      variables.onAnswered?.();
       confirmDraftCommand(variables);
       queryClient.setQueryData<ThreadDraftListItem[]>(draftsKey, (drafts) =>
         drafts?.filter((draft) => draft.draftId !== variables.draftId),

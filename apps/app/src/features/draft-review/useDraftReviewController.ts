@@ -4,19 +4,12 @@ import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contra
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { isCancelledError, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import {
-  type Dispatch,
-  useCallback,
-  useEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { type Dispatch, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import {
   answerDraftCommandClosed,
   clearDraftReviewLaunchFailure,
   draftCommandPendingIn,
+  pendingDraftCommand,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -103,8 +96,7 @@ export type DraftReviewController = {
   isApplying: boolean;
   canApplyReviewedDraft: boolean;
   /**
-   * The global disposition lock: any Apply/Discard in flight in the session.
-   * Every mutating control disables on it so dispositions can't overlap.
+   * Any draft command or batch in this Work, shared across every surface.
    */
   isDisposing: boolean;
   /**
@@ -139,9 +131,9 @@ export type DraftReviewController = {
   ) => void;
   /**
    * Apply or Discard a selection of changes of any draft of this Work. The
-   * changes leave every surface at once. Completion (`Applying`, "No changes
-   * left") runs only when the draft is this controller's open review; a
-   * caller never picks the controller itself (`useChangeCommandRunner`).
+   * changes leave every surface at once. Every review of the addressed draft
+   * observes completion; callers never select the reviewing controller as
+   * executor (`useChangeCommandRunner`).
    */
   applyChanges: SelectionCommand;
   discardChanges: SelectionCommand;
@@ -216,19 +208,9 @@ export function useDraftReviewController({
     });
     return { session, ports };
   }, [projectId, workId]);
-  const dispositionLock = reviewSession.disposition;
-  const disposition = useSyncExternalStore(
-    dispositionLock.subscribe,
-    dispositionLock.getSnapshot,
-    dispositionLock.getSnapshot,
-  );
   const stateRef = useRef(state);
   const activeRef = useRef(true);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
-  /** The review open when Apply all or Discard all began: its generation, and its name as listed then. */
-  const batchReviewedRef = useRef<
-    (DraftReviewSelection & { draftGeneration: number; documentName: string | null }) | null
-  >(null);
   stateRef.current = state;
 
   useEffect(() => {
@@ -240,12 +222,12 @@ export function useDraftReviewController({
 
   const inlineReview = inlineReviewFromState(state);
 
-  const activeDisposition = disposition.busy ? disposition.target : null;
-  const isApplying = activeDisposition?.kind === "apply-draft";
-  // A command in flight on any draft of this Work, from any surface, disables this one.
   const commandRecords = useDraftCommandRecords();
-  const isDisposing =
-    disposition.busy || draftCommandPendingIn(commandRecords, { projectId, workId });
+  const activeCommand = inlineReview
+    ? pendingDraftCommand(commandRecords, { projectId, workId, ...inlineReview })
+    : null;
+  const isApplying = activeCommand?.target === "all" && activeCommand.mode === "apply";
+  const isDisposing = draftCommandPendingIn(commandRecords, { projectId, workId });
   const dispositionLocked = isDisposing || draftsFrozen;
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
@@ -341,38 +323,37 @@ export function useDraftReviewController({
     }
   }
 
-  /**
-   * Apply all or Discard all closed the draft the writer is reviewing. The
-   * review holds on "No changes left" (as it does after the last change) so the
-   * batch's pending and settled outcome stays in front of them, rather than
-   * falling to live as if every draft had applied.
-   */
-  const holdBatchClosedReview = (documentId: string, draftId: string): boolean => {
-    const reviewed = batchReviewedRef.current;
-    if (reviewed?.documentId !== documentId || reviewed.draftId !== draftId) return false;
-    const inline = stateRef.current.surface;
-    if (inline.kind !== "inline" || inline.documentId !== documentId || inline.draftId !== draftId)
-      return false;
-    if (!activeRef.current) return false;
-    dispatch({
-      type: "reviewClosed",
-      documentId,
-      draftId,
-      draftGeneration: reviewed.draftGeneration,
-      documentName: reviewed.documentName,
-    });
-    return true;
-  };
-
   commandPortsRef.current = {
     scope: { projectId, workId },
+    describeDraft: (draft, mode, batch) => {
+      const row = queryClient
+        .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
+        ?.find((item) => item.draftId === draft.draftId);
+      return {
+        target: "all",
+        mode,
+        draftGeneration: newestKnownProposal(queryClient, { projectId, workId, ...draft }),
+        ...(batch && row?.isNewDocument !== true ? { completesDraft: true as const } : {}),
+      };
+    },
     apply: async ({ documentId, draftId }) => {
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
       if (
         (await unlessOutcomeUnknown(
-          applyMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId }),
+          applyMutation.mutateAsync({
+            projectId,
+            workId,
+            threadId,
+            documentId,
+            draftId,
+            onAnswered: () =>
+              answerDraftCommandClosed(
+                { projectId, workId, documentId, draftId },
+                { documentName: listedDocumentName(queryClient, projectId, workId, draftId) },
+              ),
+          }),
         )) === "unknown"
       )
         return "unknown";
@@ -382,7 +363,20 @@ export function useDraftReviewController({
       return "applied";
     },
     discard: async ({ documentId, draftId }) => {
-      await discardMutation.mutateAsync({ projectId, workId, threadId, documentId, draftId });
+      await discardMutation.mutateAsync({
+        projectId,
+        workId,
+        threadId,
+        documentId,
+        draftId,
+        onAnswered: (response) => {
+          if (response.status === "discarded")
+            answerDraftCommandClosed(
+              { projectId, workId, documentId, draftId },
+              { documentName: listedDocumentName(queryClient, projectId, workId, draftId) },
+            );
+        },
+      });
     },
     discardChanges: ({ documentId, draftId }, request) =>
       unlessOutcomeUnknown(
@@ -430,63 +424,16 @@ export function useDraftReviewController({
         selection,
         mode,
       ),
-    batchStarted: (mode) => {
-      // The review the writer is in is part of the batch: its completion is pending
-      // until its own command answers, and the header says so. Read now: the draft
-      // leaves the Work's list when it is applied.
-      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
-      const listedDraft = inline
-        ? queryClient
-            .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
-            ?.find((item) => item.draftId === inline.draftId)
-        : undefined;
-      // A new document's review is promoted to the live document, not held; so
-      // is one that has not yet learned which generation it shows.
-      if (inline && inline.draftGeneration !== undefined && listedDraft?.isNewDocument !== true) {
-        const documentName = listedDraft?.documentName ?? null;
-        batchReviewedRef.current = {
-          documentId: inline.documentId,
-          draftId: inline.draftId,
-          draftGeneration: inline.draftGeneration,
-          documentName,
-        };
-        dispatch({
-          type: "reviewCompleting",
-          documentId: inline.documentId,
-          draftId: inline.draftId,
-          draftGeneration: inline.draftGeneration,
-          mode,
-          documentName,
-        });
-      } else {
-        batchReviewedRef.current = null;
-      }
-    },
-    batchSettled: () => {
-      const reviewed = batchReviewedRef.current;
-      batchReviewedRef.current = null;
-      // Its command did not close it (refused, lost): the review carries on, with
-      // the refusal on it. A no-op when it closed.
-      if (reviewed)
-        dispatch({
-          type: "reviewReopened",
-          documentId: reviewed.documentId,
-          draftId: reviewed.draftId,
-          draftGeneration: reviewed.draftGeneration,
-        });
-    },
     // The tab closes with the click; a refusal leaves it closed and the error
     // on the draft (see draft-command-record).
     draftDiscardStarted: (selection) => {
       contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
     },
     draftApplied: ({ documentId, draftId }) => {
-      if (!holdBatchClosedReview(documentId, draftId))
-        dispatch({ type: "applySucceeded", documentId, draftId });
+      dispatch({ type: "applySucceeded", documentId, draftId });
     },
     draftDiscarded: ({ documentId, draftId }) => {
-      if (!holdBatchClosedReview(documentId, draftId))
-        dispatch({ type: "discardSucceeded", draftId });
+      dispatch({ type: "discardSucceeded", draftId });
       contextRemoval.discardDraft(projectId, workId, documentId, draftId);
     },
   };
@@ -605,16 +552,13 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  useReviewCommandCompletion({ projectId, workId, activeRef, dispatch });
+  useReviewCommandCompletion({ projectId, workId, activeRef, stateRef, dispatch });
   useReviewGeneration({ projectId, workId, inlineReview, activeRef, dispatch });
 
   const { applyChanges, discardChanges } = useSelectionCommands({
     projectId,
     workId,
     session: reviewSession,
-    stateRef,
-    activeRef,
-    dispatch,
   });
 
   const apply = useCallback(

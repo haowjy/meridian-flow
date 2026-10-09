@@ -4,7 +4,7 @@
  * What it returns is what the writer is looking at: changes with an Apply or
  * Discard in flight or confirmed are already gone from it (optimistic), and a
  * read that started before such a command cannot bring them back
- * (`change-command-record`). Every consumer, the editor's marks included,
+ * (`draft-command-record`). Every consumer, the editor's marks included,
  * therefore agrees on which changes exist. `useDraftPreviews` reads several
  * drafts' previews the same way, and refreshes the ones no review owns.
  */
