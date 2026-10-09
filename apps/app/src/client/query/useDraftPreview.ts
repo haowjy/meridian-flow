@@ -19,7 +19,7 @@ import {
   previewWithoutOperations,
   readPreviewAfterChangeCommands,
   useChangeCommandRecords,
-} from "./change-command-record";
+} from "./draft-command-record";
 import { projectQueryKeys } from "./project-query-keys";
 import { workDraftsQueryOptions } from "./useWorkDrafts";
 

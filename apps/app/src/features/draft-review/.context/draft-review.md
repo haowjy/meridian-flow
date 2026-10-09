@@ -106,7 +106,7 @@ or the batch ends, so a refused draft returns with its reason without waiting
 for the drafts after it. Each claims
 the draft's **command claim** (`beginDraftCommand` with the change and its
 operation set: one command per draft, whichever session sends it) and a **change
-command record** (`client/query/change-command-record`, keyed by the draft and
+command record** (`client/query/draft-command-record`, keyed by the draft and
 the selection's class ids, matched by shared operations; one failure per
 (draft, selection), shown on every overlapping change and on the sending file)
 for what outlives the claim:

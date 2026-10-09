@@ -23,9 +23,9 @@ import {
   type ChangeCommandMode,
   type ChangeSelection,
   confirmChangeCommand,
+  confirmDraftCommand,
   previewWithoutOperations,
-} from "./change-command-record";
-import { confirmDraftCommand } from "./draft-command-record";
+} from "./draft-command-record";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 

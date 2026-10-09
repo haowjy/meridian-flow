@@ -14,7 +14,7 @@ import {
   changeCommandState,
   hiddenOperationIds,
   useChangeCommandRecords,
-} from "@/client/query/change-command-record";
+} from "@/client/query/draft-command-record";
 import { selectionOf } from "./change-selection";
 import type { ReviewChange } from "./review-changes";
 

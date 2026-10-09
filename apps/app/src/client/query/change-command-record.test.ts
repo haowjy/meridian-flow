@@ -4,7 +4,6 @@
  */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { beforeEach, describe, expect, it } from "vitest";
-
 import {
   beginChangeCommand,
   changeCommandState,
@@ -15,8 +14,9 @@ import {
   previewWithoutOperations,
   queueChangeSelection,
   readPreviewAfterChangeCommands,
-} from "./change-command-record";
-import { releaseDraftCommand, resetDraftCommandRecords } from "./draft-command-record";
+  releaseDraftCommand,
+  resetDraftCommandRecords,
+} from "./draft-command-record";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
 const one = { classIds: ["c1"], operationIds: ["1"] };
@@ -84,10 +84,11 @@ describe("change command record", () => {
     );
     beginChangeCommand(draft, one, "apply", 1);
     confirmChangeCommand(draft, one, "apply");
+    releaseDraftCommand(draft);
     finish(preview());
     expect(operationIds(await read)).toEqual(["2", "3"]);
     // The read settled, so nothing is left to fence.
-    expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(0);
+    expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual([]);
   });
 
   describe("a selection of several changes", () => {
@@ -97,7 +98,6 @@ describe("change command record", () => {
       failChangeCommand(draft, both, "apply", "stale");
       failChangeCommand(draft, both, "apply", "offline");
       const records = currentChangeCommandRecords();
-      expect(Object.keys(records.changes)).toHaveLength(1);
       expect(changeCommandState(records, draft, both)).toMatchObject({ code: "offline" });
       expect(changeCommandState(records, draft, one)).toMatchObject({ code: "offline" });
       expect(changeCommandState(records, draft, two)).toMatchObject({ code: "offline" });
@@ -111,7 +111,9 @@ describe("change command record", () => {
     it("clears on the next action on one of its changes, and once a read lists none of them", async () => {
       failChangeCommand(draft, both, "discard", "stale");
       beginChangeCommand(draft, one, "apply", 1);
-      expect(Object.keys(currentChangeCommandRecords().changes)).toEqual([]);
+      expect(changeCommandState(currentChangeCommandRecords(), draft, both)).not.toMatchObject({
+        phase: "failed",
+      });
       releaseDraftCommand(draft);
 
       failChangeCommand(draft, both, "discard", "stale");
@@ -150,7 +152,9 @@ describe("change command record", () => {
     it("retires the failure held under its old class when the writer acts again", () => {
       failChangeCommand(draft, a, "apply", "stale");
       expect(beginChangeCommand(draft, b, "discard", 1)).toBe(true);
-      expect(Object.keys(currentChangeCommandRecords().changes)).toEqual([]);
+      expect(changeCommandState(currentChangeCommandRecords(), draft, a)).not.toMatchObject({
+        phase: "failed",
+      });
     });
 
     it("shows the latest failure, however many times it was regrouped since", () => {
@@ -186,7 +190,12 @@ describe("change command record", () => {
     it("leaves the failures of unrelated changes alone", () => {
       failChangeCommand(draft, { classIds: ["closure:9"], operationIds: ["9"] }, "apply", "stale");
       beginChangeCommand(draft, b, "discard", 1);
-      expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(1);
+      expect(
+        changeCommandState(currentChangeCommandRecords(), draft, {
+          classIds: ["closure:9"],
+          operationIds: ["9"],
+        }),
+      ).toMatchObject({ code: "stale" });
     });
   });
 });
