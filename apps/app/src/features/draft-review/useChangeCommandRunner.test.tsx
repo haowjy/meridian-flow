@@ -2,7 +2,10 @@
 /** A throwing or rejected batch releases every queued selection; provider suites own command claims. */
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { currentChangeCommandRecords } from "@/client/query/change-command-record";
+import {
+  currentChangeCommandRecords,
+  hiddenOperationIds,
+} from "@/client/query/change-command-record";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftReviewBoundary, type DraftReviewContextValue } from "./DraftReviewProvider";
@@ -19,14 +22,13 @@ const item = (id: string) => ({
 });
 
 describe("useChangeCommandRunner", () => {
-  it.each([
-    "throw",
-    "reject",
-  ] as const)("gives back every queued selection when the command %ss", async (kind) => {
+  // Real controllers return promises, so their synchronous-throw branch cannot be
+  // reached at a dependency boundary. Keep this small runner risk witness;
+  // C-owner covers rejection through the real query cache instead.
+  it("gives back every queued selection on a synchronous controller throw", async () => {
     resetDraftCommandRecords();
     const command = vi.fn(() => {
-      if (kind === "throw") throw new Error("injected");
-      return Promise.reject(new Error("injected"));
+      throw new Error("injected");
     });
     let runner!: ChangeCommandRunner;
     function Consumer() {
@@ -41,7 +43,22 @@ describe("useChangeCommandRunner", () => {
         await act(async () => {
           await expect(runner.applyBatch([item("1"), item("2")])).rejects.toThrow("injected");
         });
-        expect(currentChangeCommandRecords().queued).toEqual({});
+        expect(
+          hiddenOperationIds(currentChangeCommandRecords(), {
+            projectId: "p",
+            workId: "a",
+            documentId: "1",
+            draftId: "1",
+          }).size,
+        ).toBe(0);
+        expect(
+          hiddenOperationIds(currentChangeCommandRecords(), {
+            projectId: "p",
+            workId: "a",
+            documentId: "2",
+            draftId: "2",
+          }).size,
+        ).toBe(0);
         expect(command).toHaveBeenCalledTimes(1);
       },
     );

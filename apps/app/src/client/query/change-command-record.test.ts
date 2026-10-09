@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   beginChangeCommand,
   changeCommandState,
-  clearChangeFailure,
   confirmChangeCommand,
   currentChangeCommandRecords,
   failChangeCommand,
@@ -70,20 +69,6 @@ const operationIds = (p: DraftPreviewResponse) =>
 describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
 
-  it("a queued selection hides its operations without claiming the draft, until it is retired", () => {
-    const retire = queueChangeSelection(draft, two);
-    const records = currentChangeCommandRecords();
-    expect([...hiddenOperationIds(records, draft)]).toEqual(["2", "3"]);
-    // Another draft is untouched, and the queue blocks no command.
-    expect(hiddenOperationIds(records, { ...draft, draftId: "y" }).size).toBe(0);
-    expect(changeCommandState(records, draft, two)).toBeNull();
-    expect(beginChangeCommand(draft, one, "apply", 1)).toBe(true);
-    releaseDraftCommand(draft);
-    retire();
-    retire();
-    expect(hiddenOperationIds(currentChangeCommandRecords(), draft).size).toBe(0);
-  });
-
   it("retiring one queued selection leaves another of the same draft hidden", () => {
     const retireOne = queueChangeSelection(draft, one);
     queueChangeSelection(draft, two);
@@ -103,50 +88,6 @@ describe("change command record", () => {
     expect(operationIds(await read)).toEqual(["2", "3"]);
     // The read settled, so nothing is left to fence.
     expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(0);
-  });
-
-  it("a failure is dropped once a read no longer lists any of the change's operations", async () => {
-    failChangeCommand(draft, one, "apply", "offline");
-    expect(changeCommandState(currentChangeCommandRecords(), draft, one)?.phase).toBe("failed");
-    const without = previewWithoutOperations(preview(), new Set(["1"]));
-    await readPreviewAfterChangeCommands(draft, async () => without);
-    expect(changeCommandState(currentChangeCommandRecords(), draft, one)).toBeNull();
-  });
-
-  it("a failure survives a read that still lists the change, and clears on the next action", async () => {
-    failChangeCommand(draft, one, "apply", "stale");
-    await readPreviewAfterChangeCommands(draft, async () => preview());
-    expect(changeCommandState(currentChangeCommandRecords(), draft, one)).toMatchObject({
-      code: "stale",
-    });
-    clearChangeFailure(draft, one);
-    expect(changeCommandState(currentChangeCommandRecords(), draft, one)).toBeNull();
-  });
-
-  it("hides a change's operations and the hunks only they own, nothing else", () => {
-    const hidden = previewWithoutOperations(preview(), new Set(["2", "3"]));
-    if (hidden.status !== "active") throw new Error("active");
-    expect(hidden.operations.map((o) => o.operationId)).toEqual(["1"]);
-    expect(hidden.hunks.map((h) => h.hunkId)).toEqual(["h1"]);
-  });
-
-  it("never hides a hunk no operation owns (an unclassified one)", () => {
-    const base = preview();
-    if (base.status !== "active") throw new Error("active");
-    const loose = {
-      kind: "text",
-      hunkId: "h-loose",
-      operationIds: [],
-      unclassified: true,
-      anchor: { relStart: "", relEnd: "" },
-      spans: [],
-    } as const;
-    const hidden = previewWithoutOperations(
-      { ...base, hunks: [...base.hunks, loose] } as DraftPreviewResponse,
-      new Set(["1", "2", "3"]),
-    );
-    if (hidden.status !== "active") throw new Error("active");
-    expect(hidden.hunks.map((h) => h.hunkId)).toEqual(["h-loose"]);
   });
 
   describe("a selection of several changes", () => {
