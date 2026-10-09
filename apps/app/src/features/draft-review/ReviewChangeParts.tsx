@@ -48,7 +48,8 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
  * "You", a link to each chat that wrote the change ("Pacing pass and Lore
  * pass"), or plain "AI" when the preview cannot say which chat. A link opens
  * its chat beside the change at the turn that wrote it and never also acts on
- * the change; the names wrap on the row when there are many.
+ * the change; the names wrap when there are many. The caller bounds the width
+ * (`max-w-*`): the row gives it a line of its own, the bar caps it.
  */
 export function ChangeAuthor({
   attribution,
@@ -93,7 +94,7 @@ export function ChangeAuthor({
   return (
     <span
       className={cn(
-        "inline-flex min-w-0 max-w-[60%] flex-wrap items-baseline text-caption text-muted-foreground",
+        "inline-flex min-w-0 flex-wrap items-baseline text-caption text-muted-foreground",
         className,
       )}
     >

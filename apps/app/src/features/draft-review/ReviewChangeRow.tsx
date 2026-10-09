@@ -3,11 +3,16 @@
  * excerpt, who made it, and Discard and Apply as icon buttons. Clicking the row
  * focuses the change in the manuscript.
  *
- * Presentational: the desktop dock's Changes tab and the phone's change sheet
- * both render it, and neither passes a controller. The row never decides what
- * Apply or Discard means; it calls what it is given.
+ * Presentational: the document's change list (the desktop popover and the
+ * phone's sheet) and the Work page's expanded files both render it, and none
+ * passes a controller. The row never decides what Apply or Discard means; it
+ * calls what it is given.
  *
  * `touch` is the phone's row: the same line with every control a 44px target.
+ *
+ * The excerpt keeps a readable share of the line. The author sits beside it
+ * when its names fit and wraps under it otherwise (flex-wrap decides, no
+ * measuring), so several chats never squeeze the excerpt down to a letter.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -49,6 +54,9 @@ export function ReviewChangeRow({
   touch = false,
 }: ReviewChangeRowProps) {
   const { added, removed } = changeExcerpt(change);
+  // The first line's height: the excerpt, the dot and the buttons share it, so
+  // they stay centred on each other when the author wraps to a second line.
+  const firstLine = touch ? "min-h-11" : change.actionable ? "min-h-6" : undefined;
   const iconButton = touch ? "size-11 [&_svg:not([class*='size-'])]:size-5" : undefined;
   return (
     // Mouse convenience only: the keyboard reaches the same command through
@@ -65,37 +73,44 @@ export function ReviewChangeRow({
         arrived && "meridian-review-row-arrived",
       )}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <button
-          type="button"
-          aria-current={focused ? "true" : undefined}
-          onClick={(event) => {
-            event.stopPropagation();
-            onFocus();
-          }}
-          className={cn(
-            "focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-caption",
-            touch && "min-h-11 text-sm",
-          )}
-        >
+      <div className="flex min-w-0 items-start gap-2">
+        {/* The dot sits outside the excerpt button so an author wrapped under
+            the excerpt lines up with the excerpt text, not with the dot. */}
+        <span className={cn("flex items-center", firstLine)}>
           <ChangeDot change={change} />
-          <span className="min-w-0 flex-1 truncate">
-            {removed && !added ? (
-              <span className="text-muted-foreground line-through">{removed}</span>
-            ) : (
-              <>
-                {removed ? (
-                  <span className="mr-1 text-muted-foreground line-through">{removed}</span>
-                ) : null}
-                <span>{added ?? <Trans>Edited</Trans>}</span>
-              </>
+        </span>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+          <button
+            type="button"
+            aria-current={focused ? "true" : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              onFocus();
+            }}
+            className={cn(
+              "focus-ring flex min-w-0 flex-[1_1_8rem] items-center rounded-sm text-left text-caption",
+              firstLine,
+              touch && "text-sm",
             )}
-          </span>
-        </button>
-        <ChangeAuthor
-          attribution={change.attribution}
-          className={touch ? "inline-flex min-h-11 items-center" : undefined}
-        />
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {removed && !added ? (
+                <span className="text-muted-foreground line-through">{removed}</span>
+              ) : (
+                <>
+                  {removed ? (
+                    <span className="mr-1 text-muted-foreground line-through">{removed}</span>
+                  ) : null}
+                  <span>{added ?? <Trans>Edited</Trans>}</span>
+                </>
+              )}
+            </span>
+          </button>
+          <ChangeAuthor
+            attribution={change.attribution}
+            className={cn("max-w-full", touch && "inline-flex min-h-11 items-center")}
+          />
+        </div>
         {change.actionable ? (
           <span className="flex shrink-0 items-center">
             <IconButton
