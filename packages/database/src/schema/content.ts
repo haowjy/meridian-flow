@@ -414,9 +414,12 @@ export const documentLinks = pgTable(
 
 /**
  * Durable identity for a link written before its target document arrived.
- * `settled_document_id` is SET NULL because the only hard document delete is
- * upload-intake cleanup for an upload that never finalized; that document
- * never arrived, so the ahead ref must become unsettled again.
+ * Settlement is permanent: every document that arrived, finalized uploads
+ * included, leaves through the soft-delete lifecycle and keeps its row, so a
+ * settled ref answers gone and never captures a later occupant. No product
+ * path hard-deletes a document (an upload reservation that never finalized
+ * has no document row); SET NULL only lets an out-of-band row removal unsettle
+ * a ref instead of failing.
  */
 export const linkAheadRefs = pgTable(
   "link_ahead_refs",

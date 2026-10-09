@@ -11,7 +11,6 @@ import {
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
-import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type {
   ReserveUploadResult,
   UploadIntakeRepository,
@@ -151,10 +150,17 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
   return sourceId ? { sourceId, workSlug, workId } : null;
 }
 
-export function createDrizzleUploadIntakeRepository(
-  db: Database,
-  catalog?: ContextCatalogMutationPort,
-): UploadIntakeRepository {
+export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeRepository {
+  async function workSlugOf(workId: string | null): Promise<string | null> {
+    if (!workId) return null;
+    const [work] = await currentDrizzleDb(db)
+      .select({ slug: works.slug })
+      .from(works)
+      .where(eq(works.id, workId as never))
+      .limit(1);
+    return work?.slug ?? null;
+  }
+
   return {
     transaction: (operation) => runInDrizzleTransaction(db, operation),
     async reserve(input): Promise<ReserveUploadResult> {
@@ -290,68 +296,55 @@ export function createDrizzleUploadIntakeRepository(
         )
         .returning();
       if (!row) throw new Error("Upload reservation unavailable during finalize");
-      const workSlug = row.workId
-        ? ((
-            await currentDrizzleDb(db)
-              .select({ slug: works.slug })
-              .from(works)
-              .where(eq(works.id, row.workId))
-              .limit(1)
-          )[0]?.slug ?? null)
-        : null;
-      return mapRow(row, workSlug);
+      return mapRow(row, await workSlugOf(row.workId));
     },
-    async deleteDraft(input, actorUserId) {
-      return runInDrizzleTransaction(db, async () => {
-        const identity = and(
-          eq(uploadIntakes.intakeId, input.intakeId),
-          eq(uploadIntakes.documentId, input.documentId as never),
-          sql`exists (
-            select 1 from projects
-            where projects.id = ${uploadIntakes.projectId}
-              and projects.user_id = ${actorUserId}
-              and projects.deleted_at is null
-          )`,
-        );
-        // Work row and grant confirmation before the intake row (file-access §5).
-        const workId = await readIntakeWorkId(db, identity);
-        await lockSeamWorks(db, workId ? [workId] : []);
-        const [row] = await currentDrizzleDb(db)
-          .select()
-          .from(uploadIntakes)
-          .where(identity)
-          .for("update")
-          .limit(1);
-        if (!row) return { result: { kind: "identity_mismatch" } };
-        if (row.state === "deleted") {
-          return {
-            result: { kind: "already_deleted" },
-            objectKey: row.storageUrl ? row.objectKey : undefined,
-          };
-        }
-        if (row.consumedAt) return { result: { kind: "already_used" } };
-        if (
-          row.documentId !== input.documentId ||
-          row.canonicalUri !== input.uri ||
-          row.locationRevision !== input.expectedRevision
-        )
-          return { result: { kind: "identity_mismatch" } };
-        await currentDrizzleDb(db).delete(documents).where(eq(documents.id, row.documentId));
-        await catalog?.refreshSources([row.contextSourceId]);
-        await currentDrizzleDb(db)
-          .update(uploadIntakes)
-          .set({ state: "deleted", updatedAt: new Date() })
-          .where(
-            and(
-              eq(uploadIntakes.projectId, row.projectId),
-              eq(uploadIntakes.intakeId, row.intakeId),
-            ),
-          );
+    async lockForDelete(input, actorUserId) {
+      const identity = and(
+        eq(uploadIntakes.intakeId, input.intakeId),
+        eq(uploadIntakes.documentId, input.documentId as never),
+        sql`exists (
+          select 1 from projects
+          where projects.id = ${uploadIntakes.projectId}
+            and projects.user_id = ${actorUserId}
+            and projects.deleted_at is null
+        )`,
+      );
+      // Work row and grant confirmation before the intake row (file-access §5).
+      const workId = await readIntakeWorkId(db, identity);
+      await lockSeamWorks(db, workId ? [workId] : []);
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(uploadIntakes)
+        .where(identity)
+        .for("update")
+        .limit(1);
+      if (!row) return { kind: "refused", result: { kind: "identity_mismatch" } };
+      if (row.state === "deleted") {
         return {
-          result: { kind: "deleted" },
+          kind: "refused",
+          result: { kind: "already_deleted" },
           objectKey: row.storageUrl ? row.objectKey : undefined,
         };
-      });
+      }
+      if (row.consumedAt) return { kind: "refused", result: { kind: "already_used" } };
+      if (
+        row.documentId !== input.documentId ||
+        row.canonicalUri !== input.uri ||
+        row.locationRevision !== input.expectedRevision
+      )
+        return { kind: "refused", result: { kind: "identity_mismatch" } };
+      return { kind: "claimed", reservation: mapRow(row, await workSlugOf(row.workId)) };
+    },
+    async markDeleted(projectId, intakeId) {
+      await currentDrizzleDb(db)
+        .update(uploadIntakes)
+        .set({ state: "deleted", updatedAt: new Date() })
+        .where(
+          and(
+            eq(uploadIntakes.projectId, projectId as never),
+            eq(uploadIntakes.intakeId, intakeId),
+          ),
+        );
     },
     async consume(documentIds) {
       if (documentIds.length === 0) return;
