@@ -192,7 +192,7 @@ function successResult(
   if (isHandlerErrorResult(output)) {
     return {
       toolCallId,
-      ...modelOutput(registration, toJsonValue(output.output), input),
+      ...modelOutput(registration, toJsonValue(withoutHostOnly(output.output)), input),
       isError: true,
       ...shown,
     };
@@ -203,6 +203,7 @@ function successResult(
     value = output.output;
     if (output.metadata) metadata = toJsonValue(output.metadata) as JsonObject;
   }
+  value = withoutHostOnly(value);
   return {
     toolCallId,
     ...modelOutput(registration, toJsonValue(value), input),
@@ -212,6 +213,18 @@ function successResult(
       : {}),
     ...shown,
   };
+}
+
+/**
+ * `value` without the host-only shown-link fields a handler may return beside
+ * or inside it (`shown` candidates, an outcome's `showing`): the persisted
+ * result, history and the browser never carry them (contract §7.1).
+ */
+function withoutHostOnly(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  if (!("shown" in value) && !("showing" in value)) return value;
+  const { shown: _shown, showing: _showing, ...rest } = value as Record<string, unknown>;
+  return rest;
 }
 
 /** The handler's host-only shown-link candidates, kept out of every serialized field. */

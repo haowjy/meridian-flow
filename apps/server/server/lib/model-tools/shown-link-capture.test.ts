@@ -8,7 +8,7 @@
  * preparation that failed, was cancelled or was retried never become
  * evidence; the shown read, echo, returned passages and accepted reference
  * reads do, in the view their facts were spelled in, under the turn that
- * shows them.
+ * shows them. No persisted result carries the evidence itself.
  */
 import type { WriteOutcome } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
@@ -16,6 +16,7 @@ import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createInMemoryUnifiedContextPortFactory } from "../../domains/context/index.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
@@ -37,6 +38,7 @@ import { readThreadHistory } from "../../domains/runtime/spawn/thread-history.js
 import { createInMemoryRepositories } from "../../domains/threads/adapters/in-memory/index.js";
 import { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 import { createModelToolRegistrations, createReferenceReader } from "./index.js";
+import { showingOf } from "./shown-link-capture.js";
 import type { ResolvedModelContextPort, ToolWiringDeps } from "./tool-context.js";
 
 const PROJECT = crypto.randomUUID() as ProjectId;
@@ -335,6 +337,8 @@ async function shown(store: ShownLinkStore, threadId: string, documentId: string
     .map((link) => `${link.ref.slice(4, 12)}@${link.view}`)
     .sort();
 }
+/** Host-only evidence: refs, and the fields that carry them beside a result. */
+const HOST_FACTS = /doc:|ahead:|"showing"|"shown"/;
 const expected = (links: SpelledLinkFact[], view = "live") =>
   links.map((link) => `${link.ref.slice(4, 12)}@${view}`).sort();
 
@@ -373,6 +377,9 @@ const rows: Array<{
       check(results, "the write succeeded").toEqual([
         expect.objectContaining({ isError: undefined }),
       ]);
+      check(JSON.stringify(results), "the echo's result carries no host facts").not.toMatch(
+        HOST_FACTS,
+      );
       return {
         store: h.store,
         threadId,
@@ -467,6 +474,9 @@ const rows: Array<{
         expect.not.objectContaining({ isError: true }),
         expect.not.objectContaining({ isError: true }),
       ]);
+      check(JSON.stringify(results), "echo and receipt results carry no host facts").not.toMatch(
+        HOST_FACTS,
+      );
       const bases = (await h.store.forDocument(threadId, TARGET))
         .map((link) => `${link.ref.slice(4, 12)}@${link.holderUri}`)
         .sort();
@@ -481,6 +491,34 @@ const rows: Array<{
         threadId,
         shown: { [TARGET]: expected([fact(94), fact(95)]) },
       };
+    },
+  },
+  {
+    name: "the executor keeps a handler's host-only fields out of the persisted result",
+    async act(check) {
+      const h = await harness();
+      const outcome = success("insert", [fact(96)], undefined, TARGET_URI);
+      // A handler that hands back the whole routed outcome, not the structured shape.
+      const registry = createToolRegistry({
+        registrations: [
+          {
+            source: "core",
+            definition: { type: "function", name: "write", description: "", inputSchema: {} },
+            input: z.object({}),
+            execution: {
+              type: "server",
+              handler: async () => ({ ...outcome, shown: showingOf(TARGET, outcome) }),
+            },
+          },
+        ],
+      });
+      const executed = await createToolExecutor(registry).executeTool(
+        { id: "call-write", name: "write", arguments: {} },
+        { threadId: "thread" as ThreadId, turnId: "turn" as TurnId, agentSlug: null },
+      );
+      check(JSON.stringify(executed.result), "persisted result").not.toMatch(HOST_FACTS);
+      check(executed.shown, "evidence still travels beside it").toHaveLength(1);
+      return { store: h.store, threadId: "thread", shown: {} };
     },
   },
   {
