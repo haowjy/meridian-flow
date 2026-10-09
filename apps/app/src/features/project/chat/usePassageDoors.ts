@@ -7,7 +7,7 @@ import { navigateToPassage } from "@/core/editor/passage-navigation";
 import { dismissPassageNotice, reportPassageChanged } from "@/core/editor/passage-notice-store";
 import type { ContextPassageAnchor } from "@/features/chat/ChatContextNavigation";
 import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-coordinator";
-import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { type DockClaim, useOpenChatDocument } from "@/features/project/context/open-chat-document";
 
 export type PassageDoorTarget = {
   scheme: ProjectContextTreeScheme;
@@ -19,7 +19,11 @@ export type PassageDoorTarget = {
 };
 
 /** Tell passage navigation that a door was opened. The passage is optional. */
-export type PassageDoorOpened = (target: PassageDoorTarget, passage?: ContextPassageAnchor) => void;
+export type PassageDoorOpened = (
+  target: PassageDoorTarget,
+  passage?: ContextPassageAnchor,
+  claim?: DockClaim,
+) => void;
 
 export function usePassageDoors(projectId: string, activeWorkId: string | null): PassageDoorOpened {
   const coordinator = useRef(new LatestNavigationCoordinator());
@@ -34,7 +38,7 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
   }, [projectId, activeWorkId]);
 
   return useCallback(
-    (target, passage) => {
+    (target, passage, claim) => {
       const resolving = coordinator.current.run(async (signal) => {
         // The previous door's answer stops being true the moment this one is
         // used, and that includes its notice. Clearing at the start also means
@@ -60,7 +64,7 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
           anchor: passage,
           signal,
           openDocument: (documentId) =>
-            openDocument({ documentId, workId: target.workId ?? undefined, signal }),
+            openDocument({ documentId, workId: target.workId ?? undefined, signal, claim }),
         });
         // Report only while this door is still the writer's latest: a stale
         // verdict about somewhere they have already left is worse than silence.
