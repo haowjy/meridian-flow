@@ -27,7 +27,8 @@ export function createScopedDocumentLinks(input: {
         docs: request.docs,
         written: request.written,
         stored: request.stored,
-        refs: request.shown?.map((showing) => showing.ref),
+        refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
+        addresses: request.addresses,
       }),
     scopeFor: (documentId, context) => scopes.holder(holder(documentId, context)),
     async registerAhead(mints) {

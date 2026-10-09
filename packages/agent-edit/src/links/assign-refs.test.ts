@@ -319,6 +319,8 @@ const doors: DoorCase[] = [
       expect.soft(next?.ref, this.name).toMatch(/^ahead:/);
       expect.soft(next?.href, this.name).toBe(storedHref(ch("ch9.md"), ""));
       expect.soft([...ctx.links.minted].sort(), this.name).toEqual([image?.ref, next?.ref].sort());
+      // Registration may settle a ref at once; the echo spells both from a loaded scope.
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
   },
   {
@@ -566,6 +568,7 @@ const doors: DoorCase[] = [
       expect.soft(found?.ref, this.name).toBe(documentRef(D));
       expect.soft(later?.ref, this.name).toMatch(/^ahead:/);
       expect.soft(later?.href, this.name).toBe(storedHref(ch("later.md"), ""));
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
   },
 ];

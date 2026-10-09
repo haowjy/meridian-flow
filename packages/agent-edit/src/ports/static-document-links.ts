@@ -82,8 +82,9 @@ export function createStaticDocumentLinks(
       const keys = storedLinkKeys({
         docs: request.docs,
         ...(request.stored ? { nodes: request.stored } : {}),
-        refs: (request.shown ?? []).map((showing) => showing.ref),
+        refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
       });
+      for (const address of request.addresses ?? []) loaded.addresses.add(address);
       for (const id of keys.assetIds) loaded.ids.add(id);
       for (const address of keys.aheadAddresses) loaded.addresses.add(address);
       for (const ref of keys.refs) {

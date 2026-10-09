@@ -307,7 +307,7 @@ export function createWriteCommands(deps: {
       copiedNodes || overwrite
         ? parsed.parsed
         : { blocks: assigner.bindSpan([], parsed.parsed.blocks) };
-    await registerMinted(assigner);
+    await registerMinted(assigner, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
@@ -558,7 +558,7 @@ export function createWriteCommands(deps: {
     }
     validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
     if (resolved.edits.length === 0) return formatUnchangedSuccess();
-    await registerMinted(assigner);
+    await registerMinted(assigner, address.documentId, context);
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const actor = mutationActor(session, address.documentId, context);
@@ -811,9 +811,23 @@ export function createWriteCommands(deps: {
   /**
    * Ahead refs the write minted are registered before anything is applied or
    * locked (§6.1); a failure fails the write, and the refs were never published.
+   * Registration may settle one at once, and the echo spells them all, so the
+   * scope loads them next.
    */
-  async function registerMinted(assigner: WriteLinkAssigner): Promise<void> {
-    if (assigner.minted.length > 0) await options.links.registerAhead(assigner.minted);
+  async function registerMinted(
+    assigner: WriteLinkAssigner,
+    documentId: string,
+    context: WriteContext,
+  ): Promise<void> {
+    if (assigner.minted.length === 0) return;
+    await options.links.registerAhead(assigner.minted);
+    await options.links.prepare({
+      documentId,
+      docs: [],
+      refs: assigner.minted.map((mint) => mint.ref),
+      addresses: assigner.minted.map((mint) => mint.address),
+      context,
+    });
   }
 
   function validateResolvedIr(
