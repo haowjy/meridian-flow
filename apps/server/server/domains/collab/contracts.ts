@@ -14,7 +14,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
-import type { SpelledLinkFact } from "@meridian/markup";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";

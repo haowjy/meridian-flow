@@ -14,9 +14,9 @@ import {
   createHolderLinkScope,
   type HolderCatalog,
   type HolderLinkScope,
-  storedLinkKeys,
   writtenAddresses,
-} from "@meridian/markup";
+} from "@meridian/markup/links";
+import { storedLinkKeys } from "@meridian/markup/stored-links";
 import * as Y from "yjs";
 import type { DocumentLinksPort } from "./document-links.js";
 

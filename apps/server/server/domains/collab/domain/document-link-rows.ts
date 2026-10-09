@@ -7,7 +7,7 @@ import {
   type WrittenLinkClass,
 } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { StoredLinkOccurrence } from "@meridian/markup";
+import type { StoredLinkOccurrence } from "@meridian/markup/stored-links";
 
 export type DocumentLinkRow = {
   /** `doc:<id>`, `ahead:<uuid>`, `asset:<id>`, or the contextual href itself. */

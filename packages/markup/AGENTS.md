@@ -1,7 +1,10 @@
 # @meridian/markup
 
 Composable text ↔ ProseMirror codec package, and the one home of the link
-rules server and client share (holder scope, pass 3, stored-link walks). MDX
+rules server and client share (holder scope, pass 3, stored-link walks). The
+link rules ship at `@meridian/markup/links` and the Yjs walks at
+`@meridian/markup/stored-links`; keep both out of the root barrel so neither
+pulls in codecs, Yjs or the schema builder. MDX
 is the canonical Meridian wire format; pure markdown is the supported subset. This is a leaf package: it must
 not import from `@meridian/agent-edit` or any app/server shell.
 

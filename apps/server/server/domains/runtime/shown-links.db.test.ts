@@ -9,7 +9,7 @@
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";
-import type { SpelledLinkFact } from "@meridian/markup";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import { sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ShownLinkStore } from "./ports/shown-links.js";

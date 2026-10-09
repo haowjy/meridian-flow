@@ -11,7 +11,7 @@
  */
 
 import type { CatalogDocument } from "@meridian/contracts";
-import type { HolderCatalog } from "@meridian/markup";
+import type { HolderCatalog } from "@meridian/markup/links";
 
 import { indexedDocumentAt } from "@/core/editor/links";
 

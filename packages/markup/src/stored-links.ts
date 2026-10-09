@@ -1,5 +1,5 @@
 /**
- * Stored link, image and figure destinations of a live Yjs fragment, read
+ * Public entry `@meridian/markup/stored-links`: stored link, image and figure destinations of a live Yjs fragment, read
  * straight from the Yjs tree (never a ProseMirror projection) so the scope's
  * `prepare({ docs })`, the view-revision digest and derive stay cheap; and the
  * keys a host must load before spelling them (every adapter's `prepare`).
@@ -10,7 +10,7 @@
  * assignment sees. agent-edit's `assign-refs.test.ts` pins that parity.
  */
 import { resolveDocumentHref, storedLinkRef } from "@meridian/contracts";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema/protocol";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 
