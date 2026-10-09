@@ -115,9 +115,12 @@ const ROWS: Row[] = [
     links: [
       linkKeyOfMark({ ref: "doc:kael", href: "manuscript://Kael.md" }),
       pictureKeyOfNode({ ref: "doc:kael", src: "Nine.md" }) ?? { ref: null, href: "" },
+      // Contextual image and figure sources keep their stored identity too.
+      pictureKeyOfNode({ ref: "doc:kael", src: "uploads://seal.png" }) ?? { ref: null, href: "" },
+      pictureKeyOfNode({ ref: "doc:kael", src: "scratch://notes.md" }) ?? { ref: null, href: "" },
     ],
-    before: ["gone", "gone"],
-    after: ["gone", "gone"],
+    before: ["gone", "gone", "gone", "gone"],
+    after: ["gone", "gone", "gone", "gone"],
     asked: [],
   },
   {
