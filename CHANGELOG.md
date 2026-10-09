@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Draft review stays open through a temporarily missing preview while your unacknowledged typing follows the draft into its replacement room.
+
 - Document switches keep the last finished page inert until the destination paints or fails, on desktop and phone.
 
 - Phone review confirmations stay inside the change sheet; each contributing-chat link has a 44px touch target.

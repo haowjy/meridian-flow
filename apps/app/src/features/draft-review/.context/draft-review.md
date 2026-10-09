@@ -178,7 +178,7 @@ input arrives as an action addressed to the draft and compares its generation wi
 | O3 | Read above R that lists changes (a list row always does) | Re-enter it, over any K (the writer's "Applying" included) |
 | O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
 | P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
-| X | The Work's list has no row for the draft | With no K the review ends, unless the newest preview lists changes at R or above, or the session layer holds writer updates for this draft at R or above (an outbox or pending successor carry); K keeps it |
+| X | The Work's list omits the draft, or a preview says `gone` / 404 | With no K the review ends, unless the newest preview lists changes at R or above, or the session layer holds writer updates for this draft at R or above (an outbox or pending successor carry); K keeps it |
 | S | The editor's room is reset as `superseded` (`branch-generation-stale`, named server close or denial) | The room is cleared and read afresh; the review stays |
 | L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
 | B | Whole-draft batch | Its pending and closed actions carry R at batch start |
@@ -199,12 +199,16 @@ phase snapshot.
 Invariants: a generation never goes backwards (the preview query keeps a newer
 cached read, `keepNewerGeneration`); a completion belongs to one generation;
 `useReviewChanges` and `useInlineReviewSync` list and project only R's preview;
-arrival order does not change the outcome. Row X is the owner's "draft left the
-list" observation: it reports the empty row with the newest cached
-preview as evidence and the reducer decides against R, so a proposal that has not
-re-entered yet still counts as the draft being alive. A preview that lists changes
+arrival order does not change the outcome. Row X is the owner's typed
+`reviewAbsent` observation for list omission and gone / 404 preview reads:
+it carries cached preview and pending writer evidence, and the reducer decides
+against R, so a proposal that has not re-entered yet still counts as the draft being alive. A preview that lists changes
 also gets read afresh; a genuine external close (no proposal at R or above) ends the
-review. The Editor address owner (`EditorReviewAddressOwner`) ends a review only when the
+review (a draft-only missing read instead keeps its error destination).
+A terminal session, lost authorization or failed rebuild uses the same typed
+path with a terminal outcome: it cannot deliver through that session and keeps
+the existing live exit or draft-only error. Other fetch failures remain room errors.
+The Editor address owner (`EditorReviewAddressOwner`) ends a review only when the
 address leaves its document; whether the list still names the draft is row X's alone, so a
 list behind a re-entered proposal cannot end it from a second place.
 Unacknowledged writer edits survive retirement through the session layer's
