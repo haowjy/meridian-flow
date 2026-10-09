@@ -7,6 +7,7 @@ is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-12, driven with `./mf`.
 - [Draft review](draft-review.md): visual editor and review workflows.
+- [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 
 ## Script-backed checks
