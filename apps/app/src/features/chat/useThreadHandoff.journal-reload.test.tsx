@@ -30,7 +30,16 @@ import { serializeComposerDraft } from "@/components/app/composer/composer-docum
 import { FakeThreadSocket } from "@/core/transport/test-support/FakeThreadSocket";
 import { WsThreadTransport } from "@/core/transport/WsThreadTransport";
 import { sendProjectChat } from "@/lib/send-project-chat";
+import {
+  type TranscriptLinkNavigation,
+  TranscriptLinkNavigationContext,
+} from "@/rich-content/TranscriptReference";
 import { ErrorBlock } from "./ErrorBlock";
+import {
+  createReferenceAvailability,
+  ReferenceAvailabilityContext,
+} from "./reference-availability";
+import { UserTurn } from "./UserTurn";
 import { usePendingInbox } from "./usePendingInbox";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
@@ -45,6 +54,7 @@ const THREAD_ID = "550e8400-e29b-41d4-a716-446655440000";
 
 const mocks = vi.hoisted(() => ({
   createProjectThread: vi.fn(),
+  openDocument: vi.fn(),
 }));
 const controllers: ThreadRunController[] = [];
 
@@ -54,6 +64,10 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 }));
 vi.mock("@/client/api/projects-api", () => ({
   createProjectThread: mocks.createProjectThread,
+}));
+vi.mock("@/features/project/context/open-project-document", () => ({
+  useOpenProjectDocument: () => mocks.openDocument,
+  useProjectDocumentNavigationProjectId: () => "project-1",
 }));
 vi.mock("@/client/query/project-invalidation", () => ({
   invalidateProjectThreadData: vi.fn(),
@@ -256,7 +270,7 @@ describe("useThreadHandoff first-send journal reload", () => {
       expect.objectContaining({ submissionId: "sub-first", ...referencedPayload }),
       expect.objectContaining({ optimisticUserTurnId: "turn_local_1" }),
     );
-    expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, referencedPayload.text);
+    expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, referencedPayload.blocks);
     await act(async () => {
       await vi.waitFor(() => expect(readChatSubmissions(ACCOUNT)).toEqual([]));
     });
@@ -309,7 +323,7 @@ describe("useThreadHandoff first-send journal reload", () => {
     });
     expect(run.submit).not.toHaveBeenCalled();
     expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
-    expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, "Draft the fight scene");
+    expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, firstSend().blocks);
   });
 
   it("keeps Retry and the journal when projection setup fails after admission", async () => {
@@ -421,12 +435,50 @@ describe("real-store first-send retry", () => {
       useStore(scenario.store, (state) => Boolean(id && state.pendingCreation.threadIds[id])),
     );
     vi.spyOn(trails, "listChangeTrailShells").mockResolvedValue([]);
+    // refdoc2.md was deleted after the pick and another document now sits at
+    // its address: the live row must draw the picked identity, not the path.
+    const references = createReferenceAvailability(async (ids) => ({
+      projectId: "project-1",
+      resolutionId: "resolution",
+      resolutions: ids.map((documentId) => ({ kind: "deleted", documentId }) as never),
+    }));
+    const occupant = {
+      follow: vi.fn(),
+      canFollow: () => true,
+      resolution: null,
+      watch: () => () => {},
+    } satisfies TranscriptLinkNavigation;
     function Listeners() {
       useThreadActivity({ threadId: THREAD_ID, seed: null });
       usePendingInbox({ threadId: THREAD_ID, seed: null });
       useThreadDurableProjections({ threadId: THREAD_ID, projectId: "project-1" });
-      return null;
+      const turns = useStore(scenario.store, (state) => state.turnsByThread[THREAD_ID] ?? []);
+      return (
+        <ReferenceAvailabilityContext.Provider value={references}>
+          <TranscriptLinkNavigationContext.Provider value={occupant}>
+            {turns
+              .filter((turn) => turn.role === "user")
+              .map((turn) => (
+                <UserTurn key={turn.id} turn={turn} />
+              ))}
+          </TranscriptLinkNavigationContext.Provider>
+        </ReferenceAvailabilityContext.Provider>
+      );
     }
+    const expectGoneChip = async () => {
+      await act(async () => {
+        await vi.waitFor(() =>
+          expect(
+            document.body.querySelector('[role="link"][aria-description="No longer available"]'),
+          ).not.toBeNull(),
+        );
+      });
+      const chip = document.body.querySelector<HTMLElement>('[role="link"]');
+      expect(chip?.getAttribute("aria-disabled")).toBe("true");
+      await act(async () => chip?.click());
+      expect(occupant.follow).not.toHaveBeenCalled();
+      expect(mocks.openDocument).not.toHaveBeenCalled();
+    };
     transport.connect();
     socket.open();
     socket.deliver({
@@ -450,7 +502,10 @@ describe("real-store first-send retry", () => {
       expect(scenario.appendRequests.map(({ data }) => data)).toEqual([
         expect.objectContaining({ submissionId: "sub-first", ...referencedPayload }),
       ]);
+      await expectGoneChip();
       await act(async () => admission.resolve(defaultSendResponse({ threadId: THREAD_ID })));
+      expect(document.body.querySelector('[data-turn-id="turn-user"]')).not.toBeNull();
+      await expectGoneChip();
       expect(socket.sent.map((frame) => JSON.parse(frame))).toEqual([
         { type: "subscribe", threadId: THREAD_ID, lastSeq: "42" },
       ]);

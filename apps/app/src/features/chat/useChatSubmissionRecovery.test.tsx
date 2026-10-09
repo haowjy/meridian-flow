@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /** Existing-thread reload recovery from the durable submission journal. */
-import type { AdmissionLookup, SendMessageResponse } from "@meridian/contracts/protocol";
+import type { AdmissionLookup, SendMessageResponse, Turn } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +22,7 @@ import {
   resetDerivationsForTest,
   resumeDerivation,
 } from "./derivation/derive-conversation";
+import { projectUserTurn } from "./UserTurn";
 import {
   type ChatSubmissionRecovery,
   clearChatSubmissionRecoverySession,
@@ -138,7 +139,22 @@ describe("useChatSubmissionRecovery", () => {
   });
 
   it("replays the stored fingerprint with the same submission id when lookup is not-seen", async () => {
-    recordChatSubmission(ACCOUNT, entry());
+    const reference = {
+      type: "reference",
+      text: "[refdoc2.md](manuscript://refdoc2.md)",
+      documentId: "01900000-0000-7000-8000-000000000001",
+      uri: "manuscript://refdoc2.md",
+    } as const;
+    recordChatSubmission(
+      ACCOUNT,
+      entry({
+        text: `Hello${reference.text}`,
+        blocks: [{ type: "text", text: "Hello" }, reference],
+        references: [
+          { documentId: reference.documentId, uri: reference.uri, purpose: "reference" },
+        ],
+      }),
+    );
     const scenario = new ThreadRunScenario({
       lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
     });
@@ -149,9 +165,19 @@ describe("useChatSubmissionRecovery", () => {
       await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
     });
     expect(scenario.appendRequests[0]).toMatchObject({
-      data: { threadId: THREAD_ID, submissionId: "sub-1", text: "Hello" },
+      data: { threadId: THREAD_ID, submissionId: "sub-1", text: `Hello${reference.text}` },
     });
     expect(scenario.lookupRequests).toHaveLength(1);
+    // The recovered row draws the picked document by identity, not by path.
+    const recoveredReferences = () => projectUserTurn(scenario.turns()[0] as Turn).references;
+    expect(recoveredReferences()).toEqual([
+      {
+        from: 5,
+        to: 5 + reference.text.length,
+        documentId: reference.documentId,
+        uri: reference.uri,
+      },
+    ]);
 
     // The default append is accepted, so the replay bridges the row and retires
     // the entry: exactly one user row, no Start over / Check recovery surface.
@@ -160,6 +186,7 @@ describe("useChatSubmissionRecovery", () => {
     });
     expect(scenario.turns()).toHaveLength(1);
     expect(scenario.turns()[0]).toMatchObject({ id: "turn-user", status: "complete" });
+    expect(recoveredReferences()).toHaveLength(1);
   });
 
   it("keeps a proved rejection on the turn and retries with a reminted submission id", async () => {
@@ -174,7 +201,9 @@ describe("useChatSubmissionRecovery", () => {
     // stay attached to the turn instead of being dropped, and the fingerprint
     // is retained for Retry.
     recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-rejected" }));
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    const liveTurn = scenario.store
+      .getState()
+      .appendUserTurn(THREAD_ID, [{ type: "text", text: "Hello" }]);
     await act(async () => {
       latest.current?.markRejected("sub-rejected", liveTurn.id);
     });
@@ -229,7 +258,9 @@ describe("useChatSubmissionRecovery", () => {
     });
 
     recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-ambiguous-retry" }));
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    const liveTurn = scenario.store
+      .getState()
+      .appendUserTurn(THREAD_ID, [{ type: "text", text: "Hello" }]);
     await act(async () => {
       latest.current?.markRejected("sub-ambiguous-retry", liveTurn.id);
     });
@@ -276,7 +307,9 @@ describe("useChatSubmissionRecovery", () => {
 
     // A live rejection retains its fingerprint for Retry.
     recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-ambiguous-remount" }));
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    const liveTurn = scenario.store
+      .getState()
+      .appendUserTurn(THREAD_ID, [{ type: "text", text: "Hello" }]);
     await act(async () => {
       latest.current?.markRejected("sub-ambiguous-remount", liveTurn.id);
     });
@@ -339,7 +372,9 @@ describe("useChatSubmissionRecovery", () => {
     // A live rejection retired the durable witness, but the failed row and its
     // retry payload are retained for the session.
     recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-remount" }));
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    const liveTurn = scenario.store
+      .getState()
+      .appendUserTurn(THREAD_ID, [{ type: "text", text: "Hello" }]);
     await act(async () => {
       latest.current?.markRejected("sub-remount", liveTurn.id);
     });
@@ -378,7 +413,9 @@ describe("useChatSubmissionRecovery", () => {
     scenario.setAppend(() => gate.promise);
 
     // Simulate ChatView.handleSubmit: the live row is appended before the POST.
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    const liveTurn = scenario.store
+      .getState()
+      .appendUserTurn(THREAD_ID, [{ type: "text", text: "Hello" }]);
     const pending = scenario.controller.submit(
       THREAD_ID,
       {
@@ -430,7 +467,7 @@ describe("useChatSubmissionRecovery", () => {
 
     // Simulate ChatView.handleSubmit: append the live row and register it for
     // the session before the POST awaits admission.
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, submission.text);
+    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, submission.blocks);
     rememberSubmissionTurnId(ACCOUNT, submission.submissionId, liveTurn.id);
     const pendingPost = scenario.controller.submit(
       THREAD_ID,

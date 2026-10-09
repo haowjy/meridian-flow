@@ -2,15 +2,22 @@
  * build-optimistic-user-turn — constructs an optimistic domain `Turn` for a
  * just-submitted user message (client UUID, timestamp from store `now`). Pure
  * factory used by the optimistic submit flow before the server reconciles.
+ * Its blocks are the submitted message blocks as the server persists them, so
+ * reference and skill occurrences keep their identity before admission.
  */
-import type { Turn } from "@meridian/contracts/protocol";
+import {
+  blockPlainText,
+  type Turn,
+  type UserMessageBlock,
+  userMessageTurnBlock,
+} from "@meridian/contracts/protocol";
 
 import { baseTurnFields } from "@/core/session/state-helpers";
 
 export function buildOptimisticUserTurn(input: {
   id: string;
   threadId: string;
-  text: string;
+  blocks: readonly UserMessageBlock[];
   now: number;
   prevTurnId?: string | null;
 }): Turn {
@@ -34,23 +41,24 @@ export function buildOptimisticUserTurn(input: {
     ...baseTurnFields(),
     createdAt: timestamp,
     completedAt: null,
-    blocks: [
-      {
-        id: `${input.id}_block_1`,
+    blocks: input.blocks.map((block, sequence) => {
+      const { blockType, content } = userMessageTurnBlock(block);
+      return {
+        id: `${input.id}_block_${sequence + 1}`,
         turnId: input.id,
         responseId: null,
-        blockType: "text",
-        sequence: 0,
-        textContent: input.text,
-        content: { text: input.text },
+        blockType,
+        sequence,
+        textContent: blockPlainText(blockType, content),
+        content,
         provider: null,
         providerData: null,
         collapsedContent: null,
         executionSide: null,
         status: "complete",
         createdAt: timestamp,
-      },
-    ],
+      };
+    }),
     siblingIds: [],
     responses: [],
   };
