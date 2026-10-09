@@ -73,8 +73,7 @@ hidden constraints, surprising invariants, and workarounds.
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-ux/writer-copy-separation.md).
 
-**Debugging.** Follow [docs/debugging.md](docs/debugging.md); use the
-[runtime probe catalog](docs/qa/README.md) for repeatable verification.
+**Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 
 ## Knowledge and structure
 
@@ -114,10 +113,13 @@ Driving or inspecting the running app (threads, docs, mock model, logs): use
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
 `pnpm test:all` runs unit and managed DB tests together. Keep automated tests
 below 2,000 expanded cases (including `it.each` rows and browser-device
-variants) and target at most 60 seconds for that full run. New tests must
-protect a named risk; prune weaker duplicate coverage rather than adding
-another layer. Skips, exclusions, and bundling unrelated cases do not
-satisfy the budget. Contracts, markup, and DB suites reuse worker module caches:
+variants) and target at most 60 seconds for that full run. Write few unit
+tests: a new test must protect a named risk; prune weaker duplicate coverage
+rather than adding another layer. Skips, exclusions, and bundling unrelated
+cases do not satisfy the budget. To verify a change, prefer probes,
+end-to-end smoke scripts and written manual-testing steps in the
+[runtime probe catalog](docs/qa/README.md); add or update the recipe that
+covers what you changed. Contracts, markup, and DB suites reuse worker module caches:
 no module/global mocks there. Keep test data and connections instance-owned;
 DB rollback/FK resets, not fresh module loading, isolate persisted state.
 
