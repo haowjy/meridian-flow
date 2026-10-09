@@ -11,17 +11,22 @@
 import {
   type AheadRef,
   aheadAddress,
-  classifyWrittenLink,
-  classifyWrittenSource,
-  documentRef,
   mintAheadRef,
   resolveDocumentHref,
   splitDocumentHrefSuffix,
   storedHref,
 } from "@meridian/contracts";
-import { type LinkOccurrence, type PMNode, walkLinkOccurrences } from "@meridian/markup";
+import {
+  assignFreshLink,
+  type HolderLinkScope,
+  type LinkOccurrence,
+  type PMNode,
+  type WrittenGrammar,
+  walkLinkOccurrences,
+  writtenSourceUri,
+} from "@meridian/markup";
 import { Fragment } from "prosemirror-model";
-import { type AheadMint, type HolderLinkScope, writtenSourceUri } from "../ports/document-links.js";
+import type { AheadMint } from "../ports/document-links.js";
 import { correspondLinks, type LinkMatch, type ShownLink } from "./correspondence.js";
 import {
   restoreOutsideSplice,
@@ -110,10 +115,8 @@ interface Grammar {
    * that document moved. Pass 3 keeps its exact-then-unique-extension resolve.
    */
   correspondenceKey(href: string, holderUri: string | null): string | null;
-  /** Pass 3's classification. */
-  classify(href: string, holderUri: string | null): ReturnType<typeof classifyWrittenLink>;
   spell(scope: HolderLinkScope, attrs: OccurrenceAttrs): string | null;
-  aheadKind: "link" | "source";
+  kind: WrittenGrammar;
 }
 
 const GRAMMARS: Record<"link" | "source", Grammar> = {
@@ -123,9 +126,8 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
       const uri = resolveDocumentHref(href, holderUri)?.uri;
       return uri ? (aheadAddress(uri, "link") ?? uri) : null;
     },
-    classify: classifyWrittenLink,
     spell: (scope, attrs) => scope.spellLink({ href: attrs.href, ref: attrs.ref }).address,
-    aheadKind: "link",
+    kind: "link",
   },
   source: {
     address(href) {
@@ -133,9 +135,8 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
       return uri ? { uri, suffix: splitDocumentHrefSuffix(href).suffix } : null;
     },
     correspondenceKey: (href) => writtenSourceUri(href),
-    classify: (href) => sourceClass(href),
     spell: (scope, attrs) => scope.spellSource({ src: attrs.href, ref: attrs.ref }).address,
-    aheadKind: "source",
+    kind: "source",
   },
 };
 
@@ -232,7 +233,7 @@ function continued(
   };
 }
 
-/** Pass 3: classify, then resolve in this view, then mint an ahead ref. */
+/** Pass 3: markup's `assignFreshLink` in this view; a minted ref is registered by the host. */
 function fresh(
   input: {
     grammar: Grammar;
@@ -243,31 +244,22 @@ function fresh(
   occurrence: LinkOccurrence,
 ): OccurrenceAttrs {
   const { grammar, scope } = input;
-  const written = occurrence.attrs;
-  const literal = { ref: null, href: written.href, title: written.title };
-  const classified = grammar.classify(written.href, scope.holder.uri);
-  if (classified.kind !== "internal") return literal;
-  const document = scope.documentFor(classified.uri);
-  if (document) {
-    return {
-      ref: documentRef(document.documentId),
-      title: written.title,
-      href: storedHref(document.uri, classified.suffix),
-    };
-  }
-  const address = aheadAddress(classified.uri, grammar.aheadKind);
-  if (!address) return literal;
-  const ref = input.mint();
-  input.minted.push({ ref, address, holderProjectId: scope.holder.projectId });
-  return { ref, title: written.title, href: storedHref(address, classified.suffix) };
-}
-
-/** A source the href grammar cannot decode is still a bare manuscript path (shipped rule). */
-function sourceClass(src: string): ReturnType<typeof classifyWrittenSource> {
-  const classified = classifyWrittenSource(src);
-  if (classified.kind !== "external") return classified;
-  const uri = writtenSourceUri(src);
-  return uri ? { kind: "internal", uri, suffix: splitDocumentHrefSuffix(src).suffix } : classified;
+  const { href, title } = occurrence.attrs;
+  const assigned = assignFreshLink({
+    href,
+    grammar: grammar.kind,
+    holderUri: scope.holder.uri,
+    documentFor: (uri) => scope.documentFor(uri),
+    mint: input.mint,
+  });
+  if (assigned.kind === "literal") return { ref: null, href, title };
+  if (assigned.kind === "ahead")
+    input.minted.push({
+      ref: assigned.ref,
+      address: assigned.address,
+      holderProjectId: scope.holder.projectId,
+    });
+  return { ref: assigned.ref, title, href: assigned.href };
 }
 
 /**

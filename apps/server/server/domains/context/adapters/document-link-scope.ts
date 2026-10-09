@@ -13,12 +13,6 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
-  createHolderLinkScope,
-  type HolderCatalog,
-  storedLinkKeys,
-  writtenAddresses,
-} from "@meridian/agent-edit/integration";
-import {
   type CatalogDocument,
   type ContextUriScheme,
   canonicalContextUri,
@@ -29,6 +23,12 @@ import {
 } from "@meridian/contracts";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import {
+  createHolderLinkScope,
+  type HolderCatalog,
+  storedLinkKeys,
+  writtenAddresses,
+} from "@meridian/markup";
 import { type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";

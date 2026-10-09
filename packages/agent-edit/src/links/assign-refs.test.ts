@@ -1,6 +1,6 @@
 // Ref assignment on the real write path: reviewer cases are assigned as the model means them, and no door loses or churns refs.
 import { documentRef, storedHref } from "@meridian/contracts";
-import { walkLinkOccurrences } from "@meridian/markup";
+import { extractStoredLinks, walkLinkOccurrences } from "@meridian/markup";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";
@@ -10,7 +10,6 @@ import type { LinkSpliceFallbackDetail } from "../tool/write-deps.js";
 import { assignLinkRefs } from "./assign-refs.js";
 import { type Fixture, reviewerFixtures } from "./correspondence.fixtures.js";
 import type { ShownLink } from "./correspondence.js";
-import { extractStoredLinks } from "./stored-links.js";
 import {
   catalogDocument,
   docFromBlocks,

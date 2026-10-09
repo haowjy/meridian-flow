@@ -4,15 +4,17 @@
  * `prepare({ docs })`, the view-revision digest and derive stay cheap; and the
  * keys a host must load before spelling them (every adapter's `prepare`).
  *
- * The Yjs twin of markup's `walkLinkOccurrences`, which ref assignment and
+ * The Yjs twin of `walkLinkOccurrences`, which ref assignment and
  * shown facts walk: both must yield the same `(kind, ref, href)` sequence for
  * one document, or the note count and revision digest drift from what
- * assignment sees. `assign-refs.test.ts` pins that parity.
+ * assignment sees. agent-edit's `assign-refs.test.ts` pins that parity.
  */
 import { resolveDocumentHref, storedLinkRef } from "@meridian/contracts";
-import { type PMNode, walkLinkOccurrences } from "@meridian/markup";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
+
+import { walkLinkOccurrences } from "./link-occurrences.js";
 
 export interface StoredLinkOccurrence {
   kind: "link" | "image" | "figure";

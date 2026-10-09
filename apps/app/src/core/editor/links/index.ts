@@ -17,15 +17,15 @@ export {
   linkTargetAddress,
 } from "./link-address";
 export {
-  type BoundLink,
-  bindPastedNodes,
-  bindWrittenHref,
+  type AssignedLink,
+  assignPastedNodes,
+  assignWrittenHref,
   indexedDocumentAt,
   indexedDocumentAtExactly,
-  type LinkBindingDocument,
-  type LinkBindingIndex,
-  type LinkBindingScope,
-} from "./link-binding";
+  type LinkAssignmentDocument,
+  type LinkAssignmentIndex,
+  type LinkAssignmentScope,
+} from "./link-assignment";
 export {
   LINK_CHIP_ICONS,
   type LinkChipIcon,

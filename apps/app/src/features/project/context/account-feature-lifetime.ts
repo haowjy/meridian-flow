@@ -3,6 +3,7 @@ import { lookupProjectContextAvailability } from "@/client/query/project-context
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
+import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
@@ -15,6 +16,8 @@ export class AccountFeatureLifetime {
   readonly availability;
   readonly resources;
   readonly opener;
+  /** What the account has learned its projects' ahead refs settled on; never cleared while it lives. */
+  readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;

@@ -13,9 +13,9 @@
  *
  * Pasting into an Editor keeps the ref only when the copy came from the same
  * project; the link is then `{ ref, href: address }`. Anything else (another
- * project, a link with no metadata, Markdown text) is bound fresh from its
+ * project, a link with no metadata, Markdown text) is assigned fresh from its
  * address by the editor's one paste door (`transformPasted`, through
- * `link-binding.ts`), exactly as if the writer had typed it. The metadata is
+ * `link-assignment.ts`), exactly as if the writer had typed it. The metadata is
  * never a capability: a kept `doc:` ref still resolves through the reader's
  * own catalog and draws gone when they cannot read it.
  *
@@ -36,7 +36,7 @@ import { type DocumentLinkScope, UNSCOPED_DOCUMENT_LINKS } from "@meridian/marku
 import { DOMSerializer, type Mark, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
-import { bindPastedSlice } from "./link-binding";
+import { assignPastedSlice } from "./link-assignment";
 import { type LinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
 
@@ -122,7 +122,7 @@ function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkAnswer
   const ref = clipboardLinkRef(stored.ref);
   const address = currentLinkAddress({ ref, href }, resolution);
   if (address) element.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
-  const projectId = resolution.binding?.projectId ?? null;
+  const projectId = resolution.assignment?.projectId ?? null;
   if (ref && projectId) {
     element.setAttribute(LINK_REF_ATTRIBUTE, ref);
     element.setAttribute(LINK_PROJECT_ATTRIBUTE, projectId);
@@ -131,8 +131,8 @@ function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkAnswer
 
 /**
  * Paste into an Editor: a same-project link keeps its ref at its recorded
- * address; every other recorded link pastes its address unbound, for the
- * paste door to bind fresh.
+ * address; every other recorded link pastes its address with no ref, for the
+ * paste door to assign fresh.
  */
 function keepPastedRefs(html: string, projectId: string | null): string {
   if (!html.includes("data-meridian-")) return html;
@@ -180,8 +180,8 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
 /**
  * The plugin that owns both directions on an Editor: the clipboard serializer
  * that records what each link names, the HTML transform that keeps a
- * same-project ref, and the paste transform that binds every link still
- * unbound. Its state is the editor's resolution, whose binding scope is the
+ * same-project ref, and the paste transform that assigns every link still
+ * without a ref. Its state is the editor's resolution, whose assignment scope is the
  * holder's address, project and local index. Its HTML transform runs after
  * the paste sanitizer, which keeps well-formed metadata only.
  */
@@ -204,14 +204,14 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache)
     state: { init: () => resolution, apply: (_transaction, value) => value },
     props: {
       clipboardSerializer: new DOMSerializer(base.nodes, marks),
-      transformPastedHTML: (html) => keepPastedRefs(html, resolution.binding?.projectId ?? null),
+      transformPastedHTML: (html) => keepPastedRefs(html, resolution.assignment?.projectId ?? null),
       transformPasted: (slice, view) =>
         // A drag inside the editor moves links it already holds, as stored.
         view.dragging
           ? slice
-          : bindPastedSlice(
+          : assignPastedSlice(
               slice,
-              resolution.binding ?? { holderUri: null, projectId: null, index: null },
+              resolution.assignment ?? { holderUri: null, projectId: null, index: null },
             ),
     },
   });

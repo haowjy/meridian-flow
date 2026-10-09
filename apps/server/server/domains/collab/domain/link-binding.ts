@@ -24,13 +24,17 @@ import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
   toDocHandle,
-  writtenAddresses,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { type MarkupCodec, type PMNode, walkLinkOccurrences } from "@meridian/markup";
+import {
+  type MarkupCodec,
+  type PMNode,
+  walkLinkOccurrences,
+  writtenAddresses,
+} from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";

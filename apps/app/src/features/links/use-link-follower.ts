@@ -39,6 +39,7 @@ import {
 } from "@/core/editor/links";
 
 import { type FollowReporter, followProjectLink, type LinkDestination } from "./follow-link";
+import { createLinkSettlements, useOptionalLinkSettlements } from "./link-settlements";
 import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
@@ -94,6 +95,11 @@ export function useLinkFollower({
     providedResolution === undefined ? createLinkAnswerCache() : null,
   );
   const resolution = providedResolution === undefined ? ownedResolution : providedResolution;
+  // The account's memo outlives every surface; outside the authenticated
+  // shell (tests, SSR) the follower keeps its own.
+  const accountSettlements = useOptionalLinkSettlements();
+  const [ownedSettlements] = useState(createLinkSettlements);
+  const settlements = accountSettlements ?? ownedSettlements;
   const ready = scope !== null && scope !== "pending" ? scope : null;
   const pending = scope === "pending";
   const projectId = ready?.projectId ?? null;
@@ -115,7 +121,11 @@ export function useLinkFollower({
   useEffect(() => {
     if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
-      createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
+      createProjectLinkResolver(
+        { projectId, workId, baseUri, holderDocumentId },
+        index,
+        settlements,
+      ),
       { baseUri, projectId },
     );
     for (const release of scopeWaiters.current) release();
@@ -129,7 +139,7 @@ export function useLinkFollower({
     // `index` stays the same object while its revision does, so a different one
     // is a different catalog: registering against it is how an answer about the
     // old one becomes unreachable.
-  }, [baseUri, holderDocumentId, index, projectId, resolution, workId]);
+  }, [baseUri, holderDocumentId, index, projectId, resolution, settlements, workId]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
