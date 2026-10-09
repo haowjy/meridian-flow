@@ -6,6 +6,7 @@ import type {
   ParsedContentWithSpans,
   PMNode,
 } from "@meridian/markup";
+import { createShownLinkLedger, type ShownLinkLedger } from "./links/shown.js";
 import { toHashline } from "./model/hashline.js";
 
 /** A codec bound to one holder's link scope: every serialization spells through it. */
@@ -14,6 +15,8 @@ export interface AgentEditCodec {
   readonly markup: MarkupCodec;
 
   parse(content: string): ParsedContent;
+  /** Parse with each link occurrence's source span (pure syntax, like `parse`). */
+  parseWithSpans(content: string): ParsedContentWithSpans;
   serialize(blocks: PMNode[]): string;
   serializeBlockBodies(blocks: readonly PMNode[]): string[];
 
@@ -22,6 +25,12 @@ export interface AgentEditCodec {
 
   /** Batch version of serializeBlock for callers that already have aligned hashes. */
   serializeBlocks(blocks: readonly PMNode[], hashes: readonly string[]): string[];
+
+  /**
+   * Host-only facts for items this codec rendered as hashlines (whole or as a
+   * prefix): each ref and the address it spelled at that render.
+   */
+  shownLinks: ShownLinkLedger["shownLinks"];
 }
 
 /**
@@ -46,20 +55,26 @@ export function createAgentEditCodecFactory(markup: MarkupCodec): AgentEditCodec
 }
 
 function bindAgentEditCodec(markup: MarkupCodec, links: DocumentLinkScope): AgentEditCodec {
+  const ledger = createShownLinkLedger(links, markup);
   return {
     markup,
     parse: (content) => markup.parse(content),
+    parseWithSpans: (content) => markup.parseWithSpans(content),
     serialize: (blocks) => markup.serialize(blocks, links),
     serializeBlockBodies: (blocks) => markup.serializeBlocks(blocks, links),
 
     serializeBlock(block, hash) {
-      return toHashline(hash, markup.serializeBlock(block, links));
+      const body = markup.serializeBlock(block, links);
+      ledger.record([block], [hash], [body]);
+      return toHashline(hash, body);
     },
 
     serializeBlocks(blocks, hashes) {
-      return markup
-        .serializeBlocks(blocks, links)
-        .map((body, index) => toHashline(hashes[index] ?? "", body));
+      const bodies = markup.serializeBlocks(blocks, links);
+      ledger.record(blocks, hashes, bodies);
+      return bodies.map((body, index) => toHashline(hashes[index] ?? "", body));
     },
+
+    shownLinks: (items) => ledger.shownLinks(items),
   };
 }

@@ -11,7 +11,6 @@ import { MemoryJournal } from "./test-support/recording-journal.js";
 import {
   cloneDoc,
   codec,
-  codecFactory,
   MemoryCoordinator,
   model,
   THREAD_ID,
@@ -28,7 +27,6 @@ describe("mutation commit", () => {
       coordinator,
       model,
       links,
-      codec: codecFactory,
     });
     const runtimeDoc = cloneDoc(coordinator.require("chapter.md"));
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtimeDoc);

@@ -81,7 +81,16 @@ export type {
   StaticCatalogDocument,
   StaticDocumentCatalog,
 } from "./ports/static-document-links.js";
-export { createStaticDocumentLinks } from "./ports/static-document-links.js";
+export {
+  createStaticDocumentLinks,
+  type StaticDocumentLinksOptions,
+} from "./ports/static-document-links.js";
+export {
+  extractStoredLinks,
+  type StoredLinkKeys,
+  type StoredLinkOccurrence,
+  storedLinkKeys,
+} from "./ports/stored-link-extraction.js";
 export type {
   CompactionResult,
   JournalSnapshot,
