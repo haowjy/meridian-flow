@@ -131,6 +131,14 @@ export function useDraftReviewScopeValue({
     review: controller.inlineReview,
     dispatch: reviewState.dispatch,
     disposing: controller.isDisposing,
+    draftOnly: getContextTabs(effectiveProjectId).tabs.some(
+      (tab) =>
+        tab.kind === "tracked" &&
+        tab.draftOnly &&
+        tab.documentId === controller.inlineReview?.documentId &&
+        tab.reviewDraftId === controller.inlineReview?.draftId &&
+        tab.reviewWorkId === workId,
+    ),
   });
   useReconcileReviewFocus(controller);
 

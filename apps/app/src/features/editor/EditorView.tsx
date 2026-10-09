@@ -173,7 +173,9 @@ export function EditorView(props: EditorViewProps) {
   // The painted review while its room is replaced: an inert copy, so neither the
   // live prose nor an empty shell shows under a review the writer is still in. It belongs to
   // the one review identity (document, draft) it was copied from and renders for no other.
-  const reviewIdentity = props.reviewDraftId ? `${props.documentId}:${props.reviewDraftId}` : null;
+  const reviewIdentity = props.reviewDraftId
+    ? `${props.projectId}:${props.reviewWorkId}:${props.documentId}:${props.reviewDraftId}`
+    : null;
   const { controller, roomOwner } = useDraftReview();
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
   const liveSession = props.session ?? null;

@@ -201,10 +201,11 @@ also gets read afresh; a genuine external close (no proposal at R or above) ends
 review. The Editor address owner (`EditorReviewAddressOwner`) ends a review only when the
 address leaves its document; whether the list still names the draft is row X's alone, so a
 list behind a re-entered proposal cannot end it from a second place.
-Known gap ([#731](https://github.com/haowjy/meridian-flow/issues/731)): moving off a generation retires its branch session, and
-branch sessions keep no local copy, so writer edits the server has not acknowledged are
-lost on re-entry or a stale room. The fix is a generation-aware handoff at session
-retirement, not a retained room.
+Unacknowledged writer edits survive retirement through the session layer's
+`BranchWriterHandoff` ([#731](https://github.com/haowjy/meridian-flow/issues/731)).
+The pool drains released outboxes and carries reset outboxes; the handoff filters
+against the synchronized successor before replay. Review lifetime does not own
+or gate that delivery, including when the writer has left the review.
 
 Focus is review state too: `inlineReview.focus` holds the focused change's class
 id with the operations it held, one value for the whole review. When the server
