@@ -113,6 +113,10 @@ export interface SpelledLinkFact {
    * a stored `doc:` or `ahead:` ref, or an uploaded picture's `asset:<id>` src.
    */
   ref: string;
+  /**
+   * Empty when the reader was shown an upload as an empty destination: that
+   * names no address, so it continues only the occurrence it was shown as.
+   */
   address: string;
 }
 
@@ -124,7 +128,10 @@ export function occurrenceIdentity({ kind, attrs }: Pick<LinkOccurrence, "kind" 
   return kind !== "link" && attrs.href.startsWith(ASSET_PREFIX) ? attrs.href : null;
 }
 
-/** What one occurrence shows a reader in this scope; null without an identity or a spelled address. */
+/**
+ * What one occurrence shows a reader in this scope; null without an identity,
+ * or for a link spelled at no address.
+ */
 export function spelledFact(
   occurrence: Pick<LinkOccurrence, "kind" | "attrs">,
   links: DocumentLinkScope,
@@ -132,11 +139,13 @@ export function spelledFact(
   const ref = occurrenceIdentity(occurrence);
   if (ref === null) return null;
   const { attrs } = occurrence;
-  const { address } =
-    occurrence.kind === "link"
-      ? links.spellLink({ href: attrs.href, ref: attrs.ref })
-      : links.spellSource({ src: attrs.href, ref: attrs.ref });
-  return address === null ? null : { ref, address };
+  if (occurrence.kind === "link") {
+    const { address } = links.spellLink({ href: attrs.href, ref: attrs.ref });
+    return address === null ? null : { ref, address };
+  }
+  const { href, address } = links.spellSource({ src: attrs.href, ref: attrs.ref });
+  if (address !== null) return { ref, address };
+  return href === "" ? { ref, address: "" } : null;
 }
 
 /** Spell every identity-bearing occurrence of these blocks with this scope. Pure. */

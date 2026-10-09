@@ -4,7 +4,11 @@ import { type CandidateRow, matchOccurrences } from "./correspondence-matching.j
 /** One showing of a link to the model in this holder document (host-only evidence). */
 export interface ShownLink {
   ref: string;
-  /** Canonical absolute address shown, without suffix (the speller's key space). */
+  /**
+   * Canonical absolute address shown, without suffix (the speller's key space).
+   * Empty for a picture shown as an empty destination: an empty written source
+   * then continues it in pass 1, but no showing at no address claims one in pass 2.
+   */
   address: string;
   /** The holder's URI when it was shown; written relative hrefs normalize against it. */
   holderUri: string;
@@ -109,7 +113,9 @@ export function correspondLinks(input: CorrespondenceInput): LinkMatch[] {
     });
   });
   const matching = matchOccurrences(candidates, input.old.length);
-  const latest = [...history.values()].map((entries) => entries[0]);
+  const latest = [...history.values()]
+    .map((entries) => entries[0])
+    .filter((showing) => showing.address !== "");
   const live = new Map(
     latest.map((showing) => [showing.ref, input.isLive(showing.ref, showing.address)]),
   );

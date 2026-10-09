@@ -129,8 +129,9 @@ parse, in pass 3 of the host's ref assignment over a prepared scope (agent-edit
 upload's `asset:<id>` is its identity: `spellSource` reports the address it
 spelled, and `spelledLinks` records a fact keyed `asset:<id>` there, so a
 rewrite that keeps the shown address continues the upload. An upload spelled
-as an empty destination records nothing; a rewrite that writes `()` back
-unchanged keeps it, by the same equality rule that keeps a contextual link.
+as an empty destination records a fact at the empty address, so a rewrite
+that writes `()` back over it keeps the picture even once it became
+addressable (agent-edit's correspondence).
 
 ## Shared link rules
 
