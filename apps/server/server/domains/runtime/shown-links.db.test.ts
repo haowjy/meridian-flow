@@ -3,8 +3,9 @@
  * store adapters. Dedup keeps the latest showing per key; rows survive a real
  * compaction; a fork reads its source's showings only up to its cutoff turn,
  * and a source's later repeat never takes one away; a handoff and a spawned
- * child inherit nothing; a writer delayed after drawing its sequence never
- * rewinds a key's order.
+ * child inherit nothing; a showing recorded in a failed persistence rolls
+ * back with it; a writer delayed after drawing its sequence never rewinds a
+ * key's order.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";
@@ -34,6 +35,7 @@ if (!RUN_DB_TESTS || !url) {
     const { createCompactionFixture } = await import("./loop/__tests__/compaction-db-fixture.js");
     const { createDrizzleShownLinkStore } = await import("./adapters/drizzle/shown-links.js");
     const { createInMemoryShownLinkStore } = await import("./adapters/in-memory/shown-links.js");
+    const { InMemoryTransactionOwner } = await import("../../shared/in-memory-transaction.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });
     afterAll(() => db.close());
@@ -57,10 +59,18 @@ if (!RUN_DB_TESTS || !url) {
         extension: "md",
         fileType: "markdown",
       });
+      const owner = new InMemoryTransactionOwner();
       const store: ShownLinkStore =
         adapter === "drizzle"
           ? createDrizzleShownLinkStore(db)
-          : createInMemoryShownLinkStore({ threads: rig.repos.threads, turns: rig.repos.turns });
+          : createInMemoryShownLinkStore({
+              transactionOwner: owner,
+              threads: rig.repos.threads,
+              turns: rig.repos.turns,
+            });
+      // The transaction the adapter's repositories commit through.
+      const transaction = <T>(operation: () => Promise<T>) =>
+        adapter === "drizzle" ? rig.repos.transaction(operation) : owner.run(operation);
       const turns = await rig.repos.turns.listByThread(rig.threadId);
       const answer = turns.at(-1) as Turn;
       const source = (await rig.repos.threads.findById(rig.threadId)) as Thread;
@@ -97,7 +107,7 @@ if (!RUN_DB_TESTS || !url) {
           origin: "writer",
           status: "complete",
         });
-      return { rig, store, answer, source, show, seen, derive, next, documentId };
+      return { rig, store, answer, source, show, seen, derive, next, documentId, transaction };
     }
     type Rig = Awaited<ReturnType<typeof rig>>;
     type Adapter = "drizzle" | "in-memory";
@@ -254,6 +264,20 @@ if (!RUN_DB_TESTS || !url) {
           ] as const) {
             check(await ordered(r, threadId), what).toEqual([competing.ref, shownLast.ref]);
           }
+        },
+      },
+      {
+        name: "a showing recorded in a failed persistence rolls back with it",
+        async run({ answer, source, show, seen, transaction }, check) {
+          await show(source.id, answer, [link(7)]);
+          const failed = await transaction(async () => {
+            await show(source.id, answer, [link(8)]);
+            throw new Error("result persistence failed");
+          }).catch((error: Error) => error.message);
+          check(failed, "the persistence failed").toBe("result persistence failed");
+          check(await seen(source.id), "only the committed showing").toEqual([
+            "00000007@kb://target-7.md",
+          ]);
         },
       },
       {

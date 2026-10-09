@@ -4,6 +4,7 @@ import type { Block, OrchestratorEvent, Thread, Turn } from "@meridian/contracts
 import { encodeImageInclusionMetadata, type ImageContextBreak } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
 import type { Tool } from "../gateway/index.js";
+import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   type CompactionDecision,
@@ -17,7 +18,7 @@ import { createLocalTurn } from "./local-turn.js";
 import type { ControlMessage } from "./next-inbox-work.js";
 import type { OrchestratorDeps, OrchestratorRepositories } from "./orchestrator.js";
 import { createPrefixCacheStateService } from "./prefix-cache-state.js";
-import { loadReferenceReads } from "./reference-context.js";
+import { type LoadedReferenceReads, loadReferenceReads } from "./reference-context.js";
 import { type AssembledNextTurnContext, assembleNextTurnContext } from "./turn-context-assembly.js";
 
 export type PrepareRequestInput = {
@@ -47,6 +48,8 @@ export type PreparedRequest = {
   assembled: AssembledNextTurnContext;
   events: OrchestratorEvent[];
   compaction: CompactionDecision;
+  /** Host-only reference-read candidates; the commit persisting `events` records them. */
+  shown: ShownLinkShowing[];
 };
 
 export async function prepareRequestContext(input: PrepareRequestInput): Promise<PreparedRequest> {
@@ -66,9 +69,9 @@ export async function prepareRequestContext(input: PrepareRequestInput): Promise
 async function prepareBaseRequest(
   input: PrepareRequestInput,
 ): Promise<Omit<PreparedRequest, "turns" | "blocks">> {
-  const referenceUpdates =
+  const references: LoadedReferenceReads =
     input.readReferences === false
-      ? []
+      ? { blocks: [], shown: [] }
       : await loadReferenceReads({
           blocks: input.blocks,
           userTurnId: input.referenceTurnId,
@@ -77,6 +80,7 @@ async function prepareBaseRequest(
           reader: input.deps.referenceReader,
           signal: input.signal,
         });
+  const referenceUpdates = references.blocks;
   const referencesById = new Map(referenceUpdates.map((block) => [block.id, block]));
   const blocks = input.blocks.map((block) => referencesById.get(block.id) ?? block);
   const events: OrchestratorEvent[] = referenceUpdates.map((block) => ({
@@ -186,7 +190,7 @@ async function prepareBaseRequest(
     }
     compaction = { kind: "generate" };
   }
-  return { assembled, events, compaction };
+  return { assembled, events, compaction, shown: references.shown };
 }
 
 function buildImageProjectionEvents(input: {

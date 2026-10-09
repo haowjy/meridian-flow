@@ -3,8 +3,9 @@
  * ref and the absolute address shown. Host-only; never in model text.
  *
  * Facts come from the render itself. A bound codec keeps a ledger of every
- * hashline it rendered: the immutable node, the hash and body it emitted, and
- * the address each ref-bearing occurrence spelled in that same scope. A
+ * link-bearing hashline it rendered: the hash and body it emitted, and the
+ * address each ref-bearing occurrence spelled in that same scope; a render
+ * with no refs is kept too, so equal text shown without them claims nothing. A
  * result's items are then looked up by the hash they carry, never by the
  * document's current state. A whole item counts all its ref-bearing
  * occurrences; a truncated one counts only those whose source span ends
@@ -79,7 +80,9 @@ export function createShownLinkLedger(
         const body = bodies[index];
         if (hash === undefined || body === undefined) return;
         const occurrences = walkLinkOccurrences([block]);
-        if (!occurrences.some((occurrence) => occurrence.attrs.ref !== null)) return;
+        // A render of links without refs is kept: it is the negative evidence
+        // that clears a fact an equal-text render once showed.
+        if (occurrences.length === 0) return;
         const facts = occurrences.map(({ kind, attrs }): SpelledLinkFact | null => {
           if (attrs.ref === null) return null;
           const { address } =

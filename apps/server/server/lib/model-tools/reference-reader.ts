@@ -1,11 +1,11 @@
 /**
  * Reference loading resolves the mention and calls `readDocument`, as the
- * `read` tool does (D18). Unlike a tool result, the reference block is
- * persisted by run preparation, so the read records its own evidence, and
- * only while the run that will send it is still live.
+ * `read` tool does (D18). The read returns its shown-link candidates beside
+ * the result; run preparation carries them to the commit that persists the
+ * reference block, so only an accepted attempt leaves evidence.
  */
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { ReferenceReader, ShownLinkStore } from "../../domains/runtime/index.js";
+import type { ReferenceReader } from "../../domains/runtime/index.js";
 import { resolveDocumentAddress } from "./document-tools.js";
 import { documentGrant } from "./file-access.js";
 import { readDocument } from "./read-document.js";
@@ -26,9 +26,7 @@ function readError(message: string, status?: "document_not_found"): JsonValue {
   return asJson(writeToolError("read", message, status).output);
 }
 
-export function createReferenceReader(
-  deps: ToolWiringDeps & { shownLinks: Pick<ShownLinkStore, "record"> },
-): ReferenceReader {
+export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
   return {
     async read(reference, ctx) {
       const call = await resolveToolCall(deps, ctx);
@@ -47,16 +45,14 @@ export function createReferenceReader(
       const grant = await documentGrant(deps, call.principal, "read", address, "read");
       if (isToolError(grant)) return { result: asJson(grant.output), revision: null };
       const outcome = await readDocument(deps, grant, address, {}, ctx);
-      if (!outcome.isError) {
+      if (outcome.isError) return { result: asJson(outcome.result), revision: outcome.revision };
+      recordTouchInBackground(deps, address.documentId, ctx);
+      return {
+        result: asJson(outcome.result),
+        revision: outcome.revision,
         // The attachment's read text goes to the model as the reference block.
-        if (!ctx.signal?.aborted) {
-          for (const shown of showing(address.documentId, address.uri, outcome)) {
-            await deps.shownLinks.record({ ...shown, threadId: ctx.threadId, turnId: ctx.turnId });
-          }
-        }
-        recordTouchInBackground(deps, address.documentId, ctx);
-      }
-      return { result: asJson(outcome.result), revision: outcome.revision };
+        shown: showing(address.documentId, address.uri, outcome),
+      };
     },
   };
 }

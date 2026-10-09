@@ -106,7 +106,7 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
-import type { ShownLinkStore } from "../ports/shown-links.js";
+import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
@@ -259,7 +259,7 @@ export interface OrchestratorDeps {
   imageAssets: ImageAssetPort;
   /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
   concurrentRenderBudgetBytes?(request: GenerateRequest): number;
-  /** Shown-link evidence: tool results, settled receipts and backfilled concurrent runs record here. */
+  /** Shown-link evidence: tool results, reference reads, settled receipts and backfilled concurrent runs record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
   responseWrites: {
     commitResponse(
@@ -686,6 +686,10 @@ async function runDrainTurn(
             selection.activeLeafTurnId,
             async () => {
               await reconcileOrphanedPendingWrites(deps, input.threadId);
+              // The reference blocks in `events` are what this turn's request
+              // shows; a discarded or retried preparation never gets here.
+              if (preflight)
+                await recordShownLinks(deps, input.threadId, reservedTurn.id, preflight.shown);
               if (preflight)
                 await persistPreparedPromptBake(
                   preflight.assembled,
@@ -1189,6 +1193,16 @@ async function persistCommittedWriteResult(input: {
   return { block: persisted.result };
 }
 
+/** Records accepted reference-read candidates; callers run it inside the commit persisting their blocks. */
+async function recordShownLinks(
+  deps: Pick<OrchestratorDeps, "shownLinks">,
+  threadId: string,
+  turnId: string,
+  shown: readonly ShownLinkShowing[],
+): Promise<void> {
+  for (const showing of shown) await deps.shownLinks.record({ ...showing, threadId, turnId });
+}
+
 /**
  * Loads text-reference reads for one user turn, returning prepared events and
  * blocks with read results applied. Used both
@@ -1202,8 +1216,8 @@ async function prepareReferenceReads(input: {
   assistantTurnId: string;
   blocks: readonly Block[];
   signal?: AbortSignal;
-}): Promise<{ blocks: Block[]; events: OrchestratorEvent[] }> {
-  const loaded = await loadReferenceReads({
+}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; shown: ShownLinkShowing[] }> {
+  const { blocks: loaded, shown } = await loadReferenceReads({
     blocks: input.blocks,
     userTurnId: input.userTurnId,
     threadId: input.threadId,
@@ -1211,7 +1225,7 @@ async function prepareReferenceReads(input: {
     reader: input.deps.referenceReader,
     signal: input.signal,
   });
-  if (loaded.length === 0) return { blocks: [...input.blocks], events: [] };
+  if (loaded.length === 0) return { blocks: [...input.blocks], events: [], shown };
   const events = loaded.map((block) => ({
     type: "block.upserted" as const,
     block: contentForBlockInput({
@@ -1228,6 +1242,7 @@ async function prepareReferenceReads(input: {
   return {
     blocks: input.blocks.map((block) => updatedById.get(block.id) ?? block),
     events,
+    shown,
   };
 }
 
@@ -1682,6 +1697,7 @@ async function executeLoop({
       signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
+      recordShown: (turnId, shown) => recordShownLinks(deps, input.threadId, turnId, shown),
       prepareAdoptedTurn: async (turn, blocks) => {
         const withReferences = await prepareReferenceReads({
           deps,
@@ -1702,6 +1718,7 @@ async function executeLoop({
         return {
           blocks: withReferences.blocks,
           events: withReferences.events,
+          shown: withReferences.shown,
           extraTurns:
             skillBody.kind === "created"
               ? [{ turn: skillBody.turn, blocks: [skillBody.block] }]

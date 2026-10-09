@@ -2,6 +2,7 @@
 
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import { type AGUIEvent, EventType, type UserMessageBlock } from "@meridian/contracts/protocol";
+import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { testWorkSlug } from "../../../../test-support/work-slug.js";
 import {
   type CreditLedger,
@@ -60,6 +61,8 @@ export function createRuntimeHarness(
   overrides: Omit<Partial<OrchestratorDeps>, "backgroundTasks"> & {
     backgroundTasks?: DetachedWorkTracker;
     repos?: ThreadRepositories;
+    /** The owner supplied `repos` commit through; the in-memory shown-link store joins it. */
+    transactionOwner?: InMemoryTransactionOwner;
     inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
     threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
@@ -79,11 +82,14 @@ export function createRuntimeHarness(
     backgroundTasks: suppliedBackgroundTasks,
     creditLedger: suppliedLedger,
     notices: suppliedNotices,
+    transactionOwner: suppliedOwner,
     ...dependencies
   } = overrides;
   const backgroundTasks = suppliedBackgroundTasks ?? createDetachedWorkTracker();
   const projects = createInMemoryProjectRepository();
-  const repos = overrides.repos ?? createInMemoryRepositories({ projects });
+  // Shown-link evidence commits through the repositories' transactions.
+  const transactionOwner = suppliedOwner ?? new InMemoryTransactionOwner();
+  const repos = overrides.repos ?? createInMemoryRepositories({ projects, transactionOwner });
   const activeDocuments = createActiveDocumentResolver(repos);
   const preferences = createInMemoryProjectPreferencesRepository();
   const projectPreferences = {
@@ -206,7 +212,11 @@ export function createRuntimeHarness(
       },
       async rollbackResponse() {},
     },
-    shownLinks: createInMemoryShownLinkStore({ threads: repos.threads, turns: repos.turns }),
+    shownLinks: createInMemoryShownLinkStore({
+      transactionOwner,
+      threads: repos.threads,
+      turns: repos.turns,
+    }),
     ...dependencies,
     backgroundTasks,
     shutdown,
@@ -306,6 +316,8 @@ export async function runtimeScenario(
     signalGatewayEvent?: (event: StreamEvent) => boolean;
     runStarter?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["runStarter"];
     notices?: NonNullable<Parameters<typeof createRuntimeHarness>[0]>["notices"];
+    /** Shared with a caller-built in-memory `shownLinks` store. */
+    transactionOwner?: InMemoryTransactionOwner;
   },
 ) {
   const {
@@ -313,10 +325,11 @@ export async function runtimeScenario(
     projectTitle = "Runtime",
     creditsMillicredits = "1000000",
     signalGatewayEvent,
+    transactionOwner = new InMemoryTransactionOwner(),
     ...ports
   } = options;
   const projects = createInMemoryProjectRepository();
-  const repos = createInMemoryRepositories({ projects });
+  const repos = createInMemoryRepositories({ projects, transactionOwner });
   const project = await projects.create({ userId, title: projectTitle });
   const thread = await repos.threads.create({ userId, projectId: project.id });
   const journal = createInMemoryEventJournalWriter();
@@ -348,6 +361,7 @@ export async function runtimeScenario(
     ...ports,
     gateway,
     repos,
+    transactionOwner,
     eventWriter: hub,
     headSeq: (id) => hub.headSeq(id),
     boundThreads: () => [thread.id],
