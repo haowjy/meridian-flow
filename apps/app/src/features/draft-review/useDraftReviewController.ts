@@ -44,6 +44,7 @@ import {
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
   inlineReviewFromState,
+  type ProposalEvidence,
   type ReviewToast,
 } from "./draft-review-session";
 import { type ReviewFocus, reviewChangesOfPreview } from "./review-changes";
@@ -150,6 +151,15 @@ export type DraftReviewController = {
    * place; it neither exits nor guesses the new room.
    */
   reviewRoomStale: (documentId: string, draftId: string, roomName: string) => void;
+  /**
+   * The Work's draft list has no row for the reviewed draft. The review ends
+   * unless the newest preview evidence shows the draft alive (row X).
+   */
+  reviewDraftAbsentFromList: (
+    documentId: string,
+    draftId: string,
+    evidence: ProposalEvidence | null,
+  ) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
   inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
@@ -487,6 +497,13 @@ export function useDraftReviewController({
     dispatch({ type: "roomStale", documentId, draftId, roomName });
   }, []);
 
+  const reviewDraftAbsentFromList = useCallback(
+    (documentId: string, draftId: string, evidence: ProposalEvidence | null) => {
+      dispatch({ type: "draftAbsentFromList", documentId, draftId, evidence });
+    },
+    [],
+  );
+
   const exitInlineReview = useCallback(() => {
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
     if (inline) {
@@ -627,6 +644,7 @@ export function useDraftReviewController({
       dismissToast,
       enterInlineReview,
       reviewRoomStale,
+      reviewDraftAbsentFromList,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
@@ -657,6 +675,7 @@ export function useDraftReviewController({
       dismissToast,
       enterInlineReview,
       reviewRoomStale,
+      reviewDraftAbsentFromList,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,

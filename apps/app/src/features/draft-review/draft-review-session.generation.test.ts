@@ -318,6 +318,56 @@ describe("S: the review's room is reported stale", () => {
   });
 });
 
+describe("X: the Work's list has no row for the draft", () => {
+  const absent = (
+    evidence: { draftGeneration: number; proposal: boolean } | null,
+  ): DraftReviewAction => ({ type: "draftAbsentFromList", ...A, evidence });
+
+  it("ends a review with no completion when no preview lists changes (an external close)", () => {
+    expect(review(run(reviewing(2), absent(null)))).toBeNull();
+    expect(review(run(reviewing(2), absent({ draftGeneration: 2, proposal: false })))).toBeNull();
+  });
+
+  it("ends a review whose only evidence is of an earlier generation", () => {
+    expect(review(run(reviewing(2), absent({ draftGeneration: 1, proposal: true })))).toBeNull();
+  });
+
+  it.each([
+    2, 3,
+  ])("keeps a review while the preview lists changes at R or above (%i)", (generation) => {
+    const open = reviewing(2);
+    expect(run(open, absent({ draftGeneration: generation, proposal: true }))).toBe(open);
+  });
+
+  it("keeps a review whose generation is unresolved while a preview lists changes", () => {
+    const unresolved = run(EMPTY_DRAFT_REVIEW_STATE, enter());
+    expect(run(unresolved, absent({ draftGeneration: 2, proposal: true }))).toBe(unresolved);
+  });
+
+  it("keeps a review that holds a completion, whatever the evidence", () => {
+    const finished = reviewing(2, closed);
+    expect(run(finished, absent(null))).toBe(finished);
+    const completing = reviewing(2, pending);
+    expect(run(completing, absent(null))).toBe(completing);
+  });
+
+  it("ends in the same state whichever of the list and the newer proposal arrives first", () => {
+    const evidence = { draftGeneration: 3, proposal: true };
+    const listFirst = run(
+      reviewing(2),
+      absent(evidence),
+      observed(3, true, { roomName: "room-3" }),
+    );
+    const previewFirst = run(
+      reviewing(2),
+      observed(3, true, { roomName: "room-3" }),
+      absent(evidence),
+    );
+    expect(review(listFirst)).toMatchObject({ draftGeneration: 3, roomName: "room-3" });
+    expect(listFirst).toEqual(previewFirst);
+  });
+});
+
 describe("L: the writer leaves, or enters another draft", () => {
   const other = { documentId: "doc-b", draftId: "draft-b" };
   const inputs = [
@@ -326,6 +376,7 @@ describe("L: the writer leaves, or enters another draft", () => {
     answeredClosed(9),
     claimEnded(9),
     { type: "roomStale", ...A, roomName: "room-2" },
+    { type: "draftAbsentFromList", ...A, evidence: null },
   ] as const;
 
   it.each(inputs)("leaves no review for D to take $type", (input) => {

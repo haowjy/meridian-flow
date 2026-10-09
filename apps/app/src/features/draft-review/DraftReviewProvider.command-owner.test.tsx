@@ -63,6 +63,26 @@ function twoDrafts() {
   );
 }
 
+const MODES = ["apply", "discard"] as const;
+
+/** A selection command of a mode, as the Editor's controller and the Chat's runner send it. */
+function commandOf(mode: (typeof MODES)[number]) {
+  const apply = mode === "apply";
+  return {
+    mock: apply ? mocks.applyDraftChanges : mocks.discardDraft,
+    sendInEditor: (probe: ScopeProbe, id: string) =>
+      apply
+        ? probe.editor.controller.applyChanges(draftA, change(id))
+        : probe.editor.controller.discardChanges(draftA, change(id)),
+    sendInChat: (probe: ScopeProbe, id: string) =>
+      apply
+        ? probe.chatRunner.applyChanges(draftA, change(id))
+        : probe.chatRunner.discardChanges(draftA, change(id)),
+    answer: (closes: boolean) => (apply ? applied(closes) : discarded(closes)),
+    toast: apply ? "applied" : "discarded",
+  };
+}
+
 /** A command whose answer the test releases. */
 function heldCommand(mock: typeof mocks.discardDraft) {
   let answer!: (response: unknown) => void;
@@ -84,10 +104,11 @@ beforeEach(() => {
   twoDrafts();
 });
 
-describe("two last Discards for one open draft in the same turn", () => {
-  it("keeps the first command's hold when the second is refused", async () => {
+describe("two last commands for one open draft in the same turn", () => {
+  it.each(MODES)("%s: keeps the first command's hold when the second is refused", async (mode) => {
+    const { mock, sendInChat, answer: answered } = commandOf(mode);
     mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
-    const answer = heldCommand(mocks.discardDraft);
+    const answer = heldCommand(mock);
     await renderReviewScopes(async (probe) => {
       await groupsListed(probe);
       await open(probe, draftA);
@@ -95,18 +116,18 @@ describe("two last Discards for one open draft in the same turn", () => {
       let first!: Promise<unknown>;
       let second: unknown;
       await act(async () => {
-        first = probe().chatRunner.discardChanges(draftA, change("2"));
-        second = await probe().chatRunner.discardChanges(draftA, change("2"));
+        first = sendInChat(probe(), "2");
+        second = await sendInChat(probe(), "2");
       });
       expect(second).toEqual({ kind: "blocked" });
       expect(probe().editor.controller.isDisposing).toBe(true);
       expect(probe().editor.controller.inlineReview?.completion).toMatchObject({
         phase: "pending",
-        mode: "discard",
+        mode,
       });
 
       await act(async () => {
-        answer(discarded(false));
+        answer(answered(false));
         await first;
       });
       expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
@@ -115,19 +136,20 @@ describe("two last Discards for one open draft in the same turn", () => {
 });
 
 describe("an answer that arrives after the writer moved to another review", () => {
-  it("shows no toast in the review they are in", async () => {
-    const answer = heldCommand(mocks.applyDraftChanges);
+  it.each(MODES)("%s: shows no toast in the review they are in", async (mode) => {
+    const { mock, sendInEditor, answer: answered } = commandOf(mode);
+    const answer = heldCommand(mock);
     await renderReviewScopes(async (probe) => {
       await groupsListed(probe);
       await open(probe, draftA);
       await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
       let done!: Promise<unknown>;
       await act(async () => {
-        done = probe().editor.controller.applyChanges(draftA, change("2"));
+        done = sendInEditor(probe(), "2");
       });
       await open(probe, draftB);
       await act(async () => {
-        answer(applied(false));
+        answer(answered(false));
         await done;
       });
       expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-b");
@@ -135,21 +157,24 @@ describe("an answer that arrives after the writer moved to another review", () =
     });
   });
 
-  it("still shows the toast when the writer is back in the review it was sent from", async () => {
-    const answer = heldCommand(mocks.applyDraftChanges);
+  it.each(
+    MODES,
+  )("%s: still shows the toast when the writer is back in the review it was sent from", async (mode) => {
+    const { mock, sendInEditor, answer: answered, toast } = commandOf(mode);
+    const answer = heldCommand(mock);
     await renderReviewScopes(async (probe) => {
       await groupsListed(probe);
       await open(probe, draftA);
       await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
       let done!: Promise<unknown>;
       await act(async () => {
-        done = probe().editor.controller.applyChanges(draftA, change("2"));
+        done = sendInEditor(probe(), "2");
       });
       await act(async () => {
-        answer(applied(false));
+        answer(answered(false));
         await done;
       });
-      expect(probe().editor.controller.toast?.code).toBe("applied");
+      expect(probe().editor.controller.toast?.code).toBe(toast);
     });
   });
 });

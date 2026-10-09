@@ -610,9 +610,9 @@ describe("O3: a finished review takes up its draft's next proposal", () => {
     });
   });
 
-  it("re-enters from a cached preview alone, before any list row", async () => {
+  it.each(MODES)("%s: re-enters from a cached preview alone, before any list row", async (mode) => {
     await renderReviewScopes(async (probe) => {
-      await reviewClosed(probe);
+      await reviewClosed(probe, mode);
       mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));
       await reread(probe);
       await vi.waitFor(() => expect(probe().header.finished).toBe(false));
@@ -622,9 +622,11 @@ describe("O3: a finished review takes up its draft's next proposal", () => {
 });
 
 describe("O2: nothing to take up", () => {
-  it("a list read of the closed generation after the close lists no change and reopens nothing", async () => {
+  it.each(
+    MODES,
+  )("%s: a list read of the closed generation after the close lists no change and reopens nothing", async (mode) => {
     await renderReviewScopes(async (probe) => {
-      await reviewClosed(probe);
+      await reviewClosed(probe, mode);
       // A list read that began before the close still lists the draft, at the generation it closed.
       mocks.listWorkDrafts.mockResolvedValue(listedAt(1, "2026-10-06T23:00:00.000Z"));
       await relist(probe);
@@ -637,9 +639,9 @@ describe("O2: nothing to take up", () => {
     });
   });
 
-  it("equal list rows churning cause no reads", async () => {
+  it.each(MODES)("%s: equal list rows churning cause no reads", async (mode) => {
     await renderReviewScopes(async (probe) => {
-      await reviewClosed(probe);
+      await reviewClosed(probe, mode);
       mocks.listWorkDrafts.mockResolvedValue(listedAt(2));
       mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));
       await relist(probe);
@@ -659,9 +661,11 @@ describe("O2: nothing to take up", () => {
     });
   });
 
-  it("stays finished while the draft stays out of the list, and reads nothing", async () => {
+  it.each(
+    MODES,
+  )("%s: stays finished while the draft stays out of the list, and reads nothing", async (mode) => {
     await renderReviewScopes(async (probe) => {
-      await reviewClosed(probe);
+      await reviewClosed(probe, mode);
       const reads = mocks.getDraftPreview.mock.calls.length;
       await relist(probe);
       await act(async () => undefined);
@@ -672,8 +676,59 @@ describe("O2: nothing to take up", () => {
   });
 });
 
+describe("invariant 4: a list without the draft, a preview with its next proposal", () => {
+  // A remote close and next write happened; the list was read between them (no row) and the
+  // preview after them (G+1 with changes). Whichever lands first, the review ends on G+1.
+  it.each([
+    "list-first",
+    "preview-first",
+  ] as const)("%s: a review with no completion follows the proposal, not the empty list", async (order) => {
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await vi.waitFor(() => expect(probe().editor.controller.reviewRoomName).toBe(roomOf(1)));
+      mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
+      if (order === "preview-first") {
+        mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));
+        await reread(probe);
+        await vi.waitFor(() =>
+          expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2),
+        );
+        await relist(probe);
+      } else {
+        // The list lands while the preview is still the review's own generation; the preview read
+        // it triggers (or one already in flight) lands after.
+        let landed!: (preview: unknown) => void;
+        mocks.getDraftPreview.mockReturnValueOnce(new Promise((resolve) => (landed = resolve)));
+        await relist(probe);
+        mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));
+        await act(async () => landed(proposal(2, "5")));
+      }
+      await vi.waitFor(() =>
+        expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2),
+      );
+      await vi.waitFor(() => expect(probe().editor.controller.reviewRoomName).toBe(roomOf(2)));
+      expect(probe().editor.controller.inlineReview).toMatchObject({ draftId: "draft-a" });
+      expect(classIds(probe())).toEqual(["class-5"]);
+    });
+  });
+
+  it("a genuine external close still ends the review", async () => {
+    await renderReviewScopes(async (probe) => {
+      await reviewOpened(probe);
+      await vi.waitFor(() => expect(probe().editor.controller.reviewRoomName).toBe(roomOf(1)));
+      mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
+      mocks.getDraftPreview.mockResolvedValue(reset(2));
+      await relist(probe);
+      await reread(probe);
+      await vi.waitFor(() => expect(probe().editor.controller.inlineReview).toBeNull());
+    });
+  });
+});
+
 describe("O1, invariant 1: a read of an earlier generation never goes back", () => {
-  it("a preview read begun before the closing answer cannot reopen the review or replace the cache", async () => {
+  it.each(
+    MODES,
+  )("%s: a preview read begun before the closing answer cannot reopen the review or replace the cache", async (mode) => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       let staleRead!: (preview: unknown) => void;
@@ -685,12 +740,12 @@ describe("O1, invariant 1: a read of an earlier generation never goes back", () 
       await act(async () => {
         void probe().queryClient.invalidateQueries({ queryKey: previewKey });
       });
-      mocks.applyDraftChanges.mockImplementation(async () => {
+      commandOf(mode).mock.mockImplementation(async () => {
         serverClosesA(2);
-        return applied(true);
+        return commandOf(mode).answer(true, "2");
       });
       await act(async () => {
-        await probe().editor.controller.applyChanges(draftA, change("2"));
+        await commandOf(mode).sendInEditor(probe(), "2");
       });
       expect(probe().header.finished).toBe(true);
       mocks.listWorkDrafts.mockResolvedValue(listedAt(1, "2026-10-06T23:00:00.000Z"));
@@ -706,9 +761,11 @@ describe("O1, invariant 1: a read of an earlier generation never goes back", () 
     });
   });
 
-  it("a stale read of G after re-entering G+1 leaves the cache and the review on G+1", async () => {
+  it.each(
+    MODES,
+  )("%s: a stale read of G after re-entering G+1 leaves the cache and the review on G+1", async (mode) => {
     await renderReviewScopes(async (probe) => {
-      await reviewOpened(probe);
+      await reviewClosed(probe, mode);
       mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));
       mocks.listWorkDrafts.mockResolvedValue(listedAt(2));
       await relist(probe);
@@ -737,7 +794,7 @@ describe("O3, C1: a command already running on the new proposal", () => {
   )("%s: the re-entry adopts its pending completion, and its answer closes it", async (mode) => {
     const { mock, sendInEditor, answer } = commandOf(mode);
     await renderReviewScopes(async (probe) => {
-      await reviewClosed(probe);
+      await reviewClosed(probe, mode);
       mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));
       await reread(probe);
       const release = heldCommand(mock);
@@ -767,9 +824,11 @@ describe("O3, C1: a command already running on the new proposal", () => {
 });
 
 describe("L: a late re-entry read after the writer left", () => {
-  it.each(["leave", "next"] as const)("cannot undo %s", async (action) => {
+  it.each(
+    MODES.flatMap((mode) => (["leave", "next"] as const).map((action) => [mode, action] as const)),
+  )("%s: cannot undo %s", async (mode, action) => {
     await renderReviewScopes(async (probe) => {
-      await reviewClosed(probe);
+      await reviewClosed(probe, mode);
       let finish!: (preview: unknown) => void;
       mocks.getDraftPreview.mockReturnValueOnce(
         new Promise((resolve) => {
@@ -804,18 +863,19 @@ describe("L: a late re-entry read after the writer left", () => {
 });
 
 describe("C4, C5: a claim whose generation is not the shown one", () => {
-  it("the old closing claim cannot be adopted again on re-entry", async () => {
+  it.each(MODES)("%s: the old closing claim cannot be adopted again on re-entry", async (mode) => {
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       let listDone!: (rows: unknown) => void;
-      const release = heldCommand(mocks.applyDraftChanges);
+      const { mock, sendInEditor, answer } = commandOf(mode);
+      const release = heldCommand(mock);
       let done!: Promise<unknown>;
       await act(async () => {
-        done = probe().editor.controller.applyChanges(draftA, change("2"));
+        done = sendInEditor(probe(), "2");
       });
       mocks.listWorkDrafts.mockReturnValue(new Promise((resolve) => (listDone = resolve)));
       mocks.getDraftPreview.mockResolvedValue(reset(2));
-      await act(async () => release(applied(true)));
+      await act(async () => release(answer(true, "2")));
       await vi.waitFor(() => expect(probe().header.finished).toBe(true));
 
       mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));

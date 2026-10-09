@@ -172,54 +172,51 @@ export function useDraftReviewScopeValue({
     [controller.inlineReview, controller.reviewRoomName],
   );
 
-  // The reviewed draft left the active list (applied or discarded elsewhere):
-  // there is nothing left to review. A local disposition ends review itself.
-  // The list and the preview are separate reads and either can lag the other: a
-  // preview that lists changes at the generation the review shows says the
-  // draft is alive, and the list is read again before the review gives up.
-  const reviewed = controller.inlineReview;
+  // The reviewed draft left the active list (applied or discarded elsewhere).
+  // The list and the preview are separate reads and either can lag the other, so
+  // the list's silence is not decided here: the reducer weighs it against the
+  // generation the review shows and the newest preview (row X). A preview that
+  // lists changes says the draft is alive; it is read again, and the next read
+  // either confirms it or ends the review.
+  const reviewedDocumentId = controller.inlineReview?.documentId ?? "";
+  const reviewedDraftId = controller.inlineReview?.draftId ?? "";
+  // The writer handled the last change: the draft leaving the list is the
+  // result they just caused, and the review stays open to say so.
+  const reviewHandled = controller.inlineReview?.completion !== undefined;
   const cachedProposal = useCachedProposal({
     projectId: effectiveProjectId,
     workId: effectiveWorkId,
-    documentId: reviewed?.documentId ?? "",
-    draftId: reviewed?.draftId ?? "",
+    documentId: reviewedDocumentId,
+    draftId: reviewedDraftId,
   });
-  const proposedAtShown =
-    cachedProposal?.proposal === true &&
-    cachedProposal.draftGeneration === reviewed?.draftGeneration;
   useEffect(() => {
-    const selection = controller.inlineReview;
-    if (!selection || controller.isDisposing) return;
-    // The writer handled the last change: the draft leaving the list is the
-    // result they just caused, and the review stays open to say so.
-    if (selection.completion) return;
+    if (!reviewedDraftId || reviewHandled || controller.isDisposing) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const stillActive = (drafts.drafts ?? groups.map((group) => group.draft)).some(
-      (draft) => draft.documentId === selection.documentId && draft.draftId === selection.draftId,
+      (draft) => draft.documentId === reviewedDocumentId && draft.draftId === reviewedDraftId,
     );
     if (stillActive) return;
-    if (proposedAtShown) {
-      // Either the list is behind, which the read below settles, or the draft
-      // closed and the preview is: its next read ends the review.
+    controller.reviewDraftAbsentFromList(reviewedDocumentId, reviewedDraftId, cachedProposal);
+    if (cachedProposal?.proposal) {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.workDraftPreview(
           effectiveProjectId,
           effectiveWorkId,
-          selection.documentId,
-          selection.draftId,
+          reviewedDocumentId,
+          reviewedDraftId,
         ),
       });
-      return;
     }
-    controller.exitReview();
   }, [
-    controller.exitReview,
-    controller.inlineReview,
+    controller.reviewDraftAbsentFromList,
+    reviewedDocumentId,
+    reviewedDraftId,
+    reviewHandled,
     controller.isDisposing,
     drafts.drafts,
     drafts.status,
     groups,
-    proposedAtShown,
+    cachedProposal,
     effectiveProjectId,
     effectiveWorkId,
     queryClient,
