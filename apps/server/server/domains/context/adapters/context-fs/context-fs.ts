@@ -5,6 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
+import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   classifyFiletype,
   type Filetype,
@@ -12,10 +13,12 @@ import {
   filetypeForPath,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
+  BoundContent,
   BranchPeerShadowAccess,
   DocumentCreationAggregate,
   DocumentLinkScopes,
@@ -23,10 +26,14 @@ import type {
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
-import { countWords, createDocumentCreationAggregate } from "../../../collab/index.js";
+import {
+  countWords,
+  createDocumentCreationAggregate,
+  LinkBindingInsideTransactionError,
+} from "../../../collab/index.js";
 import { sourceDestination } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
-import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
+import { writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import {
   createResultAwareCommandExecutor,
@@ -53,6 +60,7 @@ import type {
   ContextWriteBinaryOptions,
   ContextWriteOptions,
   ThreadContextView,
+  WriteProvenance,
 } from "../../ports/context-port.js";
 import type {
   ContextLocationToken,
@@ -78,6 +86,12 @@ export interface ContextFSDeps {
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
+  /**
+   * The project a document created here belongs to, and the URI authority of
+   * this source (a Work-scoped scheme's Work): content written into a new
+   * document binds its links as that document's address (contract §6.2).
+   */
+  holder: { projectId: string; authority?: CanonicalContextAuthority };
   /** The project manifest that decides which documents of a drafted source exist (D20). */
   manifestView?: {
     projectId: string;
@@ -186,6 +200,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly manifestView?: ContextFSDeps["manifestView"];
   private readonly readView?: ThreadContextView;
   private readonly scheme: ContextScheme;
+  private readonly holder: ContextFSDeps["holder"];
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
@@ -223,6 +238,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.manifestView = deps.manifestView;
     this.readView = deps.threadView;
     this.scheme = deps.scheme;
+    this.holder = deps.holder;
     this.name = deps.scheme;
   }
 
@@ -248,7 +264,8 @@ export class ContextFS implements ContextSchemeAdapter {
     name: string;
     extension: string;
     filetype: Filetype;
-    content: string;
+    /** Bound before the command transaction; null creates an empty document. */
+    content: BoundContent | null;
     provisionalName?: boolean;
     options?: ContextWriteOptions;
   }): Promise<Result<{ document: ContextDocument; markdown: string }, AdapterFault>> {
@@ -272,7 +289,7 @@ export class ContextFS implements ContextSchemeAdapter {
         },
         persistMembership: () => this.store.recordDocumentMembership(documentId),
         initializeContent: async () => {
-          if (input.content.length === 0) {
+          if (input.content === null || input.content.markdown.length === 0) {
             await this.documentCreation.ensureDocument(documentId);
             return "";
           }
@@ -295,7 +312,7 @@ export class ContextFS implements ContextSchemeAdapter {
           if (!seeded.ok) {
             throw new DocumentCreationFault(this.syncFault(seeded.error));
           }
-          return input.content;
+          return input.content.markdown;
         },
       });
       if (!created.created) return Err({ code: "conflict" });
@@ -309,18 +326,19 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
+  /**
+   * Restores a half-created document's membership and, if it has no Yjs state,
+   * an empty one. The stored projection is never reparsed: it spells links as
+   * they were addressed when it was written, and a move since then would turn
+   * a stale path back into a link.
+   */
   private async repairTrackedDocument(
     document: ContextDocument,
   ): Promise<Result<void, AdapterFault>> {
     try {
       await this.documentCreation.repairDocumentAtomically({
         documentId: document.id as never,
-        initializeContent: async () => {
-          const seeded = await this.documentSync.seedFromMarkdown(document.id, document.markdown, {
-            type: "system",
-          });
-          if (!seeded.ok) throw new DocumentCreationFault(this.syncFault(seeded.error));
-        },
+        initializeContent: () => this.documentCreation.ensureDocument(document.id),
         persistMembership: () => this.store.recordDocumentMembership(document.id),
       });
       return Ok(undefined);
@@ -425,12 +443,81 @@ export class ContextFS implements ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
-    return this.commandExecutor.run(() => this.writeInTransaction(path, content, options));
+    const existing = await this.lookupTrackedDocument(path);
+    if (!existing.ok) return existing;
+    // An actor's overwrite keeps the refs of links it leaves in place; import and system writes bind fresh.
+    const actor = options?.origin?.type === "agent" || options?.origin?.type === "human";
+    const bound = await this.bind(path, existing.value, content, {
+      ...(actor ? { against: "current" as const } : {}),
+      origin: options?.origin,
+    });
+    if (!bound.ok) return bound;
+    return this.commandExecutor.run(() => this.writeInTransaction(path, bound.value, options));
+  }
+
+  /**
+   * The tracked document at `path`, read before any command transaction so
+   * content can be bound against it; the transaction looks it up again.
+   */
+  private async lookupTrackedDocument(
+    path: string,
+  ): Promise<Result<ContextDocument | null, AdapterFault>> {
+    const { dir, filename } = splitPath(path);
+    if (!filename) return Ok(null);
+    const folderId = await this.findFolderId(dir);
+    if (folderId === MISSING) return Ok(null);
+    const { name, extension } = parseFilename(filename);
+    const existing = await this.store.findDocument(folderId, name, extension);
+    if (existing && existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
+    return Ok(existing);
+  }
+
+  /**
+   * Bind written Markdown outside the command transaction (contract §6.2):
+   * binding may register ahead refs, which takes namespace keys the command
+   * transaction will hold.
+   */
+  private async bind(
+    path: string,
+    existing: ContextDocument | null,
+    markdown: string | ((current: string) => string),
+    options: { against?: "current"; origin?: WriteProvenance },
+  ): Promise<Result<BoundContent, AdapterFault>> {
+    const { filename } = splitPath(path);
+    if (!filename) return Err({ code: "io_error", message: "Cannot write to source root" });
+    const filetype = existing
+      ? Ok(existing.filetype ?? DEFAULT_EDITABLE_FILETYPE)
+      : trackedFiletypeForPath(filename);
+    if (!filetype.ok) return filetype;
+    try {
+      return Ok(
+        await this.documentSync.bindMarkdown({
+          holder: existing
+            ? { documentId: existing.id as DocumentId }
+            : {
+                uri: canonicalContextUri(this.scheme, path, this.holder.authority),
+                projectId: this.holder.projectId,
+                filetype: filetype.value,
+              },
+          markdown,
+          ...(existing && options.against ? { against: options.against } : {}),
+          ...(options.origin?.type === "agent"
+            ? { threadId: options.origin.threadId as ThreadId }
+            : {}),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof LinkBindingInsideTransactionError) throw error;
+      return Err({
+        code: "io_error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async writeInTransaction(
     path: string,
-    content: string,
+    content: BoundContent,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
@@ -480,14 +567,20 @@ export class ContextFS implements ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    let bound: BoundContent | null = null;
+    if (content.length > 0) {
+      const binding = await this.bind(path, null, content, { origin: options?.origin });
+      if (!binding.ok) return binding;
+      bound = binding.value;
+    }
     return this.commandExecutor.run(() =>
-      this.createTrackedDocumentInTransaction(path, content, options),
+      this.createTrackedDocumentInTransaction(path, bound, options),
     );
   }
 
   private async createTrackedDocumentInTransaction(
     path: string,
-    content: string,
+    content: BoundContent | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
@@ -592,7 +685,7 @@ export class ContextFS implements ContextSchemeAdapter {
         name,
         extension: "md",
         filetype: "markdown",
-        content: "",
+        content: null,
         provisionalName: true,
         options: { origin: options.origin },
       });
@@ -664,7 +757,7 @@ export class ContextFS implements ContextSchemeAdapter {
       name,
       extension,
       filetype,
-      content: "",
+      content: null,
       options,
     });
     return created.ok ? Ok({ documentId: created.value.document.id, created: true }) : created;
@@ -675,12 +768,23 @@ export class ContextFS implements ContextSchemeAdapter {
     command: import("../../ports/context-port.js").ContextEditCommand,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
-    return this.commandExecutor.run(() => this.editInTransaction(path, command, options));
+    const existing = await this.lookupTrackedDocument(path);
+    if (!existing.ok) return existing;
+    if (!existing.value) {
+      return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
+    }
+    // Append rewrites the whole document; bound against it, every existing link keeps its ref.
+    const bound = await this.bind(path, existing.value, (current) => current + command.content, {
+      against: "current",
+      origin: options?.origin,
+    });
+    if (!bound.ok) return bound;
+    return this.commandExecutor.run(() => this.editInTransaction(path, bound.value, options));
   }
 
   private async editInTransaction(
     path: string,
-    command: import("../../ports/context-port.js").ContextEditCommand,
+    content: BoundContent,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
@@ -708,10 +812,10 @@ export class ContextFS implements ContextSchemeAdapter {
       if (!repaired.ok) return repaired;
     }
 
-    const edited = await editCollabMarkdown({
+    const edited = await writeCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
-      command,
+      content,
       provenance: options?.origin,
     });
     if (!edited.ok) return edited;

@@ -20,6 +20,7 @@ import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
+import { createLinkBinder, type LinkBinderDeps } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
@@ -39,6 +40,7 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
+  | "onLinkSpliceFallback"
 >;
 
 export function createAgentEditRuntime(input: {
@@ -60,6 +62,10 @@ export function createAgentEditRuntime(input: {
   /** Durable ahead-ref registration for refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
+  /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
+  inTransaction(): boolean;
+  /** Showings an agent's whole-document write binds against (lane E); none when absent. */
+  shownLinks?: LinkBinderDeps["shownLinks"];
 }) {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
@@ -89,7 +95,6 @@ export function createAgentEditRuntime(input: {
     createMarkdownDocumentEngine({
       codec: markupCodec,
       links: input.links,
-      schema,
       model,
       journal: input.journal,
       coordinator: input.coordinator,
@@ -98,16 +103,17 @@ export function createAgentEditRuntime(input: {
       deferUntilCommit: input.deferUntilCommit,
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
-      identityPreservingWrite: ({ documentId, markdown, actor }) =>
+      identityPreservingWrite: ({ documentId, content, actor }) =>
         liveUtilityCore.write(
           {
             command: "create",
             file: "document.md",
             documentId,
-            content: markdown,
+            content: content.markdown,
             overwrite: true,
           },
           {
+            boundBlocks: content.blocks,
             actor,
             sessionId:
               actor.kind === "human"
@@ -125,8 +131,20 @@ export function createAgentEditRuntime(input: {
     }),
     input.links,
   );
+  const linkBinder = createLinkBinder({
+    codec: markupCodec,
+    schema,
+    model,
+    coordinator: input.coordinator,
+    links: input.links,
+    registrar: input.aheadRefs,
+    resolveFiletype: input.resolveDocumentFiletype,
+    inTransaction: input.inTransaction,
+    ...(input.shownLinks ? { shownLinks: input.shownLinks } : {}),
+  });
   return {
     codec,
+    linkBinder,
     liveUtilityCore,
     markdownDocuments,
     markupCodec,

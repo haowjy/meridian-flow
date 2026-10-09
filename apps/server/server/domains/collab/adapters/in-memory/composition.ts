@@ -75,6 +75,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const runtime = createAgentEditRuntime({
     links,
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
+    inTransaction: () => false,
     journal,
     coordinator,
     lifecycle: documentCreation,
@@ -208,7 +209,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
-      editDocument: runtime.markdownDocuments.editDocument,
+      bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindStatic: runtime.linkBinder.bindStatic,
     },
     projections: {
       refreshDocumentProjection: projections.refresh,

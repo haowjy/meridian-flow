@@ -7,6 +7,7 @@
  * thread resolution to context-port-resolution.ts.
  */
 
+import type { CanonicalContextAuthority } from "@meridian/contracts";
 import {
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
@@ -134,7 +135,7 @@ function contextFsAdapter(
   assembly: AdapterAssembly,
   deps: Pick<
     ContextFSDeps,
-    "store" | "mutationStore" | "commandTransaction" | "scheme" | "manifestView"
+    "store" | "mutationStore" | "commandTransaction" | "scheme" | "manifestView" | "holder"
   >,
 ): ContextSchemeAdapter {
   return new ContextFS({
@@ -180,6 +181,7 @@ function buildProjectContextFsAdapters(
           run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
         },
         scheme,
+        holder: { projectId },
         ...(listsThroughProjectManifest(scheme) ? { manifestView: schemeView } : {}),
       }),
     );
@@ -191,6 +193,8 @@ function buildWorkScopedContextFsAdapters(
   assembly: AdapterAssembly,
   workId: string,
   projectId: string,
+  /** The Work's URI authority (`{ kind: "none" }` for No Work). */
+  authority: CanonicalContextAuthority,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const { storeResolvers, commandTransaction } = assembly;
   // Scratch/uploads are canonical live documents even though their storage is
@@ -208,6 +212,7 @@ function buildWorkScopedContextFsAdapters(
           run: (operation) => commandTransaction.run(operation, [{ scheme, workId: workId }]),
         },
         scheme,
+        holder: { projectId, authority },
       }),
     );
   }
@@ -234,6 +239,7 @@ function buildNoWorkContextFsAdapters(
           },
         },
         scheme,
+        holder: { projectId, authority: { kind: "none" } },
       }),
     );
   }
@@ -294,7 +300,12 @@ function buildUnifiedContextPort(input: {
   const workAuthorities = scope.workAuthorities;
   const primaryAdapters =
     scope.kind === "work"
-      ? buildWorkScopedContextFsAdapters(assembly, scope.authority.workId, scope.projectId)
+      ? buildWorkScopedContextFsAdapters(
+          assembly,
+          scope.authority.workId,
+          scope.projectId,
+          scope.authority,
+        )
       : buildNoWorkContextFsAdapters(assembly, scope.projectId);
   for (const [scheme, adapter] of primaryAdapters) adapters.set(scheme, adapter);
 
@@ -309,14 +320,21 @@ function buildUnifiedContextPort(input: {
     workAuthorities,
     primaryWorkAuthority: scope.kind === "work" ? scope.authority : undefined,
     resolveWorkAdapters: (targetAuthority) =>
-      buildWorkScopedContextFsAdapters(assembly, targetAuthority.workId, scope.projectId),
+      buildWorkScopedContextFsAdapters(
+        assembly,
+        targetAuthority.workId,
+        scope.projectId,
+        targetAuthority,
+      ),
     resolveNoWork: async () => {
       const workId =
         scope.kind === "work" && scope.authority.workSlug === null
           ? scope.authority.workId
           : await storeResolvers.resolveNoWorkId(scope.projectId);
       return {
-        adapters: buildWorkScopedContextFsAdapters(assembly, workId, scope.projectId),
+        adapters: buildWorkScopedContextFsAdapters(assembly, workId, scope.projectId, {
+          kind: "none",
+        }),
         workId,
       };
     },
