@@ -80,6 +80,9 @@ pointer, and calls into it.
   document is now, and whether the reader can reach it, rides a decoration
   keyed by ref and href (law 9), so no peer receives an answer that was true
   in someone else's project. A move writes nothing into linking documents.
+- **A picture's ref is a link's question.** An `image` or `figure` with a ref
+  is answered by this cache under the same key (`pictureKeyOfNode`), asked by
+  the same document scan; its node view draws the answer. No second cache.
 - **The decorations are mapped on an ordinary keystroke and rebuilt only when
   something reached a link** — a mark step, an edit inside one, an answer
   landing. The exception is a remote write: mapping across the whole-document
@@ -87,7 +90,8 @@ pointer, and calls into it.
   `isRemoteDocumentRebuild` rebuilds instead.
 - **A copied link keeps its document.** The clipboard records each internal
   link's current address, ref and project; a paste in the same project keeps
-  the ref and any other assigns the address fresh (`link-clipboard.ts`). Never
+  the ref and any other assigns the address fresh (`link-clipboard.ts`).
+  Ref-bearing images and figures travel the same way. Never
   paste a relative href into a different holder as written, and never trust
   clipboard metadata as a capability.
 - Register keys and claims from the plugin's `view()`, never TipTap's

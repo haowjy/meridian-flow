@@ -18,24 +18,35 @@
  * renders outermost), and the link chip stylesheet
  * (`components/app/link-chip/link-chip.css`) draws the chip on it through
  * `:has()`. That is a fact about how marks and decorations nest, not a choice.
+ *
+ * The same scan asks about every ref-bearing `image` and `figure`, which draw
+ * no decoration: their node views read the answer from the cache themselves
+ * (`asset-image-render-state.ts`). One asker per document, so a page of
+ * pictures is one batch rather than a question per picture per publish.
  */
 
 import { t } from "@lingui/core/macro";
 import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
-import { AddMarkStep, RemoveMarkStep } from "@tiptap/pm/transform";
+import { AddMarkStep, AttrStep, RemoveMarkStep } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 import { isRemoteDocumentRebuild } from "../anchors";
 import { linkChip, linkChipPartAttributes } from "./link-chip";
-import { type LinkAnswerCache, type LinkKey, linkCacheKey, linkKeyOfMark } from "./link-resolution";
+import {
+  type LinkAnswerCache,
+  type LinkKey,
+  linkCacheKey,
+  linkKeyOfMark,
+  pictureKeyOfNode,
+} from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
 const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
 
 type LinkResolutionPluginState = {
   decorations: DecorationSet;
-  /** Every internal link in the document, once per ref and canonical href. */
+  /** Every internal link and ref-bearing picture, once per ref and canonical href. */
   links: readonly LinkKey[];
 };
 
@@ -61,8 +72,8 @@ export function linkResolutionPlugin(resolution: LinkAnswerCache): Plugin {
        * - A peer's write: y-prosemirror replaces the WHOLE document in one
        *   step, so `map` reports every position deleted and would drop every
        *   decoration on the page (see `core/editor/anchors.ts`). Rebuild.
-       * - A local edit that reaches a link, by mark or by text: the ranges
-       *   themselves changed. Rebuild.
+       * - A local edit that reaches a link, by mark or by text, or a picture
+       *   that carries a ref: the ranges themselves changed. Rebuild.
        *
        * Everything else is prose moving past decorations that still describe
        * the same links, and mapping carries them for the cost of the edit
@@ -73,7 +84,8 @@ export function linkResolutionPlugin(resolution: LinkAnswerCache): Plugin {
         if (!transaction.docChanged) return value;
         if (
           isRemoteDocumentRebuild(transaction) ||
-          reachesLink(transaction, old.schema.marks.link)
+          reachesLink(transaction, old.schema.marks.link) ||
+          reachesPicture(transaction)
         ) {
           return read(state.doc, resolution);
         }
@@ -153,6 +165,42 @@ function reachesLink(transaction: Transaction, linkType: MarkType | undefined): 
 }
 
 /**
+ * True when a step inserted, removed or rewrote a picture that names a
+ * document. An attribute step carries no range, so it is asked directly.
+ */
+function reachesPicture(transaction: Transaction): boolean {
+  return transaction.steps.some((step, index) => {
+    const before = transaction.docs[index];
+    const after = transaction.docs[index + 1] ?? transaction.doc;
+    if (step instanceof AttrStep)
+      return namesPicture(before.nodeAt(step.pos)) || namesPicture(after.nodeAt(step.pos));
+    let reached = false;
+    step.getMap().forEach((oldStart, oldEnd, newStart, newEnd) => {
+      reached ||= pictureWithin(before, oldStart, oldEnd) || pictureWithin(after, newStart, newEnd);
+    });
+    return reached;
+  });
+}
+
+function namesPicture(node: PMNode | null): boolean {
+  return node !== null && isPicture(node) && pictureKeyOfNode(node.attrs) !== null;
+}
+
+function isPicture(node: PMNode): boolean {
+  return node.type.name === "image" || node.type.name === "figure";
+}
+
+function pictureWithin(doc: PMNode, from: number, to: number): boolean {
+  let found = false;
+  doc.nodesBetween(Math.max(0, from - 1), Math.min(doc.content.size, to + 1), (node) => {
+    if (found) return false;
+    found = namesPicture(node);
+    return !found && !node.isAtom;
+  });
+  return found;
+}
+
+/**
  * Widened by one position on each side. Typing at either edge of a link lands
  * inside the range the writer sees as the link, and a changed range that only
  * touches a boundary holds no mark of its own to report.
@@ -170,6 +218,11 @@ function read(doc: PMNode, resolution: LinkAnswerCache): LinkResolutionPluginSta
   const links = new Map<string, LinkKey>();
 
   doc.descendants((node, pos) => {
+    if (isPicture(node)) {
+      const picture = pictureKeyOfNode(node.attrs);
+      if (picture) links.set(linkCacheKey(picture), picture);
+      return false;
+    }
     if (!node.isText) return true;
     const mark = node.marks.find((candidate) => candidate.type.name === "link");
     if (!mark) return false;

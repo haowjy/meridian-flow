@@ -22,7 +22,7 @@
  * parsed blocks rather than on a guess about the raw text.
  */
 
-import { markdownCodec } from "@meridian/markup";
+import { markdownCodec, mdxCodec } from "@meridian/markup";
 import {
   Fragment,
   type Node as PMNode,
@@ -146,7 +146,19 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
       blocks.push(node);
     });
   }
-  return markdownCodec({ schema })
-    .serializeBlocks(blocks, clipboardLinkScope(view.state))
+  const links = clipboardLinkScope(view.state);
+  const markdown = markdownCodec({ schema });
+  let mdx: ReturnType<typeof mdxCodec> | null = null;
+  return blocks
+    .map((block) => {
+      // A figure or a component has no Markdown form, and a copy that throws
+      // here loses the whole clipboard, the HTML a rich paste reads included.
+      try {
+        return markdown.serializeBlock(block, links);
+      } catch {
+        mdx ??= mdxCodec({ schema });
+        return mdx.serializeBlock(block, links);
+      }
+    })
     .join("\n\n");
 };

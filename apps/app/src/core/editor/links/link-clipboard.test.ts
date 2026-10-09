@@ -1,17 +1,21 @@
 // @vitest-environment jsdom
 /**
- * Clipboard link metadata carries what a link names into the paste, keeps a
- * ref only inside its own project, and never injects an href; plain text
- * spells current full addresses and never an id.
+ * Clipboard link metadata carries what a link or picture names into the
+ * paste, keeps a ref only inside its own project, and never injects an href;
+ * plain text spells current full addresses and never an id.
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { Editor, type JSONContent } from "@tiptap/core";
 import { Schema, Slice } from "@tiptap/pm/model";
 import { EditorState } from "@tiptap/pm/state";
 import { expect, it } from "vitest";
 
+import { createStandaloneEditorExtensions } from "../config";
 import { markdownClipboardSerializer } from "../markdown-paste";
+import { sanitizePastedHTML } from "../sanitize-paste";
 import { LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
 import { createLinkAnswerCache, type LinkAnswer } from "./link-resolution";
+import { LINK_SURFACE_NAME } from "./link-storage";
 
 const schema = new Schema({
   nodes: { doc: { content: "text*" }, text: {} },
@@ -168,6 +172,108 @@ it("carries what a copied link names across the clipboard", () => {
   const text = markdownClipboardSerializer(new Slice(doc.content, 0, 0), { state } as never);
   for (const [label, , , spelled] of textRows) expect.soft(text, label).toContain(spelled);
   expect.soft(text, "no ref or id in plain text").not.toMatch(/doc:|ahead:|0000-4000/);
+
+  // Pictures, through a real editor's whole copy and paste: the serializer,
+  // the sanitizer, the ref transform, the TipTap mirrors and the image door.
+  const MAP = "00000000-0000-4000-8000-0000000000b1";
+  const OTHER_MAP = "00000000-0000-4000-8000-0000000000b2";
+  const SETTLED = "ahead:00000000-0000-4000-8000-0000000000b3";
+  const PLATE_REF = "doc:00000000-0000-4000-8000-0000000000b4";
+  const pictureEditor = (
+    projectId: string,
+    documents: { documentId: string; uri: string }[],
+    content: JSONContent[] = [{ type: "paragraph" }],
+  ) => {
+    const editor = new Editor({
+      extensions: createStandaloneEditorExtensions({ assetRenderContext: { projectId } }),
+      content: { type: "doc", content },
+      // The app's paste sanitizer runs before every plugin transform.
+      editorProps: { transformPastedHTML: sanitizePastedHTML },
+    });
+    const settled: Record<string, LinkAnswer> = {
+      [SETTLED]: {
+        state: "document",
+        document: {
+          documentId: MAP,
+          title: "map",
+          scheme: "manuscript",
+          path: "uploads/map.png",
+          uri: "manuscript://uploads/map.png",
+          workId: null,
+        },
+      },
+    };
+    editor.storage[LINK_SURFACE_NAME].resolution.registerResolver(
+      {
+        index: { documents },
+        local: ({ ref }) => {
+          const answer = ref ? settled[ref] : undefined;
+          return answer ? { kind: "answered", answer } : { kind: "unasked" };
+        },
+        remote: async (questions) => questions.map(() => null),
+      },
+      { baseUri: "manuscript://vol-1/holder.md", projectId },
+    );
+    return editor;
+  };
+  const source = pictureEditor(
+    "project-a",
+    [],
+    [
+      {
+        type: "paragraph",
+        content: [{ type: "image", attrs: { src: "manuscript://art/map.png", ref: SETTLED } }],
+      },
+      {
+        type: "figure",
+        attrs: { src: "manuscript://art/plate.png", ref: PLATE_REF, caption: "Plate" },
+      },
+    ],
+  );
+  source.storage[LINK_SURFACE_NAME].resolution.request([
+    { ref: SETTLED, href: "manuscript://art/map.png" },
+  ]);
+  const copied = source.view.serializeForClipboard(source.state.doc.slice(0)).dom.innerHTML;
+  const pictureRows = [
+    {
+      row: "a same-project paste keeps each picture's ref at its current address",
+      into: pictureEditor("project-a", []),
+      pasted: [
+        { type: "image", src: "manuscript://uploads/map.png", ref: SETTLED },
+        { type: "figure", src: "manuscript://art/plate.png", ref: PLATE_REF },
+      ],
+    },
+    {
+      row: "another project binds each picture fresh, by its own index",
+      into: pictureEditor("project-b", [
+        { documentId: OTHER_MAP, uri: "manuscript://uploads/map.png" },
+      ]),
+      pasted: [
+        { type: "image", src: "manuscript://uploads/map.png", ref: `doc:${OTHER_MAP}` },
+        {
+          type: "figure",
+          src: "manuscript://art/plate.png",
+          ref: expect.stringMatching(/^ahead:/),
+        },
+      ],
+    },
+  ];
+  try {
+    for (const { row, into, pasted } of pictureRows) {
+      into.view.pasteHTML(copied, new Event("paste") as ClipboardEvent);
+      const pictures: unknown[] = [];
+      into.state.doc.descendants((node) => {
+        if (node.type.name === "image" || node.type.name === "figure")
+          pictures.push({ type: node.type.name, src: node.attrs.src, ref: node.attrs.ref });
+      });
+      expect.soft(pictures, row).toEqual(pasted);
+      // Never a link standing in for a picture, nor an import of an address.
+      expect.soft(into.getHTML(), `${row}: no stand-in link`).not.toContain("<a ");
+      into.destroy();
+    }
+  } finally {
+    source.destroy();
+  }
 });
 
 it.each([
