@@ -39,10 +39,13 @@ Local-dev-only utilities. Never imported by the application runtime.
   through `runMigrations`; it matches both hash and journal timestamp before it
   applies anything, holds one session advisory lock on a dedicated connection
   for the whole run, and commits each ordinary migration separately with its
-  history row. A first line exactly `-- migration: no-transaction` opts into
-  autocommitted statements; the row is recorded only after all succeed. Every
-  statement in such a file must be re-runnable, including a preceding
-  `DROP INDEX CONCURRENTLY IF EXISTS` for each concurrent index build. The runner
+  history row. The first-line `-- migration: no-transaction` marker (BOM and
+  CRLF tolerated) opts into autocommitted statements; history is recorded only
+  after all succeed. Concurrent statements must be alone in their breakpoint
+  chunk. Builds require IF NOT EXISTS: before execution the runner concurrently
+  drops only invalid indexes those builds name, never valid guards. All other
+  statements must also be re-runnable. Scope short lock_timeout settings only
+  around ACCESS EXCLUSIVE statements, not online builds, drops or validation. The runner
   refuses structurally invalid, divergent, or out-of-order history. Only reset a
   database owned by the current dev checkout. Shared and deployed database
   history requires human repair, never a reset.

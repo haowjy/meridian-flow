@@ -162,7 +162,7 @@ export const contextSources = pgTable(
     index("context_sources_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    uniqueIndex("context_sources_project_slug")
+    uniqueIndex("context_sources_project_scope_slug")
       .on(table.projectId, table.slug)
       .where(
         sql`${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.deletedAt} IS NULL`,

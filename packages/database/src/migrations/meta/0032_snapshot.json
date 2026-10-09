@@ -1,5 +1,5 @@
 {
-  "id": "8c174ea2-0eca-437b-96f2-f44dc828a497",
+  "id": "df90e687-21d2-4377-b3df-c116ec1d79c8",
   "prevId": "7087b9f2-1541-4a6d-a776-3b6125f008e8",
   "version": "7",
   "dialect": "postgresql",
@@ -4031,8 +4031,8 @@
           "method": "btree",
           "with": {}
         },
-        "context_sources_project_slug": {
-          "name": "context_sources_project_slug",
+        "context_sources_project_scope_slug": {
+          "name": "context_sources_project_scope_slug",
           "columns": [
             {
               "expression": "project_id",

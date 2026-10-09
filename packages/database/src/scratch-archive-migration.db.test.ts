@@ -137,29 +137,51 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       await expect(
         target`INSERT INTO context_sources (project_id, root_thread_id, name, slug, scope) VALUES (${id(2)}, ${id(26)}, 'Scratch', 'scratch', 'lineage')`,
       ).rejects.toMatchObject({ code: "23514" });
-      // Every autocommitted cut can be left by a failure. Restart from statement
-      // zero after each cut, including an invalid concurrent-index remnant.
-      await expect(
-        target.unsafe(
-          "CREATE UNIQUE INDEX CONCURRENTLY context_sources_project_slug_next ON context_sources(slug)",
-        ),
-      ).rejects.toMatchObject({ code: "23505" });
-      expect(
-        await target`SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = 'context_sources_project_slug_next'::regclass`,
-      ).toEqual([{ indisvalid: false }]);
-      for (let cut = 1; cut <= online.length; cut++) {
-        for (const statement of online.slice(0, cut))
-          if (statement.trim()) await target.unsafe(statement);
-        for (const statement of online) if (statement.trim()) await target.unsafe(statement);
-      }
       await cp(
         path.join(migrations, "0034_context_source_online_indexes.sql"),
         path.join(directory, "0034_context_source_online_indexes.sql"),
       );
       await writeFile(path.join(directory, "meta/_journal.json"), JSON.stringify(journal));
-      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      // A failed concurrent build leaves an invalid remnant. The real runner
+      // removes that remnant without touching the still-valid old guard.
+      await expect(
+        target.unsafe(
+          "CREATE UNIQUE INDEX CONCURRENTLY context_sources_project_scope_slug ON context_sources(slug)",
+        ),
+      ).rejects.toMatchObject({ code: "23505" });
       expect(
-        await target`SELECT count(*)::integer AS count FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relnamespace = 'public'::regnamespace AND c.relname IN ('context_sources_project_slug', 'context_sources_lineage_slug') AND i.indisvalid`,
+        await target`SELECT indisvalid FROM pg_index WHERE indexrelid = 'context_sources_project_scope_slug'::regclass`,
+      ).toEqual([{ indisvalid: false }]);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      const writer = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
+      try {
+        // Each cut starts from a fresh fenced, old-index state, not the result
+        // of the previous retry. Probe duplicates from another backend.
+        for (let cut = 0; cut <= online.length; cut++) {
+          await target.unsafe(
+            "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS context_sources_project_slug ON context_sources(project_id, slug) WHERE work_id IS NULL AND deleted_at IS NULL",
+          );
+          await target.unsafe(
+            "DROP INDEX CONCURRENTLY IF EXISTS context_sources_project_scope_slug",
+          );
+          await target.unsafe("DROP INDEX CONCURRENTLY IF EXISTS context_sources_lineage_slug");
+          await target`ALTER TABLE context_sources ADD CONSTRAINT context_sources_lineage_rollout_fence CHECK (root_thread_id IS NULL) NOT VALID`;
+          await target`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${journal.entries[34].when}`;
+          for (const statement of online.slice(0, cut))
+            if (statement.trim()) await target.unsafe(statement);
+          expect(
+            await writer`INSERT INTO context_sources(project_id, name, slug, scope) VALUES (${id(2)}, 'Duplicate', 'unfiled', 'project') ON CONFLICT DO NOTHING RETURNING id`,
+          ).toEqual([]);
+          await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+          expect(
+            await writer`INSERT INTO context_sources(project_id, name, slug, scope) VALUES (${id(2)}, 'Duplicate', 'unfiled', 'project') ON CONFLICT DO NOTHING RETURNING id`,
+          ).toEqual([]);
+        }
+      } finally {
+        await writer.end();
+      }
+      expect(
+        await target`SELECT count(*)::integer AS count FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relnamespace = 'public'::regnamespace AND c.relname IN ('context_sources_project_scope_slug', 'context_sources_lineage_slug') AND i.indisvalid`,
       ).toEqual([{ count: 2 }]);
       expect(
         await target`SELECT conname FROM pg_constraint WHERE conrelid = 'context_sources'::regclass AND NOT convalidated`,

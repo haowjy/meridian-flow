@@ -31,11 +31,13 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
 - Write migrations as if production data exists. Never delete writer data; move
   it. No skips may rely on empty tables. Add CHECKs and FKs `NOT VALID`, then
   `VALIDATE CONSTRAINT` in a later migration. Build and drop indexes
-  `CONCURRENTLY` in a migration whose first line is exactly
-  `-- migration: no-transaction`; every statement must be re-runnable. Precede
-  concurrent builds with `DROP INDEX CONCURRENTLY IF EXISTS` of the same name.
-  Swap an index by building under a temporary name, dropping the old index
-  concurrently, then `ALTER INDEX ... RENAME`. Reapply these hand-edits to
+  `CONCURRENTLY` with first-line `-- migration: no-transaction` (BOM and CRLF
+  tolerated). Each concurrent statement is alone in its breakpoint chunk.
+  Builds use IF NOT EXISTS; the runner pre-drops only invalid indexes they name,
+  never valid guards. Use a new permanent replacement name, then drop the old
+  guard last. Every statement must be re-runnable. Short lock_timeout settings
+  surround only ACCESS EXCLUSIVE statements, not online DDL or validation.
+  Reapply these hand-edits to
   generated SQL whenever merging the base requires branch regeneration.
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
   (destroys local data); the new baseline is not an incremental upgrade. Reset

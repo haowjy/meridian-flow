@@ -1,6 +1,6 @@
 {
-  "id": "fb2fc9b0-b2c9-4d10-8732-5e9a44e7ebdc",
-  "prevId": "40b2aed7-81fe-4f68-824c-93793e5c0a1b",
+  "id": "a75e78a9-b198-42f0-8aed-ceef3f29abe2",
+  "prevId": "92319a89-39e7-4a9b-a0e4-ed38695fa47a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4031,8 +4031,8 @@
           "where": "\"context_sources\".\"deleted_by_work_id\" IS NOT NULL",
           "concurrently": false
         },
-        "context_sources_project_slug": {
-          "name": "context_sources_project_slug",
+        "context_sources_project_scope_slug": {
+          "name": "context_sources_project_scope_slug",
           "columns": [
             {
               "expression": "project_id",

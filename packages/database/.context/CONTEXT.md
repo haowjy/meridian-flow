@@ -156,11 +156,12 @@ grant_reason)` for `source_type = 'grant'` and `grant_reason LIKE
 Write migrations as if production data exists: never delete writer data; move
 it, and never skip a rule because tables are empty. Add CHECKs and FKs `NOT
 VALID`, then `VALIDATE CONSTRAINT` in a later migration. Build and drop indexes
-`CONCURRENTLY` in a file whose first line is exactly
-`-- migration: no-transaction`. Every statement must be re-runnable: precede
-concurrent builds with `DROP INDEX CONCURRENTLY IF EXISTS` of the same name.
-Swap an index by building under a temporary name, dropping the old index
-concurrently, then `ALTER INDEX ... RENAME`. The runner holds a session advisory
+`CONCURRENTLY` in a first-line `-- migration: no-transaction` file (BOM and
+CRLF tolerated), alone in its breakpoint chunk. Builds use IF NOT EXISTS; the
+runner pre-drops only invalid indexes they name, never valid retry guards.
+Build replacements under new permanent names and drop the old guard last.
+All statements must be re-runnable; short lock_timeout settings surround only
+ACCESS EXCLUSIVE statements, never concurrent DDL or validation. The runner holds a session advisory
 lock throughout and commits ordinary migrations individually; marker files
 autocommit and are recorded only after all statements succeed. Earlier
 migrations remain applied on failure; a marker file restarts from its first
@@ -343,10 +344,16 @@ Migrate first, then swap to the lineage-Scratch app. 0032 installs NOT VALID
 scope checks and a temporary `root_thread_id IS NULL` write fence. 0033 moves
 every No Work Scratch source (including trashed content) into a fresh Unfiled
 root, taking `Scratch`, `Scratch (2)`, etc., never merging existing entries.
-0034 builds/switches indexes concurrently, validates the checks, then removes
-the fence. Until then no lineage row may be admitted. This makes the old and
-new project-index predicates identical during the swap. Retry the complete
-0034 file after failure; do not launch the new app until migration completes.
+0034 builds permanent replacement indexes concurrently, validates the checks,
+then removes the fence and drops the old guard last. Until fence removal no
+lineage row may be admitted. Retry the complete 0034 file after failure; do not
+launch the new app until migration completes.
+
+Marker files tolerate BOM/CRLF and isolate every concurrent statement in its
+breakpoint chunk. Builds use IF NOT EXISTS; the runner pre-drops only invalid
+indexes those builds name, never a valid retry guard. Short lock_timeout is
+scoped only around ACCESS EXCLUSIVE statements (the fence drop), not concurrent
+builds, drops or CHECK validation.
 
 The old binary may recreate a work-scoped Scratch source in the rollout window.
 The new catalog and availability readers ignore No Work Scratch rows instead
