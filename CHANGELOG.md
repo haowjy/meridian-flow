@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Development: add pure link-ref correspondence with lexicographic matching, historical holder normalization and diagnostic bounded order completion. Reviewer fixtures and exhaustive oracle rows reuse the existing test-count budget.
+- Development: preserve link identity across rewritten and reordered spans with exact lexicographic correspondence and historical holder normalization.
 
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 
