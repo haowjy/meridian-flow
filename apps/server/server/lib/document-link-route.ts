@@ -61,10 +61,8 @@ export async function handleDocumentLinkResolveRequest(
   await deps.linkScopes.within(
     {
       projectId,
-      viewer: {
-        accountId: userId,
-        ...(request.rootThreadId ? { threadId: request.rootThreadId } : {}),
-      },
+      // Scratch ownership does not select a reader thread or its primary Work.
+      viewer: { accountId: userId },
     },
     async () => {
       const refLinks = request.links.flatMap((link, index) =>

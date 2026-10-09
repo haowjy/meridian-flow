@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Links in a No Work fork keep reading its draft after the first chat moves to another Work.
+
 - Your existing No Work Scratch notes stay available under Unfiled when chats gain their own Scratch.
 
 - "View projects" moves below your account at the foot of the left sidebar, so a near miss on Scratch no longer leaves the project.
