@@ -856,6 +856,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: { linkUpdate: { links: 1, documents: 1 } },
       });
+
+      // Renumber two linked chapters in sequence: the first takes the address the second
+      // vacated. Each move counts its own incoming link; the holder and its index stay put.
+      const chapterOne = await write("manuscript://Chapter 1.md");
+      const chapterTwo = await write("manuscript://Chapter 2.md");
+      await db
+        .insert(schema.documentLinks)
+        .values([row(holder, chapterOne), row(holder, chapterTwo, 2)]);
+      const renumberState = await yjsState(holder);
+      const holderLinks = () =>
+        db
+          .select({
+            key: schema.documentLinks.linkKey,
+            target: schema.documentLinks.targetDocumentId,
+          })
+          .from(schema.documentLinks)
+          .where(eq(schema.documentLinks.sourceDocumentId, holder as never))
+          .orderBy(schema.documentLinks.linkKey);
+      const linksBefore = await holderLinks();
+      await expect(
+        port.move("manuscript://Chapter 2.md", "manuscript://Chapter 3.md"),
+      ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 2, documents: 1 } } });
+      await expect(
+        port.move("manuscript://Chapter 1.md", "manuscript://Chapter 2.md"),
+      ).resolves.toMatchObject({ ok: true, value: { linkUpdate: { links: 1, documents: 1 } } });
+      await expect(port.stat("manuscript://Chapter 2.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: chapterOne },
+      });
+      await expect(port.stat("manuscript://Chapter 3.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: chapterTwo },
+      });
+      expect(await yjsState(holder)).toEqual(renumberState);
+      expect(await holderLinks()).toEqual(linksBefore);
     });
   });
 }
