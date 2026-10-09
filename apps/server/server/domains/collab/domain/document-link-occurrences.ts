@@ -91,21 +91,27 @@ export function applyDocumentLinkSubstitutions(
                 ? stem(newFilename)
                 : null
             : null;
+        // Clear before retargeting: format(newHref) alone leaves an old-href
+        // restore before the end marker. A draft's ProseMirror edit can replace
+        // that marker, exposing the restore on plain text after the next move.
         if (label !== null && label !== words) {
           // Insert inside the old run with its own marks, delete around it, then
           // retarget. This preserves concurrent hand retargets (L4's probe).
           text.insert(first.start + 1, label, first.attributes);
           text.delete(first.start, 1);
           text.delete(first.start + label.length, words.length - 1);
+          text.format(first.start, label.length, { link: null });
           text.format(first.start, label.length, {
             link: { ...first.attributes.link, href: substitution.href },
           });
         } else {
           if (occurrence.href === substitution.href) continue;
-          for (const run of runs)
+          for (const run of runs) {
+            text.format(run.start, run.length, { link: null });
             text.format(run.start, run.length, {
               link: { ...run.attributes.link, href: substitution.href },
             });
+          }
         }
       }
       changed++;

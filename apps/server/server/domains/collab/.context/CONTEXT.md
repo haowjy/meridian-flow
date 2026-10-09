@@ -233,6 +233,13 @@ the update reach an already-loaded room and schedule the ordinary live-to-draft
 pull. This operation neither opens a room under database locks nor owns redirect
 storage or lifecycle eligibility (the caller checks those).
 
+Link retargeting clears the old link mark on each exact run before applying
+the new attributes in the same Yjs transaction. A direct `format(newHref)`
+leaves an old-href restore before the original end marker. ProseMirror can
+replace that marker while editing a draft; a later move then exposes the old
+href on unlinked text. Publish the normalized boundary as part of maintenance,
+not as a read-time repair. Other marks and text identities stay intact.
+
 `link-update` journal metadata persists as `link_update` with the mover's user
 or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
 words have writer-protected birth provenance. Maintenance is excluded from both
