@@ -18,11 +18,7 @@ import {
   type ChangeAttribution,
   changeAttribution,
 } from "./change-attribution";
-import {
-  changeTextForHunks,
-  type OperationChangeText,
-  operationsWithWriterEdits,
-} from "./operation-change-text";
+import { changeTextForHunks, type OperationChangeText } from "./operation-change-text";
 
 /**
  * The dot's colour family: AI, the writer's, an AI removal, a merge nobody can
@@ -102,16 +98,9 @@ export function reviewChanges(
       else hunksByClassId.set(classId, [hunk]);
     }
   });
-  const writerJoined = operationsWithWriterEdits(operations, hunks);
 
   const ranked = [...byClass].map(([classId, classOps]) => {
-    const change = describeChange(
-      classId,
-      classOps,
-      hunksByClassId.get(classId) ?? [],
-      firstHunk,
-      writerJoined,
-    );
+    const change = describeChange(classId, classOps, hunksByClassId.get(classId) ?? [], firstHunk);
     return {
       change,
       position: Math.min(
@@ -197,12 +186,9 @@ function describeChange(
   classOps: ReviewOperation[],
   classHunks: readonly ReviewHunk[],
   firstHunk: ReadonlyMap<string, number>,
-  writerJoined: ReadonlySet<string>,
 ): ReviewChange {
   const operationIds = classOps.map((op) => op.operationId);
-  const includesWriterEdits = classOps.some(
-    (op) => op.kind === "writer" || writerJoined.has(op.operationId),
-  );
+  const includesWriterEdits = classOps.some((op) => op.kind === "writer");
   const merged = classHunks.some((hunk) => hunk.mergeArtifact === true);
   const agentOps = classOps.filter((op) => op.kind === "agent");
   const anchorOperationId =
