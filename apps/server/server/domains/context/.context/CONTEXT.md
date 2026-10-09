@@ -259,6 +259,15 @@ it. Arrival hooks, each once against the operation's final tree:
 
 Draft-only rows and deleted rows are not arrivals.
 
+`adapters/document-address.ts` owns server document addresses: the canonical
+address a document's folder chain spells now, a canonical address resolved to
+storage coordinates (project, scheme, Work, No Work lock coordinate, path), the
+document at an exact address (rendered path compared byte for byte), and
+`listsThroughLiveManifest(scheme)`, the one rule for which sources are live only
+through the project manifest. A document under a deleted folder reads as deleted
+at its address. The link scope, the ahead-ref registry, the move note, and the
+browser address lookup all read through it.
+
 ## Browser document addresses
 
 `document_previous_locations` is direct-to-identity bookmark and chat history. Moves capture only their file/subtree before DML and
