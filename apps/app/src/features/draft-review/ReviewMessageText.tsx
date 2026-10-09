@@ -9,7 +9,7 @@ import type { DraftCommandFailure, ServerRefusal } from "@/client/query/draft-co
 function knownRefusal(serverCode: string): MessageDescriptor | undefined {
   switch (serverCode) {
     case "work_archived":
-      return msg`This Work is archived. Unarchive it to apply or discard its drafts.`;
+      return msg`This Work is archived. Unarchive it to apply or discard its changes.`;
     case "work_not_found":
       return msg`This Work no longer exists.`;
     case "draft_not_found":

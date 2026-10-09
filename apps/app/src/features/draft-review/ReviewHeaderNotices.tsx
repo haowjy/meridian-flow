@@ -81,8 +81,8 @@ export function ReviewFailureNotices({
         <p className={cn("border-border border-t py-1 text-destructive", className)} role="alert">
           <Plural
             value={failedElsewhere.length - MAX_NAMED_FAILURES}
-            one="# more draft did not apply"
-            other="# more drafts did not apply"
+            one="Changes in # more document did not apply"
+            other="Changes in # more documents did not apply"
           />
         </p>
       ) : null}

@@ -115,8 +115,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   change sheet, each ending in `WorkChangesLink` ("All changes in <Work>", one
   transition to the Work's Files tab, nothing in No Work). This Work's are the Work
   page's Changes to review (`features/project/work/WorkChanges`): every draft file
-  once, a row expanding in place to its changes, with Apply all and Discard all
-  (whole drafts, `disposeDrafts`) in its menu. Every list of draft files uses
+  once, a row expanding in place to its changes, with "Apply all changes" and "Discard all changes"
+  (whole drafts, `disposeDrafts`) in its menu, without draft counts. Every list of draft files uses
   `sortDraftFiles` (name, then id; never update time, which reshuffles as the AI
   writes), and a change list keeps document order (`reviewChanges` breaks ties on
   class id so a refreshed preview never reorders them). Moving between files on the

@@ -38,11 +38,11 @@ row's Review a silent no-op).
    show the new document until Apply (draft-only documents stay out of the
    live tree by design).
 5. Dispose of the new-document draft both ways:
-   - **Discard all** from the Changes to review `…` menu: the tab closes,
+   - **Discard all changes** from the Changes to review `…` menu: the tab closes,
      the route repairs (URL must not keep pointing at the dead path), a reload must not restore it, and — the
      resurrection regression — after a LATER Apply of a different draft in
      the same work, the discarded document must never reappear in the tree.
-   - **Apply all** from the same menu: the tab stays open on live content with no
+   - **Apply all changes** from the same menu: the tab stays open on live content with no
      "Access lost" toast, and the document appears in the tree within ~5s
      without a reload.
 
@@ -250,8 +250,10 @@ Continue with Probe G's fixture (recreate affected proposals between actions).
    A stays where it was. Repeat for a Work owned by neither current chat nor Editor:
    it acts in that Work, with no cross-Work preview or command. Inspect fresh live
    and draft reads through `./mf`; cached DOM alone cannot certify persistence.
-3. Filter search so one file is hidden; Apply all still counts and handles every
-   draft of that Work. Recreate, Discard all: inline confirmation lets Keep cancel
+3. Filter search so one file is hidden; the menu says Apply all changes and Discard all changes, without counts,
+   and still handles every document of that Work. Recreate, Discard all changes:
+   inline confirmation says "Discard all changes?" and explains that pending changes
+   from every document in this Work are removed. Keep cancels
    without requests, then confirming handles all, with no navigation.
 4. While a batch waits, navigate to another Work, then archive the original Work
    through its ordinary menu. PASS: requests already owned by the original batch

@@ -167,7 +167,8 @@ Work Uploads have no Files tab surface (composer attachments still land there, s
 row's name launches review through the same `useAiDraftLauncher` handoff as the
 other review launchers, not a plain document open, and the row expands in place
 to that draft's changes (`useDraftChanges`, previewed only once expanded). Its
-menu runs Apply all and Discard all across every draft of the Work through the
+menu says "Apply all changes" and "Discard all changes", without draft counts,
+and runs across every draft of the Work through the
 scope that covers it (`useWorkReviewScope`: the Editor's, else the chat's, else
 a third scope `ProjectView` mounts for a Work neither has). No Work has no Work
 page and so no Work-wide list. Files search uses one name matcher across drafts and Scratch;

@@ -374,7 +374,7 @@ describe("the change-list sheet", () => {
       ]) {
         expect(text).not.toContain(gone);
       }
-      expect(named("All drafts")).toBeUndefined();
+      expect(named("All changes")).toBeUndefined();
     });
   });
 

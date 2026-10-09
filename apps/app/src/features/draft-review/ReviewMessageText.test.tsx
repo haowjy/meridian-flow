@@ -11,8 +11,8 @@ import { ReviewMessageText } from "./ReviewMessageText";
 
 describe("a held refusal across a language switch", () => {
   // The macros are stubbed in tests, so a message's id is its English text.
-  const archivedEn = "This Work is archived. Unarchive it to apply or discard its drafts.";
-  const archivedZh = "此作品已归档。取消归档后才能应用或放弃它的草稿。";
+  const archivedEn = "This Work is archived. Unarchive it to apply or discard its changes.";
+  const archivedZh = "此作品已归档。取消归档后才能应用或放弃其中的改动。";
 
   function renderHeld(failure: DraftCommandFailure, run: () => Promise<void>): Promise<void> {
     i18n.load("zh", { [archivedEn]: archivedZh });
