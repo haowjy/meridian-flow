@@ -66,10 +66,9 @@ export type PreparedHolder =
 /**
  * The base a write was prepared against. Two separate checks guard applying
  * it: the authority generation must still be the one the base was read from
- * (the certificate; admission checks it under the document's lock), and the
- * document must hold every clock in `stateVector` (the update's dependency).
- * Neither implies the other: a restore can keep every clock yet replace the
- * generation, and a state vector says nothing of which generation it is in.
+ * (the certificate), and the document must hold every clock in
+ * `stateVector` (the update's dependency). Both are agent-edit's
+ * `admitPreparedUpdate`, run under the document's lock by every door.
  */
 export interface PreparedBase {
   readonly authority: Readonly<CheckpointAuthority>;
@@ -142,28 +141,6 @@ export class LinkBindingInsideTransactionError extends Error {
     super("Link binding must run before the command transaction opens (contract §6.2)");
     this.name = "LinkBindingInsideTransactionError";
   }
-}
-
-/**
- * Whether `doc` has seen every clock `base` names, so `update`'s dependencies
- * are present. Clock containment only: it is no generation fence (see
- * `sameAuthority`), and it does not prove the base's items are still live.
- */
-export function containsBase(doc: Y.Doc, base: PreparedBase | null): boolean {
-  if (base === null) return true;
-  const have = Y.decodeStateVector(Y.encodeStateVector(doc));
-  for (const [client, clock] of Y.decodeStateVector(base.stateVector)) {
-    if ((have.get(client) ?? 0) < clock) return false;
-  }
-  return true;
-}
-
-/** Whether a document's authority is the generation a prepared base certified. */
-export function sameAuthority(current: Readonly<CheckpointAuthority>, base: PreparedBase): boolean {
-  return (
-    current.authorityId === base.authority.authorityId &&
-    current.generation === base.authority.generation
-  );
 }
 
 export interface LinkBinderDeps {

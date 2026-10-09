@@ -102,21 +102,9 @@ export function createAgentEditRuntime(input: {
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
       identityPreservingWrite: ({ documentId, content, actor }) =>
-        liveUtilityCore.write(
+        liveUtilityCore.applyPrepared(
+          { documentId, base: content.base, update: content.update, certified: content.certified },
           {
-            command: "create",
-            file: "document.md",
-            documentId,
-            content: content.markdown,
-            overwrite: true,
-          },
-          {
-            prepared: {
-              blocks: content.blocks,
-              update: content.update,
-              ...(content.base ? { authority: content.base.authority } : {}),
-              ...(content.certified ? { certified: content.certified } : {}),
-            },
             actor,
             sessionId:
               actor.kind === "human"
