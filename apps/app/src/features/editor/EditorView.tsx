@@ -102,24 +102,14 @@ export type EditorViewProps = {
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
   /** Active draft room for inline review; absent means bind to the live document room. */
+  reviewDraftId?: string | null;
   /** Generation-fenced room name for the active branch review room, supplied by the preview DTO. */
   reviewRoomName?: string | null;
   /** Work that owns the draft review — required to query the hunk model when reviewing. */
   reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
-  /**
-   * Called when the review room is of a generation the server has closed
-   * (`branch-generation-stale`): the review is still wanted, and its owner reads
-   * the draft's current room. Required whenever the host supplies a review.
-   */
-} & (
-  | {
-      reviewDraftId?: string | null;
-      onReviewRoomStale: (documentId: string, draftId: string, roomName: string) => void;
-    }
-  | { reviewDraftId?: null; onReviewRoomStale?: never }
-);
+};
 
 /**
  * How long a painted review editor waits for its change marks before showing

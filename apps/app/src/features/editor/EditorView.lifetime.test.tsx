@@ -135,7 +135,7 @@ function mountedEditor(): Editor {
   return dom.editor;
 }
 
-type LiveProps = Omit<EditorViewProps, "reviewDraftId" | "onReviewRoomStale">;
+type LiveProps = Omit<EditorViewProps, "reviewDraftId">;
 let applyProps: (next: Partial<LiveProps>) => void = () => {};
 
 function Harness({ initial }: { initial: LiveProps }) {

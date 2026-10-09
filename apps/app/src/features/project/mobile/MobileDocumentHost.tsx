@@ -371,7 +371,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
           reviewRoomName={reviewRoomName}
           reviewWorkId={reviewDraftId ? controller.workId : null}
           onReviewSessionUnavailable={controller.exitInlineReview}
-          onReviewRoomStale={controller.reviewRoomStale}
         />
       </div>
     </MobileDocumentReview>
