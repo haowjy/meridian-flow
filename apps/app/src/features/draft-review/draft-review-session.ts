@@ -15,7 +15,6 @@ import {
   type PendingDraftCommand,
   pendingDraftCommand,
   queueChangeSelection,
-  releaseChangeCommand,
   releaseDraftCommand,
 } from "@/client/query/draft-command-record";
 import { classifyDraftCommandRejection } from "@/client/query/draft-command-rejection";
@@ -179,7 +178,7 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     const ports = this.ports();
     const draft = { ...ports.scope, ...selection };
-    if (!beginChangeCommand(draft, change, mode, basis.draftGeneration, completesDraft, basis))
+    if (!beginChangeCommand(draft, change, mode, basis.draftGeneration, completesDraft))
       return { kind: "blocked" };
     try {
       let response: { status: string } | "unknown";
@@ -222,7 +221,7 @@ export class DraftReviewSession {
       failChangeCommand(draft, change, mode, code);
       return { kind: "change-refused", mode, code };
     } finally {
-      releaseChangeCommand(draft);
+      releaseDraftCommand(draft);
     }
   }
 
