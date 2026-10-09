@@ -30,3 +30,14 @@ document, though the port accepts a `documentIds` batch. Compaction calls it
 twice (before the summary and once per successor-prepare attempt) over every
 document recorded in the history it checks. Unmeasured; batch it if those
 round trips show in compaction latency.
+
+## Cache link-scope membership by manifest head
+
+`adapters/document-link-scope.ts` reads manifest membership through the same
+resolver ContextFS lists through, which flushes the manifest and replays it
+per snapshot. With real membership a live model read's scope costs about
+21 ms p50 on a 1,000-document project, but a single draft-view operation
+costs about 49 ms, of which about 33 ms is the manifest flush and replays
+(`729-730-scope-benchmark.log` in the model-tool-surface work directory).
+Cache membership per snapshot key by manifest head sequence and draft branch
+state, without weakening the flush that keeps reads fresh; measure first.

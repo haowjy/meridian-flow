@@ -15,3 +15,9 @@
   Duel`). Unverified: whether following it scrolls to the heading named by
   that text rather than a slug. Check, and make it do so if not
   (`features/links/`, the follow and open path).
+- Every catalog revision starts a new resolution generation whose first read
+  of a server-only key (a gone `doc:` ref, an unsettled ahead ref) is pending,
+  which draws filled for one round trip before the dashed answer returns.
+  Settled ahead refs no longer do (the settlement memo). Read the previous
+  generation's answer while revalidating to remove the rest
+  (`link-resolution.ts` generations, `features/links/project-link-resolver.ts`).
