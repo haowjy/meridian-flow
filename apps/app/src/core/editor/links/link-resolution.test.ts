@@ -27,12 +27,18 @@ it("ignores the old generation answering late, after its waiter was carried", as
   resolution.registerResolver({ remote: () => new Promise((done) => (oldAnswer = done)) });
   let settled: unknown = "waiting";
   void resolution.resolve(KAEL_LINK).then((entry) => (settled = entry));
-  resolution.registerResolver({ remote: () => new Promise((done) => (newAnswer = done)) });
+  // The new generation shows a provisional answer; the click still waits for
+  // the server, and the old generation's late gone must not replace it.
+  resolution.registerResolver({
+    local: () => ({ kind: "ask", provisional: { state: "resolved", document: KAEL } }),
+    remote: () => new Promise((done) => (newAnswer = done)),
+  });
 
-  oldAnswer([{ state: "unresolved", document: null }]);
+  oldAnswer([{ state: "gone", document: null }]);
   await Promise.resolve();
   await Promise.resolve();
   expect(settled).toBe("waiting");
+  expect(resolution.read(KAEL_LINK)).toEqual({ state: "resolved", document: KAEL });
 
   newAnswer([{ state: "resolved", document: KAEL }]);
   await vi.waitFor(() => expect(settled).toEqual({ state: "resolved", document: KAEL }));

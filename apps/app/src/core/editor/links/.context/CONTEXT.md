@@ -161,7 +161,10 @@ the decoration scan's `request()` queues every unanswered link and pumps
 once, so one scan is one batch of up to 200; a click's `resolve()` pumps at
 once. Four batches are in flight at most, and a batch that throws fails only
 its own questions. A provisional local answer stands through the request and
-is replaced only by `gone` or a different document (`settledOver`).
+is replaced only by `gone` or a different document (`settledOver`). A click
+on a provisional link waits for that request, or asks again if it failed, so
+the server's `gone` or other document wins for a click as it does for the
+chip. Any change to a cached entry publishes, a failure included.
 
 The registration's options are also the editor's binding scope
 (`resolution.binding`): the holder's address, its project, and the local
@@ -278,7 +281,9 @@ accessible state sits on the focusable `<a>` itself, as on chat's
 reference: the link mark's view (`linkStateAttributes`) sets an
 `aria-description` of "No longer available" (a missing link's is "Doesn't
 exist yet") and, for gone, `aria-disabled`, which also drops the pointer
-cursor. The hint, the menu and the form say the same words, and the menu
+cursor. The view reads the resolution from the extension's storage, not
+`getLinkResolution`, because a view built while the editor is constructing
+sees the editor as destroyed. The hint, the menu and the form say the same words, and the menu
 offers no Open link.
 
 A scheme URI knows its family from its prefix and a relative path from the
