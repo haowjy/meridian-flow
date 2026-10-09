@@ -355,8 +355,8 @@ async function shown(store: ShownLinkStore, threadId: string, documentId: string
     .map((link) => `${link.ref.slice(4, 12)}@${link.view}`)
     .sort();
 }
-/** Host-only evidence: refs, and the fields that carry them beside a result. */
-const HOST_FACTS = /doc:|ahead:|"showing"|"shown"/;
+/** Host-only evidence: refs and asset identities, and the fields that carry them beside a result. */
+const HOST_FACTS = /doc:|ahead:|asset:|"showing"|"shown"/;
 const expected = (links: SpelledLinkFact[], view = "live") =>
   links.map((link) => `${link.ref.slice(4, 12)}@${view}`).sort();
 
@@ -410,7 +410,7 @@ const rows: Array<{
     async act(check) {
       const h = await harness();
       const { threadId, results } = await runTurn(h, [toolCall("search", { pattern: "needle" })]);
-      check(JSON.stringify(results), "search output carries no host facts").not.toContain("doc:");
+      check(JSON.stringify(results), "search output carries no host facts").not.toMatch(HOST_FACTS);
       const passages = expected([fact(0), fact(1), fact(2)]);
       return {
         store: h.store,
