@@ -1,8 +1,12 @@
 /**
  * Stored link, image and figure destinations of a live Yjs fragment, read
  * straight from the Yjs tree (never a ProseMirror projection) so the scope's
- * `prepare({ docs })`, the view-revision digest and derive stay cheap.
+ * `prepare({ docs })`, the view-revision digest and derive stay cheap; and the
+ * keys a host must load before spelling them (every adapter's `prepare`).
  */
+import { resolveDocumentHref } from "@meridian/contracts";
+import { type PMNode, walkLinkOccurrences } from "@meridian/markup";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
 export interface StoredLinkOccurrence {
@@ -57,4 +61,44 @@ function sameLinkMark(a: Record<string, unknown>, b: Record<string, unknown>): b
   return (
     a.href === b.href && (a.title ?? null) === (b.title ?? null) && refOf(a.ref) === refOf(b.ref)
   );
+}
+
+/** What spelling stored occurrences needs loaded: refs, ahead addresses and `asset:` ids. */
+export interface StoredLinkKeys {
+  refs: Set<string>;
+  /** Decoded addresses of stored ahead refs (an arrival there settles them). */
+  aheadAddresses: Set<string>;
+  assetIds: Set<string>;
+}
+
+export function storedLinkKeys(input: {
+  docs?: readonly Y.Doc[];
+  /** Nodes that already carry stored attrs, such as copies. */
+  nodes?: readonly PMNode[];
+  refs?: readonly string[];
+}): StoredLinkKeys {
+  const keys: StoredLinkKeys = {
+    refs: new Set(input.refs ?? []),
+    aheadAddresses: new Set(),
+    assetIds: new Set(),
+  };
+  const add = ({ kind, ref, href }: StoredLinkOccurrence) => {
+    if (ref) {
+      keys.refs.add(ref);
+      if (ref.startsWith("ahead:")) {
+        const stored = resolveDocumentHref(href, null);
+        if (stored) keys.aheadAddresses.add(stored.uri);
+      }
+    } else if (kind !== "link" && href.startsWith("asset:")) {
+      keys.assetIds.add(href.slice("asset:".length));
+    }
+  };
+  for (const doc of input.docs ?? []) {
+    for (const occurrence of extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)))
+      add(occurrence);
+  }
+  for (const { kind, attrs } of walkLinkOccurrences(input.nodes ?? [])) {
+    add({ kind, ref: attrs.ref, href: attrs.href });
+  }
+  return keys;
 }

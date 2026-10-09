@@ -84,7 +84,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const reversalStore = options.journal;
   const mutationCommit = createMutationCommit({
     links: options.links,
-    codec: options.codec,
     journal: options.journal,
     coordinator: options.coordinator,
     model: options.model,

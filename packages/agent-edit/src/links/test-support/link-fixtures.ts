@@ -153,12 +153,14 @@ export function linkHarness(input: {
     catalog,
     links,
     live,
-    /** Spells the live holder (or any copy of it) under the catalog as it is now. */
-    markdown: (of: Y.Doc = live()) =>
-      codecFactory
+    /** Spells the live holder (or any copy of it) under the catalog as it is now, prepared like a door. */
+    async markdown(of: Y.Doc = live()) {
+      await links.prepare({ documentId: input.holder.id, docs: [of] });
+      return codecFactory
         .bind(links.scopeFor(input.holder.id, undefined))
         .serialize(prosemirrorBlocksForDoc(of, schema))
-        .trim(),
+        .trim();
+    },
     /** Reads the holder as the model would. */
     read(command: Record<string, unknown> = {}) {
       return ctx.core.read(

@@ -15,6 +15,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   createHolderLinkScope,
   type HolderCatalog,
+  storedLinkKeys,
   writtenAddresses,
 } from "@meridian/agent-edit/integration";
 import {
@@ -25,21 +26,17 @@ import {
   matchDocumentPath,
   parseContextUri,
   parseLinkRef,
-  resolveDocumentHref,
 } from "@meridian/contracts";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { walkLinkOccurrences } from "@meridian/markup";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
-import {
-  type DocumentLinkScopes,
-  extractStoredLinks,
-  type LinkScopeKey,
-  type LinkScopeObserver,
-  type ScopePrepareRequest,
+import type {
+  DocumentLinkScopes,
+  LinkScopeKey,
+  LinkScopeObserver,
+  ScopePrepareRequest,
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { catalogSourceAuthority } from "./catalog-file-mapper.js";
@@ -153,30 +150,17 @@ export function createDrizzleDocumentLinkScopes(deps: {
     if (!snapshot?.open) return;
     snapshot.prepared = true;
 
-    const refs = new Set(request.refs ?? []);
-    const ids = new Set(request.holders.map((holder) => holder.documentId));
-    const addresses = new Set(request.addresses ?? []);
-    const stored = [
-      ...(request.docs ?? []).flatMap((doc) =>
-        extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
-      ),
-      ...walkLinkOccurrences(request.nodes ?? []).map((occurrence) => ({
-        kind: occurrence.kind,
-        ref: occurrence.attrs.ref,
-        href: occurrence.attrs.href,
-      })),
-    ];
-    for (const occurrence of stored) {
-      if (occurrence.ref) {
-        refs.add(occurrence.ref);
-        if (occurrence.ref.startsWith("ahead:")) {
-          const address = resolveDocumentHref(occurrence.href, null);
-          if (address) addresses.add(address.uri);
-        }
-      } else if (occurrence.kind !== "link" && occurrence.href.startsWith("asset:")) {
-        ids.add(occurrence.href.slice("asset:".length));
-      }
-    }
+    const stored = storedLinkKeys({
+      docs: request.docs,
+      nodes: request.stored,
+      refs: request.refs,
+    });
+    const refs = stored.refs;
+    const ids = new Set([
+      ...request.holders.map((holder) => holder.documentId),
+      ...stored.assetIds,
+    ]);
+    const addresses = new Set([...(request.addresses ?? []), ...stored.aheadAddresses]);
     const aheadIds = new Set<string>();
     for (const ref of refs) {
       const parsed = parseLinkRef(ref);
@@ -440,8 +424,13 @@ export function createDrizzleDocumentLinkScopes(deps: {
         observer.snapshotMiss({ documentId, key, prepared: snapshot.prepared });
       const holderRow = snapshot.rows.get(documentId);
       if (holderRow === undefined) miss(`holder:${documentId}`);
+      // The holder's own row owns its project; a key that named no project leaves it empty.
       return createHolderLinkScope(
-        { uri: holderRow?.uri ?? null, projectId: snapshot.projectId ?? "", view },
+        {
+          uri: holderRow?.uri ?? null,
+          projectId: holderRow?.projectId ?? snapshot.projectId ?? "",
+          view,
+        },
         snapshotCatalog(snapshot, view, miss),
         miss,
       );
