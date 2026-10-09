@@ -26,7 +26,7 @@ Same-Work pending document navigation retains the prior document presentation
 and breadcrumb until address resolution settles. The shared review-scope owner
 supplies that same document identity to both the recovery executor and phone
 host; navigation commands always come from the current route. Errors, Work
-changes, Results, and screen changes do not reuse that pending projection.
+changes and screen changes do not reuse that pending projection.
 
 Deferred implementation work is tracked in [TODO](TODO).
 
@@ -123,7 +123,7 @@ the document session registry.
 - Chat uses the same breadcrumb grammar (`ChatBreadcrumb`): `Chats` is a
   never-truncating ancestor that opens the index, and the current segment is
   the chat switcher. The index shows a lone `Chats`, so its body hides the
-  duplicate heading (`namedByChrome`). Work and Results keep a centered title;
+  duplicate heading (`namedByChrome`). Work keeps a centered title;
   the leading side reserves as many 44px slots as the trailing side. Crumb
   targets stay 44px with negative margin so the trail fits the 56px band. The drawer edits the
   project title inline without closing, and offers an explicit View projects link.
@@ -137,8 +137,7 @@ the document session registry.
   only over Work or Editor: on the Chat screen commands navigate instead of
   revealing.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
-  `MobileProject`): chat carries the Results entry, Results carries the way
-  back to chat, and the Files browser inside a scheme (scheme root or folder,
+  `MobileProject`): the Files browser inside a scheme (scheme root or folder,
   no file open) carries the `+` create menu (`MobileCreateEntryMenu`). The
   Files root and all other screens leave it empty.
 - The bar is solid `bg-background`, not `backdrop-filter`. On iOS Safari,

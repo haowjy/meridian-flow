@@ -7,8 +7,9 @@
  * resolves against), which document is at an address, so a link the index can
  * answer costs no request, and whether a link-ahead address is already taken.
  * It walks the project's manuscript, kb, and Unfiled, the writer's user files,
- * and the scope Work's Scratch and Uploads by row id, including No Work. A URI naming another Work's Scratch is outside it and always asks the
- * server.
+ * and the scope's Scratch (the chat's lineage notes on No Work, else the scope
+ * Work's) and the scope Work's Uploads. A URI naming another owner's Scratch is
+ * outside it and always asks the server.
  *
  * The index also says WHICH catalog it is. A resolved answer is true of the
  * documents the project held when it was asked, so a rename, a create, or a

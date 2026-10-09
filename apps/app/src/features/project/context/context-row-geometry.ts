@@ -9,8 +9,8 @@ export const contextTreeRowGrowClassName =
   "min-h-8 [@media(hover:none)]:min-h-11 [@media(pointer:coarse)]:min-h-11";
 
 /**
- * A file row's frame: the tree's own rows and the right rail's Recent and
- * Results rows wear it, so height, padding, text and the hover and selected
+ * A file row's frame: the tree's own rows, the right rail's Recent rows and the
+ * left rail's Scratch rows wear it, so height, padding, text and the hover and selected
  * fills cannot drift apart. Hover is inactive-only: the active row keeps its
  * stronger fill.
  */

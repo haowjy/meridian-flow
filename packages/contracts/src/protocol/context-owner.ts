@@ -4,9 +4,9 @@
  * A document is held by a Work (its row id, No Work's included) or, for
  * Scratch, by a No Work chat's lineage (the first chat's id). Never both. The
  * handle (`c12`) is what a lineage's URI spells; a query needs only the id, so
- * the handle is optional on a `ContextOwner` and required on a
- * `ResolvedDocumentOwner`, the form a tab or placement carries. Flatten to
- * `workId` / `rootThreadId` only at the HTTP and storage edges.
+ * the handle is optional on a `ContextOwner` (a tab or placement carries it,
+ * as `TabOwner` requires). Flatten to `workId` / `rootThreadId` only at the
+ * HTTP and storage edges.
  */
 
 /** A Work-scoped document's Work. `null` is for a project scheme, which has no owner. */
@@ -25,11 +25,6 @@ export type LineageOwnerRef = {
 
 /** Enough to ask for a catalog, a document or a request. */
 export type ContextOwner = WorkOwnerRef | LineageOwnerRef;
-
-/** An owner with everything a tab, a placement or a URI needs: a Work row, or a lineage with its handle. */
-export type ResolvedDocumentOwner =
-  | { workId: string; rootThreadId?: undefined; rootThreadRef?: undefined }
-  | { workId?: undefined; rootThreadId: string; rootThreadRef: string };
 
 /** The owner two separate nullable pieces name: the lineage when there is one, else the Work. */
 export function contextOwner(

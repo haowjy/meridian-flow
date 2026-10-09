@@ -128,7 +128,6 @@ export function useDockView(
   setView: (view: DockView) => void;
   /** The document replacing the views on this screen, if any. */
   document: DockDocument | null;
-  closeDocument: () => void;
 } {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
   const setDockView = useDockViewStore((state) => state.setDockView);
@@ -137,11 +136,9 @@ export function useDockView(
       ? state.occupant
       : null,
   );
-  const closeDocument = useDockViewStore((state) => state.closeDocument);
   return {
     ...resolveDockView(screen, stored),
     setView: (next) => setDockView(screen, next),
     document: occupant,
-    closeDocument,
   };
 }

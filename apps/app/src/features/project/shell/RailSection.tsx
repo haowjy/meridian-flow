@@ -40,26 +40,19 @@ export function CollapsibleRailSection({
   );
 }
 
-/**
- * One file row, as the tree draws it. The row is a button; `trailing` sits
- * beside it (inside the same hover fill) for a control that must not nest in it.
- */
+/** One file row, as the tree draws it. */
 export function RailFileRow({
   icon,
   name,
   title,
-  ariaLabel,
   onOpen,
-  trailing,
   active = false,
   depth = 1,
 }: {
   icon: LucideIcon;
   name: string;
   title?: string;
-  ariaLabel?: string;
   onOpen: () => void;
-  trailing?: ReactNode;
   /** The document is open beside the writer; the row keeps the tree's selected fill. */
   active?: boolean;
   depth?: number;
@@ -73,7 +66,6 @@ export function RailFileRow({
       <button
         type="button"
         onClick={onOpen}
-        aria-label={ariaLabel}
         aria-current={active ? "true" : undefined}
         className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
       >
@@ -81,7 +73,6 @@ export function RailFileRow({
         <RowIcon icon={icon} />
         <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
       </button>
-      {trailing}
     </div>
   );
 }

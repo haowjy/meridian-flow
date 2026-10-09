@@ -297,7 +297,7 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
     // Files root: nothing is drilled in, so "Files" is the current location.
     return [{ label: filesLabel }];
   }
-  // Scratch is browsed from its owner (a chat's Scratch menu, a Work's Files),
+  // Scratch is browsed from its owner (the rail's or drawer's Scratch section, a Work's Files),
   // never from the Editor's Files, so its trail names where a note lives and
   // links nowhere.
   const browsable = props.activeContextScheme !== "scratch";

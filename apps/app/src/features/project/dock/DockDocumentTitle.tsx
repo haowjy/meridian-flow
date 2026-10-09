@@ -2,11 +2,10 @@
  * DockDocumentTitle — the dock document's title chip and its menu.
  *
  * The chip names the document (icon, name, chevron) in the dock header, the
- * same chip grammar as the chat title beside it. It opens a `DrillInMenu` on the
- * document's own tree (a Work's Scratch or Uploads, as the Work page's Files
- * lists it, or a chat's Scratch, as that chat's header lists it) at the
- * document's folder, so a sibling note is one pick away.
- * Below the tree: Open in Editor and Rename. Rename swaps the chip for the
+ * same chip grammar as the chat title beside it. It opens a `DrillInMenu` at
+ * the document's own folder; back rows climb to the project's areas, so any
+ * document is a few picks away. Below the tree: Rename (Open in Editor is the
+ * header's own button). Rename swaps the chip for the
  * tree row's own inline name field, so a rename here is the one the Files list
  * makes.
  */

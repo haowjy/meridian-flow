@@ -547,7 +547,7 @@ short-circuits only while its creation record is pending or failed; meanwhile
 `ProjectRouteBootstrap` mounts the shell with no route data and seeds it when it
 arrives rather than remounting. Browser history state is not creation
 recovery, and an in-flight create may be lost on reload. Project-scoped Works,
-threads, context catalogs, Results, and Agent catalog reads pause through
+threads, context catalogs, and Agent catalog reads pause through
 selectors over that same registry until the create is confirmed.
 `routing/work-route.ts` also owns the read/write projection for remembered
 Work, stored by id. Work detail's `?view=files` and the
@@ -573,7 +573,7 @@ may still be missing or occupied by another document. Background namespace
 rejection therefore stays on the acted-on document's existing identity field.
 Work-scoped tab ownership and the ready Editor Work use the Work row id, including
 the locked No Work row. Only `workSelectionFor` spells that row as `none` for
-project-content addresses; Scratch and Uploads addresses carry the row id.
+project-content addresses; Uploads and a Work's Scratch addresses carry the row id, and a chat's Scratch address carries its lineage in `?chat=`.
 A chat's Scratch route target carries `rootThreadId` and keeps `workId` as the
 Editor's own Work (`ContextRouteTarget`); `targetInEditorOf` and
 `sameContextTarget` are the shared rules, so a Work change never prunes a
@@ -590,8 +590,8 @@ selectors using synchronous, entry-guarded history replacement, pinning no selec
 without empty URL parameters. This same-destination repair bypasses blockers;
 it never queues a competing navigation behind a pending dirty-edit decision.
 Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
-invalid percent encoding, and a Scratch or Uploads address without its Work
-remain parser errors, not recoverable selector values. Required path identities never fall
+invalid percent encoding, and an Uploads or Work Scratch address without its Work
+(or a Scratch address with neither `?work=` nor `?chat=`) remain parser errors, not recoverable selector values. Required path identities never fall
 back. Work and document path misses stay unavailable. Path and remembered chat IDs are identity, not primary-list lookups. A confirmed
 snapshot miss falls back to the index.
 Editor can seed its initially absent Work
