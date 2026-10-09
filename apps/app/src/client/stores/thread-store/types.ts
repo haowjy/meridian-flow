@@ -88,7 +88,7 @@ export type ThreadStoreActions = {
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
   markHandoffPending(threadId: string): void;
-  appendUserTurn(threadId: string, text: string): Turn;
+  appendUserTurn(threadId: string, blocks: readonly UserMessageBlock[]): Turn;
   acknowledgeUserTurn(
     threadId: string,
     optimisticTurnId: string,

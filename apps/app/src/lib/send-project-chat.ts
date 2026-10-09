@@ -146,7 +146,7 @@ export function sendProjectChat({
   }
 
   threadActions.markHandoffPending(threadId);
-  const optimisticUserTurnId = threadActions.appendUserTurn(threadId, text).id;
+  const optimisticUserTurnId = threadActions.appendUserTurn(threadId, blocks).id;
   const workingTurnId = crypto.randomUUID();
   threadActions.ensureAssistantTurn(threadId, workingTurnId);
 
@@ -224,7 +224,7 @@ export function rehydrateFirstSendSubmission(
     existingTurns.some((turn) => turn.id === remembered.optimisticUserTurnId);
   const optimisticUserTurnId = reuse
     ? remembered.optimisticUserTurnId
-    : threadActions.appendUserTurn(entry.threadId, entry.text).id;
+    : threadActions.appendUserTurn(entry.threadId, entry.blocks).id;
   const workingTurnId = reuse ? remembered.workingTurnId : crypto.randomUUID();
   threadActions.ensureAssistantTurn(entry.threadId, workingTurnId);
   firstSendSessionIds.set(mapKey, { optimisticUserTurnId, workingTurnId });
