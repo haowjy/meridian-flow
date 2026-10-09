@@ -46,6 +46,11 @@ const STAGED = id(15);
 const SETTLED_AHEAD = id(16);
 const OPEN_AHEAD = id(17);
 const WORK = id(18);
+const SEAL = id(19);
+const OLD_CREST = id(20);
+const CREST = id(21);
+const THREAD = id(22);
+const UNKNOWN_THREAD = id(23);
 const RESPONSE = "response-f2";
 const LIVE = { kind: "live" } as const;
 const DRAFT = { kind: "draft", workId: WORK, responseId: RESPONSE } as const;
@@ -88,12 +93,14 @@ if (!RUN) {
   describe("document-link scope (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
     // Manifest membership the way ContextFS reads it: live, and a Work draft that
-    // holds a document it created plus one this response staged.
+    // removed NOTES and holds a document it created, plus one this response staged
+    // in its thread (the real resolver counts staged creates only with both).
     const membership: LinkScopeMembership = async (view) => {
-      const live = [HOLDER, TARGET, SECRET, NOTES, MAP];
+      const live = [HOLDER, TARGET, SECRET, NOTES, MAP, CREST];
       if (!view.workId) return { members: live };
+      const staged = view.responseId === RESPONSE && view.threadId === THREAD ? [STAGED] : [];
       return {
-        members: [...live, DRAFTED, ...(view.responseId === RESPONSE ? [STAGED] : [])],
+        members: [...live.filter((each) => each !== NOTES), DRAFTED, ...staged],
       };
     };
     const scopes = createDrizzleDocumentLinkScopes({
@@ -122,19 +129,21 @@ if (!RUN) {
         extension: "md",
         ...extra,
       });
-      await db
-        .insert(documents)
-        .values([
-          row(HOLDER, "holder", { folderId: PART }),
-          row(TARGET, "target", { folderId: PART }),
-          row(DELETED, "gone", { deletedAt: new Date() }),
-          row(SECRET, "secret"),
-          row(NOTES, "notes"),
-          row(DRAFTED, "drafted"),
-          row(STAGED, "staged"),
-          row(MAP, "map", { folderId: PART, extension: "png", fileType: "image" }),
-          { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "md" },
-        ]);
+      await db.insert(documents).values([
+        row(HOLDER, "holder", { folderId: PART }),
+        row(TARGET, "target", { folderId: PART }),
+        row(DELETED, "gone", { deletedAt: new Date() }),
+        row(SECRET, "secret"),
+        row(NOTES, "notes"),
+        row(DRAFTED, "drafted"),
+        row(STAGED, "staged"),
+        row(MAP, "map", { folderId: PART, extension: "png", fileType: "image" }),
+        // A deleted picture alone at its path, and one whose path a live picture took.
+        row(SEAL, "seal", { extension: "png", fileType: "image", deletedAt: new Date() }),
+        row(OLD_CREST, "crest", { extension: "png", fileType: "image", deletedAt: new Date() }),
+        row(CREST, "crest", { extension: "png", fileType: "image" }),
+        { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "md" },
+      ]);
       await db.insert(linkAheadRefs).values([
         {
           aheadId: SETTLED_AHEAD,
@@ -170,8 +179,12 @@ if (!RUN) {
       await scopes.within({ documentId: HOLDER }, async () => {
         await scopes.prepare({
           holders: [{ documentId: HOLDER, view: LIVE }],
-          docs: [holderDoc(stored, [`asset:${MAP}`])],
-          addresses: ["manuscript://part1/target"],
+          docs: [holderDoc(stored, [`asset:${MAP}`, `asset:${SEAL}`, `asset:${OLD_CREST}`])],
+          addresses: [
+            "manuscript://part1/target",
+            "manuscript://part1/map.png",
+            "manuscript://part1/nowhere.png",
+          ],
         });
         const scope = scopes.holder({ documentId: HOLDER, view: LIVE });
         const spell = (ref: string) =>
@@ -196,17 +209,29 @@ if (!RUN) {
         expect
           .soft(scope.spellSource({ src: `asset:${MAP}`, ref: null }).href)
           .toBe("part1/map.png");
+        // A deleted picture keeps its path only while it is the sole image there;
+        // writing that path back binds the same asset (a save and restore round trip).
+        const seal = scope.spellSource({ src: `asset:${SEAL}`, ref: null }).href;
+        expect.soft(seal, "sole deleted image").toBe("seal.png");
+        expect.soft(scope.assetFor(seal), "its path binds back").toBe(SEAL);
+        expect
+          .soft(scope.spellSource({ src: `asset:${OLD_CREST}`, ref: null }).href, "path reused")
+          .toBe(`asset:${OLD_CREST}`);
+        expect.soft(scope.assetFor("crest.png"), "the live picture holds the path").toBe(CREST);
+        // A written path outside assets/ binds to the picture there; an unknown one stays literal.
+        expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
+        expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
       });
     });
 
     it("sees a Work draft's created and same-response staged documents in the draft view only", async () => {
-      await scopes.within({ documentId: HOLDER }, async () => {
+      await scopes.within({ documentId: HOLDER, viewer: { threadId: THREAD } }, async () => {
         await scopes.prepare({
           holders: [
             { documentId: HOLDER, view: DRAFT },
             { documentId: HOLDER, view: LIVE },
           ],
-          refs: [`doc:${DRAFTED}`, `doc:${STAGED}`],
+          refs: [`doc:${DRAFTED}`, `doc:${STAGED}`, `doc:${NOTES}`],
         });
         const draft = scopes.holder({ documentId: HOLDER, view: DRAFT });
         const live = scopes.holder({ documentId: HOLDER, view: LIVE });
@@ -222,6 +247,31 @@ if (!RUN) {
           expect.soft(live.resolve({ ref, href: "x.md" })).toEqual({ kind: "gone" });
           expect.soft(live.spellLink({ ref, href: "x.md" }).href).toBe("x.md");
         }
+        // The draft's own manifest wins: a live document it removed is gone there.
+        const notes = { ref: `doc:${NOTES}`, href: "x.md" };
+        expect.soft(draft.resolve(notes), "removed in the draft").toEqual({ kind: "gone" });
+        expect.soft(live.resolve(notes), "still live").toMatchObject({ kind: "document" });
+        // A view whose membership was never loaded is a miss: it keeps the stored href.
+        const other = scopes.holder({
+          documentId: HOLDER,
+          view: { kind: "draft", workId: WORK, responseId: "other-response" },
+        });
+        expect.soft(other.resolve(notes), "unloaded view").toEqual({ kind: "unknown" });
+        expect.soft(other.spellLink(notes).href).toBe("x.md");
+      });
+      // Read outside the reply's thread, the staged create is not this reader's.
+      await scopes.within({ documentId: HOLDER }, async () => {
+        await scopes.prepare({
+          holders: [{ documentId: HOLDER, view: DRAFT }],
+          refs: [`doc:${STAGED}`],
+        });
+        expect
+          .soft(
+            scopes
+              .holder({ documentId: HOLDER, view: DRAFT })
+              .resolve({ ref: `doc:${STAGED}`, href: "x.md" }),
+          )
+          .toEqual({ kind: "gone" });
       });
     });
 
@@ -233,6 +283,7 @@ if (!RUN) {
       const rename = (name: string) =>
         db.update(documents).set({ name }).where(eq(documents.id, TARGET));
       let inherited: Promise<string> | undefined;
+      let stray: Promise<string> | undefined;
       await scopes.within({ projectId: PROJECT }, async () => {
         await scopes.prepare({
           holders: [{ documentId: HOLDER, view: LIVE }],
@@ -243,6 +294,22 @@ if (!RUN) {
         expect(await scopes.within({ documentId: HOLDER }, async () => spellTarget())).toBe(
           "target.md",
         );
+        // One whose project can't be found has nothing of its own: it keeps the enclosing one.
+        expect
+          .soft(await scopes.within({ threadId: UNKNOWN_THREAD }, async () => spellTarget()))
+          .toBe("target.md");
+        // A door read in a thread never joins one read in none: it loads its own.
+        expect
+          .soft(
+            await scopes.within({ documentId: HOLDER, viewer: { threadId: THREAD } }, async () => {
+              await scopes.prepare({
+                holders: [{ documentId: HOLDER, view: LIVE }],
+                refs: [`doc:${TARGET}`],
+              });
+              return spellTarget();
+            }),
+          )
+          .toBe("moved.md");
         // Work scheduled here outlives the operation and must not read its settled snapshot.
         inherited = new Promise((resolve) => setTimeout(resolve, 20)).then(() =>
           scopes.within({ documentId: HOLDER }, async () => {
@@ -253,8 +320,17 @@ if (!RUN) {
             return spellTarget();
           }),
         );
+        // A new holder needs an open snapshot; an inherited settled one answers for nobody.
+        stray = new Promise((resolve) => setTimeout(resolve, 20)).then(() => {
+          try {
+            return spellTarget();
+          } catch (error) {
+            return (error as Error).message;
+          }
+        });
       });
       expect(await inherited).toBe("moved.md");
+      expect(await stray).toContain("outside a document link scope");
 
       await expect(
         scopes.within({ documentId: HOLDER }, async () => spellTarget()),
