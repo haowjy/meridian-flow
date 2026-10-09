@@ -64,7 +64,7 @@ export function createAgentEditRuntime(input: {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
   /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
   inTransaction(): boolean;
-  /** Showings an agent's whole-document write binds against (lane E); none when absent. */
+  /** Showings an agent's whole-document write binds against (the thread's shown-link store). */
   shownLinks?: LinkBinderDeps["shownLinks"];
 }) {
   const schema = buildDocumentSchema();
