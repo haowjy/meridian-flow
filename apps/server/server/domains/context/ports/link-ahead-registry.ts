@@ -1,5 +1,5 @@
 /** Port for durable ahead-ref identities (contract §9.2). */
-import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
 export type AheadRegistration = {
   /** The bare UUID of the `ahead:<uuid>` ref; the table key. */
@@ -8,6 +8,11 @@ export type AheadRegistration = {
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;
 };
+
+/** Which holders' index rows a registration recovery reads. */
+export type AheadRecoveryScope =
+  | { documentId: DocumentId }
+  | { projectId: ProjectId; personalOwnerId?: UserId };
 
 /** Raised when registration would open a root transaction under a caller's transaction (§6.1). */
 export class RegistrationInsideTransactionError extends Error {
@@ -29,4 +34,10 @@ export interface LinkAheadRegistry {
    * lock; skips deleted documents and draft-only membership. Returns rows settled.
    */
   settleArrivals(documentIds: readonly DocumentId[]): Promise<number>;
+  /**
+   * Client-minted refs (contract §11.3): registers up to `limit` ahead ids the link index holds
+   * with no registry row, each independently, in scope (everywhere when absent). Logs and skips
+   * a failing ref, so one bad address never blocks the rest. Returns refs registered.
+   */
+  registerUnregistered(scope: AheadRecoveryScope | undefined, limit: number): Promise<number>;
 }

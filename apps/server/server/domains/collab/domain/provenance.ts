@@ -247,7 +247,6 @@ export function materializeRootLineageForDoc(doc: Y.Doc): RootLineageRun[] {
 export function birthClassFromAttribution(
   attribution: Pick<AttributedJournalRow, "originType" | "actorUserId">,
 ): SafetyBirthClass {
-  if (attribution.originType === "link_update") return "writer_protected";
   if (attribution.originType === "human" && attribution.actorUserId) return "writer_protected";
   return "agent";
 }

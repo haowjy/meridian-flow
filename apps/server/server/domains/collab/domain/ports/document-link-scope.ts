@@ -47,6 +47,8 @@ export interface ScopePrepareRequest {
    * against the first holder, so they load after it.
    */
   written?: readonly PMNode[];
+  /** Views a `reader` will resolve in, beside the holders' (their draft membership loads too). */
+  views?: readonly LinkView[];
 }
 
 export interface DocumentLinkScopes {
@@ -59,6 +61,11 @@ export interface DocumentLinkScopes {
    * snapshot, so work the operation defers past its end still spells from it.
    */
   holder(input: { documentId: string; view: LinkView }): HolderLinkScope;
+  /**
+   * The same, for a door with an address but no holder document (the resolver endpoint, chat:
+   * `uri` null). Resolution never reads the holder; only spelling would.
+   */
+  reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
 }
 
 export const LIVE_VIEW: LinkView = { kind: "live" };

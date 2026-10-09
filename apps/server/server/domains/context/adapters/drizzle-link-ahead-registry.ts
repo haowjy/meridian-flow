@@ -13,12 +13,13 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
+  documentLinks,
   documents,
   linkAheadRefs,
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
@@ -27,6 +28,13 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { isDrafted } from "../../file-policy/index.js";
 import {
+  createNoopEventSink,
+  type EventSink,
+  emitEvent,
+  unknownToEventPayload,
+} from "../../observability/index.js";
+import {
+  type AheadRecoveryScope,
   type AheadRegistration,
   type LinkAheadRegistry,
   RegistrationInsideTransactionError,
@@ -59,6 +67,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   constructor(
     private readonly db: Database,
     private readonly resolveManifestMembership: MembershipResolver,
+    private readonly eventSink: EventSink = createNoopEventSink(),
   ) {}
 
   async register(registrations: readonly AheadRegistration[]): Promise<void> {
@@ -118,11 +127,71 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     let settled = 0;
     for (const documentId of new Set(documentIds)) {
       const address = await this.currentAddress(documentId);
-      if (address && (await this.isLive(address, documentId))) {
+      // Every arrival calls this; the manifest read is paid only when a ref waits here.
+      if (
+        address &&
+        (await this.hasUnsettled(address)) &&
+        (await this.isLive(address, documentId))
+      ) {
         settled += await this.settle(address, documentId);
       }
     }
     return settled;
+  }
+
+  async registerUnregistered(
+    scope: AheadRecoveryScope | undefined,
+    limit: number,
+  ): Promise<number> {
+    if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
+    const holderProject = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
+    const pending = await this.db
+      .selectDistinctOn([documentLinks.aheadId], {
+        aheadId: documentLinks.aheadId,
+        address: documentLinks.address,
+        holderProjectId: sql<ProjectId>`${holderProject}`,
+      })
+      .from(documentLinks)
+      .innerJoin(documents, eq(documents.id, documentLinks.sourceDocumentId))
+      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .leftJoin(works, eq(works.id, contextSources.workId))
+      .innerJoin(projects, sql`${projects.id} = ${holderProject}`)
+      .leftJoin(linkAheadRefs, eq(linkAheadRefs.aheadId, documentLinks.aheadId))
+      .where(
+        and(
+          isNotNull(documentLinks.aheadId),
+          isNotNull(documentLinks.address),
+          isNull(linkAheadRefs.aheadId),
+          isNull(documents.deletedAt),
+          scope === undefined
+            ? undefined
+            : "documentId" in scope
+              ? eq(documentLinks.sourceDocumentId, scope.documentId)
+              : scope.personalOwnerId
+                ? eq(projects.userId, scope.personalOwnerId)
+                : sql`${holderProject} = ${scope.projectId}`,
+        ),
+      )
+      .orderBy(documentLinks.aheadId)
+      .limit(limit);
+    let registered = 0;
+    for (const row of pending) {
+      if (!row.aheadId || !row.address) continue;
+      try {
+        await this.register([
+          { aheadId: row.aheadId, holderProjectId: row.holderProjectId, address: row.address },
+        ]);
+        registered++;
+      } catch (cause) {
+        emitEvent(this.eventSink, {
+          level: "warn",
+          source: "context.link-ahead",
+          name: "AheadRegistrationFailed",
+          payload: { aheadId: row.aheadId, ...unknownToEventPayload(cause) },
+        });
+      }
+    }
+    return registered;
   }
 
   /** Decoded canonical address → (project, scheme, Work, path), as `document-link-rows.ts` does. */
@@ -293,6 +362,26 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return (await this.isLive(address, documentId)) ? documentId : null;
   }
 
+  private async hasUnsettled(address: Address): Promise<boolean> {
+    const [row] = await currentDrizzleDb(this.db)
+      .select({ id: linkAheadRefs.aheadId })
+      .from(linkAheadRefs)
+      .where(and(this.atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
+      .limit(1);
+    return Boolean(row);
+  }
+
+  private atAddress(address: Address) {
+    return and(
+      eq(linkAheadRefs.projectId, address.projectId),
+      eq(linkAheadRefs.scheme, address.scheme),
+      address.workId === null
+        ? isNull(linkAheadRefs.workId)
+        : eq(linkAheadRefs.workId, address.workId),
+      eq(linkAheadRefs.path, address.path),
+    );
+  }
+
   /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */
   private async settle(address: Address, documentId: string, aheadId?: string): Promise<number> {
     const rows = await currentDrizzleDb(this.db)
@@ -300,12 +389,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       .set({ settledDocumentId: documentId, settledAt: new Date() })
       .where(
         and(
-          eq(linkAheadRefs.projectId, address.projectId),
-          eq(linkAheadRefs.scheme, address.scheme),
-          address.workId === null
-            ? isNull(linkAheadRefs.workId)
-            : eq(linkAheadRefs.workId, address.workId),
-          eq(linkAheadRefs.path, address.path),
+          this.atAddress(address),
           isNull(linkAheadRefs.settledDocumentId),
           aheadId ? eq(linkAheadRefs.aheadId, aheadId) : undefined,
         ),
@@ -318,6 +402,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 export function createDrizzleLinkAheadRegistry(
   db: Database,
   resolveManifestMembership: MembershipResolver,
+  eventSink?: EventSink,
 ): LinkAheadRegistry {
-  return new DrizzleLinkAheadRegistry(db, resolveManifestMembership);
+  return new DrizzleLinkAheadRegistry(db, resolveManifestMembership, eventSink);
 }

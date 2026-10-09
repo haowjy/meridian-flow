@@ -16,6 +16,7 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
 import { createDocumentUriResolver, resolveDocumentUri } from "../context/document-uri-resolver.js";
+import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
@@ -50,8 +51,10 @@ import {
   createDrizzleAuthorityGenerationReader,
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
-import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
-import { createDrizzleDocumentLinkRewrite } from "./adapters/drizzle-document-link-rewrite.js";
+import {
+  type AheadRegistrationRecovery,
+  createDrizzleDocumentDerivationStore,
+} from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -139,6 +142,10 @@ type CollabDomainDeps = {
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
+  /** Ahead-ref settlement at tracked creates and Apply completions (contract §9.3–9.4). */
+  arrivals?: DocumentArrivals;
+  /** Registers client-minted ahead refs after certified derives, and recovers failures (§11.3). */
+  aheadRegistrations?: AheadRegistrationRecovery;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -146,6 +153,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     ensureDocument: persistence.lifecycle.ensureDocument,
+    onArrival: (id) => deps.arrivals?.settle([id]) ?? Promise.resolve(0),
   });
   const hocuspocusBinding = createHocuspocusBinding(deps.eventSink);
   const liveCoordinator = createHocuspocusCoordinator({
@@ -193,8 +201,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const projectionDiagnostics = createDocumentProjectionDiagnostics(deps.eventSink);
   const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
-  const derivationStore = createDrizzleDocumentDerivationStore(deps.db, (tx, documentId) =>
-    resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
+  const derivationStore = createDrizzleDocumentDerivationStore(
+    deps.db,
+    (tx, documentId) => resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
+    deps.aheadRegistrations
+      ? {
+          registry: deps.aheadRegistrations,
+          ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
+        }
+      : undefined,
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,
@@ -273,6 +288,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     derivationStore,
     deps.notices,
     deps.eventSink,
+    deps.arrivals,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const pushCommits = createDrizzlePushCommitStore(
@@ -535,21 +551,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     projections: {
       documentDerivations: derivations,
-      rewriteDocumentLinks: createDrizzleDocumentLinkRewrite({
-        db: deps.db,
-        resolveUri: (tx, documentId) =>
-          resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
-        serializer: runtime.markdownDocuments,
-        publish(documentId, update) {
-          const room = hocuspocusBinding.current()?.documents.get(documentId);
-          if (room)
-            Y.applyUpdate(room, update, {
-              source: "local",
-              context: { origin: { type: "system", reason: "link-update" } },
-            });
-          branchPulls.scheduleLivePull(documentId);
-        },
-      }),
       refreshDocumentProjection: projectionRefresher.refresh,
     },
     lineage,

@@ -219,45 +219,30 @@ admission sequence, location version, and extractor version. Equal cuts are
 idempotent; older cuts cannot replace newer output. Projection byte size comes
 from the same certified serialization. `document_links` is replaced in that
 same transaction, using occurrences from the same private Y.Doc and the holder's
-canonical URI captured under the journal lock. Its targets are address keys,
-not resolved document identities; contextual links have no target key or project.
-User links name the holder owner's personal project. Manifests (and already
-soft-deleted staged-push holders without a live URI) certify with no link rows.
-Changing the extractor must bump its version to invalidate older output; never
-add a second post-write publisher.
+canonical URI captured under the journal lock. Rows are keyed by
+`(source_document_id, link_key)`: `doc:<id>` and `asset:<id>` keys carry the
+target id, `ahead:<uuid>` keys the ahead id and its decoded address, and a
+contextual link keys by its href. It is a hint from a certified cut, never link
+authority. Manifests (and already soft-deleted staged-push holders without a
+live URI) certify with no link rows. Changing the extractor must bump its
+version to invalidate older output; never add a second post-write publisher.
 
-`rewriteDocumentLinks({ documentId, claim })` maintains links under one mutation
-lock and a holder-row `FOR NO KEY UPDATE` lock. The caller's claim runs after
-capture in the ambient transaction, owns its redirect locks, and returns
-substitutions, mover attribution, and consumption. The same transaction admits
-fresh writer-protected words, certifies through the shared derivation helpers at
-the post-append admission sequence, then consumes. A null claim writes nothing;
-rejection or consumption failure rolls back everything. Only after commit does
-the update reach an already-loaded room and schedule the ordinary live-to-draft
-pull. This operation neither opens a room under database locks nor owns redirect
-storage or lifecycle eligibility (the caller checks those).
+A certified derive whose rows hold `ahead:` refs registers the ones the registry
+lacks (client mints): awaited when the derive runs outside a transaction (debounce,
+move flush), after commit when it runs inside one (create, push completion),
+because registration takes namespace keys in its own root transaction. A cut that
+was already certified still registers, so an earlier failure retries. Failures are
+logged, never thrown; the sweep and `flush` recover them by anti-join.
 
-Link retargeting removes overridden link-format markers from each touched
-Y.XmlText before publishing the maintenance transaction. A direct
-`format(newHref)` leaves an old-href restore before the original end marker.
-ProseMirror can replace that marker while editing a draft; a later move then
-exposes the old href on unlinked text. Delete only markers superseded within
-the same zero-width gap. Clearing/reapplying the range changes leading-boundary
-arbitration and can override concurrent manual retargets. Other marks, visible
-text, and surviving format boundaries stay intact; reads never scrub output.
-
-`link-update` journal metadata persists as `link_update` with the mover's user
-or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
-words have writer-protected birth provenance. Maintenance is excluded from both
-live overlap dependencies and reversal lineage blockers, so rewriting a link
-inside an AI paragraph does not prevent the paragraph's Undo. Draft attribution normalizes live and branch journal entries to the package's
-`ConcurrentUpdateOrigin` before block coverage. `link-update` and
-`system:reconcile` keep neutral `system` provenance: their bytes converge, but
-neither touched/deleted hashes nor new lineage become human or agent echoes.
-Maintenance accounts for changed blocks without replacing prior authored
-coverage. Coverage projects the CRDT join of baseline, upstream, and journal
-rows, since preflight can observe a live rewrite before the Work draft does;
-a recheck must not mistake that older upstream for a new writer edit.
+Nothing maintains links inside documents: a move or rename writes no bytes into
+any holder, because links carry stable refs and re-spell on read. Draft
+attribution normalizes live and branch journal entries to the package's
+`ConcurrentUpdateOrigin` before block coverage. `system:reconcile` keeps neutral
+`system` provenance: its bytes converge, but neither touched/deleted hashes nor
+new lineage become human or agent echoes. Coverage projects the CRDT join of
+baseline, upstream, and journal rows, since preflight can observe a live change
+before the Work draft does; a recheck must not mistake that older upstream for a
+new writer edit.
 
 The recovery scheduler sweeps database staleness at startup and every ten seconds,
 at most 100 stale documents returned per pass with a wraparound cursor. This
@@ -265,7 +250,9 @@ limits derivation work, not query scan work: an entirely current corpus is
 scanned in full on every idle pass. Scoped `flush` pages all stale
 documents in a project, or every project owned by `personalOwnerId`. Both ignore
 caller transactions and timer queues. Failed derives log and retain last-good
-output without advancing certification; a later sweep retries them.
+output without advancing certification; a later sweep retries them. Each sweep
+and `flush` then registers up to 100 index ahead refs that have no registry row
+(a failed client-mint registration does not depend on the projection changing).
 
 ## Reference map
 
@@ -277,20 +264,11 @@ output without advancing certification; a later sweep retries them.
 - [Draft/live visual model](draft-live-model.html)
 - [Collab domain visual explainer, end to end](collab-domain.html)
 
-## Stored link occurrence primitives
+## Stored link extraction
 
-`domain/document-link-occurrences.ts` is internal to collab and shares extraction
-and substitution traversal. Only its substitution type is part of the public rewrite contract. One text occurrence is contiguous
-runs with the same href within one XmlText, regardless of other marks; paragraph
-boundaries split occurrences. Literal image and figure `src` attributes are
-occurrences; only addresses with an explicit substitution are rewritten. Extraction retains Yjs references for
-immediate use, not durable occurrence identity.
-
-Application takes a private, integrated snapshot fragment and a map from the
-original href to its replacement and optional old/new filenames. Substitutions
-are simultaneous, count changed occurrences, and relabel only exact filename
-or stem matches. Replacement words inherit the first character's marks.
-Insert inside the original run, delete around the insertion, then retarget;
-this ordering preserves concurrent manual retargeting. Snapshot creation,
-reserved client identity, journal origin, admission fencing, persistence and
-publication belong to the caller, not these pure traversal primitives.
+`domain/stored-link-extraction.ts` reads `{ kind, ref, href }` occurrences from a
+live Yjs fragment: a link occurrence is a maximal run sharing one link mark (href,
+title and ref) whatever other marks split it; a paragraph boundary ends a run.
+Image and figure `src` attributes are occurrences with their own `ref`. Derive
+(index rows and client-mint registration), the link scope's `prepare({ docs })`
+and the view-revision digest share it. Nothing rewrites stored links.

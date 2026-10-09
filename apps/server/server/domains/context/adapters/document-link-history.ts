@@ -1,11 +1,10 @@
-/** Authorized pending-link identities and chat-only previous-location fallback. */
+/** Chat-only previous-location fallback, authorized against the reader's projects. */
 import { matchDocumentPath } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentPreviousLocations,
   documents,
-  linkRedirects,
   projects,
   works,
 } from "@meridian/database/schema";
@@ -39,25 +38,6 @@ export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHist
     return row ? resolveDocumentUri(tx, authorities, documentId) : null;
   }
   return {
-    async redirect(input) {
-      if (!input.holder || !(await authorizedUri(input.holder.documentId, input))) return null;
-      const [row] = await currentDrizzleDb(db)
-        .select()
-        .from(linkRedirects)
-        .where(
-          and(
-            eq(linkRedirects.sourceDocumentId, input.holder.documentId),
-            eq(linkRedirects.href, input.holder.href),
-          ),
-        )
-        .limit(1);
-      if (!row) return null;
-      return {
-        uri: row.targetDocumentId
-          ? await authorizedUri(row.targetDocumentId, input)
-          : row.intendedUri,
-      };
-    },
     async previous(input, address) {
       const scope = address.scope;
       const rows = await currentDrizzleDb(db)

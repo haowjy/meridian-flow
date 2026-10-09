@@ -20,11 +20,13 @@ import {
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
   createCollabDomain,
   createInMemoryCollabDomain,
   createLinkScopeObserver,
+  type DocumentLinkScopes,
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
@@ -37,6 +39,7 @@ import {
   createDocumentRevisions,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
+  createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
   createDrizzleFigureDocumentRepository,
@@ -48,7 +51,6 @@ import {
   createFigureAssetService,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
-  createLinkUpdateWorker,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createUploadIntake,
@@ -58,7 +60,6 @@ import {
   InMemoryContextCatalog,
   type LinkAheadRegistry,
   type LinkScopeMembership,
-  type LinkUpdateWorker,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type ProjectDocumentCatalogRefreshPort,
@@ -260,7 +261,8 @@ export type AppServices = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
-  linkUpdates: LinkUpdateWorker;
+  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
+  linkScopes: DocumentLinkScopes;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -349,7 +351,8 @@ export type ProductionAppPorts = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
-  linkUpdates: LinkUpdateWorker;
+  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
+  linkScopes: DocumentLinkScopes;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -518,9 +521,12 @@ export async function createProductionAppPorts(input: {
       input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
     );
   };
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, async (input) => ({
-    members: [...(await manifestMembership(input)).members],
-  }));
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
+    db,
+    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
+    eventSink,
+  );
+  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
@@ -529,6 +535,8 @@ export async function createProductionAppPorts(input: {
   });
   const documentSync = createCollabDomain({
     db,
+    arrivals,
+    aheadRegistrations: linkAheadRegistry,
     fileAccess,
     links: documentLinks,
     aheadRefs: linkAheadRegistry,
@@ -567,20 +575,15 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     eventSink,
   });
-  const linkUpdates = createLinkUpdateWorker({
-    db,
-    rewriteDocumentLinks: documentSync.rewriteDocumentLinks,
-    eventSink,
-  });
   contextPorts = createProductionUnifiedContextPortFactory({
     links: documentLinks,
     db,
     documentSync,
     manifestMembership: documentSync,
     documentDerivations: documentSync.documentDerivations,
-    kickLinkUpdates: linkUpdates.kick,
     catalogMutations: contextCatalog,
     eventSink,
+    arrivals,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, contextCatalog),
@@ -619,6 +622,7 @@ export async function createProductionAppPorts(input: {
     db,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
+    arrivals,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)
@@ -658,7 +662,6 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
-    linkUpdates,
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
@@ -673,6 +676,7 @@ export async function createProductionAppPorts(input: {
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
     }),
+    linkScopes: documentLinks,
     projects,
     works: workRepo,
     projectRepo,
@@ -1076,7 +1080,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
-    linkUpdates: ports.linkUpdates,
+    linkScopes: ports.linkScopes,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -1129,7 +1133,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
       ports.documentSync.dispose();
-      await ports.linkUpdates.stop();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);
@@ -1281,6 +1284,7 @@ export function createInMemoryAppServices(): AppServices {
   const linkAheadRegistry: LinkAheadRegistry = {
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
+    registerUnregistered: async () => unsupported(),
   };
 
   return {
@@ -1361,7 +1365,6 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     linkAheadRegistry,
-    linkUpdates: { sweep: async () => 0, kick() {}, stop: async () => {} },
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
     contextCatalogRefresh: {
@@ -1389,6 +1392,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    linkScopes: createStaticDocumentLinkScopes(),
     projects: {
       async ensureDefaultBootstrapReady() {
         return false;

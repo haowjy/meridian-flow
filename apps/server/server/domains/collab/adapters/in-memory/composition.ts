@@ -212,9 +212,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
-      rewriteDocumentLinks: async () => {
-        throw new Error("Link maintenance requires durable transactions");
-      },
       documentDerivations: {
         derive: async (documentId) => {
           await projections.refresh({ documentId });
