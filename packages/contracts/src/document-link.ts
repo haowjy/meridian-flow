@@ -191,7 +191,10 @@ function decodes(path: string): boolean {
 export interface SpelledHref {
   /** What the wire shows. */
   href: string;
-  /** Canonical absolute address the reader was shown, no suffix; null for no-ref links. */
+  /**
+   * Canonical absolute address the reader was shown, no suffix; null for a
+   * link with no identity (no ref, and not an upload's `asset:` source).
+   */
   address: string | null;
 }
 

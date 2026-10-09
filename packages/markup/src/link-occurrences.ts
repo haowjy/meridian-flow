@@ -103,27 +103,50 @@ function stringOrNull(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
 }
 
-/** What a reader of these blocks was shown for one ref: its canonical address. */
+/**
+ * What a reader of these blocks was shown for one identity, at the canonical
+ * address it was spelled at. Host-only evidence; never in model text.
+ */
 export interface SpelledLinkFact {
+  /**
+   * The identity shown, in the link index's key space (`document_links.link_key`):
+   * a stored `doc:` or `ahead:` ref, or an uploaded picture's `asset:<id>` src.
+   */
   ref: string;
   address: string;
 }
 
-/** Spell every ref-bearing occurrence of these blocks with this scope. Pure. */
+const ASSET_PREFIX = "asset:";
+
+/** The identity an occurrence carries: its stored ref, else an upload's `asset:<id>` src; null for none. */
+export function occurrenceIdentity({ kind, attrs }: Pick<LinkOccurrence, "kind" | "attrs">) {
+  if (attrs.ref !== null) return attrs.ref;
+  return kind !== "link" && attrs.href.startsWith(ASSET_PREFIX) ? attrs.href : null;
+}
+
+/** What one occurrence shows a reader in this scope; null without an identity or a spelled address. */
+export function spelledFact(
+  occurrence: Pick<LinkOccurrence, "kind" | "attrs">,
+  links: DocumentLinkScope,
+): SpelledLinkFact | null {
+  const ref = occurrenceIdentity(occurrence);
+  if (ref === null) return null;
+  const { attrs } = occurrence;
+  const { address } =
+    occurrence.kind === "link"
+      ? links.spellLink({ href: attrs.href, ref: attrs.ref })
+      : links.spellSource({ src: attrs.href, ref: attrs.ref });
+  return address === null ? null : { ref, address };
+}
+
+/** Spell every identity-bearing occurrence of these blocks with this scope. Pure. */
 export function spelledLinks(
   blocks: readonly PMNode[],
   links: DocumentLinkScope,
 ): SpelledLinkFact[] {
-  const facts: SpelledLinkFact[] = [];
-  for (const { kind, attrs } of walkLinkOccurrences(blocks)) {
-    if (attrs.ref === null) continue;
-    const { address } =
-      kind === "link"
-        ? links.spellLink({ href: attrs.href, ref: attrs.ref })
-        : links.spellSource({ src: attrs.href, ref: attrs.ref });
-    if (address !== null) facts.push({ ref: attrs.ref, address });
-  }
-  return facts;
+  return walkLinkOccurrences(blocks)
+    .map((occurrence) => spelledFact(occurrence, links))
+    .filter((fact): fact is SpelledLinkFact => fact !== null);
 }
 
 type AstRecord = {

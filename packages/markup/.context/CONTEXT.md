@@ -121,8 +121,11 @@ project knows it by, else the ref itself: a picture never fails its document.
 Parse is pure syntax: every parsed link has `ref: null` and its destination
 as written, and every image and figure `src` is the source as written. The
 shipped image rule (a known manuscript path becomes `asset:<id>`) runs after
-parse, in the host's ref assignment over a prepared scope (agent-edit
-`assignSources`), which is what lets a host load only what the text names.
+parse, in pass 3 of the host's ref assignment over a prepared scope (agent-edit
+`assignLinkRefs`), which is what lets a host load only what the text names. An
+upload's `asset:<id>` is its identity: `spellSource` reports its manuscript
+address, and `spelledLinks` records a fact keyed `asset:<id>` there, so a
+rewrite that keeps the shown path continues the upload.
 
 ## Shared link rules
 
