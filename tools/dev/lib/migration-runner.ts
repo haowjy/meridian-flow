@@ -71,7 +71,33 @@ export async function runMigrations(input: {
   databaseUrl: string;
   migrationsDirectory: string;
 }): Promise<void> {
-  const client = postgres(input.databaseUrl, { max: 1 });
+  let disconnected = false;
+  let failed = false;
+  const client = postgres(input.databaseUrl, {
+    max: 1,
+    onclose: () => {
+      disconnected = true;
+    },
+  });
+  // FATAL errors can arrive before postgres.js emits onclose.
+  function observeFailure(error: unknown) {
+    const details = error as { severity?: string; code?: string };
+    if (
+      details?.severity === "FATAL" ||
+      details?.code?.startsWith("CONNECTION_") ||
+      details?.code?.startsWith("08")
+    )
+      disconnected = true;
+    failed = true;
+  }
+  async function cleanup(action: () => unknown | Promise<unknown>) {
+    try {
+      await action();
+    } catch (error) {
+      observeFailure(error);
+      // Cleanup is best effort; it must never replace the file-aware failure.
+    }
+  }
   try {
     const history = readMigrationHistory(input.migrationsDirectory);
     if (history.issues.length > 0) {
@@ -144,18 +170,27 @@ export async function runMigrations(input: {
           );
           if (!noTransaction) await session`COMMIT`;
         } catch (error) {
-          if (!noTransaction) await session`ROLLBACK`;
+          observeFailure(error);
+          if (!noTransaction && !disconnected) await cleanup(() => session`ROLLBACK`);
           throw new MigrationStatementError(migrationPath, error);
         }
       }
+    } catch (error) {
+      observeFailure(error);
+      throw error;
     } finally {
-      try {
-        await session`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_ID})`;
-      } finally {
-        session.release();
+      // Backend termination releases its advisory lock. A dead reserved session
+      // cannot reconnect safely, so never submit cleanup SQL to it.
+      if (!disconnected) {
+        await cleanup(() => session`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_ID})`);
+        if (!disconnected) await cleanup(() => session.release());
       }
     }
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    await client.end();
+    if (failed) await cleanup(() => client.end({ timeout: 1 }));
+    else await client.end();
   }
 }
