@@ -449,6 +449,7 @@ function createProductionStoreResolvers(
         rootThreadId,
         membershipObserverFor({ projectId }),
         catalogMutations,
+        arrivals,
       );
     },
     resolveProjectStore(projectId, userId, scheme, manifestView) {

@@ -1,4 +1,4 @@
-/** Populated 0031 upgrade contract: Scratch archival and interrupted online DDL. */
+/** Populated 0032 upgrade contract: Scratch archival and interrupted online DDL. */
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -34,27 +34,52 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       });
       isolated = true;
       await cp(migrations, directory, { recursive: true });
-      for (const entry of journal.entries.slice(32))
+      for (const entry of journal.entries.slice(33))
         await rm(path.join(directory, `${entry.tag}.sql`));
       await writeFile(
         path.join(directory, "meta/_journal.json"),
-        JSON.stringify({ ...journal, entries: journal.entries.slice(0, 32) }),
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, 33) }),
       );
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedScratchArchive(target);
+      const { createHarness } = await import(
+        new URL(
+          "../../../apps/server/server/domains/collab/test-support/change-trail-postgres-harness.ts",
+          import.meta.url,
+        ).href
+      );
+      const { createTestDocumentLinkScopes } = await import(
+        new URL(
+          "../../../apps/server/server/domains/collab/test-support/document-link-scopes.ts",
+          import.meta.url,
+        ).href
+      );
+      const links = createTestDocumentLinkScopes(db);
+      const readChapter = async () => {
+        const harness = createHarness(db, { links });
+        try {
+          return await harness
+            .crossWorkProbeFixture()
+            .runtime.markdownDocuments.readAsMarkdown(id(18));
+        } finally {
+          harness.cancelScheduledPulls();
+          harness.destroyWarmState();
+        }
+      };
       const before =
         await target`SELECT id, markdown_projection, metadata, deleted_at FROM documents ORDER BY id`;
       const yjs = await target`SELECT * FROM document_yjs_heads`;
+      expect(yjs.every((head) => head.schema_version === 1_000_000)).toBe(true);
       const checkpoints = await target`SELECT * FROM document_yjs_checkpoints ORDER BY id`;
       const updates = await target`SELECT * FROM document_yjs_updates`;
-      for (const entry of journal.entries.slice(32, 34))
+      for (const entry of journal.entries.slice(33, 35))
         await cp(
           path.join(migrations, `${entry.tag}.sql`),
           path.join(directory, `${entry.tag}.sql`),
         );
       await writeFile(
         path.join(directory, "meta/_journal.json"),
-        JSON.stringify({ ...journal, entries: journal.entries.slice(0, 34) }),
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, 35) }),
       );
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       expect(
@@ -108,6 +133,23 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       expect(await target`SELECT folder_id FROM documents WHERE id = ${id(16)}`).toEqual([
         { folder_id: id(13) },
       ]);
+      expect(
+        await target`SELECT settled_document_id FROM link_ahead_refs WHERE ahead_id = ${id(33)}`,
+      ).toEqual([{ settled_document_id: id(14) }]);
+      expect(
+        await target`SELECT ahead_id, settled_document_id FROM link_ahead_refs WHERE ahead_id IN (${id(34)}, ${id(35)}) ORDER BY ahead_id`,
+      ).toEqual([
+        { ahead_id: id(34), settled_document_id: null },
+        { ahead_id: id(35), settled_document_id: id(18) },
+      ]);
+      const chapter = await readChapter();
+      expect(chapter).toMatchObject({ ok: true });
+      expect(chapter.value).toContain(
+        "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
+      );
+      expect(chapter.value).toContain(
+        "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
+      );
       // Exercise the actual lifecycle reader, not just the migrated row shape.
       const { createDrizzleUploadIntakeRepository } = (await import(
         new URL(
@@ -173,11 +215,11 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         ).entries,
       ).toEqual([]);
       const online = (
-        await readFile(path.join(migrations, "0034_context_source_online_indexes.sql"), "utf8")
+        await readFile(path.join(migrations, "0035_context_source_online_indexes.sql"), "utf8")
       ).split("--> statement-breakpoint");
       await cp(
-        path.join(migrations, "0034_context_source_online_indexes.sql"),
-        path.join(directory, "0034_context_source_online_indexes.sql"),
+        path.join(migrations, "0035_context_source_online_indexes.sql"),
+        path.join(directory, "0035_context_source_online_indexes.sql"),
       );
       await writeFile(path.join(directory, "meta/_journal.json"), JSON.stringify(journal));
       // A failed concurrent build leaves an invalid remnant. The real runner
@@ -203,7 +245,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
             "DROP INDEX CONCURRENTLY IF EXISTS context_sources_project_scope_slug",
           );
           await target.unsafe("DROP INDEX CONCURRENTLY IF EXISTS context_sources_lineage_slug");
-          await target`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${journal.entries[34].when}`;
+          await target`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = ${journal.entries[35].when}`;
           for (const statement of online.slice(0, cut))
             if (statement.trim()) await target.unsafe(statement);
           expect(

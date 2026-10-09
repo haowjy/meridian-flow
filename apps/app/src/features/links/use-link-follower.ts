@@ -140,7 +140,7 @@ export function useLinkFollower({
     // `index` stays the same object while its revision does, so a different one
     // is a different catalog: registering against it is how an answer about the
     // old one becomes unreachable.
-  }, [baseUri, holderDocumentId, index, projectId, resolution, settlements, workId]);
+  }, [baseUri, holderDocumentId, index, projectId, resolution, rootThreadId, settlements, workId]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);

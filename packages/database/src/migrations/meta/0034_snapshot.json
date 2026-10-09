@@ -1,6 +1,6 @@
 {
-  "id": "ba3779ee-919c-440f-8238-5e691f3f00b7",
-  "prevId": "487403a1-0cc5-403d-9d05-854af04e7ee1",
+  "id": "b4fb85b7-4720-460d-8c17-54bec741e613",
+  "prevId": "d950afab-8601-4f3a-aacd-b5dffd4ae38a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5145,6 +5145,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "root_thread_id": {
+          "name": "root_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "path": {
           "name": "path",
           "type": "text",
@@ -5172,8 +5178,8 @@
         }
       },
       "indexes": {
-        "link_ahead_refs_unsettled": {
-          "name": "link_ahead_refs_unsettled",
+        "link_ahead_refs_owner_unsettled": {
+          "name": "link_ahead_refs_owner_unsettled",
           "columns": [
             {
               "expression": "project_id",
@@ -5189,6 +5195,12 @@
             },
             {
               "expression": "work_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "root_thread_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

@@ -57,6 +57,7 @@ type Row = {
   id: string;
   projectId: string;
   scheme: ContextUriScheme;
+  rootThreadId: string | null;
   /** Path inside its source, with extension. */
   path: string;
   /** Decoded canonical URI. */
@@ -75,6 +76,7 @@ type Snapshot = {
   viewer: string | null;
   /** The thread read in: its manifest peer and reply's staged creates count in a draft view. */
   viewerThreadId: string | null;
+  scratchRootThreadRef: string | null;
   /** Doors known to share this project. */
   members: Set<string>;
   open: boolean;
@@ -124,7 +126,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     if (!isUuid(id)) return null;
     const threadUser =
       threadId && isUuid(threadId)
-        ? sql`(SELECT t.created_by_user_id::text FROM threads t WHERE t.id = ${threadId}::uuid)`
+        ? sql`(SELECT t.created_by_user_id::text FROM threads t WHERE t.id = ${threadId}::uuid AND t.project_id = p.id)`
         : sql`NULL::text`;
     const project =
       "projectId" in key
@@ -142,8 +144,10 @@ export function createDrizzleDocumentLinkScopes(deps: {
       owner: string;
       thread_user: string | null;
       personal: string | null;
+      root_ref: string | null;
     }>(sql`
       SELECT p.id::text AS project_id, p.user_id::text AS owner, ${threadUser} AS thread_user,
+        ${threadId && isUuid(threadId) ? sql`(SELECT r.ref FROM threads t JOIN threads r ON r.id = t.root_thread_id WHERE t.id = ${threadId}::uuid AND t.project_id = p.id)` : sql`NULL::text`} AS root_ref,
         (SELECT pp.id::text FROM projects pp
           WHERE pp.user_id = p.user_id AND pp.is_personal AND pp.deleted_at IS NULL
           ORDER BY pp.created_at LIMIT 1) AS personal
@@ -245,6 +249,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         id: address.documentId,
         projectId: address.projectId,
         scheme: address.scheme,
+        rootThreadId: address.rootThreadId ?? null,
         path: address.path,
         uri: address.uri,
         stem: dot > 0 ? address.uri.slice(0, address.uri.length - (filename.length - dot)) : null,
@@ -339,6 +344,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         personalProjectId: project?.personal ?? null,
         viewer: key.viewer?.accountId ?? project?.thread_user ?? project?.owner ?? null,
         viewerThreadId: threadId,
+        scratchRootThreadRef: project?.root_ref ?? null,
         members: new Set([...members, ...(project ? [`project:${project.project_id}`] : [])]),
         open: true,
         prepared: false,
@@ -390,7 +396,12 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const miss = (key: string) =>
         observer.snapshotMiss({ documentId: uri ?? "reader", key, prepared: snapshot.prepared });
       return createHolderLinkScope(
-        { uri, projectId: snapshot.projectId ?? "", view },
+        {
+          uri,
+          projectId: snapshot.projectId ?? "",
+          view,
+          scratchRootThreadRef: uri === null ? snapshot.scratchRootThreadRef : null,
+        },
         snapshotCatalog(snapshot, view, miss),
         miss,
       );
@@ -458,6 +469,7 @@ function snapshotCatalog(
     if (present === null) return null;
     return {
       documentId: row.id,
+      ...(row.rootThreadId ? { rootThreadId: row.rootThreadId } : {}),
       projectId: row.projectId,
       uri: row.uri,
       presence: present,

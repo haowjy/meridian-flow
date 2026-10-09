@@ -11,3 +11,8 @@ ALTER TABLE context_sources VALIDATE CONSTRAINT context_sources_scope_valid;
 ALTER TABLE context_sources VALIDATE CONSTRAINT context_sources_scope_work_fk;
 --> statement-breakpoint
 DROP INDEX CONCURRENTLY IF EXISTS context_sources_project_slug;
+
+--> statement-breakpoint
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "link_ahead_refs_owner_unsettled" ON "link_ahead_refs" USING btree ("project_id", "scheme", "work_id", "root_thread_id", md5("path")) WHERE "settled_document_id" IS NULL;
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "link_ahead_refs_unsettled";

@@ -237,8 +237,9 @@ leaves the row and its bytes as they are for recovery.
 ## Ahead refs and arrivals
 
 `link_ahead_refs` records each `ahead:` ref with the decoded address it was
-minted for (project, scheme, Work id, path; Work by id, so a rename never
-orphans it). Rows are never deleted by link edits. Server mints register before
+minted for (project, scheme, Work id or lineage root id, path; owners by id, so
+a rename never orphans it). Lineage registrations and arrivals compare the root id
+as well as the exact path; two chats cannot capture each other’s waiting refs. Rows are never deleted by link edits. Server mints register before
 the write takes any lock; client mints are registered by the certified derive
 (awaited outside a transaction, after commit inside one), and the derivation
 sweep and `flush` recover any that failed with `registerUnregistered`. A soft-deleted

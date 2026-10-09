@@ -239,6 +239,17 @@ silently drops the other lane's value. A renamed file also breaks the snapshot
 database applies. `fresh-migrations.db.test.ts` checks strict journal ordering
 and the installed baseline hash without preventing future additive migrations.
 
+### No Work Scratch upgrade
+
+After link identity migration `0032`, the lineage Scratch chain adds the source
+owner column and ahead-ref lineage coordinate, archives old No Work Scratch
+under an unused `Unfiled/Scratch` root, then validates constraints and builds
+indexes concurrently. The move preserves document IDs and collaborative state:
+`doc:` refs follow the same document and reads spell its Unfiled address. It also
+settles still-unsettled ahead refs at exact newly occupied live Unfiled paths;
+trashed ancestors and existing settlements are excluded. Showing history retains
+its historical addresses. There is no link redirect or collaborative link rewrite.
+
 ### Works columns that must not return
 
 `works` lives in [`../src/schema/content.ts`](../src/schema/content.ts)

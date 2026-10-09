@@ -287,7 +287,7 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     ["../kb.md", "manuscript://book/ch1.md", internal("manuscript://kb.md", "")],
     ["Kb://cast/Lin%20Feng.md", null, internal("kb://cast/Lin Feng.md", "")],
     ["scratch://notes.md", "manuscript://book/ch1.md", { kind: "contextual" }],
-    ["scratch://@/notes.md", "manuscript://book/ch1.md", internal("scratch://@/notes.md", "")],
+    ["scratch://@/notes.md", "manuscript://book/ch1.md", { kind: "external" }],
     ["manuscript://ch1.md", "user://journal/today.md", { kind: "contextual" }],
     ["user://journal/old.md", "user://journal/today.md", internal("user://journal/old.md", "")],
     ["ch2.md", null, { kind: "external" }],
@@ -460,3 +460,18 @@ it("classifies written links and mints ahead addresses by grammar", () => {
 function internal(uri: string, suffix: string) {
   return { kind: "internal" as const, uri, suffix };
 }
+
+it("spells lineage Scratch contextually only for its own chat reader", () => {
+  const target = doc(U.cast, "scratch://@/c12/notes/jade.md");
+  const resolution = { kind: "document", document: target, inDraft: false } as const;
+  const link = { ref: `doc:${U.cast}`, href: "scratch://@/c12/old.md#gate" };
+  const chat = { ...holder, uri: null, scratchRootThreadRef: "c12" };
+  expect(spellStoredLink(link, chat, resolution, "holder")).toEqual({
+    href: "scratch://notes/jade.md#gate",
+    address: target.uri,
+  });
+  for (const other of [holder, { ...chat, scratchRootThreadRef: "c13" }])
+    expect(spellStoredLink(link, other, resolution, "holder").href).toBe(
+      "scratch://@/c12/notes/jade.md#gate",
+    );
+});
