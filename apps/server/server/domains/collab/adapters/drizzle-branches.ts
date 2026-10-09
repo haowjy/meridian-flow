@@ -845,6 +845,38 @@ export function createDrizzleBranchStore(
     });
   }
 
+  /**
+   * A cross-project move: the documents leave `from`'s live manifest and join `to`'s, in the
+   * caller's transaction. Both manifest holders lock in id order first, so opposite transfers
+   * cannot wait on each other.
+   */
+  async function transferLiveManifestMembership(
+    documentIds: readonly DocumentId[],
+    projects: { from: ProjectId; to: ProjectId },
+  ): Promise<void> {
+    if (documentIds.length === 0 || projects.from === projects.to) return;
+    await runInDrizzleTransaction(db, async () => {
+      const manifests = [];
+      for (const projectId of [projects.from, projects.to]) {
+        const manifest = await loadProjectManifest({ projectId });
+        manifest.doc.destroy();
+        manifests.push(manifest.documentId);
+      }
+      for (const manifestId of [...manifests].sort()) {
+        await lockDocumentMutation(currentDrizzleDb(db), manifestId);
+      }
+      const [fromManifest, toManifest] = manifests as [DocumentId, DocumentId];
+      await mutateLiveManifestDocument(fromManifest, (doc) => {
+        const map = doc.getMap<{ present: true }>("documents");
+        for (const id of documentIds) if (map.has(id)) map.delete(id);
+      });
+      await mutateLiveManifestDocument(toManifest, (doc) => {
+        const map = doc.getMap<{ present: true }>("documents");
+        for (const id of documentIds) if (!map.has(id)) map.set(id, { present: true });
+      });
+    });
+  }
+
   return {
     deferUntilCommit: deferUntilDrizzleCommit,
 
@@ -1060,6 +1092,7 @@ export function createDrizzleBranchStore(
     reconcileProjectManifest,
 
     resolveManifestMembership,
+    transferLiveManifestMembership,
     recordManifestDocumentCreated: (documentId, view) =>
       view?.threadId
         ? mutateThreadManifest(documentId, true, {

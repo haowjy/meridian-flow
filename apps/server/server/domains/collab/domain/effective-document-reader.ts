@@ -271,6 +271,9 @@ export function createEffectiveDocumentReader(input: {
     reconcileProjectManifest(projectId: ProjectId) {
       return input.branches.reconcileProjectManifest(projectId);
     },
+    transferLiveManifestMembership(documentIds, projects) {
+      return input.branches.transferLiveManifestMembership(documentIds, projects);
+    },
     async recordManifestDocumentCreated(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },

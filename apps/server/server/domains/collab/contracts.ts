@@ -392,6 +392,11 @@ export type BranchPeerShadowAccess = {
     responseId?: string | null;
   }): Promise<{ documentId: DocumentId; members: string[] }>;
   reconcileProjectManifest(projectId: ProjectId): Promise<void>;
+  /** A cross-project move's live membership, inside the move transaction. */
+  transferLiveManifestMembership(
+    documentIds: readonly DocumentId[],
+    projects: { from: ProjectId; to: ProjectId },
+  ): Promise<void>;
   recordManifestDocumentCreated(
     documentId: DocumentId,
     view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },

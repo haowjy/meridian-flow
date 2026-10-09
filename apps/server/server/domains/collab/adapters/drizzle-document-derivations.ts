@@ -167,21 +167,27 @@ export async function certifyDocumentDerivation(
 export type AheadRegistrationRecovery = {
   registerUnregistered(
     scope: { documentId: DocumentId } | DerivationScope | undefined,
-    limit: number,
-  ): Promise<number>;
+    page: { after?: string; limit: number },
+  ): Promise<{ registered: number; next: string | null }>;
 };
+
+const AHEAD_RECOVERY_PAGE = 100;
 
 export function createDrizzleDocumentDerivationStore(
   db: Database,
   resolveUri: (tx: DrizzleDb, documentId: DocumentId) => Promise<string | null>,
   aheads?: { registry: AheadRegistrationRecovery; eventSink?: EventSink },
 ): DocumentDerivationStore {
-  const recover = async (
+  const page = async (
     scope: Parameters<AheadRegistrationRecovery["registerUnregistered"]>[0],
-  ) => {
-    if (!aheads) return 0;
+    after: string | undefined,
+  ): Promise<{ registered: number; next: string | null }> => {
+    if (!aheads) return { registered: 0, next: null };
     try {
-      return await aheads.registry.registerUnregistered(scope, 100);
+      return await aheads.registry.registerUnregistered(scope, {
+        after,
+        limit: AHEAD_RECOVERY_PAGE,
+      });
     } catch (cause) {
       if (aheads.eventSink)
         emitEvent(aheads.eventSink, {
@@ -190,19 +196,31 @@ export function createDrizzleDocumentDerivationStore(
           name: "ahead_registration.failed",
           payload: unknownToEventPayload(cause),
         });
-      return 0;
+      return { registered: 0, next: null };
     }
+  };
+  /** Every page in scope; each page starts after the last key attempted, so it terminates. */
+  const drain = async (scope: Parameters<typeof page>[0]) => {
+    let registered = 0;
+    let after: string | undefined;
+    do {
+      const progress = await page(scope, after);
+      registered += progress.registered;
+      after = progress.next ?? undefined;
+    } while (after);
+    return registered;
   };
   return {
     async registerAheads(documentId) {
       const register = async () => {
-        await recover({ documentId });
+        await drain({ documentId });
       };
       // Inside create or push completion the rows are not committed yet; registration takes
       // namespace keys in its own root transaction, so it waits for this commit (§6.1, O6).
       if (!deferUntilDrizzleCommit(register)) await register();
     },
-    recoverAheads: (scope) => recover(scope),
+    drainAheads: (scope) => drain(scope),
+    recoverAheads: (after) => page(undefined, after),
     capture(documentId) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);

@@ -51,6 +51,10 @@ export type ApplicationBranchStore = BranchStore &
       threadId?: ThreadId | null;
     }): Promise<{ documentId: DocumentId; members: string[] }>;
     reconcileProjectManifest(projectId: ProjectId): Promise<void>;
+    transferLiveManifestMembership(
+      documentIds: readonly DocumentId[],
+      projects: { from: ProjectId; to: ProjectId },
+    ): Promise<void>;
     recordManifestDocumentCreated(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },

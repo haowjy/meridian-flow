@@ -12,6 +12,7 @@ import {
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
 } from "@meridian/contracts/context-uri";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
@@ -51,6 +52,7 @@ import type {
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import type { LiveMembership } from "./ports/live-membership.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
   getInMemoryContextTreeMutationStore,
@@ -118,6 +120,13 @@ export interface ManifestMembershipPort {
   recordManifestDocumentDeleted(
     documentId: string,
     view: { projectId: string; workId?: string | null; threadId?: string | null },
+  ): Promise<void>;
+  /** The live manifest: a move's note counts only its members (contract §10). */
+  resolveManifestMembership(input: { projectId: ProjectId }): Promise<{ members: string[] }>;
+  /** A cross-project move carries live membership to its destination project (§9.3). */
+  transferLiveManifestMembership(
+    documentIds: readonly DocumentId[],
+    projects: { from: ProjectId; to: ProjectId },
   ): Promise<void>;
 }
 
@@ -386,6 +395,12 @@ function createProductionStoreResolvers(
     documentDeleted: (documentId) =>
       manifestMembership.recordManifestDocumentDeleted(documentId, manifestView),
   });
+  const liveMembership: LiveMembership = {
+    members: async (projectId) =>
+      new Set((await manifestMembership.resolveManifestMembership({ projectId })).members),
+    transfer: (documentIds, projects) =>
+      manifestMembership.transferLiveManifestMembership(documentIds, projects),
+  };
 
   return {
     resolveProjectStore(projectId, userId, scheme, manifestView) {
@@ -436,6 +451,7 @@ function createProductionStoreResolvers(
         catalogMutations,
         eventSink,
         arrivals,
+        liveMembership,
       );
     },
   };

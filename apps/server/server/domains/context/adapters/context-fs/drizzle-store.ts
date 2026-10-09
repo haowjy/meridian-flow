@@ -71,16 +71,13 @@ export async function notifyMembershipObserver(
   observer: ContextDocumentMembershipObserver | undefined,
   method: keyof ContextDocumentMembershipObserver,
   documentId: string,
-  /** Runs after the observer, in the same post-commit callback. */
-  then?: () => Promise<unknown>,
 ): Promise<void> {
-  if (!observer && !then) return;
+  if (!observer) return;
   let deferred = false;
   const completed = new Promise<void>((resolve, reject) => {
     deferred = runAfterDrizzleCommit(async () => {
       try {
-        await observer?.[method](documentId);
-        await then?.();
+        await observer[method](documentId);
         resolve();
       } catch (cause) {
         reject(cause);
@@ -363,15 +360,11 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         renderFilename(input.name, input.extension),
       );
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      // A binary's live membership is published after this commit, so it arrives there: the
-      // settlement retakes the namespace key in its own transaction (contract §9.3).
-      const arrivals = this.deps.arrivals;
-      await notifyMembershipObserver(
-        this.deps.membershipObserver,
-        "documentCreated",
-        row.id,
-        arrivals && (() => arrivals.settleCommitted([row.id as DocumentId])),
-      );
+      // The upload is an arrival (contract §9.3): its membership and the settlement of a ref
+      // waiting at this address publish together, under the namespace key this command holds,
+      // before the manifest holder lock the publication takes.
+      await this.deps.membershipObserver?.documentCreated(row.id);
+      await this.deps.arrivals?.settle([row.id as DocumentId]);
       return mapDocument(row);
     });
   }
