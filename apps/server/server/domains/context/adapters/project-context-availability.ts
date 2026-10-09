@@ -101,8 +101,6 @@ export function classifyAuthoritativeIdentity(input: {
   if (!source || document.kind !== "content" || !isContextUriScheme(source.slug)) {
     return { kind: "inconsistent" };
   }
-  // The old binary can recreate No Work Scratch before the rollout app swap.
-  if (source.slug === "scratch" && work?.isNoWork) return { kind: "not-visible" };
   const scheme = source.slug;
   const isWorkScheme = WORK_SCHEMES.has(scheme);
   const hasLineageOwnership =
