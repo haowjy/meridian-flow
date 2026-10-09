@@ -1,6 +1,6 @@
 // End-to-end write(command=...) coverage with in-memory port fakes.
 import { describe, expect, it, vi } from "vitest";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 
 import type { UpdateJournal } from "../ports/update-journal.js";
 import {
@@ -191,7 +191,7 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
   });
 
-  it("rejects create for an existing non-empty file with overwrite guidance", async () => {
+  it("rejects create for a non-empty file with overwrite guidance, even one filled just before admission", async () => {
     const ctx = harness({ "chapter.md": "Already here." });
 
     const result = await ctx.core.write(
@@ -204,6 +204,40 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("File already exists: chapter.md");
     expect(outcomeText(result)).toContain("overwrite=true");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
+
+    // A host's fresh bound write: empty when checked and restored, then a writer's paragraph is
+    // admitted before the write's own admission (its third acquisition of the document).
+    const raced = harness({});
+    const acquire = raced.coordinator.withDocument.bind(raced.coordinator);
+    let acquisitions = 0;
+    raced.coordinator.withDocument = async (docId, fn, ...rest) => {
+      if (++acquisitions === 3) {
+        const live = raced.liveDoc(docId);
+        const vector = Y.encodeStateVector(live);
+        live.transact(
+          () => model.insertBlocks(live, null, codec.parse("Writer content.")),
+          "writer",
+        );
+        await raced.journal.append(docId, Y.encodeStateAsUpdate(live, vector), {
+          origin: "human:writer",
+          seq: 0,
+        });
+      }
+      return acquire(docId, fn, ...rest);
+    };
+    const fresh = await raced.core.write(
+      { command: "create", file: "chapter.md", content: "Fresh bound." },
+      {
+        ...context,
+        actor: { kind: "human", userId: "saver", threadId: context.threadId },
+        boundNodes: codec.parse("Fresh bound.").blocks,
+      },
+    );
+    expect(acquisitions).toBeGreaterThanOrEqual(3);
+    expectOutcome(fresh, "invalid_write", true);
+    expect(outcomeText(fresh)).toContain("File already exists: chapter.md");
+    expect(blockTexts(raced.liveDoc("chapter.md"))).toEqual(["Writer content."]);
+    expect((await raced.journal.read("chapter.md")).updates).toHaveLength(1);
   });
 
   it("inserts by block hash, by find, and deduplicates tool_use_id", async () => {

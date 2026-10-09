@@ -41,7 +41,9 @@ The memory-only runtime replica is distinct from that host-owned branch.
   own transaction binds the whole document first, outside it, and hands the
   core the bound nodes as a `create`'s content (`WriteContext.boundNodes`);
   the core applies them as an ordinary overwrite (or, bound fresh, a create
-  into an empty document) and never assigns again.
+  into an empty document) and never assigns again. A create without overwrite
+  checks emptiness again at the admission that journals it, before
+  journaling: a writer admitted after the first check refuses it.
 
 ### Destructive scope targeting and recovery
 

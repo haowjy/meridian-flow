@@ -63,15 +63,17 @@ link that stays corresponds to itself and keeps its ref, so an overwrite
 keeps refs verbatim), and registers the ahead refs it minted.
 
 A bound write is desired state: its assigned blocks, plus the holder it was
-bound for and whether it was bound fresh. It is applied under the document's
-lock through agent-edit's ordinary whole-document overwrite (the
-correspondence a `create` with overwrite resolves), so unchanged blocks keep
-their items and so does unchanged prose in a changed block.
+bound for and whether it was bound fresh. It is applied as agent-edit's
+ordinary whole-document overwrite (the correspondence a `create` with
+overwrite resolves), so unchanged blocks keep their items and so does
+unchanged prose in a changed block.
 `writeDocument` routes an actor's write in a thread (and every agent write)
 through the edit core's `create` with the nodes as `WriteContext.boundNodes`:
-the core aligns them against the document, computes the overwrite's semantic
-IR and certified provenance there, and records the write as that actor's
-mutation (L21's kept-paragraph authorship holds by construction). A writer's
+the core aligns them against its runtime copy of the document, computes the
+overwrite's semantic IR and certified provenance there, and records the write
+as that actor's mutation (L21's kept-paragraph authorship holds by
+construction). Alignment and admission are separate acquisitions, so an edit
+admitted between them merges like any concurrent edit to a `create`. A writer's
 save outside a thread applies the same correspondence to the engine's
 staged copy (`overwriteWithAssigned`) and carries no certified facts, since
 fresh-authorship admission refuses the reserved provenance namespace. Do not
@@ -84,7 +86,9 @@ the moment between bind and apply. An edit made against the old state and
 admitted after the save merges into the blocks it kept.
 A write bound fresh (seed, import, create, upload) lands only in a document
 with no blocks: the core's `create` without overwrite refuses one that has
-content, and the engine answers `stale_generation`.
+content, checked again at the admission that journals it
+(`PreparedMutation.refuseUnlessEmpty`), and the engine answers
+`stale_generation`.
 A bound write also certifies its holder (`document`
 by id, `new` by the canonical address it will have, or `static`): the engine
 refuses to apply it to any other document, and ContextFS checks the path's
