@@ -47,7 +47,8 @@ type RuntimeInput = {
 
 function createCore(
   accountId: AccountId,
-  connectivityHints?: ConnectivityHintsPort,
+  connectivityHints: ConnectivityHintsPort | undefined,
+  epochSignal: AbortSignal,
 ): AccountDocumentSessionCore {
   const registry = new DocumentSessionRegistry(
     undefined,
@@ -60,6 +61,7 @@ function createCore(
         awareness,
         connectivityHints,
       }),
+    epochSignal,
   );
   return Object.freeze({
     accountId,
@@ -77,11 +79,11 @@ function createCore(
 export function createAccountDocumentSessionRuntime(
   input: RuntimeInput,
 ): AccountDocumentSessionRuntime {
-  const core = input.core ?? createCore(input.accountId, input.connectivityHints);
+  const epoch = new AbortController();
+  const core = input.core ?? createCore(input.accountId, input.connectivityHints, epoch.signal);
   if (core.accountId !== input.accountId) {
     throw new Error("Account document session core belongs to a different account");
   }
-  const epoch = new AbortController();
   let state: "open" | "closing" | "closed" = "open";
   let finishPromise: Promise<void> | null = null;
   const requireOpen = () => {

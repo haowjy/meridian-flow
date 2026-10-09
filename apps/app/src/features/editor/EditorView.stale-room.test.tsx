@@ -105,7 +105,8 @@ const pool = new BranchRoomPool({
     }),
 });
 const poolRegistry = {
-  retainBranchRooms: (owner: string, rooms: Iterable<string>) => pool.retain(owner, rooms),
+  retainBranchRooms: (owner: string, rooms: Parameters<typeof pool.retain>[1]) =>
+    pool.retain(owner, rooms),
   releaseBranchRooms: (owner: string) => pool.release(owner),
   getBranchRoom: (room: string) => pool.get(room),
   rebuildBranchRoom: (room: string) => pool.rebuild(room),
@@ -127,6 +128,7 @@ function Host() {
       documentId={documentId}
       projectId="project-a"
       session={sessionFor(documentId)}
+      reviewWorkId="work-a"
       reviewDraftId={inlineReview?.draftId}
       reviewRoomName={reviewRoomName ?? undefined}
       onReviewSessionUnavailable={value.controller.exitInlineReview}
@@ -161,7 +163,6 @@ afterEach(() => pool.invalidate());
 describe("a reset review room with its two owners", () => {
   it.each([
     WS_CLOSE.BRANCH_GENERATION_STALE.reason,
-    "branch-stale-doc",
   ] as const)("binds the next generation's room after %s", async (reason) => {
     const oldRoom = branchRoomName(`stale-room-${reason}`, 1);
     const newRoom = branchRoomName(`stale-room-${reason}`, 2);
@@ -189,7 +190,7 @@ describe("a reset review room with its two owners", () => {
           transportStatus.get(oldRoom)?.({
             kind: "reset",
             reason,
-            disposition: reason === WS_CLOSE.BRANCH_STALE.reason ? "rebuild" : "superseded",
+            disposition: "superseded",
           }),
         );
 

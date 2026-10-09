@@ -218,3 +218,9 @@ and navigation contracts.
   and `rebuild` keep unacknowledged updates available for retirement; `refused`
   rejects pending edits and `schema` fences the room. The transport owns the
   outbox; the session exposes it without reconstructing a document diff.
+- `BranchRoomPool` retains draft refs per owner without opening rooms. A released
+  room with an outbox drains before teardown; terminal retirement takes its
+  carry before destruction and installs the teardown quarantine before delivery.
+  `BranchWriterHandoff` belongs to the account epoch, not the review UI. Its
+  attempt owns its own retention, waits for first sync, filters missing anchors
+  before a synchronous writer apply, and invalidates draft reads only after ack.
