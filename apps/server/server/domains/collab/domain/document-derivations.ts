@@ -1,4 +1,6 @@
 /** Derives live outputs from durable cuts; timers are hints, database staleness is authority. */
+
+import { extractStoredLinks } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -12,7 +14,6 @@ import type {
 } from "./ports/document-derivations.js";
 import { LIVE_VIEW } from "./ports/document-link-scope.js";
 import type { DurableProjectionSerializer } from "./ports/durable-projection.js";
-import { extractStoredLinks } from "./stored-link-extraction.js";
 
 export function createDocumentDerivationService(input: {
   store: DocumentDerivationStore;

@@ -6,10 +6,10 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { renderedItems, shownLinksForItems } from "../links/shown.js";
+import { renderedItems } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
-import { resolveWrite } from "../resolver/resolve.js";
+import { planWrite, resolveWrite } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
@@ -129,7 +129,7 @@ export function createWriteCommands(deps: {
         address.filePath,
         selection.documentBlocks,
       );
-    return withShown(runtime.doc, links, {
+    return withShown(links, {
       ...readSuccess(
         renderer.renderRead(
           toDocHandle(runtime.doc),
@@ -255,11 +255,7 @@ export function createWriteCommands(deps: {
     const links = await bindLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
-      ...(copiedNodes
-        ? {}
-        : prepared
-          ? { bound: prepared.blocks }
-          : { written: parsed.parsed.blocks }),
+      ...(given ? { stored: given } : { written: parsed.parsed.blocks }),
       shown,
       context,
     });
@@ -313,7 +309,7 @@ export function createWriteCommands(deps: {
     // an empty document binds fresh.
     const written =
       given || overwrite ? parsed.parsed : { blocks: assigner.bindSpan([], parsed.parsed.blocks) };
-    await registerMinted(assigner);
+    await registerMinted(assigner, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
@@ -417,7 +413,6 @@ export function createWriteCommands(deps: {
         deletedHashes,
       });
       return withShown(
-        runtime.doc,
         links,
         formatApplySuccess({
           ...emptiedDocument(runtime, links.codec),
@@ -485,7 +480,6 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return withShown(
-      runtime.doc,
       links,
       formatApplySuccess({
         ...emptiedDocument(runtime, links.codec),
@@ -547,32 +541,34 @@ export function createWriteCommands(deps: {
       return status("invalid_write", `from selected no blocks in ${from?.path}.`);
     }
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
-    const writtenContent = copiedNodes
-      ? undefined
-      : parseQuietly("content" in selectors ? selectors.content : undefined);
-    const shown = await shownLinksFor(address.documentId, context);
+    const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
     const links = await bindLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
-      ...(writtenContent ? { written: writtenContent.blocks } : {}),
+      ...(copiedNodes ? { stored: copiedNodes } : {}),
       shown,
       context,
     });
-    const assigner = linkAssigner(address.documentId, links.scope, shown);
-    const resolved = resolveWrite(
-      {
-        doc: toDocHandle(runtime.doc),
-        model: options.model,
-        codec: links.codec,
-        links: assigner,
-      },
+    // Planning fixes scope, matches and a find's reconstructed groups; what
+    // binding will see is only known then, so it loads before binding runs.
+    const plan = planWrite(
+      { doc: toDocHandle(runtime.doc), model: options.model, codec: links.codec },
       {
         ...selectors,
-        ...(writtenContent ? { parsedContent: writtenContent } : {}),
         documentAddress: address,
         ...(copiedNodes ? { blocks: copiedNodes } : {}),
       },
     );
+    if (plan.ok && plan.written.length > 0) {
+      await options.links.prepare({
+        documentId: address.documentId,
+        docs: [],
+        written: plan.written,
+        context,
+      });
+    }
+    const assigner = linkAssigner(address.documentId, links.scope, shown);
+    const resolved = plan.ok ? plan.bind(assigner) : plan;
     if (!resolved.ok) {
       return errorResponse(
         resolved.error.code,
@@ -583,7 +579,7 @@ export function createWriteCommands(deps: {
     }
     validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
     if (resolved.edits.length === 0) return formatUnchangedSuccess();
-    await registerMinted(assigner);
+    await registerMinted(assigner, address.documentId, context);
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const actor = mutationActor(session, address.documentId, context);
@@ -688,7 +684,7 @@ export function createWriteCommands(deps: {
           return rejected;
         }
         markSynced(session, address.documentId);
-        return withShown(runtime.doc, links, result);
+        return withShown(links, result);
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preOwnSnapshot);
         markSynced(session, address.documentId);
@@ -753,7 +749,6 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return withShown(
-      runtime.doc,
       links,
       formatApplySuccess({
         ...emptiedDocument(runtime, links.codec),
@@ -807,14 +802,8 @@ export function createWriteCommands(deps: {
   }
 
   /** Attach the links the result's rendered blocks showed, spelled with the command's binding. */
-  function withShown(doc: Y.Doc, links: BoundLinks, result: InternalWriteResult) {
-    const shownLinks = shownLinksForItems(renderedItems(result.model), {
-      doc: toDocHandle(doc),
-      model: options.model,
-      codec: links.codec,
-      scope: links.scope,
-      parser: options.codec,
-    });
+  function withShown(links: BoundLinks, result: InternalWriteResult) {
+    const shownLinks = links.codec.shownLinks(renderedItems(result.model));
     return shownLinks.length > 0 ? { ...result, shownLinks } : result;
   }
 
@@ -832,7 +821,6 @@ export function createWriteCommands(deps: {
       scope,
       holderDocumentId: documentId,
       shown,
-      codec: options.codec,
       ...(options.onLinkSpliceFallback
         ? {
             onSpliceFallback: (reason) => options.onLinkSpliceFallback?.({ documentId, reason }),
@@ -844,19 +832,23 @@ export function createWriteCommands(deps: {
   /**
    * Ahead refs the write minted are registered before anything is applied or
    * locked (§6.1); a failure fails the write, and the refs were never published.
+   * Registration may settle one at once, and the echo spells them all, so the
+   * scope loads them next.
    */
-  async function registerMinted(assigner: WriteLinkAssigner): Promise<void> {
-    if (assigner.minted.length > 0) await options.links.registerAhead(assigner.minted);
-  }
-
-  /** Written content parsed early so the scope can load what it names; errors surface in resolve. */
-  function parseQuietly(content: unknown) {
-    if (typeof content !== "string" || content.length === 0) return undefined;
-    try {
-      return options.codec.parse(content);
-    } catch {
-      return undefined;
-    }
+  async function registerMinted(
+    assigner: WriteLinkAssigner,
+    documentId: string,
+    context: WriteContext,
+  ): Promise<void> {
+    if (assigner.minted.length === 0) return;
+    await options.links.registerAhead(assigner.minted);
+    await options.links.prepare({
+      documentId,
+      docs: [],
+      refs: assigner.minted.map((mint) => mint.ref),
+      addresses: assigner.minted.map((mint) => mint.address),
+      context,
+    });
   }
 
   function validateResolvedIr(
