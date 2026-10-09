@@ -246,9 +246,6 @@ export interface ContextDeleteOptions extends ContextWriteOptions {
   expected: DeleteContextEntryRequest["expected"];
 }
 
-/** Certified context edits are closed semantic commands, never opaque callbacks. */
-export type ContextEditCommand = { kind: "append"; content: string };
-
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
 export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   fileType: DocumentFileType;
@@ -291,12 +288,22 @@ export interface ContextPort {
 
   /**
    * Claim and seed a new tracked URI without ever replacing an existing path.
-   * Text content is prepared here, so only prepared content may be passed
-   * inside a transaction.
+   * Its Markdown is prepared here, outside any transaction; a caller inside
+   * its own transaction prepares first and uses `createPreparedDocument`.
    */
   createTrackedDocument(
     uri: string,
-    content: string | PreparedWrite,
+    markdown: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
+
+  /**
+   * `createTrackedDocument` with content `prepareTrackedDocument` made for
+   * this URI (null: empty); safe inside a transaction.
+   */
+  createPreparedDocument(
+    uri: string,
+    prepared: PreparedWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
@@ -311,15 +318,6 @@ export interface ContextPort {
     uri: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
-
-  /**
-   * Resolve and apply one semantic edit under the document collab mutex.
-   */
-  edit(
-    uri: string,
-    command: ContextEditCommand,
-    options?: ContextWriteOptions,
-  ): Promise<Result<ContextWriteResult, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(

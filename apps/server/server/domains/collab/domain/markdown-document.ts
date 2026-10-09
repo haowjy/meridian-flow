@@ -7,6 +7,7 @@
  */
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
+  admitPreparedUpdate,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
@@ -37,7 +38,7 @@ import type {
 import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
-import { containsBase, type PreparedWrite, sameAuthority } from "./link-binding.js";
+import type { PreparedWrite } from "./link-binding.js";
 import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type DocumentLinkScopes,
@@ -249,24 +250,10 @@ export function createMarkdownDocumentEngine(
   }
 
   /**
-   * Whether a prepared write may apply to `doc`, whose authority is
-   * `authority`: its base's generation certificate is still current and `doc`
-   * has every clock the base had; a fresh write needs a document with no
-   * blocks, or it would sit beside content it never saw.
-   */
-  function holdsBase(
-    doc: Y.Doc,
-    authority: Readonly<CheckpointAuthority>,
-    content: PreparedWrite,
-  ): boolean {
-    if (content.base === null) return deps.model.getBlocks(toDocHandle(doc)).length === 0;
-    return sameAuthority(authority, content.base) && containsBase(doc, content.base);
-  }
-
-  /**
    * Merge a prepared update into `draft`, a copy of the live document taken
-   * under its lock, so the certificate is checked against the generation the
-   * update is admitted into.
+   * under its lock, so it is admitted (`admitPreparedUpdate`: certificate,
+   * clocks, fresh-needs-empty) against the generation it lands in. A writer's
+   * save outside a thread applies the update alone, without certified facts.
    */
   function mergePrepared(
     documentId: DocumentId,
@@ -275,11 +262,13 @@ export function createMarkdownDocumentEngine(
     content: PreparedWrite,
     yjsOrigin: TransactionOrigin,
   ): Result<void, SyncError> {
-    const stale = Err({ code: "stale_generation", documentId } as const);
-    if (!holdsBase(draft, authority, content)) return stale;
-    Y.applyUpdate(draft, content.update, yjsOrigin);
-    if (draft.store.pendingStructs !== null || draft.store.pendingDs !== null) return stale;
-    return Ok(undefined);
+    const refused = admitPreparedUpdate(draft, content, {
+      authority,
+      model: deps.model,
+      origin: yjsOrigin,
+      certified: false,
+    });
+    return refused ? Err({ code: "stale_generation", documentId }) : Ok(undefined);
   }
 
   async function replaceLiveDocumentMarkdown(
@@ -501,21 +490,15 @@ export function createMarkdownDocumentEngine(
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
     const shaped = checkPrepared(input.documentId, input.content, format.value, "write");
     if (!shaped.ok) return shaped;
-    const stale = Err({ code: "stale_generation", documentId: input.documentId } as const);
-    // An early answer only: the certificate can expire after this, so agent-edit checks it
-    // again where it admits the update, under that document's lock.
-    await deps.lifecycle.ensureDocument(input.documentId);
-    const holds = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-      holdsBase(doc, documentAuthority(doc), input.content),
-    );
-    if (!holds) return stale;
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,
       content: input.content,
       actor,
     });
-    if (outcome.status !== "success" && outcome.error?.type === "prepared_base") return stale;
+    if (outcome.status !== "success" && outcome.error?.type === "prepared_base") {
+      return Err({ code: "stale_generation", documentId: input.documentId });
+    }
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
       serializeForSchema(

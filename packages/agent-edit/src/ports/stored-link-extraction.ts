@@ -4,7 +4,7 @@
  * `prepare({ docs })`, the view-revision digest and derive stay cheap; and the
  * keys a host must load before spelling them (every adapter's `prepare`).
  */
-import { resolveDocumentHref } from "@meridian/contracts";
+import { resolveDocumentHref, storedLinkRef } from "@meridian/contracts";
 import { type PMNode, walkLinkOccurrences } from "@meridian/markup";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -33,7 +33,7 @@ export function extractStoredLinks(fragment: Y.XmlFragment): StoredLinkOccurrenc
           continue;
         }
         if (!previous || !sameLinkMark(previous, link)) {
-          occurrences.push({ kind: "link", ref: refOf(link.ref), href: link.href });
+          occurrences.push({ kind: "link", ref: storedLinkRef(link.ref), href: link.href });
         }
         previous = link;
       }
@@ -42,7 +42,11 @@ export function extractStoredLinks(fragment: Y.XmlFragment): StoredLinkOccurrenc
     if (node instanceof Y.XmlElement && (node.nodeName === "image" || node.nodeName === "figure")) {
       const src = node.getAttribute("src");
       if (typeof src === "string" && src) {
-        occurrences.push({ kind: node.nodeName, ref: refOf(node.getAttribute("ref")), href: src });
+        occurrences.push({
+          kind: node.nodeName,
+          ref: storedLinkRef(node.getAttribute("ref")),
+          href: src,
+        });
       }
     }
     for (const child of node.toArray()) {
@@ -53,13 +57,11 @@ export function extractStoredLinks(fragment: Y.XmlFragment): StoredLinkOccurrenc
   return occurrences;
 }
 
-function refOf(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
-
 function sameLinkMark(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
   return (
-    a.href === b.href && (a.title ?? null) === (b.title ?? null) && refOf(a.ref) === refOf(b.ref)
+    a.href === b.href &&
+    (a.title ?? null) === (b.title ?? null) &&
+    storedLinkRef(a.ref) === storedLinkRef(b.ref)
   );
 }
 

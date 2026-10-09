@@ -25,6 +25,11 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
+import {
+  mergePreparedUpdate,
+  type PreparedUpdate,
+  preparedRefusalResult,
+} from "./prepared-update.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import {
   formatApplySuccess,
@@ -79,7 +84,7 @@ export function createWriteCommands(deps: {
   } = deps;
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
 
-  return { read, create, mutate };
+  return { read, create, mutate, applyPrepared };
 
   function emptiedDocument(
     runtime: { doc: Y.Doc },
@@ -179,12 +184,6 @@ export function createWriteCommands(deps: {
       return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
     }
     const content = command.command === "create" ? (command.content ?? "") : "";
-    // Host-prepared content (§6.2) arrives bound and as an update; it is never assigned again.
-    const prepared = command.command === "create" ? context.prepared : undefined;
-    if (prepared && context.responseId) {
-      // A staged reply admits later, where the prepared base's certificate is not checked.
-      return status("invalid_write", "A prepared write is admitted at once, never staged.");
-    }
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
@@ -199,9 +198,8 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const given = copiedNodes ?? prepared?.blocks;
-    const parsed: ParseForCommandResult = given
-      ? { ok: true, parsed: { blocks: [...given] } }
+    const parsed: ParseForCommandResult = copiedNodes
+      ? { ok: true, parsed: { blocks: [...copiedNodes] } }
       : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -256,11 +254,11 @@ export function createWriteCommands(deps: {
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
     }
-    const shown = given ? [] : await shownLinksFor(address.documentId, context);
+    const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
     const links = await bindLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
-      ...(given ? { stored: given } : { written: parsed.parsed.blocks }),
+      ...(copiedNodes ? { stored: copiedNodes } : { written: parsed.parsed.blocks }),
       shown,
       context,
     });
@@ -273,7 +271,7 @@ export function createWriteCommands(deps: {
       );
     }
     let overwrite: Extract<ResolveWriteResult, { ok: true }> | undefined;
-    if (overwriting && existingBlocks.length > 0 && !prepared) {
+    if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveOverwrite(
         {
           doc: toDocHandle(runtime.doc),
@@ -283,7 +281,7 @@ export function createWriteCommands(deps: {
         },
         address,
         copiedNodes ? { blocks: copiedNodes } : { content, parsedContent: parsed.parsed },
-        given ? given.length === 0 : content.length === 0,
+        copiedNodes ? copiedNodes.length === 0 : content.length === 0,
       );
       if (!resolved.ok) {
         return errorResponse(
@@ -296,10 +294,11 @@ export function createWriteCommands(deps: {
       if (resolved.edits.length === 0) return formatUnchangedSuccess();
       overwrite = resolved;
     }
-    // Copies and host-bound content carry what they name; written content into
-    // an empty document binds fresh.
+    // Copies carry what they name; written content into an empty document binds fresh.
     const written =
-      given || overwrite ? parsed.parsed : { blocks: assigner.bindSpan([], parsed.parsed.blocks) };
+      copiedNodes || overwrite
+        ? parsed.parsed
+        : { blocks: assigner.bindSpan([], parsed.parsed.blocks) };
     await registerMinted(assigner, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
@@ -315,32 +314,7 @@ export function createWriteCommands(deps: {
     let deletedHashes = new Set<string>();
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
-    if (prepared) {
-      // The host lowered the overwrite and wrote its certified provenance against the base;
-      // both merge here, and the IR is admitted with them.
-      Y.applyUpdate(runtime.doc, prepared.update, origin);
-      if (prepared.certified) {
-        Y.applyUpdate(runtime.doc, prepared.certified.provenance, origin);
-        semanticEditIr = prepared.certified.ir;
-      }
-      if (runtime.doc.store.pendingStructs !== null || runtime.doc.store.pendingDs !== null) {
-        restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        return status(
-          "invalid_write",
-          "Prepared content's base is not in this document; prepare it again.",
-        );
-      }
-      if (sameBytes(Y.encodeStateAsUpdate(runtime.doc), preWriteSnapshot)) {
-        return formatUnchangedSuccess();
-      }
-      const changes = diffSnapshots(
-        before,
-        snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
-      );
-      touchedHashes = new Set([...changes.changed, ...changes.inserted]);
-      deletedHashes = changes.deleted;
-      insertedHashes = [...changes.inserted];
-    } else if (overwrite) {
+    if (overwrite) {
       semanticEditIr = overwrite.ir;
       const applied = applyEdits(toDocHandle(runtime.doc), options.model, overwrite.edits, origin);
       if (!applied.ok) {
@@ -461,7 +435,6 @@ export function createWriteCommands(deps: {
         touchedHashes,
         deletedHashes,
         preOwnSnapshot: preWriteSnapshot,
-        ...(prepared?.authority ? { expectedAuthority: prepared.authority } : {}),
         ...(turnId ? { turnId } : {}),
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
@@ -501,6 +474,101 @@ export function createWriteCommands(deps: {
         ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
       }),
     );
+  }
+
+  /**
+   * A whole-document write the host bound and lowered outside its transaction
+   * (§6.2), recorded as the actor's mutation: nothing is parsed, assigned or
+   * aligned again. It stages on the runtime, and the commit admits it under
+   * the document's lock (`admitPreparedUpdate`), never later: it is never
+   * part of a staged reply.
+   */
+  async function applyPrepared(
+    input: PreparedUpdate & { documentId: string },
+    session: ActorSession,
+    context: WriteContext,
+  ): Promise<InternalWriteResult> {
+    const { documentId } = input;
+    await options.lifecycle?.ensureDocument(documentId);
+    const runtime = runtimeFor(session, documentId);
+    const restored = await runtimeStore.restoreRuntimeFromLive(
+      session,
+      documentId,
+      runtime,
+      "create",
+    );
+    if (isInternalWriteResult(restored)) return restored;
+    const links = await bindLinks(options, { documentId, docs: [runtime.doc], context });
+    const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
+    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
+    const beforeVector = Y.encodeStateVector(runtime.doc);
+    const origin = threadOrigins.getThreadOrigin(documentId, session.threadId);
+    if (!mergePreparedUpdate(runtime.doc, input, origin, true)) {
+      restorePreWriteSnapshot(runtime, preWriteSnapshot);
+      return preparedRefusalResult(documentId, "base_missing");
+    }
+    if (sameBytes(Y.encodeStateAsUpdate(runtime.doc), preWriteSnapshot)) {
+      return formatUnchangedSuccess();
+    }
+    // The echo spells what the result names.
+    await options.links.prepare({ documentId, docs: [runtime.doc], context });
+    const changes = diffSnapshots(
+      before,
+      snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
+    );
+    const actor = mutationActor(session, documentId, context);
+    const turnId = actor.kind === "agent" ? actor.turnId : null;
+    const writeIdentity = await nextWriteIdentity(documentId, session, context);
+    const semanticEditIr = input.certified?.ir;
+    const committed = await submitPreparedMutation(
+      {
+        docId: documentId,
+        commandName: "create",
+        runtime,
+        links,
+        before,
+        updates: [
+          {
+            update: Y.encodeStateAsUpdate(runtime.doc, beforeVector),
+            meta: mutationMeta(actor),
+            mutation: {
+              threadId: session.threadId,
+              turnId,
+              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+              actorKind: actor.kind,
+              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+              writeId: writeIdentity.durableId,
+              wId: writeIdentity.ordinal,
+              ...(semanticEditIr ? { semanticEditIr } : {}),
+              ...mutationMode(context.interactionContext),
+            },
+          },
+        ],
+        liveOrigin: mutationUpdateOrigin(actor),
+        actor,
+        touchedHashes: new Set([...changes.changed, ...changes.inserted]),
+        deletedHashes: changes.deleted,
+        preOwnSnapshot: preWriteSnapshot,
+        prepared: input,
+        ...(turnId ? { turnId } : {}),
+        interactionContext: interactionContextForAttempt(
+          context.interactionContext,
+          writeIdentity.durableId,
+        ),
+      },
+      session,
+    );
+    if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
+    runtimeStore.attachRuntime(session, documentId, runtime);
+    return formatApplySuccess({
+      phase: "committed",
+      revision: committed.ok ? committed.revision : null,
+      writeId: writeIdentity.handle,
+      echo: committed.ok ? committed.summary.echo : [],
+      ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
+      ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
+    });
   }
 
   async function mutate(
@@ -816,7 +884,6 @@ export function createWriteCommands(deps: {
   ): WriteLinkAssigner {
     return createWriteLinkAssigner({
       scope,
-      holderDocumentId: documentId,
       shown,
       ...(options.onLinkSpliceFallback
         ? {

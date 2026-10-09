@@ -6,8 +6,8 @@
  * Binding can mint ahead refs, and registering them opens a root transaction
  * that takes namespace keys. A command transaction that already holds those
  * keys would wait on itself forever, invisibly to PostgreSQL. So every
- * whole-document door (ContextFS write, edit and create, uploads, import,
- * writer writes, host append, seeds) prepares first and passes the result in;
+ * whole-document door (ContextFS write and create, uploads, import, writer
+ * writes, seeds) prepares first and passes the result in;
  * the binder refuses to run inside a transaction so a door that forgot to
  * hoist fails at once.
  *
@@ -25,7 +25,6 @@
  */
 import {
   type AgentEditCodec,
-  type AheadMint,
   assignLinkRefs,
   createAgentEditCodecFactory,
   type DocumentCoordinator,
@@ -37,7 +36,7 @@ import {
   writtenAddresses,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import { type LinkView, parseLinkRef } from "@meridian/contracts";
+import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { type MarkupCodec, type PMNode, walkLinkOccurrences } from "@meridian/markup";
@@ -45,6 +44,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { documentAuthority } from "./document-handle.js";
+import { aheadRegistrations } from "./document-links-port.js";
 import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type AheadRefRegistrar,
@@ -66,10 +66,9 @@ export type PreparedHolder =
 /**
  * The base a write was prepared against. Two separate checks guard applying
  * it: the authority generation must still be the one the base was read from
- * (the certificate; admission checks it under the document's lock), and the
- * document must hold every clock in `stateVector` (the update's dependency).
- * Neither implies the other: a restore can keep every clock yet replace the
- * generation, and a state vector says nothing of which generation it is in.
+ * (the certificate), and the document must hold every clock in
+ * `stateVector` (the update's dependency). Both are agent-edit's
+ * `admitPreparedUpdate`, run under the document's lock by every door.
  */
 export interface PreparedBase {
   readonly authority: Readonly<CheckpointAuthority>;
@@ -111,12 +110,11 @@ export type BindHolder =
 
 export interface BindMarkdownInput {
   holder: BindHolder;
-  /** The new content, or (host append) a function of the holder's current Markdown. */
-  markdown: string | ((current: string) => string);
+  markdown: string;
   /**
    * `current`: prepare against the holder's current document, so every link
    * that stays corresponds to itself and keeps its ref, and unchanged content
-   * keeps its items (overwrite, append). Absent: fresh (seed, import, create).
+   * keeps its items (an actor's overwrite). Absent: fresh (seed, import, create).
    */
   against?: "current";
   /** The version the content is written into; whole-document doors write live. */
@@ -143,28 +141,6 @@ export class LinkBindingInsideTransactionError extends Error {
     super("Link binding must run before the command transaction opens (contract §6.2)");
     this.name = "LinkBindingInsideTransactionError";
   }
-}
-
-/**
- * Whether `doc` has seen every clock `base` names, so `update`'s dependencies
- * are present. Clock containment only: it is no generation fence (see
- * `sameAuthority`), and it does not prove the base's items are still live.
- */
-export function containsBase(doc: Y.Doc, base: PreparedBase | null): boolean {
-  if (base === null) return true;
-  const have = Y.decodeStateVector(Y.encodeStateVector(doc));
-  for (const [client, clock] of Y.decodeStateVector(base.stateVector)) {
-    if ((have.get(client) ?? 0) < clock) return false;
-  }
-  return true;
-}
-
-/** Whether a document's authority is the generation a prepared base certified. */
-export function sameAuthority(current: Readonly<CheckpointAuthority>, base: PreparedBase): boolean {
-  return (
-    current.authorityId === base.authority.authorityId &&
-    current.generation === base.authority.generation
-  );
 }
 
 export interface LinkBinderDeps {
@@ -317,26 +293,12 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
           schemaType,
         });
 
+      const { markdown } = input;
       if (schemaType === "code") {
         if (base) await prepare([]);
-        const current = previous[0]?.textContent ?? "";
-        const markdown =
-          typeof input.markdown === "string" ? input.markdown : input.markdown(current);
         return finish([codeBlock(markdown, filetype)], markdown);
       }
 
-      let markdown: string;
-      let current: readonly PMNode[] = [];
-      if (typeof input.markdown === "string") {
-        markdown = input.markdown;
-      } else {
-        // Append spells the current document the way any reader without a thread sees it, so
-        // every old link's spelling corresponds to itself below.
-        await prepare([]);
-        const spelled = previous.length > 0 ? deps.codec.serialize(previous, scopeFor()) : "";
-        current = deps.codec.parse(spelled).blocks;
-        markdown = input.markdown(spelled);
-      }
       const written = deps.codec.parse(markdown).blocks;
       await prepare(written);
       const scope = scopeFor();
@@ -344,29 +306,15 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         old: walkLinkOccurrences(previous),
         written,
         scope,
-        holderDocumentId: documentId ?? "",
         shown: [],
       });
-      await register(assigned.minted, scope);
-      return finish(keepUnchangedPrefix(previous, current, written, assigned.nodes), markdown);
+      if (assigned.minted.length > 0) {
+        await deps.registrar.register(aheadRegistrations(assigned.minted));
+      }
+      return finish(assigned.nodes, markdown);
     } finally {
       base?.doc.destroy();
     }
-  }
-
-  async function register(minted: readonly AheadMint[], scope: HolderLinkScope): Promise<void> {
-    if (minted.length === 0) return;
-    await deps.registrar.register(
-      minted.map((mint) => {
-        const parsed = parseLinkRef(mint.ref);
-        if (parsed?.kind !== "ahead") throw new RangeError(`Not an ahead ref: ${mint.ref}`);
-        return {
-          aheadId: parsed.aheadId,
-          holderProjectId: scope.holder.projectId,
-          address: mint.address,
-        };
-      }),
-    );
   }
 
   return {
@@ -398,27 +346,4 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       return prepared({ holder, base: null, blocks, markdown, schemaType });
     },
   };
-}
-
-/**
- * Host append: the leading blocks the appended text left as the current
- * document spelled them are the current document's own nodes, so the diff
- * leaves them untouched even where the codec does not spell every attribute.
- * The append then lands after them, anchored to the base's items.
- */
-function keepUnchangedPrefix(
-  previous: readonly PMNode[],
-  current: readonly PMNode[],
-  written: readonly PMNode[],
-  assigned: readonly PMNode[],
-): readonly PMNode[] {
-  if (current.length !== previous.length) return assigned;
-  let kept = 0;
-  while (kept < current.length && kept < written.length) {
-    const spelled = current[kept];
-    const rewritten = written[kept];
-    if (!spelled || !rewritten || !spelled.eq(rewritten)) break;
-    kept++;
-  }
-  return [...previous.slice(0, kept), ...assigned.slice(kept)];
 }

@@ -34,7 +34,8 @@ export interface HolderLinkScope extends DocumentLinkScope {
   documentFor(uri: string): CatalogDocument | null;
   /** Shipped image rule: an asset document id for a known manuscript image path, else null. */
   assetFor(manuscriptPath: string): string | null;
-  isLive(ref: string): boolean;
+  /** Whether a stored link resolves to a live document now (an unsettled ahead ref by its href). */
+  isLive(link: { ref: string; href: string }): boolean;
 }
 
 export interface LinkPrepareRequest {
@@ -60,7 +61,8 @@ export interface AheadMint {
   ref: AheadRef;
   /** aheadAddress(...) result: decoded, canonical, with an extension. */
   address: string;
-  holderDocumentId: string;
+  /** The holder scope's project at mint time: the registry's namespace. */
+  holderProjectId: string;
 }
 
 export interface DocumentLinksPort {
@@ -103,7 +105,7 @@ export function createHolderLinkScope(
   onMiss: (what: string) => void = () => {},
 ): HolderLinkScope {
   const resolve = (link: { ref: string | null; href: string }): LinkResolution => {
-    const resolution = resolveStoredLink(link, holder, catalog);
+    const resolution = resolveStoredLink(link, catalog);
     if (resolution.kind === "unknown") onMiss(link.ref ?? link.href);
     return resolution;
   };
@@ -139,7 +141,7 @@ export function createHolderLinkScope(
       if (id === undefined) onMiss(uri);
       return id ?? null;
     },
-    isLive: (ref) => resolve({ ref, href: "" }).kind === "document",
+    isLive: (link) => resolve(link).kind === "document",
   };
 }
 

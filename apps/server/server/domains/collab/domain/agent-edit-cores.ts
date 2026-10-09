@@ -56,7 +56,10 @@ export type LiveAgentEditCore = AgentEditCore & {
   readonly [liveAgentEditCoreBrand]: "live-agent-edit-core";
 };
 
-export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "commitResponse"> & {
+export type ThreadPeerAgentEditCore = Omit<
+  AgentEditCore,
+  "read" | "write" | "applyPrepared" | "commitResponse"
+> & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /** Where this reply's writes to a document go, once it has written there. */
