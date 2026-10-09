@@ -489,7 +489,9 @@ export async function createProductionAppPorts(input: {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog);
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, {
+    settle: (documentIds) => arrivals.settle(documentIds),
+  });
   const threadRepos = createDrizzleRepositories(
     db,
     workProjectionMutation,

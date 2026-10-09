@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Restoring a chat or Work reconnects waiting links to its returning Scratch notes.
+
 - Links in a No Work fork keep reading its draft after the first chat moves to another Work.
 
 - Your existing No Work Scratch notes stay available under Unfiled when chats gain their own Scratch.

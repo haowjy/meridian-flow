@@ -50,6 +50,7 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/context-catalog-repair.db.test.ts",
   "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
+  "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts",
   "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts",
   "apps/server/server/domains/context/uploads/upload-intake.db.test.ts",
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
