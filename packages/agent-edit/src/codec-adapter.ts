@@ -1,5 +1,5 @@
 // Adapts the pure markup codec to agent-edit's hash-prefixed block display contract.
-import type { MarkupCodec, ParsedContent, PMNode } from "@meridian/markup";
+import type { DocumentLinkScope, MarkupCodec, ParsedContent, PMNode } from "@meridian/markup";
 import { toHashline } from "./model/hashline.js";
 
 export interface AgentEditCodec {
@@ -17,20 +17,28 @@ export interface AgentEditCodec {
   serializeBlocks(blocks: readonly PMNode[], hashes: readonly string[]): string[];
 }
 
-export function createAgentEditCodec(markup: MarkupCodec): AgentEditCodec {
+/**
+ * `links` spells every link and image destination this codec serializes. It is
+ * captured here only until lane F2 of #729/#730 turns this into a factory that
+ * binds a holder scope per command.
+ */
+export function createAgentEditCodec(
+  markup: MarkupCodec,
+  links: DocumentLinkScope,
+): AgentEditCodec {
   return {
     markup,
     parse: (content) => markup.parse(content),
-    serialize: (blocks) => markup.serialize(blocks),
-    serializeBlockBodies: (blocks) => markup.serializeBlocks(blocks),
+    serialize: (blocks) => markup.serialize(blocks, links),
+    serializeBlockBodies: (blocks) => markup.serializeBlocks(blocks, links),
 
     serializeBlock(block, hash) {
-      return toHashline(hash, markup.serializeBlock(block));
+      return toHashline(hash, markup.serializeBlock(block, links));
     },
 
     serializeBlocks(blocks, hashes) {
       return markup
-        .serializeBlocks(blocks)
+        .serializeBlocks(blocks, links)
         .map((body, index) => toHashline(hashes[index] ?? "", body));
     },
   };

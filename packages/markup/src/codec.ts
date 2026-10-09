@@ -10,15 +10,17 @@ import { type PluggableList, type Processor, unified } from "unified";
 import type { MdastRoot } from "./ast.js";
 import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
+import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
-  AssetPathResolver,
   BuildOptions,
   CodecParseErrorLocation,
+  DocumentLinkScope,
   MarkupCodec,
   MarkupCodecBuilder,
   MarkupPlugin,
+  OccurrenceSpan,
   ParseContext,
   SerializeContext,
 } from "./types.js";
@@ -29,9 +31,12 @@ export function requiredBlockNamesForSchema(schema: Schema): string[] {
   return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));
 }
 
+const NO_ASSET_PATHS: ParseContext["assetForPath"] = () => null;
+
 export function createMarkupCodec(options: {
   schema: Schema;
-  assetPathResolver: AssetPathResolver;
+  /** Transitional image rule; see `ParseContext.assetForPath`. */
+  assetForPath?: ParseContext["assetForPath"];
 }): MarkupCodecBuilder {
   const plugins: MarkupPlugin[] = [];
   return {
@@ -42,7 +47,7 @@ export function createMarkupCodec(options: {
     build(buildOptions?: BuildOptions) {
       return buildMarkupCodec(
         options.schema,
-        options.assetPathResolver,
+        options.assetForPath ?? NO_ASSET_PATHS,
         plugins,
         buildOptions ?? {},
       );
@@ -52,7 +57,7 @@ export function createMarkupCodec(options: {
 
 function buildMarkupCodec(
   schema: Schema,
-  assetPathResolver: AssetPathResolver,
+  assetForPath: ParseContext["assetForPath"],
   plugins: readonly MarkupPlugin[],
   options: BuildOptions,
 ): MarkupCodec {
@@ -109,17 +114,40 @@ function buildMarkupCodec(
   const stringifyMarkdown = (root: MdastRoot): string =>
     stringifyProcessor.stringify(root as Parameters<typeof stringifyProcessor.stringify>[0]);
 
-  const parseBlocks = (content: string, baseCtx: ParseContext): PMNode[] => {
+  const parseBlocks = (content: string, baseCtx: ParseContext): PMNode[] =>
+    parseTopLevel(content, baseCtx, false).blocks;
+
+  /** One top-level parse; spans only when asked, since every write parses. */
+  const parseTopLevel = (
+    content: string,
+    baseCtx: ParseContext,
+    withSpans: boolean,
+  ): { blocks: PMNode[]; spans: OccurrenceSpan[] } => {
     const source = preprocess(content);
     const runtime = makeRuntime(source);
     const ctx = withRuntime<ParseContext>(
-      { schema: baseCtx.schema, assetPathResolver: baseCtx.assetPathResolver },
+      { schema: baseCtx.schema, assetForPath: baseCtx.assetForPath },
       runtime,
     );
     const tree = parsePreparedMarkdown(source);
-    return tree.children
-      .map((child) => parseBlockAst(child, ctx))
-      .filter((node): node is PMNode => node !== null);
+    const blocks: PMNode[] = [];
+    const spans: OccurrenceSpan[] = [];
+    for (const child of tree.children) {
+      const node = parseBlockAst(child, ctx);
+      if (node === null) continue;
+      blocks.push(node);
+      if (withSpans)
+        spans.push(
+          ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
+        );
+    }
+    return { blocks, spans };
+  };
+
+  const parseDocument = (content: string, withSpans: boolean) => {
+    if (content.trim().length === 0) return { blocks: [schema.node("paragraph")], spans: [] };
+    const parsed = parseTopLevel(content, { schema, assetForPath }, withSpans);
+    return parsed.blocks.length > 0 ? parsed : { blocks: [schema.node("paragraph")], spans: [] };
   };
 
   const makeRuntime = (source: string): CodecRuntime => ({
@@ -151,31 +179,31 @@ function buildMarkupCodec(
     return body === EMPTY_PARAGRAPH_SENTINEL ? "" : body;
   };
 
-  const serializeBlocks = (blockList: readonly PMNode[]): string[] => {
+  const serializeBlocks = (blockList: readonly PMNode[], links: DocumentLinkScope): string[] => {
     const runtime = makeRuntime("");
-    const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
+    const ctx = withRuntime<SerializeContext>({ schema, links }, runtime);
     return blockList.map((block) => serializeBody(block, ctx));
   };
 
   return {
-    serialize(blockList: PMNode[]): string {
+    serialize(blockList: PMNode[], links: DocumentLinkScope): string {
       const runtime = makeRuntime("");
-      const ctx = withRuntime<SerializeContext>({ schema, assetPathResolver }, runtime);
+      const ctx = withRuntime<SerializeContext>({ schema, links }, runtime);
       const result = blockList.map((block) => serializeOne(block, ctx)).join("\n");
       if (result.replace(/\s/g, "").replace(/ /g, "").length === 0) return "";
       return result;
     },
 
     parse(content: string) {
-      if (content.trim().length === 0) {
-        return { blocks: [schema.node("paragraph")] };
-      }
-      const parsed = parseBlocks(content, { schema, assetPathResolver });
-      return { blocks: parsed.length > 0 ? parsed : [schema.node("paragraph")] };
+      return { blocks: parseDocument(content, false).blocks };
     },
 
-    serializeBlock(block: PMNode): string {
-      return serializeBlocks([block])[0] ?? "";
+    parseWithSpans(content: string) {
+      return parseDocument(content, true);
+    },
+
+    serializeBlock(block: PMNode, links: DocumentLinkScope): string {
+      return serializeBlocks([block], links)[0] ?? "";
     },
 
     serializeBlocks,

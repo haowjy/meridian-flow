@@ -2,7 +2,7 @@
 
 import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -28,9 +28,7 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000004" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000005" as TurnId;
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
+const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 function projectedChange(

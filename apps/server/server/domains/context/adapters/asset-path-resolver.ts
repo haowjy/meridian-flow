@@ -3,12 +3,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { parseContextUri } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import type { AssetPathResolver } from "@meridian/markup";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import {
   type AssetPathProject,
+  type AssetPathResolver,
   createUnscopedAssetPathObserver,
   type DocumentAssetPaths,
 } from "../../collab/index.js";

@@ -612,6 +612,8 @@ function inlineMark(element: HtmlElement, ctx: ParseContext): Mark | null {
   return ctx.schema.marks.link.create({
     href: decodeHtmlAttribute(href),
     title: title ? decodeHtmlAttribute(title) : null,
+    // A stored ref is never in the wire; parse is syntax only.
+    ref: null,
   });
 }
 

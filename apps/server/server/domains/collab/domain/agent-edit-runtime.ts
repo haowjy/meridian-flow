@@ -25,7 +25,7 @@ import {
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
-import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
+import { assetPathLinkScope, type DocumentAssetPaths } from "./ports/document-asset-paths.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
@@ -60,11 +60,15 @@ export function createAgentEditRuntime(input: {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 }) {
   const schema = buildDocumentSchema();
+  // Transitional asset seam (#729/#730 lane F2 replaces both with the document
+  // link scope and the binding pass): parse still claims known image paths, and
+  // serialization spells `asset:` sources through the same per-operation paths.
   const markupCodec = mdxCodec({
     schema,
-    assetPathResolver: input.assetPaths.resolver,
+    assetForPath: (path) => input.assetPaths.resolver.assetForPath(path),
   });
-  const codec = createAgentEditCodec(markupCodec);
+  const links = assetPathLinkScope(input.assetPaths.resolver);
+  const codec = createAgentEditCodec(markupCodec, links);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();
   const liveUtilityCore = asLiveAgentEditCore(
@@ -85,6 +89,7 @@ export function createAgentEditRuntime(input: {
   const markdownDocuments = scopeMarkdownEngineAssetPaths(
     createMarkdownDocumentEngine({
       codec: markupCodec,
+      links,
       schema,
       model,
       journal: input.journal,

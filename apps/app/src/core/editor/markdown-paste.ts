@@ -22,11 +22,7 @@
  * parsed blocks rather than on a guess about the raw text.
  */
 
-import {
-  type AssetPathResolver,
-  markdownCodec,
-  unresolvedAssetPathResolver,
-} from "@meridian/markup";
+import { markdownCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   Fragment,
   type Node as PMNode,
@@ -57,9 +53,13 @@ export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
   return blocks.some((block) => block.type.name !== "paragraph" || carriesInlineStructure(block));
 }
 
+/**
+ * Pasted image paths stay literal here: the editor's `transformPasted` maps a
+ * known project path back to its `asset:` ref for every paste, text or HTML
+ * (`images/image-workflow.ts` `resolveImagesFromClipboard`).
+ */
 export function markdownClipboardParser(
   schema?: Schema,
-  assetPathResolver: AssetPathResolver = unresolvedAssetPathResolver,
   /** Parse extensions other editor extensions contribute, read per paste. */
   remarkPlugins: () => PluggableList = () => [],
 ): NonNullable<EditorProps["clipboardTextParser"]> {
@@ -70,7 +70,6 @@ export function markdownClipboardParser(
     let blocks: readonly PMNode[];
     try {
       blocks = markdownCodec({
-        assetPathResolver,
         schema: schema ?? view.state.schema,
         remarkPlugins: remarkPlugins(),
       }).parse(text).blocks;
@@ -146,7 +145,5 @@ export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardText
       blocks.push(node);
     });
   }
-  return markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })
-    .serializeBlocks(blocks)
-    .join("\n\n");
+  return markdownCodec({ schema }).serializeBlocks(blocks, UNSCOPED_DOCUMENT_LINKS).join("\n\n");
 };

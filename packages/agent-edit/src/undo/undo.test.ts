@@ -1,6 +1,6 @@
 // Reconcile coverage for cold journal undo/redo reconstruction.
 
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -22,9 +22,7 @@ import { InMemoryAgentEditJournal } from "../test-support/index.js";
 import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
+const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 const DOC_ID = "doc-1";
 const FILE = "chapter.md";

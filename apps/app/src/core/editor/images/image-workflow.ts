@@ -82,7 +82,13 @@ export function imageAttrsFromUpload(response: UploadFigureAssetResponse) {
   };
 }
 
-export type MutableAssetPathResolver = import("@meridian/markup").AssetPathResolver & {
+/** The editor's known asset ids ↔ project-relative paths, for clipboard round trips. */
+export type AssetPathResolver = {
+  pathForAsset(assetDocumentId: string): string | null;
+  assetForPath(path: string): string | null;
+};
+
+export type MutableAssetPathResolver = AssetPathResolver & {
   remember(assetDocumentId: string, path: string): void;
 };
 
@@ -103,10 +109,7 @@ export function createEditorAssetPathResolver(): MutableAssetPathResolver {
   };
 }
 
-export function resolveAssetRefsForClipboard(
-  slice: Slice,
-  resolver: import("@meridian/markup").AssetPathResolver,
-): Slice {
+export function resolveAssetRefsForClipboard(slice: Slice, resolver: AssetPathResolver): Slice {
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
@@ -125,10 +128,7 @@ export function resolveAssetRefsForClipboard(
   );
 }
 
-function resolveAssetPathsFromClipboard(
-  slice: Slice,
-  resolver: import("@meridian/markup").AssetPathResolver,
-): Slice {
+function resolveAssetPathsFromClipboard(slice: Slice, resolver: AssetPathResolver): Slice {
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
@@ -157,7 +157,7 @@ function resolveAssetPathsFromClipboard(
 export function resolveImagesFromClipboard(
   slice: Slice,
   schema: Schema,
-  resolver: import("@meridian/markup").AssetPathResolver,
+  resolver: AssetPathResolver,
 ): { slice: Slice; imports: PastedImageImport[] } {
   return linkExternalPastedImages(resolveAssetPathsFromClipboard(slice, resolver), schema);
 }

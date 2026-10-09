@@ -5,7 +5,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
@@ -17,9 +17,7 @@ import {
 
 it("traces multi-block identity shifts back to the displaced passage", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(
-    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-  );
+  const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo.\n\nCharlie."));
@@ -120,9 +118,7 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
 
 it("preserves ordinary changes when two blocks claim the same relocated passage", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(
-    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-  );
+  const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo.\n\nCharlie."));
@@ -229,9 +225,7 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
 
 it("does not relocate content from a structurally replaced source block", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(
-    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-  );
+  const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   model.insertBlocks(toDocHandle(beforeDoc), null, codec.parse("Alpha.\n\nBravo."));
@@ -335,9 +329,7 @@ it("does not relocate content from a structurally replaced source block", () => 
 
 it("keeps canonical identities distinct when snapshot block hashes collide", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(
-    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-  );
+  const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   beforeDoc.clientID = 111_111_111;
@@ -399,9 +391,7 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
 
 it("keeps an unrelated deletion and insertion in one push as separate events", () => {
   const schema = buildDocumentSchema();
-  const codec = createAgentEditCodec(
-    mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-  );
+  const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
   const model = yProsemirrorModel(schema);
   const beforeDoc = createCollabYDoc({ gc: false });
   const afterDoc = createCollabYDoc({ gc: false });

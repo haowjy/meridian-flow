@@ -1,11 +1,11 @@
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 
 import { prosemirrorRootOf, yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
 type Case = {
@@ -70,7 +70,7 @@ function roundTrip(markdown: string): string {
   model.insertBlocks(doc, null, parsed);
   const root = prosemirrorRootOf(doc, schema);
   const blocks = Array.from({ length: root.childCount }, (_, index) => root.child(index));
-  return codec.serialize(blocks);
+  return codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS);
 }
 
 function normalizeMarkdown(value: string): string {
