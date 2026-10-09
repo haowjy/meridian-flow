@@ -723,7 +723,7 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
 function liveAttributionRows(updates: readonly PersistedUpdate[]): AttributionRow[] {
   return updates.map(({ seq, update, meta }) => {
     let origin: ConcurrentUpdateOrigin;
-    if (meta.origin === "link-update" || meta.origin === "system:reconcile") {
+    if (meta.origin === "system:reconcile") {
       origin = { type: "system" };
     } else if (meta.reversalActor?.type === "agent" || meta.origin.startsWith("agent:")) {
       origin = { type: "agent", actorTurnId: meta.actorTurnId ?? "unknown-agent" };
