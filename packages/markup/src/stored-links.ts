@@ -9,7 +9,7 @@
  * one document, or the note count and revision digest drift from what
  * assignment sees. agent-edit's `assign-refs.test.ts` pins that parity.
  */
-import { resolveDocumentHref, storedLinkRef } from "@meridian/contracts";
+import { parseLinkRef, resolveDocumentHref, storedLinkRef } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema/protocol";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
@@ -94,7 +94,7 @@ export function storedLinkKeys(input: {
   const add = ({ kind, ref, href }: StoredLinkOccurrence) => {
     if (ref) {
       keys.refs.add(ref);
-      if (ref.startsWith("ahead:")) {
+      if (parseLinkRef(ref)?.kind === "ahead") {
         const stored = resolveDocumentHref(href, null);
         if (stored) keys.aheadAddresses.add(stored.uri);
       }
