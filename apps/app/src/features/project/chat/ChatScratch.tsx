@@ -165,8 +165,16 @@ export function RailScratchSection({
           }}
         />
       ) : null}
+      <RailPaneHeader
+        label={schemeLabel("scratch")}
+        icon={schemeIcon("scratch")}
+        title={tree.heading}
+        ariaLabel={tree.heading}
+        expanded={expanded}
+        onExpandedChange={changeExpanded}
+      />
       {expanded ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-1">
+        <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
           <ScratchRows
             tree={tree}
             folderId={null}
@@ -180,16 +188,6 @@ export function RailScratchSection({
           />
         </div>
       ) : null}
-      {/* The heading stays at the rail's foot; its notes open upwards above it. */}
-      <RailPaneHeader
-        label={schemeLabel("scratch")}
-        icon={schemeIcon("scratch")}
-        title={tree.heading}
-        ariaLabel={tree.heading}
-        expanded={expanded}
-        onExpandedChange={changeExpanded}
-        opensUp
-      />
     </section>
   );
 }
