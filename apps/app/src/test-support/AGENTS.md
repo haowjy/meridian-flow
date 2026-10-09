@@ -31,13 +31,20 @@ visible is a browser question and belongs in a probe.
 
 ## Review fixtures
 
-- **`draft-review-scope.tsx`** — the draft review's real controller composition
-  (Editor and Chat scopes over one Work, controllers, mutations, query cache, and
-  the header's model, and the third scope the Work page reads through
-  `useWorkReviewScope`) for a claim about a cross-surface outcome. It mounts no
-  editor, marks, bar or sheet; `surface` is where a suite mounts the one surface it
-  claims about (the Work page's list). The suite fakes only
-  the network (`@/client/api/drafts-api`); never set the review's state by hand.
+- **`draft-review-scope.tsx`** — real Editor, Chat and third-Work scopes,
+  controllers, query cache, mutations and header model. `createReviewScopeFixture`
+  installs test-lifetime network spies and account dependency seams; always
+  dispose it after the render finishes, and do not use concurrent tests with it.
+  `deferredReviewAnswer` holds each request independently. Pass scenario Works
+  and identities to `render`; mount actual document/phone/Work UI through
+  `surface`, and the chat strip through `chatSurface`. `host` wraps those scopes
+  inside the query provider for shell providers. The default removal coordinator
+  uses the real tab workspace; pass an owned coordinator for route coordination.
+  The default room document is only a refresh subscription source, never a
+  delivery or editor-paint witness. Supply a session registry and mounted editor
+  when claiming those outcomes. Existing consumers may still supply their own
+  network/account seams to `renderReviewScopes`; importing the helper installs
+  nothing. Keep surface-only setup and scenario data in their suites.
 - **`editor-session-fakes.ts`** — fake document sessions and a branch-room
   registry for suites about which editor exists and when (`EditorView`).
 - **`inline-review-editor.ts`** — a real collaborative editor with the

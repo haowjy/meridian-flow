@@ -6,7 +6,7 @@
  */
 
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
 import {
   currentDraftCommandRecords,
@@ -16,38 +16,19 @@ import {
 import {
   applied,
   change,
+  createReviewScopeFixture,
+  deferredReviewAnswer,
   draftA,
   listed,
   preview,
   previewOf,
-  renderReviewScopes,
   type ScopeProbe,
   work,
 } from "@/test-support/draft-review-scope";
 
-const mocks = vi.hoisted(() => ({
-  listWorkDrafts: vi.fn(),
-  getDraftPreview: vi.fn(),
-  applyDraftChanges: vi.fn(),
-  applyDraft: vi.fn(),
-  discardDraft: vi.fn(),
-}));
-
-vi.mock("@/client/api/drafts-api", () => mocks);
-vi.mock("@/client/query/useContextCatalog", () => ({
-  contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
-  useContextCatalogView: () => ({ catalog: null }),
-  projectCatalogView: () => ({ findDocument: () => null }),
-}));
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useContextRemovalCoordinator: () => ({ promoteAppliedDraft: vi.fn(), discardDraft: vi.fn() }),
-  useOptionalAccountResourceReplica: () => null,
-  useLiveDocumentSessionRegistry: () => ({
-    retainBranchRooms: vi.fn(),
-    releaseBranchRooms: vi.fn(),
-    getBranchRoom: () => ({ document: { on: vi.fn(), off: vi.fn() } }),
-  }),
-}));
+let fixture: ReturnType<typeof createReviewScopeFixture>;
+let mocks: ReturnType<typeof createReviewScopeFixture>["network"];
+const renderReviewScopes: typeof fixture.render = (...args) => fixture.render(...args);
 
 const listedB = {
   ...listed,
@@ -65,16 +46,19 @@ async function reviewOpened(probe: () => ScopeProbe) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  fixture = createReviewScopeFixture();
+  mocks = fixture.network;
   resetDraftCommandRecords();
   mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
   mocks.getDraftPreview.mockResolvedValue(preview);
 });
 
+afterEach(() => fixture.dispose());
+
 describe("one command authority per draft across the Editor and the Chat", () => {
   it("a per-change Apply in the Editor blocks the Chat's whole-draft Apply and Discard, and both surfaces read busy", async () => {
-    let answer!: (response: unknown) => void;
-    mocks.applyDraftChanges.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
+    mocks.applyDraftChanges.mockReturnValueOnce(answer.promise);
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       let done: Promise<unknown> | undefined;
@@ -97,7 +81,7 @@ describe("one command authority per draft across the Editor and the Chat", () =>
       expect(mocks.applyDraft).not.toHaveBeenCalled();
 
       await act(async () => {
-        answer(applied(false));
+        answer.resolve(applied(false));
         await done;
       });
       await vi.waitFor(() => expect(probe().chat.controller.isDisposing).toBe(false));
@@ -106,8 +90,8 @@ describe("one command authority per draft across the Editor and the Chat", () =>
   });
 
   it("a whole-draft Apply in the Chat blocks the Editor's per-change Apply, and both surfaces read busy", async () => {
-    let confirm!: () => void;
-    mocks.applyDraft.mockReturnValue(new Promise<void>((resolve) => (confirm = resolve)));
+    const confirm = deferredReviewAnswer<Awaited<ReturnType<typeof mocks.applyDraft>>>();
+    mocks.applyDraft.mockReturnValueOnce(confirm.promise);
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       let done: Promise<unknown> | undefined;
@@ -127,7 +111,7 @@ describe("one command authority per draft across the Editor and the Chat", () =>
       expect(classIds(probe())).toEqual(["class-1", "class-2"]);
 
       await act(async () => {
-        confirm();
+        confirm.resolve({ status: "applied", draftId: "draft-a" });
         await done;
       });
     });
@@ -141,10 +125,8 @@ describe("the room-opening read", () => {
       await reviewOpened(probe);
       await act(async () => probe().editor.controller.exitInlineReview());
 
-      let oldRead!: (response: unknown) => void;
-      mocks.getDraftPreview.mockImplementationOnce(
-        () => new Promise((resolve) => (oldRead = resolve)),
-      );
+      const oldRead = deferredReviewAnswer<typeof preview>();
+      mocks.getDraftPreview.mockReturnValueOnce(oldRead.promise);
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
       expect(probe().editor.controller.reviewRoomName).toBeNull();
       // The list is already actionable from the cache.
@@ -157,7 +139,7 @@ describe("the room-opening read", () => {
       await vi.waitFor(() => expect(classIds(probe())).toEqual(["class-1"]));
 
       // The older read answers last, with the change still in it.
-      await act(async () => oldRead(preview));
+      await act(async () => oldRead.resolve(preview));
       await act(async () => undefined);
       expect(classIds(probe())).toEqual(["class-1"]);
       // The review still finds its room.
@@ -170,13 +152,11 @@ describe("the room-opening read", () => {
   it("commits no room to a review that has moved on", async () => {
     await renderReviewScopes(async (probe) => {
       await vi.waitFor(() => expect(mocks.listWorkDrafts).toHaveBeenCalled());
-      let slow!: (response: unknown) => void;
-      mocks.getDraftPreview.mockImplementationOnce(
-        () => new Promise((resolve) => (slow = resolve)),
-      );
+      const slow = deferredReviewAnswer<typeof preview>();
+      mocks.getDraftPreview.mockReturnValueOnce(slow.promise);
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
       await act(async () => probe().editor.controller.exitInlineReview());
-      await act(async () => slow({ ...preview, reviewRoomName: "stale-room" }));
+      await act(async () => slow.resolve({ ...preview, reviewRoomName: "stale-room" }));
       expect(probe().editor.controller.reviewRoomName).toBeNull();
       expect(probe().editor.controller.inlineReview).toBeNull();
     });
@@ -195,10 +175,8 @@ const failureOf = (_probe: ScopeProbe, documentId: string) =>
 describe("a whole-draft Apply the server rejects after the review moved on", () => {
   it("keeps its failure on that draft's record and shows it where the draft is listed, without navigating back", async () => {
     mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
-    let reject!: (error: unknown) => void;
-    mocks.applyDraft.mockReturnValue(
-      new Promise((_resolve, rejectApply) => (reject = rejectApply)),
-    );
+    const answer = deferredReviewAnswer<Awaited<ReturnType<typeof mocks.applyDraft>>>();
+    mocks.applyDraft.mockReturnValueOnce(answer.promise);
     await renderReviewScopes(async (probe) => {
       await reviewOpened(probe);
       await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(2));
@@ -209,7 +187,7 @@ describe("a whole-draft Apply the server rejects after the review moved on", () 
         probe().editor.controller.enterInlineReview("document-b", "draft-b");
       });
       await act(async () => {
-        reject(new HttpResponseError("refused", 409, {}));
+        answer.reject(new HttpResponseError("refused", 409, {}));
         await done;
       });
 
