@@ -112,10 +112,15 @@ runtime, since receipts spell links the reply removed.
 `createHolderLinkScope(holder, catalog)` applies the contracts' resolution and
 spelling rules over any `HolderCatalog`, so hosts cannot disagree;
 `createStaticDocumentLinks(catalog)` is the in-memory adapter over a fixed
-catalog (tests, and the server's in-memory composition through its scopes).
+catalog. It loads keys on `prepare` the way the server's batched loader does
+and answers an unprepared id, settlement or address as a snapshot miss
+(recorded in `misses`), so tests catch a door that forgot to prepare; the
+server's in-memory composition passes `{ preloaded: true }`.
+`storedLinkKeys` (`ports/stored-link-extraction.ts`) is what both adapters
+load for stored occurrences (docs and `stored` nodes such as copies).
 After parse, `links/assign-refs.ts` `bindSources` applies the shipped image
-rule (a known manuscript path becomes `asset:<id>`); the resolver runs it on
-every parse through `ResolveWriteContext.bindWritten`, copies excepted.
+rule (a known manuscript path becomes `asset:<id>`); the write binder runs it
+on every written node before correspondence, copies excepted.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
 the schema explicitly. This keeps the package host-agnostic without server/infra
 dependency leaks.
