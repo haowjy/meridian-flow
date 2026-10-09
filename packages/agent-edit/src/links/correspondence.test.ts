@@ -1,6 +1,6 @@
-// Link correspondence contracts: reviewer examples, normalization, reorder identity and exhaustive ranking.
+// Link correspondence contracts: ranking counterexamples, normalization, reorder identity and exhaustive ranking.
+// The 28 r7 reviewer fixtures run on the real write path (assign-refs.test.ts).
 import { expect, it } from "vitest";
-import { reviewerFixtures } from "./correspondence.fixtures.js";
 import {
   type CorrespondenceInput,
   correspondLinks,
@@ -140,12 +140,7 @@ function exhaustive(values: CorrespondenceInput): LinkMatch[] {
   });
 }
 
-it("preserves r7 reviewer matches, stated ambiguities and historical holder normalization", () => {
-  expect(reviewerFixtures).toHaveLength(28);
-  for (const fixture of reviewerFixtures) {
-    const values = input({ ...fixture, isLive: (ref) => fixture.live.includes(ref) });
-    expect.soft(correspondLinks(values), fixture.name).toEqual(fixture.expected);
-  }
+it("preserves r7 ranking counterexamples, stated ambiguities and historical holder normalization", () => {
   const cases: Array<{ name: string; values: CorrespondenceInput; expected: LinkMatch[] }> = [
     {
       name: "r7 strong precedence sacrifices two weak historical continuations",
