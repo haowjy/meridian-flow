@@ -205,7 +205,7 @@ if (!RUN) {
             "unsettled ahead keeps its address",
           )
           .toBe("../later.md");
-        expect.soft(scope.isLive(`doc:${TARGET}`)).toBe(true);
+        expect.soft(scope.isLive({ ref: `doc:${TARGET}`, href: "x.md" })).toBe(true);
         expect.soft(scope.documentFor("manuscript://part1/target")?.documentId).toBe(TARGET);
         expect
           .soft(scope.spellSource({ src: `asset:${MAP}`, ref: null }).href)
