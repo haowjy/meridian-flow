@@ -1,5 +1,5 @@
 /** Schema-aware read and restore contracts for the collab document engine. */
-import { fragmentOf, yProsemirrorModel } from "@meridian/agent-edit/integration";
+import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import {
@@ -22,15 +22,17 @@ import { createMarkdownDocumentEngine } from "./markdown-document.js";
 const DOCUMENT_ID = "code-document" as DocumentId;
 const SYSTEM_ORIGIN = { type: "system" as const };
 
+const schema = buildDocumentSchema();
+const model = yProsemirrorModel(schema);
+
 function setup(filetype = "typescript") {
-  const schema = buildDocumentSchema();
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
     schema,
     codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-    model: yProsemirrorModel(schema),
+    model,
     journal,
     coordinator,
     lifecycle: createInMemoryDocumentLifecycle(coordinator),
@@ -88,20 +90,42 @@ describe("code document serialization", () => {
 });
 
 describe("checkpoint restore", () => {
-  it.each([
+  type Subject = ReturnType<typeof setup>;
+
+  it.each<
+    [string, string, (subject: Subject) => Promise<void>, (subject: Subject) => Promise<void>]
+  >([
     [
       "a code checkpoint without turning fences into literal code",
       "typescript",
-      "const original = true;",
+      (subject) => seedCode(subject, "const original = true;"),
+      async (subject) => {
+        await expect(subject.engine.readAsMarkdown(DOCUMENT_ID)).resolves.toEqual({
+          ok: true,
+          value: "const original = true;",
+        });
+      },
     ],
     [
-      "a document checkpoint's nodes as projected",
+      "a document checkpoint's nodes, including attributes Markdown can't spell",
       "md",
-      '# Title\n\nA *quiet* [link](https://example.com "t").\n',
+      async (subject) => {
+        const live = subject.coordinator.ensureEmpty(DOCUMENT_ID);
+        model.insertBlocks(toDocHandle(live), null, { blocks: [uploadingImageParagraph()] });
+      },
+      async (subject) => {
+        const [paragraph] = model.projectBlocks(
+          toDocHandle(subject.coordinator.ensureEmpty(DOCUMENT_ID)),
+        );
+        expect(paragraph?.firstChild?.attrs).toMatchObject({
+          src: "pending.png",
+          uploadToken: "upload-1",
+        });
+      },
     ],
-  ])("restores %s", async (_name, filetype, original) => {
+  ])("restores %s", async (_name, filetype, seed, expectRestored) => {
     const subject = setup(filetype);
-    await seedCode(subject, original);
+    await seed(subject);
     const checkpoints = createCheckpointService({
       coordinator: subject.coordinator,
       store: subject.journal,
@@ -121,12 +145,38 @@ describe("checkpoint restore", () => {
       ok: true,
       value: undefined,
     });
-    await expect(subject.engine.readAsMarkdown(DOCUMENT_ID)).resolves.toEqual({
-      ok: true,
-      value: original,
-    });
+    await expectRestored(subject);
+  });
+
+  // Risk: a restore that reports failure must not have journaled or installed its content.
+  it("leaves the journal and live document untouched when the snapshot can't serialize", async () => {
+    const subject = setup("md");
+    await seedCode(subject, "Before.");
+    const live = subject.coordinator.ensureEmpty(DOCUMENT_ID);
+    const liveBefore = Y.encodeStateAsUpdate(live);
+    const journalBefore = (await subject.journal.read(DOCUMENT_ID)).updates.length;
+    const snapshot = createCollabYDoc({ gc: false });
+    model.insertBlocks(toDocHandle(snapshot), null, { blocks: [invalidWidthTable()] });
+
+    await expect(
+      subject.engine.restoreFromYDoc(DOCUMENT_ID, snapshot, SYSTEM_ORIGIN),
+    ).rejects.toThrow(/colwidth/);
+    expect((await subject.journal.read(DOCUMENT_ID)).updates).toHaveLength(journalBefore);
+    expect(Y.encodeStateAsUpdate(live)).toEqual(liveBefore);
   });
 });
+
+function uploadingImageParagraph() {
+  const image = schema.nodes.image.create({ src: "pending.png", uploadToken: "upload-1" });
+  return schema.nodes.paragraph.create(null, [image]);
+}
+
+function invalidWidthTable() {
+  const cell = schema.nodes.table_cell.create({ colwidth: "wrong" }, [
+    schema.nodes.paragraph.create(null, [schema.text("cell")]),
+  ]);
+  return schema.nodes.table.create(null, [schema.nodes.table_row.create(null, [cell])]);
+}
 
 describe("schema-aware serialization purity", () => {
   it("returns the repaired projection without mutating its source when the anomaly sink throws", async () => {

@@ -25,7 +25,14 @@ schema-blind serialization is private to the engine.
 Checkpoint restore (`restoreFromYDoc`) installs the snapshot's projected nodes
 directly, never a serialize/parse round trip, so attributes the codec does not
 spell survive; a `code` snapshot is rebuilt from its text with the current
-filetype as `language`.
+filetype as `language`. Every whole-document replacement serializes its staged
+copy before journal admission, so a snapshot the codec can't spell fails with
+the journal and live document untouched. Restore matches the old round trip
+only for Markdown-generated content. Native snapshots keep structure it used to
+normalize: a whitespace-only paragraph followed by an empty one stays two
+paragraphs (the old path collapsed them to one empty paragraph; both serialize
+to the same empty Markdown), and a non-string code-block `language` such as
+`42` stays numeric instead of reparsing to a string.
 Schema projection always runs on a private `gc: false` clone (with the source
 client identity restored after state copy): normalization can repair that clone,
 but serialization cannot mutate its input Y.Doc. Any clone update during
