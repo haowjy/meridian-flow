@@ -69,6 +69,8 @@ export {
   type LinkQuestion,
   type LinkResolutionEntry,
   type LocalLinkAnswer,
+  linkCacheKey,
+  linkKeyOfMark,
 } from "./link-resolution";
 export { getLinkAnswerCache, getLinkSurface } from "./link-storage";
 export {

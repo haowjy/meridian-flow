@@ -35,8 +35,6 @@ import {
   type LinkSelection,
   linkAt,
   linkAtSelection,
-  linkHref,
-  linkRef,
   relocateLink,
 } from "./link-commands";
 import {
@@ -46,7 +44,7 @@ import {
   linkClickIntent,
   MIDDLE_BUTTON,
 } from "./link-navigation";
-import { createLinkAnswerCache, type LinkKey } from "./link-resolution";
+import { createLinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import { linkResolutionPlugin } from "./link-resolution-decorations";
 import {
   getLinkAnswerCache,
@@ -98,8 +96,7 @@ function followLinkAtSelection(editor: Editor | null): boolean {
   if (!editor || !link) return false;
   // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
   // place a plain click would.
-  const key = { ref: linkRef(link), href: linkHref(link) };
-  return followUnlessGone(editor, key, "current") !== "unavailable";
+  return followUnlessGone(editor, linkKeyOfMark(link.attributes), "current") !== "unavailable";
 }
 
 export const LinkSurfaceExtension = Extension.create({
@@ -325,11 +322,11 @@ function anchorIn(view: EditorView, node: EventTarget | null): HTMLElement | nul
 
 /** What the menu shows and acts on, derived from the link as it stands now. */
 function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
-  const href = linkHref(link);
+  const { ref, href } = linkKeyOfMark(link.attributes);
   return {
     anchor: anchorLinkRange(state, { from: link.from, to: link.to }),
     href,
-    ref: linkRef(link),
+    ref,
     target: classifyLinkTarget(href),
     identity: link.identity,
   };
@@ -343,7 +340,7 @@ function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
  */
 function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
   const link = linkAt(view.state, view.posAtDOM(anchor, 0));
-  if (link) return { ref: linkRef(link), href: linkHref(link) };
+  if (link) return linkKeyOfMark(link.attributes);
   return {
     ref: null,
     href: anchor.getAttribute("data-meridian-link") ?? anchor.getAttribute("href") ?? "",

@@ -37,7 +37,7 @@ import { DOMSerializer, type Mark, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
 import { bindPastedSlice } from "./link-binding";
-import type { LinkAnswerCache, LinkKey } from "./link-resolution";
+import { type LinkAnswerCache, type LinkKey, linkCacheKey, linkKeyOfMark } from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
 
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
@@ -117,8 +117,9 @@ export function clipboardLinkProject(value: string | null): string | null {
 
 /** Copy, HTML flavour: what one rendered link mark names, beside its href. */
 function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkAnswerCache): void {
-  const href = String(mark.attrs.href ?? "");
-  const ref = clipboardLinkRef(typeof mark.attrs.ref === "string" ? mark.attrs.ref : null);
+  const stored = linkKeyOfMark(mark.attrs);
+  const href = stored.href;
+  const ref = clipboardLinkRef(stored.ref);
   const address = currentLinkAddress({ ref, href }, resolution);
   if (address) element.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
   const projectId = resolution.binding?.projectId ?? null;

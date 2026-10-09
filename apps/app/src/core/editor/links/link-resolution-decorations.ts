@@ -28,7 +28,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 import { isRemoteDocumentRebuild } from "../anchors";
 import { linkChip, linkChipPartAttributes } from "./link-chip";
-import type { LinkAnswerCache, LinkKey } from "./link-resolution";
+import { type LinkAnswerCache, type LinkKey, linkCacheKey, linkKeyOfMark } from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
 const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
@@ -173,14 +173,12 @@ function read(doc: PMNode, resolution: LinkAnswerCache): LinkResolutionPluginSta
     if (!node.isText) return true;
     const mark = node.marks.find((candidate) => candidate.type.name === "link");
     if (!mark) return false;
-    const target = classifyLinkTarget(String(mark.attrs.href ?? ""));
+    const stored = linkKeyOfMark(mark.attrs);
+    const target = classifyLinkTarget(stored.href);
     if (!target || !isInternalLinkTarget(target)) return false;
 
-    const link: LinkKey = {
-      ref: typeof mark.attrs.ref === "string" ? mark.attrs.ref : null,
-      href: linkTargetHref(target),
-    };
-    links.set(`${link.ref ?? ""}\u0000${link.href}`, link);
+    const link: LinkKey = { ref: stored.ref, href: linkTargetHref(target) };
+    links.set(linkCacheKey(link), link);
     const entry = resolution.read(link);
     // Every internal link is drawn, answered or not: a failed or unasked one
     // is a filled chip in its own family, never a missing one.
@@ -208,12 +206,10 @@ export function linkStateAttributes(
   link: { readonly [attribute: string]: unknown },
   resolution: LinkAnswerCache | null,
 ): () => void {
-  const target = classifyLinkTarget(String(link.href ?? ""));
+  const stored = linkKeyOfMark(link);
+  const target = classifyLinkTarget(stored.href);
   if (!resolution || !target || !isInternalLinkTarget(target)) return () => {};
-  const key: LinkKey = {
-    ref: typeof link.ref === "string" && link.ref ? link.ref : null,
-    href: linkTargetHref(target),
-  };
+  const key: LinkKey = { ref: stored.ref, href: linkTargetHref(target) };
   const sync = () => {
     const entry = resolution.read(key);
     const description =
