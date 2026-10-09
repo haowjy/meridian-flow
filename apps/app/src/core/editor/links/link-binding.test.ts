@@ -34,12 +34,12 @@ afterEach(() => {
   for (const editor of live.splice(0)) editor.destroy();
 });
 
-function editor(content = "<p>Kael waits.</p>"): Editor {
+function editor(content = "<p>Kael waits.</p>", projectId = "project-1"): Editor {
   const created = new Editor({ extensions: createStandaloneEditorExtensions(), content });
   live.push(created);
   getLinkAnswerCache(created)?.registerResolver(
     { index: { documents: DOCUMENTS }, remote: async (questions) => questions.map(() => null) },
-    { baseUri: HOLDER, projectId: "project-1" },
+    { baseUri: HOLDER, projectId },
   );
   return created;
 }
@@ -68,14 +68,15 @@ function ctrlK(target: Editor, from: number, to: number, href: string): Stored[]
   return links(target);
 }
 
-/** The browser's paste of clipboard text, through every plugin's paste props. */
-function paste(target: Editor, text: string): Stored[] {
+/** The browser's paste of clipboard text (and HTML), through every plugin's paste props. */
+function paste(target: Editor, text: string, html = ""): Stored[] {
   const event = new Event("paste", { bubbles: true, cancelable: true });
+  const data: Record<string, string> = {
+    "text/plain": text,
+    ...(html ? { "text/html": html } : {}),
+  };
   Object.defineProperty(event, "clipboardData", {
-    value: {
-      types: ["text/plain"],
-      getData: (type: string) => (type === "text/plain" ? text : ""),
-    },
+    value: { types: Object.keys(data), getData: (type: string) => data[type] ?? "" },
   });
   target.view.dom.dispatchEvent(event);
   return links(target);
@@ -196,6 +197,33 @@ it("binds what each producer writes", () => {
       ],
     ],
   ];
+  // Rich copy and paste end to end: the copy records the ref beside its
+  // address, the paste sanitizer and kept-ref transform let it through, the
+  // mark parses it, and binding keeps it in its own project only.
+  const richPaste = (projectId: string) => {
+    const source = editor(STALE);
+    source.commands.setTextSelection({ from: 1, to: 5 });
+    source.commands.setMark("link", {
+      href: "manuscript://volume-1/old-name.md",
+      title: null,
+      ref: `doc:${MOVED}`,
+    });
+    source.commands.setTextSelection({ from: 1, to: 5 });
+    const { dom, text } = source.view.serializeForClipboard(source.state.selection.content());
+    return paste(editor("<p></p>", projectId), text, dom.innerHTML);
+  };
+  rows.push(
+    [
+      "rich paste in the same project keeps the ref at its address",
+      () => richPaste("project-1"),
+      [{ text: "Kael", ref: `doc:${MOVED}`, href: "manuscript://volume-1/old-name.md" }],
+    ],
+    [
+      "rich paste into another project binds fresh from the address",
+      () => richPaste("project-2"),
+      [{ text: "Kael", ref: "ahead:*", href: "manuscript://volume-1/old-name.md" }],
+    ],
+  );
   for (const [label, produce, expected] of rows) {
     expect.soft(produce(), label).toEqual(expected);
   }
