@@ -182,7 +182,7 @@ input arrives as an action addressed to the draft and compares its generation wi
 | O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
 | P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
 | X | The Work's list has no row for the draft | With no K the review ends, unless the newest preview lists changes at R or above (the list lags); K keeps it |
-| S | The editor's room is `branch-generation-stale` | The room is cleared and read afresh; the review stays |
+| S | The editor's room is `branch-generation-stale` or `branch-stale-doc` | The room is cleared and read afresh; the review stays |
 | L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
 | B | Whole-draft batch | Its pending and closed actions carry R at batch start |
 
@@ -204,6 +204,10 @@ also gets read afresh; a genuine external close (no proposal at R or above) ends
 review. The Editor address owner (`EditorReviewAddressOwner`) ends a review only when the
 address leaves its document; whether the list still names the draft is row X's alone, so a
 list behind a re-entered proposal cannot end it from a second place.
+Known gap ([#731](https://github.com/haowjy/meridian-flow/issues/731)): moving off a generation retires its branch session, and
+branch sessions keep no local copy, so writer edits the server has not acknowledged are
+lost on re-entry or a stale room. The fix is a generation-aware handoff at session
+retirement, not a retained room.
 
 Focus is review state too: `inlineReview.focus` holds the focused change's class
 id with the operations it held, one value for the whole review. When the server
