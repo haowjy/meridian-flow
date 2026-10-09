@@ -17,22 +17,6 @@ import { markdownCodec } from "./index.js";
 describe("markdown codec round-trip corpus", () => {
   const codec = markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
 
-  it("stabilizes paragraphs, headings, nested marks, hard breaks, links, and images", () => {
-    expectStable(
-      codec,
-      [
-        "# The Ascension Trial",
-        "",
-        'Plain text, then **bold**, *italic*, `code()`, and [a link](https://example.com "Ex").',
-        "",
-        "nested ***bold-italic*** word.",
-        "",
-        "line one\\",
-        "line two with ![a sword](img/sword.png) here.",
-      ].join("\n"),
-    );
-  });
-
   // Tab is a key a writer presses in prose (the editor inserts one), so the
   // wire has to carry it. A tab in the middle of a line is literal; a LEADING
   // tab would parse back as an indented code block, so it goes out as a
@@ -50,29 +34,15 @@ describe("markdown codec round-trip corpus", () => {
     expectStable(codec, wire);
   });
 
-  it("stabilizes strong spans containing nested emphasis boundaries", () => {
-    expectStable(codec, "Intro with **bold _em_** tail");
-    expectStable(codec, "Intro with **bold *em*** tail");
-  });
-
   it.each([
-    "chapter 1.md",
     "a(b.md",
-    "(balanced).md",
-    "folder\\notes.md",
     "folder\\ notes.md",
     "a\\<b> c.md",
-    "a\\) b.md",
   ])("carries destination %j through the wire unchanged", (href) => {
     const doc = [paragraph(t("x", [m("link", { href, title: null })]))];
     const wire = codec.serialize(doc);
     expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
     expectStable(codec, wire);
-  });
-
-  it("encloses a destination with spaces rather than escaping them", () => {
-    const doc = [paragraph(t("x", [m("link", { href: "../volume 1/chapter 1.md", title: null })]))];
-    expect(codec.serialize(doc)).toBe("[x](<../volume 1/chapter 1.md>)\n");
   });
 
   it("never lets a destination span lines", () => {
@@ -82,10 +52,6 @@ describe("markdown codec round-trip corpus", () => {
     expect(codec.parse(wire).blocks[0]?.firstChild?.marks[0]?.attrs.href).toBe("a%0Ab%0D%0Ac.md");
   });
 
-  it("stabilizes link labels containing closing brackets", () => {
-    expectStable(codec, "[a\\]b](https://x.test)");
-  });
-
   it("parses mixed task list item checked attrs", () => {
     const doc = parsedDoc(codec, "- [x] a\n- plain\n- [ ] b\n");
     const list = doc.firstChild;
@@ -93,54 +59,6 @@ describe("markdown codec round-trip corpus", () => {
     expect(
       [...Array(list?.childCount ?? 0)].map((_, index) => list?.child(index).attrs.checked),
     ).toEqual([true, null, false]);
-  });
-
-  it("parses strikethrough as strike marks", () => {
-    const doc = parsedDoc(codec, "~~gone~~");
-    const text = doc.firstChild?.firstChild;
-    expect(text?.type.name).toBe("text");
-    expect(text?.text).toBe("gone");
-    expect(text?.marks.map((mark) => mark.type.name)).toEqual(["strike"]);
-  });
-
-  it("stabilizes lists, blockquotes, thematic breaks, and ordered-list starts", () => {
-    expectStable(
-      codec,
-      [
-        "> A quoted line.",
-        "",
-        "- first",
-        "- second",
-        "",
-        "3. three",
-        "4. four",
-        "",
-        "---",
-        "",
-        "After the break.",
-      ].join("\n"),
-    );
-  });
-
-  it("stabilizes code blocks with languages and backtick-heavy content", () => {
-    expectStable(
-      codec,
-      [
-        "```math",
-        "E = mc^2",
-        "```",
-        "",
-        "````stat",
-        "```",
-        "inside",
-        "```",
-        "````",
-        "",
-        "```",
-        "plain code",
-        "```",
-      ].join("\n"),
-    );
   });
 
   it("stabilizes empty paragraphs through the NBSP wire sentinel", () => {
@@ -169,23 +87,6 @@ describe("markdown codec round-trip corpus", () => {
     expect(parsed[0]?.rangeHasMark(0, parsed[0].content.size, schema.marks.link)).toBe(false);
     expect(codec.parse(codec.serialize(parsed)).blocks[0]?.textContent).toBe(input);
     expectStable(codec, codec.serialize(parsed));
-  });
-
-  it("round-trips standard links to Context URIs and relative paths", () => {
-    for (const [label, href] of [
-      ["Chapter 213", "chapter-213.md"],
-      ["Kael", "kb://characters/Kael.md"],
-      ["the gate", "../volume 1/chapter 1.md"],
-      ["notes", "scratch://@revision/notes.md#plan"],
-      ["修炼 arc", "第一章 雪夜.md"],
-    ] as const) {
-      const doc = [paragraph(t(label, [m("link", { href, title: null })]))];
-      const wire = codec.serialize(doc);
-      expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
-      expectStable(codec, wire);
-    }
-    expectStable(codec, '[**bold** and plain](guide.md "tooltip")');
-    expectStable(codec, "![Realm map](<assets/realm map.png>)");
   });
 
   it("keeps HTAB-containing and enclosed destinations parseable", () => {

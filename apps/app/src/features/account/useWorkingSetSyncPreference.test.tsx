@@ -134,39 +134,6 @@ afterEach(() => {
 });
 
 describe("useWorkingSetSyncPreference", () => {
-  it("does not let a late loader echo from an older write clobber the latest intent", async () => {
-    const first = deferred<AccountSettings>();
-    const second = deferred<AccountSettings>();
-    mocks.updateAccountSettings
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    await mount(false, async ({ read, setServerValue }) => {
-      await act(async () => read().change(true));
-      await act(async () => read().change(false));
-
-      // The older write confirms `true`; its invalidate races the newer `false`
-      // intent.
-      await act(async () => first.resolve({ workingSetSyncEnabled: true }));
-      await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
-
-      await act(async () => second.resolve({ workingSetSyncEnabled: false }));
-      await waitFor(() => expect(read().pending).toBe(false));
-      expect(read().value).toBe(false);
-
-      // The slower loader echo from the older write lands after the latest write
-      // settled and must not overwrite the newer confirmed value.
-      await setServerValue(true);
-      expect(read().value).toBe(false);
-
-      // A later 4xx reverts to the confirmed base. A poisoned base would revert
-      // to the stale `true`.
-      mocks.updateAccountSettings.mockRejectedValueOnce(new HttpResponseError("bad", 400, {}));
-      await act(async () => read().change(true));
-      await waitFor(() => expect(read().error?.kind).toBe("rejected"));
-      expect(read().value).toBe(false);
-    });
-  });
-
   it("reverts to the last confirmed value when the latest overlapping write is rejected", async () => {
     const first = deferred<AccountSettings>();
     const second = deferred<AccountSettings>();

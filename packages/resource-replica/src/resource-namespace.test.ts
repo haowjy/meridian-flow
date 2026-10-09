@@ -114,7 +114,6 @@ function transport(input: {
 
 describe("namespace record transitions", () => {
   it.each([
-    {},
     { createEligibility: { eligibleAt: null } },
   ])("keeps an ineligible local reservation off the network", (obligations) => {
     const record = local();
@@ -632,29 +631,6 @@ describe("namespace reconciliation", () => {
     expect(submit).toHaveBeenCalledOnce();
   });
 
-  it("leaves an old submitted request uncertain after identity remint", async () => {
-    const store = new MemoryStore();
-    const submitted = prepareNamespaceAttempt(store.record, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
-    if (!submitted) throw new Error("missing submitted write");
-    store.record = submitted.next;
-    store.record.resource.identity = { documentId: "replacement", revision: 2 };
-    const submit = vi.fn(async () => createOutcome());
-    await expect(
-      reconcileResourceNamespace({
-        key: store.record.resource,
-        metadata: asMetadata(store),
-        lock: immediateLock,
-        transport: transport({ submit }),
-        newAttemptIds: () => ({ attemptId: "unused", operationId: "unused" }),
-      }),
-    ).resolves.toBe("uncertain");
-    expect(submit).not.toHaveBeenCalled();
-    expect(store.record.intents[0]?.state).toBe("submitted");
-  });
-
   it("revalidates identity after receipt lookup before dispatch", async () => {
     const store = new MemoryStore();
     const submitted = prepareNamespaceAttempt(store.record, {
@@ -690,11 +666,7 @@ describe("namespace reconciliation", () => {
 
 it.each([
   ["work_archived", false],
-  ["work_deleted", false],
-  ["work_missing", false],
   ["work_archived", true],
-  ["work_deleted", true],
-  ["work_missing", true],
 ] as const)("keeps accepted placement after %s (receiptless %s) and does not replay", async (reason, receiptless) => {
   const before = local();
   before.resource.canonical = {

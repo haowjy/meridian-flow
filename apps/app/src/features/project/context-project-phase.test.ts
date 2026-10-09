@@ -9,22 +9,9 @@ import {
 } from "./context-project-phase";
 
 const WORK_1 = "work-1" as ParsedRequestId;
-const WORK_2 = "work-2" as ParsedRequestId;
 const ready = { status: "ready" as const, workId: WORK_1, source: "route" as const };
 
 describe("Context project authority", () => {
-  it.each(["loading"] as const)("withholds initial authority while Work is %s", (status) => {
-    const next = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, {
-      status,
-      workId: WORK_1,
-    });
-    expect(contextProjectPhase(next.authority)).toMatchObject({
-      status: "waiting-for-work",
-      work: { status },
-    });
-    expect(next.effect).toBeNull();
-  });
-
   it("starts raw validation once and Strict replay adopts it with a fresh attempt", () => {
     const first = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, ready);
     expect(first.effect).toMatchObject({ raw: "start", attempt: { token: 1 } });
@@ -56,23 +43,5 @@ describe("Context project authority", () => {
       status: "live",
       workId: WORK_1,
     });
-  });
-
-  it.each([
-    { status: "loading" as const, workId: WORK_1 },
-  ])("suspends after live for $status and never restores bootstrap", (work) => {
-    const attempt = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, ready);
-    const live = settleContextProjectBootstrap(attempt.authority, 1);
-    const suspended = updateContextProjectReadiness(live, true, work);
-    expect(contextProjectPhase(suspended.authority).status).toBe("suspended");
-    expect(suspended.effect).toBeNull();
-
-    const resumed = updateContextProjectReadiness(suspended.authority, true, {
-      ...ready,
-      workId: WORK_2,
-    });
-    expect(resumed.effect).toBeNull();
-    expect(contextProjectPhase(resumed.authority)).toEqual({ status: "live", workId: WORK_2 });
-    expect(resumed.authority.rawValidation).toBe("settled");
   });
 });

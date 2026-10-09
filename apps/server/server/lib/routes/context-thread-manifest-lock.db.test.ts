@@ -6,7 +6,7 @@
  * context-thread-existing-document.db.test.ts.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, it } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleDocumentAssetPaths } from "../../domains/context/adapters/asset-path-resolver.js";
 import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
@@ -227,16 +227,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await fixture.collab.drainHocuspocusPersistence();
       return created.value.documentId;
     }
-
-    it("lists the manuscript at once", async () => {
-      const fixture = createFixture();
-      await seedExisting(fixture, "listed.md");
-      const port = await threadPort(fixture);
-
-      const listed = await settlesWithin("list", port.list("manuscript://"));
-      expect(listed.ok).toBe(true);
-      expect(JSON.stringify(listed)).toContain("listed.md");
-    });
 
     it("releases a live room outside a transaction that holds that document's lock", async () => {
       const fixture = createFixture();

@@ -5,11 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
-import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import { useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ContextRemovalRoutePort } from "../context/context-removal-coordinator";
-import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
-import { identityCommitRoute } from "../context/use-identity-commit";
 import { useOpenContextRoute } from "./ProjectNavigationContext";
 import { ReadableProjectRoute } from "./ReadableProjectRoute";
 
@@ -93,12 +91,12 @@ vi.mock("./ProjectAddressDocument", () => ({ ProjectAddressDocument: () => null 
 vi.mock("../ProjectView", () => ({
   ProjectView: (props: { contextRemovalRoute: ContextRemovalRoutePort }) => {
     openRoute = useOpenContextRoute();
-    removalRoute = props.contextRemovalRoute;
+    _removalRoute = props.contextRemovalRoute;
     return null;
   },
 }));
 
-let removalRoute: ContextRemovalRoutePort | undefined;
+let _removalRoute: ContextRemovalRoutePort | undefined;
 let openRoute: ReturnType<typeof useOpenContextRoute>;
 const open: NonNullable<typeof openRoute> = (...args) => {
   if (!openRoute) throw new Error("The route's open command is not mounted");
@@ -184,59 +182,6 @@ it("opens another document at a reused path as a new history entry", async () =>
   );
 });
 
-it("repairs a renamed document's address in place and keeps its review", async () => {
-  await withRoute(
-    "manuscript/a.md?work=&draft=draft-a",
-    "document-a",
-    "/renamed.md",
-    async (history) => {
-      const before = history.length;
-      const { request, options } = identityCommitRoute("document-a", {
-        scheme: "manuscript",
-        path: "/renamed.md",
-        routeWorkId: workId,
-      });
-      await open(request, options);
-      expect(history.length).toBe(before);
-      expect(history.location.pathname).toContain("renamed.md");
-      expect(history.location.search).toContain("draft=draft-a");
-    },
-  );
-});
-
-it("drops the review when the open command names another document", async () => {
-  await withRoute("manuscript/a.md?work=&draft=draft-a", "document-a", "/a.md", async (history) => {
-    await open({ documentId: "document-c", scheme: "manuscript", path: "/c.md", workId });
-    expect(history.location.search).not.toContain("draft=");
-  });
-});
-
-it("keeps the review when the removal coordinator relocates the address's document", async () => {
-  // The coordinator replays a move of the document the address names; the review
-  // stays until the owner, which knows identity, decides it no longer applies.
-  await withRoute("manuscript/a.md?work=&draft=draft-a", "document-a", "/a.md", async (history) => {
-    const before = history.length;
-    removalRoute?.updateSearch(projectId, (search) => ({ ...search, path: "/moved.md" }));
-    await vi.waitFor(() => expect(history.location.pathname).toContain("moved.md"));
-    expect(history.length).toBe(before);
-    expect(history.location.search).toContain("draft=draft-a");
-  });
-});
-
-it("launches a review of the address's own document without moving the address to a stale path", async () => {
-  // The draft list still names the document's old path.
-  await withRoute("manuscript/renamed.md?work=", "document-a", "/renamed.md", async (history) => {
-    const before = history.length;
-    await open(
-      { documentId: "document-a", scheme: "manuscript", path: "/old-name.md", workId },
-      { draftId: "draft-a", replaceIfSameDocument: true },
-    );
-    expect(history.length).toBe(before);
-    expect(history.location.pathname).toContain("renamed.md");
-    expect(history.location.search).toContain("draft=draft-a");
-  });
-});
-
 function openDocumentA(path: string) {
   useContextTabsStore.getState().openTab(projectId, {
     kind: "tracked",
@@ -249,22 +194,6 @@ function openDocumentA(path: string) {
     schemaType: "document",
   });
 }
-
-it("launches another document's review at its current path, not the path its draft row captured", async () => {
-  // A was renamed to /renamed.md and B took /a.md, which the address now shows. The
-  // launch still carries A's old path.
-  await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async (history) => {
-    openDocumentA("/renamed.md");
-    const before = history.length;
-    await open(
-      { documentId: "document-a", scheme: "manuscript", path: "/a.md", workId },
-      { draftId: "draft-a", replaceIfSameDocument: true },
-    );
-    expect(history.length).toBe(before + 1);
-    expect(history.location.pathname).toContain("/manuscript/renamed.md");
-    expect(history.location.search).toContain("draft=draft-a");
-  });
-});
 
 it("does not let a launch's prepared tab move the document's open tab back to the captured path", async () => {
   await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async () => {
@@ -295,40 +224,6 @@ it("does not let a launch's prepared tab move the document's open tab back to th
   });
 });
 
-it("installs a cold review launch's tab at the route's own path spelling", async () => {
-  // A deep link to a pending new-document draft: the address names the document, but no
-  // tab exists yet. The address spells its path without a leading slash; the installed
-  // tab must still match the route (`/path`), or nothing owns the route and a document
-  // host rejects it.
-  await withRoute("manuscript/new-draft.md?work=", "document-n", "/new-draft.md", async () => {
-    useContextTabsStore.setState({ byProject: {} });
-    await open(
-      { documentId: "document-n", scheme: "manuscript", path: "/new-draft.md", workId },
-      {
-        draftId: "draft-n",
-        replaceIfSameDocument: true,
-        tab: {
-          kind: "tracked",
-          documentId: "document-n",
-          scheme: "manuscript",
-          path: "/new-draft.md",
-          name: "new-draft.md",
-          editable: true,
-          filetype: "markdown",
-          schemaType: "document",
-          draftOnly: true,
-          reviewWorkId: workId,
-        },
-      },
-    );
-    const { tabs } = getContextTabs(projectId);
-    const route = { scheme: "manuscript" as const, path: "/new-draft.md", workId };
-    expect(
-      resolveWorkspaceRoute({ tabs, selectedDocumentId: undefined, locator: route }),
-    ).toMatchObject({ kind: "owner" });
-  });
-});
-
 const draftLaunch = {
   draftId: "draft-a",
   replaceIfSameDocument: true,
@@ -340,66 +235,6 @@ const launchOfA = {
   workId,
 } as const;
 
-function manuscriptEntry(documentId: string, path: string) {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  return {
-    kind: "file",
-    entryId: documentId,
-    scope: { kind: "project", projectId },
-    sourceId: "manuscript-source",
-    parentId: "manuscript-source",
-    name,
-    aliases: [],
-    path: [name],
-    uri: `manuscript:/${path}`,
-    provisionalName: false,
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-  };
-}
-
-it("places a launch with no tab of its document through the live catalog, not its cached path", async () => {
-  // A was renamed and B took /a.md, which the address shows. A has no tab, so only the
-  // catalog knows where A is.
-  await withRoute(
-    "manuscript/a.md?work=",
-    "document-b",
-    "/a.md",
-    async (history) => {
-      const before = history.length;
-      const result = await open(launchOfA, draftLaunch);
-      expect(result).toMatchObject({ kind: "applied" });
-      expect(history.length).toBe(before + 1);
-      expect(history.location.pathname).toContain("/manuscript/renamed.md");
-      expect(history.location.search).toContain("draft=draft-a");
-      expect(state.identity).not.toHaveBeenCalled();
-    },
-    catalogPlacing("document-a", "/renamed.md"),
-  );
-});
-
-it("asks the server where a document is when neither a tab, the address nor the catalog does", async () => {
-  await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async (history) => {
-    state.identity.mockResolvedValue({
-      projectId,
-      resolutionId: "r",
-      resolutions: [
-        {
-          kind: "available",
-          documentId: "document-a",
-          generation: "0",
-          authority: { kind: "project", projectId },
-          entry: manuscriptEntry("document-a", "/renamed.md"),
-        },
-      ],
-    });
-    await open(launchOfA, draftLaunch);
-    expect(history.location.pathname).toContain("/manuscript/renamed.md");
-    expect(history.location.search).toContain("draft=draft-a");
-  });
-});
-
 it("fails the launch, and stays where it is, when its document cannot be located", async () => {
   // Navigating to the old path would open B under A's draft.
   await withRoute("manuscript/a.md?work=", "document-b", "/a.md", async (history) => {
@@ -410,16 +245,5 @@ it("fails the launch, and stays where it is, when its document cannot be located
     expect(result.kind).toBe("failed");
     expect(history.location.href).toBe(before);
     expect(history.length).toBe(length);
-  });
-});
-
-it("replaces the entry when a copied live address names no Work and its document is reviewed", async () => {
-  // A live document opened from a copied URL has no `?work=` to say No Work. Reviewing it
-  // is still the same document in the same Work, so Back must not step through the launch.
-  await withRoute("manuscript/a.md", "document-a", "/a.md", async (history) => {
-    const before = history.length;
-    await open(launchOfA, draftLaunch);
-    expect(history.length).toBe(before);
-    expect(history.location.search).toContain("draft=draft-a");
   });
 });

@@ -231,9 +231,10 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 - **Database checks** run through root `pnpm test:db`, whose owned local
   database lifecycle is in `tools/dev/run-db-tests.ts`. The closed manifest in
   `apps/server/vitest.db.config.ts` must exactly match every discovered
-  `*.db.test.ts` suite in the server and database package. A real-Postgres
-  suite with another suffix remains outside the gate until it is renamed and
-  registered. Do not use a separate root Vitest DB wrapper.
+  `*.db.test.ts` suite under `apps/server`, `packages/database`, and `tools/dev`.
+  A real-Postgres suite with another suffix remains outside the gate until it
+  is renamed and registered. The combined `pnpm test:all` run includes this
+  same DB project; do not duplicate its manifest or lifecycle.
 - **Browser/runtime checks** should use portless HTTPS routes, never raw ports,
   so tests exercise the real proxy/TLS path.
 

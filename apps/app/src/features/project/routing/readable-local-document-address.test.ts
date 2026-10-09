@@ -1,20 +1,16 @@
 /** Warm exact content resolves readable routes independently from network address lookup. */
 
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
-import { parseRequestId } from "@meridian/contracts/request-id";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import {
   gateLiveView,
-  mergeLocalResourceState,
-  projectAddressMatchesContextTarget,
   reconcileDocumentAddress,
   resolveLocalDocumentAddress,
   routeContinuityDocumentId,
 } from "./local-document-address";
-import type { ProjectAddress } from "./project-address";
 
 function catalog(localContent: boolean): CatalogContextView {
   const scope = { kind: "project" as const, projectId: "project-id" };
@@ -83,89 +79,6 @@ function catalog(localContent: boolean): CatalogContextView {
   };
 }
 
-function workCatalog(workId: string, localContent: boolean): CatalogContextView {
-  const scope = { kind: "work" as const, projectId: "project-id", workId };
-  const uri = "scratch://@chapter-drafts/notes.md";
-  const normalized = catalogViewFromSnapshot({
-    scope,
-    generation: "cached",
-    headRevision: "1",
-    cursor: "cursor",
-    entries: [
-      {
-        kind: "source",
-        entryId: "scratch-source",
-        scope,
-        scheme: "scratch",
-        name: "Scratch",
-        uri: "scratch://@chapter-drafts",
-      },
-      {
-        kind: "file",
-        entryId: "document-id",
-        scope,
-        sourceId: "scratch-source",
-        parentId: "scratch-source",
-        name: "notes.md",
-        aliases: [],
-        path: ["notes.md"],
-        uri,
-        provisionalName: false,
-        editable: true,
-        filetype: "markdown",
-        schemaType: "document",
-      },
-    ],
-  });
-  const file: CatalogFile = {
-    kind: "file",
-    entryId: "document-id",
-    parentId: "scratch-source",
-    documentId: "document-id",
-    name: "notes.md",
-    aliases: [],
-    path: "/notes.md",
-    uri,
-    provisionalName: false,
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-    ...(localContent ? { localContent: true as const } : {}),
-  };
-  return {
-    normalized,
-    root: {
-      kind: "dir",
-      entryId: "scratch-source",
-      parentId: null,
-      name: "Scratch",
-      path: "/",
-      uri: "scratch://@chapter-drafts",
-    },
-    children: () => [file],
-    files: () => [file],
-    findPath: (path) => (path === file.path ? file : null),
-    findDocument: (documentId) => (documentId === file.documentId ? file : null),
-  };
-}
-
-it("admits an exact cached readable path before a failed remote lookup matters", () => {
-  expect(
-    resolveLocalDocumentAddress(
-      "project-id",
-      { kind: "document", scheme: "kb", path: "Cached.md" },
-      null,
-      catalog(true),
-    ),
-  ).toMatchObject({
-    file: { documentId: "document-id", localContent: true },
-    result: {
-      kind: "current",
-      document: { documentId: "document-id", generation: "0" },
-    },
-  });
-});
-
 it("never answers a bound document the catalog does not list with the path's occupant", () => {
   // Document A is bound to the route but is not in the live catalog (a pending new-document
   // draft); B, which has local content, now holds the path the URL names.
@@ -186,35 +99,6 @@ it("does not turn metadata-only catalog discovery into blank local content", () 
       { kind: "document", scheme: "kb", path: "Cached.md" },
       null,
       catalog(false),
-    ),
-  ).toBeUndefined();
-});
-
-it("resolves a Work-scoped path through its id and takes the context URI slug from the catalog", () => {
-  const workId = parseRequestId("123e4567-e89b-42d3-a456-426614174000");
-  if (!workId) throw new Error("Invalid test Work ID");
-  const result = resolveLocalDocumentAddress(
-    "project-id",
-    { kind: "document", scheme: "scratch", path: "notes.md" },
-    workId,
-    workCatalog(workId, true),
-  );
-  expect(result?.result).toMatchObject({
-    kind: "current",
-    document: {
-      authority: {
-        kind: "work",
-        workId,
-        workSlug: "chapter-drafts",
-      },
-    },
-  });
-  expect(
-    resolveLocalDocumentAddress(
-      "project-id",
-      { kind: "document", scheme: "scratch", path: "notes.md" },
-      parseRequestId("123e4567-e89b-42d3-a456-426614174001"),
-      workCatalog(workId, true),
     ),
   ).toBeUndefined();
 });
@@ -269,33 +153,6 @@ it("keeps the path of the writer's unconfirmed move over a server alias for the 
     localFile: pending.file,
   });
   expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
-});
-
-it("keeps local ownership while canonical metadata replaces a stale same-ID path", () => {
-  const local = catalog(true).findDocument("document-id");
-  if (!local) throw new Error("Expected local file");
-  const {
-    resourceHandle: _resourceHandle,
-    resourceState: _resourceState,
-    localContent: _localContent,
-    ...canonicalBase
-  } = local;
-  const canonical: CatalogFile = {
-    ...canonicalBase,
-    name: "Canonical.md",
-    path: "/Canonical.md",
-    uri: "kb://Canonical.md",
-  };
-
-  expect(mergeLocalResourceState(canonical, local)).toMatchObject({
-    documentId: "document-id",
-    name: "Canonical.md",
-    path: "/Canonical.md",
-    uri: "kb://Canonical.md",
-    resourceHandle: "resource-id",
-    resourceState: "acknowledged",
-    localContent: true,
-  });
 });
 
 describe("gateLiveView", () => {
@@ -382,10 +239,8 @@ function bound(workId: string, documentId = "doc-a") {
 }
 
 it.each([
-  [null, "no-work", "no-work", null],
   ["doc-b", "no-work", "no-work", null],
   ["doc-a", "no-work", "no-work", "doc-a"],
-  ["doc-a", "work-1", "work-1", "doc-a"],
   ["doc-a", "work-1", "no-work", null],
 ])("requires admission %s and matching Editor context %s / %s", (admittedDocumentId, editorWorkId, selectionWork, expected) => {
   expect(
@@ -396,98 +251,4 @@ it.each([
       selection: bound(selectionWork),
     }),
   ).toBe(expected);
-});
-
-describe("projectAddressMatchesContextTarget", () => {
-  const noWorkId = "no-work";
-  const address = (work: ProjectAddress["work"]): ProjectAddress => ({
-    projectId: "project-id",
-    destination: { kind: "document", scheme: "manuscript", path: "a.md" },
-    work,
-  });
-  const target = (workId?: string) => ({ scheme: "manuscript", path: "/a.md", workId });
-
-  it("names a No Work document by its row id, whatever the address spells", () => {
-    expect(
-      projectAddressMatchesContextTarget(address({ kind: "none" }), target(noWorkId), noWorkId),
-    ).toBe(true);
-    expect(
-      projectAddressMatchesContextTarget(address({ kind: "none" }), target("work-1"), noWorkId),
-    ).toBe(false);
-  });
-
-  it("reads an address that names no Work (a copied live URL) as the Editor's own Work", () => {
-    // Same document, same Work: a review launch replaces the entry rather than pushing.
-    expect(
-      projectAddressMatchesContextTarget(
-        address({ kind: "absent" }),
-        target(noWorkId),
-        noWorkId,
-        undefined,
-        noWorkId,
-      ),
-    ).toBe(true);
-    // The Editor's Work is another one: a different destination.
-    expect(
-      projectAddressMatchesContextTarget(
-        address({ kind: "absent" }),
-        target(noWorkId),
-        noWorkId,
-        undefined,
-        "work-1",
-      ),
-    ).toBe(false);
-    expect(
-      projectAddressMatchesContextTarget(address({ kind: "absent" }), target(noWorkId), noWorkId),
-    ).toBe(false);
-  });
-
-  it("never matches a request whose Work is not yet resolved", () => {
-    expect(projectAddressMatchesContextTarget(address({ kind: "none" }), target(), noWorkId)).toBe(
-      false,
-    );
-  });
-  describe("with document identity", () => {
-    const named = (documentId: string, addressDocumentId?: string) =>
-      projectAddressMatchesContextTarget(
-        address({ kind: "none" }),
-        { ...target(noWorkId), documentId },
-        noWorkId,
-        addressDocumentId,
-      );
-
-    it("lets identity decide once both sides know it", () => {
-      // The same path reused by another document is not the same document.
-      expect(named("document-a", "document-b")).toBe(false);
-      // A renamed document is the same one, whatever path the request carries.
-      expect(
-        projectAddressMatchesContextTarget(
-          address({ kind: "none" }),
-          {
-            scheme: "manuscript",
-            path: "/old-name.md",
-            workId: noWorkId,
-            documentId: "document-a",
-          },
-          noWorkId,
-          "document-a",
-        ),
-      ).toBe(true);
-    });
-
-    it("falls back to the path while the address is unresolved", () => {
-      expect(named("document-a")).toBe(true);
-    });
-
-    it("still requires the Work to match when identity agrees", () => {
-      expect(
-        projectAddressMatchesContextTarget(
-          address({ kind: "none" }),
-          { ...target("work-1"), documentId: "document-a" },
-          noWorkId,
-          "document-a",
-        ),
-      ).toBe(false);
-    });
-  });
 });

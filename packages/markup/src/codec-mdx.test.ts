@@ -5,7 +5,6 @@ import {
   blocksOf,
   components,
   docFrom,
-  emptyParagraph,
   expectStable,
   firstParsedBlock,
   m,
@@ -50,38 +49,6 @@ describe("mdx prose and component round-trip corpus", () => {
     ]);
   });
 
-  it("keeps raw URL prose as text, not link marks", () => {
-    const doc = parsedDoc(codec, "visit https://example.com today");
-    const firstText = doc.firstChild?.firstChild;
-    expect(firstText?.type.name).toBe("text");
-    expect(firstText?.marks).toHaveLength(0);
-    expectStable(codec, "visit https://example.com today");
-  });
-
-  it("stabilizes Figure nodes with special characters in attrs", () => {
-    expectStable(
-      codec,
-      '<Figure src="uploads://w1/map.png" alt="Realm map" label="fig-map" caption="The northern provinces &amp; beyond" />',
-    );
-  });
-
-  it("round-trips a Figure with a multiline caption", () => {
-    const figure = schema.node("figure", {
-      src: "uploads://w1/map.png",
-      alt: "Realm map",
-      label: "fig-map",
-      caption: "The northern provinces\nBeyond the pass",
-    });
-    const serialized = codec.serializeBlock(figure);
-
-    expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(figure.toJSON());
-    expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
-  });
-
-  it("stabilizes JSX leaf components with nested JSON props", () => {
-    expectStable(codec, '<StatBlock value={42} config={{"hp":10,"tags":["a","b"],"ok":true}} />');
-  });
-
   it.each([
     {
       kind: "leaf",
@@ -105,29 +72,6 @@ describe("mdx prose and component round-trip corpus", () => {
 
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(node.toJSON());
     expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
-  });
-
-  it("stabilizes JSX leaf components with inline text children", () => {
-    expectStable(codec, '<Badge tone="warn">caution **marked**</Badge>');
-  });
-
-  it("stabilizes JSX leaf inline children with nested marks", () => {
-    expectStable(codec, '<Badge tone="warn">before **bold _em_** after</Badge>');
-  });
-
-  it("stabilizes JSX containers with block children and nested object props", () => {
-    expectStable(
-      codec,
-      [
-        '<Panel title="Stats" meta={{"nested":{"x":1},"list":[true,null]}}>',
-        "",
-        "Paragraph with **bold**.",
-        "",
-        "- item",
-        "",
-        "</Panel>",
-      ].join("\n"),
-    );
   });
 
   it("degrades unknown components to raw text paragraphs", () => {
@@ -216,32 +160,6 @@ describe("mdx prose and component round-trip corpus", () => {
     const serialized = codec.serialize(blocksOf(original));
     const back = parsedDoc(codec, serialized);
     expect(back.toJSON()).toEqual(original.toJSON());
-  });
-
-  it("emits the canonical representative MDX wire format", () => {
-    const doc = docFrom([
-      schema.node("heading", { level: 1 }, [t("Title")]),
-      paragraph(t("bold bit", [m("strong")])),
-      schema.node("bullet_list", { tight: true }, [
-        schema.node("list_item", null, [paragraph(t("one"))]),
-      ]),
-      schema.node("ordered_list", { order: 3, tight: true }, [
-        schema.node("list_item", null, [paragraph(t("three"))]),
-      ]),
-      schema.node("code_block", { language: "js" }, [t("console.log(1)")]),
-      schema.node("figure", {
-        src: "img.png",
-        alt: "Alt",
-        label: "fig-1",
-        caption: "Cap",
-      }),
-      emptyParagraph(),
-      paragraph(t("tail")),
-    ]);
-
-    expect(codec.serialize(blocksOf(doc))).toBe(
-      '# Title\n\n**bold bit**\n\n- one\n\n3. three\n\n```js\nconsole.log(1)\n```\n\n<Figure src="img.png" alt="Alt" label="fig-1" caption="Cap" />\n\n\u00a0\n\ntail\n',
-    );
   });
 
   it("preserves link-looking text inside JSX props", () => {

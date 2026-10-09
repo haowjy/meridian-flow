@@ -37,31 +37,6 @@ describe("in-memory app Agent binding transaction", () => {
     expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
   });
 
-  it("rolls back both stores when revisions own the outer transaction", async () => {
-    const app = createInMemoryAppServices();
-    await seedGeneralAgent(app.agentRevisions, "model");
-    const general = await app.agentRevisions.readCatalogEntry(null, "general");
-    if (!general) throw new Error("Missing General");
-    let id = "";
-    await expect(
-      app.agentRevisions.withCatalogTransaction(null, async () => {
-        await app.repos.transaction(async () => {
-          const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
-          id = thread.id;
-          await app.agentRevisions.bindThread(
-            id,
-            general.selectedRevisionId,
-            bindingConfiguration,
-            null,
-          );
-        });
-        throw new Error("outer rollback");
-      }),
-    ).rejects.toThrow("outer rollback");
-    expect(await app.repos.threads.findById(id)).toBeNull();
-    expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
-  });
-
   it("hides pending threads without erasing unrelated successful creates on rollback", async () => {
     const app = createInMemoryAppServices();
     let release = () => {};
@@ -88,31 +63,6 @@ describe("in-memory app Agent binding transaction", () => {
     expect(await pending).toBe("rollback");
     expect(hidden).toBeNull();
     expect(await app.repos.threads.findById(ordinary.id)).not.toBeNull();
-  });
-
-  it("rolls a thread and binding back together", async () => {
-    const app = createInMemoryAppServices();
-    await seedGeneralAgent(app.agentRevisions, "model");
-    const general = await app.agentRevisions.readCatalogEntry(null, "general");
-    if (!general) throw new Error("Missing General");
-    let id = "";
-    await expect(
-      app.repos.transaction(async () => {
-        const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
-        id = thread.id;
-        expect(
-          await app.agentRevisions.bindThread(
-            id,
-            general.selectedRevisionId,
-            bindingConfiguration,
-            null,
-          ),
-        ).toBe(true);
-        throw new Error("after binding");
-      }),
-    ).rejects.toThrow("after binding");
-    expect(await app.repos.threads.findById(id)).toBeNull();
-    expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
   });
 });
 

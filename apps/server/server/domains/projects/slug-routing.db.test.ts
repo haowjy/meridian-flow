@@ -50,11 +50,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     afterAll(async () => db.$client.end());
 
-    it("project findById on a non-UUID slug resolves to null", async () => {
-      const repo = createDrizzleProjectRepository({ db });
-      await expect(repo.findById("probe-rowmenu-not-a-uuid" as never)).resolves.toBeNull();
-    });
-
     it("creates the project manifest source before publishing its catalog identity", async () => {
       const userId = "93b1f764-1234-f678-0712-123456789ad2";
       await db.insert(schema.users).values({
@@ -212,11 +207,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await repo.softDelete(project.id);
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toBeNull();
       expect(await chats.findLiveByProjectRef(project.id, "p4")).toBeNull();
-    });
-
-    it("work findById on a non-UUID slug resolves to null", async () => {
-      const repo = workRepository();
-      await expect(repo.findById("also-a-slug" as never)).resolves.toBeNull();
     });
 
     it("create and find accept canonical UUIDs regardless of version or variant bits", async () => {

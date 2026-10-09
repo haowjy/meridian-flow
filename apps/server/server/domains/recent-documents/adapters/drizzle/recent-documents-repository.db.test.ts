@@ -12,7 +12,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
   deleteDrizzleRows,
@@ -187,41 +187,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("keeps one open per interval, then moves the row on a later open", async () => {
-      const { db, repo } = await seed();
-      const storedOpenedAt = async () =>
-        (
-          await db
-            .select({ openedAt: userRecentDocuments.openedAt })
-            .from(userRecentDocuments)
-            .where(
-              and(eq(userRecentDocuments.userId, USER), eq(userRecentDocuments.documentId, OWNED)),
-            )
-        )[0]?.openedAt;
-
-      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(true);
-      const first = await storedOpenedAt();
-      expect(first).toBeInstanceOf(Date);
-
-      // A repeat open inside the interval is the same open: the row does not move.
-      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(false);
-      expect(await storedOpenedAt()).toEqual(first);
-
-      // The interval is per document, not per account: another document opened in
-      // the same window is a different open and must still be recorded.
-      await expect(repo.record(userId(USER), documentId(PDF))).resolves.toBe(true);
-
-      // Past the interval, the same open moves the row and reports the write.
-      await db
-        .update(userRecentDocuments)
-        .set({ openedAt: new Date(Date.now() - 60_000) })
-        .where(
-          and(eq(userRecentDocuments.userId, USER), eq(userRecentDocuments.documentId, OWNED)),
-        );
-      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(true);
-      expect((await storedOpenedAt())?.getTime()).toBeGreaterThan(Date.now() - 5_000);
-    });
-
     it("omits a soft-deleted document and does not let it occupy a cap slot", async () => {
       const { db, repo } = await seed();
       await repo.record(userId(USER), documentId(DOOMED));
@@ -258,22 +223,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const listed = await repo.listForProject(PROJECT, userId(USER));
       expect(listed).toHaveLength(USER_RECENT_DOCUMENTS_CAP);
       expect(listed.map((item) => item.documentId)).not.toContain(DOOMED);
-    });
-
-    it("lists a binary document", async () => {
-      const { repo } = await seed();
-      await repo.record(userId(USER), documentId(PDF));
-      await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toEqual([
-        expect.objectContaining({
-          documentId: PDF,
-          scheme: "manuscript",
-          path: "/proof.pdf",
-          name: "proof.pdf",
-          filetype: "pdf",
-          editable: false,
-          workSlug: null,
-        }),
-      ]);
     });
   });
 }

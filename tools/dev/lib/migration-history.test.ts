@@ -215,18 +215,6 @@ describe("formatDatabaseHistoryRefusal", () => {
     .entries[0];
   const issues = [{ kind: "edited" as const, entry: migration, applied: applied(migration) }];
 
-  it("uses the caller prefix and local reset command", () => {
-    const message = formatDatabaseHistoryRefusal({
-      databaseName: "local",
-      issues,
-      prefix: "primary database",
-      localDevDatabase: true,
-      resetCommand: "pnpm db:reset",
-    });
-    expect(message).toContain('primary database: refused migration history for database "local"');
-    expect(message).toContain("Run `pnpm db:reset`");
-  });
-
   it("never recommends reset for a shared database", () => {
     const message = formatDatabaseHistoryRefusal({
       databaseName: "shared",

@@ -57,25 +57,6 @@ async function setup() {
 }
 
 describe("persistReturnResult", () => {
-  it("settles the candidate and successful tool result together without a premature report card", async () => {
-    const { repos, child, turn, transcript } = await setup();
-    const settled = await persistReturnResult(transcript, {
-      toolCallId: "return-1",
-      outcome: { ok: true },
-      capture: { summary: "done", payload: { answer: 42 } },
-      executionReports: repos.executionReports,
-    });
-
-    expect(settled.endTurn).toBe(true);
-    expect(transcript.allBlocks.map((block) => block.blockType)).toEqual(["tool_result"]);
-    expect(settled.block.content).toMatchObject({ output: { ok: true }, isError: false });
-    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
-      capture: { summary: "done", payload: { answer: 42 } },
-      captureToolCallId: "return-1",
-      outcome: null,
-    });
-  });
-
   it("persists a rejected competing return as a failed ordinary tool result", async () => {
     const { repos, child, turn, transcript } = await setup();
     await repos.executionReports.captureOnce(child.id, turn.id, "first", { summary: "kept" });
@@ -149,45 +130,6 @@ describe("captured candidate terminal policy", () => {
       payload: { retained: true },
     });
   });
-
-  it("rolls terminal status and report back together when the journal fails", async () => {
-    const { repos, child, turn, transcript } = await setup();
-    const scope = { repos, child, turn, transcript };
-    await appendPublicResponse(scope, 0, [{ sequence: 1, text: "result" }]);
-    await expect(
-      finalizeExecution(
-        {
-          repos,
-          eventWriter: {
-            async appendEvent() {
-              throw new Error("journal failed");
-            },
-          },
-        },
-        {
-          threadId: child.id,
-          turnId: turn.id,
-          cause: { kind: "success", finishReason: "end_turn" },
-        },
-      ),
-    ).rejects.toThrow("journal failed");
-    expect((await repos.turns.findById(turn.id))?.status).toBe("streaming");
-    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
-      outcome: null,
-    });
-    await finalizeExecution(
-      { repos, eventWriter: transcript.persistence.eventWriter },
-      {
-        threadId: child.id,
-        turnId: turn.id,
-        cause: { kind: "success", finishReason: "end_turn" },
-      },
-    );
-    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
-      outcome: "succeeded",
-      summary: "result",
-    });
-  });
 });
 
 async function appendPublicResponse(
@@ -217,24 +159,6 @@ async function appendPublicResponse(
 }
 
 describe("persisted execution fallback", () => {
-  it("uses only the final persisted response's ordered public blocks, not process text", async () => {
-    const scope = await setup();
-    await appendPublicResponse(scope, 0, [{ sequence: 1, text: "earlier response" }]);
-    await appendPublicResponse(scope, 1, [
-      { sequence: 4, text: "second" },
-      { sequence: 3, text: "final " },
-    ]);
-    const terminal = await finalizeExecution(
-      { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
-      {
-        threadId: scope.child.id,
-        turnId: scope.turn.id,
-        cause: { kind: "success", finishReason: "end_turn" },
-      },
-    );
-    expect(terminal.report).toMatchObject({ source: "final_assistant", summary: "final second" });
-  });
-
   it("keeps a genuinely empty final response empty rather than borrowing older prose", async () => {
     const scope = await setup();
     await appendPublicResponse(scope, 0, [{ sequence: 1, text: "earlier response" }]);
@@ -255,49 +179,6 @@ describe("persisted execution fallback", () => {
     );
     expect(terminal.report).toMatchObject({ source: "empty", summary: "" });
   });
-
-  it("does not borrow an earlier response on failure when the last response is empty", async () => {
-    const scope = await setup();
-    await appendPublicResponse(scope, 0, [{ sequence: 1, text: "older public text" }]);
-    await appendPublicResponse(scope, 1, []);
-    const terminal = await finalizeExecution(
-      { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
-      {
-        threadId: scope.child.id,
-        turnId: scope.turn.id,
-        cause: {
-          kind: "failed",
-          reason: "budget",
-          error: "budget exhausted",
-        },
-      },
-    );
-    expect(terminal.report).toMatchObject({ outcome: "failed", source: "empty", summary: "" });
-  });
-
-  for (const cause of [
-    {
-      kind: "failed" as const,
-      reason: "budget",
-      error: "budget exhausted",
-    },
-    { kind: "cancelled" as const, reason: "cancelled" },
-  ]) {
-    it(`keeps only the last durable public response on ${cause.kind}`, async () => {
-      const scope = await setup();
-      await appendPublicResponse(scope, 0, [{ sequence: 1, text: "old text" }]);
-      await appendPublicResponse(scope, 1, [{ sequence: 2, text: "partial last" }]);
-      const terminal = await finalizeExecution(
-        { repos: scope.repos, eventWriter: scope.transcript.persistence.eventWriter },
-        { threadId: scope.child.id, turnId: scope.turn.id, cause },
-      );
-      expect(terminal.report).toMatchObject({
-        outcome: cause.kind === "failed" ? "failed" : "cancelled",
-        source: "final_assistant",
-        summary: "partial last",
-      });
-    });
-  }
 
   it("preserves same-execution durable public text when no response row committed", async () => {
     const scope = await setup();

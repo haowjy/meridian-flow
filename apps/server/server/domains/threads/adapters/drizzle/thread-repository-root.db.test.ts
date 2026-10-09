@@ -49,23 +49,7 @@ else
       expect(await persistedRoot(created.id)).toBe(created.id);
     });
 
-    it("a handoff starts its own root and keeps its source turn", async () => {
-      // The source (`ids.threadId`) is itself a root: null parent, self root.
-      const { thread: derived } = await repos.threads.createDerivedPrimary({
-        id: crypto.randomUUID() as never,
-        userId: ids.userId,
-        projectId: ids.projectId,
-        workId: ids.noWorkId,
-        source: { parentThreadId: null, rootThreadId: ids.threadId, spawnDepth: 0 },
-        originType: "handoff",
-        originTurnId: originTurnId as never,
-      });
-      expect(derived.parentThreadId).toBeNull();
-      expect(await persistedRoot(derived.id)).toBe(derived.id);
-      expect(derived.originTurnId).toBe(originTurnId);
-    });
-
-    it("persists a derived primary with the source's sibling lineage", async () => {
+    it("persists a fork in the source's lineage and a handoff in its own", async () => {
       const subagent = await repos.threads.createSubagent({
         userId: ids.userId,
         projectId: ids.projectId,
@@ -93,18 +77,18 @@ else
       expect(fork.parentThreadId).toBe(subagent.parentThreadId);
       expect(fork.spawnDepth).toBe(subagent.spawnDepth);
       expect(await persistedRoot(fork.id)).toBe(ids.threadId);
-    });
 
-    it("roots a subagent at the spawning root", async () => {
-      const subagent = await repos.threads.createSubagent({
+      // A handoff keeps the sibling provenance but starts its own lineage (and so its own Scratch).
+      const { thread: handoff } = await repos.threads.createDerivedPrimary({
+        id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
-        parentThreadId: ids.threadId,
-        rootThreadId: ids.threadId,
-        originTurnId: originTurnId as never,
-        spawnDepth: 1,
+        source: subagent,
+        originType: "handoff",
+        originTurnId: sourceTurn.id,
       });
-      expect(await persistedRoot(subagent.id)).toBe(ids.threadId);
+      expect(handoff.parentThreadId).toBe(subagent.parentThreadId);
+      expect(await persistedRoot(handoff.id)).toBe(handoff.id);
     });
   });
