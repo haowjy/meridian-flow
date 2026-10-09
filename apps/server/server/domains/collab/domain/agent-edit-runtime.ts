@@ -1,6 +1,6 @@
 /** Shared agent-edit and markdown runtime construction for collab compositions. */
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
@@ -17,15 +17,15 @@ import {
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
-import { scopeMarkdownEngineAssetPaths } from "./asset-path-scope.js";
+import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
+import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
-import { documentRevision } from "./document-revision.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
-import { assetPathLinkScope, type DocumentAssetPaths } from "./ports/document-asset-paths.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
@@ -55,25 +55,24 @@ export function createAgentEditRuntime(input: {
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
-  /** Image paths for `asset:<documentId>` ↔ path translation, loaded per operation. */
-  assetPaths: DocumentAssetPaths;
+  /** How links and image sources spell, loaded per operation (contract §4.4). */
+  links: DocumentLinkScopes;
+  /** Durable ahead-ref registration for refs the model's writes mint. */
+  aheadRefs: AheadRefRegistrar;
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
 }) {
   const schema = buildDocumentSchema();
-  // Transitional asset seam (#729/#730 lane F2 replaces both with the document
-  // link scope and the binding pass): parse still claims known image paths, and
-  // serialization spells `asset:` sources through the same per-operation paths.
-  const markupCodec = mdxCodec({
-    schema,
-    assetForPath: (path) => input.assetPaths.resolver.assetForPath(path),
-  });
-  const links = assetPathLinkScope(input.assetPaths.resolver);
-  const codec = createAgentEditCodec(markupCodec, links);
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodecFactory(markupCodec);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();
   const liveUtilityCore = asLiveAgentEditCore(
     createAgentEditCore({
-      documentRevision,
+      links: createScopedDocumentLinks({
+        scopes: input.links,
+        registrar: input.aheadRefs,
+        viewFor: liveViewFor,
+      }),
       journal: input.journal,
       coordinator: input.agentCoordinator ?? input.coordinator,
       lifecycle: input.lifecycle,
@@ -86,10 +85,10 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     }),
   );
-  const markdownDocuments = scopeMarkdownEngineAssetPaths(
+  const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
       codec: markupCodec,
-      links,
+      links: input.links,
       schema,
       model,
       journal: input.journal,
@@ -124,7 +123,7 @@ export function createAgentEditRuntime(input: {
       resolveFiletype: input.resolveDocumentFiletype,
       observeSerializationAnomaly: input.observeSerializationAnomaly,
     }),
-    input.assetPaths,
+    input.links,
   );
   return {
     codec,

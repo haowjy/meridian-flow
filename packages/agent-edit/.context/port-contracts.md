@@ -94,10 +94,23 @@ and multiline blocks as `hash|\nbody`.
 
 Markdown/MDX BlockCodec and MarkCodec registration, unified/remark assembly, and
 component registry types live in `@meridian/markup`. Codec factories require the
-host's ProseMirror `Schema`, and `createAgentEditCodec(markup, links)` the
-host's `DocumentLinkScope` (captured until #729/#730 lane F2 binds one per
-command); agent-edit has no default Meridian schema and no project tree of its
-own.
+host's ProseMirror `Schema`. `createAgentEditCodecFactory(markup)` parses
+purely; every command binds it once at entry (`tool/link-binding.ts`
+`bindLinks`: `links.prepare` then `links.scopeFor`, then `codec.bind(scope)`)
+and passes the bound `AgentEditCodec` everywhere it serializes. agent-edit has
+no default Meridian schema and no project tree of its own.
+
+### DocumentLinksPort (`src/ports/document-links.ts`)
+The host's link scope: `prepare` (one batched load per synchronous block),
+`scopeFor(documentId, context)` (holder and view from the arguments),
+`registerAhead` (durable, outside any transaction) and `revision`.
+`createHolderLinkScope(holder, catalog)` applies the contracts' resolution and
+spelling rules over any `HolderCatalog`, so hosts cannot disagree;
+`createStaticDocumentLinks(catalog)` is the in-memory adapter over a fixed
+catalog (tests, and the server's in-memory composition through its scopes).
+After parse, `links/assign-refs.ts` `bindSources` applies the shipped image
+rule (a known manuscript path becomes `asset:<id>`); the resolver runs it on
+every parse through `ResolveWriteContext.bindWritten`, copies excepted.
 `@meridian/prosemirror-schema` is a devDependency only — host composition passes
 the schema explicitly. This keeps the package host-agnostic without server/infra
 dependency leaks.

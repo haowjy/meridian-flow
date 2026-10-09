@@ -41,40 +41,53 @@ including insert-only normalization; its best-effort EventSink delivery never
 fails the projection. The event carries schema version, node types, and clock
 counts, never prose.
 
-`domain/agent-edit-runtime.ts` is the one place a `mdxCodec` is built, so it is
-also the one place image paths enter serialization. The composition root passes
-a required `DocumentAssetPaths` port (`domain/ports/document-asset-paths.ts`);
-compositions with no project tree (in-memory, tests) pass
-`NO_DOCUMENT_ASSET_PATHS`. The resolver translates `asset:<documentId>` to a
-manuscript-relative path on serialize and back on parse, so an image's identity
-survives a move while markdown keeps a readable path.
+`domain/agent-edit-runtime.ts` is the one place a `mdxCodec` is built. The
+composition root passes a required `DocumentLinkScopes` port
+(`domain/ports/document-link-scope.ts`, adapter in context's
+`adapters/document-link-scope.ts`); compositions with no project tree
+(in-memory, tests) pass `createStaticDocumentLinkScopes()`. Every serialize call
+takes a holder-bound scope that spells stored links and sources: a ref-bearing
+link as its target's current path in the holder's view, an `asset:<documentId>`
+source as its manuscript-relative path, anything else as stored. Parse is pure
+syntax; writes run `bindSources` (agent-edit) after parsing, which turns a
+known manuscript image path into `asset:<id>`, so an image's identity survives
+a move while Markdown keeps a readable path.
 
-The codec asks synchronously, so the paths are loaded per operation, never
-cached: `within(project, op)` reads every manuscript image (deleted ones at
-their last location) in one query and binds them to the operation with
-`AsyncLocalStorage`. `domain/asset-path-scope.ts` wraps every door that
-serializes: the markdown engine, the edit core (`read`/`write` by grant
-project, reversal by document), the branch peer, the reply's save (by thread),
-live turn reversal, draft push and its settlement, and offline reconciliation.
-Draft preview owns one enclosing scope for both live and draft serialization.
-ContextFS search owns one for all matching documents in its source; it supplies
-those document IDs with the first document as the project anchor, so nested
-reads need neither another image-tree load nor another project lookup.
-Wrappers name every method, so a new method does not compile until its scope is
-decided. A nested `within` for the same project reuses the enclosing scope only
-while that operation is still running; a timer that inherited a settled scope
-loads fresh. Effective Markdown and hashline reads load before branch locks;
-Apply resolves branch identities and paths first, then revalidates all branch
-snapshots under their locks. The snapshot precedes locks, so a move that
-lands in between, or one the operation makes itself, shows only in the next
-scope.
+The codec asks synchronously, so the tree is read per operation, never cached.
+`within(key, op)` opens a snapshot keyed by project and reader (the project
+owner unless the door names the account it acts for) and binds it with
+`AsyncLocalStorage`; nothing loads yet. Each operation then calls
+`prepare({ holders, docs, refs, addresses, written })` with what its next
+synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
+(`domain/stored-link-extraction.ts`), and one batch loads settlements, rows by
+id and rows at exact or extension-omitted addresses, readability through the
+file policy's list path, and manifest membership only when a row needs it.
+`holder({ documentId, view })` returns the synchronous scope; it keeps its
+snapshot, so work deferred past the operation spells from it.
+
+`domain/document-link-scope-doors.ts` wraps every door that serializes: the
+markdown engine (each method prepares after loading its doc), the edit core
+(`read`/`write` by grant project and principal, reversal by document; agent-edit
+binds its codec per command through `DocumentLinksPort`), the branch peer
+(effective Markdown, hashlines and revision), the reply's save (by thread),
+live turn reversal and offline reconciliation. Draft preview owns one
+enclosing scope for both sides, the draft spelled in its Work's view. ContextFS
+search owns one for all matching documents in its source. Branch push opens
+its scope before branch locks and prepares its trail docs under them; its
+settlement keeps its own scope. Wrappers name every method, so a new method
+does not compile until its scope is decided. A nested `within` for the same
+project and reader reuses the enclosing snapshot only while that operation is
+still running; a timer that inherited a settled snapshot opens a fresh one. A
+move that lands after a prepare shows only in the next snapshot.
 
 A picture never fails its document. An id with no document spells as its
 `asset:` ref. A deleted image keeps its last path only while that path reads
 back to it alone (no live image and no other deleted image there); otherwise it
 spells as its ref, so a chapter saved while the image is gone reconnects on
-restore. A picture serialized outside every scope spells as its ref and is
-reported: `serialize.asset_path_unscoped` in production, a throw under test.
+restore. Spelling outside every scope uses stored bytes and is reported
+(`serialize.link_unscoped`); a ref or address the snapshot never loaded is
+`serialize.link_snapshot_miss`, a throw under test only when no door prepared
+the snapshot.
 
 **Durable whole-document projections route through this engine.** Push
 completion and trail forward actions inject `DurableProjectionSerializer`

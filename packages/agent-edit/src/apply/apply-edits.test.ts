@@ -6,7 +6,7 @@ import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { createAgentEditCodec } from "../codec-adapter.js";
+import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
@@ -15,7 +15,7 @@ import { applyConcurrentUpdates, computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
 const baseModel = yProsemirrorModel(schema);
 const origin: AgentOrigin = { type: "agent", actorTurnId: "turn-1" };
 

@@ -3,7 +3,10 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createDrizzleDocumentAssetPaths } from "../../domains/context/adapters/asset-path-resolver.js";
+import {
+  createTestDocumentLinkScopes,
+  testLinkDeps,
+} from "../../domains/collab/test-support/document-link-scopes.js";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -68,7 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function createFixture(options: { load?: boolean; store?: boolean } = {}) {
       const collab = createCollabDomain({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        ...testLinkDeps(db),
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
@@ -97,7 +100,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         collab,
         hocuspocus,
         contextPorts: createProductionUnifiedContextPortFactory({
-          assetPaths: createDrizzleDocumentAssetPaths(db),
+          links: createTestDocumentLinkScopes(db),
           db,
           documentSync: collab,
           manifestMembership: collab,

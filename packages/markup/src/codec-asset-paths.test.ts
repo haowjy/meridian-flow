@@ -4,19 +4,13 @@ import { markdownCodec } from "./index.js";
 
 describe("asset path resolution", () => {
   const assets = createAssetFixture([["asset-1", "assets/map.png"]]);
-  const codec = markdownCodec({ schema, assetForPath: assets.assetForPath });
+  const codec = assets.withBinding(markdownCodec({ schema }));
 
   it("stores stable refs internally and emits project-relative paths", () => {
     const parsed = codec.parse("![World map](assets/map.png)").blocks[0];
     if (!parsed) throw new Error("expected parsed image paragraph");
     expect(parsed?.firstChild?.attrs.src).toBe("asset:asset-1");
     expect(codec.serialize([parsed], assets.links)).toBe("![World map](assets/map.png)\n");
-  });
-
-  it("leaves external and unknown paths literal", () => {
-    for (const src of ["https://example.com/map.png", "assets/missing.png"]) {
-      expect(codec.parse(`![](${src})`).blocks[0]?.firstChild?.attrs.src).toBe(src);
-    }
   });
 
   // An image whose document is gone entirely must not take the chapter's

@@ -2,10 +2,11 @@
 import * as Y from "yjs";
 import { type BlockSnapshot, diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
+import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ReversalActor, ReversalRecord } from "../ports/types.js";
 import {
@@ -24,6 +25,7 @@ import { reconstructReversalUpdate, reversalBaselineDoc } from "../undo/reversal
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult } from "./internal-result.js";
+import { type BoundLinks, bindLinks } from "./link-binding.js";
 import type {
   DestructiveSweepReport,
   MutationCommit,
@@ -120,7 +122,8 @@ export function createWriteReversal(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   model: AgentEditModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  links: DocumentLinksPort;
   undoClientId?: number;
   reversalNoticePort?: ReversalNoticePort;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
@@ -132,7 +135,6 @@ export function createWriteReversal(deps: {
     runtimeStore,
     mutationCommit,
     model,
-    codec,
     undoClientId,
     onInvariantViolation = defaultInvariantViolation,
   } = deps;
@@ -275,11 +277,16 @@ export function createWriteReversal(deps: {
     interactionContext: InteractionContext;
     filePath?: string;
   }): Promise<InternalWriteResult> {
-    const prepared = await prepareReversals(input);
+    const links = await bindLinks(deps, {
+      documentId: input.docId,
+      docs: [input.runtime.doc],
+      context: { threadId: input.session.threadId },
+    });
+    const prepared = await prepareReversals({ ...input, links });
     if (!prepared.ok) return prepared.response;
     if (prepared.plans.length === 0) return status(prepared.emptyStatus);
 
-    const reversal = await executePrepared({ ...input, plans: prepared.plans });
+    const reversal = await executePrepared({ ...input, links, plans: prepared.plans });
     if (!reversal.ok) return reversal.response;
     if (reversal.sync) runtimeStore.markSynced(input.session, input.docId);
     const sync = reversal.sync ?? { echo: [], reconciled: false };
@@ -319,6 +326,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
+    links: BoundLinks;
     direction: "undo" | "redo";
     selection: ReversalSelection;
     actor: ReversalActor;
@@ -360,6 +368,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
+    links: BoundLinks;
     direction: "undo" | "redo";
     selection: ReversalSelection;
     actor: ReversalActor;
@@ -407,7 +416,7 @@ export function createWriteReversal(deps: {
 
     const sourceDoc = cloneDocWithUpdates(input.runtime.doc, input.priorUpdates);
     const reconstructionPlan = withPriorReversalUpdates(plan, input.priorUpdates);
-    const before = snapshotBlocks(toDocHandle(sourceDoc), model, codec);
+    const before = snapshotBlocks(toDocHandle(sourceDoc), model, input.links.codec);
     let update: Uint8Array | null;
     try {
       update = reconstructReversalUpdate({
@@ -446,7 +455,14 @@ export function createWriteReversal(deps: {
     try {
       Y.applyUpdate(preview, Y.encodeStateAsUpdate(sourceDoc), { type: "system" });
       Y.applyUpdate(preview, update, reversalOrigin(input.actor, plan));
-      const after = snapshotBlocks(toDocHandle(preview), model, codec);
+      // A reversal can bring back links and pictures the runtime no longer
+      // holds; the same scope loads them before the preview is spelled.
+      await deps.links.prepare({
+        documentId: input.docId,
+        docs: [preview],
+        context: { threadId: input.session.threadId },
+      });
+      const after = snapshotBlocks(toDocHandle(preview), model, input.links.codec);
       return {
         ok: true,
         prepared: { plan, update, ownDiff: diffSnapshots(before, after), preview: after },
@@ -482,6 +498,7 @@ export function createWriteReversal(deps: {
     docId: string;
     session: ActorSession;
     runtime: RuntimeDocumentState;
+    links: BoundLinks;
     commandName: DocumentCommandName;
     direction: "undo" | "redo";
     actor: ReversalActor;
@@ -496,8 +513,8 @@ export function createWriteReversal(deps: {
       }
     | { ok: false; response: InternalWriteResult }
   > {
-    const before = snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
-    const keptOtherEdits = otherEditsCheck(input.direction, input.plans);
+    const before = snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
+    const keptOtherEdits = otherEditsCheck(input.direction, input.plans, input.links);
     const update = Y.mergeUpdates(input.plans.map((prepared) => prepared.update));
     const deletedHashes = new Set(input.plans.flatMap(({ ownDiff }) => [...ownDiff.deleted]));
     const touchedHashes = new Set(
@@ -518,6 +535,7 @@ export function createWriteReversal(deps: {
           const capturedPreflight = await mutationCommit.captureCommitPreflight(liveDoc, {
             docId: input.docId,
             runtime: input.runtime,
+            links: input.links,
             actor: reversalMutationActor(input.actor, input.session, first.plan),
             deletedHashes: first.ownDiff.deleted,
             touchedHashes: new Set([...first.ownDiff.changed, ...first.ownDiff.inserted]),
@@ -539,6 +557,7 @@ export function createWriteReversal(deps: {
               {
                 docId: input.docId,
                 runtime: input.runtime,
+                links: input.links,
                 actor: reversalMutationActor(input.actor, input.session, first.plan),
                 deletedHashes,
                 touchedHashes,
@@ -586,6 +605,7 @@ export function createWriteReversal(deps: {
             const summary = mutationCommit.summarizeMutationEcho(
               {
                 runtime: input.runtime,
+                links: input.links,
                 before,
                 touchedHashes,
                 deletedHashes,
@@ -596,7 +616,7 @@ export function createWriteReversal(deps: {
               ...summary,
               revision: applied.revision,
               reconciled: keptOtherEdits(
-                snapshotBlocks(toDocHandle(input.runtime.doc), model, codec),
+                snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec),
               ),
             };
           };
@@ -668,6 +688,7 @@ export function createWriteReversal(deps: {
   function otherEditsCheck(
     direction: "undo" | "redo",
     plans: readonly PreparedReversal[],
+    links: BoundLinks,
   ): (after: readonly BlockSnapshot[]) => boolean {
     const baseline = reversalBaselineDoc(
       direction,
@@ -676,7 +697,7 @@ export function createWriteReversal(deps: {
     if (!baseline) return () => false;
     let expected: string[];
     try {
-      expected = snapshotBlocks(toDocHandle(baseline), model, codec).map(
+      expected = snapshotBlocks(toDocHandle(baseline), model, links.codec).map(
         (block) => block.renderedContent,
       );
     } finally {

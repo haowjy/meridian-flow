@@ -1,10 +1,11 @@
 /** Sole ordering owner for durable branch-push settlement and recovery. */
 import { createHash, randomUUID } from "node:crypto";
 import type {
-  AgentEditCodec,
+  AgentEditCodecFactory,
   DocumentCoordinator,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
@@ -18,7 +19,7 @@ import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
-import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
@@ -38,9 +39,9 @@ export function createBranchPushTransition(input: {
   settlementStore: PendingSettlementStore;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
-  /** Sweep detection and change events compare the document with itself in one scope. */
-  assetPaths: DocumentAssetPaths;
+  codec: AgentEditCodecFactory;
+  /** Settlement runs in its document's scope, so nested document doors join it. */
+  links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
   writerIngressBarrier?: WriterIngressBarrier;
   sweepProjectionDiagnostics?: SweepProjectionDiagnostics;
@@ -170,7 +171,8 @@ export function createBranchPushTransition(input: {
         pending,
         prePushDoc,
         model: input.model,
-        codec: input.codec,
+        // Sweep detection compares the document with itself: stored bytes are its identity.
+        codec: input.codec.bind(UNSCOPED_DOCUMENT_LINKS),
       });
     } catch (cause) {
       input.sweepProjectionDiagnostics?.unavailable({
@@ -185,7 +187,7 @@ export function createBranchPushTransition(input: {
   type Settlement = { pending: PendingLiveSettlement; liveDoc: Y.Doc; signal?: AbortSignal };
 
   function settle(settlement: Settlement): Promise<void> {
-    return input.assetPaths.within({ documentId: settlement.pending.push.documentId }, () =>
+    return input.links.within({ documentId: settlement.pending.push.documentId }, () =>
       settleDocument(settlement),
     );
   }
