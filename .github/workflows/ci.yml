@@ -18,16 +18,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: quality
-    # Skip draft PRs; every non-PR caller runs.
+  # scripts.check is the source of truth; the runner partitions its named
+  # scripts into two expensive jobs and one cheap static-check batch.
+  quality-checks:
+    name: quality-${{ matrix.group }}
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [static, typecheck, test]
     steps:
       - uses: actions/checkout@v4
         with:
-          # S7 reads the pre-history snapshot when bootstrapping its immutable
-          # append-only schema-version baseline.
+          # The static group's S7 check reads the pre-history snapshot when
+          # bootstrapping its immutable append-only schema-version baseline.
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -35,7 +40,24 @@ jobs:
           node-version: 24.17.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      # Keep Nx outputs local to this runner. Project-scoped Nx inputs omit
+      # root config changes, so restoring outputs across runs is unsafe.
+      - run: node tools/ci/run-check-group.mjs ${{ matrix.group }}
+
+  quality:
+    name: quality
+    needs: [quality-checks]
+    # A skipped required job counts as passing. Run even after a dependency
+    # fails/cancels/skips, but retain the workflow's deliberate draft-PR skip.
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every quality group to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS"
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")'
 
   migration-checks:
     name: migration-checks
