@@ -74,8 +74,6 @@ export function assignWrittenHref(
  * image paste door imports it.
  */
 export function assignWrittenSource(src: string, index: LinkAssignmentIndex | null): AssignedLink {
-  // Protocol-relative is the web, whatever the source grammar would make of it.
-  if (src.startsWith("//")) return { ref: null, href: src };
   const assigned = assignFreshLink({
     href: src,
     grammar: "source",

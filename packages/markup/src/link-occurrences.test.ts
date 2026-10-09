@@ -1,4 +1,8 @@
-/** `parseWithSpans` spans and `walkLinkOccurrences` order must name the same occurrences. */
+/**
+ * `parseWithSpans` spans and `walkLinkOccurrences` order must name the same
+ * occurrences, and every reader of stored or written link attrs takes them the
+ * way contracts' rules say.
+ */
 import {
   type CatalogDocument,
   type LinkHolder,
@@ -9,7 +13,7 @@ import { expect, it } from "vitest";
 
 import { components, m, paragraph, schema, t } from "./codec-test-support.js";
 import { type DocumentLinkScope, mdxCodec } from "./index.js";
-import { spelledLinks, walkLinkOccurrences } from "./links.js";
+import { assignFreshLink, spelledLinks, walkLinkOccurrences, writtenAddresses } from "./links.js";
 
 const holder: LinkHolder = {
   uri: "manuscript://book/ch1.md",
@@ -138,4 +142,79 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     )
     .toEqual([null, null]);
   expect.soft(spelledLinks(emptyRef, scope), "empty ref shows no fact").toEqual([]);
+
+  // A malformed stored ref is still a ref: the walk and the codec keep it, so
+  // the resolver answers gone instead of whatever sits at its address.
+  const atAddress = { ...catalog, documentAt: () => documents.get(id.ch2) ?? null };
+  const malformed = [
+    paragraph(
+      t("two", [link("manuscript://book/ch2.md", "doc:malformed")]),
+      image("assets/map.png", "doc:malformed"),
+    ),
+  ];
+  expect
+    .soft(
+      walkLinkOccurrences(malformed).map((occurrence) => occurrence.attrs.ref),
+      "malformed ref walks as a ref",
+    )
+    .toEqual(["doc:malformed", "doc:malformed"]);
+  expect
+    .soft(
+      spelledLinks(malformed, {
+        spellLink: (link) =>
+          spellStoredLink(link, holder, resolveStoredLink(link, atAddress), "holder"),
+        spellSource: scope.spellSource,
+      }),
+      "malformed ref is gone, never its address",
+    )
+    .toEqual([
+      { ref: "doc:malformed", address: "manuscript://book/ch2.md" },
+      { ref: "doc:malformed", address: "manuscript://assets/map.png" },
+    ]);
+
+  // Fresh assignment and address preloading read the one source classifier
+  // and register only at an address with a real extension.
+  const fresh = (href: string, grammar: "link" | "source") =>
+    assignFreshLink({
+      href,
+      grammar,
+      holderUri: holder.uri,
+      documentFor: () => null,
+      mint: () => `ahead:${id.open}`,
+    });
+  const assigned: [string, "link" | "source", ReturnType<typeof fresh>][] = [
+    ["//cdn.example.com/map.png", "source", { kind: "literal" }],
+    ["assets/gate.", "source", { kind: "literal" }],
+    [
+      "assets/50%.png",
+      "source",
+      {
+        kind: "ahead",
+        ref: `ahead:${id.open}`,
+        href: "manuscript://assets/50%25.png",
+        address: "manuscript://assets/50%.png",
+      },
+    ],
+    [
+      "chapter.",
+      "link",
+      {
+        kind: "ahead",
+        ref: `ahead:${id.open}`,
+        href: "manuscript://book/chapter..md",
+        address: "manuscript://book/chapter..md",
+      },
+    ],
+  ];
+  for (const [href, grammar, expected] of assigned)
+    expect.soft(fresh(href, grammar), `fresh ${grammar} ${href}`).toEqual(expected);
+  expect
+    .soft(
+      writtenAddresses(
+        [paragraph(image("//cdn.example.com/map.png", null), image("assets/50%.png", null))],
+        holder.uri,
+      ),
+      "preloaded source addresses",
+    )
+    .toEqual(["manuscript://assets/50%.png"]);
 });

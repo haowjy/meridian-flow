@@ -63,7 +63,7 @@ export type LinkKey = { ref: string | null; href: string };
 /**
  * The stored link a link mark's attributes name. The only reading of a mark's
  * `ref` and `href`, so no two surfaces can disagree about which answer a link
- * has (an empty or malformed ref is no ref).
+ * has (an empty ref is no ref; a malformed one stays, and resolves gone).
  */
 export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }): LinkKey {
   return { ref: storedLinkRef(attrs.ref), href: String(attrs.href ?? "") };
@@ -81,8 +81,6 @@ export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }):
  */
 export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown }): LinkKey | null {
   const src = String(attrs.src ?? "");
-  // Protocol-relative is the web, whatever the source grammar would make of it.
-  if (src.startsWith("//")) return null;
   const written = classifyWrittenSource(src);
   if (written.kind === "external") return null;
   if (written.kind === "contextual") return { ref: null, href: src };

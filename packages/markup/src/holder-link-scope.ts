@@ -19,11 +19,9 @@ import {
   type LinkHolder,
   type LinkResolution,
   mintAheadRef,
-  parseContextUri,
   resolveStoredLink,
   type SpelledHref,
   spellStoredLink,
-  splitDocumentHrefSuffix,
   storedHref,
   type WrittenLinkClass,
 } from "@meridian/contracts";
@@ -116,23 +114,6 @@ export function createHolderLinkScope(
 /** The two written-address grammars: a link reads against its holder, a source against the manuscript root. */
 export type WrittenGrammar = "link" | "source";
 
-/**
- * What a written href or source is, before any catalog is consulted. A source
- * the href grammar cannot decode (a raw `%`) is still a bare manuscript path,
- * as the shipped image rule always has.
- */
-export function classifyWrittenHref(
-  href: string,
-  grammar: WrittenGrammar,
-  holderUri: string | null,
-): WrittenLinkClass {
-  if (grammar === "link") return classifyWrittenLink(href, holderUri);
-  const classified = classifyWrittenSource(href);
-  if (classified.kind !== "external") return classified;
-  const uri = writtenSourceUri(href);
-  return uri ? { kind: "internal", uri, suffix: splitDocumentHrefSuffix(href).suffix } : classified;
-}
-
 /** Pass 3's answer for one written href; `literal` keeps it as written with no ref. */
 export type FreshAssignment =
   | { kind: "literal" }
@@ -155,7 +136,10 @@ export function assignFreshLink(input: {
   /** Default `mintAheadRef`; injected only by tests. */
   mint?: () => AheadRef;
 }): FreshAssignment {
-  const classified = classifyWrittenHref(input.href, input.grammar, input.holderUri);
+  const classified =
+    input.grammar === "link"
+      ? classifyWrittenLink(input.href, input.holderUri)
+      : classifyWrittenSource(input.href);
   if (classified.kind !== "internal") return { kind: "literal" };
   const document = input.documentFor(classified.uri);
   if (document)
@@ -173,33 +157,25 @@ export function assignFreshLink(input: {
 /**
  * The decoded addresses written links and sources in `blocks` may resolve to:
  * what a host must load before assigning their refs. Links resolve against the
- * holder; sources under the manuscript-root grammar, and a source the href
- * grammar cannot decode (a raw `%`) is read as a bare manuscript path, as the
- * shipped image rule always has.
+ * holder, sources under the manuscript-root grammar.
  */
 export function writtenAddresses(blocks: readonly PMNode[], holderUri: string | null): string[] {
   const out = new Set<string>();
-  for (const occurrence of walkLinkOccurrences(blocks)) {
-    const { href } = occurrence.attrs;
-    if (occurrence.kind === "link") {
-      const written = classifyWrittenLink(href, holderUri);
-      if (written.kind === "internal") out.add(written.uri);
-      continue;
-    }
-    const uri = writtenSourceUri(href);
+  for (const { kind, attrs } of walkLinkOccurrences(blocks)) {
+    const uri =
+      kind === "link"
+        ? internalUri(classifyWrittenLink(attrs.href, holderUri))
+        : writtenSourceUri(attrs.href);
     if (uri) out.add(uri);
   }
   return [...out];
 }
 
-/** A written image/figure source as a decoded manuscript-relative address, or null. */
+/** A written image/figure source as a decoded internal address, or null. */
 export function writtenSourceUri(src: string): string | null {
-  if (!src || src.startsWith(ASSET_PREFIX)) return null;
-  const written = classifyWrittenSource(src);
-  if (written.kind === "internal") return written.uri;
-  if (written.kind === "external" && !/^[a-z][a-z0-9+.-]*:/i.test(src)) {
-    const raw = parseContextUri(src.split(/[?#]/)[0] ?? "");
-    if (raw.ok && raw.value.scheme === "manuscript" && raw.value.path) return raw.value.normalized;
-  }
-  return null;
+  return internalUri(classifyWrittenSource(src));
+}
+
+function internalUri(written: WrittenLinkClass): string | null {
+  return written.kind === "internal" ? written.uri : null;
 }
