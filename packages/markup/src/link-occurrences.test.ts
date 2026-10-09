@@ -15,11 +15,17 @@ const holder: LinkHolder = {
   projectId: "p1",
   view: { kind: "live" },
 };
+const id = {
+  ch2: "00000000-0000-4000-8000-000000000001",
+  map: "00000000-0000-4000-8000-000000000002",
+  fig: "00000000-0000-4000-8000-000000000003",
+  open: "00000000-0000-4000-8000-000000000004",
+};
 const documents = new Map<string, CatalogDocument>(
   [
-    ["ch2", "manuscript://book/ch2.md"],
-    ["map", "manuscript://assets/map.png"],
-    ["fig", "manuscript://assets/fig.png"],
+    [id.ch2, "manuscript://book/ch2.md"],
+    [id.map, "manuscript://assets/map.png"],
+    [id.fig, "manuscript://assets/fig.png"],
   ].map(([documentId = "", uri = ""]) => [
     documentId,
     { documentId, projectId: "p1", uri, presence: "live", readable: true, nameable: true },
@@ -49,7 +55,7 @@ const image = (src: string, ref: string | null, width: number | null = null) =>
   schema.node("image", { src, alt: "Map", title: null, ref, width });
 
 it("aligns parse spans with walk order for links, images, figures and table anchors", () => {
-  const ch2 = link("manuscript://book/old-ch2.md", "doc:ch2");
+  const ch2 = link("manuscript://book/old-ch2.md", `doc:${id.ch2}`);
   const stored = [
     paragraph(
       t("See "),
@@ -58,10 +64,10 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       t(", "),
       t("the web", [link("https://example.com")]),
       t(" and "),
-      image("manuscript://assets/old-map.png", "doc:map"),
+      image("manuscript://assets/old-map.png", `doc:${id.map}`),
     ),
     schema.node("heading", { level: 2 }, [
-      t("Ahead", [link("manuscript://book/ch12.md#top", "ahead:open")]),
+      t("Ahead", [link("manuscript://book/ch12.md#top", `ahead:${id.open}`)]),
     ]),
     schema.node("bullet_list", { tight: true }, [
       schema.node("list_item", null, [paragraph(t("Lin", [link("../kb.md")]))]),
@@ -70,7 +76,7 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       src: "manuscript://assets/old-fig.png",
       alt: "Fig",
       caption: "",
-      ref: "doc:fig",
+      ref: `doc:${id.fig}`,
     }),
     schema.node("table", null, [
       schema.node("table_row", null, [
@@ -78,12 +84,12 @@ it("aligns parse spans with walk order for links, images, figures and table anch
           paragraph(
             t("in table", [ch2]),
             t(" "),
-            image("manuscript://assets/old-map.png", "doc:map"),
+            image("manuscript://assets/old-map.png", `doc:${id.map}`),
           ),
         ]),
       ]),
     ]),
-    paragraph(image("manuscript://assets/old-map.png", "doc:map", 40)),
+    paragraph(image("manuscript://assets/old-map.png", `doc:${id.map}`, 40)),
   ];
   const codec = mdxCodec({ schema, components });
   const text = codec.serialize(stored, scope);
