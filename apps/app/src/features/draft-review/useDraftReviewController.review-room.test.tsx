@@ -11,6 +11,7 @@ import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { OpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -19,9 +20,21 @@ import { type DraftReviewController, useDraftReviewController } from "./useDraft
 const work = { id: "work-a", projectId: "project-a", name: "w", isNoWork: false } as Work;
 
 const failing = vi.hoisted(() => new Set<string>());
+/** Reads of a document still to be cancelled in flight, as a refresh's invalidation does. */
+const cancelled = vi.hoisted(() => ({
+  reads: new Map<string, number>(),
+  cancel: (_documentId: string) => {},
+}));
 vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: vi.fn(async (_p: string, _w: string, documentId: string, draftId: string) => {
     if (failing.has(documentId)) throw new Error("offline");
+    const toCancel = cancelled.reads.get(documentId) ?? 0;
+    if (toCancel > 0) {
+      cancelled.reads.set(documentId, toCancel - 1);
+      await Promise.resolve();
+      cancelled.cancel(documentId);
+      return new Promise<never>(() => {});
+    }
     return {
       status: "active",
       draftId,
@@ -61,6 +74,7 @@ describe("review room across a review switch", () => {
   beforeEach(() => {
     openNext = null;
     failing.clear();
+    cancelled.reads.clear();
   });
 
   it("resolves the room of a review opened in the flush that closes the previous one", async () => {
@@ -101,6 +115,52 @@ describe("review room across a review switch", () => {
         expect(controller.reviewRoomError).toBe(false);
       },
     );
+  });
+
+  describe("a read cancelled in flight", () => {
+    const withCancellingClient = (run: () => Promise<void>) => {
+      const client = new QueryClient();
+      cancelled.cancel = (documentId) =>
+        void client.cancelQueries({
+          queryKey: projectQueryKeys.workDraftPreview(
+            "project-a",
+            "work-a",
+            documentId,
+            `draft-${documentId}`,
+          ),
+        });
+      return withReactRoot(
+        <QueryClientProvider client={client}>
+          <ProjectNavigationProvider openContextRoute={vi.fn<OpenContextRoute>()} screen="context">
+            <Owner />
+          </ProjectNavigationProvider>
+        </QueryClientProvider>,
+        run,
+      );
+    };
+
+    it("is read again, and a cancellation is not a failed room", async () => {
+      cancelled.reads.set("doc-busy", 2);
+      await withCancellingClient(async () => {
+        await act(async () => controller.enterInlineReview("doc-busy", "draft-doc-busy"));
+        await vi.waitFor(() => expect(controller.reviewRoomName).toBe("room-doc-busy"));
+        expect(controller.reviewRoomError).toBe(false);
+      });
+    });
+
+    it("is read again only a bounded number of times, then the room is failed and re-entry retries", async () => {
+      cancelled.reads.set("doc-busy", 1_000);
+      await withCancellingClient(async () => {
+        await act(async () => controller.enterInlineReview("doc-busy", "draft-doc-busy"));
+        await vi.waitFor(() => expect(controller.reviewRoomError).toBe(true));
+        expect(controller.reviewRoomName).toBeNull();
+
+        cancelled.reads.clear();
+        await act(async () => controller.enterInlineReview("doc-busy", "draft-doc-busy"));
+        await vi.waitFor(() => expect(controller.reviewRoomName).toBe("room-doc-busy"));
+        expect(controller.reviewRoomError).toBe(false);
+      });
+    });
   });
 
   it("holds the room with the review: leaving drops it, and a stale one is read again in place", async () => {

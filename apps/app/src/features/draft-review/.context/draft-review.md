@@ -267,7 +267,10 @@ not cancel B's request, or B waits forever for a room (the draft-only editor
 that stayed empty under a "Review draft" chip). The request is the one fenced
 preview query (`draftPreviewQueryOptions`, read fresh), not a second raw fetch:
 it joins any read in flight, a change handled while it was in flight cannot come
-back through it, and a review that moved on commits no room. The review editor
+back through it, and a review that moved on commits no room. A refresh's
+invalidation cancels the read in flight and rejects a read that joined it with
+`CancelledError`, so a cancelled read is read again (bounded, and only while the
+review still owns the attempt) and only a fetch that failed is the room error. The review editor
 is keyed by its own branch room, never by the live binding, so a rename (which
 re-mints the live binding) does not remount the painted review.
 

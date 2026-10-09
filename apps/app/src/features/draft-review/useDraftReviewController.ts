@@ -2,7 +2,7 @@
 
 import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { isCancelledError, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import {
   type Dispatch,
@@ -57,6 +57,9 @@ import {
 } from "./useSelectionCommands";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
+
+/** How many times in a row a room read is read again after a refresh cancelled it. */
+const MAX_CANCELLED_ROOM_READS = 5;
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
 export type ReviewChangeTarget = ReviewFocus & { anchorOperationId: string };
@@ -260,9 +263,22 @@ export function useDraftReviewController({
   useEffect(() => {
     if (!roomWanted || !reviewedDocumentId || !reviewedDraftId) return;
     const draft = { projectId, workId, documentId: reviewedDocumentId, draftId: reviewedDraftId };
-    const readFresh = () =>
-      queryClient.fetchQuery({ ...draftPreviewQueryOptions(draft), staleTime: 0 });
     let owned = true;
+    // A refresh's invalidation cancels the read in flight and starts another.
+    // The read that began it follows its replacement, but one that joined it is
+    // rejected with the cancellation, which says nothing of the room. While this
+    // attempt is owned, read again (joining the replacement, or fresh); only a
+    // fetch that failed reports the room failed. A cancel loop is bounded.
+    const readFresh = async () => {
+      for (let cancelled = 0; ; cancelled++) {
+        try {
+          return await queryClient.fetchQuery({ ...draftPreviewQueryOptions(draft), staleTime: 0 });
+        } catch (error) {
+          if (!isCancelledError(error) || !owned || cancelled >= MAX_CANCELLED_ROOM_READS)
+            throw error;
+        }
+      }
+    };
     void (async () => {
       let preview = await readFresh();
       // A read already in flight can predate the generation the review shows; it
