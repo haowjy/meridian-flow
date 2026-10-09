@@ -14,7 +14,6 @@ import type {
   ConcurrentUpdate,
   ConcurrentUpdateOrigin,
 } from "../apply/types.js";
-import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
 import { type LineageRange, subtractLineageRanges } from "../lineage/range-set.js";
 import { withRunShownLinks } from "../links/shown.js";
@@ -186,8 +185,6 @@ export interface MutationCommit {
 
 export function createMutationCommit(deps: {
   links: DocumentLinksPort;
-  /** Reparses truncated renders for shown-link spans. */
-  codec: Pick<AgentEditCodecFactory, "parseWithSpans">;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
@@ -219,13 +216,7 @@ export function createMutationCommit(deps: {
     });
     return {
       echo,
-      concurrentEdits: withRunShownLinks(concurrent.info, {
-        doc: toDocHandle(input.runtime.doc),
-        model,
-        codec: input.links.codec,
-        scope: input.links.scope,
-        parser: deps.codec,
-      }),
+      concurrentEdits: withRunShownLinks(concurrent.info, input.links.codec),
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
   }

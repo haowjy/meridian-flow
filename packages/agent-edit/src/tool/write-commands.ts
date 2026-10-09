@@ -6,7 +6,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { renderedItems, shownLinksForItems } from "../links/shown.js";
+import { renderedItems } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { planWrite, resolveWrite } from "../resolver/resolve.js";
@@ -129,7 +129,7 @@ export function createWriteCommands(deps: {
         address.filePath,
         selection.documentBlocks,
       );
-    return withShown(runtime.doc, links, {
+    return withShown(links, {
       ...readSuccess(
         renderer.renderRead(
           toDocHandle(runtime.doc),
@@ -392,7 +392,6 @@ export function createWriteCommands(deps: {
         deletedHashes,
       });
       return withShown(
-        runtime.doc,
         links,
         formatApplySuccess({
           ...emptiedDocument(runtime, links.codec),
@@ -460,7 +459,6 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return withShown(
-      runtime.doc,
       links,
       formatApplySuccess({
         ...emptiedDocument(runtime, links.codec),
@@ -665,7 +663,7 @@ export function createWriteCommands(deps: {
           return rejected;
         }
         markSynced(session, address.documentId);
-        return withShown(runtime.doc, links, result);
+        return withShown(links, result);
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preOwnSnapshot);
         markSynced(session, address.documentId);
@@ -730,7 +728,6 @@ export function createWriteCommands(deps: {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return withShown(
-      runtime.doc,
       links,
       formatApplySuccess({
         ...emptiedDocument(runtime, links.codec),
@@ -784,14 +781,8 @@ export function createWriteCommands(deps: {
   }
 
   /** Attach the links the result's rendered blocks showed, spelled with the command's binding. */
-  function withShown(doc: Y.Doc, links: BoundLinks, result: InternalWriteResult) {
-    const shownLinks = shownLinksForItems(renderedItems(result.model), {
-      doc: toDocHandle(doc),
-      model: options.model,
-      codec: links.codec,
-      scope: links.scope,
-      parser: options.codec,
-    });
+  function withShown(links: BoundLinks, result: InternalWriteResult) {
+    const shownLinks = links.codec.shownLinks(renderedItems(result.model));
     return shownLinks.length > 0 ? { ...result, shownLinks } : result;
   }
 
