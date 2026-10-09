@@ -24,7 +24,10 @@ import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
-import { createTestDocumentLinkScopes } from "./document-link-scopes.js";
+import {
+  createTestDocumentLinkScopes,
+  lateBoundManifestMembership,
+} from "./document-link-scopes.js";
 
 export const USER_ID = "00000000-0000-4000-8000-000000000701";
 export const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
@@ -42,15 +45,18 @@ export const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "wo
 export function createWorkDraftFixture(db: Database) {
   const hocuspocus = fakeHocuspocus();
   const collabs: Array<{ dispose(): void }> = [];
-  const createTestCollab = (links = createTestDocumentLinkScopes(db)) => {
+  /** Without `links`, scopes read the created domain's own manifests, as production does. */
+  const createTestCollab = (links?: ReturnType<typeof createTestDocumentLinkScopes>) => {
+    const manifest = lateBoundManifestMembership();
     const collab = createCollabDomain({
-      links,
+      links: links ?? createTestDocumentLinkScopes(db, { membership: manifest.membership }),
       aheadRefs: UNSUPPORTED_AHEAD_REFS,
       fileAccess: createAllowAllFileAccess(),
       db,
       workProjectionMutation: createTestWorkProjectionMutation(db),
       workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
     });
+    manifest.bind(collab);
     collabs.push(collab);
     return collab;
   };

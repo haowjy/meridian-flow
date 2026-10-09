@@ -8,6 +8,8 @@
  * every document at an exact or extension-omitted address. Readability comes
  * from the file policy's list path; presence from `deleted_at` plus the same
  * manifest membership ContextFS lists through, read only when a row needs it.
+ * A draft view's own manifest decides what it holds; the live manifest only
+ * tells a live document from a draft-only one.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -69,6 +71,7 @@ type Snapshot = {
   projectId: string | null;
   personalProjectId: string | null;
   viewer: string | null;
+  /** The thread read in: its manifest peer and reply's staged creates count in a draft view. */
   viewerThreadId: string | null;
   /** Doors known to share this project. */
   members: Set<string>;
@@ -101,17 +104,24 @@ const viewKey = (view: LinkView) =>
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
   fileAccess: Pick<FileAccess, "listAccess">;
-  /** Absent only where no project manifest exists (tests): every non-deleted row is live. */
-  membership?: LinkScopeMembership;
+  /** The manifest authority; tests without one pass an explicit controlled resolver. */
+  membership: LinkScopeMembership;
   observer: LinkScopeObserver;
 }): DocumentLinkScopes {
   const { db, observer } = deps;
+  if (typeof deps.membership !== "function") {
+    throw new TypeError("Document-link scopes need a manifest membership resolver");
+  }
   const storage = new AsyncLocalStorage<Snapshot>();
 
-  async function resolveProject(key: LinkScopeKey) {
+  async function resolveProject(key: LinkScopeKey, threadId: string | null) {
     const id =
       "projectId" in key ? key.projectId : "threadId" in key ? key.threadId : key.documentId;
     if (!isUuid(id)) return null;
+    const threadUser =
+      threadId && isUuid(threadId)
+        ? sql`(SELECT t.created_by_user_id::text FROM threads t WHERE t.id = ${threadId}::uuid)`
+        : sql`NULL::text`;
     const project =
       "projectId" in key
         ? sql`${id}::uuid`
@@ -126,9 +136,10 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const [row] = await currentDrizzleDb(db).execute<{
       project_id: string;
       owner: string;
+      thread_user: string | null;
       personal: string | null;
     }>(sql`
-      SELECT p.id::text AS project_id, p.user_id::text AS owner,
+      SELECT p.id::text AS project_id, p.user_id::text AS owner, ${threadUser} AS thread_user,
         (SELECT pp.id::text FROM projects pp
           WHERE pp.user_id = p.user_id AND pp.is_personal AND pp.deleted_at IS NULL
           ORDER BY pp.created_at LIMIT 1) AS personal
@@ -138,7 +149,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
 
   async function prepare(request: ScopePrepareRequest): Promise<void> {
     const snapshot = storage.getStore();
-    if (!snapshot) return;
+    if (!snapshot?.open) return;
     snapshot.prepared = true;
 
     const refs = new Set(request.refs ?? []);
@@ -320,21 +331,24 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const row of unknown) snapshot.readable.set(row.id, access.has(row.id as DocumentId));
   }
 
-  /** Live membership, and a draft view's, read only once a present row needs them. */
+  /**
+   * Membership of each prepared holder's view, read only once a present
+   * manifest-governed row needs it: the live set always (it tells live from
+   * draft-only), and a draft view's own set, which alone decides what it holds.
+   * A failure propagates: authority failure is never permission to expose rows.
+   */
   async function loadMembership(snapshot: Snapshot, holders: ScopePrepareRequest["holders"]) {
     const projectId = snapshot.projectId;
-    if (!projectId || !deps.membership) return;
-    const governed = [...snapshot.rows.values()].filter(
-      (row): row is Row =>
+    if (!projectId) return;
+    const governed = [...snapshot.rows.values()].some(
+      (row) =>
         row !== null &&
         !row.deleted &&
         row.projectId === projectId &&
         MANIFEST_SCHEMES.has(row.scheme),
     );
-    if (governed.length === 0) return;
-    const live = await members(snapshot, "live", { projectId });
-    const outsideLive = governed.some((row) => !live.has(row.id));
-    if (!outsideLive) return;
+    if (!governed) return;
+    await members(snapshot, "live", { projectId });
     for (const { view } of holders) {
       if (view.kind !== "draft") continue;
       await members(snapshot, viewKey(view), {
@@ -350,18 +364,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
     snapshot: Snapshot,
     key: string,
     view: Parameters<LinkScopeMembership>[0],
-  ): Promise<ReadonlySet<string>> {
-    const known = snapshot.membership.get(key);
-    if (known) return known;
-    let loaded: ReadonlySet<string>;
-    try {
-      loaded = new Set((await deps.membership?.(view))?.members ?? []);
-    } catch {
-      // Authority failure is not permission to expose raw rows (ContextFS rule).
-      loaded = new Set();
-    }
-    snapshot.membership.set(key, loaded);
-    return loaded;
+  ): Promise<void> {
+    if (snapshot.membership.has(key)) return;
+    snapshot.membership.set(key, new Set((await deps.membership(view)).members));
   }
 
   return {
@@ -370,12 +375,17 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const outer = enclosing?.open ? enclosing : undefined;
       const member = memberKey(key);
       const members = [member, ...(key.documentIds ?? []).map((id) => `document:${id}`)];
-      const joins = (snapshot: Snapshot) => !key.viewer || snapshot.viewer === key.viewer.accountId;
+      const threadId = key.viewer?.threadId ?? ("threadId" in key ? key.threadId : null);
+      // A door joins only a snapshot read as its account in its thread: membership and
+      // readability depend on both, so a more specific reader never inherits a vaguer one.
+      const joins = (snapshot: Snapshot) =>
+        (key.viewer?.accountId === undefined || snapshot.viewer === key.viewer.accountId) &&
+        (threadId === null || snapshot.viewerThreadId === threadId);
       if (outer?.members.has(member) && joins(outer)) {
         for (const each of members) outer.members.add(each);
         return operation();
       }
-      const project = await resolveProject(key);
+      const project = await resolveProject(key, threadId);
       // One whose project can't be found has nothing of its own to load.
       if (outer && project === null) return operation();
       if (outer && outer.projectId === project?.project_id && joins(outer)) {
@@ -385,8 +395,8 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const opened: Snapshot = {
         projectId: project?.project_id ?? null,
         personalProjectId: project?.personal ?? null,
-        viewer: key.viewer?.accountId ?? project?.owner ?? null,
-        viewerThreadId: key.viewer?.threadId ?? ("threadId" in key ? key.threadId : null),
+        viewer: key.viewer?.accountId ?? project?.thread_user ?? project?.owner ?? null,
+        viewerThreadId: threadId,
         members: new Set([...members, ...(project ? [`project:${project.project_id}`] : [])]),
         open: true,
         prepared: false,
@@ -407,7 +417,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
     prepare,
     holder({ documentId, view }) {
       const snapshot = storage.getStore();
-      if (!snapshot) {
+      // A settled snapshot only inherited (a timer, a deferred callback) answers for
+      // nobody; holders taken while it was open keep it.
+      if (!snapshot?.open) {
         observer.unscoped(documentId);
         return createHolderLinkScope({ uri: null, projectId: "", view }, EMPTY_CATALOG);
       }
@@ -417,7 +429,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       if (holderRow === undefined) miss(`holder:${documentId}`);
       return createHolderLinkScope(
         { uri: holderRow?.uri ?? null, projectId: snapshot.projectId ?? "", view },
-        snapshotCatalog(snapshot, view),
+        snapshotCatalog(snapshot, view, miss),
         miss,
       );
     },
@@ -454,19 +466,31 @@ const EMPTY_CATALOG: HolderCatalog = {
   assetFor: () => null,
 };
 
+/** Membership this view needs was never loaded: the lookup is a miss, not an absence. */
+const UNLOADED = Symbol("unloaded");
+
 /** The snapshot as one view sees it; reads the maps at each call, so later prepares count. */
-function snapshotCatalog(snapshot: Snapshot, view: LinkView): HolderCatalog {
-  const presence = (row: Row): CatalogDocument["presence"] | null => {
+function snapshotCatalog(
+  snapshot: Snapshot,
+  view: LinkView,
+  miss: (key: string) => void,
+): HolderCatalog {
+  const presence = (row: Row): CatalogDocument["presence"] | null | typeof UNLOADED => {
     if (row.deleted) return "deleted";
     if (row.projectId !== snapshot.projectId || !MANIFEST_SCHEMES.has(row.scheme)) return "live";
     const live = snapshot.membership.get("live");
-    if (!live || live.has(row.id)) return "live";
-    if (view.kind === "draft" && snapshot.membership.get(viewKey(view))?.has(row.id))
-      return "draft";
-    return null;
+    const own = view.kind === "live" ? live : snapshot.membership.get(viewKey(view));
+    if (!live || !own) {
+      miss(`membership:${own ? "live" : viewKey(view)}`);
+      return UNLOADED;
+    }
+    // The view's own manifest wins: a draft that removed a live document lacks it.
+    if (!own.has(row.id)) return null;
+    return live.has(row.id) ? "live" : "draft";
   };
-  const toDocument = (row: Row): CatalogDocument | null => {
+  const toDocument = (row: Row): CatalogDocument | null | undefined => {
     const present = presence(row);
+    if (present === UNLOADED) return undefined;
     if (present === null) return null;
     return {
       documentId: row.id,
@@ -499,15 +523,24 @@ function snapshotCatalog(snapshot: Snapshot, view: LinkView): HolderCatalog {
     documentAt(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
       const documents = (snapshot.byUri.get(uri) ?? []).map(toDocument);
+      if (documents.includes(undefined)) return undefined;
       return (
-        documents.find((document) => document !== null && document.presence !== "deleted") ?? null
+        documents.find(
+          (document): document is CatalogDocument =>
+            document != null && document.presence !== "deleted",
+        ) ?? null
       );
     },
     documentFor(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      const candidates = [...(snapshot.byUri.get(uri) ?? []), ...(snapshot.byStem.get(uri) ?? [])]
-        .map(toDocument)
-        .filter(reachable);
+      const documents = [
+        ...(snapshot.byUri.get(uri) ?? []),
+        ...(snapshot.byStem.get(uri) ?? []),
+      ].map(toDocument);
+      if (documents.includes(undefined)) return undefined;
+      const candidates = documents.filter(
+        (document): document is CatalogDocument => document !== undefined && reachable(document),
+      );
       return matchDocumentPath(candidates, uri, (document) => document.uri);
     },
     assetPath(id) {
