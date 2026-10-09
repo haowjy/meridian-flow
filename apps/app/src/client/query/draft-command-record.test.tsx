@@ -4,13 +4,16 @@ import { act } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
+  answerDraftCommandClosed,
   beginDraftCommand,
   bindDraftCommandAccount,
+  closedByCommand,
   confirmDraftCommand,
   draftCommandFailure,
   draftCommandPendingIn,
   failDraftCommand,
   readDraftsAfterCommands,
+  releaseDraftCommand,
   resetDraftCommandRecords,
   useDraftCommandRecords,
 } from "./draft-command-record";
@@ -62,6 +65,39 @@ describe("draft command records", () => {
       expect(await readDraftsAfterCommands(scope, async () => listed)).toEqual(listed);
       // With no read in flight, a confirmation leaves nothing behind at all.
       await act(async () => confirmDraftCommand(draft));
+      expect(held).toEqual({});
+    });
+  });
+
+  it("keeps the answer that closed the draft after the claim is released, until the reads that could list it settle", async () => {
+    await run(async () => {
+      const closing = { classIds: ["c"], operationIds: ["1"], mode: "discard" as const };
+      const earlier = deferred<typeof listed>();
+      const read = readDraftsAfterCommands(scope, () => earlier.promise);
+      await act(async () => {
+        beginDraftCommand(draft, { ...closing, completesDraft: true });
+        answerDraftCommandClosed(draft, { documentName: "Chapter 13" });
+        releaseDraftCommand(draft);
+      });
+      expect(closedByCommand(held, draft)).toEqual({ documentName: "Chapter 13" });
+      expect(draftCommandPendingIn(held, scope)).toBe(false);
+      earlier.resolve(listed);
+      // The stale read that still lists the draft cannot bring it back.
+      expect(await read).toEqual([]);
+      await act(async () => undefined);
+      expect(closedByCommand(held, draft)).toBeNull();
+
+      // With no read in flight the answer leaves nothing behind, and a claim that did not close the draft never does.
+      await act(async () => {
+        beginDraftCommand(draft, { ...closing, completesDraft: true });
+        answerDraftCommandClosed(draft, { documentName: "Chapter 13" });
+        releaseDraftCommand(draft);
+      });
+      expect(held).toEqual({});
+      await act(async () => {
+        beginDraftCommand(draft, closing);
+        releaseDraftCommand(draft);
+      });
       expect(held).toEqual({});
     });
   });

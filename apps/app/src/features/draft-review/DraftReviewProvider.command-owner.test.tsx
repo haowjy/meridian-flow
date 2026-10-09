@@ -11,6 +11,7 @@
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   applied,
   change,
@@ -174,6 +175,108 @@ describe("a review opened on a draft whose last change another scope has sent", 
   });
 });
 
+describe("a draft entered in the same flush as its closing answer", () => {
+  /**
+   * The Chat sends the last change of unopened B; the writer enters B and the
+   * server's closing answer lands before React commits that entry.
+   */
+  async function enteredWhileAnswered(
+    probe: () => ScopeProbe,
+    send: () => Promise<unknown>,
+    answer: () => void,
+  ) {
+    await groupsListed(probe);
+    await open(probe, draftA);
+    const view = await probe().mountDraftChanges(target(draftB));
+    await vi.waitFor(() => expect(view().status).toBe("ready"));
+    let done!: Promise<unknown>;
+    await act(async () => {
+      done = send();
+    });
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+    mocks.getDraftPreview.mockImplementation(async (_p, _w, _d, id: string) =>
+      id === "draft-b" ? { status: "gone" } : previewOf("1", "2"),
+    );
+    await act(async () => {
+      probe().editor.controller.enterInlineReview(draftB.documentId, draftB.draftId);
+      answer();
+      await done;
+    });
+    await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(1));
+  }
+
+  it("holds a Discard that closed it on No changes left", async () => {
+    const answer = heldCommand(mocks.discardDraft);
+    await renderReviewScopes(async (probe) => {
+      await enteredWhileAnswered(
+        probe,
+        () => probe().chatRunner.discardChanges(draftB, change("3")),
+        () => answer(answeredFor(draftB, discarded(true))),
+      );
+      expect(probe().editor.controller.inlineReview).toMatchObject({
+        draftId: "draft-b",
+        completion: { phase: "closed", documentName: "Chapter 13" },
+      });
+    });
+  });
+
+  it("holds an Apply that closed it on No changes left", async () => {
+    const answer = heldCommand(mocks.applyDraftChanges);
+    await renderReviewScopes(async (probe) => {
+      await enteredWhileAnswered(
+        probe,
+        () => probe().chatRunner.applyChanges(draftB, change("3")),
+        () => answer(answeredFor(draftB, applied(true, "3"))),
+      );
+      expect(probe().editor.controller.inlineReview).toMatchObject({
+        draftId: "draft-b",
+        completion: { phase: "closed", documentName: "Chapter 13" },
+      });
+    });
+  });
+});
+
+describe("a draft entered after its closing answer, while an earlier list read is still in flight", () => {
+  it("opens on No changes left, not on a draft the answer already closed", async () => {
+    const answer = heldCommand(mocks.discardDraft);
+    await renderReviewScopes(async (probe) => {
+      await groupsListed(probe);
+      await open(probe, draftA);
+      const view = await probe().mountDraftChanges(target(draftB));
+      await vi.waitFor(() => expect(view().status).toBe("ready"));
+      let done!: Promise<unknown>;
+      await act(async () => {
+        done = probe().chatRunner.discardChanges(draftB, change("3"));
+      });
+
+      // A read of the Work's list started before the answer and is still out: it lists B.
+      let earlierRead!: (response: unknown) => void;
+      mocks.listWorkDrafts.mockReturnValueOnce(new Promise((resolve) => (earlierRead = resolve)));
+      mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+      mocks.getDraftPreview.mockImplementation(async (_p, _w, _d, id: string) =>
+        id === "draft-b" ? { status: "gone" } : previewOf("1", "2"),
+      );
+      await act(async () => {
+        void probe().queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+        });
+      });
+      await act(async () => {
+        answer(answeredFor(draftB, discarded(true)));
+        await done;
+      });
+
+      // The claim is gone but the answer stands for the writer who opens B from the stale list.
+      await open(probe, draftB);
+      expect(probe().editor.controller.inlineReview).toMatchObject({
+        draftId: "draft-b",
+        completion: { phase: "closed", documentName: "Chapter 13" },
+      });
+      await act(async () => earlierRead({ drafts: [listed, listedB] }));
+    });
+  });
+});
+
 describe("two last Discards for one open draft in the same turn", () => {
   it("keeps the first command's hold when the second is refused", async () => {
     mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
@@ -271,6 +374,80 @@ describe("a batch whose caller changes Work", () => {
       });
 
       const sent = mocks.applyDraftChanges.mock.calls.map((call) => [call[1], call[2]]);
+      expect(sent).toEqual([
+        ["work-a", "document-a"],
+        ["work-a", "document-b"],
+      ]);
+    });
+  });
+});
+
+describe("a batch whose caller changes Work while Editor owns its first draft", () => {
+  /** A is open in the Editor, so the batch's first item runs there and its second in the Chat's session. */
+  async function editorFirstBatch(
+    probe: () => ScopeProbe,
+    mock: typeof mocks.discardDraft,
+    run: () => Promise<unknown>,
+    secondAnswer: object,
+    firstAnswer: () => void,
+  ) {
+    await groupsListed(probe);
+    await open(probe, draftA);
+    const viewA = await probe().mountDraftChanges(target(draftA));
+    const viewB = await probe().mountDraftChanges(target(draftB));
+    await vi.waitFor(() => expect(viewA().status).toBe("ready"));
+    await vi.waitFor(() => expect(viewB().status).toBe("ready"));
+    let batch!: Promise<unknown>;
+    await act(async () => {
+      batch = run();
+    });
+    expect(mock).toHaveBeenCalledTimes(1);
+
+    // The writer opens a chat of another Work while the first request waits.
+    await probe().moveChatToWork(workC);
+    mock.mockResolvedValue(answeredFor(draftB, secondAnswer));
+    await act(async () => {
+      firstAnswer();
+      await batch;
+    });
+    return mock.mock.calls.map((call) => [call[1], call[2]]);
+  }
+
+  it("sends an Apply batch's second draft to the Work it began in", async () => {
+    const answer = heldCommand(mocks.applyDraftChanges);
+    await renderReviewScopes(async (probe) => {
+      const sent = await editorFirstBatch(
+        probe,
+        mocks.applyDraftChanges,
+        () =>
+          probe().chatRunner.applyBatch([
+            { draft: draftA, selection: change("2") },
+            { draft: draftB, selection: change("3") },
+          ]),
+        applied(false, "3"),
+        () => answer(applied(false)),
+      );
+      expect(sent).toEqual([
+        ["work-a", "document-a"],
+        ["work-a", "document-b"],
+      ]);
+    });
+  });
+
+  it("sends a Discard batch's second draft to the Work it began in", async () => {
+    const answer = heldCommand(mocks.discardDraft);
+    await renderReviewScopes(async (probe) => {
+      const sent = await editorFirstBatch(
+        probe,
+        mocks.discardDraft,
+        () =>
+          probe().chatRunner.discardBatch([
+            { draft: draftA, selection: change("2") },
+            { draft: draftB, selection: change("3") },
+          ]),
+        discarded(false),
+        () => answer(discarded(false)),
+      );
       expect(sent).toEqual([
         ["work-a", "document-a"],
         ["work-a", "document-b"],

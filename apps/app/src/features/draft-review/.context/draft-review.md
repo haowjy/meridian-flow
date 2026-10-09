@@ -74,14 +74,23 @@ for the two revision tokens (with no active preview the selection is refused
 draft's command claim, so any review showing the draft follows them
 (`useReviewCommandCompletion`, synchronously from the record store): a review
 opened while the command is in flight adopts its pending completion in
-`enterInline`, the answer closes the review currently showing the draft before
-the list is re-read, and the claim ending any other way withdraws the prediction.
+`enterInline`, the answer closes the review showing the draft before the list is
+re-read, and the claim ending any other way withdraws the prediction. Every change
+to a claim of the Work is dispatched whichever review is rendered; the reducer
+orders it with `enterInline` and ignores it when it names another draft, so a draft
+entered and answered in one flush still settles (nothing reads the last rendered
+identity). The closing answer outlives the claim as a confirmation
+(`closedByCommand`, with the document's name read when it landed): it is adopted by
+a review that opens on the draft afterwards and expires with the list reads that
+started before it, like any confirmation.
 The claim, not the sender, owns this; a refused duplicate never begins it.
 `useChangeCommandRunner` is the transport surfaces use: the Editor's controller
 runs a draft it has open in the caller's Work (the toast and focus belong to the
 review the writer is in); every other draft runs in the caller's scope. A batch
 keeps the caller it began with, so a caller that moves to another Work mid-batch
-cannot redirect the remaining drafts (a session keeps its own Work's ports). A selection batch is
+cannot redirect the remaining drafts (a session is bound to its Work's ports from
+its creation, `useDraftReviewController`, whether or not it has sent before, and
+releases its disposition reservation on every path). A selection batch is
 one command per draft, each with its union and tokens; a refusal on one does not
 stop the next. At the click every draft's selection is `queued` in the change
 record (hidden on every surface, claiming nothing); it is retired per draft as

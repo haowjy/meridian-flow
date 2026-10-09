@@ -6,16 +6,23 @@
  * A command's identity, mode and coverage live in the draft's claim, and the
  * server's answer lands there (`draft-command-record`), so the review needs
  * nothing from the sender. A review that opens on a claimed draft adopts its
- * pending completion at once (`commandCompletion`); one already open follows
- * the claim: pending when it begins, closed on the answer that closed the
- * draft (before any list read can drop the draft), and withdrawn when the
- * claim ends without that answer (a refusal, a lost request, a change that did
- * not close the draft).
+ * pending completion at once (`commandCompletion`), or its closed one when the
+ * answer already came; one already open follows the claim: pending when it
+ * begins, closed on the answer that closed the draft (before any list read can
+ * drop the draft), and withdrawn when the claim ends without that answer (a
+ * refusal, a lost request, a change that did not close the draft).
+ *
+ * Every change to a claim of the Work is dispatched, whichever review is
+ * rendered: the reducer applies it in order with the review's own transitions
+ * (`enterInline`) and ignores it when it names another draft, so a draft
+ * entered and answered in one flush still settles.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useEffect } from "react";
 import {
+  changedDrafts,
+  closedByCommand,
   type DraftCommandRecords,
   pendingChangeCommand,
   subscribeDraftCommandRecords,
@@ -23,7 +30,6 @@ import {
 import type {
   DraftReviewAction,
   DraftReviewSelection,
-  DraftReviewState,
   ReviewCompletion,
 } from "./draft-review-session";
 import { listedDocumentName } from "./useSelectionCommands";
@@ -36,8 +42,9 @@ export function commandCompletion(
   draft: Scope & DraftReviewSelection,
   documentName: () => string | null,
 ): ReviewCompletion | undefined {
+  const closed = closedByCommand(records, draft);
+  if (closed) return { phase: "closed", documentName: closed.documentName };
   const command = pendingChangeCommand(records, draft);
-  if (command?.draftClosed) return { phase: "closed", documentName: documentName() };
   if (command?.completesDraft)
     return { phase: "pending", mode: command.mode, documentName: documentName() };
   return undefined;
@@ -54,12 +61,15 @@ export function completionAction(
   draft: Scope & DraftReviewSelection,
   documentName: () => string | null,
 ): DraftReviewAction | null {
+  const { documentId, draftId } = draft;
+  const closed = closedByCommand(records, draft);
+  if (closed)
+    return closedByCommand(previous, draft)
+      ? null
+      : { type: "reviewClosed", documentId, draftId, documentName: closed.documentName };
   const command = pendingChangeCommand(records, draft);
   const before = pendingChangeCommand(previous, draft);
   if (command === before) return null;
-  const { documentId, draftId } = draft;
-  if (command?.draftClosed)
-    return { type: "reviewClosed", documentId, draftId, documentName: documentName() };
   if (command?.completesDraft)
     return {
       type: "reviewCompleting",
@@ -75,11 +85,9 @@ export function completionAction(
 export function useReviewCommandCompletion({
   projectId,
   workId,
-  stateRef,
   activeRef,
   dispatch,
 }: Scope & {
-  stateRef: { readonly current: DraftReviewState };
   activeRef: { readonly current: boolean };
   dispatch: Dispatch<DraftReviewAction>;
 }): void {
@@ -87,17 +95,18 @@ export function useReviewCommandCompletion({
   useEffect(
     () =>
       subscribeDraftCommandRecords((records, previous) => {
-        const surface = stateRef.current.surface;
-        if (surface.kind !== "inline" || !activeRef.current) return;
-        const action = completionAction(
-          records,
-          previous,
-          { projectId, workId, documentId: surface.documentId, draftId: surface.draftId },
-          // Read now: the draft leaves the list once the answer's reads land.
-          () => listedDocumentName(queryClient, projectId, workId, surface.draftId),
-        );
-        if (action) dispatch(action);
+        if (!activeRef.current) return;
+        for (const draft of changedDrafts(records, previous, { projectId, workId })) {
+          const action = completionAction(
+            records,
+            previous,
+            draft,
+            // Read now: the draft leaves the list once the answer's reads land.
+            () => listedDocumentName(queryClient, projectId, workId, draft.draftId),
+          );
+          if (action) dispatch(action);
+        }
       }),
-    [projectId, workId, queryClient, stateRef, activeRef, dispatch],
+    [projectId, workId, queryClient, activeRef, dispatch],
   );
 }
