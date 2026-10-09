@@ -1,14 +1,11 @@
-/**
- * The draft review's real composition for tests that claim a cross-surface
- * outcome: the Editor's and the Chat's scopes over one Work, their controllers,
- * mutations and query cache, with the header's model reading the Editor's. The
- * suite supplies the network (`@/client/api/drafts-api`) and the two seams the
- * scope reads from the account (`account-feature-context`, the catalog); none of
- * the review's own state is faked or set by hand.
- */
+/** Real review scopes and instance-owned network/account seams for composed app tests. */
 import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
+import { vi } from "vitest";
+import { Doc } from "yjs";
+import * as draftsApi from "@/client/api/drafts-api";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -26,6 +23,8 @@ import { type DraftChangesTarget, useDraftChanges } from "@/features/draft-revie
 import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
 import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
+import * as account from "@/features/project/context/account-feature-context";
+import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { WorkReviewScopesProvider } from "@/features/project/work/useWorkReviewScope";
 import { withReactRoot } from "./react-dom-harness";
 
@@ -48,7 +47,8 @@ export const listed = {
   draftId: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
-  status: "active",
+  contextPath: null,
+  status: "active" as const,
   draftGeneration: 1,
   lastActorTurnId: "turn-1",
   actorThreads: [],
@@ -58,17 +58,17 @@ export const listed = {
 export const operation = (id: string) => ({
   operationId: id,
   closureClassId: `class-${id}`,
-  kind: "agent",
-  contribution: "added",
-  classification: "addition",
+  kind: "agent" as const,
+  contribution: "added" as const,
+  classification: "addition" as const,
   hunkCount: 1,
 });
 
 export const preview = {
-  status: "active",
+  status: "active" as const,
   draftId: "draft-a",
   draftGeneration: 1,
-  inlineModelPresent: true,
+  inlineModelPresent: true as const,
   reviewRoomName: "review-room-a",
   liveRevisionToken: "live-1",
   draftRevisionToken: "draft-1",
@@ -89,7 +89,7 @@ export const change = (...ids: string[]) => ({
 });
 
 export const applied = (draftClosed: boolean, id = "2") => ({
-  status: "applied",
+  status: "applied" as const,
   draftId: "draft-a",
   operationIds: [id],
   closureClassIds: [`class-${id}`],
@@ -97,30 +97,21 @@ export const applied = (draftClosed: boolean, id = "2") => ({
 });
 
 export const discarded = (draftClosed: boolean) => ({
-  status: "discarded",
+  status: "discarded" as const,
   draftId: "draft-a",
   draftClosed,
 });
 
 export type ScopeProbe = {
   queryClient: QueryClient;
-  /** The Editor's scope: where a review lives and per-change commands run. */
   editor: DraftReviewContextValue;
-  /** The Chat's scope: the composer's whole-draft commands. */
   chat: DraftReviewContextValue;
-  /** The third scope: a Work no other scope has. It lists and runs commands, and never enters a review. */
   third: DraftReviewContextValue;
-  /** What the header, the dock's list and the editor's chrome read, for the reviewed draft. */
   header: ReviewHeaderModel;
-  /** The writer opens another draft of the Work: the header then reads that one. */
   openDraft: (draft: ReviewedDraft) => Promise<void>;
-  /** A surface mounts after the review is already open (the dock's tab, a sheet): its view of the Editor's review. */
   mountLateReader: () => Promise<() => ReviewChangesView>;
-  /** The transport as the Chat's scope uses it: the strip's and a Work row's way to send. */
   chatRunner: ChangeCommandRunner;
-  /** The chat moves to another Work (the writer opens a chat of it); the Editor stays. */
   moveChatToWork: (to: Work) => Promise<void>;
-  /** A change list of any draft, read through the Chat's scope (an unopened draft's rows). */
   mountDraftChanges: (
     target: DraftChangesTarget,
     scope?: "chat" | "third",
@@ -129,10 +120,16 @@ export type ScopeProbe = {
 
 export type ReviewedDraft = { documentId: string; draftId: string };
 
-export function renderReviewScopes(
+export async function renderReviewScopes(
   run: (probe: () => ScopeProbe) => Promise<void>,
   options: {
     reviewed?: ReviewedDraft;
+    projectId?: string;
+    editorWork?: Work;
+    chatWork?: Work;
+    thirdWork?: Work;
+    threadId?: string;
+    host?: (children: ReactNode) => ReactNode;
     onOpenDraft?: (row: ReviewFileTarget) => void;
     /** A surface that reads the scopes, as the project shell offers them (the Work page's list). */
     surface?: ReactNode;
@@ -201,15 +198,21 @@ export function renderReviewScopes(
     );
   }
   function Scopes(): ReactNode {
-    const editor = useDraftReviewScopeValue({ projectId: "project-a", work });
-    const [chatWork, setChatWork] = useState(work);
+    const editor = useDraftReviewScopeValue({
+      projectId: options.projectId ?? "project-a",
+      work: options.editorWork ?? work,
+    });
+    const [chatWork, setChatWork] = useState(options.chatWork ?? work);
     current.moveChatToWork = (to) => act(async () => setChatWork(to));
     const chat = useDraftReviewScopeValue({
-      projectId: "project-a",
+      projectId: options.projectId ?? "project-a",
       work: chatWork,
-      threadId: "thread-a",
+      threadId: options.threadId ?? "thread-a",
     });
-    const third = useDraftReviewScopeValue({ projectId: "project-a", work: workC });
+    const third = useDraftReviewScopeValue({
+      projectId: options.projectId ?? "project-a",
+      work: options.thirdWork ?? workC,
+    });
     current.editor = editor;
     current.chat = chat;
     current.third = third;
@@ -228,10 +231,74 @@ export function renderReviewScopes(
   }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   current.queryClient = queryClient;
-  return withReactRoot(
+  const node = (
     <QueryClientProvider client={queryClient}>
-      <Scopes />
-    </QueryClientProvider>,
-    () => run(() => current as ScopeProbe),
+      {options.host ? options.host(<Scopes />) : <Scopes />}
+    </QueryClientProvider>
   );
+  try {
+    await withReactRoot(node, () => run(() => current as ScopeProbe), {
+      drainMacrotask: !vi.isFakeTimers(),
+    });
+  } finally {
+    queryClient.clear();
+  }
+}
+
+/** One answer per held request; resolve/reject inside act, independently of other requests. */
+export function deferredReviewAnswer<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Install only for this test; dispose after unmount. No import-time replacement of modules. */
+export function createReviewScopeFixture(
+  options: {
+    removal?: ContextRemovalCoordinator;
+    registry?: LiveDocumentSessionRegistry;
+    resources?: ReturnType<typeof account.useOptionalAccountResourceReplica>;
+  } = {},
+) {
+  const network = {
+    listWorkDrafts: vi.spyOn(draftsApi, "listWorkDrafts"),
+    getDraftPreview: vi.spyOn(draftsApi, "getDraftPreview"),
+    applyDraft: vi.spyOn(draftsApi, "applyDraft"),
+    applyDraftChanges: vi.spyOn(draftsApi, "applyDraftChanges"),
+    discardDraft: vi.spyOn(draftsApi, "discardDraft"),
+  };
+  // Unconfigured requests stay pending, never accidentally reach a real server.
+  for (const endpoint of Object.values(network))
+    endpoint.mockReturnValue(new Promise<never>(() => {}));
+  const removal = options.removal ?? new ContextRemovalCoordinator();
+  const roomDocument = new Doc();
+  // This is only a refresh subscription source, not a delivery/paint witness.
+  const registry =
+    options.registry ??
+    ({
+      retainBranchRooms: () => {},
+      releaseBranchRooms: () => {},
+      getBranchRoom: () => ({ document: roomDocument }),
+    } as unknown as LiveDocumentSessionRegistry);
+  const seams = [
+    vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
+    vi.spyOn(account, "useLiveDocumentSessionRegistry").mockReturnValue(registry),
+    vi
+      .spyOn(account, "useOptionalAccountResourceReplica")
+      .mockReturnValue(options.resources ?? null),
+  ];
+  return {
+    network,
+    removal,
+    render: renderReviewScopes,
+    dispose() {
+      for (const spy of [...Object.values(network), ...seams]) spy.mockRestore();
+      if (!options.removal) removal.dispose();
+      roomDocument.destroy();
+    },
+  };
 }
