@@ -12,6 +12,7 @@ import {
   filetypeForPath,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
@@ -20,6 +21,7 @@ import type {
   DocumentCreationAggregate,
   DocumentLinkScopes,
   DocumentSeedOrigin,
+  EffectiveReadVersion,
   MarkdownDocumentStore,
   SyncError,
 } from "../../../collab/index.js";
@@ -821,9 +823,15 @@ export class ContextFS implements ContextSchemeAdapter {
     );
     const first = searchable[0];
     if (!first) return Ok([]);
-    // One source has one project association, including personal and Work sources.
+    // One source has one project association, including personal and Work sources; its
+    // chapters' reads join this snapshot, so it is read in their thread.
+    const threadId = this.threadView()?.threadId;
     return this.links.within(
-      { documentId: first.document.id, documentIds: searchable.map(({ document }) => document.id) },
+      {
+        documentId: first.document.id,
+        documentIds: searchable.map(({ document }) => document.id),
+        ...(threadId ? { viewer: { threadId } } : {}),
+      },
       async () => {
         const hits: AdapterSearchHit[] = [];
         for (const row of searchable) {
@@ -867,34 +875,25 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
-  private threadView(): {
-    threadId: string;
-    responseId?: string | null;
-    version: "draft" | "live";
-    workId: string | null;
-  } | null {
+  private threadView():
+    | ({ threadId: ThreadId; responseId?: string | null } & EffectiveReadVersion)
+    | null {
     const view = this.readView;
     if (!view) return null;
+    const reader = { threadId: view.threadId as ThreadId, responseId: view.responseId };
     // Without a separate draft both versions are the same document (D3).
-    const ownVersion = sourceDestination(this.scheme, view.draftWork).kind;
-    const version = view.version === "live" ? "live" : ownVersion;
-    return {
-      threadId: view.threadId,
-      responseId: view.responseId,
-      version,
-      workId: version === "draft" ? (view.draftWork?.id ?? null) : null,
-    };
+    const drafted = sourceDestination(this.scheme, view.draftWork).kind === "draft";
+    return view.version !== "live" && drafted && view.draftWork
+      ? { ...reader, destination: "draft", workId: view.draftWork.id as WorkId }
+      : { ...reader, destination: "live" };
   }
 
   private async readVisibleMarkdown(documentId: string): Promise<Result<string, SyncError>> {
     const view = this.threadView();
     if (view) {
       const read = await this.documentSync.readEffectiveMarkdown({
-        documentId: documentId as never,
-        threadId: view.threadId as never,
-        responseId: view.responseId,
-        destination: view.version,
-        workId: view.workId as never,
+        ...view,
+        documentId: documentId as DocumentId,
       });
       return read.ok ? Ok(read.value.content) : read;
     }
@@ -922,11 +921,8 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = this.threadView();
     if (view) {
       const hashlines = await this.documentSync.readEffectiveHashlines({
-        documentId: documentId as never,
-        threadId: view.threadId as never,
-        responseId: view.responseId,
-        destination: view.version,
-        workId: view.workId as never,
+        ...view,
+        documentId: documentId as DocumentId,
       });
       return hashlines.ok
         ? Ok({

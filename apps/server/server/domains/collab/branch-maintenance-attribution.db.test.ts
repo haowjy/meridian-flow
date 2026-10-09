@@ -15,6 +15,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_ID,
 } from "./test-support/work-draft-fixture.js";
 
 // The DB project requires RUN_DB_TESTS and installs an owned worker DATABASE_URL.
@@ -107,6 +108,7 @@ describe("draft maintenance attribution (postgres)", () => {
       documentId: DOC_ID as never,
       threadId: THREAD_ID as never,
       destination: "draft",
+      workId: WORK_ID as never,
     });
     expect(draft).toMatchObject({
       ok: true,

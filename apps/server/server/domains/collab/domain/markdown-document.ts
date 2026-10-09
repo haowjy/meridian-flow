@@ -56,8 +56,6 @@ export type MarkdownSetResult = {
   meta: UpdateMeta;
 };
 
-export type MarkdownEditResult = MarkdownSetResult & { beforeMarkdown: string };
-
 type MarkdownWriteHook = (event: {
   documentId: DocumentId;
   threadId?: ThreadId;
@@ -100,13 +98,13 @@ type MarkdownDocumentEngineDeps = {
 };
 
 export type MarkdownDocumentEngine = {
-  /** `view` is the version `doc` is (a Work draft's links spell in that draft); default live. */
-  serializeDocument(documentId: DocumentId, doc: Y.Doc, view?: LinkView): Promise<string>;
-  /** `view` is the version `doc` is (a Work draft's links spell in that draft); default live. */
+  /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
+  serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
+  /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
   serializeVersionedDocument(
     documentId: DocumentId,
     doc: Y.Doc,
-    view?: LinkView,
+    view: LinkView,
   ): Promise<{ content: string; revision: string }>;
   readVersionedMarkdown(
     documentId: string,
@@ -123,12 +121,6 @@ export type MarkdownDocumentEngine = {
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
-  editMarkdown(input: {
-    documentId: DocumentId;
-    transform: (markdown: string) => string;
-    origin: RuntimeOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<MarkdownEditResult, SyncError>>;
   seedFromMarkdown(
     documentId: string,
     markdown: string,
@@ -365,55 +357,6 @@ export function createMarkdownDocumentEngine(
     }
   }
 
-  async function editMarkdown(input: {
-    documentId: DocumentId;
-    transform: (markdown: string) => string;
-    origin: RuntimeOrigin;
-    threadId?: ThreadId;
-  }): Promise<Result<MarkdownEditResult, SyncError>> {
-    await deps.lifecycle.ensureDocument(input.documentId);
-    const resolvedFormat = await documentFormat(input.documentId);
-    if (!resolvedFormat.ok) return resolvedFormat;
-    const format = resolvedFormat.value;
-
-    try {
-      const result = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => {
-        const links = await spelling(input.documentId, [liveDoc]);
-        const beforeMarkdown = serializeForSchema(
-          input.documentId,
-          liveDoc,
-          format.schemaType,
-          links,
-        );
-        const parsed = parseMarkdown(input.documentId, input.transform(beforeMarkdown), format);
-        if (!parsed.ok) return parsed;
-        const bound = await bindWritten(input.documentId, parsed.value, format.schemaType);
-
-        const result = await replaceLiveDocumentMarkdown(
-          input.documentId,
-          liveDoc,
-          bound,
-          input.origin,
-          format.schemaType,
-        );
-        return result.ok ? Ok({ ...result.value, beforeMarkdown }) : result;
-      });
-      if (result.ok) {
-        await deps.afterWrite?.({
-          documentId: result.value.documentId,
-          threadId: input.threadId,
-          markdown: result.value.markdown,
-        });
-      }
-      return result;
-    } catch (cause) {
-      if (isDocumentNotFoundError(cause)) {
-        return Err({ code: "not_found", documentId: input.documentId });
-      }
-      throw cause;
-    }
-  }
-
   const engine: MarkdownDocumentEngine = {
     async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
@@ -468,8 +411,6 @@ export function createMarkdownDocumentEngine(
     },
 
     setMarkdown,
-
-    editMarkdown,
 
     async seedFromMarkdown(documentId, markdown, origin) {
       const typedDocumentId = documentId as DocumentId;

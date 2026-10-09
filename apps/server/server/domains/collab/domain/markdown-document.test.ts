@@ -85,7 +85,9 @@ describe("code document serialization", () => {
         message: "Tracked document has registered binary filetype: png",
       },
     });
-    await expect(subject.engine.serializeDocument(DOCUMENT_ID, projection)).rejects.toMatchObject({
+    await expect(
+      subject.engine.serializeDocument(DOCUMENT_ID, projection, { kind: "live" }),
+    ).rejects.toMatchObject({
       code: "corrupt_state",
     });
     projection.destroy();
@@ -197,9 +199,9 @@ describe("schema-aware serialization purity", () => {
     const beforeXml = fragmentOf(input).toString();
 
     try {
-      await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe(
-        "kept prose\n",
-      );
+      await expect(
+        subject.engine.serializeDocument(DOCUMENT_ID, input, { kind: "live" }),
+      ).resolves.toBe("kept prose\n");
 
       expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
       expect(fragmentOf(input).toString()).toBe(beforeXml);
@@ -216,7 +218,9 @@ describe("schema-aware serialization purity", () => {
     fragmentOf(input).insert(0, [paragraph]);
     const beforeState = Y.encodeStateAsUpdate(input);
 
-    await expect(subject.engine.serializeDocument(DOCUMENT_ID, input)).resolves.toBe("ab\n");
+    await expect(
+      subject.engine.serializeDocument(DOCUMENT_ID, input, { kind: "live" }),
+    ).resolves.toBe("ab\n");
 
     expect(Y.encodeStateAsUpdate(input)).toEqual(beforeState);
     expect(subject.eventSink.events).toHaveLength(1);
