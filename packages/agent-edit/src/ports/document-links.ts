@@ -60,7 +60,8 @@ export interface AheadMint {
   ref: AheadRef;
   /** aheadAddress(...) result: decoded, canonical, with an extension. */
   address: string;
-  holderDocumentId: string;
+  /** The holder scope's project at mint time: the registry's namespace. */
+  holderProjectId: string;
 }
 
 export interface DocumentLinksPort {

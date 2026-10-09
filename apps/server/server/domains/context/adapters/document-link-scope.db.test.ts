@@ -223,8 +223,8 @@ if (!RUN) {
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
       });
-      // A key that names no project (a non-UUID grant) still registers under the
-      // holder row's own project, and a holder with no row is refused before the registry.
+      // A key that names no project (a non-UUID grant) still mints under the holder
+      // row's own project, and registration keeps the project the mint recorded.
       const registered: string[] = [];
       const port = createScopedDocumentLinks({
         scopes,
@@ -235,17 +235,15 @@ if (!RUN) {
         },
         viewFor: liveViewFor,
       });
-      const mint = (holderDocumentId: string) => ({
-        ref: `ahead:${id(90)}` as const,
-        address: "manuscript://part1/new.md",
-        holderDocumentId,
-      });
       await scopes.within({ projectId: "test-project" }, async () => {
         await port.prepare({ documentId: HOLDER, docs: [] });
-        await port.registerAhead([mint(HOLDER)]);
-        await expect
-          .soft(port.registerAhead([mint(id(91))]), "no holder row")
-          .rejects.toThrow("no holder project");
+        await port.registerAhead([
+          {
+            ref: `ahead:${id(90)}`,
+            address: "manuscript://part1/new.md",
+            holderProjectId: port.scopeFor(HOLDER, undefined).holder.projectId,
+          },
+        ]);
       });
       expect.soft(registered).toEqual([PROJECT]);
     });

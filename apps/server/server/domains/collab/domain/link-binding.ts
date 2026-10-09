@@ -25,7 +25,6 @@
  */
 import {
   type AgentEditCodec,
-  type AheadMint,
   assignLinkRefs,
   createAgentEditCodecFactory,
   type DocumentCoordinator,
@@ -37,7 +36,7 @@ import {
   writtenAddresses,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import { type LinkView, parseLinkRef } from "@meridian/contracts";
+import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { type MarkupCodec, type PMNode, walkLinkOccurrences } from "@meridian/markup";
@@ -45,6 +44,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { documentAuthority } from "./document-handle.js";
+import { aheadRegistrations } from "./document-links-port.js";
 import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type AheadRefRegistrar,
@@ -306,29 +306,15 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         old: walkLinkOccurrences(previous),
         written,
         scope,
-        holderDocumentId: documentId ?? "",
         shown: [],
       });
-      await register(assigned.minted, scope);
+      if (assigned.minted.length > 0) {
+        await deps.registrar.register(aheadRegistrations(assigned.minted));
+      }
       return finish(assigned.nodes, markdown);
     } finally {
       base?.doc.destroy();
     }
-  }
-
-  async function register(minted: readonly AheadMint[], scope: HolderLinkScope): Promise<void> {
-    if (minted.length === 0) return;
-    await deps.registrar.register(
-      minted.map((mint) => {
-        const parsed = parseLinkRef(mint.ref);
-        if (parsed?.kind !== "ahead") throw new RangeError(`Not an ahead ref: ${mint.ref}`);
-        return {
-          aheadId: parsed.aheadId,
-          holderProjectId: scope.holder.projectId,
-          address: mint.address,
-        };
-      }),
-    );
   }
 
   return {

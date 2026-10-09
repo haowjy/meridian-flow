@@ -3,9 +3,8 @@
  * document and its write context, and this turns them into a holder and view
  * over the operation's document-link scope (contract §4.3–4.4).
  */
-import type { DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
+import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { type LinkView, parseLinkRef } from "@meridian/contracts";
-import { isUuid } from "../../../shared/uuid.js";
 import { documentRevision } from "./document-revision.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -32,28 +31,7 @@ export function createScopedDocumentLinks(input: {
       }),
     scopeFor: (documentId, context) => scopes.holder(holder(documentId, context)),
     async registerAhead(mints) {
-      if (mints.length === 0) return;
-      await input.registrar.register(
-        mints.map((mint) => {
-          const parsed = parseLinkRef(mint.ref);
-          if (parsed?.kind !== "ahead") throw new RangeError(`Not an ahead ref: ${mint.ref}`);
-          const scope = scopes.holder({
-            documentId: mint.holderDocumentId,
-            view: { kind: "live" },
-          });
-          // An empty or non-UUID project would only fail later as a registry query error.
-          if (!isUuid(scope.holder.projectId)) {
-            throw new RangeError(
-              `Ahead ref ${mint.ref} has no holder project: ${mint.holderDocumentId} is not a prepared project document`,
-            );
-          }
-          return {
-            aheadId: parsed.aheadId,
-            holderProjectId: scope.holder.projectId,
-            address: mint.address,
-          };
-        }),
-      );
+      if (mints.length > 0) await input.registrar.register(aheadRegistrations(mints));
     },
     revision: documentRevision,
   };
@@ -62,4 +40,19 @@ export function createScopedDocumentLinks(input: {
 /** The live utility core: every command reads and writes the live tree. */
 export function liveViewFor(_documentId: string, context: WriteContext | undefined): LinkView {
   return context?.responseId ? { kind: "live", responseId: context.responseId } : { kind: "live" };
+}
+
+/** The registry rows for minted ahead refs: each under the project its holder scope had. */
+export function aheadRegistrations(mints: readonly AheadMint[]) {
+  return mints.map((mint) => {
+    const parsed = parseLinkRef(mint.ref);
+    if (parsed?.kind !== "ahead") throw new RangeError(`Not an ahead ref: ${mint.ref}`);
+    // An unscoped holder has no project; the registry would only fail later on the query.
+    if (!mint.holderProjectId) throw new RangeError(`Ahead ref ${mint.ref} has no holder project`);
+    return {
+      aheadId: parsed.aheadId,
+      holderProjectId: mint.holderProjectId,
+      address: mint.address,
+    };
+  });
 }
