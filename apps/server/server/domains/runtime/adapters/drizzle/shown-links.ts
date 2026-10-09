@@ -37,7 +37,7 @@ export function createDrizzleShownLinkStore(db: DrizzleDatabase): ShownLinkStore
     async record(input) {
       if (input.links.length === 0) return;
       const view = linkViewKey(input.view);
-      // One row per key; a repeated key in one call would make ON CONFLICT touch a row twice.
+      // One row per key and turn; a repeated key in one call would make ON CONFLICT touch a row twice.
       const unique = new Map(input.links.map((link) => [`${link.ref}\0${link.address}`, link]));
       await db_()
         .insert(table)
@@ -60,9 +60,12 @@ export function createDrizzleShownLinkStore(db: DrizzleDatabase): ShownLinkStore
             table.address,
             table.holderUri,
             table.view,
+            table.turnId,
           ],
-          // `excluded.seq` is the fresh sequence value drawn for the proposed row.
-          set: { seq: sql`excluded.seq`, turnId: sql`excluded.turn_id` },
+          // `excluded.seq` was drawn before conflict arbitration, so a writer
+          // delayed after drawing may arrive second with the smaller value.
+          set: { seq: sql`excluded.seq` },
+          setWhere: sql`excluded.seq > ${table.seq}`,
         });
     },
     async forDocument(threadId, documentId) {
