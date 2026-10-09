@@ -14,20 +14,13 @@ import {
 } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
-import { type EditorScope, useEditorScope } from "./editor-scope";
 
 const noWork = { id: "no-work", slug: null, archivedAt: null } as Work;
 const namedWork = { id: "named-work", slug: "named", archivedAt: null } as Work;
 const holderScheme = "manuscript";
 const holderProjectionReady = true;
-let observedScope: EditorScope;
-let indexedWorkId: string | null;
-let referenceWorkId: string | null;
 vi.mock("./references/useReferenceBrowserCatalog", () => ({
-  useReferenceBrowserCatalog: (_projectId: string, workId: string | null) => {
-    referenceWorkId = workId;
-    return null;
-  },
+  useReferenceBrowserCatalog: () => null,
 }));
 vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLink: vi.fn() }));
 vi.mock("@/client/query/useWorks", () => ({
@@ -40,13 +33,16 @@ const threadList: { current: ThreadListItem[] } = {
   current: [{ id: "thread-1", title: "Chapter voice" }],
 };
 
-/** Lifetime is not about review: no review is ever open here, and nothing reports about one. */
+/** Runtime callbacks are inert; these tests own only editor lifetime and surface selection. */
 const controller = {
   registerInlineReviewRuntime: () => {},
   releaseInlineReviewRuntime: () => {},
   inlineReviewModelAvailable: () => {},
   setInlineReviewShown: () => {},
-  inlineReview: null,
+  inlineReview: null as
+    | import("@/features/draft-review/draft-review-session").InlineDraftReview
+    | null,
+  reviewRoomError: false,
 };
 
 vi.mock("@/client/query/useProjectThreads", () => ({
@@ -100,26 +96,13 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
-// The real runtime and follower, with only the scope it reads observed.
-vi.mock("./surfaces/link", async () => {
-  const { ProjectLinkRuntime: Runtime } = await import("./surfaces/link/ProjectLinkRuntime");
-  return {
-    ProjectLinkRuntime: (props: React.ComponentProps<typeof Runtime>) => {
-      observedScope = useEditorScope();
-      return <Runtime {...props} />;
-    },
-  };
-});
 const openDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => openDocument,
 }));
 vi.mock("@/features/links", async () => ({
   useLinkFollower: (await import("@/features/links/use-link-follower")).useLinkFollower,
-  useLinkableDocuments: (scope: EditorScope) => {
-    indexedWorkId = scope.workId;
-    return { documents: [], revision: "", complete: false };
-  },
+  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
 }));
 // Lifetime is about which editor exists, not what hangs off it. An empty
 // registry keeps every lane's own dependencies out of this suite.
@@ -135,10 +118,10 @@ function mountedEditor(): Editor {
   return dom.editor;
 }
 
-type LiveProps = Omit<EditorViewProps, "reviewDraftId">;
-let applyProps: (next: Partial<LiveProps>) => void = () => {};
+type SurfaceProps = EditorViewProps;
+let applyProps: (next: Partial<SurfaceProps>) => void = () => {};
 
-function Harness({ initial }: { initial: LiveProps }) {
+function Harness({ initial }: { initial: SurfaceProps }) {
   const [props, setProps] = useState(initial);
   applyProps = (next) => setProps((previous) => ({ ...previous, ...next }));
   return (
@@ -148,7 +131,7 @@ function Harness({ initial }: { initial: LiveProps }) {
   );
 }
 
-function ExactLiveEditor(props: LiveProps) {
+function ExactLiveEditor(props: SurfaceProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />
@@ -277,4 +260,34 @@ describe("editor lifetime", () => {
       );
     });
   });
+});
+
+it("does not attribute the leaving review's room error to an incoming request", async () => {
+  controller.inlineReview = {
+    kind: "inline",
+    documentId: "leaving",
+    draftId: "failed-draft",
+    roomError: true,
+  };
+  controller.reviewRoomError = true;
+  try {
+    await withReactRoot(
+      <Harness
+        initial={{
+          documentId: "incoming",
+          projectId: "project-1",
+          reviewDraftId: "incoming-draft",
+        }}
+      />,
+      () => {
+        expect(document.body.textContent).not.toContain("Couldn't open review mode.");
+        expect(
+          document.querySelector('[data-editor-surface="live"]')?.classList.contains("hidden"),
+        ).toBe(true);
+      },
+    );
+  } finally {
+    controller.inlineReview = null;
+    controller.reviewRoomError = false;
+  }
 });

@@ -230,7 +230,10 @@ export function EditorView(props: EditorViewProps) {
   const schemaStale =
     snapshot?.connectionState?.kind === "reset" &&
     snapshot.connectionState.reason === WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason;
-  const failed = reviewRequested && controller.reviewRoomError;
+  const failed =
+    controller.inlineReview?.documentId === props.documentId &&
+    controller.inlineReview.draftId === props.reviewDraftId &&
+    controller.reviewRoomError;
   const terminal = failed || schemaStale || (props.draftOnly && !reviewRequested);
   const liveKey = liveSession
     ? `${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`

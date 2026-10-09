@@ -725,7 +725,6 @@ function observeGeneration(
     });
   }
   if (read.draftGeneration < shown) return review;
-  if (read.draftGeneration === shown) return withRoom(review);
   if (!adoptsGeneration(review, read)) return withRoom(review);
   const completion = completionAt(read.claim, read.draftGeneration);
   return reenter(review, read.draftGeneration, completion, read.roomName);
