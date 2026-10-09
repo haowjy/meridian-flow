@@ -42,7 +42,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
@@ -131,7 +130,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         threadContext: {
           requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
           resolveContextDocument: async () => {

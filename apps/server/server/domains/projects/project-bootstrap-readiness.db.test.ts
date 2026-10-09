@@ -20,7 +20,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("../collab/composition.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
     const { eq } = await import("drizzle-orm");
     const { default: postgres } = await import("postgres");
@@ -47,7 +46,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },

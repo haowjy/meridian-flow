@@ -75,7 +75,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
