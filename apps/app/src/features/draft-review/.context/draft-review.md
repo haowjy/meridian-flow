@@ -156,9 +156,10 @@ reload the draft is not listed and the address falls back to live.
 
 ### An open review follows its draft's generation
 
-The server closes a draft by resetting its branch one generation up
-(`draftGeneration`, on the list row and the preview; it never decreases for a
-draft id), and the same id carries the next proposal. The reset and the next
+Whole Apply (including Apply all) stays in generation G; it does not reset the
+branch. Whole Discard and handling the last selected changes reset the branch
+one generation up (`draftGeneration`, on the list row and preview; it never
+decreases for a draft id), and the same id carries the next proposal. The reset and the next
 proposal share generation G+1 and its room, so the number cannot tell them apart;
 whether G+1 lists changes (a *proposal*) can. `draftRevisionToken` moves with every
 write and is only the server's stale-command fence, never an identity.
@@ -192,7 +193,9 @@ supplied session and reports actual paint; refresh watches it without acquiring
 another room. Before replacing a painted session the editor captures inert
 `FrozenReview` markup, which stays until its successor paints. Room retention
 still supplies `reviewRoomRef` to the pool; writer handoff, draining and teardown
-quarantine are exclusively session-layer operations.
+quarantine are exclusively session-layer operations. The owner exposes the
+session, input eligibility and capture/paint callbacks, not a second presentation
+phase snapshot.
 Invariants: a generation never goes backwards (the preview query keeps a newer
 cached read, `keepNewerGeneration`); a completion belongs to one generation;
 `useReviewChanges` and `useInlineReviewSync` list and project only R's preview;
@@ -208,7 +211,13 @@ Unacknowledged writer edits survive retirement through the session layer's
 `BranchWriterHandoff` ([#731](https://github.com/haowjy/meridian-flow/issues/731)).
 The pool drains released outboxes and carries reset outboxes; the handoff filters
 against the synchronized successor before replay. Review lifetime does not own
-or gate that delivery, including when the writer has left the review.
+or gate that delivery, including when the writer has left the review. Option A
+is the current lead default, not a permanent human-confirmed ruling: same-tab
+whole Discard replays unacknowledged writer edits whose anchors survive the
+reset. Missing anchors are filtered before delivery. Tab-close/sign-out loss
+([#739](https://github.com/haowjy/meridian-flow/issues/739)) and unresolved server
+admission ([#738](https://github.com/haowjy/meridian-flow/issues/738)) remain
+separate risks.
 
 Focus is review state too: `inlineReview.focus` holds the focused change's class
 id with the operations it held, one value for the whole review. When the server
@@ -274,8 +283,8 @@ preview query (`draftPreviewQueryOptions`, read fresh), not a second raw fetch:
 it joins any read in flight, a change handled while it was in flight cannot come
 back through it, and a review that moved on commits no room. A refresh's
 invalidation cancels the read in flight and rejects a read that joined it with
-`CancelledError`, so a cancelled read is read again (bounded, and only while the
-review still owns the attempt) and only a fetch that failed is the room error. The review editor
+`CancelledError`, so a cancelled read is read again only while the
+review still owns the attempt and only a fetch that failed is the room error. The review editor
 is keyed by its own branch room, never by the live binding, so a rename (which
 re-mints the live binding) does not remount the painted review.
 
@@ -287,7 +296,7 @@ identity-bar chip read it. The live text is read-only from the click. If the
 marks never arrive the review shows anyway after 1.5 s.
 
 When the server refuses a review room's pending edits (4409), the room is
-rebuilt in place and the review stays open. While the rebuild runs, `EditorView`
+rebuilt in place by `useReviewRoomOwner` and the review stays open. While the rebuild runs, `EditorView`
 shows an inert copy of the painted review (`FrozenReviewMarkup`), detached from
 input before the retired Y.Doc is destroyed, so neither live prose nor an empty
 shell appears under a review the writer is still in. The copy belongs to one
