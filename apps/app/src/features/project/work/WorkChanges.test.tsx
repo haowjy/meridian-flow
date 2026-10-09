@@ -589,12 +589,24 @@ describe("the scope that runs a Work page's batch", () => {
     });
   });
 
-  it("disables Apply all and Discard all once the Work is archived", async () => {
+  it("a Work archived while its batch is in flight locks the controls, lets the batch finish and goes nowhere", async () => {
     const scopes = {
       editor: scopeFor("work-e"),
       chat: scopeFor("work-c"),
       third: scopeFor("work-t"),
     };
+    // The batch's answer is ours to give: the archive lands before it.
+    let finish!: () => void;
+    let settled = false;
+    vi.mocked(scopes.third.controller.disposeDrafts).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => {
+            settled = true;
+            resolve([{ kind: "applied" }]);
+          };
+        }),
+    );
     let archive!: () => void;
     function Page() {
       const [archived, setArchived] = useState(false);
@@ -615,17 +627,25 @@ describe("the scope that runs a Work page's batch", () => {
         </EditorReviewScope>
       );
     }
+    const locked = (name: string) =>
+      (menuItem(name) as HTMLElement).getAttribute("aria-disabled") === "true";
     await withReactRoot(surface(<Page />), async () => {
       await applyAll();
       expect(scopes.third.controller.disposeDrafts).toHaveBeenCalledOnce();
+      expect(settled).toBe(false);
+
       await act(async () => archive());
       await openMenu();
-      expect((menuItem("Apply all 1 draft") as HTMLElement).getAttribute("aria-disabled")).toBe(
-        "true",
-      );
-      expect((menuItem("Discard all 1 draft") as HTMLElement).getAttribute("aria-disabled")).toBe(
-        "true",
-      );
+      expect(locked("Apply all 1 draft")).toBe(true);
+      expect(locked("Discard all 1 draft")).toBe(true);
+
+      // The batch still runs to its end; the page stays where it is.
+      await act(async () => finish());
+      expect(settled).toBe(true);
+      expect(document.body.textContent).toContain("Changes to review");
+      expect(mocks.openAiDraft).not.toHaveBeenCalled();
+      expect(scopes.third.controller.disposeDrafts).toHaveBeenCalledOnce();
+      expect(locked("Apply all 1 draft")).toBe(true);
     });
   });
 });
