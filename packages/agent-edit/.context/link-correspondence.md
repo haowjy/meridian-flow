@@ -58,7 +58,9 @@ second, incremental `prepare` (`written`), then `plan.bind` assigns and
 aligns synchronously. A create parses up front and prepares once. Then
 `links.registerAhead(minted)` before the write reserves an ordinal, applies,
 stages or takes any lock. A registration failure fails the write before
-anything is applied; the minted refs were never published.
+anything is applied; the minted refs were never published. Registration may
+settle a ref at once, so the handler then prepares the minted refs and their
+addresses (`refs`, `addresses`) before the echo spells them.
 
 ## Find splice (`src/links/find-splice.ts`)
 

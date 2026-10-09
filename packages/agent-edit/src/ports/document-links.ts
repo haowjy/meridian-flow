@@ -45,6 +45,10 @@ export interface LinkPrepareRequest {
   written?: readonly PMNode[];
   /** Nodes that already carry stored attrs (copies) and will be spelled as stored. */
   stored?: readonly PMNode[];
+  /** Refs no doc carries yet that will be spelled (ahead refs this write registered). */
+  refs?: readonly string[];
+  /** Decoded addresses to load (a registered ahead ref's own address). */
+  addresses?: readonly string[];
   shown?: readonly ShownLink[];
   context?: WriteContext;
 }
