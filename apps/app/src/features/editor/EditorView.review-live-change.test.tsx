@@ -69,7 +69,6 @@ function Host() {
       documentId={documentId}
       projectId="project-a"
       session={sessionFor(documentId)}
-      onReviewRoomStale={value.controller.reviewRoomStale}
       reviewWorkId={work.id}
       reviewDraftId={value.controller.inlineReview?.draftId}
       reviewRoomName={value.controller.reviewRoomName ?? undefined}

@@ -139,7 +139,6 @@ export type DraftReviewController = {
    * (`branch-generation-stale`). The review asks for a fresh read and keeps its
    * place; it neither exits nor guesses the new room.
    */
-  reviewRoomStale: (documentId: string, draftId: string, roomName: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
   inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
@@ -370,10 +369,6 @@ export function useDraftReviewController({
     [projectId, queryClient, workId],
   );
 
-  const reviewRoomStale = useCallback((documentId: string, draftId: string, roomName: string) => {
-    dispatch({ type: "roomStale", documentId, draftId, roomName });
-  }, []);
-
   const exitInlineReview = useCallback(() => {
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
     if (inline) {
@@ -509,7 +504,6 @@ export function useDraftReviewController({
       toast: state.toast,
       dismissToast,
       enterInlineReview,
-      reviewRoomStale,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
@@ -539,7 +533,6 @@ export function useDraftReviewController({
       state.toast,
       dismissToast,
       enterInlineReview,
-      reviewRoomStale,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
