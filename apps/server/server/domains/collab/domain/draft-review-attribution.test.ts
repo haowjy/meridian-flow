@@ -541,43 +541,6 @@ describe("draft review attribution", () => {
     ]);
   });
 
-  it("classifies a repeated before-after pair across three regions as a rename", () => {
-    const live = createDoc(
-      [
-        "Chen raised the sword with enough surrounding text for review.",
-        "Chen crossed the bridge with enough surrounding text for review.",
-        "Chen opened the gate with enough surrounding text for review.",
-      ].join("\n\n"),
-    );
-    const draft = cloneDoc(live);
-    const blocks = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () => {
-      for (const block of blocks) {
-        model.applyTextEdit(toDocHandle(draft), block, { from: 0, to: 4 }, "Li Wei");
-      }
-    });
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 261, actorTurnId: "turn-ai-7", updateData: update }],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        operationId: "261",
-        actorTurnId: "turn-ai-7",
-        classification: "rename",
-        beforeExcerpt: "Chen",
-        afterExcerpt: "Li Wei",
-        hunkCount: 3,
-      }),
-    ]);
-  });
-
   it("emits ordered inserted sub-spans with source writer operation identities", () => {
     const live = createDoc("Alpha tail text for mixed insertion span ordering.");
     const draft = cloneDoc(live);

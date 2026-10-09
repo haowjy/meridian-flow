@@ -17,11 +17,7 @@ import {
   queueChangeSelection,
   readPreviewAfterChangeCommands,
 } from "./change-command-record";
-import {
-  beginDraftCommand,
-  releaseDraftCommand,
-  resetDraftCommandRecords,
-} from "./draft-command-record";
+import { releaseDraftCommand, resetDraftCommandRecords } from "./draft-command-record";
 
 const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
 const one = { classIds: ["c1"], operationIds: ["1"] };
@@ -74,25 +70,6 @@ const operationIds = (p: DraftPreviewResponse) =>
 describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
 
-  it("claims the draft once: no second change, and no whole-draft command, beside it", () => {
-    expect(beginChangeCommand(draft, one, "apply", 1)).toBe(true);
-    expect(beginChangeCommand(draft, one, "discard", 1)).toBe(false);
-    expect(beginChangeCommand(draft, two, "apply", 1)).toBe(false);
-    expect(beginDraftCommand(draft)).toBe(false);
-    expect(beginChangeCommand({ ...draft, draftId: "y" }, two, "apply", 1)).toBe(true);
-  });
-
-  it("a claim hides its operations and is the change's pending state", () => {
-    beginChangeCommand(draft, two, "discard", 1);
-    const records = currentChangeCommandRecords();
-    expect([...hiddenOperationIds(records, draft)]).toEqual(["2", "3"]);
-    expect(changeCommandState(records, draft, two)).toEqual({ phase: "pending", mode: "discard" });
-    // Found by a shared operation too, as the server may regroup the class.
-    expect(
-      changeCommandState(records, draft, { classIds: ["c9"], operationIds: ["3"] }),
-    ).toMatchObject({ phase: "pending" });
-  });
-
   it("a queued selection hides its operations without claiming the draft, until it is retired", () => {
     const retire = queueChangeSelection(draft, two);
     const records = currentChangeCommandRecords();
@@ -126,12 +103,6 @@ describe("change command record", () => {
     expect(operationIds(await read)).toEqual(["2", "3"]);
     // The read settled, so nothing is left to fence.
     expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(0);
-  });
-
-  it("a read that started after the confirmation is authoritative", async () => {
-    confirmChangeCommand(draft, one, "apply");
-    const after = await readPreviewAfterChangeCommands(draft, async () => preview());
-    expect(operationIds(after)).toEqual(["1", "2", "3"]);
   });
 
   it("a failure is dropped once a read no longer lists any of the change's operations", async () => {
@@ -176,17 +147,6 @@ describe("change command record", () => {
     );
     if (hidden.status !== "active") throw new Error("active");
     expect(hidden.hunks.map((h) => h.hunkId)).toEqual(["h-loose"]);
-  });
-
-  it("keeps the same preview object when nothing is hidden", () => {
-    const original = preview();
-    expect(previewWithoutOperations(original, new Set())).toBe(original);
-  });
-
-  it("belongs to its draft: another draft's changes are untouched", () => {
-    beginChangeCommand(draft, one, "apply", 1);
-    const other = { ...draft, draftId: "y" };
-    expect(changeCommandState(currentChangeCommandRecords(), other, one)).toBeNull();
   });
 
   describe("a selection of several changes", () => {

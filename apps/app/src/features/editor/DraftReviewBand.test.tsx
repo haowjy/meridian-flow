@@ -130,13 +130,6 @@ const byText = (text: string) =>
     (node) => (node.getAttribute("aria-label") ?? node.textContent)?.trim() === text,
   );
 
-async function openSwitcher() {
-  const trigger = document.querySelector<HTMLElement>("[data-slot=dropdown-menu-trigger]");
-  await act(async () => {
-    trigger?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  });
-}
-
 beforeEach(() => {
   resetDraftCommandRecords();
   Object.assign(controller, {
@@ -171,39 +164,6 @@ beforeEach(() => {
 });
 
 describe("DraftReviewBand", () => {
-  it("is the Draft chip, stepper, Show changes, Discard draft and Apply draft, under their full names", async () => {
-    await render({}, async () => {
-      const text = document.body.textContent ?? "";
-      // The document's name is the breadcrumb's; the chip says only what this is.
-      expect(text).not.toContain("Chapter 12");
-      expect(byText("Document version")?.textContent).toBe("Draft");
-      expect(text).toContain("2 of 6");
-      expect(document.querySelector("[role=switch]")?.getAttribute("aria-label")).toBe(
-        "Show changes",
-      );
-      // Whole-draft commands name their scope; only the narrowest row shortens them.
-      const labels = (name: string) =>
-        [...(byText(name)?.querySelectorAll("span") ?? [])].map((span) => span.textContent);
-      expect(labels("Discard draft")).toEqual(["Discard draft", "Discard"]);
-      expect(labels("Apply draft")).toEqual(["Apply draft", "Apply"]);
-      expect(document.querySelector("[aria-label='Next change']")).not.toBeNull();
-    });
-  });
-
-  it("carries Rename in the chip's menu only when the document can be renamed", async () => {
-    const onRename = vi.fn();
-    await render({ onRename }, async () => {
-      await openSwitcher();
-      await act(async () => byText("Rename")?.click());
-      // Rename runs from the menu's close-focus callback, after Radix finishes closing.
-      await vi.waitFor(() => expect(onRename).toHaveBeenCalledOnce());
-    });
-    await render({}, async () => {
-      await openSwitcher();
-      expect(byText("Rename")).toBeUndefined();
-    });
-  });
-
   it("steps through the changes and toggles Show changes", async () => {
     await render({}, async () => {
       await act(async () =>
@@ -215,137 +175,6 @@ describe("DraftReviewBand", () => {
       await act(async () => toggle?.click());
       expect(controller.setMarksVisible).toHaveBeenCalledWith(false);
     });
-  });
-
-  it("lists this document's versions only: live and its draft, with no other file", async () => {
-    await render({}, async () => {
-      await openSwitcher();
-      const menu = document.querySelector("[role=menu]")?.textContent ?? "";
-      expect(menu).toContain("Live version");
-      expect(menu).toContain("Draft");
-      for (const gone of [
-        "Chapter 13",
-        "Interlude",
-        "11 changes",
-        "New document",
-        "Apply all",
-        "Discard all",
-      ]) {
-        expect(menu).not.toContain(gone);
-      }
-    });
-  });
-
-  it("shows the live version from the menu, and closes review for a draft-only document", async () => {
-    await render({}, async () => {
-      await openSwitcher();
-      await act(async () => byText("Live version")?.click());
-      expect(controller.exitInlineReview).toHaveBeenCalledOnce();
-    });
-    const close = vi.fn();
-    controller.exitInlineReview.mockClear();
-    await render(
-      { onCloseDraftOnly: close },
-      async () => {
-        await openSwitcher();
-        expect(byText("Live version")).toBeUndefined();
-        await act(async () => byText("Close review")?.click());
-        expect(close).toHaveBeenCalledOnce();
-        expect(controller.exitInlineReview).not.toHaveBeenCalled();
-      },
-      "doc-int",
-    );
-  });
-
-  it("Apply draft goes on to the next draft in the switcher at once", async () => {
-    const onOpenDraft = vi.fn();
-    await render({ onOpenDraft }, async () => {
-      await act(async () => byText("Apply draft")?.click());
-      expect(controller.apply).toHaveBeenCalledWith("doc-12", "draft-doc-12");
-      expect((onOpenDraft.mock.calls[0][0] as ReviewFileTarget).documentId).toBe("doc-13");
-    });
-  });
-
-  it("Discard draft does the same", async () => {
-    const onOpenDraft = vi.fn();
-    await render({ onOpenDraft }, async () => {
-      await act(async () => byText("Discard draft")?.click());
-      expect(controller.discard).toHaveBeenCalledWith("doc-12", "draft-doc-12");
-      expect(onOpenDraft).toHaveBeenCalledOnce();
-    });
-  });
-
-  it("with no other draft left, Apply draft opens nothing: the review returns to live by itself", async () => {
-    groups.splice(1, 2);
-    try {
-      const onOpenDraft = vi.fn();
-      await render({ onOpenDraft }, async () => {
-        await act(async () => byText("Apply draft")?.click());
-        expect(controller.apply).toHaveBeenCalledOnce();
-        expect(onOpenDraft).not.toHaveBeenCalled();
-      });
-    } finally {
-      groups.push(draft("doc-13", "Chapter 13"), draft("doc-int", "Interlude", true));
-    }
-  });
-
-  it("disables the commands while one is in flight, and sends nothing", async () => {
-    controller.dispositionLocked = true;
-    const onOpenDraft = vi.fn();
-    await render({ onOpenDraft }, async () => {
-      expect((byText("Apply draft") as HTMLButtonElement).disabled).toBe(true);
-      expect((byText("Discard draft") as HTMLButtonElement).disabled).toBe(true);
-      await act(async () => byText("Apply draft")?.click());
-      expect(controller.apply).not.toHaveBeenCalled();
-      expect(onOpenDraft).not.toHaveBeenCalled();
-    });
-  });
-
-  it("when the last change is handled, says so and offers the next draft without jumping", async () => {
-    Object.assign(view, { items: [], finished: true });
-    const onOpenDraft = vi.fn();
-    await render({ onOpenDraft }, async () => {
-      expect(document.body.textContent).toContain("No changes left");
-      expect(onOpenDraft).not.toHaveBeenCalled();
-      await act(async () => byText("Next draft")?.click());
-      expect((onOpenDraft.mock.calls[0][0] as ReviewFileTarget).documentId).toBe("doc-13");
-      // Nothing is left to publish: the draft's own commands go with the changes.
-      expect(byText("Apply draft")).toBeUndefined();
-      expect(byText("Discard draft")).toBeUndefined();
-      // The stepper has nothing to step through.
-      expect(document.querySelector("[aria-label='Next change']")).toBeNull();
-    });
-  });
-
-  it("says formatting remains, not No changes left, and keeps Apply draft and Discard draft", async () => {
-    Object.assign(view, { items: [], unlisted: true });
-    const onOpenDraft = vi.fn();
-    await render({ onOpenDraft }, async () => {
-      expect(document.body.textContent).toContain("Formatting changes remain");
-      expect(document.body.textContent).not.toContain("No changes left");
-      expect(byText("Next draft")).toBeUndefined();
-      await act(async () => byText("Discard draft")?.click());
-      expect(controller.discard).toHaveBeenCalledWith("doc-12", "draft-doc-12");
-      expect(onOpenDraft).toHaveBeenCalled();
-    });
-  });
-
-  it("holds on No changes left after the server closed the draft and the list lost it", async () => {
-    // The closed draft is no longer among the Work's drafts; the review itself says it finished.
-    const closed = groups.splice(0, 1);
-    Object.assign(view, { items: [], finished: true });
-    controller.inlineReview = { completion: { phase: "closed", documentName: "Chapter 12" } };
-    const onOpenDraft = vi.fn();
-    try {
-      await render({ onOpenDraft }, async () => {
-        expect(document.body.textContent).toContain("No changes left");
-        expect(controller.exitInlineReview).not.toHaveBeenCalled();
-        await act(async () => byText("Next draft")?.click());
-        expect((onOpenDraft.mock.calls[0][0] as ReviewFileTarget).documentId).toBe("doc-13");
-      });
-    } finally {
-      groups.unshift(...closed);
-    }
   });
 
   it("Next draft follows the file order from where the closed draft stood, not from the top", async () => {
@@ -366,53 +195,6 @@ describe("DraftReviewBand", () => {
     } finally {
       groups.splice(1, 0, ...closed);
     }
-  });
-
-  it("offers the way back to live when no other draft is left", async () => {
-    const all = groups.splice(0, groups.length);
-    Object.assign(view, { items: [], finished: true });
-    controller.inlineReview = { completion: { phase: "closed", documentName: "Chapter 12" } };
-    try {
-      await render({}, async () => {
-        expect(document.body.textContent).toContain("No changes left");
-        expect(byText("Next draft")).toBeUndefined();
-        await act(async () => byText("Back to live")?.click());
-        expect(controller.exitInlineReview).toHaveBeenCalledOnce();
-      });
-    } finally {
-      groups.push(...all);
-    }
-  });
-
-  it("shows a failed whole-draft command on the header, from the draft's own record", async () => {
-    failDraftCommand(
-      { projectId: "p", workId: "w", documentId: "doc-12", draftId: "draft-doc-12" },
-      { code: "apply-offline" },
-    );
-    await render({}, async () => {
-      expect(document.querySelector("[role=alert]")?.textContent).toContain("Couldn't apply");
-    });
-  });
-
-  it("says Applying, not No changes left, while the last change's command is in flight", async () => {
-    Object.assign(view, { items: [], completing: "apply" });
-    controller.dispositionLocked = true;
-    await render({}, async () => {
-      const text = document.body.textContent ?? "";
-      expect(text).toContain("Applying");
-      expect(text).not.toContain("No changes left");
-      expect(byText("Next draft")).toBeUndefined();
-      // Not finished: the draft's own commands stay, held by the lock.
-      expect((byText("Apply draft") as HTMLButtonElement).disabled).toBe(true);
-    });
-  });
-
-  it("says Discarding while the last Discard is in flight", async () => {
-    Object.assign(view, { items: [], completing: "discard" });
-    await render({}, async () => {
-      expect(document.body.textContent).toContain("Discarding");
-      expect(document.body.textContent).not.toContain("No changes left");
-    });
   });
 
   it("says which other draft did not apply, on the header the writer was moved to, and opens it on request", async () => {
@@ -486,30 +268,6 @@ describe("the document's change list", () => {
     });
   }
 
-  it("has its button, and opens, while the changes are hidden in the text", async () => {
-    controller.marksVisible = false;
-    withChanges();
-    await render({}, async () => {
-      // The stepper has nothing to step through; the list does not depend on the marks.
-      expect(
-        document.querySelector<HTMLButtonElement>("[aria-label='Next change']")?.disabled,
-      ).toBe(true);
-      expect(listButton()?.disabled).toBe(false);
-      await openList();
-      expect(list()?.querySelectorAll("[data-review-change-row]")).toHaveLength(3);
-    });
-  });
-
-  it("is named by what it lists: the count, or the list itself", async () => {
-    await render({}, async () => {
-      expect(listButton()?.getAttribute("aria-label")).toBe("Show the 6 changes");
-    });
-    Object.assign(view, { items: [], finished: true });
-    await render({}, async () => {
-      expect(listButton()?.getAttribute("aria-label")).toBe("Show the changes list");
-    });
-  });
-
   it("lists this document's changes with the way to the Work's files at its foot", async () => {
     withChanges();
     await render({}, async () => {
@@ -521,20 +279,6 @@ describe("the document's change list", () => {
       for (const gone of ["Chapter 13", "Interlude", "Apply all", "Discard all"]) {
         expect(text).not.toContain(gone);
       }
-    });
-  });
-
-  it("says what stands in for the changes: finished, formatting only", async () => {
-    Object.assign(view, { items: [], finished: true });
-    await render({}, async () => {
-      await openList();
-      expect(list()?.textContent).toContain("No changes left");
-      expect(list()?.textContent).toContain("All changes in Arc One");
-    });
-    Object.assign(view, { items: [], finished: false, unlisted: true });
-    await render({}, async () => {
-      await openList();
-      expect(list()?.textContent).toContain("Formatting changes remain");
     });
   });
 

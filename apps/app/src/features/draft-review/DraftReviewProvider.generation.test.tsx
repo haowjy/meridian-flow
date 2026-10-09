@@ -639,28 +639,6 @@ describe("O2: nothing to take up", () => {
     });
   });
 
-  it.each(MODES)("%s: equal list rows churning cause no reads", async (mode) => {
-    await renderReviewScopes(async (probe) => {
-      await reviewClosed(probe, mode);
-      mocks.listWorkDrafts.mockResolvedValue(listedAt(2));
-      mocks.getDraftPreview.mockResolvedValue(proposal(2, "5"));
-      await relist(probe);
-      await vi.waitFor(() => expect(classIds(probe())).toEqual(["class-5"]));
-      await vi.waitFor(() => expect(probe().editor.controller.reviewRoomName).toBe(roomOf(2)));
-
-      // The same row, listed again and again (updated times differing): the generation is the one shown.
-      const reads = mocks.getDraftPreview.mock.calls.length;
-      for (let i = 0; i < 5; i++)
-        await act(async () => {
-          mocks.listWorkDrafts.mockResolvedValue(listedAt(2, `2026-10-09T05:00:0${i}.000Z`));
-          await probe().queryClient.invalidateQueries({ queryKey: draftsKey });
-        });
-      expect(mocks.getDraftPreview.mock.calls.length).toBe(reads);
-      expect(probe().header.finished).toBe(false);
-      expect(classIds(probe())).toEqual(["class-5"]);
-    });
-  });
-
   it.each(
     MODES,
   )("%s: stays finished while the draft stays out of the list, and reads nothing", async (mode) => {

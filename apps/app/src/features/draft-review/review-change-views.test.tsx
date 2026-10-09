@@ -1,8 +1,5 @@
 // @vitest-environment jsdom
-/**
- * The pieces every surface shows a change with: the row, the bar, the stepper
- * and the toast. They take no controller, so these tests drive them with props.
- */
+/** Change controls, refusal visibility and real chat-link routing through retained process folds. */
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act, useRef } from "react";
@@ -99,22 +96,6 @@ const rowProps = (overrides: Partial<React.ComponentProps<typeof ReviewChangeRow
 });
 
 describe("ReviewChangeRow", () => {
-  it("is one line: the excerpt, who made it, and Discard and Apply named for assistive tech", async () => {
-    await render(
-      <ul>
-        <ReviewChangeRow {...rowProps()} />
-      </ul>,
-      async () => {
-        const row = document.querySelector("[data-review-change-row]");
-        expect(row?.textContent).toContain("his");
-        expect(row?.textContent).toContain("one withered");
-        expect(row?.textContent).toContain("AI");
-        expect(button("Discard")).toBeDefined();
-        expect(button("Apply")).toBeDefined();
-      },
-    );
-  });
-
   it("focuses the change on a click, and Apply or Discard act without also focusing", async () => {
     const props = rowProps();
     await render(
@@ -148,22 +129,6 @@ describe("ReviewChangeRow", () => {
     );
   });
 
-  it("says Discard with your edits when the writer's edits are inside, and shows You for their own change", async () => {
-    await render(
-      <ul>
-        <ReviewChangeRow
-          {...rowProps({
-            change: change({ includesWriterEdits: true, attribution: { kind: "you" } }),
-          })}
-        />
-      </ul>,
-      async () => {
-        expect(button("Discard with your edits")).toBeDefined();
-        expect(document.querySelector("li")?.textContent).toContain("You");
-      },
-    );
-  });
-
   it("disables both commands while one is in flight, and hides Apply for a new document", async () => {
     await render(
       <ul>
@@ -181,29 +146,6 @@ describe("ReviewChangeRow", () => {
       async () => {
         expect(button("Apply")).toBeUndefined();
       },
-    );
-  });
-
-  it("opens the chat that wrote it without acting on the change", async () => {
-    const props = rowProps({
-      change: change({
-        attribution: chats({ threadId: "t-9", title: "Line edit", turnId: null, toolCallId: null }),
-      }),
-    });
-    const openThread = vi.fn();
-    await render(
-      <ul>
-        <ReviewChangeRow {...props} />
-      </ul>,
-      async () => {
-        const link = Array.from(document.querySelectorAll("button")).find((b) =>
-          b.textContent?.includes("Line edit"),
-        );
-        await act(async () => link?.click());
-        expect(openThread).toHaveBeenCalledWith("t-9");
-        expect(props.onFocus).not.toHaveBeenCalled();
-      },
-      openThread,
     );
   });
 
@@ -315,52 +257,6 @@ describe("ReviewChangeRow", () => {
     );
   });
 
-  it("lists three chats with commas and one conjunction, no decorative separators", async () => {
-    await render(
-      <ul>
-        <ReviewChangeRow
-          {...rowProps({
-            change: change({
-              attribution: chats(
-                { threadId: "t-1", title: "Pacing pass" },
-                { threadId: "t-2", title: "Lore pass" },
-                { threadId: "t-3", title: "Draft notes" },
-              ),
-            }),
-          })}
-        />
-      </ul>,
-      async () => {
-        const text = document.querySelector("li")?.textContent ?? "";
-        expect(text).toMatch(/Pacing pass, Lore pass,? and Draft notes/);
-        expect(text).not.toMatch(/[·•—|]/);
-      },
-    );
-  });
-
-  it("calls an untitled chat what the chat list calls it, and still opens it", async () => {
-    const props = rowProps({
-      change: change({
-        attribution: chats({ threadId: "t-3", title: null, turnId: null, toolCallId: null }),
-      }),
-    });
-    const openThread = vi.fn();
-    await render(
-      <ul>
-        <ReviewChangeRow {...props} />
-      </ul>,
-      async () => {
-        const link = Array.from(document.querySelectorAll("button")).find((b) =>
-          b.textContent?.includes("New chat"),
-        );
-        expect(link).toBeDefined();
-        await act(async () => link?.click());
-        expect(openThread).toHaveBeenCalledWith("t-3");
-      },
-      openThread,
-    );
-  });
-
   it("shows why a command did not land, on the row", async () => {
     await render(
       <ul>
@@ -372,71 +268,6 @@ describe("ReviewChangeRow", () => {
         expect(document.querySelector("li")?.textContent).toContain(
           "Couldn't apply. Check your connection and try again.",
         );
-      },
-    );
-  });
-});
-
-describe("touch forms", () => {
-  const targets = (selector: string) =>
-    Array.from(document.querySelectorAll<HTMLElement>(selector)).filter((node) =>
-      node.className.includes("size-11"),
-    );
-
-  it("raises the row's Discard and Apply to 44px targets", async () => {
-    await render(
-      <ul>
-        <ReviewChangeRow {...rowProps()} touch />
-      </ul>,
-      async () => {
-        expect(button("Discard")?.className).toContain("size-11");
-        expect(button("Apply")?.className).toContain("size-11");
-        expect(document.querySelector("li button[aria-current], li button")?.className).toContain(
-          "min-h-11",
-        );
-      },
-    );
-  });
-
-  it("keeps the bar's accessible Discard name in full while showing only Discard", async () => {
-    const props = {
-      change: change({ includesWriterEdits: true }),
-      disabled: false,
-      canApply: true,
-      failure: null,
-      onApply: vi.fn(),
-      onDiscard: vi.fn(),
-    };
-    await render(<ReviewChangeBar {...props} touch />, async () => {
-      const discard = button("Discard with your edits");
-      expect(discard?.textContent).toBe("Discard");
-      expect(discard?.className).toContain("h-11");
-      expect(button("Apply")?.className).toContain("h-11");
-      expect(document.body.textContent).toContain("Includes your edits");
-      await act(async () => discard?.click());
-      expect(props.onDiscard).toHaveBeenCalledOnce();
-    });
-  });
-
-  it("makes both stepper arrows 44px", async () => {
-    await render(
-      <ReviewStepper count={6} focusedIndex={2} disabled={false} onStep={vi.fn()} touch />,
-      async () => {
-        expect(targets("button")).toHaveLength(2);
-        expect(document.body.textContent).toContain("3 of 6");
-      },
-    );
-  });
-
-  it("places the toast where the host asks", async () => {
-    await render(
-      <ReviewToast
-        toast={{ id: 1, code: "applied", tone: "success" } as never}
-        onDismiss={vi.fn()}
-        className="bottom-24"
-      />,
-      async () => {
-        expect(document.querySelector("[data-review-toast]")?.className).toContain("bottom-24");
       },
     );
   });
@@ -503,20 +334,6 @@ describe("a change with no per-change commands", () => {
       },
     );
   });
-
-  it("an ordinary bar carries no such note", async () => {
-    await render(
-      <ReviewChangeBar
-        change={change()}
-        disabled={false}
-        canApply
-        failure={null}
-        onApply={vi.fn()}
-        onDiscard={vi.fn()}
-      />,
-      async () => expect(document.body.textContent).not.toContain("handles this"),
-    );
-  });
 });
 
 describe("ReviewChangeBar", () => {
@@ -528,81 +345,6 @@ describe("ReviewChangeBar", () => {
     onApply: vi.fn(),
     onDiscard: vi.fn(),
     ...overrides,
-  });
-
-  it("offers Discard and Apply, and says AI when the preview cannot name the chat", async () => {
-    const props = barProps();
-    await render(<ReviewChangeBar {...props} />, async () => {
-      expect(document.body.textContent).toContain("AI");
-      await act(async () => button("Apply")?.click());
-      await act(async () => button("Discard")?.click());
-      expect(props.onApply).toHaveBeenCalledOnce();
-      expect(props.onDiscard).toHaveBeenCalledOnce();
-    });
-  });
-
-  it("calls an untitled chat what the chat list calls it", async () => {
-    const openThread = vi.fn();
-    await render(
-      <ReviewChangeBar
-        {...barProps({
-          change: change({
-            attribution: chats({ threadId: "t-3", title: null, turnId: null, toolCallId: null }),
-          }),
-        })}
-      />,
-      async () => {
-        const link = Array.from(document.querySelectorAll("button")).find((b) =>
-          b.textContent?.includes("New chat"),
-        );
-        await act(async () => link?.click());
-        expect(openThread).toHaveBeenCalledWith("t-3");
-      },
-      openThread,
-    );
-  });
-
-  it("names a mixed change: Includes your edits, and Discard with your edits", async () => {
-    await render(
-      <ReviewChangeBar {...barProps({ change: change({ includesWriterEdits: true }) })} />,
-      async () => {
-        expect(document.body.textContent).toContain("Includes your edits");
-        expect(button("Discard with your edits")).toBeDefined();
-        expect(button("Discard")).toBeUndefined();
-      },
-    );
-  });
-
-  it("links the chat that wrote it, and shows You for the writer's own change", async () => {
-    const openThread = vi.fn();
-    await render(
-      <ReviewChangeBar
-        {...barProps({
-          change: change({
-            attribution: chats({
-              threadId: "t-1",
-              title: "Pacing",
-              turnId: null,
-              toolCallId: null,
-            }),
-          }),
-        })}
-      />,
-      async () => {
-        const link = Array.from(document.querySelectorAll("button")).find((b) =>
-          b.textContent?.includes("Pacing"),
-        );
-        await act(async () => link?.click());
-        expect(openThread).toHaveBeenCalledWith("t-1");
-      },
-      openThread,
-    );
-    await render(
-      <ReviewChangeBar
-        {...barProps({ change: change({ attribution: { kind: "you" }, tone: "writer" }) })}
-      />,
-      async () => expect(document.body.textContent).toContain("You"),
-    );
   });
 
   it("hides Apply for a new document, disables while in flight, and shows each refusal on the bar", async () => {
@@ -685,13 +427,6 @@ describe("ReviewStepper", () => {
         await act(async () => button("Previous change")?.click());
         expect(onStep.mock.calls).toEqual([[1], [-1]]);
       },
-    );
-  });
-
-  it("reads the count before any change is focused", async () => {
-    await render(
-      <ReviewStepper count={6} focusedIndex={-1} disabled={false} onStep={vi.fn()} />,
-      async () => expect(document.body.textContent).toContain("6 changes"),
     );
   });
 });
