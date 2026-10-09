@@ -18,22 +18,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # scripts.check is the source of truth; the runner partitions its named
-  # scripts into two expensive jobs and one cheap static-check batch.
-  quality-checks:
-    name: quality-${{ matrix.group }}
+  # scripts.check remains the inventory; keep explicit jobs so the required
+  # aggregate checks each result directly, including after partial reruns.
+  quality-static:
+    name: quality-static
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        group: [static, typecheck, test]
     steps:
       - uses: actions/checkout@v4
         with:
-          # The static group's S7 check reads the pre-history snapshot when
-          # bootstrapping its immutable append-only schema-version baseline.
+          # S7 reads the pre-history snapshot when bootstrapping its immutable
+          # append-only schema-version baseline.
           fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node tools/ci/run-check-group.mjs static
+
+  quality-typecheck:
+    name: quality-typecheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -42,11 +52,25 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Keep Nx outputs local to this runner. Project-scoped Nx inputs omit
       # root config changes, so restoring outputs across runs is unsafe.
-      - run: node tools/ci/run-check-group.mjs ${{ matrix.group }}
+      - run: node tools/ci/run-check-group.mjs typecheck
+
+  quality-test:
+    name: quality-test
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node tools/ci/run-check-group.mjs test
 
   quality:
     name: quality
-    needs: [quality-checks]
+    needs: [quality-static, quality-typecheck, quality-test]
     # A skipped required job counts as passing. Run even after a dependency
     # fails/cancels/skips, but retain the workflow's deliberate draft-PR skip.
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
