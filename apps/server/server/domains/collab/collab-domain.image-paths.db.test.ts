@@ -102,10 +102,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success" });
     }
 
-    it.each([
-      false,
-      true,
-    ])("shares search paths across chapters (thread view: %s)", async (threadView) => {
+    // The thread view exercises the same one-scope search as a writer's live
+    // view, through a draft view; the adapter's snapshot reuse is pinned in
+    // `document-link-scope.db.test.ts`.
+    it("shares search paths across chapters in a thread view", async () => {
       const links = createTestDocumentLinkScopes(db);
       const collab = createTestCollab(links);
       collab.bindHocuspocus(hocuspocus as never);
@@ -135,14 +135,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),
-        ...(threadView
-          ? {
-              threadView: {
-                threadId: THREAD_ID,
-                draftWork: { id: WORK_ID as never, slug: "work" },
-              },
-            }
-          : {}),
+        threadView: {
+          threadId: THREAD_ID,
+          draftWork: { id: WORK_ID as never, slug: "work" },
+        },
         documentSync: {
           ...collab,
           async readVersionedMarkdown(documentId) {

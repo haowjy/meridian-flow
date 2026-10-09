@@ -1,4 +1,6 @@
 // A host-prepared create is admitted only into the authority generation its base was read in.
+// The replaced-generation refusal and the host's re-prepare are witnessed end to end by the
+// A2-R2 rows in apps/server/server/domains/collab/link-binding.db.test.ts.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -8,7 +10,6 @@ import { blockTexts, expectOutcome } from "./test-support/assertions.js";
 import { codec, context, harness, model } from "./test-support/write-tool-harness.js";
 
 const GENERATION_1: JournalAuthority = { authorityId: "authority-a", generation: 1n };
-const GENERATION_2: JournalAuthority = { authorityId: "authority-a", generation: 2n };
 
 /** The live document's generation is `live`; a write prepared against it now. */
 function preparedSetup(live: JournalAuthority) {
@@ -38,21 +39,6 @@ describe("prepared create certification", () => {
 
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Prepended.", "Alpha."]);
     expect(ctx.journal.recordedBatchEntries().at(-1)?.[0]?.authority).toEqual(GENERATION_1);
-  });
-
-  it("refuses, as a stale base for the host to prepare again, a write whose generation was replaced", async () => {
-    const { ctx, write } = preparedSetup(GENERATION_2);
-
-    const outcome = await write(GENERATION_1);
-
-    expectOutcome(outcome, "invalid_write", true);
-    expect(outcome.error).toEqual({
-      type: "prepared_base",
-      code: "authority_replaced",
-      documentId: "chapter.md",
-    });
-    expect(ctx.journal.recordedBatches()).toEqual([]);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 
   it("never stages a prepared write, where its certificate would go unchecked", async () => {

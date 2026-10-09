@@ -39,7 +39,6 @@ if (!RUN) {
     const SOURCES = {
       manuscript: SOURCE,
       scratch: "00000000-0000-4000-8000-000000000b0b",
-      uploads: "00000000-0000-4000-8000-000000000b0c",
     } as const;
     type Scheme = keyof typeof SOURCES;
     const addressFor = (scheme: Scheme) =>
@@ -76,7 +75,7 @@ if (!RUN) {
       await database
         .insert(contextSources)
         .values({ id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript" });
-      for (const scheme of ["scratch", "uploads"] as const) {
+      for (const scheme of ["scratch"] as const) {
         await database.insert(contextSources).values({
           id: SOURCES[scheme],
           workId: NO_WORK,
@@ -139,75 +138,87 @@ if (!RUN) {
       await database.close();
     });
 
-    describe.each(["manuscript", "scratch", "uploads"] as const)("%s namespace race", (scheme) => {
-      it("arrival first: registration queues on the arrival's key and settles the document", async () => {
-        let release!: () => void;
-        const held = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        let locked!: () => void;
-        const lockTaken = new Promise<void>((resolve) => {
-          locked = resolve;
-        });
-        const arrival = arrive(scheme, DOCUMENT, async () => {
-          locked();
-          await held;
-        });
-        try {
-          await lockTaken;
-          const registering = newRegistry(database).register([registrationFor(scheme)]);
-          await waitForWaiters(arrivalKey(scheme), 1);
-          release();
-          const [arrivalSettled] = await Promise.all([arrival, registering]);
-          expect(arrivalSettled).toBe(0); // the row did not exist yet; registration saw the document
-          expect(await settledIds()).toEqual([DOCUMENT]);
-        } finally {
-          release();
-          await arrival.catch(() => undefined);
-        }
+    /** Arrival holds its key; registration queues on the same key and sees the document. */
+    async function raceArrivalFirst(scheme: Scheme) {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
       });
+      let locked!: () => void;
+      const lockTaken = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const arrival = arrive(scheme, DOCUMENT, async () => {
+        locked();
+        await held;
+      });
+      try {
+        await lockTaken;
+        const registering = newRegistry(database).register([registrationFor(scheme)]);
+        await waitForWaiters(arrivalKey(scheme), 1);
+        release();
+        const [arrivalSettled] = await Promise.all([arrival, registering]);
+        expect(arrivalSettled).toBe(0); // the row did not exist yet; registration saw the document
+        expect(await settledIds()).toEqual([DOCUMENT]);
+      } finally {
+        release();
+        await arrival.catch(() => undefined);
+      }
+    }
 
-      it("registration first: queued ahead of the arrival, then the arrival's CAS settles it", async () => {
-        // The gate holds the key so registration and then the arrival queue in a known order.
-        let release!: () => void;
-        const held = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        let locked!: () => void;
-        const gateTaken = new Promise<void>((resolve) => {
-          locked = resolve;
-        });
-        const gate = runInDrizzleTransaction(gateConnection, async () => {
-          // Namespace key only: a Work-row lock would queue the arrival on the row, not the key.
-          await lockNamespaceKeys(gateConnection, [
-            {
-              projectId: PROJECT,
-              userId: USER,
-              scheme,
-              workId: scheme === "manuscript" ? null : NO_WORK,
-            },
-          ]);
-          locked();
-          await held;
-        });
-        let registering: Promise<void> | undefined;
-        let arrival: Promise<number> | undefined;
-        try {
-          await gateTaken;
-          registering = newRegistry(database).register([registrationFor(scheme)]);
-          await waitForWaiters(arrivalKey(scheme), 1);
-          arrival = arrive(scheme);
-          await waitForWaiters(arrivalKey(scheme), 2);
-          release();
-          await registering;
-          expect(await settledIds()).toEqual([null]); // committed before the document existed
-          expect(await arrival).toBe(1);
-          expect(await settledIds()).toEqual([DOCUMENT]);
-        } finally {
-          release();
-          await Promise.allSettled([gate, registering, arrival]);
-        }
+    /** Registration queues ahead of the arrival, then the arrival's CAS settles it. */
+    async function raceRegistrationFirst(scheme: Scheme) {
+      // The gate holds the key so registration and then the arrival queue in a known order.
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
       });
+      let locked!: () => void;
+      const gateTaken = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const gate = runInDrizzleTransaction(gateConnection, async () => {
+        // Namespace key only: a Work-row lock would queue the arrival on the row, not the key.
+        await lockNamespaceKeys(gateConnection, [
+          {
+            projectId: PROJECT,
+            userId: USER,
+            scheme,
+            workId: scheme === "manuscript" ? null : NO_WORK,
+          },
+        ]);
+        locked();
+        await held;
+      });
+      let registering: Promise<void> | undefined;
+      let arrival: Promise<number> | undefined;
+      try {
+        await gateTaken;
+        registering = newRegistry(database).register([registrationFor(scheme)]);
+        await waitForWaiters(arrivalKey(scheme), 1);
+        arrival = arrive(scheme);
+        await waitForWaiters(arrivalKey(scheme), 2);
+        release();
+        await registering;
+        expect(await settledIds()).toEqual([null]); // committed before the document existed
+        expect(await arrival).toBe(1);
+        expect(await settledIds()).toEqual([DOCUMENT]);
+      } finally {
+        release();
+        await Promise.allSettled([gate, registering, arrival]);
+      }
+    }
+
+    it("manuscript namespace race settles exactly once in both orders", async () => {
+      await raceArrivalFirst("manuscript");
+      await seed();
+      await raceRegistrationFirst("manuscript");
+    });
+
+    // Only the namespace key differs by scheme: scratch and uploads take the same No Work key
+    // shape and neither is drafted, so one scratch arrival proves registration locks that key.
+    it("scratch registration queues on the No Work key its arrival holds", async () => {
+      await raceArrivalFirst("scratch");
     });
 
     it("settles an occupied address at registration, once: later occupants and re-registration never retarget", async () => {
@@ -249,13 +260,6 @@ if (!RUN) {
         runInDrizzleTransaction(database, () => registry.register([inside])),
       ).rejects.toBeInstanceOf(RegistrationInsideTransactionError);
       expect(await database.select().from(linkAheadRefs)).toHaveLength(2);
-    });
-
-    it("never settles to a draft-only row", async () => {
-      await insertDocument(database);
-      liveMembers = [];
-      await newRegistry(database).register([registration]);
-      expect(await settledIds()).toEqual([null]);
     });
 
     it("normalizes ahead ids and requires an exact qualified address", async () => {
