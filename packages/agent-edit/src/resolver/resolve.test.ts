@@ -184,7 +184,7 @@ describe("resolveWrite", () => {
     });
     const remove = (fragment: string | undefined, scope: string | undefined) =>
       resolveWrite(
-        { doc, model, codec },
+        { doc, model, codec, links: "prebound" },
         {
           documentAddress: address(fragment),
           command: "remove",
@@ -280,7 +280,7 @@ function resolve(
   params: Omit<ResolveWriteParams, "documentAddress">,
 ): ResolveWriteResult {
   return resolveWrite(
-    { doc, model, codec },
+    { doc, model, codec, links: "prebound" },
     {
       documentAddress: {
         documentId: "123e4567-e89b-12d3-a456-426614174000",

@@ -61,12 +61,16 @@ export interface ResolveWriteContext {
    * Ref assignment over the command's prepared link scope; parse itself is
    * pure syntax. Every door that turns written Markdown into nodes binds
    * through it before block alignment and no-op detection. Copies never do:
-   * their nodes already carry what they name. Absent, nodes stay as parsed.
+   * their nodes already carry what they name. `"prebound"`: the caller
+   * already assigned refs (a host's lowered overwrite), so nodes stay as given.
    */
-  links?: WriteLinkAssigner;
+  links: WriteLinks;
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
 }
+
+/** Ref assignment for a write, or `"prebound"` for nodes whose refs are already assigned. */
+export type WriteLinks = WriteLinkAssigner | "prebound";
 
 export type ResolveWriteResult =
   | { ok: true; edits: ResolvedEdit[]; ir: SemanticEditIRV1 }
@@ -95,8 +99,8 @@ export type WritePlan =
   | {
       ok: true;
       written: readonly Block[];
-      /** Ref assignment, then block alignment and no-op detection; absent links keep nodes as parsed. */
-      bind(links: WriteLinkAssigner | undefined): ResolveWriteResult;
+      /** Ref assignment, then block alignment and no-op detection. */
+      bind(links: WriteLinks): ResolveWriteResult;
     }
   | ResolveWriteFailure;
 
@@ -141,7 +145,7 @@ export function planWrite(
     written: steps.flatMap((step) =>
       step.kind === "spliced"
         ? step.parsed.blocks
-        : step.kind === "edits" || !step.bind
+        : step.kind === "edits" || (step.kind === "insert" && !step.bind)
           ? []
           : step.blocks,
     ),
@@ -172,7 +176,7 @@ type PlannedStep =
   | { kind: "edits"; edits: ResolvedEdit[] }
   | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; bind: boolean }
   /** Rewrite `scope` as `blocks`, bound against the scope's old nodes. */
-  | { kind: "replace"; scope: BlockScope; blocks: Block[]; bind: true }
+  | { kind: "replace"; scope: BlockScope; blocks: Block[] }
   /** A formatted find's reconstructed group: only the splice's occurrences are assigned. */
   | {
       kind: "spliced";
@@ -193,7 +197,7 @@ function bindPlannedWrite(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
   steps: readonly PlannedStep[],
-  links: WriteLinkAssigner | undefined,
+  links: WriteLinks,
 ): ResolveWriteResultWithoutIr {
   const edits: ResolvedEdit[] = [];
   let keptBlocks = false;
@@ -223,10 +227,10 @@ function bindPlannedWrite(
 function bindScope(
   ctx: ConcreteResolveContext,
   step: Extract<PlannedStep, { kind: "replace" | "spliced" }>,
-  links: WriteLinkAssigner | undefined,
+  links: WriteLinks,
 ): Block[] {
   if (step.kind === "replace") return bindSpan(links, scopeNodes(ctx, step.scope), step.blocks);
-  if (!links) return step.parsed.blocks;
+  if (links === "prebound") return step.parsed.blocks;
   return links.bindSplice({
     oldGroup: step.oldGroup,
     oldText: step.oldText,
@@ -347,7 +351,7 @@ function planReplace(
   if (params.content.length === 0) {
     return error("invalid_write", "Use `remove` to remove blocks");
   }
-  return { steps: [{ kind: "replace", scope: scope.scope, blocks: parsed.blocks, bind: true }] };
+  return { steps: [{ kind: "replace", scope: scope.scope, blocks: parsed.blocks }] };
 }
 
 function planRemove(
@@ -361,7 +365,7 @@ function planRemove(
   return { steps: [{ kind: "edits", edits: deleteEdits(params, scope.scope) }] };
 }
 
-interface ConcreteResolveContext extends ResolveWriteContext {
+interface ConcreteResolveContext extends Omit<ResolveWriteContext, "links"> {
   doc: DocHandle;
   /** Every top-level block as a ProseMirror node, in document order. */
   projectedBlocks(): readonly Block[];
@@ -378,12 +382,8 @@ function normalizeParams(
   return { ...params, content };
 }
 
-function bindSpan(
-  links: WriteLinkAssigner | undefined,
-  old: readonly Block[],
-  written: readonly Block[],
-): Block[] {
-  return links ? links.bindSpan(old, written) : [...written];
+function bindSpan(links: WriteLinks, old: readonly Block[], written: readonly Block[]): Block[] {
+  return links === "prebound" ? [...written] : links.bindSpan(old, written);
 }
 
 function validateContent(
@@ -621,7 +621,7 @@ function planSplicedGroup(
   oldText: string,
   spliced: SplicedGroup,
 ): PlannedStep | ResolveWriteFailure {
-  if (spliced.text.length === 0) return { kind: "replace", scope, blocks: [], bind: true };
+  if (spliced.text.length === 0) return { kind: "replace", scope, blocks: [] };
   try {
     return {
       kind: "spliced",

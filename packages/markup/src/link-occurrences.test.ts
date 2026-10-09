@@ -37,16 +37,10 @@ const catalog = {
   documentAt: () => null,
 };
 const scope: DocumentLinkScope = {
-  spellLink: (link) =>
-    spellStoredLink(link, holder, resolveStoredLink(link, holder, catalog), "holder"),
+  spellLink: (link) => spellStoredLink(link, holder, resolveStoredLink(link, catalog), "holder"),
   spellSource: ({ src, ref }) => {
     const link = { href: src, ref };
-    return spellStoredLink(
-      link,
-      holder,
-      resolveStoredLink(link, holder, catalog),
-      "manuscript-root",
-    );
+    return spellStoredLink(link, holder, resolveStoredLink(link, catalog), "manuscript-root");
   },
 };
 
