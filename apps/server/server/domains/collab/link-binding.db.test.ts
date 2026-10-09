@@ -111,9 +111,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       );
       // Runs once, after the next whole-document write is prepared and before it applies.
       let afterNextPrepare: (() => Promise<void>) | null = null;
+      let preparations = 0;
       const bindMarkdown = ports.documentSync.bindMarkdown;
       ports.documentSync.bindMarkdown = async (input) => {
         const prepared = await bindMarkdown(input);
+        preparations++;
         const between = afterNextPrepare;
         afterNextPrepare = null;
         await between?.();
@@ -133,20 +135,28 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         return settled.value;
       };
       const read = async (uri: string) => (await ok(port.read(uri))).content;
-      /** An independent writer's edit, made from the document as it is now: new prose, link removed. */
-      const writerEdit = async (documentId: string) => {
+      /** The text of the document's `index`th block. */
+      const blockText = (fragment: Y.XmlFragment, index: number) =>
+        (fragment.get(index) as Y.XmlElement).get(0) as Y.XmlText;
+      /**
+       * An independent writer's edit, made from the document as it is now
+       * (by default: new prose, link removed); admitting it is returned.
+       */
+      const writerEdit = async (
+        documentId: string,
+        edit = (fragment: Y.XmlFragment) => {
+          const prose = blockText(fragment, 0);
+          prose.delete(0, prose.length);
+          prose.insert(0, "Concurrent.");
+          const linked = blockText(fragment, 1);
+          linked.format(0, linked.length, { link: null });
+        },
+      ) => {
         const client = new Y.Doc({ gc: false });
         const state = await ports.documentSync.loadHocuspocusDocument?.(documentId);
         if (state) Y.applyUpdate(client, state);
         const vector = Y.encodeStateVector(client);
-        const fragment = client.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        const prose = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
-        const linked = (fragment.get(1) as Y.XmlElement).get(0) as Y.XmlText;
-        client.transact(() => {
-          prose.delete(0, prose.length);
-          prose.insert(0, "Concurrent.");
-          linked.format(0, linked.length, { link: null });
-        });
+        client.transact(() => edit(client.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)));
         const update = Y.encodeStateAsUpdate(client, vector);
         client.destroy();
         return async () => {
@@ -331,6 +341,70 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             refs: () => [],
             markdown: "Inserted.\n\nFirst para.\n\nSecond para changed here.\n\nThird.\n",
           },
+          // A2-R1: a save is an ordered block correspondence against its base, not a positional
+          // diff, so a kept paragraph between changed ones stays itself.
+          ...[writer, writerInThread].flatMap((actor) =>
+            (["before", "after"] as const).map((when) => ({
+              door: `a save inserting above a kept paragraph keeps its items, anchors, and an edit to it admitted ${when} the save${"threadId" in actor.origin ? " (in a thread)" : ""}`,
+              act: async () => {
+                const uri = `manuscript://kept-middle-${when}-${"threadId" in actor.origin}.md`;
+                const id = (
+                  await ok(port.createTrackedDocument(uri, "Alpha.\n\nBravo.\n\nCharlie."))
+                ).documentId;
+                const base = await journalDoc(id);
+                const kept = base.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1) as Y.XmlElement;
+                const keptText = kept.get(0) as Y.XmlText;
+                const keptIds = [kept._item?.id, keptText._item?.id];
+                const anchor = Y.createRelativePositionFromTypeIndex(keptText, 3);
+                base.destroy();
+                const edit = await writerEdit(id, (fragment) => {
+                  const text = blockText(fragment, 1);
+                  text.insert(text.length, " Concurrent.");
+                });
+                if (when === "before") afterNextPrepare = edit;
+                await ok(
+                  port.write(uri, "Alpha.\n\nInserted.\n\nBravo.\n\nChanged Charlie.", actor),
+                );
+                if (when === "after") await edit();
+                const saved = await journalDoc(id);
+                const block = saved
+                  .getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)
+                  .get(2) as Y.XmlElement;
+                const text = block.get(0) as Y.XmlText;
+                expect([block._item?.id, text._item?.id]).toEqual(keptIds);
+                const resolved = Y.createAbsolutePositionFromRelativePosition(anchor, saved);
+                expect(resolved?.type).toBe(text);
+                expect(resolved?.index).toBe(3);
+                saved.destroy();
+                return id;
+              },
+              refs: () => [],
+              markdown: "Alpha.\n\nInserted.\n\nBravo. Concurrent.\n\nChanged Charlie.\n",
+            })),
+          ),
+          // A2-R2: a restore replaces the authority generation even when its checkpoint retains
+          // every clock the write was prepared against; the write must be prepared again.
+          ...[writer, writerInThread].map((actor) => ({
+            door: `a write prepared before a restore that kept its base's clocks is prepared again${"threadId" in actor.origin ? " (in a thread)" : ""}`,
+            act: async () => {
+              const uri = `manuscript://restored-${"threadId" in actor.origin}.md`;
+              const id = (await ok(port.createTrackedDocument(uri, "Initial."))).documentId;
+              await ok(port.write(uri, "Checkpoint base.", writer));
+              const checkpoint = await ports.documentSync.checkpoint(id, "same base");
+              if (!checkpoint.ok) throw new Error(JSON.stringify(checkpoint.error));
+              const generation = await ports.documentSync.currentLiveGeneration(id);
+              afterNextPrepare = async () => {
+                await ok(ports.documentSync.restore(id, checkpoint.value));
+              };
+              preparations = 0;
+              await ok(port.edit(uri, { kind: "append", content: "\n\nAppend." }, actor));
+              expect(await ports.documentSync.currentLiveGeneration(id)).toBe(generation + 1n);
+              expect(preparations).toBe(2);
+              return id;
+            },
+            refs: () => [],
+            markdown: "Checkpoint base.\n\nAppend.\n",
+          })),
           {
             door: "a write prepared for one holder never lands on the document that replaced it",
             act: async () => {
