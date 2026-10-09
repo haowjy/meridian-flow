@@ -74,7 +74,8 @@ export class DraftCommandNotSentError extends Error {
 }
 
 function assertOnline(): void {
-  if (!onlineManager.isOnline()) throw new DraftCommandNotSentError();
+  // The browser may change reachability before TanStack receives its network event.
+  if (!navigator.onLine || !onlineManager.isOnline()) throw new DraftCommandNotSentError();
 }
 
 /** Disposition commands run now (and refuse when offline) instead of waiting for the network. */
@@ -195,7 +196,10 @@ export function useDiscardDraft() {
       return response;
     },
     onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
-    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
+    onError: (error, variables) => {
+      if (error instanceof DraftCommandNotSentError) return;
+      return invalidateDraftReviewQueries(queryClient, variables);
+    },
   });
 }
 
@@ -234,7 +238,10 @@ export function useApplyDraftChanges() {
       return response;
     },
     onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
-    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
+    onError: (error, variables) => {
+      if (error instanceof DraftCommandNotSentError) return;
+      return invalidateDraftReviewQueries(queryClient, variables);
+    },
   });
 }
 

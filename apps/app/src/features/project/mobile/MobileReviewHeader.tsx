@@ -69,7 +69,7 @@ export function MobileReviewHeader({
             touch
             count={count}
             focusedIndex={view.focusedIndex}
-            disabled={!controller.marksVisible}
+            disabled={false}
             onStep={view.step}
           />
         ) : null}

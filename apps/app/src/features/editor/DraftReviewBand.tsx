@@ -91,7 +91,7 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
               compact
               count={count}
               focusedIndex={view.focusedIndex}
-              disabled={!controller.marksVisible}
+              disabled={false}
               onStep={view.step}
             />
             <ShowChangesToggle

@@ -107,6 +107,7 @@ export function ReviewChangeRow({
             </span>
           </button>
           <ChangeAuthor
+            touch={touch}
             attribution={change.attribution}
             className={cn("max-w-full", touch && "inline-flex min-h-11 items-center")}
           />
