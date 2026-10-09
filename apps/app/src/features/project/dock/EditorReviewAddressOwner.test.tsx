@@ -195,11 +195,12 @@ describe("EditorReviewAddressOwner", () => {
 
     it("an unfinished review whose draft left the list is left to the review's own list decision", async () => {
       const exit = vi.fn();
+      const setDraftId = vi.fn();
       await withReactRoot(
         <Harness
           listed={false}
           activeDocumentId={draft.documentId}
-          onSetDraftId={vi.fn()}
+          onSetDraftId={setDraftId}
           exitInlineReview={exit}
           openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
         />,
@@ -208,6 +209,8 @@ describe("EditorReviewAddressOwner", () => {
             setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
           );
           expect(exit).not.toHaveBeenCalled();
+          expect(setDraftId).toHaveBeenLastCalledWith(draft.draftId);
+          expect(setDraftId).not.toHaveBeenCalledWith(null);
         },
       );
     });

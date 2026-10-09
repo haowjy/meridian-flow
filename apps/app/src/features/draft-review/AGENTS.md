@@ -164,9 +164,11 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   the input contract even without a hold. Schema-reset sessions remain bound
   for their terminal notice and are never input-eligible.
 - **Entry absence belongs to the fresh preview read.** List omission is withheld
-  until that read answers. `active` observes the generation; `gone` or 404 exits
-  to live, or fails a draft-only review. Other read failures are terminal.
-  Post-entry list observations and completion protection remain unchanged.
+  until that read answers. `active` observes the generation; `gone`, 404 and
+  list omission share the reducer's `reviewAbsent` observation. Pending writer
+  delivery at the shown generation or later keeps review open; otherwise a
+  missing read exits to live or fails a draft-only review. Terminal session
+  failures keep their live exit or draft-only error; other read failures are room errors.
 - **Writer typing has draft-only client boundaries** (`core/editor/extensions/inline-review/writer-client`).
   The next content edit rotates the Yjs client when it touches a different
   server closure class or a disjoint untouched site. Edits in one class and
