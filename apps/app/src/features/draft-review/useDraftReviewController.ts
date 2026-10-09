@@ -49,7 +49,11 @@ import {
   type ReviewToast,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-changes";
-import { commandCompletion, useReviewCommandCompletion } from "./useReviewCommandCompletion";
+import {
+  commandCompletion,
+  draftReads,
+  useReviewCommandCompletion,
+} from "./useReviewCommandCompletion";
 import {
   listedDocumentName,
   type SelectionCommand,
@@ -467,7 +471,7 @@ export function useDraftReviewController({
         completion: commandCompletion(
           currentDraftCommandRecords(),
           { projectId, workId, documentId, draftId },
-          () => listedDocumentName(queryClient, projectId, workId, draftId),
+          draftReads(queryClient, { projectId, workId, documentId, draftId }),
         ),
       });
       loadInlineReviewRoom(documentId, draftId);

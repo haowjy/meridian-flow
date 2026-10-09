@@ -79,12 +79,16 @@ re-read, and the claim ending any other way withdraws the prediction. Every chan
 to a claim of the Work is dispatched whichever review is rendered; the reducer
 orders it with `enterInline` and ignores it when it names another draft, so a draft
 entered and answered in one flush still settles (nothing reads the last rendered
-identity). The closing answer (`closedByCommand`, with the document's name read
-when it landed) lives only as long as the claim: nothing of it is kept once the
+identity). The closing answer (`draftClosed` on the claim, with the document's name
+read when it landed) lives only as long as the claim: nothing of it is kept once the
 claim is released, because the server reuses a closed draft's id for the next
 proposal and a retained answer would close that fresh generation. A review that
 opens on the draft after the claim ended therefore shows whatever the draft's
-list row and preview say now.
+list row and preview say now. A claim's completion applies to the generation it
+was sent against: the claim keeps the `draftRevisionToken` it was sent with, and
+while the draft's cached preview is active with another token (an agent proposed
+again on the reused id before the claim's reads finished) neither a review that
+opens nor one already open takes the claim's pending or closing completion.
 The claim, not the sender, owns this (completion dispatched by the sending
 controller was lost when the writer opened the draft mid-command); a refused
 duplicate never begins it.

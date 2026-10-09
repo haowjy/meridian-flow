@@ -324,6 +324,84 @@ describe("a draft the server reuses for the next proposal after a closing answer
   });
 });
 
+describe("a draft the server reuses while the closing command still awaits its reads", () => {
+  /**
+   * The Chat's last change on unopened B is answered closing, and the mutation
+   * still awaits a slow Work-list read. The agent proposes again on B's id and
+   * the preview read returns it. The claim's completion belongs to the
+   * generation the command was sent against, not to the proposal that followed.
+   */
+  it.each([
+    [
+      "apply",
+      () => mocks.applyDraftChanges,
+      (r: ScopeProbe["chatRunner"]) => r.applyChanges(draftB, change("3")),
+      () => applied(true),
+    ],
+    [
+      "discard",
+      () => mocks.discardDraft,
+      (r: ScopeProbe["chatRunner"]) => r.discardChanges(draftB, change("3")),
+      () => discarded(true),
+    ],
+  ] as const)("%s: opens on the new proposal, before and after the claim ends", async (_mode, command, send, closing) => {
+    const answer = heldCommand(command());
+    await renderReviewScopes(async (probe) => {
+      await groupsListed(probe);
+      await open(probe, draftA);
+      const view = await probe().mountDraftChanges(target(draftB));
+      await vi.waitFor(() => expect(view().status).toBe("ready"));
+      const reusedRows = {
+        drafts: [listed, { ...listedB, updatedAt: "2026-10-09T04:00:00.000Z" }],
+      };
+      let finishList!: (response: unknown) => void;
+      let done!: Promise<unknown>;
+      try {
+        await act(async () => {
+          done = send(probe().chatRunner);
+        });
+        mocks.listWorkDrafts.mockReturnValue(new Promise((resolve) => (finishList = resolve)));
+        mocks.getDraftPreview.mockImplementation(async (_p, _w, _d, id: string) =>
+          id === "draft-b"
+            ? {
+                ...previewOf("4"),
+                draftId: "draft-b",
+                draftRevisionToken: "draft-next-generation",
+                reviewRoomName: "review-room-b-next",
+              }
+            : previewOf("1", "2"),
+        );
+        await act(async () => {
+          answer(answeredFor(draftB, closing()));
+        });
+        await vi.waitFor(() =>
+          expect(view().items.map((item) => item.change.classId)).toEqual(["class-4"]),
+        );
+
+        await probe().openDraft(draftB);
+        await open(probe, draftB);
+        expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+        expect(probe().header.view.finished).toBe(false);
+        expect(probe().header.view.items.map((item) => item.change.classId)).toEqual(["class-4"]);
+
+        mocks.listWorkDrafts.mockResolvedValue(reusedRows);
+        await act(async () => {
+          finishList(reusedRows);
+          await done;
+        });
+        expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+        expect(probe().header.view.items.map((item) => item.change.classId)).toEqual(["class-4"]);
+      } finally {
+        mocks.listWorkDrafts.mockResolvedValue(reusedRows);
+        await act(async () => {
+          finishList?.(reusedRows);
+          await done;
+        });
+      }
+    });
+  });
+});
+
 describe("two last Discards for one open draft in the same turn", () => {
   it("keeps the first command's hold when the second is refused", async () => {
     mocks.getDraftPreview.mockResolvedValue(previewOf("2"));

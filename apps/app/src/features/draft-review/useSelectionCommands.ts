@@ -110,6 +110,20 @@ export function useSelectionCommands({
   return { applyChanges, discardChanges };
 }
 
+/** The generation of the draft's cached preview, when it is an active one. */
+export function cachedPreviewGeneration(
+  queryClient: QueryClient,
+  projectId: string,
+  workId: string,
+  documentId: string,
+  draftId: string,
+): string | null {
+  const cached = queryClient.getQueryData<DraftPreviewResponse>(
+    projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+  );
+  return cached?.status === "active" ? cached.draftRevisionToken : null;
+}
+
 /** The listed draft's document name, kept by a review that outlives the draft's place in the list. */
 export function listedDocumentName(
   queryClient: QueryClient,
