@@ -59,8 +59,8 @@ parse. A `LinkBinder` makes it, before the caller opens any transaction:
 `bindMarkdown` opens the holder's scope (the document, or the project and the
 address a document about to be created will have), parses, prepares, assigns
 fresh or against the holder's current document (`against: "current"`: every
-link that stays corresponds to itself and keeps its ref, so an overwrite or a
-host append keeps refs verbatim), and registers the ahead refs it minted.
+link that stays corresponds to itself and keeps its ref, so an overwrite
+keeps refs verbatim), and registers the ahead refs it minted.
 
 A prepared write is a mutation, not a desired state. Prepared against the
 current document, it keeps the base it read through the coordinator (its
@@ -75,8 +75,7 @@ writer's save outside a thread applies the update alone, since fresh-authorship
 admission refuses the reserved provenance namespace. Do not lower prepared
 writes with a whole-fragment `updateYFragment` diff: it keeps only a common
 prefix and suffix, so a paragraph inserted above kept prose re-attributes that
-prose to the saver (A2-1's certified-save row). Append keeps the current document's own nodes for the blocks the
-appended text left alone, so it is an insertion after the base's last block.
+prose to the saver (A2-1's certified-save row).
 Applying merges the update into the live document: a writer's edit, unlink or
 retarget admitted between prepare and apply stays, in either order. Two
 separate checks guard applying it. The base's authority generation is a
@@ -105,8 +104,7 @@ if the text names anything. `writeDocument` routes an actor's write in a
 thread (and every agent write) through the edit core's create-overwrite with
 `WriteContext.prepared`, which merges the prepared update into its runtime and
 records it as that actor's mutation; a writer's save outside a thread merges
-it directly. There is no string-transform write: host append binds
-`current + appended` itself. Seed, import and create bind fresh (pass 3 only).
+it directly. There is no string-transform or append write. Seed, import and create bind fresh (pass 3 only).
 
 The codec asks synchronously, so the tree is read per operation, never cached.
 `within(key, op)` opens a snapshot keyed by project and reader (the account a

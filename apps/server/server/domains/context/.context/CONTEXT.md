@@ -117,9 +117,9 @@ router resolves to exact project-scoped Work authority before dispatch.
 - **Collab-aware markdown bridge** (`context/collab-document-sync.ts`) — maps
   ContextFS provenance to collab origins. Agent/human writes use the richer
   collab write APIs that return attribution metadata; system/import writes use
-  the markdown write API directly. The certified `ContextPort.edit` boundary is
-  a closed command surface; its current command is a fresh end-of-document
-  append. Opaque caller callbacks do not cross the boundary.
+  the markdown write API directly. There is no host edit or append door: a
+  host changes a document by writing it whole (or the model edits it through
+  agent-edit).
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
   for `move`/`delete` operations. Callers may request exact-target moves so an
   existing destination folder is a collision rather than a Unix-style container.
@@ -208,7 +208,7 @@ stays `linkUpdate: { links, documents }`.
 
 ## Whole-document writes
 
-`ContextFS.write`, `edit` (append) and `createTrackedDocument` with content
+`ContextFS.write` and `createTrackedDocument` with content
 prepare their Markdown (`documentSync.bindMarkdown`) **before**
 `commandExecutor.run`, then apply the `PreparedWrite` inside the
 namespace-locked transaction (collab `document-authority-and-schema.md`). The
@@ -219,7 +219,7 @@ another authority generation since the base was read, or it no longer has the
 base's clocks, the transaction answers `stale_target` and
 `preparedCommand` prepares again against what is there (three attempts). An
 edit admitted in between merges with the prepared update. An actor's overwrite
-and every append prepare against the current document; import and system
+prepares against the current document; import and system
 writes prepare fresh. A new document prepares as the canonical URI it will have
 (`ContextFSDeps.holder`: the port's project and the source's Work authority).
 

@@ -43,7 +43,7 @@ export function fakePreparedWrite({ holder, markdown }: BindMarkdownInput): Prep
     base: null,
     update: new Uint8Array(),
     blocks: [],
-    markdown: typeof markdown === "string" ? markdown : markdown(""),
+    markdown,
     schemaType: "document",
   } as unknown as PreparedWrite;
 }
