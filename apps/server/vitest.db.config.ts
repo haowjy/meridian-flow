@@ -67,6 +67,7 @@ const expectedSuites = [
   "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.db.test.ts",
   "apps/server/server/domains/runtime/loop/execution-finalizer.db.test.ts",
   "apps/server/server/domains/runtime/loop/compaction-protocol.db.test.ts",
+  "apps/server/server/domains/runtime/shown-links.db.test.ts",
   "apps/server/server/domains/runtime/handoff/brief-service.db.test.ts",
   "apps/server/server/domains/runtime/loop/control-protocol.db.test.ts",
   "apps/server/server/domains/runtime/loop/work-context-notices.db.test.ts",

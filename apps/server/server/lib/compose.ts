@@ -148,6 +148,7 @@ import {
   createDrizzleHandoffStatusReader,
   createDrizzleRunClaim,
   createDrizzleRuntimeDelivery,
+  createDrizzleShownLinkStore,
   createDrizzleThreadLock,
   createGatewayFromEnv,
   createInMemoryInbox,
@@ -179,6 +180,7 @@ import {
   readChainPermission,
   readPendingInbox,
   requireWritableThread,
+  type ShownLinkStore,
   sweepWakes,
   type ToolExecutor,
   type ToolRegistry,
@@ -385,6 +387,8 @@ export type ProductionAppPorts = {
   activeDocuments: ActiveDocumentResolver;
   runClaim: RunClaim;
   statusReader: ThreadStatusReader;
+  /** Links shown to the model per thread and document (contract §7). */
+  shownLinks: ShownLinkStore;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -708,6 +712,7 @@ export async function createProductionAppPorts(input: {
     activeDocuments,
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
+    shownLinks: createDrizzleShownLinkStore(db),
   };
 }
 
@@ -797,6 +802,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     readAgentChain: ports.readAgentChain,
     readChainPermission: ports.readChainPermission,
+    shownLinks: ports.shownLinks,
   };
   for (const registration of createModelToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
@@ -1000,6 +1006,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
+    shownLinks: ports.shownLinks,
     documentRevisions: createDocumentRevisions({
       links: ports.linkScopes,
       threads: ports.threadRepos.threads,
