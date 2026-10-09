@@ -365,9 +365,8 @@ with. Every client producer assigns it without parsing and without the network
 | `@` link-ahead row | `mintAheadRef()`, href `aheadAddress(uri, "link")` |
 | Ctrl+K, toolbar, menu Edit (`commitLinkDraft`) | a picked document's `doc:`, else `assignWrittenHref`; an unchanged destination keeps the link's attrs, any other is a retarget assigned fresh |
 | pasted `[[…]]` | the catalog row's `doc:`, else a minted ahead ref at the link-ahead address |
-| any paste (Markdown, HTML without metadata, another project's rich copy) | `assignPastedNodes` on every link still without a ref, in the link clipboard plugin's `transformPasted` |
-| same-project rich paste | the copied ref, at the copied current address (links and pictures) |
-| pasted `image`/`figure` with a manuscript address source (another project's rich copy, outside HTML) | `assignWrittenSource` (the same `assignFreshLink`, source grammar), in the image paste door after the asset-path translation |
+| any paste (Markdown, HTML without metadata, another project's rich copy) | `assignPastedSlice` on every link and every `image`/`figure` source still without a ref, in the link clipboard plugin's `transformPasted`: a link through `assignWrittenHref`, a source through `assignWrittenSource` (the same `assignFreshLink`, source grammar) |
+| same-project rich paste | the copied ref, at the copied current address (links and pictures); an upload's `asset:<id>` source |
 | image uploads | `asset:` src, no ref |
 
 `assignWrittenHref` is markup's `assignFreshLink`, the pass 3 agent-edit
@@ -402,9 +401,15 @@ same way with its metadata on its `<img>` (a figure's own picture): the
 sanitizer admits a recorded address as the source (and a metadata-free
 document address, which binds fresh like its bare spelling), the kept ref is
 `data-meridian-kept-ref` on that `<img>`, and anything unkept is assigned by
-the image paste door. The text flavour spells a picture whose ref answers a
-document at that document's current address under the manuscript-root
-grammar (stored spelling otherwise), from the same answer rich copy records.
+`transformPasted` with the links. An `asset:<id>` upload is the same identity
+stored differently: copy records `asset:<id>` as its ref at the address the
+assignment index (the project catalog links are assigned from) holds that id
+at now; a same-project paste restores the `asset:` source and any other paste
+binds the address fresh. An upload the index does not hold records nothing, and
+there is no second path-to-asset map. The text flavour spells a picture whose
+ref answers a document, or an upload the index holds, at that document's
+current address under the manuscript-root grammar (stored spelling otherwise),
+from the same answer rich copy records.
 It serializes a block the Markdown codec
 has no form for (a figure, a component) through the MDX codec, so copying one
 never loses the HTML flavour. The chat composer takes the full

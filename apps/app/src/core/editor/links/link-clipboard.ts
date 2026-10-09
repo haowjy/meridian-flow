@@ -21,9 +21,12 @@
  *
  * An `image` or `figure` with a ref travels the same way, its metadata on the
  * picture's `<img>`: the sanitizer lets a recorded address through as the
- * source, a same-project paste keeps the ref, and anything else reaches the
- * image paste door with no ref, which assigns its address fresh
- * (`images/image-workflow.ts`).
+ * source, a same-project paste keeps the ref, and anything else arrives with
+ * no ref and is assigned its address fresh. An `asset:<id>` upload is the
+ * same thing stored differently: it records `asset:<id>` as its ref at the
+ * address the project catalog holds that id at now, and a same-project paste
+ * restores the `asset:` source. An upload the catalog does not hold yet
+ * records nothing.
  *
  * The text/plain flavour spells every internal link as its full address, so
  * it means the same thing in another app or through the Markdown paste door;
@@ -46,11 +49,10 @@ import type { DocumentLinkScope } from "@meridian/markup";
 import { DOMSerializer, type Mark, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
-import { assignPastedSlice } from "./link-assignment";
+import { assignPastedSlice, type LinkAssignmentDocument } from "./link-assignment";
 import {
   type LinkAnswerCache,
   type LinkKey,
-  type LinkResolutionEntry,
   linkKeyOfMark,
   pictureKeyOfNode,
 } from "./link-resolution";
@@ -126,16 +128,39 @@ export function clipboardLinkRef(value: string | null): string | null {
   return value && parseLinkRef(value) ? value : null;
 }
 
+const UPLOAD_PREFIX = "asset:";
+
+/**
+ * A recorded picture ref read back from untrusted clipboard HTML, or null: a
+ * link ref, or an upload's `asset:<id>` with an id a `doc:` ref could name.
+ */
+export function clipboardPictureRef(value: string | null): string | null {
+  if (!value?.startsWith(UPLOAD_PREFIX)) return clipboardLinkRef(value);
+  return parseLinkRef(`doc:${value.slice(UPLOAD_PREFIX.length)}`)?.kind === "doc" ? value : null;
+}
+
+/** The catalog's document an `asset:<id>` upload source names, or null. */
+function uploadDocument(
+  src: string,
+  resolution: LinkAnswerCache | null,
+): LinkAssignmentDocument | null {
+  if (!src.startsWith(UPLOAD_PREFIX)) return null;
+  const documentId = src.slice(UPLOAD_PREFIX.length);
+  const documents = resolution?.assignment?.index?.documents ?? [];
+  return documents.find((document) => document.documentId === documentId) ?? null;
+}
+
 /** A recorded project id read back from untrusted clipboard HTML, or null. */
 export function clipboardLinkProject(value: string | null): string | null {
   return value && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : null;
 }
 
 /** Copy, HTML flavour: what one rendered link mark or picture names, beside its href. */
-function recordLinkMetadata(element: Element, stored: LinkKey, resolution: LinkAnswerCache): void {
-  const href = stored.href;
-  const ref = clipboardLinkRef(stored.ref);
-  const address = currentLinkAddress({ ref, href }, resolution);
+function recordLinkMetadata(
+  element: Element,
+  { ref, address }: { ref: string | null; address: string | null },
+  resolution: LinkAnswerCache,
+): void {
   if (address) element.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
   const projectId = resolution.assignment?.projectId ?? null;
   if (ref && projectId) {
@@ -144,10 +169,25 @@ function recordLinkMetadata(element: Element, stored: LinkKey, resolution: LinkA
   }
 }
 
+/** What a stored link (or ref-bearing picture) records: its ref and current address. */
+function linkMetadata(stored: LinkKey, resolution: LinkAnswerCache) {
+  const ref = clipboardLinkRef(stored.ref);
+  return { ref, address: currentLinkAddress({ ref, href: stored.href }, resolution) };
+}
+
+/** What a picture records, or null for one that names nothing the project holds. */
+function pictureMetadata(attrs: PMNode["attrs"], resolution: LinkAnswerCache) {
+  const src = String(attrs.src ?? "");
+  const upload = uploadDocument(src, resolution);
+  if (upload) return { ref: src, address: storedHref(upload.uri, "") };
+  const picture = pictureKeyOfNode(attrs);
+  return picture ? linkMetadata(picture, resolution) : null;
+}
+
 /**
  * Paste into an Editor: a same-project link or picture keeps its ref at its
- * recorded address; every other recorded one pastes its address with no ref,
- * for the paste door to assign fresh.
+ * recorded address (an upload its `asset:` source); every other recorded one
+ * pastes its address with no ref, for the paste door to assign fresh.
  */
 function keepPastedRefs(html: string, projectId: string | null): string {
   if (!html.includes("data-meridian-")) return html;
@@ -156,8 +196,10 @@ function keepPastedRefs(html: string, projectId: string | null): string {
   for (const element of container.content.querySelectorAll(
     `[data-meridian-link], img[${LINK_ADDRESS_ATTRIBUTE}]`,
   )) {
+    const picture = element.localName === "img";
     const address = clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE));
-    const ref = clipboardLinkRef(element.getAttribute(LINK_REF_ATTRIBUTE));
+    const recorded = element.getAttribute(LINK_REF_ATTRIBUTE);
+    const ref = picture ? clipboardPictureRef(recorded) : clipboardLinkRef(recorded);
     const project = clipboardLinkProject(element.getAttribute(LINK_PROJECT_ATTRIBUTE));
     for (const attribute of [
       LINK_ADDRESS_ATTRIBUTE,
@@ -167,10 +209,11 @@ function keepPastedRefs(html: string, projectId: string | null): string {
     ])
       element.removeAttribute(attribute);
     if (!address) continue;
-    if (element.localName === "img") element.setAttribute("src", address);
+    if (picture) element.setAttribute("src", address);
     else element.setAttribute("data-meridian-link", address);
-    if (ref && projectId && project === projectId)
-      element.setAttribute(LINK_KEPT_REF_ATTRIBUTE, ref);
+    if (!ref || !projectId || project !== projectId) continue;
+    if (ref.startsWith(UPLOAD_PREFIX)) element.setAttribute("src", ref);
+    else element.setAttribute(LINK_KEPT_REF_ATTRIBUTE, ref);
   }
   return container.innerHTML;
 }
@@ -180,9 +223,9 @@ function keepPastedRefs(html: string, projectId: string | null): string {
  * Every internal link is spelled as its full current address (a resolved ref
  * at its document's address now, otherwise the address its href names), so
  * the text means the same thing wherever it lands, holder or not. A picture
- * whose ref answers a document is spelled at that document's current address
- * under the manuscript-root grammar, as rich copy records it; any other
- * source (gone, missing, `asset:`, ref-less) as stored.
+ * whose ref answers a document, or an upload the catalog holds, is spelled at
+ * that document's current address under the manuscript-root grammar, as rich
+ * copy records it; any other source (gone, missing, ref-less) as stored.
  */
 export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
   const resolution = linkClipboardPluginKey.getState(state) ?? null;
@@ -197,6 +240,9 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
     spellSource: (attrs) => {
       const picture = pictureKeyOfNode(attrs);
       const entry = picture?.ref && resolution ? resolution.read(picture) : null;
+      const known =
+        uploadDocument(attrs.src, resolution) ??
+        (entry?.state === "document" ? entry.document : null);
       const holder: LinkHolder = {
         uri: resolution?.baseUri ?? null,
         projectId: resolution?.assignment?.projectId ?? "",
@@ -205,7 +251,7 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
       return spellStoredLink(
         { ref: attrs.ref, href: attrs.src },
         holder,
-        sourceResolution(entry, attrs.ref, holder.projectId),
+        sourceResolution(known, entry?.state === "gone", attrs.ref, holder.projectId),
         "manuscript-root",
       );
     },
@@ -213,16 +259,17 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
 }
 
 /**
- * The cache's answer for a picture as the speller reads it. Anything not yet
- * answered spells as stored, as it does with no tree loaded.
+ * What is known of a picture's document, as the speller reads it. Anything not
+ * yet answered spells as stored, as it does with no tree loaded.
  */
 function sourceResolution(
-  entry: LinkResolutionEntry | null,
+  document: LinkAssignmentDocument | null,
+  gone: boolean,
   ref: string | null,
   projectId: string,
 ): LinkResolution {
-  if (entry?.state === "document") {
-    const { documentId, uri } = entry.document;
+  if (document) {
+    const { documentId, uri } = document;
     // The speller reads only `document.uri`; the answer carries no presence,
     // so the other fields are neutral fillers, not facts about the document.
     return {
@@ -231,15 +278,15 @@ function sourceResolution(
       inDraft: false,
     };
   }
-  if (entry?.state === "gone") return { kind: "gone" };
+  if (gone) return { kind: "gone" };
   return ref === null ? { kind: "address" } : { kind: "unknown" };
 }
 
 /**
  * The plugin that owns both directions on an Editor: the clipboard serializer
- * that records what each link names, the HTML transform that keeps a
- * same-project ref, and the paste transform that assigns every link still
- * without a ref. Its state is the editor's resolution, whose assignment scope is the
+ * that records what each link and picture names, the HTML transform that keeps
+ * a same-project ref, and the paste transform that assigns every link and
+ * picture source still without one. Its state is the editor's resolution, whose assignment scope is the
  * holder's address, project and local index. Its HTML transform runs after
  * the paste sanitizer, which keeps well-formed metadata only.
  */
@@ -252,7 +299,11 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache)
         link: (mark: Mark, inline: boolean) => {
           const rendered = DOMSerializer.renderSpec(document, renderLink(mark, inline));
           if (rendered.dom instanceof Element && rendered.dom.hasAttribute("data-meridian-link"))
-            recordLinkMetadata(rendered.dom, linkKeyOfMark(mark.attrs), resolution);
+            recordLinkMetadata(
+              rendered.dom,
+              linkMetadata(linkKeyOfMark(mark.attrs), resolution),
+              resolution,
+            );
           return rendered;
         },
       }
@@ -263,7 +314,7 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache)
     if (!renderPicture) continue;
     nodes[name] = (node: PMNode) => {
       const rendered = DOMSerializer.renderSpec(document, renderPicture(node));
-      const picture = pictureKeyOfNode(node.attrs);
+      const picture = pictureMetadata(node.attrs, resolution);
       const image =
         rendered.dom instanceof Element
           ? rendered.dom.localName === "img"

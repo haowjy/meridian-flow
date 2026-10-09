@@ -18,7 +18,7 @@ import { type AnchorRange, carryAnchor } from "../anchors";
 import type { ImageIngressHost } from "./image-ingress-ports";
 import type { ImageIngressStore } from "./image-ingress-store";
 import type { AnnouncedUpload } from "./image-upload-presence";
-import type { MutableAssetClipboardIndex, PastedImageImport } from "./image-workflow";
+import type { PastedImageImport } from "./image-workflow";
 import {
   NO_PENDING_IMAGES,
   NO_UPLOAD_OWNERS,
@@ -31,8 +31,6 @@ import {
 export const IMAGE_INGRESS_NAME = "meridianImageIngress";
 
 export type ImageIngressStorage = {
-  /** Per-editor: an `asset:` ref only means something in one project. */
-  assetIndex: MutableAssetClipboardIndex;
   /** Drag state and refusals — the two facts no document node can hold. */
   status: ImageIngressStore;
   host: ImageIngressHost | null;
@@ -107,11 +105,6 @@ export function imageIngressStorage(editor: Editor | null | undefined): ImageIng
 export function ingressState(editor: Editor | null | undefined): ImageIngressPluginState {
   if (!editor || editor.isDestroyed) return EMPTY_INGRESS_STATE;
   return imageIngressPluginKey.getState(editor.state) ?? EMPTY_INGRESS_STATE;
-}
-
-/** This editor's asset index, for a surface that translates `asset:` refs. */
-export function editorAssetIndex(editor: Editor | null): MutableAssetClipboardIndex | null {
-  return imageIngressStorage(editor)?.assetIndex ?? null;
 }
 
 /** Drag state and refusals for this editor's ingress, for the app to render. */
