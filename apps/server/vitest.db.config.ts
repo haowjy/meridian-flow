@@ -102,6 +102,7 @@ const expectedSuites = [
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
   "packages/database/src/saved-subagent-contracts-migration.db.test.ts",
+  "packages/database/src/scratch-archive-migration.db.test.ts",
   "tools/dev/lib/migration-runner.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database,tools/dev}/**/*.db.test.ts", {

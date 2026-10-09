@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Preserve existing No Work Scratch notes and upload intakes under Unfiled during the lineage Scratch upgrade, with retryable concurrent index migrations.
+
 - "View projects" moves below your account at the foot of the left sidebar, so a near miss on Scratch no longer leaves the project.
 
 - On the Chat screen, the side panel's header now has an "Open document" menu even when nothing is open, listing Manuscript, Knowledge Base, User, Unfiled and Scratch. Clicking a file in the left project tree also opens it in the side panel (images and PDFs included), and the tree highlights it. The empty panel says where to pick a document. On the Editor and Work screens and on a phone, tree clicks open as before.
@@ -283,8 +285,6 @@
 - Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
-
-### Fixed
 - Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
 - Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
 - Keep interrupted compaction metadata parseable across run-start and startup recovery.
@@ -431,8 +431,6 @@
 - Remove the unused account project-home redirect endpoint and its wire contract; drop the unconsumed last-active-project preference from user persistence.
 - Open a searchable project library at the signed-in base URL. Create a named project from a separate destination; open any project directly in Chat. Remove the account Home composer and quick-chat entry.
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
-### Fixed
-
 - Reject malformed saved report captures without confusing JSON null with an absent capture.
 
 - Keep thread snapshots and replay cursors on one consistent database view.
@@ -494,8 +492,6 @@
 - Saved terminal reports drive durable parent publication: the original card is patched in place, a body-free completion fact is emitted, and a compact retrieval reference is queued. Pending publication retries after interruption.
 - Saved report artifacts render on the child Return card, foreground direct card, and ordinary expanded `thread_report` row; background cards stay body-free.
 - Every conversation has a project-scoped short ref (`cN` primary, `pN` subagent). `thread_message` and `thread_report` address the child by ref; exact report reads also require its execution UUID. Chat URLs and Open doors retain thread UUIDs.
-
-### Fixed
 
 - Keep the project-title header on the sidebar surface in both themes.
 - Reveal the current chat when a long switcher list opens without stealing search focus; give dark dropdown current and hover rows visible tonal steps.
