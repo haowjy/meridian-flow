@@ -14,15 +14,25 @@ import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 
-function namespaceKey(input: {
+export type ContextNamespace = {
   projectId: string;
   userId: string;
   scheme: string;
   workId: string | null;
-}): string {
+};
+
+export function contextNamespaceKey(input: ContextNamespace): string {
   return input.scheme === "user"
     ? `context-user:${input.userId}`
     : `context-project:${input.projectId}:${input.workId ?? "none"}:${input.scheme}`;
+}
+
+/** Acquire only namespace locks. Callers are responsible for Work checks. */
+export async function lockNamespaceKeys(
+  db: Database,
+  namespaces: readonly ContextNamespace[],
+): Promise<void> {
+  await lockAdvisoryKeys(db, namespaces.map(contextNamespaceKey));
 }
 
 /**
@@ -39,7 +49,7 @@ export async function lockContextNamespaces(
   await requireLockedActiveWorks(db, workIds);
   await lockAdvisoryKeys(db, [
     ...(scopes.some((scope) => scope.scheme === "user") ? [owner.userId] : []),
-    ...scopes.map((scope) => namespaceKey({ ...owner, ...scope })),
+    ...scopes.map((scope) => contextNamespaceKey({ ...owner, ...scope })),
   ]);
 }
 
@@ -67,7 +77,7 @@ export async function lockContextSources(
   await lockAdvisoryKeys(db, [
     ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
     ...rows.map((row) =>
-      namespaceKey({
+      contextNamespaceKey({
         projectId: (row.projectId ?? row.workProjectId) as string,
         userId: row.userId ?? "",
         workId: row.workId,

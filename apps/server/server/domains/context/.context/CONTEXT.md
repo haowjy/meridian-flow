@@ -221,6 +221,13 @@ keys exist before lazy source rows; direct Drizzle stores derive the same keys
 from backing ownership. Do not enter a single-source transaction and then issue
 a multi-source command with a larger lock set.
 
+Ahead-ref registration uses the exported `lockNamespaceKeys` seam when it opens
+its independent root transaction. It takes only the sorted, deduplicated logical
+namespace keys: no Work lifecycle or holder lock is acquired. Arrival settlement
+runs in the caller's already-locked transaction and acquires no lock, so the
+Work → namespace → holder order used by authored moves and creates cannot form a
+cycle with registration.
+
 Full paths can exceed the PostgreSQL B-tree tuple limit. History uses a hash
 index with exact equality rechecks, and namespace-locked replacement owns
 source/path uniqueness. All folder batches commit atomically. Current files or
