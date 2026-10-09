@@ -183,22 +183,19 @@ export function useDraftReviewController({
   const discardMutation = useDiscardDraft();
   const localStateOwner = useDraftReviewStateOwner();
   const { state, dispatch } = stateOwner ?? localStateOwner;
-  const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
   // One session per Work: the controller outlives navigation between Works, and
   // a command still in flight in the Work left behind must not keep the new
-  // Work's controls disabled.
-  const reviewSession = useMemo(() => {
-    // The session belongs to this Work for good. The ref moves to the next
-    // Work's ports with the next render, and a command sent through this
-    // session afterwards (a batch that began here) must still act in this Work.
-    let ownPorts: DraftReviewCommandPorts | null = null;
-    return new DraftReviewSession(() => {
-      const latest = commandPortsRef.current;
-      if (latest?.scope.projectId === projectId && latest.scope.workId === workId)
-        ownPorts = latest;
-      if (!ownPorts) throw new Error("Draft review command ports are not ready.");
-      return ownPorts;
+  // Work's controls disabled. The session owns its ports from its creation: each
+  // render of this Work refreshes them, and the next Work's render makes a
+  // session of its own, so a command sent through this one afterwards (a batch
+  // that began here) still acts in this Work whether or not it ever ran before.
+  const { session: reviewSession, ports: commandPortsRef } = useMemo(() => {
+    const ports: { current: DraftReviewCommandPorts | null } = { current: null };
+    const session = new DraftReviewSession(() => {
+      if (!ports.current) throw new Error("Draft review command ports are not ready.");
+      return ports.current;
     });
+    return { session, ports };
   }, [projectId, workId]);
   const dispositionLock = reviewSession.disposition;
   const disposition = useSyncExternalStore(
@@ -367,7 +364,11 @@ export function useDraftReviewController({
           // Only an answered Discard can close the draft; a refusal says nothing about it.
           onAnswered: (response) => {
             if (response.status === "discarded" && response.draftClosed)
-              answerDraftCommandClosed({ projectId, workId, documentId, draftId });
+              answerDraftCommandClosed(
+                { projectId, workId, documentId, draftId },
+                // Read now: the draft leaves the list once the answer's reads land.
+                { documentName: listedDocumentName(queryClient, projectId, workId, draftId) },
+              );
           },
         }),
       ),
@@ -382,7 +383,11 @@ export function useDraftReviewController({
           request,
           onAnswered: (response) => {
             if (response.status === "applied" && response.draftClosed)
-              answerDraftCommandClosed({ projectId, workId, documentId, draftId });
+              answerDraftCommandClosed(
+                { projectId, workId, documentId, draftId },
+                // Read now: the draft leaves the list once the answer's reads land.
+                { documentName: listedDocumentName(queryClient, projectId, workId, draftId) },
+              );
           },
         }),
       ),
@@ -561,7 +566,7 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
-  useReviewCommandCompletion({ projectId, workId, stateRef, activeRef, dispatch });
+  useReviewCommandCompletion({ projectId, workId, activeRef, dispatch });
 
   const { applyChanges, discardChanges } = useSelectionCommands({
     projectId,

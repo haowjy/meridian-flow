@@ -17,7 +17,10 @@
  *   absence is not evidence of Apply (a remote Discard looks the same), so the
  *   record never turns unknown into success; it only stops showing a message
  *   on a row that is gone.
- * - `confirmed`: the server confirmed Apply. Draft-list reads that started
+ * - `confirmed`: the server confirmed Apply, or answered a selection command
+ *   with `draftClosed` (then `closed` keeps that terminal outcome after the
+ *   claim is released, for a review that opens on the draft before the answer
+ *   reached it: `closedByCommand`). Draft-list reads that started
  *   before the confirmation can no longer bring the draft back, so the record
  *   lives only until those reads settle. A read that started after it is
  *   authoritative, because the server reuses a draft id for the next
@@ -67,6 +70,12 @@ export type ChangeCommandMode = "apply" | "discard";
 export type ChangeSelection = { classIds: readonly string[]; operationIds: readonly string[] };
 
 /**
+ * What the server's closing answer left to say about the draft, read when it
+ * landed: the draft leaves the Work's list once the answer's reads do.
+ */
+export type ClosedDraft = { documentName: string | null };
+
+/**
  * A selection command in flight, with the operation set it sends. This is the
  * one place its identity, mode and coverage are readable from, by whichever
  * review has the draft open (`completesDraft`: the selection handles every
@@ -76,13 +85,13 @@ export type ChangeSelection = { classIds: readonly string[]; operationIds: reado
 export type PendingChangeCommand = ChangeSelection & {
   mode: ChangeCommandMode;
   completesDraft?: true;
-  draftClosed?: true;
+  draftClosed?: ClosedDraft;
 };
 
 type DraftCommandRecord =
   | { phase: "pending"; change?: PendingChangeCommand }
   | { phase: "failed"; failure: DraftCommandFailure; at: number }
-  | { phase: "confirmed"; at: number };
+  | { phase: "confirmed"; at: number; closed?: ClosedDraft };
 
 export type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
 
@@ -137,16 +146,28 @@ export function beginDraftCommand(draft: DraftRef, change?: PendingChangeCommand
  * closed the draft. Reviews showing it settle on this before the draft list is
  * re-read (`subscribeDraftCommandRecords`).
  */
-export function answerDraftCommandClosed(draft: DraftRef): void {
+export function answerDraftCommandClosed(draft: DraftRef, closed: ClosedDraft): void {
   const record = recordFor(draft);
   if (record?.phase !== "pending" || !record.change) return;
-  const change = { ...record.change, draftClosed: true as const };
+  const change = { ...record.change, draftClosed: closed };
   setRecord(draft, () => ({ phase: "pending", change }));
 }
 
-/** Release a claim that ended without a confirmation or a held failure. */
+/**
+ * Release a claim that ended without a confirmation or a held failure. A claim
+ * the server's answer closed the draft under keeps that outcome as a
+ * confirmation, which expires with the reads that could still list the draft.
+ */
 export function releaseDraftCommand(draft: DraftRef): void {
-  if (recordFor(draft)?.phase === "pending") setRecord(draft, () => null);
+  const record = recordFor(draft);
+  if (record?.phase !== "pending") return;
+  const closed = record.change?.draftClosed;
+  if (!closed) {
+    setRecord(draft, () => null);
+    return;
+  }
+  setRecord(draft, (at) => ({ phase: "confirmed", at, closed }), true);
+  retireConfirmations();
 }
 
 export function failDraftCommand(draft: DraftRef, failure: DraftCommandFailure): void {
@@ -253,6 +274,31 @@ export function pendingChangeCommand(
 ): PendingChangeCommand | null {
   const record = records[draftCommandKey(draft)];
   return record?.phase === "pending" ? (record.change ?? null) : null;
+}
+
+/**
+ * The server's answer to a selection command closed this draft: the command
+ * is still in flight, or it was released and its confirmation has not expired.
+ */
+export function closedByCommand(records: DraftCommandRecords, draft: DraftRef): ClosedDraft | null {
+  const record = records[draftCommandKey(draft)];
+  if (record?.phase === "pending") return record.change?.draftClosed ?? null;
+  return record?.phase === "confirmed" ? (record.closed ?? null) : null;
+}
+
+/** The drafts of this project's Work whose record differs between two snapshots. */
+export function changedDrafts(
+  records: DraftCommandRecords,
+  previous: DraftCommandRecords,
+  scope: DraftScope,
+): DraftRef[] {
+  const prefix = scopePrefix(scope);
+  return [...new Set([...Object.keys(records), ...Object.keys(previous)])]
+    .filter((key) => key.startsWith(prefix) && records[key] !== previous[key])
+    .map((key) => {
+      const [documentId = "", draftId = ""] = key.slice(prefix.length).split("\u0000");
+      return { ...scope, documentId, draftId };
+    });
 }
 
 /** A command is in flight on any draft of this project's Work. */

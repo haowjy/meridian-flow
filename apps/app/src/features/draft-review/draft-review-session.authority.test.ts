@@ -139,3 +139,18 @@ describe("a rejected whole-draft Apply", () => {
     });
   });
 });
+
+describe("a session whose ports cannot be resolved", () => {
+  beforeEach(() => resetDraftCommandRecords());
+
+  it("gives its disposition reservation back, for a command and for a batch", async () => {
+    const session = new DraftReviewSession(() => {
+      throw new Error("Draft review command ports are not ready.");
+    });
+
+    await expect(session.applySelection(selection, change, tokens)).rejects.toThrow("not ready");
+    expect(session.disposition.getSnapshot()).toEqual({ busy: false });
+    await expect(session.disposeDrafts("discard", [selection])).rejects.toThrow("not ready");
+    expect(session.disposition.getSnapshot()).toEqual({ busy: false });
+  });
+});

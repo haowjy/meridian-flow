@@ -199,10 +199,11 @@ export class DraftReviewSession {
     if (drafts.length === 0) return [];
     const reservation = this.disposition.reserve({ kind: "batch", mode, count: drafts.length });
     if (!reservation) return [{ kind: "blocked" }];
-    const ports = this.ports();
     const outcomes: DraftCommandOutcome[] = [];
-    ports.batchStarted(mode);
+    let ports: DraftReviewCommandPorts | undefined;
     try {
+      ports = this.ports();
+      ports.batchStarted(mode);
       for (const draft of drafts) {
         const outcome = await (mode === "apply"
           ? this.applyDraft(draft, reservation, ports)
@@ -215,7 +216,7 @@ export class DraftReviewSession {
       }
     } finally {
       this.disposition.release(reservation);
-      ports.batchSettled();
+      ports?.batchSettled();
     }
     return outcomes;
   }
@@ -352,9 +353,8 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     const reservation = this.disposition.reserve(target);
     if (!reservation) return { kind: "blocked" };
-    const ports = this.ports();
     try {
-      return await command(reservation, ports);
+      return await command(reservation, this.ports());
     } finally {
       this.disposition.release(reservation);
     }
