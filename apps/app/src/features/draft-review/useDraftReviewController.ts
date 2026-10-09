@@ -15,7 +15,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  answerDraftCommandClosed,
   clearDraftReviewLaunchFailure,
+  currentDraftCommandRecords,
   draftCommandPendingIn,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -36,7 +38,6 @@ import {
   useOpenContextRoute,
 } from "@/features/project/routing/ProjectNavigationContext";
 import {
-  type DraftBatchError,
   type DraftCommandOutcome,
   type DraftReviewCommandPorts,
   type DraftReviewSelection,
@@ -48,6 +49,7 @@ import {
   type ReviewToast,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-changes";
+import { commandCompletion, useReviewCommandCompletion } from "./useReviewCommandCompletion";
 import {
   listedDocumentName,
   type SelectionCommand,
@@ -141,7 +143,6 @@ export type DraftReviewController = {
   discardChanges: SelectionCommand;
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
-  dockDispositionError: DraftBatchError | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -186,15 +187,19 @@ export function useDraftReviewController({
   // One session per Work: the controller outlives navigation between Works, and
   // a command still in flight in the Work left behind must not keep the new
   // Work's controls disabled.
-  const reviewSession = useMemo(
-    () =>
-      new DraftReviewSession(() => {
-        const ports = commandPortsRef.current;
-        if (!ports) throw new Error("Draft review command ports are not ready.");
-        return ports;
-      }),
-    [projectId, workId],
-  );
+  const reviewSession = useMemo(() => {
+    // The session belongs to this Work for good. The ref moves to the next
+    // Work's ports with the next render, and a command sent through this
+    // session afterwards (a batch that began here) must still act in this Work.
+    let ownPorts: DraftReviewCommandPorts | null = null;
+    return new DraftReviewSession(() => {
+      const latest = commandPortsRef.current;
+      if (latest?.scope.projectId === projectId && latest.scope.workId === workId)
+        ownPorts = latest;
+      if (!ownPorts) throw new Error("Draft review command ports are not ready.");
+      return ownPorts;
+    });
+  }, [projectId, workId]);
   const dispositionLock = reviewSession.disposition;
   const disposition = useSyncExternalStore(
     dispositionLock.subscribe,
@@ -224,7 +229,6 @@ export function useDraftReviewController({
   }, []);
 
   const inlineReview = inlineReviewFromState(state);
-  const dockDispositionError = state.dockDispositionError;
 
   const activeDisposition = disposition.busy ? disposition.target : null;
   const isApplying = activeDisposition?.kind === "apply-draft";
@@ -315,31 +319,6 @@ export function useDraftReviewController({
   }
 
   /**
-   * The server answered the last change's command. If it closed the draft, the
-   * review holds on "No changes left" now; this runs on the answer, before the
-   * draft list and preview re-reads that follow it, because the list drops the
-   * closed draft and every "the draft left the list" exit would otherwise win
-   * the race. If it did not (another change arrived), the review carries on.
-   */
-  const settleAnsweredCommand = (
-    documentId: string,
-    draftId: string,
-    response: { draftClosed?: boolean },
-  ) => {
-    if (!activeRef.current) return;
-    if (response.draftClosed) {
-      dispatch({
-        type: "reviewClosed",
-        documentId,
-        draftId,
-        documentName: listedDocumentName(queryClient, projectId, workId, draftId),
-      });
-    } else {
-      dispatch({ type: "reviewReopened", documentId, draftId });
-    }
-  };
-
-  /**
    * Apply all or Discard all closed the draft the writer is reviewing. The
    * review holds on "No changes left" (as it does after the last change) so the
    * batch's pending and settled outcome stays in front of them, rather than
@@ -387,8 +366,8 @@ export function useDraftReviewController({
           request,
           // Only an answered Discard can close the draft; a refusal says nothing about it.
           onAnswered: (response) => {
-            if (response.status === "discarded")
-              settleAnsweredCommand(documentId, draftId, response);
+            if (response.status === "discarded" && response.draftClosed)
+              answerDraftCommandClosed({ projectId, workId, documentId, draftId });
           },
         }),
       ),
@@ -402,7 +381,8 @@ export function useDraftReviewController({
           draftId,
           request,
           onAnswered: (response) => {
-            if (response.status === "applied") settleAnsweredCommand(documentId, draftId, response);
+            if (response.status === "applied" && response.draftClosed)
+              answerDraftCommandClosed({ projectId, workId, documentId, draftId });
           },
         }),
       ),
@@ -441,9 +421,8 @@ export function useDraftReviewController({
       } else {
         batchReviewedRef.current = null;
       }
-      dispatch({ type: "batchStarted" });
     },
-    batchSettled: (error) => {
+    batchSettled: () => {
       const reviewed = batchReviewedRef.current;
       batchReviewedRef.current = null;
       // Its command did not close it (refused, lost): the review carries on, with
@@ -454,7 +433,6 @@ export function useDraftReviewController({
           documentId: reviewed.documentId,
           draftId: reviewed.draftId,
         });
-      dispatch({ type: "batchSettled", error });
     },
     // The tab closes with the click; a refusal leaves it closed and the error
     // on the draft (see draft-command-record).
@@ -475,10 +453,21 @@ export function useDraftReviewController({
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
       clearDraftReviewLaunchFailure({ projectId, workId, documentId, draftId });
-      dispatch({ type: "enterInline", documentId, draftId });
+      // A command already in flight on this draft (sent from the strip or the
+      // Work page) is this review's to show: adopt its completion now.
+      dispatch({
+        type: "enterInline",
+        documentId,
+        draftId,
+        completion: commandCompletion(
+          currentDraftCommandRecords(),
+          { projectId, workId, documentId, draftId },
+          () => listedDocumentName(queryClient, projectId, workId, draftId),
+        ),
+      });
       loadInlineReviewRoom(documentId, draftId);
     },
-    [loadInlineReviewRoom, projectId, workId],
+    [loadInlineReviewRoom, projectId, queryClient, workId],
   );
 
   const exitInlineReview = useCallback(() => {
@@ -572,6 +561,8 @@ export function useDraftReviewController({
     dispatch({ type: "toastDismissed", id });
   }, []);
 
+  useReviewCommandCompletion({ projectId, workId, stateRef, activeRef, dispatch });
+
   const { applyChanges, discardChanges } = useSelectionCommands({
     projectId,
     workId,
@@ -622,7 +613,6 @@ export function useDraftReviewController({
       discardChanges,
       toast: state.toast,
       dismissToast,
-      dockDispositionError,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -654,7 +644,6 @@ export function useDraftReviewController({
       discardChanges,
       state.toast,
       dismissToast,
-      dockDispositionError,
       enterInlineReview,
       exitInlineReview,
       exitReview,

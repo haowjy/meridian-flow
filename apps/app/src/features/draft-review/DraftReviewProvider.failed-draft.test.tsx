@@ -130,9 +130,6 @@ describe("Apply all", () => {
             ["Chapter c", "apply-server-error"],
           ]),
         );
-        expect(probe().editor.controller.dockDispositionError).toEqual({
-          code: "apply-server-error",
-        });
       },
       { reviewed: ref("b") },
     );
@@ -177,12 +174,9 @@ describe("Apply all", () => {
         await act(async () => probe().editor.controller.enterInlineReview("document-c", "draft-c"));
         await act(async () => rejectApply(new HttpResponseError("injected", 500, null)));
         await vi.waitFor(() =>
-          expect(probe().editor.controller.dockDispositionError).toEqual({
-            code: "apply-server-error",
-          }),
+          expect(elsewhere(probe())).toEqual([["Chapter a", "apply-server-error"]]),
         );
         expect(onOpenDraft).not.toHaveBeenCalled();
-        expect(elsewhere(probe())).toEqual([["Chapter a", "apply-server-error"]]);
       },
       { reviewed: ref("b"), onOpenDraft },
     );
