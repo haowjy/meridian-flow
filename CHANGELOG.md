@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Downloading a chapter whose live text can't be read right now fails with a retryable error (503) instead of serving a stored copy that could show a link or image at a path it has since moved from.
 - Development: document revision tokens move from `y1:` to `y2:` and now cover where each linked document and image sits, so moving a linked chapter changes the revision of the chapters that link to it.
 
 - Development: add pure link-ref correspondence with lexicographic matching, historical holder normalization and diagnostic bounded order completion. Reviewer fixtures and exhaustive oracle rows reuse the existing test-count budget.

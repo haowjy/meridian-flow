@@ -168,7 +168,8 @@ from document derivation.
 `domain/document-derivations.ts` is the sole projection pipeline. The write hook
 runs it immediately; WebSocket admissions and generation replacement schedule it
 with a two-second trailing debounce and ten-second maximum wait. The projection
-feeds search, listings and sizes, the download fallback, and the link index;
+feeds search, listings and sizes, and the link index (download serves only
+the live read: a projection can hold a pre-move path);
 the Editor and AI read live Yjs, and renames flush first. Push completion
 runs the same derive in its ambient completion transaction, so journal, projection,
 watermark, and settlement roll back together.
