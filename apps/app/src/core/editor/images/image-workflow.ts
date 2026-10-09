@@ -235,6 +235,17 @@ export function assetDocumentIdFromSrc(src: string): string | null {
   return src.startsWith("asset:") && src.length > 6 ? src.slice(6) : null;
 }
 
+/**
+ * A picture source the browser may fetch as written (a web or `data:` URL),
+ * or null. An `asset:` upload or a document address names a document, and
+ * only a signed URL draws it: put in an `<img src>` (a node view, clipboard
+ * or drag HTML) it is a request for a URL that does not exist.
+ */
+export function browserPictureSource(src: string): string | null {
+  if (!src || src.startsWith("asset:") || pictureKeyOfNode({ src })) return null;
+  return src;
+}
+
 export function signedUrlRefreshDelayMs(signedUrlExpiresAt: string, nowMs = Date.now()): number {
   const expiresAtMs = Date.parse(signedUrlExpiresAt);
   if (!Number.isFinite(expiresAtMs)) return 60_000;

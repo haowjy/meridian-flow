@@ -9,7 +9,13 @@
  * through the editor's one requester while the picture is mounted. A
  * ref-less source that is a document address (`uploads://seal.png`) is asked
  * by its address, as a ref-less link is. A document answer draws exactly as
- * an `asset:` picture does. A web or `data:` source renders as written.
+ * an `asset:` picture does. A web or `data:` source renders as written; no
+ * other source is ever handed to the browser as a URL.
+ *
+ * Whether a document is gone is the server's answer, never a guess: the link
+ * resolver's for a ref, the signed-URL route's 404 for a document (which also
+ * hides an unreadable one, so a stored id is never a capability). A gone
+ * document is asked again when the catalog changes, so restoring it draws it.
  */
 
 import { t } from "@lingui/core/macro";
@@ -26,6 +32,7 @@ import {
 } from "react";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
+import { httpErrorStatus } from "@/client/api/http-client";
 
 import { assetDocumentIdFromSrc, signedUrlRefreshDelayMs } from "./images";
 import {
@@ -82,9 +89,10 @@ function usePictureTarget(
   if (!src) return { kind: "empty" };
   const assetDocumentId = assetDocumentIdFromSrc(src);
   if (assetDocumentId) return { kind: "document", documentId: assetDocumentId };
-  // An editor with no link lane has nothing to ask, and draws the source as
-  // it always has.
-  if (!key || !cache) return { kind: "literal", url: src };
+  if (!key) return { kind: "literal", url: src };
+  // A document address is not a URL: an editor with no link lane has no way
+  // to ask about it, which is a question that could not be asked.
+  if (!cache) return { kind: "unanswered" };
   if (entry === UNASKED || entry?.state === "pending") return { kind: "resolving" };
   if (!entry) return { kind: "unanswered" };
   switch (entry.state) {
@@ -95,8 +103,21 @@ function usePictureTarget(
       return { kind: "unavailable", message: t`No image has been uploaded to ${path} yet.` };
     }
     case "gone":
-      return { kind: "unavailable", message: t`This image is no longer available.` };
+      return { kind: "unavailable", message: goneMessage() };
   }
+}
+
+function goneMessage(): string {
+  return t`This image is no longer available.`;
+}
+
+/**
+ * The link cache's current generation: a new one is a catalog change, after
+ * which a document the server said was gone is worth asking about again.
+ */
+function useLinkGeneration(resolution: LinkAnswerCache | null): unknown {
+  const subscribe = useMemo(() => resolution?.subscribe ?? noSubscription, [resolution]);
+  return useSyncExternalStore(subscribe, () => resolution?.assignment ?? null);
 }
 
 /** A manuscript picture's address as the writer wrote it: its path from the root. */
@@ -202,6 +223,12 @@ export function useAssetImageRenderState(input: {
   // to be judged against is the request in flight at that instant.
   const loadInFlightRef = useRef(false);
   const [refreshToken, setRefreshToken] = useState(0);
+  const generation = useLinkGeneration(resolution);
+  const generationRef = useRef(generation);
+  generationRef.current = generation;
+  // The picture the signed-URL route last called gone, and the generation it
+  // was asked in. A later generation asks again.
+  const [gone, setGone] = useState<{ picture: string; generation: unknown } | null>(null);
   // Which picture this is: its project, and its stored link or its source.
   // A URL on screen belongs to one picture. It stays while that same picture
   // revalidates (a catalog change, a signed-URL refresh), and a node view
@@ -213,6 +240,13 @@ export function useAssetImageRenderState(input: {
     state: initialState(target),
   }));
   const state = shown.picture === picture ? shown.state : initialState(target);
+
+  const goneIsStale = gone !== null && gone.picture === picture && gone.generation !== generation;
+  useEffect(() => {
+    if (!goneIsStale) return;
+    setGone(null);
+    setRefreshToken((token) => token + 1);
+  }, [goneIsStale]);
 
   const unanswered = target.kind === "unanswered";
   const retry = useCallback(() => {
@@ -274,6 +308,7 @@ export function useAssetImageRenderState(input: {
 
     async function loadSignedUrl(skipCache: boolean) {
       loadInFlightRef.current = true;
+      const askedIn = generationRef.current;
       // The previous URL stays on screen: a refresh must not blink the picture
       // out of the manuscript. It is also the URL about to expire, which is
       // why an error arriving now belongs to the request, not to the picture.
@@ -291,6 +326,11 @@ export function useAssetImageRenderState(input: {
         refreshTimer = setTimeout(() => void loadSignedUrl(true), delay);
       } catch (error) {
         if (cancelled) return;
+        if (httpErrorStatus(error) === 404) {
+          setGone({ picture, generation: askedIn });
+          setState({ kind: "unavailable", url: null, message: goneMessage() });
+          return;
+        }
         setState({
           kind: "error",
           url: null,
