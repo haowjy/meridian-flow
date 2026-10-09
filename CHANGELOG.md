@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Development: run CI quality checks in parallel; keep the required quality gate red when any group fails.
+- Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.
 

@@ -7,9 +7,11 @@ const { scripts } = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 );
 const isolated = ["typecheck", "test"];
-const group = process.argv[2];
-if (!["static", ...isolated].includes(group)) {
-  throw new Error("Usage: node tools/ci/run-check-group.mjs <static|typecheck|test>");
+const [group, ...testArgs] = process.argv.slice(2);
+if (!["static", ...isolated].includes(group) || (group !== "test" && testArgs.length > 0)) {
+  throw new Error(
+    "Usage: node tools/ci/run-check-group.mjs <static|typecheck|test> [test arguments...]",
+  );
 }
 
 const checks = scripts.check.split("&&").map((command) => {
@@ -31,7 +33,7 @@ const selected = checks.filter((check) =>
 );
 console.log(`Quality ${group}: ${selected.join(", ")}`);
 for (const check of selected) {
-  const result = spawnSync("pnpm", ["run", check], { stdio: "inherit" });
+  const result = spawnSync("pnpm", ["run", check, ...testArgs], { stdio: "inherit" });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
