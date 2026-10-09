@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import * as handoff from "@/features/project/dock/editor-review-handoff";
+import { MobileDocumentReview } from "@/features/project/mobile/MobileDocumentReview";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import {
   applied,
@@ -16,6 +18,14 @@ import {
   listed,
   preview,
 } from "@/test-support/draft-review-scope";
+import {
+  createReviewEditor,
+  destroyReviewEditors,
+  model,
+  posOf,
+  setModel,
+  textHunk,
+} from "@/test-support/inline-review-editor";
 import { DraftReviewBand } from "./DraftReviewBand";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
@@ -28,7 +38,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   fixture.dispose();
+  destroyReviewEditors();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 const list = () => document.querySelector<HTMLElement>("[data-draft-change-list]");
@@ -129,6 +141,87 @@ it("focuses this document, then applies and discards its classes without closing
     },
     {
       surface: <DraftReviewBand documentId="document-a" draftId="draft-a" onOpenDraft={navigate} />,
+      host: (children) => (
+        <I18nProvider i18n={i18n}>
+          <TooltipProvider>
+            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+              {children}
+            </ProjectNavigationProvider>
+          </TooltipProvider>
+        </I18nProvider>
+      ),
+    },
+  );
+});
+
+it.each([
+  "desktop",
+  "phone",
+] as const)("%s steps with marks hidden without restoring them", async (surface) => {
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.getDraftPreview.mockResolvedValue(preview);
+  const navigate = vi.fn();
+  vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
+  await fixture.render(
+    async (probe) => {
+      await settled(() => expect(probe().editor.files).toHaveLength(1));
+      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+      await settled(() => expect(probe().header.view.items).toHaveLength(2));
+      await act(async () => {
+        probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true);
+        probe().editor.controller.setMarksVisible(false);
+      });
+      vi.stubGlobal("HTMLElement", window.HTMLElement);
+      window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+      const { editor } = createReviewEditor(["Alpha", "Beta"]);
+      setModel(
+        editor,
+        model(
+          preview.operations,
+          ["Alpha", "Beta"].map((text, index) => {
+            const from = posOf(editor, text);
+            return textHunk(editor, `h${index}`, [String(index + 1)], {
+              from,
+              to: from + text.length,
+            });
+          }),
+        ),
+      );
+      editor.commands.setInlineReviewMarksVisible(false);
+      probe().editor.controller.registerInlineReviewRuntime({
+        documentId: "document-a",
+        draftId: "draft-a",
+        editor,
+      });
+      const paragraphs = [...editor.view.dom.querySelectorAll("p")];
+      const scrolls = paragraphs.map((paragraph) => {
+        const scroll = vi.fn();
+        paragraph.scrollIntoView = scroll;
+        return scroll;
+      });
+      for (const [label, classId] of [
+        ["Next change", "class-1"],
+        ["Previous change", "class-2"],
+      ]) {
+        const button = document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
+        expect(button).not.toBeNull();
+        expect(button?.disabled).toBe(false);
+        await act(async () => button?.click());
+        expect(probe().header.view.focused?.classId).toBe(classId);
+        expect(probe().editor.controller.marksVisible).toBe(false);
+        expect(scrolls[classId === "class-1" ? 0 : 1]).toHaveBeenCalled();
+        expect(editor.view.dom.querySelector("[data-review-operations]")).toBeNull();
+      }
+    },
+    {
+      surface:
+        surface === "desktop" ? (
+          <DraftReviewBand documentId="document-a" draftId="draft-a" onOpenDraft={navigate} />
+        ) : (
+          <MobileDocumentReview documentId="document-a">
+            <div />
+          </MobileDocumentReview>
+        ),
       host: (children) => (
         <I18nProvider i18n={i18n}>
           <TooltipProvider>

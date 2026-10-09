@@ -660,6 +660,8 @@ commands, and the lightweight hunk model used by the plugin.
 - The plugin is the sole owner of decoration state. React talks to it via TipTap
   commands (`setInlineReviewModel`, `setInlineReviewActiveOperation`,
   `scrollInlineReviewOperationIntoView`) — never by holding decoration objects.
+- Stepping scrolls the manuscript block from the plugin's cached hunk geometry,
+  independent of painted marks and without moving the writer's selection.
 - Anchor resolution routes through the shared `relative-position-runtime.ts`
   extraction of the y-prosemirror binding (`ySyncPluginKey` state).
   `Y.RelativePosition` decode is separated from

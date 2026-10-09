@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Stepping through draft changes works with marks hidden on desktop and phone, without showing the marks again.
+
 - Development: consolidate Work draft files into one catalog-labelled, stable-order projection and document lookup; remove draft grouping and recency competition.
 - Unacknowledged typing follows a draft into its replacement room when its anchors survive, including after Discard in the same tab. Leaving review does not cancel delivery; edits anchored in discarded text are not replayed.
 

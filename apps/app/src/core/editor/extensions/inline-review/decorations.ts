@@ -86,7 +86,7 @@ interface MarkGeometry {
   tone: ReviewTone;
   /** A decoration over exactly one top-level node, not inline text. */
   node: boolean;
-  /** Written on the DOM so a click or the stepper finds the change. */
+  /** Written on the DOM so a click finds the change. */
   operationAttr: string;
   /** The operation a span belongs to, when it is painted for one author inside a larger hunk. */
   spanOperationId: string | null;
