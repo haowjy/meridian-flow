@@ -1,4 +1,5 @@
 /** Programmatic Drizzle migration runner with file-aware PostgreSQL failures. */
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
@@ -95,9 +96,10 @@ export async function runMigrations(input: {
       migrationsByTag.set(entry.tag, migration);
     }
 
-    await client.begin(async (transaction) => {
-      await transaction`SELECT pg_advisory_xact_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
-      const applied = (await readAppliedMigrations(transaction)) ?? [];
+    const session = await client.reserve();
+    try {
+      await session`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
+      const applied = (await readAppliedMigrations(session)) ?? [];
       const plan = planDatabaseMigrations(history, applied);
       if (plan.issues.length > 0) {
         const databaseName = decodeURIComponent(
@@ -111,8 +113,8 @@ export async function runMigrations(input: {
           }),
         );
       }
-      await transaction`CREATE SCHEMA IF NOT EXISTS drizzle`;
-      await transaction`
+      await session`CREATE SCHEMA IF NOT EXISTS drizzle`;
+      await session`
         CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
           id SERIAL PRIMARY KEY,
           hash text NOT NULL,
@@ -127,19 +129,32 @@ export async function runMigrations(input: {
           );
         }
         const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
-        for (const statement of migration.sql) {
-          try {
-            await transaction.unsafe(statement);
-          } catch (error) {
-            throw new MigrationStatementError(migrationPath, error);
+        const noTransaction =
+          readFileSync(migrationPath, "utf8").split("\n")[0] === "-- migration: no-transaction";
+        // Reserved postgres.js sessions do not expose begin(); keep transaction
+        // control on the same connection that owns the session advisory lock.
+        if (!noTransaction) await session`BEGIN`;
+        try {
+          for (const statement of migration.sql) {
+            await session.unsafe(statement);
           }
+          await session.unsafe(
+            `INSERT INTO drizzle.__drizzle_migrations ("hash", "created_at") VALUES ($1, $2)`,
+            [migration.hash, migration.folderMillis],
+          );
+          if (!noTransaction) await session`COMMIT`;
+        } catch (error) {
+          if (!noTransaction) await session`ROLLBACK`;
+          throw new MigrationStatementError(migrationPath, error);
         }
-        await transaction.unsafe(
-          `INSERT INTO drizzle.__drizzle_migrations ("hash", "created_at") VALUES ($1, $2)`,
-          [migration.hash, migration.folderMillis],
-        );
       }
-    });
+    } finally {
+      try {
+        await session`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_ID})`;
+      } finally {
+        session.release();
+      }
+    }
   } finally {
     await client.end();
   }

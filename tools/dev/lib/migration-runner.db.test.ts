@@ -191,4 +191,82 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
       { count: 2 },
     ]);
   });
+
+  it("applies and records a concurrent index migration outside a transaction", async () => {
+    await sql`DROP SCHEMA public CASCADE`;
+    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
+    await sql`CREATE SCHEMA public`;
+    const directory = path.join(temporaryRoot, "online-index");
+    await writeMigrations(directory, [
+      { tag: "0000_table", when: 100, sql: "CREATE TABLE public.online_events (id int);" },
+      {
+        tag: "0001_index",
+        when: 200,
+        sql: [
+          "-- migration: no-transaction",
+          'DROP INDEX CONCURRENTLY IF EXISTS "online_events_id";',
+          "--> statement-breakpoint",
+          'CREATE INDEX CONCURRENTLY "online_events_id" ON public.online_events (id);',
+        ].join("\n"),
+      },
+    ]);
+    await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+    expect(
+      await sql`
+      SELECT indisvalid FROM pg_index WHERE indexrelid = 'public.online_events_id'::regclass
+    `,
+    ).toEqual([{ indisvalid: true }]);
+    expect(await sql`SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY id`).toEqual([
+      { created_at: "100" },
+      { created_at: "200" },
+    ]);
+  });
+
+  it("keeps earlier migrations on failure and converges after fixing either mode", async () => {
+    for (const noTransaction of [false, true]) {
+      await sql`DROP SCHEMA public CASCADE`;
+      await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
+      await sql`CREATE SCHEMA public`;
+      const directory = path.join(temporaryRoot, `retry-${noTransaction}`);
+      const first = {
+        tag: "0000_events",
+        when: 100,
+        sql: "CREATE TABLE public.retry_events (id int PRIMARY KEY); INSERT INTO public.retry_events VALUES (1);",
+      };
+      const later = {
+        tag: "0001_later",
+        when: 200,
+        sql: [
+          ...(noTransaction ? ["-- migration: no-transaction"] : []),
+          "INSERT INTO public.retry_events VALUES (2) ON CONFLICT DO NOTHING;",
+          "--> statement-breakpoint",
+          "SELECT * FROM public.missing_table;",
+        ].join("\n"),
+      };
+      await writeMigrations(directory, [first, later]);
+      await expect(
+        runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory }),
+      ).rejects.toThrow(`Migration statement failed in ${path.join(directory, "0001_later.sql")}`);
+      expect(await sql`SELECT id FROM public.retry_events ORDER BY id`).toEqual(
+        noTransaction ? [{ id: 1 }, { id: 2 }] : [{ id: 1 }],
+      );
+      expect(await sql`SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY id`).toEqual([
+        { created_at: "100" },
+      ]);
+      await writeMigrations(directory, [
+        first,
+        { ...later, sql: later.sql.replace("SELECT * FROM public.missing_table;", "SELECT 1;") },
+      ]);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      expect(await sql`SELECT id FROM public.retry_events ORDER BY id`).toEqual([
+        { id: 1 },
+        { id: 2 },
+      ]);
+      expect(await sql`SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY id`).toEqual([
+        { created_at: "100" },
+        { created_at: "200" },
+      ]);
+    }
+  });
 });
