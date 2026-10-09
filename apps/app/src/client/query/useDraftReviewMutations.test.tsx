@@ -16,7 +16,13 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/client/api/drafts-api", () => api);
 
-const input = { projectId: "project-a", workId: "work-a", documentId: "doc-a", draftId: "draft-a" };
+const input = {
+  projectId: "project-a",
+  workId: "work-a",
+  documentId: "doc-a",
+  draftId: "draft-a",
+  draftGeneration: 1,
+};
 const lost = () => new TypeError("Failed to fetch");
 const listing = (...draftIds: string[]) => ({
   drafts: draftIds.map((draftId) => ({ draftId, documentId: "doc-a" }) as ThreadDraftListItem),

@@ -51,7 +51,10 @@ export type DraftReviewCommandPorts = {
   /** The Work these commands act in; part of every command record's identity. */
   scope: { projectId: string; workId: string };
   /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
-  apply: (selection: DraftReviewSelection) => Promise<"applied" | "unknown">;
+  apply: (
+    selection: DraftReviewSelection,
+    draftGeneration: number | undefined,
+  ) => Promise<"applied" | "unknown">;
   /** Whole-draft Discard: unfenced, no operation ids. */
   discard: (selection: DraftReviewSelection) => Promise<void>;
   /**
@@ -85,8 +88,11 @@ export type DraftReviewCommandPorts = {
     batch: boolean,
   ) => PendingDraftCommand;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
-  draftApplied: (selection: DraftReviewSelection) => void;
-  draftDiscarded: (selection: DraftReviewSelection) => void;
+  draftSettled: (
+    selection: DraftReviewSelection,
+    draftGeneration: number | undefined,
+    mode: "apply" | "discard",
+  ) => void;
 };
 
 /**
@@ -229,12 +235,13 @@ export class DraftReviewSession {
     const draft = { ...ports.scope, ...selection };
     if (!batch && !beginDraftCommand(draft, ports.describeDraft(selection, mode, false)))
       return { kind: "blocked" };
+    const generation = pendingDraftCommand(currentDraftCommandRecords(), draft)?.draftGeneration;
     try {
       // Navigation is explicit and optimistic, not inferred from settlement.
       if (mode === "discard") ports.draftDiscardStarted(selection);
       let result: "applied" | "unknown" | undefined;
       try {
-        if (mode === "apply") result = await ports.apply(selection);
+        if (mode === "apply") result = await ports.apply(selection, generation);
         else await ports.discard(selection);
       } catch (error) {
         const failure = commandFailure(mode, error);
@@ -245,10 +252,7 @@ export class DraftReviewSession {
         failDraftCommand(draft, { code: "apply-unknown" });
         return { kind: "apply-outcome-unknown" };
       }
-      if (!batch) {
-        if (mode === "apply") ports.draftApplied(selection);
-        else ports.draftDiscarded(selection);
-      }
+      if (!batch) ports.draftSettled(selection, generation, mode);
       return { kind: mode === "apply" ? "applied" : "discarded" };
     } finally {
       releaseDraftCommand(draft);
@@ -414,7 +418,12 @@ export type DraftReviewAction =
     }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
-  | { type: "applySucceeded"; documentId: string; draftId: string }
+  | {
+      type: "reviewDisposed";
+      documentId: string;
+      draftId: string;
+      draftGeneration: number | undefined;
+    }
   | { type: "changeFocused"; documentId: string; draftId: string; focus: ReviewFocus | null }
   | {
       /** A preview or list read of the draft landed (rows O1-O4), or the room read resolved (P, with `roomName`). */
@@ -459,7 +468,6 @@ export type DraftReviewAction =
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
-  | { type: "discardSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
 
@@ -487,8 +495,16 @@ export function draftReviewReducer(
       }
       if ((state.surface.shown ?? false) === action.shown) return state;
       return { ...state, surface: { ...state.surface, shown: action.shown } };
-    case "applySucceeded":
-      return clearDraftReviewState(state, action.draftId);
+    case "reviewDisposed":
+      if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline")
+        return state;
+      if (
+        state.surface.draftGeneration !== undefined &&
+        (action.draftGeneration === undefined ||
+          action.draftGeneration < state.surface.draftGeneration)
+      )
+        return state;
+      return clearInlineState({ ...state, surface: { kind: "none" } });
     case "changeFocused":
       if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline") {
         return state;
@@ -566,8 +582,6 @@ export function draftReviewReducer(
       };
     case "toastDismissed":
       return state.toast?.id === action.id ? { ...state, toast: null } : state;
-    case "discardSucceeded":
-      return clearDraftReviewState(state, action.draftId);
     case "exitInline":
       if (state.surface.kind !== "inline") return state;
       return clearInlineState({
@@ -739,14 +753,6 @@ function draftAbsentFromList(
     evidence?.proposal === true &&
     (review.draftGeneration === undefined || evidence.draftGeneration >= review.draftGeneration);
   return alive ? state : clearInlineState({ ...state, surface: { kind: "none" } });
-}
-
-function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftReviewState {
-  const currentDraftId = state.surface.kind === "none" ? null : state.surface.draftId;
-  return {
-    ...state,
-    surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
-  };
 }
 
 function stateAfterInlineModelAvailable(
