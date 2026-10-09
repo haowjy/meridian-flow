@@ -16,9 +16,11 @@ import type {
   ResolvedReviewSpan,
 } from "@/core/editor/extensions/inline-review/model";
 import { createLocalPresence } from "@/core/editor/local-presence";
+import {
+  relativePositionForIndex,
+  relativePositionRuntimeFromState,
+} from "@/core/editor/relative-position-runtime";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
-
-import { relativePositionForEditorIndex } from "./editor-relative-position";
 import { createManuscriptPane } from "./standalone-editor";
 
 const editors: Array<{ editor: Editor; pane: HTMLElement }> = [];
@@ -78,7 +80,8 @@ export function posOf(editor: Editor, needle: string): number {
 }
 
 export function rel(editor: Editor, position: number): Y.RelativePosition {
-  const anchor = relativePositionForEditorIndex(editor, position);
+  const runtime = relativePositionRuntimeFromState(editor.state);
+  const anchor = runtime ? relativePositionForIndex(runtime, position) : null;
   if (!anchor) throw new Error("editor has no Yjs binding");
   return anchor;
 }

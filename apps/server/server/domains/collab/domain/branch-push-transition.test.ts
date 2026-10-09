@@ -223,30 +223,6 @@ describe("branch push settlement transitions", () => {
   });
 
   it.each([
-    "expiry",
-    "handoff",
-  ] as const)("a live lease denies recovery until %s, then only the replacement completes", async (mode) => {
-    vi.useFakeTimers();
-    const rig = fixture();
-    await expect(
-      rig.push(async () => {
-        throw new Error("owner stopped");
-      }),
-    ).rejects.toThrow("owner stopped");
-    const pending = await rig.store.loadLiveSettlement(1);
-    const replacement = rig.replaceProcess();
-    expect(await replacement.recover()).toBe(0);
-    if (mode === "handoff")
-      expect(await rig.store.handoffClaim({ pushId: 1, claim: pending.claim })).toBe(true);
-    else vi.setSystemTime(pending.claim.leaseExpiresAt.getTime() + 1);
-    expect(await replacement.recover()).toBe(1);
-    expect(await replacement.recover()).toBe(0);
-    expect(rig.completed).toEqual([1]);
-    expect(rig.text()).toBe("Survivor.");
-    expect(await rig.store.renewClaim({ pushId: 1, claim: pending.claim })).toBeNull();
-  });
-
-  it.each([
     "before classification",
     "after classification",
   ] as const)("joins delete-only writer changes %s and settles the latest revision", async (when) => {
@@ -265,32 +241,6 @@ describe("branch push settlement transitions", () => {
     expect(revisions.at(-1)).toBe(1);
     expect(rig.completed).toEqual([1]);
     expect(rig.text()).toBe("Survivor.");
-    expect(await rig.transition().recover()).toBe(0);
-  });
-
-  it.each([
-    "before apply",
-    "after apply",
-  ] as const)("recovers %s failure to one terminal completion", async (boundary) => {
-    vi.useFakeTimers();
-    const rig = fixture();
-    const fence = rig.store.withCompletionFence;
-    let failed = false;
-    rig.store.withCompletionFence = async (input, complete) => {
-      if (!failed) {
-        failed = true;
-        if (boundary === "after apply") expect(complete()).toBe("applied");
-        throw new Error("completion fault");
-      }
-      return fence(input, complete);
-    };
-    await expect(rig.push()).rejects.toThrow("completion fault");
-    expect(rig.completed).toEqual([]);
-    const pending = await rig.store.loadLiveSettlement(1);
-    vi.setSystemTime(pending.claim.leaseExpiresAt.getTime() + 1);
-    expect(await rig.replaceProcess().recover()).toBe(1);
-    expect(rig.text()).toBe("Survivor.");
-    expect(rig.completed).toEqual([1]);
     expect(await rig.transition().recover()).toBe(0);
   });
 });

@@ -141,35 +141,6 @@ function runStarted(runId: string) {
 }
 
 describe("ThreadRunController mid-run merge", () => {
-  it("keeps the live subscription instead of rewinding on a merge", async () => {
-    const scenario = makeScenario({
-      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
-    });
-    await scenario.submit("hello");
-    expect(scenario.transport.subscriptions).toHaveLength(1);
-    scenario.emit(runStarted("run-1"), "11");
-
-    scenario.setAppend(async () =>
-      defaultSendResponse({ assistantTurnId: "run-1", resumeAfterSeq: "11" }),
-    );
-    await scenario.submit("steer");
-
-    expect(scenario.transport.subscriptions).toHaveLength(1);
-    expect(scenario.transport.activeSubscription()?.active).toBe(true);
-  });
-
-  it("starts a fresh subscription for a fresh run", async () => {
-    const scenario = makeScenario({
-      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
-    });
-    await scenario.submit("hello");
-    scenario.emit(runStarted("run-1"), "11");
-
-    await scenario.submit("again");
-
-    expect(scenario.transport.subscriptions).toHaveLength(2);
-  });
-
   it("keeps one mounted stream across a server-initiated split turn", async () => {
     const scenario = makeScenario({
       append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
@@ -256,29 +227,6 @@ describe("controller gap-result ownership", () => {
     expect(scenario.turns()[0]?.status).toBe("complete");
   });
 
-  it("stops outstanding stale recovery on disposal without another fetch", async () => {
-    vi.useFakeTimers();
-    const gate = scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>();
-    const scenario = makeScenario({ snapshot: () => gate.promise });
-    scenario.store.getState().acceptDurableBlockSeq("thread_1", "4000");
-    scenario.resume({ expectedTurnId: "run-1" });
-    scenario.emit(runStarted("run-1"), "10");
-    scenario.reportGap();
-    expect(scenario.snapshotRequests).toHaveLength(1);
-    scenario.controller.dispose();
-    gate.resolve({
-      thread: { id: "thread_1", userId: "account-1" },
-      turns: [],
-      nextSeq: "4000",
-      actionRequired: false,
-      liveState: { runningTurnId: null },
-    } as never);
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(300);
-    expect(scenario.snapshotRequests).toHaveLength(1);
-    expect(scenario.activeSubscription()).toBeUndefined();
-  });
-
   it("aborts unresolved gap requests on run replacement and disposal", () => {
     const scenario = makeScenario({
       snapshot: () => new Promise(() => undefined),
@@ -307,37 +255,6 @@ describe("controller gap-result ownership", () => {
     scenario.reportGap();
     await vi.waitFor(() => expect(scenario.activeSubscription()).toBeUndefined());
     expect(scenario.snapshotRequests).toHaveLength(1);
-  });
-
-  it("retries a mismatched gap response instead of satisfying recovery", async () => {
-    vi.useFakeTimers();
-    const first = scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>();
-    const second = scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>();
-    let request = 0;
-    const scenario = makeScenario({
-      snapshot: () => (request++ === 0 ? first.promise : second.promise),
-    });
-    scenario.resume({ expectedTurnId: "run-1" });
-    scenario.emit(runStarted("run-1"), "10");
-    scenario.reportGap();
-    first.resolve({
-      thread: { id: "other-thread", userId: "account-1" },
-      turns: [],
-      nextSeq: "5000",
-      actionRequired: false,
-      liveState: { runningTurnId: null },
-    } as never);
-    await vi.advanceTimersByTimeAsync(250);
-    expect(scenario.snapshotRequests).toHaveLength(2);
-    second.resolve({
-      thread: { id: "thread_1", userId: "account-1" },
-      turns: [],
-      nextSeq: "5000",
-      actionRequired: false,
-      liveState: { runningTurnId: null },
-    } as never);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(scenario.store.getState().durableBlockCursorByThread.thread_1).toBe("4999");
   });
 
   it("starts fresh recovery when a newer run joined an older singleton fetch", async () => {

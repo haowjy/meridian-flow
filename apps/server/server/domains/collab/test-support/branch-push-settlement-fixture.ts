@@ -2,14 +2,13 @@
 
 import { splitHashline } from "@meridian/agent-edit";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import type { Database } from "@meridian/database";
 import { and, desc, eq } from "drizzle-orm";
-import { afterAll, beforeEach, expect } from "vitest";
+import { expect } from "vitest";
 import {
-  closeDatabase,
   type createHarness,
   ALPHA_ID as DEFAULT_ALPHA_ID,
   DEFAULT_SCENARIO_IDS,
-  db,
   resetDatabase,
   schema,
   seedDatabase,
@@ -18,8 +17,9 @@ import type { SettlementOracleOutput } from "./durable-settlement-oracle.js";
 
 export {
   ALPHA_ID,
+  closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   markdownFromUpdate,
   OTHER_USER_ID,
   runInRootDrizzleTransaction,
@@ -31,15 +31,14 @@ export {
 export const COLD_SCENARIO_IDS = Object.fromEntries(
   Object.entries(DEFAULT_SCENARIO_IDS).map(([key, value]) => [key, value.replace("4000", "4001")]),
 ) as typeof DEFAULT_SCENARIO_IDS;
-export function setupSettlementFixture() {
-  beforeEach(async () => {
-    await resetDatabase();
-    await seedDatabase(COLD_SCENARIO_IDS);
-  });
-  afterAll(closeDatabase);
+/** The caller owns hook registration and connection teardown. */
+export async function resetSettlementFixture(db: Database): Promise<void> {
+  await resetDatabase(db);
+  await seedDatabase(db, COLD_SCENARIO_IDS);
 }
 
 export async function expirePendingClaims(
+  db: Database,
   documentId: DocumentId = DEFAULT_ALPHA_ID,
 ): Promise<void> {
   await db
@@ -100,6 +99,7 @@ export function expectSweepClassification(
 }
 
 export async function observeSettlement(
+  db: Database,
   harness: ReturnType<typeof createHarness>,
   documentId: DocumentId = DEFAULT_ALPHA_ID,
 ): Promise<SettlementOracleOutput> {

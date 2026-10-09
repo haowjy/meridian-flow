@@ -15,6 +15,16 @@
 - Undo and Redo in draft review keep the original author of the text they restore, including after reload and when the draft is applied. Retyping the same words by hand stays yours.
 - Independent AI replacements stay separate changes: each AI write records only its own edits, including when a chat's edit is published into the Work's draft. Discarding a draft's last change keeps it discarded when the same chat writes again.
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
+- Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
+
+- Development: trim duplicate maintenance-attribution cases; retain four focused risks and one suite-owned PostgreSQL convergence witness.
+- Draft saves no longer credit automatic link rewrites or reconciliation to the writer; authored block credit survives maintenance.
+
+- Development: fold six split lifecycle tests into the scenarios they continue: one run lease from acquire through stale release, Agent catalog removal then restore, Retry then the superseded original, fork-ID replay after source trash, and nested presence suspension. Outcome checks stay beside each transition.
+- Development: reconcile the focused suite with current image-path and model-write regression contracts without restoring retired scaffolding.
+- Development: `pnpm test:all` runs unit and managed PostgreSQL tests together; its DB guard checks nested tests and rejects unit-only runs even with custom singular or plural reporter flags. Failed concurrency fixtures release and await their paused pulls.
+- Development: DB fixture resets send their ordered deletes in one round trip, preserving transaction rollback and FK locking. DB suites own their connections; DB and pure contract/codec workers reuse module caches.
+- Development: prune duplicate frontend, runtime, collaboration, package and tooling tests; keep recovery, authorization, billing, concurrent edits and persisted atomicity contracts. Shutdown fixtures report startup failures and await process cleanup. Keep focused stalled-stdout and paid-summary recovery regressions. Drop weaker stream-order, missing-hash and cleanup-ref duplicates.
 - Changed writes return mutation facts directly, without allocating discarded per-edit summaries.
 
 - Model reads, writes and recovery stop retaining unused session clock maps.

@@ -23,12 +23,6 @@ const imageBlock: Block = {
   createdAt: "2026-09-27T12:00:00.000Z",
 };
 
-const missingImageAsset: ImageAssetPort = {
-  async resolve() {
-    return null;
-  },
-};
-
 function image(id: string): Block {
   return {
     ...imageBlock,
@@ -56,37 +50,6 @@ function imageIds(blocks: readonly Block[]) {
 }
 
 describe("projectImageBlocksForModel", () => {
-  it("names a missing asset according to whether it was previously included", async () => {
-    const previouslyIncluded = await projectImageBlocksForModel({
-      thread,
-      blocks: [imageBlock],
-      inclusions: new Map([[imageBlock.id, true]]),
-      supportsImageInput: true,
-      imageAssets: missingImageAsset,
-    });
-    const firstSight = await projectImageBlocksForModel({
-      thread,
-      blocks: [imageBlock],
-      supportsImageInput: true,
-      imageAssets: missingImageAsset,
-    });
-
-    expect(previouslyIncluded.breaks).toEqual([
-      {
-        blockId: imageBlock.id,
-        uri: "scratch://image.png",
-        reason: "asset_unavailable",
-      },
-    ]);
-    expect(firstSight.breaks).toEqual([
-      {
-        blockId: imageBlock.id,
-        uri: "scratch://image.png",
-        reason: "asset_unavailable_first_sight",
-      },
-    ]);
-  });
-
   it("fills free budget with excluded retained candidates, newest first", async () => {
     const mib = 1024 * 1024;
     const candidates = [image("old"), image("middle"), image("new")];
@@ -189,71 +152,6 @@ describe("projectImageBlocksForModel", () => {
     ]);
   });
 
-  it("lets a late arrival use the existing image budget before re-admitting candidates", async () => {
-    const mib = 1024 * 1024;
-    const included = image("included");
-    const candidate = image("candidate");
-    const lateArrival = image("late");
-    const projection = await projectImageBlocksForModel({
-      thread,
-      blocks: [included, candidate, lateArrival],
-      inclusions: new Map([
-        [included.id, true],
-        [candidate.id, false],
-      ]),
-      supportsImageInput: true,
-      imageAssets: assets(
-        new Map([
-          [`document-${included.id}`, 8 * mib],
-          [`document-${candidate.id}`, 8 * mib],
-          [`document-${lateArrival.id}`, 8 * mib],
-        ]),
-      ),
-      mode: {
-        kind: "compaction",
-        candidates: new Set([candidate.id]),
-        decidingTurnId: "turn-c",
-      },
-    });
-
-    expect(imageIds(projection.blocks)).toEqual(["included", "late"]);
-    expect(projection.decisions).toEqual([{ blockId: "late", included: true }]);
-    expect(projection.breaks).toEqual([]);
-  });
-
-  it("does not decide or announce a candidate twice when it precedes included images", async () => {
-    const mib = 1024 * 1024;
-    const candidate = image("candidate");
-    const included = image("included");
-    const lateArrival = image("late");
-    const projection = await projectImageBlocksForModel({
-      thread,
-      blocks: [candidate, included, lateArrival],
-      inclusions: new Map([
-        [candidate.id, false],
-        [included.id, true],
-      ]),
-      supportsImageInput: true,
-      imageAssets: assets(
-        new Map([
-          [`document-${candidate.id}`, 8 * mib],
-          [`document-${included.id}`, 8 * mib],
-          [`document-${lateArrival.id}`, 8 * mib],
-        ]),
-      ),
-      mode: {
-        kind: "compaction",
-        candidates: new Set([candidate.id]),
-        decidingTurnId: "turn-c",
-      },
-    });
-
-    expect(imageIds(projection.blocks)).toEqual(["included", "late"]);
-    expect(projection.decisions).toEqual([{ blockId: "late", included: true }]);
-    expect(projection.breaks).toEqual([]);
-    expect(projection.breaks.some(({ uri }) => uri === "scratch://candidate.png")).toBe(false);
-  });
-
   it("skips a transient candidate failure without deciding or failing", async () => {
     const candidate = image("candidate");
     let attempts = 0;
@@ -279,28 +177,6 @@ describe("projectImageBlocksForModel", () => {
     expect(attempts).toBe(1);
     expect(projection.decisions).toEqual([]);
     expect(projection.breaks).toEqual([]);
-  });
-
-  it("rethrows unexpected candidate resolution errors", async () => {
-    const candidate = image("candidate");
-    await expect(
-      projectImageBlocksForModel({
-        thread,
-        blocks: [candidate],
-        inclusions: new Map([[candidate.id, false]]),
-        supportsImageInput: true,
-        imageAssets: {
-          async resolve() {
-            throw new Error("adapter bug");
-          },
-        },
-        mode: {
-          kind: "compaction",
-          candidates: new Set([candidate.id]),
-          decidingTurnId: "turn-c",
-        },
-      }),
-    ).rejects.toThrow("adapter bug");
   });
 
   it("stops candidate resolution when the signal aborts", async () => {

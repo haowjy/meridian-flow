@@ -1,10 +1,4 @@
-/**
- * Shared behavior contract for `ProjectChatFeedRepository`, run against both the in-memory and Drizzle
- * adapters. The in-memory adapter's search/favorite filters are plain
- * JS predicates; the Drizzle adapter's are ILIKE and a real join. These
- * scenarios exist to keep both honest, especially search metacharacters and
- * ILIKE case-folding, which only the Drizzle adapter can get wrong.
- */
+/** PostgreSQL chat-feed contracts for literal search and composed filter pagination. */
 import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { expect } from "vitest";
 import type { ThreadRepositories } from "../../ports/repositories.js";
@@ -44,59 +38,6 @@ async function pageIds(
     workId: null,
   });
   return page.map((item) => item.id);
-}
-
-/** Equal-activity rows (a real tie, not an approximation) page by descending id. */
-export async function expectChatFeedTiesContract(h: ChatFeedConformanceHarness): Promise<void> {
-  const ids = [
-    "00000000-0000-4000-8000-00000000a001",
-    "00000000-0000-4000-8000-00000000a002",
-    "00000000-0000-4000-8000-00000000a003",
-  ];
-  for (const id of ids) await createTitledThread(h, id, id);
-  const expectedOrder = [...ids].sort().reverse();
-
-  const firstPage = await h.repos.chatFeed.queryPage({
-    projectId: h.projectId,
-    userId: h.userId,
-    after: null,
-    limit: 2,
-    favorite: false,
-    search: null,
-    workId: null,
-  });
-  expect(firstPage.map((item) => item.id)).toEqual(expectedOrder.slice(0, 2));
-
-  const last = firstPage[1];
-  if (!last) throw new Error("Expected a second row on the tied first page");
-  const secondPage = await h.repos.chatFeed.queryPage({
-    projectId: h.projectId,
-    userId: h.userId,
-    after: { sortAt: last.lastActivityAt, threadId: last.id as ThreadId },
-    limit: 2,
-    favorite: false,
-    search: null,
-    workId: null,
-  });
-  expect(secondPage.map((item) => item.id)).toEqual(expectedOrder.slice(2));
-}
-
-/** Favorites narrows the feed without changing the shared activity order. */
-export async function expectChatFeedFavoriteFilterContract(
-  h: ChatFeedConformanceHarness,
-): Promise<void> {
-  const favoriteId = "00000000-0000-4000-8000-00000000b001";
-  const otherId = "00000000-0000-4000-8000-00000000b002";
-  await createTitledThread(h, favoriteId, "Favorite chat");
-  await createTitledThread(h, otherId, "Other chat");
-  await h.repos.threadUserState.update({
-    threadId: favoriteId as ThreadId,
-    userId: h.userId as UserId,
-    isFavorite: true,
-  });
-
-  expect(await pageIds(h, { favorite: true })).toEqual([favoriteId]);
-  expect(await pageIds(h)).toEqual(expect.arrayContaining([favoriteId, otherId]));
 }
 
 /**

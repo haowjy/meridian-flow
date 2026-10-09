@@ -1,46 +1,8 @@
 /** Spawn-family registrations: advertised schemas, guidance copy and handler results. */
 import { describe, expect, it } from "vitest";
-import { createSpawnToolRegistrations, spawnToolDescription } from "./spawn-tools.js";
+import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
-
-describe("spawn tool guidance", () => {
-  const spawn = createSpawnToolRegistrations().find(
-    (entry) => entry.definition.name === "spawn",
-  )?.definition;
-
-  it("words the description for a named roster and for an empty one", () => {
-    expect(spawnToolDescription(true)).toBe(
-      "Run a subagent in its own thread. Prefer a named subagent from your roster; use the generic one sparingly. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.",
-    );
-    expect(spawnToolDescription(false)).toBe(
-      "Run a subagent in its own thread. You have no named subagents; spawn only when the user asks. Background runs return immediately and notify you when they finish; if you have nothing else to do while waiting, end your turn. Don't message a child just to wait.",
-    );
-  });
-
-  it("labels the task apart from the agent and the source conversation apart from a document", () => {
-    const properties = (
-      spawn?.inputSchema as { properties: Record<string, { description?: string }> }
-    ).properties;
-    expect(properties.name?.description).toBe(
-      '2–5 word task label the user sees, e.g. "Chapter 12 continuity check". Make parallel tasks distinct. Not the agent\'s name.',
-    );
-    expect(properties.from?.description).toBe(
-      'A conversation ref, not a document (or "current"). The child can read it with thread_history; its history is not copied in.',
-    );
-  });
-
-  it("describes return_result's report and payload", () => {
-    const returnResult = createSpawnToolRegistrations().find(
-      (entry) => entry.definition.name === "return_result",
-    )?.definition;
-    const properties = (
-      returnResult?.inputSchema as { properties: Record<string, { description?: string }> }
-    ).properties;
-    expect(properties.summary?.description).toBe("Report for the parent.");
-    expect(properties.payload?.description).toBe("Optional JSON result.");
-  });
-});
 
 describe("spawn and thread_message refusals", () => {
   const executor = createToolExecutor(

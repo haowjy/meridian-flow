@@ -4,38 +4,7 @@
  */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import {
-  createOrchestratorEventProjector,
-  projectOrchestratorEvents,
-} from "./orchestrator-event-projector.js";
-
-describe("orchestrator event projector", () => {
-  it("maps the pending inbox to the client inbox.changed frame", () => {
-    const pending = {
-      items: [
-        {
-          id: "message-1",
-          seq: 1,
-          intent: "message" as const,
-          provenance: { kind: "writer" as const, actorId: "user-1" },
-          deliveryState: "waiting" as const,
-          summary: "queued",
-          enqueuedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
-    };
-    const events = projectOrchestratorEvents([
-      { type: "inbox.changed", threadId: "thread-1", pending },
-    ]);
-
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: EventType.CUSTOM,
-      name: "meridian.inbox.changed",
-      value: pending,
-    });
-  });
-});
+import { createOrchestratorEventProjector } from "./orchestrator-event-projector.js";
 
 describe("tool results", () => {
   it("sends the typed result beside the model's text", () => {

@@ -232,6 +232,10 @@ export function applyConcurrentUpdates(
 
   for (const item of updates) {
     if (isOwnUpdate(item.origin, ownOrigin)) continue;
+    if (item.origin.type === "system") {
+      if (item.update.length > 0) model.applyUpdate(doc, item.update, item.origin);
+      continue;
+    }
     const before = snapshotBlocks(doc, model, codec);
     if (item.touchedHashes || item.deletedHashes) {
       if (item.update.length > 0) model.applyUpdate(doc, item.update, item.origin);

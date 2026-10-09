@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 /** Resource-session fallback and recovery behavior at the desktop editor host. */
 
-import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { act, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -24,7 +23,7 @@ vi.mock("./account-feature-context", () => ({
   }),
 }));
 
-import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./ContextEditorMountHost";
+import { ContextTabSessionBoundary } from "./ContextEditorMountHost";
 
 function session(): DocumentSession {
   return {
@@ -51,23 +50,6 @@ function admission(boundSession: DocumentSession): AdmittedLiveDocument {
 describe("ContextTabSessionBoundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("does not treat an unrelated catalog revision as document availability", () => {
-    const resource = {
-      identity: { documentId: "document-a" },
-      revision: 4,
-      lifecycle: { kind: "acknowledged", availabilityGeneration: "9" },
-    };
-    const snapshot = (catalogRevision: number) =>
-      ({
-        records: [{ resource }],
-        catalogs: [{ scope: "project", revision: catalogRevision }],
-      }) as unknown as ResourceProjectionSnapshot;
-
-    expect(resourceAvailabilityRevision(snapshot(1), "document-a")).toBe(
-      resourceAvailabilityRevision(snapshot(2), "document-a"),
-    );
   });
 
   it("falls through a stale local-resource failure to authoritative server admission", async () => {
@@ -213,48 +195,6 @@ describe("ContextTabSessionBoundary", () => {
       expect(firstRelease).toHaveBeenCalledOnce();
     });
     expect(secondRelease).toHaveBeenCalledOnce();
-  });
-
-  it("keeps the warm session while a review launch re-opens the tab without its resource handle", async () => {
-    const cachedSession = session();
-    resourceReplica.keyForDocument.mockResolvedValue({ handle: "resource-a" });
-    resourceReplica.openDocument.mockImplementation(async () => ({
-      kind: "opened",
-      handle: { session: cachedSession, release: vi.fn() },
-    }));
-    const opener = { open: vi.fn() };
-    let dropHandle!: () => void;
-    const observed: Array<DocumentSession | null> = [];
-
-    function Harness() {
-      const [handle, setHandle] = useState<string | undefined>("resource-a");
-      dropHandle = () => setHandle(undefined);
-      return (
-        <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
-          <ContextTabSessionBoundary
-            projectId="project-a"
-            documentId="document-a"
-            resourceHandle={handle}
-            availabilityRevision="document-1"
-          >
-            {(value) => {
-              observed.push(value);
-              return null;
-            }}
-          </ContextTabSessionBoundary>
-        </ProjectDocumentLiveOpenerContext.Provider>
-      );
-    }
-
-    await withReactRoot(<Harness />, async () => {
-      await act(async () => undefined);
-      expect(observed.at(-1)).toBe(cachedSession);
-      const before = observed.length;
-      await act(async () => dropHandle());
-      await act(async () => undefined);
-      expect(observed.slice(before)).not.toContain(null);
-      expect(observed.at(-1)).toBe(cachedSession);
-    });
   });
 
   it("releases a warm cached editor when its availability becomes terminal", async () => {

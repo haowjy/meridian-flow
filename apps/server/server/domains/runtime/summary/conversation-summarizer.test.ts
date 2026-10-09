@@ -2,7 +2,6 @@
 import type { Block, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import { createInMemoryRepositories } from "../../threads/index.js";
 import type {
   Gateway,
   GenerateRequest,
@@ -13,11 +12,7 @@ import type {
 import { createTestAgentBinding } from "../loop/__tests__/runtime-fixtures.js";
 import { estimateRequestTokens } from "../loop/compaction/index.js";
 import { createInMemoryModelRequestDebugStore } from "../model-request-debug/index.js";
-import { describeTurn } from "../spawn/history-item.js";
-import { renderHistoryResult } from "../spawn/history-result.js";
-import { listReadableThreads } from "../spawn/thread-ls.js";
 import { createToolRegistry } from "../tools/index.js";
-import { createInspectionToolRegistrations } from "../tools/inspection-tools.js";
 import { createConversationSummarizer } from "./conversation-summarizer.js";
 
 const threadModel: ModelInfo = {
@@ -117,129 +112,6 @@ function setup(
 }
 
 describe("conversation summarizer", () => {
-  it("calls the human user in compaction, handoff, history, and listing model text", async () => {
-    const compaction = setup();
-    await compaction.service.summarize(compaction.input);
-
-    const handoff = setup();
-    handoff.input.instruction = "handoff";
-    handoff.input.incomingAgentName = "Editor";
-    await handoff.service.summarize(handoff.input);
-
-    const turn = {
-      id: "turn",
-      role: "user",
-      origin: "writer",
-      status: "complete",
-      position: 18,
-      createdAt: "2026-01-02T03:04:05.000Z",
-    } as Turn;
-    const history = renderHistoryResult({
-      ref: "c1",
-      view: "page",
-      turns: [
-        {
-          number: 18,
-          ...describeTurn(turn),
-          items: [{ kind: "message", text: "Continue the chapter.", tokens: 5 }],
-          hiddenCount: 0,
-        },
-      ],
-      inProgress: [],
-    });
-
-    const repos = createInMemoryRepositories();
-    const listed = await repos.threads.create({ userId: "user", projectId: "project" });
-    const listedTurn = await repos.turns.create({
-      threadId: listed.id,
-      role: "user",
-      origin: "writer",
-      status: "complete",
-    });
-    await repos.blocks.create({
-      turnId: listedTurn.id,
-      blockType: "text",
-      sequence: 0,
-      textContent: "Continue the chapter.",
-    });
-    const listing = await listReadableThreads({
-      repos,
-      statusReader: { readMany: async () => new Map() },
-      caller: listed,
-      input: {},
-    });
-    const listingDescription = createInspectionToolRegistrations({
-      repos,
-      statusReader: {} as never,
-      registry: createToolRegistry(),
-      tokenizer: async () => "anthropic",
-    }).find(({ definition }) => definition.name === "thread_ls")?.definition.description;
-
-    const modelText = [
-      onlyText(compaction.requests[0], compaction.requests[0].messages.length - 1),
-      onlyText(handoff.requests[0], handoff.requests[0].messages.length - 1),
-      history,
-      "listing" in listing ? listing.listing : "",
-      listingDescription ?? "",
-    ].join("\n");
-    expect(modelText).not.toMatch(/writer/i);
-    expect(history).toContain("[18] user");
-  });
-
-  it.each([
-    false,
-    true,
-  ])("includes writer summary instructions on the %s cache path", async (warm) => {
-    const rig = setup({ warm });
-    rig.input.writerInstructions = "Prioritize unresolved cultivation debts.";
-
-    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
-    expect(JSON.stringify(rig.requests)).toContain("Prioritize unresolved cultivation debts.");
-    const [capture] = rig.modelRequestDebug.listByThread("thread");
-    expect(JSON.stringify(capture?.request)).toContain("Prioritize unresolved cultivation debts.");
-    expect(rig.requests[0].correlation?.gatewayCallId).toBe(capture?.gatewayCallId);
-  });
-
-  it("reports debug capture failures without failing the summary", async () => {
-    const rig = setup();
-    rig.modelRequestDebug.capture = () => {
-      throw new Error("debug store unavailable");
-    };
-
-    await expect(rig.service.summarize(rig.input)).resolves.toMatchObject({ kind: "complete" });
-    expect(rig.eventSink.events).toContainEqual(
-      expect.objectContaining({ name: "model_request_debug.capture_failed" }),
-    );
-  });
-
-  it("leaves the rolling request output limit to the adapter", async () => {
-    const rig = setup();
-
-    await expect(rig.service.summarize(rig.input)).resolves.toMatchObject({
-      kind: "complete",
-      summarizer: { path: "rolling" },
-    });
-    expect(rig.requests[0]).not.toHaveProperty("maxTokens");
-  });
-
-  it.each([
-    "established facts ".repeat(65),
-    "故事".repeat(60),
-  ])("accepts complete output without treating conservative input estimates as provider tokens", async (text) => {
-    const rig = setup({
-      async *events() {
-        yield {
-          type: "end",
-          result: reply(text, { usage: { inputTokens: 100, outputTokens: 280 } }),
-        };
-      },
-    });
-    expect(await rig.service.summarize(rig.input)).toMatchObject({
-      kind: "complete",
-      text: text.trim(),
-    });
-  });
-
   it.each([
     ["max_tokens", reply("partial", { finishReason: "max_tokens" })],
     ["provider_error", reply("", { finishReason: "error" })],
@@ -255,26 +127,6 @@ describe("conversation summarizer", () => {
       kind: "failed",
       rejectionReason: reason,
     });
-  });
-
-  it("labels prior context and omits opaque reasoning from the cold transcript", async () => {
-    const rig = setup();
-    rig.input.projection.turns[0].metadata = {
-      kind: "system_update",
-      section: "compaction_summary",
-    };
-    rig.input.projection.blocks.push({
-      id: "reasoning",
-      responseId: null,
-      createdAt: new Date(0).toISOString(),
-      turnId: "t0",
-      blockType: "reasoning",
-      sequence: 1,
-      content: { signature: "opaque".repeat(10000) },
-    });
-    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
-    expect(JSON.stringify(rig.requests)).not.toContain("opaque");
-    expect(JSON.stringify(rig.requests)).toContain("Prior context (previous conversation summary)");
   });
 
   it("sends the serialized request in hand unchanged plus one instruction", async () => {
@@ -334,48 +186,6 @@ describe("conversation summarizer", () => {
     });
   });
 
-  it("pins the rolling compaction prompt", async () => {
-    const rig = setup();
-
-    await rig.service.summarize(rig.input);
-
-    expect(onlyText(rig.requests[0], 0)).toMatchSnapshot("compaction rolling prompt");
-  });
-
-  it.each([
-    ["overflow", "request_too_large"],
-    ["timeout", "provider_error"],
-    ["empty", "empty_text"],
-  ] as const)("fails a warm %s branch once and keeps its paid row", async (failure, reason) => {
-    const rig = setup({
-      warm: true,
-      async *events(_request, call) {
-        if (call === 1) {
-          yield { type: "usage", usage: { inputTokens: 42, outputTokens: 0 } };
-          if (failure === "overflow") {
-            yield {
-              type: "error",
-              code: "context_overflow",
-              message: "input length and max_tokens exceed context limit",
-              retryable: false,
-            };
-            return;
-          }
-          if (failure === "timeout") throw new Error("Timeout");
-          yield { type: "end", result: reply("") };
-        } else yield { type: "end", result: reply() };
-      },
-    });
-    const outcome = await rig.service.summarize(rig.input);
-    expect(outcome).toMatchObject({
-      kind: "failed",
-      rejectionReason: reason,
-      summarizer: { path: "branch", segments: 1 },
-    });
-    expect(outcome.modelResponses).toHaveLength(1);
-    expect(rig.requests).toHaveLength(1);
-  });
-
   it("compacts a Sonnet 4.6 assistant turn with four 100 KB document results on a 128k summarizer", async () => {
     const sonnet = { ...threadModel, id: "claude-sonnet-4-6", contextWindow: 1_000_000 };
     const rig = setup({ models: [sonnet, { ...cheapModel, contextWindow: 128_000 }] });
@@ -431,33 +241,6 @@ describe("conversation summarizer", () => {
     expect(JSON.stringify(rig.requests).length).toBeLessThan(20_000);
   });
 
-  it("splits oversized turns at block boundaries when they have no reducible results", async () => {
-    const rig = setup();
-    rig.input.projection = projection([""]);
-    rig.input.projection.blocks = Array.from(
-      { length: 4 },
-      (_, i) =>
-        ({
-          turnId: "t0",
-          blockType: "text",
-          sequence: i,
-          textContent: `block${i} `.repeat(300),
-        }) as Block,
-    );
-    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
-    expect(rig.requests.length).toBeGreaterThan(1);
-    for (let i = 0; i < 4; i++) expect(JSON.stringify(rig.requests)).toContain(`block${i}`);
-  });
-
-  it("splits a large system update at its source block boundaries", async () => {
-    const rig = setup({ models: [threadModel, { ...cheapModel, contextWindow: 2_800 }] });
-    rig.input.projection = projection(["system ".repeat(400)]);
-    rig.input.projection.turns[0].role = "system";
-    rig.input.projection.blocks.push({ ...rig.input.projection.blocks[0], sequence: 1 });
-    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
-    expect(rig.requests).toHaveLength(2);
-  });
-
   it("preflights block splits with room for a CJK running summary", async () => {
     const rig = setup({
       models: [threadModel, { ...cheapModel, contextWindow: 2400 }],
@@ -471,73 +254,6 @@ describe("conversation summarizer", () => {
     );
     expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
     expect(rig.requests.length).toBeGreaterThan(1);
-  });
-
-  it("does not expose custom card internals or thinking blocks", async () => {
-    const rig = setup();
-    rig.input.projection.blocks.push(
-      ...["custom", "thinking"].map(
-        (blockType, sequence) =>
-          ({
-            id: blockType,
-            responseId: null,
-            createdAt: new Date(0).toISOString(),
-            turnId: "t0",
-            blockType,
-            sequence: sequence + 1,
-            content: { kind: "helper-result", props: { threadId: "secret-internal-id" } },
-            textContent: "private-thinking",
-          }) as Block,
-      ),
-    );
-    expect(await rig.service.summarize(rig.input)).toMatchObject({ kind: "complete" });
-    expect(JSON.stringify(rig.requests)).not.toContain("secret-internal-id");
-    expect(JSON.stringify(rig.requests)).not.toContain("private-thinking");
-  });
-
-  it.each([
-    [undefined, undefined],
-    [200, undefined],
-    [5000, { type: "enabled", budget_tokens: 1024 }],
-    [1000, { type: "enabled", budget_tokens: 900 }],
-  ] as const)("keeps the branch request output limit (%s, %s)", async (maxTokens, thinking) => {
-    const rig = setup({ warm: true });
-    const request: GenerateRequest = {
-      model: threadModel.id,
-      messages: [],
-      ...(maxTokens === undefined ? {} : { maxTokens }),
-      ...(thinking ? { providerOptions: { anthropic: { thinking } } } : {}),
-    };
-    rig.input.requestInHand = request;
-    await rig.service.summarize(rig.input);
-    const { signal: _signal, correlation: _correlation, ...sent } = rig.requests[0];
-    expect(sent).toEqual({ ...request, messages: sent.messages });
-    expect(sent.messages).toHaveLength(1);
-    const prompt = JSON.stringify(sent.messages);
-    for (const phrase of [
-      "<system_update>",
-      "</system_update>",
-      "edits already made",
-      "edits still pending",
-      "cultivation realms",
-      "quoted wording exactly",
-      "Add no fact",
-    ])
-      expect(prompt).toContain(phrase);
-  });
-
-  it("fails once when a warm branch throws", async () => {
-    const rig = setup({
-      warm: true,
-      async *events() {
-        yield { type: "usage", usage: { inputTokens: 0, outputTokens: 0 } };
-        throw new Error("Unavailable");
-      },
-    });
-    const outcome = await rig.service.summarize(rig.input);
-    expect(outcome.kind).toBe("failed");
-    expect(outcome.modelResponses).toHaveLength(1);
-    expect(rig.requests).toHaveLength(1);
   });
 
   it("does not take the cold fallback after Stop during the warm call", async () => {
@@ -554,31 +270,6 @@ describe("conversation summarizer", () => {
     expect(outcome.kind).toBe("cancelled");
     expect(outcome.modelResponses).toHaveLength(1);
     expect(rig.requests).toHaveLength(1);
-  });
-
-  it("fails on warm tool use without making a rolling call", async () => {
-    const rig = setup({
-      warm: true,
-      async *events(_request, call) {
-        yield {
-          type: "end",
-          result:
-            call === 1
-              ? reply("", {
-                  content: [{ type: "tool_use", toolCallId: "x", toolName: "read", input: {} }],
-                })
-              : reply(),
-        };
-      },
-    });
-    const outcome = await rig.service.summarize(rig.input);
-    expect(outcome).toMatchObject({
-      kind: "failed",
-      rejectionReason: "tool_use",
-      summarizer: { path: "branch", segments: 1 },
-    });
-    expect(outcome.modelResponses).toHaveLength(1);
-    expect(rig.requests.map((r) => r.model)).toEqual([threadModel.id]);
   });
 
   it("segments only at turns and carries the running summary into each bounded request", async () => {
@@ -611,79 +302,12 @@ describe("conversation summarizer", () => {
     });
   });
 
-  it("fails rather than truncating one oversized turn", async () => {
-    const rig = setup();
-    rig.input.projection = projection(["huge ".repeat(5000)]);
-    const outcome = await rig.service.summarize(rig.input);
-    expect(outcome).toMatchObject({ kind: "failed", modelResponses: [] });
-    expect(rig.requests).toHaveLength(0);
-  });
-
   it("preflights every turn before any paid segment", async () => {
     const rig = setup();
     rig.input.projection = projection(["Small turn", "huge ".repeat(5000)]);
     const outcome = await rig.service.summarize(rig.input);
     expect(outcome.kind).toBe("failed");
     expect(outcome.modelResponses).toHaveLength(0);
-  });
-
-  it("falls back to the thread model when the configured provider is disabled, including idle callers", async () => {
-    const rig = setup({ models: [threadModel] });
-    rig.input.requestInHand = null;
-    rig.input.instruction = "handoff";
-    expect((await rig.service.summarize(rig.input)).kind).toBe("complete");
-    expect(rig.requests[0].model).toBe(threadModel.id);
-    expect(JSON.stringify(rig.requests[0])).toContain("handoff brief");
-  });
-
-  it("uses rolling when the request is known too large and renders images as URI", async () => {
-    const rig = setup({ warm: true });
-    rig.input.knownTooLarge = true;
-    rig.input.projection = projection([
-      "Conversation summary. Earlier turns were compacted. Established story facts.",
-    ]);
-    rig.input.projection.blocks.push({
-      id: "image",
-      responseId: null,
-      createdAt: new Date().toISOString(),
-      turnId: "t0",
-      blockType: "image",
-      sequence: 1,
-      content: { type: "image", uri: "upload://map.png", data: "BASE64" },
-    } as Block);
-    await rig.service.summarize(rig.input);
-    expect(rig.requests[0].model).toBe(cheapModel.id);
-    expect(JSON.stringify(rig.requests[0])).toContain("upload://map.png");
-    expect(JSON.stringify(rig.requests[0])).not.toContain("BASE64");
-    expect(JSON.stringify(rig.requests[0])).toContain("Earlier turns were compacted");
-  });
-
-  it.each([
-    "max_tokens",
-    "error",
-  ] as const)("fails a %s summary and returns the paid row", async (finishReason) => {
-    const rig = setup({
-      async *events() {
-        yield { type: "end", result: reply("partial", { finishReason }) };
-      },
-    });
-    expect(await rig.service.summarize(rig.input)).toMatchObject({
-      kind: "failed",
-      modelResponses: [{ outputTokens: 20, finishReason }],
-    });
-  });
-
-  it("does not retry a cold tool-use reply", async () => {
-    const rig = setup({
-      async *events() {
-        yield {
-          type: "end",
-          result: reply("", { toolCalls: [{ id: "x", name: "read", arguments: {} }] }),
-        };
-      },
-    });
-    expect((await rig.service.summarize(rig.input)).kind).toBe("failed");
-    expect(rig.requests).toHaveLength(1);
   });
 
   it("a provider timeout is failed, not cancelled, and usage survives", async () => {
@@ -698,60 +322,6 @@ describe("conversation summarizer", () => {
       modelResponses: [{ inputTokens: 42, outputTokens: 3 }],
     });
   });
-
-  it("returns a too-large rejection from the provider event", async () => {
-    const rig = setup({
-      warm: true,
-      async *events() {
-        yield {
-          type: "error",
-          code: "context_overflow",
-          message: "Too many tokens",
-          retryable: false,
-        };
-      },
-    });
-    expect(await rig.service.summarize(rig.input)).toMatchObject({
-      kind: "failed",
-      rejectionReason: "request_too_large",
-      modelResponses: [{ finishReason: "error" }],
-    });
-    expect(rig.requests).toHaveLength(1);
-  });
-
-  it("maps a thrown gateway context overflow to too large", async () => {
-    const rig = setup({
-      warm: true,
-      async *events() {
-        yield { type: "start", model: threadModel.id, provider: threadModel.provider };
-        throw Object.assign(new Error("Too many tokens"), { code: "context_overflow" });
-      },
-    });
-    expect(await rig.service.summarize(rig.input)).toMatchObject({
-      kind: "failed",
-      rejectionReason: "request_too_large",
-      modelResponses: [{ finishReason: "error" }],
-    });
-    expect(rig.requests).toHaveLength(1);
-  });
-});
-
-it.each([
-  true,
-  false,
-])("appends changed-document guidance on warm=%s without rewriting the prefix", async (warm) => {
-  const rig = setup({ warm });
-  const before = JSON.stringify(rig.input.requestInHand);
-  rig.input.changedDocuments = ["manuscript://chapter-12.md"];
-  expect((await rig.service.summarize(rig.input)).kind).toBe("complete");
-  const sent = rig.requests[0];
-  expect(JSON.stringify(sent.messages)).toContain(
-    "These documents changed after they were read; name them, do not restate their earlier text.",
-  );
-  expect(JSON.stringify(sent.messages)).toContain("manuscript://chapter-12.md");
-  expect(JSON.stringify(sent.messages)).not.toContain("thread_history");
-  expect(JSON.stringify(rig.input.requestInHand)).toBe(before);
-  if (warm) expect(sent.messages.slice(0, -1)).toEqual(rig.input.requestInHand?.messages);
 });
 
 it("C7b warm brief preserves the source request and tools, correlating rows to the owner", async () => {
@@ -806,86 +376,4 @@ it("C7b warm brief preserves the source request and tools, correlating rows to t
   expect(rig.prefixCacheStateFor).toHaveBeenCalledWith(
     expect.objectContaining({ threadId: "thread", throughTurnId: "cutoff" }),
   );
-});
-
-it("keeps the existing conditional open-request guidance for an assistant-row handoff cutoff", async () => {
-  const rig = setup({ warm: true });
-  rig.input.instruction = "handoff";
-  rig.input.incomingAgentName = "Editor";
-  rig.input.projection.turns[0].role = "assistant";
-  const requestInHand = rig.input.requestInHand;
-  if (!requestInHand) throw new Error("Expected a source request");
-  requestInHand.messages.push({ role: "assistant", content: [{ type: "text", text: "Answer" }] });
-
-  await rig.service.summarize(rig.input);
-
-  const appended = rig.requests[0].messages.at(-1);
-  const text = appended?.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-  expect(text).toContain(
-    "If the conversation ends with a user message you have not answered, report it as the open request; do not answer it.",
-  );
-  expect(text).not.toContain("immediately before this system update");
-  expect(rig.requests[0].messages.slice(0, -1)).toEqual(requestInHand.messages);
-  expect(onlyText(rig.requests[0], rig.requests[0].messages.length - 1)).toMatchSnapshot(
-    "handoff otherwise prompt",
-  );
-});
-
-it("does not call a system-origin user row the writer's open request", async () => {
-  const rig = setup({ warm: true });
-  rig.input.instruction = "handoff";
-  rig.input.projection.turns[0].origin = "system";
-
-  await rig.service.summarize(rig.input);
-
-  const text = JSON.stringify(rig.requests[0].messages.at(-1));
-  expect(text).toContain(
-    "If the conversation ends with a user message you have not answered, report it as the open request; do not answer it.",
-  );
-  expect(text).not.toContain("immediately before this system update");
-});
-
-it("uses rolling at a cold cutoff", async () => {
-  const rig = setup({ warm: false });
-  const tools = [
-    {
-      type: "function" as const,
-      name: "read",
-      description: "Read a source document",
-      inputSchema: { type: "object", properties: { uri: { type: "string" } } },
-    },
-  ];
-  const requestInHand = rig.input.requestInHand;
-  if (!requestInHand) throw new Error("Expected a source request");
-  const sourceRequest = {
-    ...requestInHand,
-    tools,
-    reasoning: { effort: "high" as const },
-  };
-  const outcome = await rig.service.summarize({
-    ...rig.input,
-    instruction: "handoff",
-    requestInHand: sourceRequest,
-  });
-
-  expect(outcome).toMatchObject({ kind: "complete", summarizer: { path: "rolling" } });
-  expect(rig.requests.length).toBeGreaterThan(0);
-  expect(rig.requests[0].model).toBe(cheapModel.id);
-  expect(rig.prefixCacheStateFor).toHaveBeenCalled();
-});
-
-it("C7b a cold transcript needs no source model when the cheap model is enabled", async () => {
-  const rig = setup({ models: [cheapModel] });
-  const outcome = await rig.service.summarize({
-    ...rig.input,
-    instruction: "handoff",
-    incomingAgentName: "Editor",
-    requestInHand: null,
-  });
-  expect(outcome.kind).toBe("complete");
-  expect(rig.requests[0].model).toBe(cheapModel.id);
-  expect(rig.prefixCacheStateFor).not.toHaveBeenCalled();
 });

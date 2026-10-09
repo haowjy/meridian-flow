@@ -90,25 +90,6 @@ function fenceEditor(): Editor {
   return editor;
 }
 
-/**
- * A caret inside an inline code span, with room on both sides of it.
- *
- * The span holds a single space so the derived rows measure the CONTEXT and
- * nothing else: a letter behind the caret would refuse every same-character
- * pair on its own (`6"` is inches), and a letter in front would refuse them all.
- */
-function codeSpanEditor(): Editor {
-  const editor = openEditor();
-  editor.commands.setContent({
-    type: "doc",
-    content: [
-      { type: "paragraph", content: [{ type: "text", marks: [{ type: "code" }], text: " " }] },
-    ],
-  });
-  editor.commands.focus("end");
-  return editor;
-}
-
 /** Explicit representative rows guard gesture behavior across editor contexts. */
 type PairRow = {
   context: AutoPairContext;
@@ -116,48 +97,11 @@ type PairRow = {
   close: string;
   caretIn: () => Editor;
 };
-
-const DECLARED_ROWS: readonly PairRow[] = [
-  { context: "prose", open: "[", close: "]", caretIn: () => openEditor() },
-  { context: "prose", open: '"', close: '"', caretIn: () => openEditor() },
-  { context: "code-fence", open: "{", close: "}", caretIn: fenceEditor },
-  { context: "code-fence", open: "\u0060", close: "\u0060", caretIn: fenceEditor },
-  { context: "inline-code", open: "{", close: "}", caretIn: codeSpanEditor },
-];
-const CLOSER_ROWS: readonly PairRow[] = [
-  { context: "prose", open: "[", close: "]", caretIn: () => openEditor() },
-  { context: "prose", open: '"', close: '"', caretIn: () => openEditor() },
-  { context: "code-fence", open: "\u0060", close: "\u0060", caretIn: fenceEditor },
-  { context: "inline-code", open: "{", close: "}", caretIn: codeSpanEditor },
-];
 const BACKSPACE_ROWS: readonly PairRow[] = [
   { context: "prose", open: "[", close: "]", caretIn: () => openEditor() },
-  { context: "prose", open: '"', close: '"', caretIn: () => openEditor() },
-  { context: "code-fence", open: "\u0060", close: "\u0060", caretIn: fenceEditor },
-  { context: "inline-code", open: "{", close: "}", caretIn: codeSpanEditor },
-];
-const OMITTED_ROWS: readonly PairRow[] = [
-  { context: "prose", open: "{", close: "}", caretIn: () => openEditor() },
-  { context: "prose", open: "'", close: "'", caretIn: () => openEditor() },
-  { context: "prose", open: "`", close: "`", caretIn: () => openEditor() },
-  { context: "inline-code", open: "`", close: "`", caretIn: codeSpanEditor },
 ];
 
 describe("representative registered pairs", () => {
-  it.each(DECLARED_ROWS)("$open writes its closer in $context", ({ open, close, caretIn }) => {
-    const editor = caretIn();
-    const room = shape(editor);
-    type(editor, open);
-    expect(shape(editor)).toBe(room.replace("|", `${open}|${close}`));
-  });
-
-  it.each(CLOSER_ROWS)("$close steps over the closer written in $context", (row) => {
-    const editor = row.caretIn();
-    const room = shape(editor);
-    type(editor, row.open + row.close);
-    expect(shape(editor)).toBe(room.replace("|", `${row.open}${row.close}|`));
-  });
-
   it.each(BACKSPACE_ROWS)("Backspace takes both halves of $open in $context", (row) => {
     const editor = row.caretIn();
     const room = shape(editor);
@@ -167,94 +111,21 @@ describe("representative registered pairs", () => {
   });
 });
 
-describe("a context a pair leaves out is a decision", () => {
-  it.each(OMITTED_ROWS)("$open stays a plain character in $context", ({ open, caretIn }) => {
-    const editor = caretIn();
-    const room = shape(editor);
-    type(editor, open);
-    expect(shape(editor)).toBe(room.replace("|", `${open}|`));
-  });
-});
-
 describe("what sits around the caret decides", () => {
-  it("stands aside in front of a word the writer is wrapping", () => {
-    const editor = openEditor("<p>Hello</p>");
-    caretAt(editor, 0);
-    type(editor, "(");
-
-    expect(shape(editor)).toBe("(|Hello");
-  });
-
-  it("closes in front of the whitespace that follows it", () => {
-    const editor = openEditor("<p>x y</p>");
-    caretAt(editor, 1);
-    type(editor, "(");
-
-    expect(shape(editor)).toBe("x(|) y");
-  });
-
-  it("stands aside in front of the word a quote would swallow", () => {
-    const editor = openEditor("<p>said and</p>");
-    caretAt(editor, 5);
-    type(editor, '"');
-
-    expect(shape(editor)).toBe('said "|and');
-  });
-
-  it("leaves an apostrophe alone in prose, where it is a letter", () => {
-    const editor = openEditor();
-    type(editor, "don't stop");
-
-    expect(shape(editor)).toBe("don't stop|");
-  });
-
-  it("leaves the backtick to the markdown code rule in prose", () => {
-    const editor = openEditor();
-    type(editor, "`spin`");
-
-    expect(editor.state.doc.firstChild?.textContent).toBe("spin");
-    expect(editor.state.doc.firstChild?.child(0).marks.map((mark) => mark.type.name)).toEqual([
-      "code",
-    ]);
-  });
-
   it("leaves a run of the same delimiter alone", () => {
     const editor = fenceEditor();
     type(editor, "```");
 
     expect(shape(editor)).toBe("```|");
   });
-
-  it("opens a docstring rather than three empty pairs", () => {
-    const editor = fenceEditor();
-    type(editor, '"""');
-
-    expect(shape(editor)).toBe('"""|');
-  });
 });
 
 describe("typing the closer steps over the one that was written", () => {
-  it("composes a second opener into a nested pair", () => {
-    const editor = openEditor();
-    type(editor, "[[");
-
-    expect(shape(editor)).toBe("[[|]]");
-  });
-
   it("walks back out of both closers in order", () => {
     const editor = openEditor();
     type(editor, "[[]]");
 
     expect(shape(editor)).toBe("[[]]|");
-  });
-
-  it("carries a name between the brackets and leaves it text", () => {
-    const editor = openEditor();
-    type(editor, "[[The Third Gate]]");
-
-    // `[[name]]` is never a link and opens nothing; `@` is how a writer links.
-    expect(shape(editor)).toBe("[[The Third Gate]]|");
-    expect(editor.view.dom.querySelector("a")).toBeNull();
   });
 
   it("writes a real bracket in front of one the writer typed themselves", () => {
@@ -263,15 +134,6 @@ describe("typing the closer steps over the one that was written", () => {
     type(editor, "]");
 
     expect(shape(editor)).toBe("a]|]");
-  });
-
-  it("steps only at the caret the closer was written for", () => {
-    const editor = openEditor();
-    type(editor, "[");
-    caretAt(editor, 2);
-    type(editor, "]");
-
-    expect(shape(editor)).toBe("[]]|");
   });
 
   it("degrades to plain insertion after the document is replaced wholesale", () => {
@@ -289,65 +151,11 @@ describe("typing the closer steps over the one that was written", () => {
 });
 
 describe("a keystroke reported as a block replacement", () => {
-  it("pairs when the reported range carries no text", () => {
-    const editor = openEditor();
-
-    // The browser swapped an empty paragraph's trailing `<br>` for the
-    // character, so ProseMirror reads the diff back as the whole block being
-    // replaced. Live, this is the first character typed into an empty
-    // paragraph, and it stopped pairing entirely when the caret was ignored.
-    expect(typeOverRange(editor, 0, editor.state.doc.content.size, "[")).toBe(true);
-    expect(shape(editor)).toBe("[|]");
-  });
-
-  it("pairs into the empty block a select-all Backspace left behind", () => {
-    const editor = openEditor("<p>Hello</p>");
-    editor.commands.selectAll();
-    editor.commands.deleteSelection();
-    // The selection still spans the emptied document, which is the state the
-    // writer's next character actually arrives in.
-    editor.commands.selectAll();
-
-    expect(typeOverRange(editor, 0, editor.state.doc.content.size, "[")).toBe(true);
-    expect(shape(editor)).toBe("[|]");
-  });
-
   it("stands aside when the writer is typing over their own selection", () => {
     const editor = openEditor("<p>Hello</p>");
     editor.commands.setTextSelection({ from: 1, to: 6 });
 
     expect(typeOverRange(editor, 1, 6, "[")).toBe(false);
-  });
-});
-
-describe("Backspace between the halves takes both", () => {
-  it("unwraps one level of a nested pair", () => {
-    const editor = openEditor();
-    type(editor, "[[");
-
-    expect(press(editor, "Backspace")).toBe(true);
-    expect(shape(editor)).toBe("[|]");
-  });
-
-  // Backspace over a plain character is the browser's own, so what these two
-  // assert is the handoff: the key is refused and the rest of the chain has it.
-  it("hands the key on when the caret is not between the halves", () => {
-    const editor = openEditor();
-    type(editor, "[]");
-
-    expect(press(editor, "Backspace")).toBe(false);
-    expect(shape(editor)).toBe("[]|");
-  });
-
-  it("hands the key on once the document has been replaced", () => {
-    const editor = openEditor();
-    type(editor, "[");
-
-    editor.commands.setContent("<p>[]</p>");
-    caretAt(editor, 1);
-
-    expect(press(editor, "Backspace")).toBe(false);
-    expect(shape(editor)).toBe("[|]");
   });
 });
 

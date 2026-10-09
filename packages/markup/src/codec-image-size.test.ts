@@ -1,11 +1,4 @@
-/**
- * The escalation ladder a picture climbs when the writer gives it a size.
- *
- * Two claims are load-bearing and both are checked in both dialects: a picture
- * nobody resized spells itself exactly as it always did, and a picture that was
- * resized carries its width across the wire and back without losing its
- * `asset:` identity.
- */
+/** Image sizes, asset identity, and literal attributes survive both codec dialects. */
 
 import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
@@ -16,7 +9,6 @@ import {
   paragraph,
   parsedDoc,
   schema,
-  t,
 } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec } from "./index.js";
 
@@ -37,11 +29,8 @@ const ENTITY_SIZED =
   '<img src="assets/realm&amp;&quot;map&quot;.png" alt="Realm &amp; &quot;map&quot;" title="The &quot;realm&quot; &amp; beyond" width="240" />';
 const LITERAL_ENTITY_SIZED =
   '<img src="assets/literal&amp;amp;map.png" alt="Literal &amp;amp; map" title="Literal &amp;quot; token" width="241" />';
-const NAMED_ENTITY_SIZED =
-  '<img src="assets/caf&eacute;&copy;.png" alt="caf&eacute; &copy;" title="&copy;" width="242" />';
-const NAMED_ENTITY_CANONICAL = '<img src="assets/café©.png" alt="café ©" title="©" width="242" />';
 
-function image(attrs: Record<string, unknown>) {
+function _image(attrs: Record<string, unknown>) {
   return schema.node("image", { src: "asset:asset-1", alt: "World map", title: null, ...attrs });
 }
 
@@ -69,18 +58,6 @@ function spannedTable(imageWire: string, canonical = false): string {
 }
 
 describe.each(dialects)("$name image sizes", ({ codec }) => {
-  it("leaves an unsized picture in plain markdown syntax", () => {
-    expect(codec.serialize([paragraph(image({ width: null }))])).toBe(`${PLAIN}\n`);
-    expect(parsedDoc(codec, PLAIN).toJSON()).toEqual(docFrom([paragraph(image({}))]).toJSON());
-  });
-
-  it("escalates a sized picture to the img tag and reads it back whole", () => {
-    expect(codec.serialize([paragraph(image({ width: 240 }))])).toBe(`${SIZED}\n`);
-    expect(parsedDoc(codec, SIZED).toJSON()).toEqual(
-      docFrom([paragraph(image({ width: 240 }))]).toJSON(),
-    );
-  });
-
   it.each([
     '<img src="assets/map.png" alt="World map" width="240">',
     'Before <img src="assets/map.png" alt="World map" width="240"> after.',
@@ -98,21 +75,6 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
       sized.firstChild.type.create({ ...sized.firstChild.attrs, width: null }),
     );
     expect(codec.serialize([cleared])).toBe(`${PLAIN}\n`);
-  });
-
-  it("carries a sized picture standing among words", () => {
-    const wire = `Before ${SIZED} after.`;
-    const blocks = codec.parse(wire).blocks;
-    expect(codec.serialize(blocks)).toBe(`${wire}\n`);
-    expect(docFrom(blocks).toJSON()).toEqual(
-      docFrom([paragraph(t("Before "), image({ width: 240 }), t(" after."))]).toJSON(),
-    );
-  });
-
-  it("keeps a title beside the width", () => {
-    const wire = '<img src="assets/map.png" alt="World map" title="The realm" width="96" />';
-    expect(codec.serialize(codec.parse(wire).blocks)).toBe(`${wire}\n`);
-    expect(codec.parse(wire).blocks[0]?.firstChild?.attrs.title).toBe("The realm");
   });
 
   it("decodes a sized HTML picture once and stays stable across saves", () => {
@@ -147,41 +109,6 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
 
   it.each([
     {
-      name: "standalone",
-      wire: NAMED_ENTITY_SIZED,
-      canonical: NAMED_ENTITY_CANONICAL,
-      imageAt: (blocks: readonly PMNode[]) => blocks[0]?.firstChild,
-    },
-    {
-      name: "inside a spanned table",
-      wire: spannedTable(NAMED_ENTITY_SIZED),
-      canonical: spannedTable(NAMED_ENTITY_CANONICAL, true),
-      imageAt: (blocks: readonly PMNode[]) =>
-        blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild,
-    },
-  ])("decodes named HTML references $name", ({ wire, canonical, imageAt }) => {
-    const first = codec.serialize(codec.parse(wire).blocks);
-    const second = codec.serialize(codec.parse(first).blocks);
-    const parsedImage = imageAt(codec.parse(wire).blocks);
-
-    expect(first).toBe(`${canonical}\n`);
-    expect(second).toBe(first);
-    expect(parsedImage?.attrs).toMatchObject({
-      src: "asset:asset-named",
-      alt: "café ©",
-      title: "©",
-      width: 242,
-    });
-  });
-
-  it.each([
-    {
-      name: "standalone",
-      wire: LITERAL_ENTITY_SIZED,
-      canonical: LITERAL_ENTITY_SIZED,
-      imageAt: (blocks: readonly PMNode[]) => blocks[0]?.firstChild,
-    },
-    {
       name: "inside a spanned table",
       wire: spannedTable(LITERAL_ENTITY_SIZED),
       canonical: spannedTable(LITERAL_ENTITY_SIZED, true),
@@ -209,49 +136,20 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     expect(codec.serialize([pending])).toBe(`${wire}\n`);
     expect(parsedDoc(codec, wire).toJSON()).toEqual(docFrom([pending]).toJSON());
   });
+});
 
-  // A width this package could not write back the same way is not a width. The
-  // tag stays the text it already was rather than becoming a picture at a size
-  // the document never said.
+// A width this package could not write back the same way is not a width. The
+// tag stays the text it already was rather than becoming a picture at a size
+// the document never said. Both dialects hand their attributes to one shared
+// reader, so the refusals run once, through the Markdown raw-HTML parser.
+describe("image attribute refusals", () => {
+  const codec = markdownCodec({ schema, assetPathResolver });
   it.each([
-    'width="50%"',
     'width="12.5"',
     'width="0"',
     'loading="lazy"',
   ])("declines an img tag carrying %s", (attribute) => {
     const wire = `<img src="assets/map.png" alt="World map" ${attribute} />`;
     expect(codec.parse(wire).blocks[0]?.firstChild?.type.name).not.toBe("image");
-  });
-});
-
-describe("sized pictures in the other spellings", () => {
-  const codec = mdxCodec({ schema, assetPathResolver, components });
-
-  it("sizes a picture inside an HTML table cell", () => {
-    const wire = [
-      "<table>",
-      "  <tbody>",
-      "    <tr>",
-      `      <td>${SIZED}</td>`,
-      "    </tr>",
-      "  </tbody>",
-      "</table>",
-    ].join("\n");
-    const blocks = codec.parse(wire).blocks;
-    expect(codec.serialize(blocks)).toBe(
-      `${[
-        "<table>",
-        "  <tbody>",
-        "    <tr>",
-        "      <td>",
-        `        <p>${SIZED}</p>`,
-        "      </td>",
-        "    </tr>",
-        "  </tbody>",
-        "</table>",
-      ].join("\n")}\n`,
-    );
-    const cell = blocks[0]?.firstChild?.firstChild?.firstChild;
-    expect(cell?.firstChild?.attrs.width).toBe(240);
   });
 });

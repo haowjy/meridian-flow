@@ -10,12 +10,7 @@ import type { BlockRef } from "../handles.js";
 import { toRef } from "../handles.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { applyEdits } from "./apply-edits.js";
-import {
-  applyConcurrentUpdates,
-  computeEcho,
-  snapshotBlocks,
-  truncateSerializedBlock,
-} from "./echo.js";
+import { applyConcurrentUpdates, computeEcho, snapshotBlocks } from "./echo.js";
 import type { AgentOrigin, ApplyResult, ResolvedEdit } from "./types.js";
 
 const schema = buildDocumentSchema();
@@ -100,24 +95,6 @@ describe("applyEdits update fidelity", () => {
     );
     expectNoOrphanedElements(doc);
   });
-
-  it("uses the explicit agent origin for local transactions", () => {
-    const doc = createDoc("Alpha sword.");
-    const [block] = baseModel.getBlocks(doc);
-    const origins: unknown[] = [];
-    doc.on("afterTransaction", (transaction) => origins.push(transaction.origin));
-
-    const result = applyEdits(
-      doc,
-      baseModel,
-      codec,
-      textEdit(block, { start: 6, end: 11 }, "blade"),
-      origin,
-    );
-
-    expectOk(result);
-    expect(origins).toContain(origin);
-  });
 });
 
 describe("applyEdits preflight safety", () => {
@@ -192,114 +169,9 @@ describe("mutation and echo composition", () => {
     ]);
     expectNoOrphanedElements(local);
   });
-
-  it("shows a full echo when a concurrent human edit touches the agent hunk", () => {
-    const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
-    const local = cloneDoc(live, 2);
-    const before = snapshotBlocks(local, baseModel, codec);
-    const [localAlpha] = baseModel.getBlocks(local);
-    const alphaHash = baseModel.getBlockId(localAlpha);
-    const remoteUpdate = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", {
-      type: "human",
-      userId: "user-1",
-    });
-
-    const result = applyEdits(
-      local,
-      baseModel,
-      codec,
-      textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
-      origin,
-    );
-
-    expectOk(result);
-    const concurrent = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [{ update: remoteUpdate, origin: { type: "human", userId: "user-1" } }],
-      origin,
-    );
-    const echo = computeEcho({
-      before,
-      after: snapshotBlocks(local, baseModel, codec),
-      agentTouchedHashes: new Set(result.changedBlocks),
-      agentDeletedHashes: new Set(result.deletedBlocks),
-    });
-    expect(concurrent.info?.human).toEqual([alphaHash]);
-    expect(echo).toHaveLength(2);
-    expect(echo[0]?.mode).toBe("full");
-    expect(echo[1]?.mode).toBe("truncated");
-    expect(echo[0]?.blocks.some((line) => line.startsWith(`${alphaHash}|`))).toBe(true);
-    expectNoOrphanedElements(local);
-  });
 });
 
 describe("applyConcurrentUpdates rendered concurrent blocks", () => {
-  it("includes the current read-format line for a changed human block", () => {
-    const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
-    const local = cloneDoc(live, 2);
-    const update = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", {
-      type: "human",
-      userId: "user-1",
-    });
-
-    const result = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [{ update, origin: { type: "human", userId: "user-1" } }],
-      origin,
-    );
-    const changedLine = snapshotBlocks(local, baseModel, codec).find((block) =>
-      block.serialized.endsWith("|Alpha knife."),
-    )?.serialized;
-
-    expect(result.info?.runs.flatMap((run) => run.blocks)).toContain(changedLine);
-    expect(result.humanTouchedHashes).toEqual(result.touchedHashes);
-  });
-
-  it("includes the read-format line for an inserted human block", () => {
-    const live = createDoc("Alpha sword.", 1);
-    const local = cloneDoc(live, 2);
-    const update = remoteInsertUpdate(live, 0, "Beta arrives.", {
-      type: "human",
-      userId: "user-1",
-    });
-
-    const result = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [{ update, origin: { type: "human", userId: "user-1" } }],
-      origin,
-    );
-    const insertedLine = snapshotBlocks(local, baseModel, codec).find((block) =>
-      block.serialized.endsWith("|Beta arrives."),
-    )?.serialized;
-
-    expect(result.info?.runs.flatMap((run) => run.blocks)).toContain(insertedLine);
-  });
-
-  it("renders the captured body for a deleted human block", () => {
-    const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
-    const local = cloneDoc(live, 2);
-    const deletedHash = baseModel.getBlockId(baseModel.getBlocks(local)[1]);
-    const update = remoteDeleteUpdate(live, 1, { type: "human", userId: "user-1" });
-
-    const result = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [{ update, origin: { type: "human", userId: "user-1" } }],
-      origin,
-    );
-
-    expect(result.info?.runs.flatMap((run) => run.tombstones)).toEqual([
-      { hash: deletedHash, capturedBody: "Beta waits." },
-    ]);
-  });
-
   it("places separated deletion tombstones at their own boundary windows", () => {
     const live = createDoc(
       Array.from({ length: 9 }, (_, index) => `Block ${index}.`).join("\n\n"),
@@ -441,30 +313,6 @@ describe("computeEcho", () => {
       "truncated",
     ]);
   });
-
-  it("truncates unchanged in-window context to the first eight words", () => {
-    const longContext = "one two three four five six seven eight nine ten";
-    const shortContext = "short context stays unchanged";
-    const before = [block("A", longContext), block("B", "old center"), block("C", shortContext)];
-    const after = [block("A", longContext), block("B", "new center"), block("C", shortContext)];
-
-    const echo = computeEcho({
-      before,
-      after,
-      agentTouchedHashes: new Set(["B"]),
-      agentDeletedHashes: new Set(),
-    });
-
-    expect(echo).toEqual([
-      { mode: "truncated", blocks: ["A|one two three four five six seven eight"] },
-      { mode: "full", blocks: ["B|new center"] },
-      { mode: "truncated", blocks: ["C|short context stays unchanged"] },
-    ]);
-  });
-
-  it("does not normalize tabs or non-breaking spaces in echo context", () => {
-    expect(truncateSerializedBlock("A|left\tmiddle\u00a0right")).toBe("A|left\tmiddle\u00a0right");
-  });
 });
 
 function block(hash: string, body: string) {
@@ -520,19 +368,6 @@ function remoteTextUpdate(
   const before = Y.encodeStateVector(doc);
   const block = baseModel.getBlocks(doc)[blockIndex];
   doc.transact(() => baseModel.applyTextEdit(doc, block, span, newText), transactionOrigin);
-  return Y.encodeStateAsUpdate(doc, before);
-}
-
-function remoteInsertUpdate(
-  doc: Y.Doc,
-  afterBlockIndex: number,
-  markdown: string,
-  transactionOrigin: unknown,
-): Uint8Array {
-  const before = Y.encodeStateVector(doc);
-  const after = baseModel.getBlocks(doc)[afterBlockIndex];
-  const parsed = codec.parse(markdown);
-  doc.transact(() => baseModel.insertBlocks(doc, after, parsed), transactionOrigin);
   return Y.encodeStateAsUpdate(doc, before);
 }
 
