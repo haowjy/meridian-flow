@@ -47,7 +47,9 @@ lifetime.
   `whenRefusedRoomDropped` runs and reopen after; a refused review room is
   rebuilt by its editor. A branch room whose last owner released during the
   teardown drain is not reopened when the drain ends, so a rebuild cannot leave
-  an unowned session behind. Branch rooms live in `branch-room-pool.ts` and the
+  an unowned session behind. Retaining and releasing only record ownership
+  (`get` and `rebuild` open rooms), so one owner's release never reacquires a
+  room another owner still retains while it retires. Branch rooms live in `branch-room-pool.ts` and the
   private local-transfer facet in `local-document-session-transfers.ts`.
 - `createEditorExtensions()` is the only app-side extension assembly point for
   collaborative documents, and its TipTap schema must stay structurally equal to
