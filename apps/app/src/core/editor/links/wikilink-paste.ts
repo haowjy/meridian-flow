@@ -202,7 +202,7 @@ function wikilinkResolver(
   // Ranking ignores case, so its answer is cached under the lowercased path;
   // a link-ahead address keeps the writer's casing, so it is asked each time.
   const matches = new Map<string, Located | null>();
-  // One address pasted twice shares one assignment, as in `assignPastedNodes`.
+  // One address pasted twice shares one assignment, as in `assignPastedSlice`.
   const aheadRefs = new Map<string, AheadRef>();
   return (occurrence) => {
     const { target } = occurrence;
