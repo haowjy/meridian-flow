@@ -1,9 +1,5 @@
-import {
-  CodecParseError,
-  type ParsedContent,
-  type ParsedContentWithSpans,
-  walkLinkOccurrences,
-} from "@meridian/markup";
+import { CodecParseError, type ParsedContent, type ParsedContentWithSpans } from "@meridian/markup";
+import { walkLinkOccurrences } from "@meridian/markup/links";
 import { Fragment } from "prosemirror-model";
 import {
   type EditResolutionErrorCode,

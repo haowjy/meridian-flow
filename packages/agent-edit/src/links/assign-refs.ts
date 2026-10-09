@@ -16,15 +16,15 @@ import {
   splitDocumentHrefSuffix,
   storedHref,
 } from "@meridian/contracts";
+import type { PMNode } from "@meridian/markup";
 import {
   assignFreshLink,
   type HolderLinkScope,
   type LinkOccurrence,
-  type PMNode,
   type WrittenGrammar,
   walkLinkOccurrences,
   writtenSourceUri,
-} from "@meridian/markup";
+} from "@meridian/markup/links";
 import { Fragment } from "prosemirror-model";
 import type { AheadMint } from "../ports/document-links.js";
 import { correspondLinks, type LinkMatch, type ShownLink } from "./correspondence.js";

@@ -25,9 +25,9 @@ import type { Database } from "@meridian/database";
 import {
   createHolderLinkScope,
   type HolderCatalog,
-  storedLinkKeys,
   writtenAddresses,
-} from "@meridian/markup";
+} from "@meridian/markup/links";
+import { storedLinkKeys } from "@meridian/markup/stored-links";
 import { type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";

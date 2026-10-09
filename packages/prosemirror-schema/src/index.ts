@@ -232,7 +232,7 @@ const customMarks = {
 
 // ─── Exports ────────────────────────────────────────────────────────
 
-export const PROSEMIRROR_FRAGMENT_NAME = "prosemirror";
+export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
 /**
  * Reserved clientID band [0, RESERVED_CLIENT_ID_MAX] is owned by server-authored

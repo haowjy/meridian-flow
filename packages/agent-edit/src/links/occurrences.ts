@@ -6,7 +6,8 @@
  * mark, an image or figure gets a new `src`/`ref`. Every other node is
  * reused, so an unchanged block stays `.eq` to its old self.
  */
-import type { LinkOccurrence, PMNode } from "@meridian/markup";
+import type { PMNode } from "@meridian/markup";
+import type { LinkOccurrence } from "@meridian/markup/links";
 import { Fragment, type Mark } from "prosemirror-model";
 
 /** Stored link attrs; an image or figure's `src` travels as `href`. */

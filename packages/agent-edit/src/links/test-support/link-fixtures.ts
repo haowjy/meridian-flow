@@ -1,6 +1,6 @@
 // Shared fixtures for link-identity tests: a static catalog, ref-bearing seeds and stored-attr readback.
 import { type CatalogDocument, documentRef, storedHref } from "@meridian/contracts";
-import { walkLinkOccurrences } from "@meridian/markup";
+import { walkLinkOccurrences } from "@meridian/markup/links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";

@@ -14,8 +14,10 @@ documents from the same node/mark specs.
   server collab code. The app constructs its TipTap schema separately; parity is
   currently unenforced.
 - **One Yjs fragment name.** `PROSEMIRROR_FRAGMENT_NAME` is the shared
-  `Y.XmlFragment` name (`"prosemirror"`). Server mirror code imports it from
-  this package; app code must stay aligned when it re-exports or displays the
+  `Y.XmlFragment` name (`"prosemirror"`). It lives in `src/protocol.ts`, exported
+  alone at `@meridian/prosemirror-schema/protocol` (and re-exported from the
+  root) so Yjs walks can name the fragment without running schema construction.
+  Server mirror code imports it from this package; app code must stay aligned when it re-exports or displays the
   fragment name.
 - **One Yjs clientID policy.** `RESERVED_CLIENT_ID_MAX` reserves clientIDs
   `[0, 999]` for server-authored Yjs writer streams, with

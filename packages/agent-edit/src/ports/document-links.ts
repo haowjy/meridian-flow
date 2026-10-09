@@ -8,7 +8,8 @@
  * so every host applies the same rules.
  */
 import type { AheadRef } from "@meridian/contracts";
-import type { HolderLinkScope, PMNode } from "@meridian/markup";
+import type { PMNode } from "@meridian/markup";
+import type { HolderLinkScope } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import type { ShownLink } from "../links/correspondence.js";
 import type { WriteContext } from "../tool/types.js";
