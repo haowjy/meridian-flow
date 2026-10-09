@@ -143,7 +143,8 @@ lifetime.
   either a qualified IndexedDB key or `none`. Admitted live keys include the
   authoritative generation; local resource keys include account and an exact
   persistence identity; branch/review sessions use `none`. A room-derived default
-  key is not permitted.
+  key is not permitted. Retiring a branch session therefore loses writer edits the
+  server has not acknowledged ([#731](https://github.com/haowjy/meridian-flow/issues/731)).
 - `local-content-initialization.ts` records exact-cache initialization in the
   existing y-indexeddb `custom` store. Its marker names the database and schema;
   the snapshot and marker append in one `updates` + `custom` transaction whose
