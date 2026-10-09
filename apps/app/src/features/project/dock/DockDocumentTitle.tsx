@@ -13,24 +13,27 @@
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { ArrowUpRight, ChevronDown, Pencil } from "lucide-react";
+import { ChevronDown, Pencil } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
+import { useProject } from "@/client/query/useProjectList";
 import { useWorks } from "@/client/query/useWorks";
 import { type TabOwner, tabContextOwner } from "@/client/stores";
 import { type DrillAction, DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { cn } from "@/lib/utils";
+import { useChatScratchSource } from "../chat/use-chat-scratch-source";
 import { fileKindIcon } from "../context/context-file-icon";
 import { schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
-import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
+import { type ScratchSource, useProjectMenuSource } from "../context/use-catalog-menu-source";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { PaneTitle } from "../PaneTitle";
-import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
+import { displayedChatThreadId, useChatNavigation } from "../routing/chat-navigation";
+import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { titleChipClass } from "../shell/title-chip";
 import { catalogSiblingNames } from "../work/work-files-model";
-import { type DockDocument, useDockViewStore } from "./dock-view-store";
+import type { DockDocument } from "./dock-view-store";
 import { useDockDocumentTab } from "./use-dock-document-tab";
 import { useOpenDocumentInDock } from "./use-open-document-in-dock";
 
@@ -42,8 +45,6 @@ export function DockDocumentTitle({
   document: DockDocument;
 }) {
   const { tab } = useDockDocumentTab(projectId, dockDocument);
-  const closeDocument = useDockViewStore((state) => state.closeDocument);
-  const openInEditor = useOpenDocumentInEditor();
   const openInDock = useOpenDocumentInDock();
   const { works } = useWorks(projectId);
   const [renaming, setRenaming] = useState(false);
@@ -57,25 +58,48 @@ export function DockDocumentTitle({
 
   const work = tab.workId ? works?.find((candidate) => candidate.id === tab.workId) : undefined;
   const archived = work ? isWorkArchived(work) : false;
-  // A document's owner names its menu: the Work, or the chat whose Scratch it is.
+  // A document's owner names its own area: the Work, or the chat whose Scratch it is.
   const lineageTitle = useLineageTitle(
     projectId,
     tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : null,
   );
   const ownerName = work?.name ?? lineageTitle;
-  const heading = ownerName
+  const documentHeading = ownerName
     ? t`${schemeLabel(tab.scheme)} for ${ownerName}`
     : schemeLabel(tab.scheme);
-  const source = useCatalogMenuSource({
+
+  // The Scratch at the menu's root is the one in view: the chat on screen on the
+  // Chat screen, the Work whose Files are open on the Work screen.
+  const screen = useProjectScreen();
+  const { display } = useChatNavigation();
+  const chatScratch = useChatScratchSource(
     projectId,
-    scheme: tab.scheme,
-    owner: tabContextOwner(tab),
-    heading,
+    screen === "chat" ? displayedChatThreadId(display) : null,
+  );
+  const workScratchId = screen === "work" ? (tab.workId ?? null) : null;
+  const workScratchName = screen === "work" ? work?.name : undefined;
+  const workScratch = useMemo<ScratchSource | null>(
+    () =>
+      workScratchId
+        ? {
+            owner: { workId: workScratchId },
+            heading: workScratchName ? t`Scratch for ${workScratchName}` : schemeLabel("scratch"),
+          }
+        : null,
+    [workScratchId, workScratchName],
+  );
+  const project = useProject(projectId);
+  const source = useProjectMenuSource({
+    projectId,
+    title: project?.title ?? "",
+    scratch: chatScratch ?? workScratch,
+    document: { scheme: tab.scheme },
+    documentOwner: tabContextOwner(tab),
+    documentHeading,
   });
-  const { catalog } = source;
+  const { catalog } = source.own;
   const current = catalog?.findDocument(tab.documentId) ?? null;
-  const { foldersOf } = source;
-  const openAt = useMemo(() => foldersOf(tab.path), [foldersOf, tab.path]);
+  const openAt = useMemo(() => source.own.openAt(tab.path), [source.own, tab.path]);
 
   const pick = (node: DrillNode) => {
     const next = source.tabFor(node.id);
@@ -83,15 +107,6 @@ export function DockDocumentTitle({
   };
 
   const actions: DrillAction[] = [
-    {
-      key: "open-in-editor",
-      label: t`Open in Editor`,
-      icon: ArrowUpRight,
-      onSelect: () => {
-        closeDocument();
-        openInEditor(tab);
-      },
-    },
     ...(current && !archived
       ? [{ key: "rename", label: t`Rename`, icon: Pencil, onSelect: () => setRenaming(true) }]
       : []),

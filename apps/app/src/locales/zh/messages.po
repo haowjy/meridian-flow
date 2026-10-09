@@ -581,7 +581,7 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
-#. placeholder {0}: folder.name
+#. placeholder {0}: folder.title ?? folder.name
 #: src/components/app/DrillInMenu.tsx
 msgid "Back from {0}"
 msgstr ""
@@ -865,7 +865,7 @@ msgstr ""
 msgid "Close chat"
 msgstr ""
 
-#: src/features/project/dock/DockHeader.tsx
+#: src/features/project/dock/DockDocumentButtons.tsx
 msgid "Close document"
 msgstr ""
 
@@ -1685,7 +1685,7 @@ msgstr ""
 msgid "Earlier"
 msgstr ""
 
-#: src/features/project/context/use-catalog-menu-source.ts
+#: src/features/project/context/menu-tree.ts
 msgid "Earlier notes"
 msgstr ""
 
@@ -2717,7 +2717,7 @@ msgstr ""
 msgid "Open full screen"
 msgstr ""
 
-#: src/features/project/dock/DockDocumentTitle.tsx
+#: src/features/project/dock/DockDocumentButtons.tsx
 msgid "Open in Editor"
 msgstr ""
 
@@ -3233,6 +3233,7 @@ msgid "scene break"
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
@@ -3244,14 +3245,22 @@ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Scratch for {0}"
-msgstr ""
+#~ msgid "Scratch for {0}"
+#~ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Scratch for {chatTitle}"
 msgstr ""
 
-#: src/features/project/chat/ChatScratch.tsx
+#: src/features/project/chat/use-chat-scratch-source.ts
+msgid "Scratch for {workName}"
+msgstr ""
+
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "Scratch for {workScratchName}"
+msgstr ""
+
+#: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
 msgstr ""
 

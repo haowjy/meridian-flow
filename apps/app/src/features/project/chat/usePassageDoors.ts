@@ -7,7 +7,7 @@ import { navigateToPassage } from "@/core/editor/passage-navigation";
 import { dismissPassageNotice, reportPassageChanged } from "@/core/editor/passage-notice-store";
 import type { ContextPassageAnchor } from "@/features/chat/ChatContextNavigation";
 import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-coordinator";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 
 export type PassageDoorTarget = {
   scheme: ProjectContextTreeScheme;
@@ -23,7 +23,7 @@ export type PassageDoorOpened = (target: PassageDoorTarget, passage?: ContextPas
 
 export function usePassageDoors(projectId: string, activeWorkId: string | null): PassageDoorOpened {
   const coordinator = useRef(new LatestNavigationCoordinator());
-  const openDocument = useOpenProjectDocument(projectId);
+  const openDocument = useOpenChatDocument(projectId);
 
   // A resolution belongs to the scope it began in. Changing project or work
   // retires it exactly as a newer door would: the transcript it came from is

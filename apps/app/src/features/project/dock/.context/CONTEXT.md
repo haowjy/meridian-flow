@@ -44,8 +44,8 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 Chat: `{ projectId, screen, tab }`. `useDockView(screen, projectId)` returns
 it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
-`DockDocumentView` and `DockHeader` swaps the view switch for the
-title chip, a Close document button, and the collapse toggle. Opening a second one
+`DockDocumentView` and `DockHeader` swaps the view switch for a Close document button then the
+title chip on the left, and Open in Editor (an expand button) then the collapse toggle on the right. Opening a second one
 replaces the first. `setDockView` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the writer's last explicit view.
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
@@ -70,6 +70,18 @@ binaries open as viewer tabs through the viewer host. A store revision (see abov
 slow lookup from replacing a newer pick; an unresolvable document announces an error.
 The phone has no context rail, so a phone never opens a Recent row here.
 
+Chat doors (link chips, receipt rows, passage and tool-result doors, `@` references) open
+through `useOpenChatDocument` (`../context/open-chat-document.ts`), the one wrapper they share
+over `useOpenProjectDocument`. It offers the resolved tab to `BesideChatContext`, which
+`ChatDocumentsBesideProvider` fills only when the chat is in the middle (`opensBesideChat`:
+Chat screen, not phone): the tab then opens in the dock slot and the address stays on the chat.
+The adapter's `beside` request hook does this before any route change, so the same open
+result (and its session admission for passage and change-trail landing) is returned. On the
+Editor and Work screens (the chat is the dock) and on the phone nothing is registered and doors
+open Editor tabs and routes as before; a new-tab gesture keeps its background tab. The route-request
+door (`ProjectChatContextNavigationProvider`) resolves its document in the catalog first, spelling a
+bare `scratch://x` with the chat's handle, and falls back to the route when nothing is found.
+
 `useOpenScratchNote()` is the way in for a note picked from the rail's Scratch section
 (`../chat/ChatScratch.tsx`): the dock document on the Chat screen only, where
 the chat is in the middle; an Editor tab from the Work and Editor screens, where the
@@ -89,10 +101,14 @@ The menu browses the tab's real scheme: a note moved out of Scratch to Manuscrip
 KB still gets its own area's tree and Rename. "Earlier notes" belongs to the chat's
 Scratch source alone.
 
-The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) over the
-document's own catalog tree (a Work's Scratch or Uploads, or a chat's Scratch) at the
-document's folder, then Open in Editor and Rename. The tree comes from
-`useCatalogMenuSource` (`../context/use-catalog-menu-source.ts`), the same source the
+The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) at the document's own folder.
+Back rows climb through the folders to the area's top and one more to a root listing of the project's
+areas: Manuscript, Knowledge Base, User, Unfiled and the Scratch in view (the on-screen chat's on the
+Chat screen, the Work's on the Work screen), headed by the project's title; Rename follows at every
+level (Open in Editor is the header button). The tree comes from `useProjectMenuSource`
+(`../context/use-catalog-menu-source.ts`), built by the pure `../context/menu-tree.ts` from the
+same catalogs the left tree reads; a document in an area the root does not offer (Uploads, or a
+Scratch left behind) opens in an unlisted area. `useCatalogMenuSource` is the single-area form the
 rail's Scratch section draws; the menu takes a tree source and an action list.
 The phone has no dock document, so no menu there.
 

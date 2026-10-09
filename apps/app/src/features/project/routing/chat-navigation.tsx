@@ -271,6 +271,11 @@ export function ChatNavigationProvider({
 }
 
 /** Chat commands are pane-aware at the route boundary; consumers never write a URL. */
+/** The project's chat navigation, or null outside a project route. */
+export function useOptionalChatNavigation(): ChatNavigation | null {
+  return useContext(ChatNavigationContext);
+}
+
 export function useChatNavigation(): ChatNavigation {
   const navigation = useContext(ChatNavigationContext);
   if (!navigation) throw new Error("Chat navigation requires a project route");

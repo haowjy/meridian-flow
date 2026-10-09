@@ -26,16 +26,15 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { PanelRightClose, X } from "lucide-react";
+import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
-import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
+import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
 import { DockDocumentTitle } from "./DockDocumentTitle";
 import type { DockDocument, DockView } from "./dock-view-store";
-import { useDockViewStore } from "./dock-view-store";
 
 export type DockViewSwitchProps = {
   view: DockView;
@@ -65,7 +64,6 @@ export function DockHeader({
   threadSelect,
   threadId,
 }: DockHeaderProps) {
-  const closeDocument = useDockViewStore((state) => state.closeDocument);
   const activity = useThreadActivity({
     threadId: threadId ?? "",
     seed: null,
@@ -77,7 +75,10 @@ export function DockHeader({
           bleeds left of the slot). */}
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {dockDocument ? (
-          <DockDocumentTitle projectId={projectId} document={dockDocument} />
+          <>
+            <DockDocumentClose />
+            <DockDocumentTitle projectId={projectId} document={dockDocument} />
+          </>
         ) : (
           <>
             {view === "chat" ? threadSelect : null}
@@ -95,11 +96,7 @@ export function DockHeader({
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.
         <div className="flex shrink-0 items-center gap-0.5 px-2">
-          {dockDocument ? (
-            <IconButton size="sm" tooltip={t`Close document`} onClick={closeDocument}>
-              <X className="size-4" aria-hidden />
-            </IconButton>
-          ) : null}
+          {dockDocument ? <DockOpenInEditor projectId={projectId} document={dockDocument} /> : null}
           {onClose ? (
             <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
           ) : null}

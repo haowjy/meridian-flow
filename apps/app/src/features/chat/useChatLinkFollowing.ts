@@ -53,7 +53,7 @@ import {
   useLinkableDocuments,
   useLinkFollower,
 } from "@/features/links";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
@@ -126,7 +126,7 @@ export function useChatLinkFollowing({
     scope === "pending" ? { projectId: null, workId: null } : scope,
   );
 
-  const openReferenceDocument = useOpenProjectDocument(projectId);
+  const openReferenceDocument = useOpenChatDocument(projectId);
   const open = useCallback<LinkDestination>(
     (document, gesture) =>
       openReferenceDocument({

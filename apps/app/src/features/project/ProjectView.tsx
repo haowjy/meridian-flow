@@ -66,6 +66,7 @@ import { ProjectContextRemovalController } from "./context/ProjectContextRemoval
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { ChatDocumentsBesideProvider } from "./dock/ChatDocumentsBesideProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
 import { EditorReviewAddressOwner } from "./dock/EditorReviewAddressOwner";
 import {
@@ -756,23 +757,25 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
   return (
     <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-      <ProjectShell
-        layout={layout}
-        surfaces={stableSurfaces}
-        onSetWidth={setSurfaceWidth}
-        onSetCollapsed={setCollapsedFor}
-        onSetDockWidth={setDockWidth}
-        onSetDockCollapsed={setDockCollapsed}
-        bounds={SURFACE_WIDTH_BOUNDS}
-        mainMinWidth={MAIN_MIN_WIDTH}
-      >
-        <ProjectRouteBoundary
-          issue={props.routeIssues?.main}
-          destinationKey={props.routeLocationKey}
+      <ChatDocumentsBesideProvider projectId={props.projectId}>
+        <ProjectShell
+          layout={layout}
+          surfaces={stableSurfaces}
+          onSetWidth={setSurfaceWidth}
+          onSetCollapsed={setCollapsedFor}
+          onSetDockWidth={setDockWidth}
+          onSetDockCollapsed={setDockCollapsed}
+          bounds={SURFACE_WIDTH_BOUNDS}
+          mainMinWidth={MAIN_MIN_WIDTH}
         >
-          {renderDesktopPane(props, surfaceToggle)}
-        </ProjectRouteBoundary>
-      </ProjectShell>
+          <ProjectRouteBoundary
+            issue={props.routeIssues?.main}
+            destinationKey={props.routeLocationKey}
+          >
+            {renderDesktopPane(props, surfaceToggle)}
+          </ProjectRouteBoundary>
+        </ProjectShell>
+      </ChatDocumentsBesideProvider>
     </TreeCreationProvider>
   );
 }

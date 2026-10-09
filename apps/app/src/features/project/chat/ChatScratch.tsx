@@ -15,12 +15,8 @@
  */
 import { t } from "@lingui/core/macro";
 import { type CSSProperties, useRef, useState } from "react";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorks } from "@/client/query/useWorks";
-import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
-import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
@@ -35,36 +31,18 @@ import {
   writeScratchExpanded,
   writeScratchHeight,
 } from "./scratch-section-pref";
+import { useChatScratchSource } from "./use-chat-scratch-source";
 
 function useChatScratch(projectId: string, threadId: string | null) {
-  const { threads } = useProjectThreads(projectId);
-  const { works, noWork } = useWorks(projectId);
-  const thread = threadId
-    ? (threads?.find((candidate) => candidate.id === threadId) ?? null)
-    : null;
-  const work =
-    thread?.workId && noWork
-      ? workFromSnapshot({ works: works ?? [], noWork }, thread.workId)
-      : null;
-  const owner = chatScratchOwner({ thread, work });
+  const scratch = useChatScratchSource(projectId, threadId);
   const source = useCatalogMenuSource({
     projectId,
-    owner:
-      owner?.kind === "lineage"
-        ? { rootThreadId: owner.rootThreadId }
-        : { workId: owner?.workId ?? null },
-    // A chat rebound onto a Work keeps its lineage's notes findable.
-    earlierRootThreadId: owner?.kind === "work" ? (thread?.rootThreadId ?? null) : null,
-    // The rail always means the chat on screen, so a chat's own notes need no name.
-    heading:
-      owner?.kind === "work" && work
-        ? t`Scratch for ${work.name}`
-        : owner?.kind === "lineage"
-          ? t`Scratch for this chat`
-          : schemeLabel("scratch"),
+    owner: scratch?.owner ?? {},
+    earlierRootThreadId: scratch?.earlierRootThreadId,
+    heading: scratch?.heading ?? schemeLabel("scratch"),
   });
   const openNote = useOpenScratchNote();
-  if (!owner || !thread) return null;
+  if (!scratch) return null;
   return {
     source,
     pick: (node: DrillNode) => {

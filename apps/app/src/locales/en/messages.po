@@ -581,7 +581,7 @@ msgstr "auto-selected"
 msgid "Back"
 msgstr "Back"
 
-#. placeholder {0}: folder.name
+#. placeholder {0}: folder.title ?? folder.name
 #: src/components/app/DrillInMenu.tsx
 msgid "Back from {0}"
 msgstr "Back from {0}"
@@ -865,7 +865,7 @@ msgstr "Close artifact preview"
 msgid "Close chat"
 msgstr "Close chat"
 
-#: src/features/project/dock/DockHeader.tsx
+#: src/features/project/dock/DockDocumentButtons.tsx
 msgid "Close document"
 msgstr "Close document"
 
@@ -1685,7 +1685,7 @@ msgstr "Duplicate"
 msgid "Earlier"
 msgstr "Earlier"
 
-#: src/features/project/context/use-catalog-menu-source.ts
+#: src/features/project/context/menu-tree.ts
 msgid "Earlier notes"
 msgstr "Earlier notes"
 
@@ -2717,7 +2717,7 @@ msgstr "Open existing"
 msgid "Open full screen"
 msgstr "Open full screen"
 
-#: src/features/project/dock/DockDocumentTitle.tsx
+#: src/features/project/dock/DockDocumentButtons.tsx
 msgid "Open in Editor"
 msgstr "Open in Editor"
 
@@ -3233,6 +3233,7 @@ msgid "scene break"
 msgstr "scene break"
 
 #: src/features/links/FollowOutcomeContent.tsx
+#: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
 #: src/features/project/work/WorkFilesView.tsx
 msgid "Scratch"
@@ -3244,14 +3245,22 @@ msgstr "Scratch couldn’t load"
 
 #. placeholder {0}: work.name
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Scratch for {0}"
-msgstr "Scratch for {0}"
+#~ msgid "Scratch for {0}"
+#~ msgstr "Scratch for {0}"
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Scratch for {chatTitle}"
 msgstr "Scratch for {chatTitle}"
 
-#: src/features/project/chat/ChatScratch.tsx
+#: src/features/project/chat/use-chat-scratch-source.ts
+msgid "Scratch for {workName}"
+msgstr "Scratch for {workName}"
+
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "Scratch for {workScratchName}"
+msgstr "Scratch for {workScratchName}"
+
+#: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
 msgstr "Scratch for this chat"
 

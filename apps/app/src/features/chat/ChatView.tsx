@@ -44,7 +44,7 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
@@ -142,7 +142,7 @@ export function ChatView({
   composerStrip,
   active = true,
 }: ChatViewProps) {
-  const openReferenceDocument = useOpenProjectDocument(projectId);
+  const openReferenceDocument = useOpenChatDocument(projectId);
   const actions = useThreadActions();
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const composerRef = useRef<ComposerHandle>(null);
