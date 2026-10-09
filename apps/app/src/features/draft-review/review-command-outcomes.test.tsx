@@ -6,6 +6,7 @@ import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   applied,
   change,
@@ -325,5 +326,52 @@ it("explicit server-certified closure finishes the last class", async () => {
     });
     await vi.waitFor(() => expect(p().header.finished).toBe(true));
     expect(p().header.unlisted).toBe(false);
+  });
+});
+
+it.each([
+  "apply",
+  "discard",
+] as const)("a late whole %s answer must not close the next generation already under review", async (mode) => {
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
+  const answer = deferredReviewAnswer<void>();
+  if (mode === "apply")
+    fixture.network.applyDraft.mockReturnValueOnce(
+      answer.promise.then(() => ({ status: "applied", draftId: "draft-a" })),
+    );
+  else
+    fixture.network.discardDraft.mockReturnValueOnce(
+      answer.promise.then(() => ({ status: "discarded", draftId: "draft-a", draftClosed: true })),
+    );
+
+  await fixture.render(async (p) => {
+    await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
+    await vi.waitFor(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(1));
+    let done!: Promise<unknown>;
+    await act(async () => {
+      done = p().editor.controller[mode]("document-a", "draft-a");
+    });
+    const nextPreview = {
+      ...previewOf("new"),
+      draftGeneration: 2,
+      reviewRoomName: "room-generation-2",
+    };
+    const nextRow = { ...listed, draftGeneration: 2, updatedAt: "2026-10-09T01:00:00Z" };
+    fixture.network.getDraftPreview.mockResolvedValue(nextPreview);
+    fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [nextRow] });
+    await act(async () => {
+      p().queryClient.setQueryData(
+        projectQueryKeys.workDraftPreview("project-a", "work-a", "document-a", "draft-a"),
+        nextPreview,
+      );
+      p().queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), [nextRow]);
+    });
+    await vi.waitFor(() => expect(p().editor.controller.inlineReview?.draftGeneration).toBe(2));
+    await act(async () => {
+      answer.resolve();
+      await done;
+    });
+    expect(p().editor.controller.inlineReview?.draftGeneration).toBe(2);
   });
 });

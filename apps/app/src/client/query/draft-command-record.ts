@@ -47,10 +47,9 @@ export type ChangeSelection = { classIds: readonly string[]; operationIds: reado
  */
 export type ClosedDraft = { documentName: string | null };
 
-/** Selection identity, preview basis and addressed settlement, shared with every observing review. */
+/** Selection identity and addressed settlement, shared with every observing review. */
 export type PendingChangeCommand = ChangeSelection & {
   target: "selection";
-  basis?: { liveRevisionToken: string; draftRevisionToken: string };
   mode: ChangeCommandMode;
   draftGeneration: number;
   completesDraft?: true;
@@ -70,8 +69,8 @@ export type PendingDraftCommand =
 
 type DraftClaimRecord =
   | { phase: "pending"; command: PendingDraftCommand }
-  | { phase: "failed"; failure: DraftCommandFailure; at: number; command?: PendingDraftCommand }
-  | { phase: "confirmed"; at: number; command?: PendingDraftCommand };
+  | { phase: "failed"; failure: DraftCommandFailure; at: number }
+  | { phase: "confirmed"; at: number };
 
 type DraftCommandRecord = {
   claim?: DraftClaimRecord;
@@ -188,12 +187,7 @@ export function releaseDraftCommand(draft: DraftRef): void {
 }
 
 export function failDraftCommand(draft: DraftRef, failure: DraftCommandFailure): void {
-  const change = recordFor(draft)?.command;
-  setRecord(
-    draft,
-    (at) => ({ phase: "failed", failure, at, ...(change ? { command: change } : {}) }),
-    true,
-  );
+  setRecord(draft, (at) => ({ phase: "failed", failure, at }), true);
 }
 
 /** Opening Review failed; never displaces an Apply or Discard in flight on the draft. */
@@ -218,12 +212,7 @@ export function clearDraftReviewLaunchFailure(draft: DraftRef): void {
 }
 
 export function confirmDraftCommand(draft: DraftRef): void {
-  const change = recordFor(draft)?.command;
-  setRecord(
-    draft,
-    (at) => ({ phase: "confirmed", at, ...(change ? { command: change } : {}) }),
-    true,
-  );
+  setRecord(draft, (at) => ({ phase: "confirmed", at }), true);
   retireConfirmations();
 }
 
@@ -417,10 +406,8 @@ export type ChangeFailureCode =
   /** A new document's changes cannot be applied one by one. */
   | "draft-only";
 
-type ChangeCommandRecord = ChangeSelection & {
-  draftGeneration?: number;
-  basis?: PendingChangeCommand["basis"];
-} & (
+type ChangeCommandRecord = ChangeSelection &
+  (
     | ({
         phase: "failed";
         mode: ChangeCommandMode;
@@ -462,14 +449,10 @@ function setChangeRecord(
   updateDraftRecord(
     draftCommandKey(draft),
     (prior, clock) => {
-      const command = prior.claim?.command;
-      const record = {
-        ...outcome(clock),
-        ...(command?.target === "selection"
-          ? { draftGeneration: command.draftGeneration, basis: command.basis }
-          : {}),
+      return {
+        ...prior,
+        outcomes: { ...prior.outcomes, [recordKey(selection)]: outcome(clock) },
       };
-      return { ...prior, outcomes: { ...prior.outcomes, [recordKey(selection)]: record } };
     },
     true,
   );
@@ -482,12 +465,10 @@ export function beginChangeCommand(
   mode: ChangeCommandMode,
   draftGeneration: number,
   completesDraft = false,
-  basis?: PendingChangeCommand["basis"],
 ): boolean {
   if (
     !beginDraftCommand(draft, {
       target: "selection",
-      basis,
       classIds: selection.classIds,
       operationIds: selection.operationIds,
       mode,
@@ -514,11 +495,6 @@ export function queueChangeSelection(draft: DraftRef, selection: ChangeSelection
       return { queued: rest };
     });
   };
-}
-
-/** Give back a claim that ended without a confirmation or a held failure. */
-export function releaseChangeCommand(draft: DraftRef): void {
-  releaseDraftCommand(draft);
 }
 
 export function failChangeCommand(
