@@ -315,14 +315,28 @@ it("carries what a copied link names across the clipboard", async () => {
   const earlyCopied = {
     html: early.view.serializeForClipboard(early.state.doc.slice(0)).dom.innerHTML,
   };
-  const pictureRows = [
+  const earlyFigure = pictureEditor(
+    "project-a",
+    [],
+    [{ type: "figure", attrs: { src: `asset:${UPLOAD}`, caption: "Plate" } }],
+  );
+  const earlyFigureCopied = {
+    html: earlyFigure.view.serializeForClipboard(earlyFigure.state.doc.slice(0)).dom.innerHTML,
+  };
+  earlyFigure.destroy();
+  const pictureRows: {
+    row: string;
+    copied: { html: string } | { text: string };
+    into: Editor;
+    pasted: unknown[];
+  }[] = [
     {
       row: "a same-project paste keeps each picture's ref at its current address",
       copied,
       into: pictureEditor("project-a", []),
       pasted: [
         { type: "image", src: "manuscript://uploads/map.png", ref: SETTLED },
-        { type: "figure", src: "manuscript://art/plate.png", ref: PLATE_REF },
+        { type: "figure", src: "manuscript://art/plate.png", ref: PLATE_REF, caption: "Plate" },
       ],
     },
     {
@@ -337,6 +351,7 @@ it("carries what a copied link names across the clipboard", async () => {
           type: "figure",
           src: "manuscript://art/plate.png",
           ref: expect.stringMatching(/^ahead:/),
+          caption: "Plate",
         },
       ],
     },
@@ -402,6 +417,21 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: [],
     },
     {
+      row: "an early upload figure keeps its asset: ref and caption in its project",
+      copied: earlyFigureCopied,
+      into: pictureEditor("project-a", []),
+      pasted: [{ type: "figure", src: `asset:${UPLOAD}`, ref: null, caption: "Plate" }],
+    },
+    {
+      // The figure is one picture: rejecting its image rejects the figure.
+      row: "an early upload figure is not pasted into another project",
+      copied: earlyFigureCopied,
+      into: pictureEditor("project-b", [
+        { documentId: OTHER_MAP, uri: "manuscript://art/new.png" },
+      ]),
+      pasted: [],
+    },
+    {
       row: "another project binds an upload fresh at its current address",
       copied: { html: uploadSerialized.dom.innerHTML },
       into: pictureEditor("project-b", [
@@ -440,7 +470,12 @@ it("carries what a copied link names across the clipboard", async () => {
       const pictures: unknown[] = [];
       into.state.doc.descendants((node) => {
         if (node.type.name === "image" || node.type.name === "figure")
-          pictures.push({ type: node.type.name, src: node.attrs.src, ref: node.attrs.ref });
+          pictures.push({
+            type: node.type.name,
+            src: node.attrs.src,
+            ref: node.attrs.ref,
+            ...(node.type.name === "figure" && { caption: node.attrs.caption }),
+          });
       });
       expect.soft(pictures, row).toEqual(pasted);
       // Never a link standing in for a picture, nor an import of an address.
