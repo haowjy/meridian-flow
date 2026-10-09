@@ -34,11 +34,16 @@ export type DocumentDerivationStore = {
   /**
    * Registers the client-minted ahead refs of this holder's certified rows (contract §11.3):
    * awaited outside a transaction, after commit inside one. Failures are logged, never thrown;
-   * `recoverAheads` picks them up.
+   * the sweep picks them up.
    */
   registerAheads(documentId: DocumentId): Promise<void>;
-  /** Recovery: index refs with no registry row, in scope (everywhere when absent). Never throws. */
-  recoverAheads(scope?: DerivationScope): Promise<number>;
+  /** Every index ref in scope with no registry row, page by page. Never throws. Returns registered. */
+  drainAheads(scope: DerivationScope): Promise<number>;
+  /**
+   * One bounded recovery page everywhere, strictly after `after`. `next` is the last ref attempted
+   * on a full page (resume there), else null (wrap). Never throws.
+   */
+  recoverAheads(after?: string): Promise<{ registered: number; next: string | null }>;
 };
 export type DocumentDerivationResult =
   | { status: "derived"; stateVector: Uint8Array }

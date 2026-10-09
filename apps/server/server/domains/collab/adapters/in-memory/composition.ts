@@ -307,6 +307,7 @@ function createInMemoryBranchPeerStub(
       return { documentId: "" as DocumentId, members: [] };
     },
     async reconcileProjectManifest() {},
+    async transferLiveManifestMembership() {},
     async recordManifestDocumentCreated() {},
     async recordManifestDocumentDeleted() {},
   };

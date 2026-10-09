@@ -19,7 +19,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
@@ -34,6 +34,8 @@ import {
   unknownToEventPayload,
 } from "../../observability/index.js";
 import {
+  type AheadRecoveryPage,
+  type AheadRecoveryProgress,
   type AheadRecoveryScope,
   type AheadRegistration,
   type LinkAheadRegistry,
@@ -141,8 +143,8 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 
   async registerUnregistered(
     scope: AheadRecoveryScope | undefined,
-    limit: number,
-  ): Promise<number> {
+    page: AheadRecoveryPage,
+  ): Promise<AheadRecoveryProgress> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
     const holderProject = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
     const pending = await this.db
@@ -170,10 +172,11 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
               : scope.personalOwnerId
                 ? eq(projects.userId, scope.personalOwnerId)
                 : sql`${holderProject} = ${scope.projectId}`,
+          page.after ? gt(documentLinks.aheadId, page.after) : undefined,
         ),
       )
       .orderBy(documentLinks.aheadId)
-      .limit(limit);
+      .limit(page.limit);
     let registered = 0;
     for (const row of pending) {
       if (!row.aheadId || !row.address) continue;
@@ -191,7 +194,9 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         });
       }
     }
-    return registered;
+    // Advance by attempted keys, not registrations: a ref that keeps failing never pins the page.
+    const last = pending.at(-1)?.aheadId;
+    return { registered, next: pending.length === page.limit && last ? last : null };
   }
 
   /** Decoded canonical address → (project, scheme, Work, path), as `document-link-rows.ts` does. */
@@ -249,6 +254,8 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         throw new Error(`No Work row for ${registration.holderProjectId} does not exist`);
       lockWorkId = noWork.id;
     } else if (authority.kind === "work") {
+      // Slugs stay reserved across soft deletion, so a deleted Work keeps its identity: the ref
+      // registers against it and settles only once a restore makes the address live again.
       const [work] = await tx
         .select({ id: works.id })
         .from(works)
@@ -256,7 +263,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           and(
             eq(works.projectId, registration.holderProjectId),
             eq(works.slug, authority.workSlug),
-            isNull(works.deletedAt),
           ),
         );
       if (!work) throw new Error(`Work ${authority.workSlug} does not exist`);
