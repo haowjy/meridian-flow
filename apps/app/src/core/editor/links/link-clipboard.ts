@@ -27,8 +27,8 @@
  * address the project catalog holds that id at now when it holds it. A
  * same-project paste restores the `asset:` source from that recorded identity
  * alone, so a just-uploaded picture copies before the catalog knows it;
- * another project binds the recorded address, and has nothing to bind when
- * none was recorded.
+ * another project binds the recorded address, and drops the whole picture
+ * (a figure with its caption) when none was recorded.
  *
  * The text/plain flavour spells every internal link as its full address, so
  * it means the same thing in another app or through the Markdown paste door;
@@ -229,8 +229,9 @@ function keepPastedRefs(html: string, projectId: string | null): string {
     }
     if (!address) {
       // An upload copied before its catalog entry carries no address: outside
-      // its project there is nothing to bind, so the picture is not pasted.
-      if (picture) element.remove();
+      // its project there is nothing to bind, so the picture is not pasted. A
+      // figure is one picture; left behind, its shell parses as an empty figure.
+      if (picture) (element.closest("figure[data-type='figure']") ?? element).remove();
       continue;
     }
     if (picture) element.setAttribute("src", address);
