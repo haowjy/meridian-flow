@@ -69,14 +69,17 @@ export function hasFileExtension(filename: string): boolean {
  * decoded (a catalog/registry key, not a stored href; store it with
  * `storedHref`), always with a real extension (`hasFileExtension`). A link
  * without one gets `.md` appended (the default the app creates, so `chapter.`
- * becomes `chapter..md`). Image and figure sources without one return null: an
- * upload always has one, so such a ref could never settle, and the caller
- * treats the source as a literal (no ref).
+ * becomes `chapter..md`) when that yields one; a dots-only name (`....`)
+ * never does and returns null. Image and figure sources without one return
+ * null: an upload always has one, so such a ref could never settle. On null
+ * the caller declines assignment and treats the href as a literal (no ref).
  */
 export function aheadAddress(uri: string, kind: "link" | "source"): string | null {
   const parsed = parseContextUri(uri);
   if (!parsed.ok || !parsed.value.path || !/^[a-z][a-z0-9+.-]*:\/\//i.test(uri)) return null;
   const filename = parsed.value.path.slice(parsed.value.path.lastIndexOf("/") + 1);
   if (hasFileExtension(filename)) return parsed.value.normalized;
-  return kind === "link" ? `${parsed.value.normalized}.md` : null;
+  return kind === "link" && hasFileExtension(`${filename}.md`)
+    ? `${parsed.value.normalized}.md`
+    : null;
 }

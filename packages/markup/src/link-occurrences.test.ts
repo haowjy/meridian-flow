@@ -5,6 +5,7 @@
  */
 import {
   type CatalogDocument,
+  hasFileExtension,
   type LinkHolder,
   resolveStoredLink,
   spellStoredLink,
@@ -185,6 +186,7 @@ it("aligns parse spans with walk order for links, images, figures and table anch
   const assigned: [string, "link" | "source", ReturnType<typeof fresh>][] = [
     ["//cdn.example.com/map.png", "source", { kind: "literal" }],
     ["assets/gate.", "source", { kind: "literal" }],
+    ["....", "link", { kind: "literal" }],
     [
       "assets/50%.png",
       "source",
@@ -206,8 +208,15 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       },
     ],
   ];
-  for (const [href, grammar, expected] of assigned)
-    expect.soft(fresh(href, grammar), `fresh ${grammar} ${href}`).toEqual(expected);
+  for (const [href, grammar, expected] of assigned) {
+    const result = fresh(href, grammar);
+    expect.soft(result, `fresh ${grammar} ${href}`).toEqual(expected);
+    // Every ahead address assignment mints is one the registry accepts.
+    if (result.kind === "ahead")
+      expect
+        .soft(hasFileExtension(result.address.slice(result.address.lastIndexOf("/") + 1)), href)
+        .toBe(true);
+  }
   expect
     .soft(
       writtenAddresses(

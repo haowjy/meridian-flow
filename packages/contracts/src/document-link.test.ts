@@ -10,7 +10,7 @@ import {
   spellStoredLink,
   storedHref,
 } from "./document-link.js";
-import { aheadAddress, parseLinkRef } from "./document-ref.js";
+import { aheadAddress, hasFileExtension, parseLinkRef } from "./document-ref.js";
 
 // UUID-shaped ids: refs are UUID-backed, and anything else is malformed.
 const names = [
@@ -315,14 +315,22 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     ["manuscript://book/ch12.mdx", "link", "manuscript://book/ch12.mdx"],
     ["manuscript://book/.hidden", "link", "manuscript://book/.hidden.md"],
     ["manuscript://book/chapter.", "link", "manuscript://book/chapter..md"],
+    ["manuscript://book/....", "link", null],
     ["manuscript://assets/gate.", "source", null],
     ["manuscript://assets/.png", "source", null],
     ["manuscript://assets/gate", "source", null],
     ["manuscript://assets/gate.png", "source", "manuscript://assets/gate.png"],
     ["ch12", "link", null],
   ];
-  for (const [uri, kind, expected] of minted)
-    expect.soft(aheadAddress(uri, kind), `ahead ${kind} ${uri}`).toBe(expected);
+  for (const [uri, kind, expected] of minted) {
+    const address = aheadAddress(uri, kind);
+    expect.soft(address, `ahead ${kind} ${uri}`).toBe(expected);
+    // Every minted address is one the registry accepts.
+    if (address)
+      expect
+        .soft(hasFileExtension(address.slice(address.lastIndexOf("/") + 1)), address)
+        .toBe(true);
+  }
 
   const uuid = "550E8400-E29B-41D4-A716-446655440000";
   const refs: [unknown, ReturnType<typeof parseLinkRef>][] = [
