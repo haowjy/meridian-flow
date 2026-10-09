@@ -37,6 +37,8 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- A stale missing-draft preview no longer closes a review that has already picked up a newer round of changes.
+
 - Discarding a draft on a phone keeps its prose and review header visible while the next document opens, instead of holding a loading message.
 
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.

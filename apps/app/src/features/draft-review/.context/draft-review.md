@@ -178,7 +178,7 @@ input arrives as an action addressed to the draft and compares its generation wi
 | O3 | Read above R that lists changes (a list row always does) | Re-enter it, over any K (the writer's "Applying" included) |
 | O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
 | P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
-| X | The Work's list omits the draft, or a preview says `gone` / 404 | With no K the review ends, unless the newest preview lists changes at R or above, or the session layer holds writer updates for this draft at R or above (an outbox or pending successor carry); K keeps it |
+| X | The Work's list omits the draft, or a preview says `gone` / 404 | An absence addressed below R is ignored. With no K the review ends, unless the newest preview lists changes at R or above, or the session layer holds writer updates for this draft at R or above (an outbox or pending successor carry); K keeps it |
 | S | The editor's room is reset as `superseded` (`branch-generation-stale`, named server close or denial) | The room is cleared and read afresh; the review stays |
 | L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
 | B | Whole-draft batch | Its pending and closed actions carry R at batch start |
@@ -201,7 +201,13 @@ cached read, `keepNewerGeneration`); a completion belongs to one generation;
 `useReviewChanges` and `useInlineReviewSync` list and project only R's preview;
 arrival order does not change the outcome. Row X is the owner's typed
 `reviewAbsent` observation for list omission and gone / 404 preview reads:
-it carries cached preview and pending writer evidence, and the reducer decides
+a cached `gone` carries the generation horizon known when its request began
+(the shown generation, cached preview and listed row), never the generation
+known when its answer arrives. A 404 from room acquisition addresses that
+attempt's generation. The reducer ignores absence below R, so an old `gone`
+cannot cancel an adopted newer row or preview. A fresh `gone` at R still
+closes despite a stale row at R; a row is not a veto on that read.
+The observation carries cached preview and pending writer evidence, and the reducer decides
 against R, so a proposal that has not re-entered yet still counts as the draft being alive. A preview that lists changes
 also gets read afresh; a genuine external close (no proposal at R or above) ends the
 review (a draft-only missing read instead keeps its error destination).
