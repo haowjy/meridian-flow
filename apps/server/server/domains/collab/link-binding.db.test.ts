@@ -4,6 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
+import { extractStoredLinks } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -28,7 +29,6 @@ import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
 import { LinkBindingInsideTransactionError } from "./domain/link-binding.js";
-import { extractStoredLinks } from "./domain/stored-link-extraction.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)(

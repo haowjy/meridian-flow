@@ -314,16 +314,7 @@ export function createWriteReversal(deps: {
     });
     // Undoing a create or copy leaves the document in place; say so, so the
     // model doesn't report it gone. Removed with this note when delete ships.
-    const withShown = {
-      ...result,
-      ...shownEvidence(renderedItems(result.model), {
-        doc: toDocHandle(input.runtime.doc),
-        model,
-        codec: links.codec,
-        scope: links.scope,
-        parser: deps.codec,
-      }),
-    };
+    const withShown = { ...result, ...shownEvidence(renderedItems(result.model), links) };
     if (input.direction === "undo" && input.filePath && isEmptyDocument(input.runtime.doc)) {
       return {
         ...withShown,

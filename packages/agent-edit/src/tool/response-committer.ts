@@ -4,12 +4,7 @@ import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
-import {
-  renderedItems,
-  type ShownRenderSource,
-  shownEvidence,
-  withRunShownLinks,
-} from "../links/shown.js";
+import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -22,7 +17,7 @@ import { mutationMode, responseInteractionContext } from "./interaction-mode.js"
 import type { InternalWriteResult } from "./internal-result.js";
 import { internalResultError, isInternalWriteResult } from "./internal-result.js";
 import { type BoundLinks, bindLinks } from "./link-binding.js";
-import { modelResult } from "./model-result.js";
+import { type AgentEditBlockItem, modelResult } from "./model-result.js";
 import type {
   CommitPreflightInput,
   DestructiveSweepReport,
@@ -252,21 +247,10 @@ export function createResponseCommitter(deps: {
     if (!bound) throw new Error(`Response document ${docBuffer.docId} was not bound for commit.`);
     return bound;
   };
-  /** Receipts and concurrent runs spell from the runtime the save rendered them from. */
-  const shownSource = (docBuffer: ResponseDocumentBuffer): ShownRenderSource => {
-    const links = linksOf(docBuffer);
-    return {
-      doc: toDocHandle(docBuffer.runtime.doc),
-      model: deps.model,
-      codec: links.codec,
-      scope: links.scope,
-      parser: deps.codec,
-    };
-  };
-  const shownLinksOf = (
-    items: Parameters<typeof shownEvidence>[0],
-    docBuffer: ResponseDocumentBuffer,
-  ) => shownEvidence(items, shownSource(docBuffer));
+  /** Receipts and concurrent runs: what the commit binding's codec rendered them as, in its view. */
+  const shownSource = (docBuffer: ResponseDocumentBuffer) => linksOf(docBuffer);
+  const shownLinksOf = (items: readonly AgentEditBlockItem[], docBuffer: ResponseDocumentBuffer) =>
+    shownEvidence(items, shownSource(docBuffer));
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
   const closedResponseOrder: string[] = [];
 
