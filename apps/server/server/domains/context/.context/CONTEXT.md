@@ -274,6 +274,13 @@ currently available to the request owner in the requested project.
 - Adapter `Ok(null)` becomes `not_found`; `permission_denied`,
   `context_unavailable`, and `io_error` stay generic context/backing-store
   faults.
+- Contextual sources pair each adapter with its canonical owner, resolving lazily
+  when needed. Bare resolution, root listing and unscoped search use that same
+  set, including the chat's Scratch whether owned by a Work or lineage.
+- Mutation resolution binds a creation policy from owner, actor and scheme
+  capabilities. Entry creation and intake both enforce it; existing-content
+  writes and same-owner renames are not creation. Untitled allocation and
+  writer location commits remain writer seams.
 - Unscoped `search(query)` fans out across searchable adapters best-effort.
 - A `SearchResult` reports the first matching passages of a file (capped by the
   adapter) plus `matchCount`, the occurrences of the query in that whole file,

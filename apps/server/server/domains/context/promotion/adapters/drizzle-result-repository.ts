@@ -1,11 +1,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  agentDefinitionRevisions,
-  projectResults,
-  threadAgentBindings,
-} from "@meridian/database/schema";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { projectResults } from "@meridian/database/schema";
+import { eq } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -104,29 +100,6 @@ export class DrizzleResultRepository implements ResultRepository {
         ? { kind: "committed" as const, record }
         : { kind: "unknown" as const, error: "Result ID already has different payload" };
     });
-  }
-  async listByProject(projectId: string): Promise<ProjectResultRecord[]> {
-    const rows = await this.db
-      .select({
-        result: projectResults,
-        agentName: sql<
-          string | null
-        >`coalesce(${agentDefinitionRevisions.definition}->'metadata'->>'name', ${agentDefinitionRevisions.slug})`,
-        agentSlug: agentDefinitionRevisions.slug,
-      })
-      .from(projectResults)
-      .leftJoin(threadAgentBindings, eq(threadAgentBindings.threadId, projectResults.threadId))
-      .leftJoin(
-        agentDefinitionRevisions,
-        eq(agentDefinitionRevisions.id, threadAgentBindings.definitionRevisionId),
-      )
-      .where(and(eq(projectResults.projectId, projectId), isNull(projectResults.deletedByWorkId)))
-      .orderBy(desc(projectResults.createdAt));
-    return rows.map((row) => ({
-      ...mapRow(row.result),
-      agentName: row.agentName ?? undefined,
-      agentSlug: row.agentSlug,
-    }));
   }
 }
 export function createDrizzleResultRepository(db: Database): ResultRepository {

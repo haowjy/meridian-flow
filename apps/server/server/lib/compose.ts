@@ -61,7 +61,6 @@ import {
   type ProjectContextAvailabilityPort,
   type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
-  type ResultRepository,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
@@ -304,7 +303,6 @@ export type AppServices = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
-  results: ResultRepository;
   /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
   /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
@@ -369,7 +367,6 @@ export type ProductionAppPorts = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
-  results: ResultRepository;
   promotionService: PromotionService;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
@@ -682,7 +679,6 @@ export async function createProductionAppPorts(input: {
     uploadIntake,
     uploadIdentity,
     figureAssets,
-    results,
     promotionService,
     notices,
     activeDocuments,
@@ -1106,7 +1102,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIntake: ports.uploadIntake,
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
-    results: ports.results,
     fileAccess: ports.fileAccess,
     fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
@@ -1628,14 +1623,6 @@ export function createInMemoryAppServices(): AppServices {
       },
       async getSignedFigureUrl() {
         throw new Error("in-memory figure assets are not implemented");
-      },
-    },
-    results: {
-      async createOrConverge() {
-        throw new Error("in-memory results are not implemented");
-      },
-      async listByProject() {
-        return [];
       },
     },
     fileAccess: createAllowAllFileAccess(),
