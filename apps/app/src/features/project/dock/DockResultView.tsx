@@ -5,12 +5,18 @@
  * but no editor, tab or title menu; the header names it and closes the slot.
  */
 
+import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { PaneTitle } from "../PaneTitle";
 import { displayName, pickIconForMime } from "../shell/ResultsRailSection";
 import { ResultViewerContent } from "../shell/ResultViewerOverlay";
-import type { DockResult } from "./dock-view-store";
 
-export function DockResultView({ projectId, result }: { projectId: string; result: DockResult }) {
+export function DockResultView({
+  projectId,
+  result,
+}: {
+  projectId: string;
+  result: ProjectResultItem;
+}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ResultViewerContent projectId={projectId} result={result} bare />
@@ -18,7 +24,7 @@ export function DockResultView({ projectId, result }: { projectId: string; resul
   );
 }
 
-export function DockResultTitle({ result }: { result: DockResult }) {
+export function DockResultTitle({ result }: { result: ProjectResultItem }) {
   const { Icon } = pickIconForMime(result.mimeType);
   return (
     <div

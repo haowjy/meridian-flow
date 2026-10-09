@@ -67,7 +67,10 @@ export function ScratchFileRow({
   edit?: ScratchFileEdit;
 }) {
   const openFile = useOpenDocumentInDock();
-  const docked = useDockViewStore((state) => state.document?.tab.documentId === file.documentId);
+  const docked = useDockViewStore(
+    (state) =>
+      state.occupant?.kind === "document" && state.occupant.tab.documentId === file.documentId,
+  );
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
   const startRename = edit?.onRename;
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);

@@ -8,20 +8,18 @@ import type { ScreenKey } from "../shell/screens";
 export type DockView = "chat" | "context" | "changes";
 
 /**
- * The one document the dock shows, in place of its views, until it is closed
- * or the writer leaves the screen that opened it. The Editor screen never
- * holds one: there, documents open as tabs.
+ * The one thing the dock shows in place of its views, until it is closed or the
+ * writer leaves what opened it: a document in the standard editor, or a Results
+ * row in a viewer (a result is a promoted artifact read by id, with no tab or
+ * editor). It carries its project, so another project's occupant is never shown.
+ * The Editor screen never holds one: there, documents open as tabs.
  */
-export type DockDocument = { screen: DockDocumentScreen; tab: ServerContextTab };
-type DockDocumentScreen = Exclude<ScreenKey, "context">;
-
-/**
- * A Results row opened in the dock's document slot. A result is a promoted
- * artifact read by id, not a project document, so it has no tab or editor; it
- * shares the slot's rules (it covers the views until closed, and only the Chat
- * screen's rail opens one).
- */
-export type DockResult = ProjectResultItem;
+export type DockOccupant =
+  | { kind: "document"; projectId: string; screen: DockOccupantScreen; tab: ServerContextTab }
+  | { kind: "result"; projectId: string; screen: "chat"; result: ProjectResultItem };
+export type DockDocument = Extract<DockOccupant, { kind: "document" }>;
+export type DockResult = Extract<DockOccupant, { kind: "result" }>;
+type DockOccupantScreen = Exclude<ScreenKey, "context">;
 
 type DockViewSet = {
   /** Ordered segments for the switch. */
@@ -44,42 +42,50 @@ const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
 
 type DockViewState = {
   byScreen: Partial<Record<ScreenKey, DockView>>;
-  document: DockDocument | null;
-  result: DockResult | null;
-  /** The writer picks a view: it replaces a document the dock was showing. */
+  occupant: DockOccupant | null;
+  /**
+   * Bumps on every occupant change (open, replace, close, scope clear). A slow
+   * open reads it before it starts and commits only if it is unchanged.
+   */
+  revision: number;
+  /** The writer picks a view: it replaces an occupant the dock was showing on that screen. */
   setDockView: (screen: ScreenKey, view: DockView) => void;
-  openDocument: (document: DockDocument) => void;
-  openResult: (result: DockResult) => void;
-  /** Closes the slot, whether it holds a document or a result. */
+  open: (occupant: DockOccupant) => void;
   closeDocument: () => void;
-  /** Drop a document that does not belong to where the writer now is. */
-  syncDocumentScope: (screen: ScreenKey, workId: string | null) => void;
+  /** Drop an occupant that does not belong to where the writer now is. */
+  syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
-export const useDockViewStore = create<DockViewState>((set) => ({
-  byScreen: {},
-  document: null,
-  result: null,
-  setDockView: (screen, view) =>
-    set((state) => ({
-      byScreen: { ...state.byScreen, [screen]: view },
-      document: state.document?.screen === screen ? null : state.document,
-      result: screen === "chat" ? null : state.result,
-    })),
-  openDocument: (document) => set({ document, result: null }),
-  openResult: (result) => set({ result, document: null }),
-  closeDocument: () => set({ document: null, result: null }),
-  syncDocumentScope: (screen, workId) =>
-    set((state) => {
-      const { document, result } = state;
-      const keepResult = screen === "chat" ? result : null;
-      if (!document) return keepResult === result ? state : { result: keepResult };
-      // A Work's note belongs to that Work's screen.
-      const stays =
-        document.screen === screen && (screen !== "work" || document.tab.workId === workId);
-      return stays ? state : { document: null, result: keepResult };
-    }),
-}));
+export const useDockViewStore = create<DockViewState>((set) => {
+  const setOccupant = (occupant: DockOccupant | null) =>
+    set((state) => ({ occupant, revision: state.revision + 1 }));
+  return {
+    byScreen: {},
+    occupant: null,
+    revision: 0,
+    setDockView: (screen, view) =>
+      set((state) => {
+        const cleared = state.occupant?.screen === screen;
+        return {
+          byScreen: { ...state.byScreen, [screen]: view },
+          ...(cleared ? { occupant: null, revision: state.revision + 1 } : {}),
+        };
+      }),
+    open: setOccupant,
+    closeDocument: () => setOccupant(null),
+    syncOccupantScope: (projectId, screen, workId) =>
+      set((state) => {
+        const { occupant } = state;
+        if (!occupant) return state;
+        // A Work's note belongs to that Work's screen.
+        const stays =
+          occupant.projectId === projectId &&
+          occupant.screen === screen &&
+          (screen !== "work" || (occupant.kind === "document" && occupant.tab.workId === workId));
+        return stays ? state : { occupant: null, revision: state.revision + 1 };
+      }),
+  };
+});
 
 export type ResolvedDockView = {
   view: DockView;
@@ -108,7 +114,10 @@ export function withoutEmptyChanges(
 }
 
 /** Resolve the active dock view for a screen and bind the switch action. */
-export function useDockView(screen: ScreenKey): ResolvedDockView & {
+export function useDockView(
+  screen: ScreenKey,
+  projectId: string,
+): ResolvedDockView & {
   setView: (view: DockView) => void;
   /** The document replacing the views on this screen, if any. */
   document: DockDocument | null;
@@ -118,16 +127,17 @@ export function useDockView(screen: ScreenKey): ResolvedDockView & {
 } {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
   const setDockView = useDockViewStore((state) => state.setDockView);
-  const document = useDockViewStore((state) =>
-    state.document?.screen === screen ? state.document : null,
+  const occupant = useDockViewStore((state) =>
+    state.occupant?.screen === screen && state.occupant.projectId === projectId
+      ? state.occupant
+      : null,
   );
-  const result = useDockViewStore((state) => (screen === "chat" ? state.result : null));
   const closeDocument = useDockViewStore((state) => state.closeDocument);
   return {
     ...resolveDockView(screen, stored),
     setView: (next) => setDockView(screen, next),
-    document,
-    result,
+    document: occupant?.kind === "document" ? occupant : null,
+    result: occupant?.kind === "result" ? occupant : null,
     closeDocument,
   };
 }

@@ -11,6 +11,7 @@
 import { useCallback } from "react";
 import type { ServerContextTab } from "@/client/stores";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
@@ -19,18 +20,19 @@ import { useDockViewStore } from "./dock-view-store";
 export function useOpenScratchNote() {
   const screen = useProjectScreen();
   const phone = usePhoneShell();
-  const openDocument = useDockViewStore((state) => state.openDocument);
+  const projectId = useProjectDocumentNavigationProjectId();
+  const open = useDockViewStore((state) => state.open);
   const openInEditor = useOpenDocumentInEditor();
   const { revealDock } = useChatNavigation();
   return useCallback(
     (tab: ServerContextTab) => {
-      if (screen === "chat" && !phone) {
-        openDocument({ screen, tab });
+      if (screen === "chat" && !phone && projectId) {
+        open({ kind: "document", projectId, screen, tab });
         revealDock("document");
         return;
       }
       openInEditor(tab);
     },
-    [openDocument, openInEditor, phone, revealDock, screen],
+    [open, openInEditor, phone, projectId, revealDock, screen],
   );
 }

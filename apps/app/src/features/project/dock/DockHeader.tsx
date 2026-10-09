@@ -83,7 +83,7 @@ export function DockHeader({
         {dockDocument ? (
           <DockDocumentTitle projectId={projectId} document={dockDocument} />
         ) : dockResult ? (
-          <DockResultTitle result={dockResult} />
+          <DockResultTitle result={dockResult.result} />
         ) : (
           <>
             {view === "chat" ? threadSelect : null}

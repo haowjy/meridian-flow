@@ -59,6 +59,11 @@ export function MobileProject(props: MobileProjectProps) {
   useDockReveal((view) => openChatSheet(view));
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [scratchOpen, setScratchOpen] = useState(false);
+  // The sheet belongs to the chat it was opened for: leaving that chat (or the
+  // chat screen) closes it rather than leaving a request for the next chat.
+  const scratchChatId = displayedChatThreadId(props.chatDisplay);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the chat id is the trigger, not an input.
+  useEffect(() => setScratchOpen(false), [scratchChatId]);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
   const localTab =

@@ -34,7 +34,7 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
   // Results live at the project scope (artifact persistence outlives any
   // single chat), so the rail tracks `projectId` independently of the thread.
   const results = useResultsRailModel(projectId);
-  const openResult = useDockViewStore((state) => state.openResult);
+  const openOccupant = useDockViewStore((state) => state.open);
   const openDocumentId = useOpenDocumentIdInDock(projectId ?? "");
 
   return (
@@ -61,7 +61,15 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
             }}
           />
           <CollapsibleRailSection title={t`Results`} icon={Sparkles} defaultOpen>
-            <ResultsRailBody projectId={projectId} model={results} onOpenResult={openResult} />
+            <ResultsRailBody
+              projectId={projectId}
+              model={results}
+              onOpenResult={(result) =>
+                projectId
+                  ? openOccupant({ kind: "result", projectId, screen: "chat", result })
+                  : undefined
+              }
+            />
           </CollapsibleRailSection>
         </div>
       </DockShell>

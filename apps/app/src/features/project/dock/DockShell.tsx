@@ -54,7 +54,7 @@ export function DockShell({
   renderHeader,
   children,
 }: DockShellProps) {
-  const dockView = useDockView(screen);
+  const dockView = useDockView(screen, projectId);
   const { groups } = useDraftReview();
   const hasChanges = hasDockChanges(groups);
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
@@ -103,7 +103,7 @@ export function DockShell({
         {overlay === "changes" ? <DockChangesView className="absolute inset-0" /> : null}
         {overlay === "result" && dockResult ? (
           <div className="absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden">
-            <DockResultView projectId={projectId} result={dockResult} />
+            <DockResultView projectId={projectId} result={dockResult.result} />
           </div>
         ) : null}
         {overlay === "document" && dockDocument ? (
