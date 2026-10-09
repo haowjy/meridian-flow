@@ -7,7 +7,7 @@ export function resolveDocumentHref(
   href: string,
   baseUri: string | null,
 ): ResolvedDocumentHref | null {
-  const { path: rawPath, suffix } = splitSuffix(href);
+  const { path: rawPath, suffix } = splitDocumentHrefSuffix(href);
   if (!rawPath || rawPath.startsWith("/") || rawPath.endsWith("/")) return null;
   const path = decodePath(rawPath);
   if (path === null || !path) return null;
@@ -67,7 +67,7 @@ export function respellDocumentHref(
   href: string,
   { holderUri, targetUri }: { holderUri: string | null; targetUri: string },
 ): string {
-  const { path: rawPath, suffix } = splitSuffix(href);
+  const { path: rawPath, suffix } = splitDocumentHrefSuffix(href);
   const path = decodePath(rawPath);
   if (path === null || !path || rawPath.startsWith("/") || rawPath.endsWith("/"))
     throw new RangeError(`Invalid document href: ${href}`);
@@ -138,7 +138,8 @@ export function matchDocumentPath<T>(
   return loose.length === 1 ? (loose[0] ?? null) : null;
 }
 
-function splitSuffix(value: string): { path: string; suffix: string } {
+/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
+export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
   const index = value.search(/[?#]/);
   return index < 0
     ? { path: value, suffix: "" }
