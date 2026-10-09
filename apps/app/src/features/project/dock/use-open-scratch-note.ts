@@ -1,5 +1,5 @@
 /**
- * Opens a note picked from a chat's Scratch menu next to that chat.
+ * Opens a note picked from the rail's Scratch section next to that chat.
  *
  * The chat is in the middle on the Chat screen, so the note opens in the
  * dock's document, covering the context rail until closed. Everywhere else the

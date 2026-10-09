@@ -36,7 +36,13 @@ const manuscript = area("area:manuscript", "Manuscript", {
     { entryId: "ch", kind: "file", name: "ch.md", path: "/Act/ch.md", parent: "act" },
   ]),
 });
-const uploads = area("area:document", "Uploads", { listed: false, scheme: "uploads" });
+const uploads = area("area:document", "Uploads", {
+  listed: false,
+  scheme: "uploads",
+  catalog: catalog("u", [
+    { entryId: "map", kind: "file", name: "map.png", path: "/map.png", parent: "u" },
+  ]),
+});
 
 describe("a document menu's tree", () => {
   it("offers the listed areas at the root and keeps an unlisted one reachable", () => {
@@ -46,7 +52,8 @@ describe("a document menu's tree", () => {
       rooted: true,
     });
     expect(tree.children(null).map((node) => node.name)).toEqual(["Manuscript"]);
-    expect(tree.children("area:document")).toEqual([]);
+    // The open document's own area is held but not offered: it lists its files when asked.
+    expect(tree.children("area:document").map((node) => node.name)).toEqual(["map.png"]);
   });
 
   it("climbs: the open document's trail is its area then its folders, and each step lists in place", () => {

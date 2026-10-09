@@ -5,7 +5,6 @@
  * (it stays mounted underneath) until the document is closed.
  */
 import { t } from "@lingui/core/macro";
-import type { DocumentFileType } from "@meridian/contracts/protocol";
 import { Clock } from "lucide-react";
 
 import type { ListQueryStatus } from "@/client/query/list-query";
@@ -20,7 +19,7 @@ import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from
 export type ContextSidebarProps = {
   /** Active thread; when null, sections render their disabled empty state. */
   threadId: string | null;
-  /** Active project; powers the Results section (project-scoped, not thread-scoped). */
+  /** Active project, which Recent documents open in. */
   projectId: string | null;
   /** Whether the rail's dock is open; a collapsed dock's document editor stands down. */
   visible: boolean;
@@ -66,8 +65,6 @@ type RailDocument = {
   documentId: string;
   name: string;
   extension: string;
-  editable: boolean;
-  fileType: DocumentFileType | null;
 };
 
 type RailMessages = {

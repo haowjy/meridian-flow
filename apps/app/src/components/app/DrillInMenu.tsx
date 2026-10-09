@@ -5,13 +5,13 @@
  * tree's source. A divider then separates the tree from the actions.
  *
  * The component takes a tree source and an action list, so the dock's
- * document title and the rail's Scratch control can share it. It owns only the
- * drill state; picking an entry and running an action belong to the caller.
+ * document title and any other tree source can share it (the rail's Scratch
+ * section draws the same tree data as rows). It owns only the drill state; picking an entry and running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
-import { type ReactElement, type RefObject, useCallback, useRef, useState } from "react";
+import { type ReactElement, useCallback, useRef, useState } from "react";
 
 import {
   DropdownMenu,
@@ -59,8 +59,6 @@ export type DrillInMenuProps = {
   openAt: readonly DrillNode[];
   actions: readonly DrillAction[];
   onPick: (node: DrillNode) => void;
-  /** Where focus goes when the menu closes without an action; defaults to the trigger. */
-  returnFocusRef?: RefObject<HTMLElement | null>;
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
 };
@@ -71,7 +69,6 @@ export function DrillInMenu({
   openAt,
   actions,
   onPick,
-  returnFocusRef,
   children,
 }: DrillInMenuProps) {
   const [open, setOpen] = useState(false);
@@ -117,9 +114,6 @@ export function DrillInMenu({
           if (action) {
             event.preventDefault();
             action.onSelect();
-          } else if (returnFocusRef?.current) {
-            event.preventDefault();
-            returnFocusRef.current.focus();
           }
         }}
       >

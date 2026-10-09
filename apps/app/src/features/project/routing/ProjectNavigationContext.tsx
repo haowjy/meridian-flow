@@ -73,11 +73,6 @@ export function useIsCurrentContextRoute() {
   return useContext(ProjectNavigationContext)?.isCurrentContextRoute;
 }
 
-/** The screen, or undefined outside a project route (chat rendered on its own). */
-export function useOptionalProjectScreen(): ScreenKey | undefined {
-  return useContext(ProjectNavigationContext)?.screen;
-}
-
 export function useProjectScreen(): ScreenKey {
   const screen = useContext(ProjectNavigationContext)?.screen;
   if (!screen) throw new Error("Project screen navigation is required");

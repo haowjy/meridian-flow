@@ -2,7 +2,7 @@
  * A chat's Scratch owner: its named Work, or its lineage when it is on No Work.
  *
  * The one rule behind a bare `scratch://` in a chat, the chat's `@` picker
- * and link scope, and the header's Scratch menu. A lineage is the first chat
+ * and link scope, and the rail's Scratch section. A lineage is the first chat
  * and every fork and subagent sharing its `rootThreadId`; a handoff starts its own.
  */
 import type { Thread, Work } from "@meridian/contracts/protocol";
