@@ -21,7 +21,6 @@ import {
 import {
   type CatalogDocument,
   type ContextUriScheme,
-  canonicalContextUri,
   type LinkView,
   matchDocumentPath,
   parseContextUri,
@@ -39,7 +38,11 @@ import type {
   ScopePrepareRequest,
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
-import { catalogSourceAuthority } from "./catalog-file-mapper.js";
+import {
+  type DocumentAddressSelection,
+  listsThroughLiveManifest,
+  loadDocumentAddresses,
+} from "./document-address.js";
 
 /** Manifest membership of one view (the resolver ContextFS lists through). */
 export type LinkScopeMembership = (input: {
@@ -52,7 +55,7 @@ export type LinkScopeMembership = (input: {
 
 type Row = {
   id: string;
-  projectId: string | null;
+  projectId: string;
   scheme: ContextUriScheme;
   /** Path inside its source, with extension. */
   path: string;
@@ -86,9 +89,6 @@ type Snapshot = {
   /** View key → member ids; absent until a row needs it. */
   membership: Map<string, ReadonlySet<string>>;
 };
-
-/** Sources whose listing goes through the project manifest (drafted, not personal). */
-const MANIFEST_SCHEMES = new Set<ContextUriScheme>(["manuscript", "kb", "unfiled"]);
 
 const memberKey = (key: LinkScopeKey) =>
   "projectId" in key
@@ -192,7 +192,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     }
 
     const newIds = [...ids].filter((id) => !snapshot.rows.has(id));
-    const loadedById = await loadRows(sql`d.id IN (${uuidList(newIds.filter(isUuid))})`, newIds);
+    const loadedById = await loadRows({ ids: newIds });
     for (const id of newIds) snapshot.rows.set(id, null);
     for (const row of loadedById) remember(snapshot, row);
 
@@ -231,91 +231,27 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const projects = [snapshot.projectId, snapshot.personalProjectId].filter(
       (id): id is string => id !== null,
     );
-    if (names.size > 0 && projects.length > 0) {
-      const rows = await loadRows(
-        sql`d.name IN (${sql.join(
-          [...names].map((name) => sql`${name}`),
-          sql`, `,
-        )}) AND d.context_source_id IN (
-          SELECT cs.id FROM context_sources cs LEFT JOIN works w ON w.id = cs.work_id
-          WHERE COALESCE(cs.project_id, w.project_id) IN (${uuidList(projects)}))`,
-        null,
-      );
-      for (const row of rows) if (!snapshot.rows.get(row.id)) remember(snapshot, row);
-    }
+    const rows = await loadRows({ names: [...names], projectIds: projects });
+    for (const row of rows) if (!snapshot.rows.get(row.id)) remember(snapshot, row);
     for (const uri of uris) snapshot.addresses.add(uri);
   }
 
-  /**
-   * Documents and their canonical URIs: each folder chain walked up to its
-   * source root, deleted rows included (a deleted ancestor deletes the row).
-   */
-  async function loadRows(filter: SQL, ids: readonly string[] | null): Promise<Row[]> {
-    if (ids && ids.filter(isUuid).length === 0) return [];
-    const rows = await currentDrizzleDb(db).execute<{
-      id: string;
-      project_id: string | null;
-      scheme: string;
-      work_id: string | null;
-      work_slug: string | null;
-      is_no_work: boolean | null;
-      path: string;
-      deleted: boolean;
-      image: boolean;
-    }>(sql`
-      WITH RECURSIVE candidates AS (
-        SELECT d.id, d.name, d.extension, d.folder_id, d.context_source_id, d.file_type,
-          d.deleted_at IS NOT NULL AS deleted
-        FROM documents d WHERE d.kind = 'content' AND ${filter}
-      ),
-      up AS (
-        SELECT c.id AS document_id, c.folder_id AS folder_id, ''::text AS path, false AS deleted
-        FROM candidates c
-        UNION ALL
-        SELECT u.document_id, f.parent_id, f.name || '/' || u.path,
-          u.deleted OR f.deleted_at IS NOT NULL
-        FROM up u JOIN folders f ON f.id = u.folder_id
-      )
-      SELECT c.id::text AS id,
-        COALESCE(cs.project_id, w.project_id)::text AS project_id,
-        cs.slug AS scheme, cs.work_id::text AS work_id, w.slug AS work_slug,
-        w.is_no_work AS is_no_work,
-        up.path || c.name || CASE WHEN c.extension = '' THEN '' ELSE '.' || c.extension END AS path,
-        c.deleted OR up.deleted OR cs.deleted_at IS NOT NULL OR w.deleted_at IS NOT NULL
-          AS deleted,
-        c.file_type = 'image' AS image
-      FROM candidates c
-      JOIN up ON up.document_id = c.id AND up.folder_id IS NULL
-      JOIN context_sources cs ON cs.id = c.context_source_id
-      LEFT JOIN works w ON w.id = cs.work_id
-    `);
-    return rows.flatMap((row): Row[] => {
-      const scheme = row.scheme as ContextUriScheme;
-      let uri: string;
-      try {
-        uri = canonicalContextUri(
-          scheme,
-          row.path,
-          catalogSourceAuthority(scheme, row.work_id, row.is_no_work ? null : row.work_slug),
-        );
-      } catch {
-        return [];
-      }
-      const filename = row.path.slice(row.path.lastIndexOf("/") + 1);
+  /** Documents and the canonical URIs their folder chains spell, deleted rows included. */
+  async function loadRows(selection: DocumentAddressSelection): Promise<Row[]> {
+    return (await loadDocumentAddresses(db, selection)).map((address) => {
+      const filename = address.path.slice(address.path.lastIndexOf("/") + 1);
       const dot = filename.lastIndexOf(".");
-      return [
-        {
-          id: row.id,
-          projectId: row.project_id,
-          scheme,
-          path: row.path,
-          uri,
-          stem: dot > 0 ? uri.slice(0, uri.length - (filename.length - dot)) : null,
-          deleted: row.deleted,
-          image: row.image,
-          manuscript: scheme === "manuscript" && row.work_id === null,
-        },
-      ];
+      return {
+        id: address.documentId,
+        projectId: address.projectId,
+        scheme: address.scheme,
+        path: address.path,
+        uri: address.uri,
+        stem: dot > 0 ? address.uri.slice(0, address.uri.length - (filename.length - dot)) : null,
+        deleted: address.deleted,
+        image: address.image,
+        manuscript: address.scheme === "manuscript" && address.lockWorkId === null,
+      };
     });
   }
 
@@ -349,7 +285,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         row !== null &&
         !row.deleted &&
         row.projectId === projectId &&
-        MANIFEST_SCHEMES.has(row.scheme),
+        listsThroughLiveManifest(row.scheme),
     );
     if (!governed) return;
     await members(snapshot, "live", { projectId });
@@ -503,7 +439,8 @@ function snapshotCatalog(
 ): HolderCatalog {
   const presence = (row: Row): CatalogDocument["presence"] | null | typeof UNLOADED => {
     if (row.deleted) return "deleted";
-    if (row.projectId !== snapshot.projectId || !MANIFEST_SCHEMES.has(row.scheme)) return "live";
+    if (row.projectId !== snapshot.projectId || !listsThroughLiveManifest(row.scheme))
+      return "live";
     const live = snapshot.membership.get("live");
     const own = snapshot.membership.get(viewKey(view));
     if (!live || !own) {
@@ -521,14 +458,13 @@ function snapshotCatalog(
     if (present === null) return null;
     return {
       documentId: row.id,
-      projectId: row.projectId ?? "",
+      projectId: row.projectId,
       uri: row.uri,
       presence: present,
       readable: snapshot.readable.get(row.id) ?? false,
       nameable:
-        row.projectId !== null &&
-        (row.projectId === snapshot.projectId ||
-          (row.projectId === snapshot.personalProjectId && row.scheme === "user")),
+        row.projectId === snapshot.projectId ||
+        (row.projectId === snapshot.personalProjectId && row.scheme === "user"),
     };
   };
   const reachable = (document: CatalogDocument | null): document is CatalogDocument =>
