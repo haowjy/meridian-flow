@@ -105,16 +105,15 @@ The chip and header are mutually exclusive by the chip's own inline-review
 check, not by a shared slot. Both read the same `shown` flag, so the swap
 happens in one frame.
 
-**Entry hold.** Entering review holds the plain live view, header included,
-until the review editor exists AND its change marks have arrived, then switches
-everything in one frame. `EditorView` reports `chromeShown` to the controller
-in a layout effect (`setInlineReviewShown`); the live wrapper hides, the review
-wrapper shows and the header mounts in the same paint. If the marks never
-arrive the review shows anyway after 1.5 s (`REVIEW_MARKS_WAIT_MS`). A
-draft-only tab has no live view to hold and reports shown at once. Wrappers
-carry `data-editor-surface="live|review"` for frame probes. A move between two
-drafts' reviews is held the same way by `features/project/dock/review-handover`
-(see `features/draft-review/AGENTS.md`).
+**Paint hold.** Pane continuity belongs to the shared
+[`PaintHold`](../../../components/app/PaintHold.md). `EditorView` chooses terminal
+notices before settled live, painted review, requested-but-pending review, or
+ordinary live. Warm live and constructing review surfaces stay mounted in
+inactive paint scopes. A requested review waits for its editor and marks (or
+1.5 s), including draft-only entry. `setInlineReviewShown(reviewVisible ||
+settled)` still synchronizes the body, header and completion focus in layout.
+A draft-only tab without a review shows a terminal Close card. Surface wrappers
+carry `data-editor-surface="live|review"`; the inert copy is `data-paint-hold`.
 
 The review manuscript is the server draft projection plus decorations, in the
 manner of suggestion mode. Insertions are inline decorations over text that
