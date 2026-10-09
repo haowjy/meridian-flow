@@ -21,12 +21,7 @@
  *   server.
  */
 
-import {
-  type DocumentLinkAnswer,
-  parseLinkRef,
-  resolveDocumentHref,
-  resolveStoredLink,
-} from "@meridian/contracts";
+import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -35,8 +30,8 @@ import {
   type DocumentAnswer,
   type InternalLinkResolver,
   type LinkAnswer,
-  type LinkTarget,
   type LocalLinkAnswer,
+  linkTargetAddress,
   linkTargetHref,
 } from "@/core/editor/links";
 
@@ -91,7 +86,7 @@ export function createProjectLinkResolver(
       let provisional: DocumentAnswer | null = null;
       if (resolution.kind === "gone") return answered(GONE);
       if (resolution.kind === "address") {
-        const uri = addressOf(target, baseUri);
+        const uri = linkTargetAddress(target, baseUri);
         const document = uri ? catalog.documentFor(uri) : null;
         const answer = document ? indexedAnswer(document.documentId) : null;
         if (answer) return answered(answer);
@@ -129,17 +124,6 @@ export function createProjectLinkResolver(
       });
     },
   };
-}
-
-/** A no-ref link's decoded address, or null when it has none. */
-function addressOf(target: LinkTarget, baseUri: string | null): string | null {
-  const resolved =
-    target.kind === "scheme"
-      ? resolveDocumentHref(target.uri, null)
-      : target.kind === "relative"
-        ? resolveDocumentHref(target.path, baseUri)
-        : null;
-  return resolved?.uri ?? null;
 }
 
 /**
