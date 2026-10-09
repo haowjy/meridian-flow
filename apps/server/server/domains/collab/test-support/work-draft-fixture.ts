@@ -21,7 +21,6 @@ import {
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
 import {
@@ -54,7 +53,6 @@ export function createWorkDraftFixture(db: Database) {
       fileAccess: createAllowAllFileAccess(),
       db,
       workProjectionMutation: createTestWorkProjectionMutation(db),
-      workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
     });
     manifest.bind(collab);
     collabs.push(collab);

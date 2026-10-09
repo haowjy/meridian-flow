@@ -64,10 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/agent-edit/integration"
     );
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
-    const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import(
-      "../../../projects/index.js"
-    );
+    const { createDocumentLastAddress } = await import("../../../context/document-uri-resolver.js");
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
     );
@@ -211,9 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           serializer,
           createDrizzleDocumentProjectionEffects(db),
           changeTrails,
-          createDrizzleDocumentDerivationStore(db, (tx, id) =>
-            resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-          ),
+          createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
         ),
       };
     };

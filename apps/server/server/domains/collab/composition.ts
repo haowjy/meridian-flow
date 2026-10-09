@@ -14,12 +14,15 @@ import {
   runOutsideWrite,
 } from "../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
-import { createDocumentUriResolver, resolveDocumentUri } from "../context/document-uri-resolver.js";
+import {
+  createDocumentLastAddress,
+  createDocumentUriResolver,
+} from "../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
-import type { ProjectWorkAuthorityResolver, WorkProjectionMutation } from "../projects/index.js";
+import type { WorkProjectionMutation } from "../projects/index.js";
 import {
   createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
@@ -132,7 +135,6 @@ type CollabDomainDeps = {
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
-  workAuthorityResolver: ProjectWorkAuthorityResolver;
   workProjectionMutation: WorkProjectionMutation;
   /**
    * Confirms writes' grants under lock where they become durable (file-access
@@ -190,7 +192,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
 
-  const documentUriResolver = createDocumentUriResolver(deps.db, deps.workAuthorityResolver);
+  const documentUriResolver = createDocumentUriResolver(deps.db);
   const documentPresentation = createDocumentPresentationResolver(documentUriResolver);
   const lookups = createDrizzleCollabLookups(deps.db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(deps.db);
@@ -202,7 +204,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const noticeDiagnostics = createReversalNoticeDiagnostics(deps.eventSink);
   const derivationStore = createDrizzleDocumentDerivationStore(
     deps.db,
-    (tx, documentId) => resolveDocumentUri(tx, deps.workAuthorityResolver, documentId),
+    createDocumentLastAddress(deps.db),
     deps.aheadRegistrations
       ? {
           registry: deps.aheadRegistrations,

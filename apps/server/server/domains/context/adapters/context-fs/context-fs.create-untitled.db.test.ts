@@ -16,7 +16,6 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../../collab/test-support/document-link-scopes.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../../projects/index.js";
 import { ContextFS } from "./context-fs.js";
 import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
@@ -63,7 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
