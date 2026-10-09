@@ -128,8 +128,15 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     mounted: files.length > 0,
     notes,
     changeCount: totalChanges(files),
-    /** Apply and Discard are offered while something can still be actionable: a preview unread, or a change they take. */
-    showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
+    /**
+     * Apply and Discard are offered while something can still be actionable: a
+     * change they take, or an unread preview of a file the list does not already
+     * call a new document (that file never joins them, so waiting on it would
+     * paint the commands only to remove them).
+     */
+    showCommands:
+      actionableFiles.length > 0 ||
+      files.some((file) => file.status !== "ready" && !file.newDocument),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     /** Review is held while a whole-draft command is running in this Work. */
     reviewBusy: controller.isDisposing,
