@@ -35,8 +35,8 @@ import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
-import { linkStateAttributes } from "../links/link-resolution-decorations";
-import { mountedLinkAnswerCache } from "../links/link-storage";
+import { drawLinkAnswer } from "../links/link-mark-view";
+import { mountedLinks } from "../links/link-storage";
 import {
   classifyLinkTarget,
   internalClipboardTarget,
@@ -338,10 +338,10 @@ export const MeridianLink = Link.extend({
 
   /**
    * Rendered, not stored: `data-link-kind` is what lets CSS give an external
-   * link its trailing arrow. An internal link's chip comes from the
-   * resolution decorations inside this `<a>`, never from the mark. It is
-   * absent from `addAttributes`, so it never reaches the schema, the wire
-   * format, or another peer's document.
+   * link its trailing arrow. An internal link's chip is drawn by the mark
+   * view (`addMarkView`), never from the mark. It is absent from
+   * `addAttributes`, so it never reaches the schema, the wire format, or
+   * another peer's document.
    *
    * It replaces TipTap's own renderHTML, so it also carries TipTap's fence:
    * an href the classifier does not recognize renders with no destination.
@@ -358,9 +358,9 @@ export const MeridianLink = Link.extend({
 
   /**
    * The same `<a>` as `renderHTML` (which clipboard HTML still uses), plus
-   * its resolution state in accessible form (`linkStateAttributes`). Those
-   * attributes are set on the live element, so its own attribute mutations
-   * are not a document change.
+   * its answer: the chip and its accessible state (`drawLinkAnswer`), the
+   * only place a link's answer is drawn. Those attributes are set on the live
+   * element, so its own attribute mutations are not a document change.
    */
   addMarkView() {
     const { editor, options } = this;
@@ -371,13 +371,13 @@ export const MeridianLink = Link.extend({
         0,
       ]);
       const element = dom as HTMLElement;
-      const resolution = mountedLinkAnswerCache(editor);
-      const unsubscribe = linkStateAttributes(element, mark.attrs, resolution);
+      // A changed ref or href is a different mark, and a new view.
+      const release = drawLinkAnswer(element, mark.attrs, mountedLinks(editor));
       return {
         dom: element,
         contentDOM,
         ignoreMutation: (mutation) => mutation.type === "attributes" && mutation.target === element,
-        destroy: unsubscribe,
+        destroy: release,
       };
     };
   },

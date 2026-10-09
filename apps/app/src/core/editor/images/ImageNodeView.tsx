@@ -40,7 +40,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useAssetImageRenderState } from "../asset-image-render-state";
-import { mountedLinkAnswerCache } from "../links";
+import { mountedLinks } from "../links";
 import { objectSelectedInDecorations } from "../objects";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { imageWidthAttr } from "./image-resize";
@@ -60,7 +60,7 @@ export function ImageNodeView(props: NodeViewProps) {
     projectId,
     src,
     ref: props.node.attrs.ref,
-    resolution: mountedLinkAnswerCache(props.editor),
+    links: mountedLinks(props.editor),
   });
   const pending = pendingUploadFromDecorations(props.decorations);
   const mine = pending?.owner === "mine" ? pending.entry : null;

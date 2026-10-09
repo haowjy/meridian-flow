@@ -5,8 +5,8 @@
  * A picture names a document one of two ways. An upload stores `asset:<id>`.
  * A picture written as an address stores a `ref` (`doc:`/`ahead:`) beside it,
  * and that ref is answered by the editor's link cache like any link's: the
- * same `(ref, href)` key, the same local rule and settlement memo, asked by
- * the same document scan (`links/link-resolution-decorations.ts`). A
+ * same `(ref, href)` key, the same local rule and settlement memo, asked
+ * through the editor's one requester while the picture is mounted. A
  * ref-less source that is a document address (`uploads://seal.png`) is asked
  * by its address, as a ref-less link is. A document answer draws exactly as
  * an `asset:` picture does. A web or `data:` source renders as written.
@@ -33,6 +33,7 @@ import {
   type LinkKey,
   type LinkResolutionEntry,
   linkCacheKey,
+  type MountedLinks,
   pictureKeyOfNode,
 } from "./links";
 
@@ -60,8 +61,8 @@ type PictureTarget =
   | { kind: "unavailable"; message: string };
 
 /**
- * Not asked yet: no resolver is registered, or a new registration's scan has
- * not reached this picture. Distinct from a failed question (null).
+ * Not asked yet: no resolver is registered, or the requester has not asked
+ * this generation about the picture. Distinct from a failed question (null).
  */
 const UNASKED = "unasked" as const;
 const noSubscription = () => () => {};
@@ -165,10 +166,12 @@ export function useAssetImageRenderState(input: {
   src: string;
   /** The picture's stored `ref`, as the node holds it. */
   ref?: unknown;
-  /** The editor's link cache, which answers the ref. */
-  resolution?: LinkAnswerCache | null;
+  /** The editor's link cache, which answers the ref, and its requester. */
+  links?: MountedLinks | null;
 }): [AssetImageRenderState, AssetImageRenderActions] {
-  const { projectId, src, resolution = null } = input;
+  const { projectId, src } = input;
+  const resolution = input.links?.resolution ?? null;
+  const requester = input.links?.requester ?? null;
   const stored = pictureKeyOfNode({ ref: input.ref, src });
   // Stable across renders while the stored link is: the subscription and the
   // retry belong to the key, not to a fresh object.
@@ -178,6 +181,8 @@ export function useAssetImageRenderState(input: {
     () => (keyLink ? { ref: keyRef, href: keyLink } : null),
     [keyRef, keyLink],
   );
+  // Asked about while shown, and released on unmount or when the key changes.
+  useEffect(() => (key && requester ? requester.watch(key) : undefined), [key, requester]);
   const target = usePictureTarget(src, key, resolution);
   const targetIdentity = pictureTargetIdentity(target);
   const assetDocumentId = target.kind === "document" ? target.documentId : null;
