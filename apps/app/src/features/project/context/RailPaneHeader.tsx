@@ -12,7 +12,6 @@ export function RailPaneHeader({
   title,
   expanded,
   onExpandedChange,
-  opensUp = false,
   actions,
 }: {
   /** Header text, rendered in UPPERCASE at the tree rows' `text-sm` scale. */
@@ -26,8 +25,6 @@ export function RailPaneHeader({
   expanded: boolean;
   /** Click toggles; ArrowLeft/ArrowRight force collapse/expand. */
   onExpandedChange: (expanded: boolean) => void;
-  /** A header pinned below its pane: the open twistie points up, at the rows above it. */
-  opensUp?: boolean;
   /** Hover-revealed `PaneHeaderActionButton`s; hidden while collapsed. */
   actions?: React.ReactNode;
 }) {
@@ -50,10 +47,7 @@ export function RailPaneHeader({
         <span className="flex w-4 shrink-0 items-center justify-center text-muted-foreground">
           <ChevronRight
             aria-hidden
-            className={cn(
-              "size-3 transition-transform",
-              expanded && (opensUp ? "-rotate-90" : "rotate-90"),
-            )}
+            className={cn("size-3 transition-transform", expanded && "rotate-90")}
           />
         </span>
         {/* Tree-row icon scale: size-3.5 glyph in a w-4 slot, matching
