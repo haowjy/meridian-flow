@@ -29,7 +29,7 @@ A surface supplies three things, and everything between is here:
   no editor kernel uses `LinkFollowDialog`.
 
 Two surfaces use this today: the Editor (`ProjectLinkRuntime`, over its
-per-editor decoration cache) and chat (`features/chat/useChatLinkFollowing.ts`,
+per-editor link cache) and chat (`features/chat/useChatLinkFollowing.ts`,
 whose header holds chat's own rules, over a cache the chat owns and its
 transcript draws chips from). Either way, what a link draws and what a click
 finds come from the same cache.
