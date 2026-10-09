@@ -41,11 +41,17 @@ runtime shapes, and observability records.
   `#` or `%` in a filename silently names another document.
 - `document-ref.ts` owns the stored link ref grammar (`doc:<uuid>`,
   `ahead:<uuid>`; `parseLinkRef` accepts only canonical UUIDs via
-  `parseRequestId`, so a malformed ref is gone and never reaches a lookup),
-  the only ahead-ref mint, and `aheadAddress`. `document-link.ts` owns the one
-  stored-link resolution (`resolveStoredLink` over a host `LinkCatalog`), the
-  one written-link classifier (`classifyWrittenLink`/`classifyWrittenSource`;
-  the single definition of "contextual"), and the speller (`spellStoredLink`).
+  `parseRequestId`, so a malformed ref is gone and never reaches a lookup;
+  `storedLinkRef` keeps a present malformed attr as a ref so it reaches
+  resolution as gone instead of falling back to its address), the only
+  ahead-ref mint, and `aheadAddress` with `hasFileExtension`, the one rule for
+  what address an ahead ref may be registered at (mint and registry alike).
+  `document-link.ts` owns the one stored-link resolution (`resolveStoredLink`
+  over a host `LinkCatalog`), the one written-link classifier
+  (`classifyWrittenLink`/`classifyWrittenSource`; the single definition of
+  "contextual", and the whole source grammar: a raw `%` is a literal
+  manuscript path, protocol-relative `//host/x` is external; no caller
+  reclassifies), and the speller (`spellStoredLink`).
   Addresses (`CatalogDocument.uri`, a classified `uri`, `aheadAddress`,
   registry keys) are decoded canonical URIs; a stored `href`/`src` is an
   escaped spelling. Build every ref-bearing stored href with

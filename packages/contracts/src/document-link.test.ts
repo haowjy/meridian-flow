@@ -304,6 +304,8 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     ["kb://maps/realm.png", internal("kb://maps/realm.png", "")],
     ["../escape.png", { kind: "external" }],
     ["https://example.com/a.png", { kind: "external" }],
+    ["//cdn.example.com/map.png", { kind: "external" }],
+    ["assets/50%.png?v=50%", internal("manuscript://assets/50%.png", "?v=50%")],
   ];
   for (const [src, expected] of sources)
     expect.soft(classifyWrittenSource(src), `source ${src}`).toEqual(expected);
@@ -312,6 +314,9 @@ it("classifies written links and mints ahead addresses by grammar", () => {
     ["manuscript://book/ch12", "link", "manuscript://book/ch12.md"],
     ["manuscript://book/ch12.mdx", "link", "manuscript://book/ch12.mdx"],
     ["manuscript://book/.hidden", "link", "manuscript://book/.hidden.md"],
+    ["manuscript://book/chapter.", "link", "manuscript://book/chapter..md"],
+    ["manuscript://assets/gate.", "source", null],
+    ["manuscript://assets/.png", "source", null],
     ["manuscript://assets/gate", "source", null],
     ["manuscript://assets/gate.png", "source", "manuscript://assets/gate.png"],
     ["ch12", "link", null],

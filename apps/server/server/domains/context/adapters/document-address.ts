@@ -12,7 +12,7 @@
  * Presence here is SQL presence. Manifest liveness belongs to the sources
  * `listsThroughLiveManifest` names; callers consult the manifest for those.
  */
-import type { DocumentId, ProjectId } from "@meridian/contracts";
+import { type DocumentId, hasFileExtension, type ProjectId } from "@meridian/contracts";
 import {
   type ContextUriScheme,
   canonicalContextUri,
@@ -231,8 +231,7 @@ export async function resolveCanonicalAddress(
     throw new RangeError(`Address is not canonical: ${input.address}`);
   }
   const { scheme, authority, path } = parsed.value;
-  // `.hidden` and `trailing.` have no real extension; tree lookup would parse them differently.
-  if (!/^[^/]*[^/.][^/]*\.[^/.]+$/.test(path.split("/").at(-1) ?? "")) {
+  if (!hasFileExtension(path.split("/").at(-1) ?? "")) {
     throw new RangeError(`Address needs a file extension: ${input.address}`);
   }
   if (authority.kind === "contextual" && !isProjectScopedScheme(scheme)) {
