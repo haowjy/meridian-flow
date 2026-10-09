@@ -9,7 +9,7 @@
  * drafts' previews the same way, and refreshes the ones no review owns.
  */
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { replaceEqualDeep, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { getDraftPreview } from "@/client/api/drafts-api";
@@ -27,6 +27,24 @@ export type DraftPreviewState = { preview: DraftPreviewResponse | null };
 
 type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
 
+/**
+ * The cache never goes back a generation: a read that began before a close can
+ * land after the next proposal's, and the draft's generation only rises
+ * (`ThreadDraftListItem.draftGeneration`). Anything else is the default
+ * structural sharing, which keeps the reference when a refetch changed nothing.
+ */
+function keepNewerGeneration(prior: unknown, next: unknown): unknown {
+  const before = prior as DraftPreviewResponse | undefined;
+  const after = next as DraftPreviewResponse;
+  if (
+    before?.status === "active" &&
+    after.status === "active" &&
+    after.draftGeneration < before.draftGeneration
+  )
+    return before;
+  return replaceEqualDeep(prior, next);
+}
+
 /** The one preview query, shared by every reader so each draft's preview is fetched once. */
 export function draftPreviewQueryOptions(draft: DraftRef) {
   return {
@@ -41,6 +59,7 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
         getDraftPreview(draft.projectId, draft.workId, draft.documentId, draft.draftId),
       ),
     staleTime: 15_000,
+    structuralSharing: keepNewerGeneration,
   };
 }
 

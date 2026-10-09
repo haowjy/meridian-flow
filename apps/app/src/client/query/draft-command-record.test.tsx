@@ -77,7 +77,7 @@ describe("draft command records", () => {
       await act(async () => {
         beginDraftCommand(draft, {
           ...closing,
-          draftRevisionToken: "draft-1",
+          draftGeneration: 1,
           completesDraft: true,
         });
         answerDraftCommandClosed(draft, { documentName: "Chapter 13" });

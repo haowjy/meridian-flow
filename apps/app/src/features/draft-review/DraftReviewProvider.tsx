@@ -32,6 +32,7 @@ import {
   useDraftReviewController,
 } from "./useDraftReviewController";
 import { useReconcileReviewFocus } from "./useReconcileReviewFocus";
+import { useCachedProposal } from "./useReviewGeneration";
 import { useReviewRefresh } from "./useReviewRefresh";
 
 export type DraftReviewContextValue = {
@@ -173,6 +174,19 @@ export function useDraftReviewScopeValue({
 
   // The reviewed draft left the active list (applied or discarded elsewhere):
   // there is nothing left to review. A local disposition ends review itself.
+  // The list and the preview are separate reads and either can lag the other: a
+  // preview that lists changes at the generation the review shows says the
+  // draft is alive, and the list is read again before the review gives up.
+  const reviewed = controller.inlineReview;
+  const cachedProposal = useCachedProposal({
+    projectId: effectiveProjectId,
+    workId: effectiveWorkId,
+    documentId: reviewed?.documentId ?? "",
+    draftId: reviewed?.draftId ?? "",
+  });
+  const proposedAtShown =
+    cachedProposal?.proposal === true &&
+    cachedProposal.draftGeneration === reviewed?.draftGeneration;
   useEffect(() => {
     const selection = controller.inlineReview;
     if (!selection || controller.isDisposing) return;
@@ -183,7 +197,21 @@ export function useDraftReviewScopeValue({
     const stillActive = (drafts.drafts ?? groups.map((group) => group.draft)).some(
       (draft) => draft.documentId === selection.documentId && draft.draftId === selection.draftId,
     );
-    if (!stillActive) controller.exitReview();
+    if (stillActive) return;
+    if (proposedAtShown) {
+      // Either the list is behind, which the read below settles, or the draft
+      // closed and the preview is: its next read ends the review.
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workDraftPreview(
+          effectiveProjectId,
+          effectiveWorkId,
+          selection.documentId,
+          selection.draftId,
+        ),
+      });
+      return;
+    }
+    controller.exitReview();
   }, [
     controller.exitReview,
     controller.inlineReview,
@@ -191,6 +219,10 @@ export function useDraftReviewScopeValue({
     drafts.drafts,
     drafts.status,
     groups,
+    proposedAtShown,
+    effectiveProjectId,
+    effectiveWorkId,
+    queryClient,
   ]);
 
   // A draft-only tab whose draft left the active list was disposed of

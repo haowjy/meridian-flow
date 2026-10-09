@@ -144,7 +144,7 @@ export function beginChangeCommand(
   draft: DraftRef,
   selection: ChangeSelection,
   mode: ChangeCommandMode,
-  draftRevisionToken: string,
+  draftGeneration: number,
   completesDraft = false,
 ): boolean {
   if (
@@ -152,7 +152,7 @@ export function beginChangeCommand(
       classIds: selection.classIds,
       operationIds: selection.operationIds,
       mode,
-      draftRevisionToken,
+      draftGeneration,
       ...(completesDraft ? { completesDraft: true as const } : {}),
     })
   ) {

@@ -27,7 +27,7 @@ import {
   previewOf,
   work,
 } from "@/test-support/draft-review-scope";
-import { registry, sessionFor } from "@/test-support/editor-session-fakes";
+import { registry, sessionFor, setConnectionState } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const mocks = vi.hoisted(() => ({
@@ -98,6 +98,8 @@ function Host() {
       session={sessionFor(documentId)}
       reviewDraftId={inlineReview?.draftId}
       reviewRoomName={reviewRoomName ?? undefined}
+      onReviewSessionUnavailable={value.controller.exitInlineReview}
+      onReviewRoomStale={value.controller.reviewRoomStale}
     />
   );
 }
@@ -232,6 +234,50 @@ describe("a last Apply", () => {
         answer(applied(true));
         await done;
       });
+      expect(surfaces()).toEqual(["live"]);
+      expect(liveEditable()).toBe("true");
+    });
+  });
+
+  it("stays on Applying, and does not leave review, when the room goes stale before the answer", async () => {
+    // The server resets the branch with the command: the room of generation 1 is
+    // refused on reconnect. The review reads the draft's current room and keeps its place.
+    const staleRoom = "review-room-stale-before-answer";
+    mocks.getDraftPreview.mockResolvedValue({
+      ...previewOf("2"),
+      reviewRoomName: staleRoom,
+    });
+    const answer = held(mocks.applyDraftChanges);
+    await renderEditor(async () => {
+      await reviewOpened();
+      let done: Promise<unknown> | undefined;
+      await act(async () => {
+        done = review?.controller.applyChanges(draftA, change("2"));
+      });
+      expect(review?.controller.inlineReview?.completion).toMatchObject({ phase: "pending" });
+
+      mocks.getDraftPreview.mockResolvedValue({
+        ...previewOf(),
+        draftGeneration: 2,
+        reviewRoomName: "review-room-after-reset",
+      });
+      mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
+      await act(async () => {
+        setConnectionState(staleRoom, { kind: "reset", reason: "branch-generation-stale" });
+      });
+      await vi.waitFor(() =>
+        expect(review?.controller.reviewRoomName).toBe("review-room-after-reset"),
+      );
+      expect(review?.controller.inlineReview).toMatchObject({
+        draftGeneration: 1,
+        completion: { phase: "pending", mode: "apply" },
+      });
+
+      await act(async () => {
+        answer(applied(true));
+        await done;
+      });
+      expect(review?.controller.inlineReview?.completion).toMatchObject({ phase: "closed" });
       expect(surfaces()).toEqual(["live"]);
       expect(liveEditable()).toBe("true");
     });

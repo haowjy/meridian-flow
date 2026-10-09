@@ -78,13 +78,13 @@ export type ClosedDraft = { documentName: string | null };
  * review has the draft open (`completesDraft`: the selection handles every
  * change the draft shows, so the draft may close), and where the server's
  * answer lands (`draftClosed`) before any list read follows it. The claim
- * remembers the draft generation it was sent against (`draftRevisionToken`):
- * its completion belongs to that generation, not to a proposal that reuses
- * the draft's id before the claim ends.
+ * remembers the draft generation it was sent against (`draftGeneration`, from
+ * the preview the writer saw): its completion belongs to that generation, not
+ * to a proposal that reuses the draft's id before the claim ends.
  */
 export type PendingChangeCommand = ChangeSelection & {
   mode: ChangeCommandMode;
-  draftRevisionToken: string;
+  draftGeneration: number;
   completesDraft?: true;
   draftClosed?: ClosedDraft;
 };

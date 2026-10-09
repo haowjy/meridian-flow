@@ -259,6 +259,9 @@ export function ContextEditorMountHost({
                     onReviewSessionUnavailable={
                       branchOnly ? undefined : controller.exitInlineReview
                     }
+                    // A room the server has moved past is not the end of the review,
+                    // a draft-only one included: the review reads the current room.
+                    onReviewRoomStale={controller.reviewRoomStale}
                   />
                 </>
               )}

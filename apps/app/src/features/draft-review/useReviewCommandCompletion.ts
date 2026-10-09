@@ -3,17 +3,17 @@
  * "Discarding", "No changes left") in step with the selection command in
  * flight on its draft, whichever controller sent it.
  *
- * A command's identity, mode and coverage live in the draft's claim, and the
- * server's answer lands there (`draft-command-record`), so the review needs
- * nothing from the sender. A review that opens on a claimed draft adopts its
- * pending completion at once (`commandCompletion`), or its closed one when the
- * answer already came; one already open follows the claim: pending when it
- * begins, closed on the answer that closed the draft (before any list read can
- * drop the draft), and withdrawn when the claim ends without that answer (a
- * refusal, a lost request, a change that did not close the draft). A claim
- * speaks only for the draft generation it was sent against: while the draft's
- * preview shows another, the server's reused id carries a new proposal, and
- * the claim's pending or closing completion is not applied to it.
+ * A command's identity, mode, coverage and the draft generation it acted on
+ * live in the draft's claim, and the server's answer lands there
+ * (`draft-command-record`), so the review needs nothing from the sender. A
+ * review that opens on a claimed draft adopts the claim (`draftClaim`); one
+ * already open follows it: pending when it begins, closed on the answer that
+ * closed the draft (before any list read can drop the draft), and withdrawn
+ * when the claim ends without that answer (a refusal, a lost request, a change
+ * that did not close the draft). Every action carries the claim's generation;
+ * the reducer applies it only to a review of that generation (rows C1-C5 of
+ * `draft-review-session`), so the server's reused id, carrying a new proposal,
+ * is never given an old proposal's completion.
  *
  * Every change to a claim of the Work is dispatched, whichever review is
  * rendered: the reducer applies it in order with the review's own transitions
@@ -25,67 +25,50 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { type Dispatch, useEffect } from "react";
 import {
   changedDrafts,
+  currentDraftCommandRecords,
   type DraftCommandRecords,
-  type PendingChangeCommand,
   pendingChangeCommand,
   subscribeDraftCommandRecords,
 } from "@/client/query/draft-command-record";
-import type {
-  DraftReviewAction,
-  DraftReviewSelection,
-  ReviewCompletion,
-} from "./draft-review-session";
-import { cachedPreviewGeneration, listedDocumentName } from "./useSelectionCommands";
+import type { DraftReviewAction, DraftReviewSelection, ReviewClaim } from "./draft-review-session";
+import { listedDocumentName } from "./useSelectionCommands";
 
 type Scope = { projectId: string; workId: string };
 
-/** What a draft's cache says now, read when a completion is decided. */
-export type DraftReads = {
-  /** Read now: the draft leaves the list once the answer's reads land. */
-  documentName: () => string | null;
-  /** The generation of the draft's active preview, if it has one cached. */
-  previewGeneration: () => string | null;
-};
-
-export function draftReads(
-  queryClient: QueryClient,
-  { projectId, workId, documentId, draftId }: Scope & DraftReviewSelection,
-): DraftReads {
-  return {
-    documentName: () => listedDocumentName(queryClient, projectId, workId, draftId),
-    previewGeneration: () =>
-      cachedPreviewGeneration(queryClient, projectId, workId, documentId, draftId),
-  };
-}
-
 /**
- * A claim's completion belongs to the draft generation it was sent against.
- * The server reuses a draft's id for its next proposal, and the preview can
- * show that proposal before the claim ends; an active preview of another
- * generation is that proposal, and the claim says nothing about it. A draft
- * with no active preview cached (gone, unlisted, not read yet) follows the claim.
+ * The claim in flight on this draft as a review reads it: the generation it
+ * acted on and the completion it gives, if any. The document's name is read
+ * now, since the draft leaves the list once the answer's reads land.
  */
-function claimOfShownGeneration(
-  claim: PendingChangeCommand | null,
-  reads: DraftReads,
-): PendingChangeCommand | null {
-  if (!claim) return null;
-  const shown = reads.previewGeneration();
-  return shown === null || shown === claim.draftRevisionToken ? claim : null;
-}
-
-/** The completion the command in flight on this draft gives a review that opens on it, if any. */
-export function commandCompletion(
-  records: DraftCommandRecords,
+export function draftClaim(
+  queryClient: QueryClient,
   draft: Scope & DraftReviewSelection,
-  reads: DraftReads,
-): ReviewCompletion | undefined {
-  const command = claimOfShownGeneration(pendingChangeCommand(records, draft), reads);
-  if (command?.draftClosed)
-    return { phase: "closed", documentName: command.draftClosed.documentName };
-  if (command?.completesDraft)
-    return { phase: "pending", mode: command.mode, documentName: reads.documentName() };
-  return undefined;
+  records: DraftCommandRecords = currentDraftCommandRecords(),
+): ReviewClaim | undefined {
+  const command = pendingChangeCommand(records, draft);
+  if (!command) return undefined;
+  if (command.draftClosed)
+    return {
+      draftGeneration: command.draftGeneration,
+      completion: { phase: "closed", documentName: command.draftClosed.documentName },
+    };
+  return {
+    draftGeneration: command.draftGeneration,
+    ...(command.completesDraft
+      ? {
+          completion: {
+            phase: "pending" as const,
+            mode: command.mode,
+            documentName: listedDocumentName(
+              queryClient,
+              draft.projectId,
+              draft.workId,
+              draft.draftId,
+            ),
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -97,34 +80,35 @@ export function completionAction(
   records: DraftCommandRecords,
   previous: DraftCommandRecords,
   draft: Scope & DraftReviewSelection,
-  reads: DraftReads,
+  queryClient: QueryClient,
 ): DraftReviewAction | null {
   const { documentId, draftId } = draft;
   const claim = pendingChangeCommand(records, draft);
   const before = pendingChangeCommand(previous, draft);
-  const command = claimOfShownGeneration(claim, reads);
-  if (command?.draftClosed)
+  if (claim?.draftClosed)
     return before?.draftClosed
       ? null
       : {
           type: "reviewClosed",
           documentId,
           draftId,
-          documentName: command.draftClosed.documentName,
+          draftGeneration: claim.draftGeneration,
+          documentName: claim.draftClosed.documentName,
         };
   if (claim === before) return null;
-  if (command?.completesDraft)
+  if (claim?.completesDraft)
     return {
       type: "reviewCompleting",
       documentId,
       draftId,
-      mode: command.mode,
-      documentName: reads.documentName(),
+      draftGeneration: claim.draftGeneration,
+      mode: claim.mode,
+      documentName: listedDocumentName(queryClient, draft.projectId, draft.workId, draftId),
     };
   // Only a prediction is withdrawn (the reducer keeps what the server closed).
-  // A claim of another generation is withdrawn too: its prediction was this
-  // review's, made before the preview moved on.
-  return before?.completesDraft ? { type: "reviewReopened", documentId, draftId } : null;
+  return before?.completesDraft
+    ? { type: "reviewReopened", documentId, draftId, draftGeneration: before.draftGeneration }
+    : null;
 }
 
 export function useReviewCommandCompletion({
@@ -142,7 +126,7 @@ export function useReviewCommandCompletion({
       subscribeDraftCommandRecords((records, previous) => {
         if (!activeRef.current) return;
         for (const draft of changedDrafts(records, previous, { projectId, workId })) {
-          const action = completionAction(records, previous, draft, draftReads(queryClient, draft));
+          const action = completionAction(records, previous, draft, queryClient);
           if (action) dispatch(action);
         }
       }),

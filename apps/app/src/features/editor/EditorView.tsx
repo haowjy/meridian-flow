@@ -111,9 +111,22 @@ export type EditorViewProps = {
   reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
+  /**
+   * Called when the review room is of a generation the server has closed
+   * (`branch-generation-stale`): the review is still wanted, and its owner reads
+   * the draft's current room. Without it a stale room ends the review like any
+   * other unavailable session.
+   */
+  onReviewRoomStale?: (documentId: string, draftId: string, roomName: string) => void;
 };
 
 let editorSessionOwnerSequence = 0;
+
+/** Resets that say the branch moved on to a later generation, not that the writer lost the room. */
+const STALE_ROOM_REASONS: ReadonlySet<string> = new Set([
+  "branch-generation-stale",
+  WS_CLOSE.BRANCH_STALE.reason,
+]);
 
 /**
  * How long a painted review editor waits for its change marks before showing
@@ -264,16 +277,36 @@ export function EditorView(props: EditorViewProps) {
         );
         return;
       }
+      const connection = snapshot.connectionState;
+      if (
+        props.onReviewRoomStale &&
+        reviewDraftId &&
+        connection?.kind === "reset" &&
+        STALE_ROOM_REASONS.has(connection.reason)
+      ) {
+        props.onReviewRoomStale(props.documentId, reviewDraftId, roomKey);
+        return;
+      }
       if (
         snapshot.status === "destroyed" ||
-        snapshot.connectionState?.kind === "terminal" ||
-        snapshot.connectionState?.kind === "unauthorized" ||
-        snapshot.connectionState?.kind === "reset"
+        connection?.kind === "terminal" ||
+        connection?.kind === "unauthorized" ||
+        connection?.kind === "reset"
       ) {
         props.onReviewSessionUnavailable?.();
       }
     });
-  }, [boundSession, props.onReviewSessionUnavailable, inReview, registry, roomKey, reviewIdentity]);
+  }, [
+    boundSession,
+    props.onReviewSessionUnavailable,
+    props.onReviewRoomStale,
+    props.documentId,
+    reviewDraftId,
+    inReview,
+    registry,
+    roomKey,
+    reviewIdentity,
+  ]);
 
   const reviewSession =
     inReview && !settled && boundSession?.roomKey === roomKey ? boundSession : null;
@@ -603,6 +636,11 @@ function ActiveSessionEditorView({
     documentId,
     draftId: reviewDraftId,
     enabled: inReview,
+    draftGeneration:
+      controller.inlineReview?.documentId === documentId &&
+      controller.inlineReview.draftId === reviewDraftId
+        ? controller.inlineReview.draftGeneration
+        : undefined,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
     onReviewSessionUnavailable,
   });

@@ -19,6 +19,7 @@ import {
   sessionFor,
   sessionHorizons,
   setConnectionState,
+  setSessionStatus,
 } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
@@ -317,6 +318,78 @@ describe("review transitions", () => {
         expect(shells.filter((shell) => !shell.closest(".hidden"))).toHaveLength(1);
       },
     );
+  });
+
+  describe("a review room the server has moved past", () => {
+    const roomStale = vi.fn();
+    let nextCase = 0;
+
+    /**
+     * Mount a review of its own document (sessions outlive a test), let `drive`
+     * change its room, and leave `unavailable` and `roomStale` holding who was told.
+     */
+    async function drivenBy(
+      drive: (roomName: string) => void,
+      onReviewRoomStale: typeof roomStale | null = roomStale,
+    ) {
+      nextCase += 1;
+      const documentId = `moved-past-${nextCase}`;
+      const roomName = `branch:${documentId}:gen:1`;
+      unavailable.mockClear();
+      roomStale.mockClear();
+      await withReactRoot(
+        <Harness
+          initial={{
+            documentId,
+            reviewDraftId: "draft-moved",
+            reviewRoomName: roomName,
+            onReviewSessionUnavailable: unavailable,
+            ...(onReviewRoomStale ? { onReviewRoomStale } : {}),
+          }}
+        />,
+        async () => {
+          await act(async () => drive(roomName));
+        },
+      );
+      return { documentId, roomName };
+    }
+
+    it.each([
+      "branch-generation-stale",
+      "branch-stale-doc",
+    ] as const)("hands %s to the review's owner and does not leave review", async (reason) => {
+      const { documentId, roomName } = await drivenBy((room) =>
+        setConnectionState(room, { kind: "reset", reason, code: 4205 }),
+      );
+      expect(roomStale).toHaveBeenCalledWith(documentId, "draft-moved", roomName);
+      expect(unavailable).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        "unauthorized",
+        (room: string) => setConnectionState(room, { kind: "unauthorized", reason: "x" }),
+      ],
+      ["terminal", (room: string) => setConnectionState(room, { kind: "terminal", reason: "x" })],
+      [
+        "a reset for any other reason",
+        (room: string) =>
+          setConnectionState(room, { kind: "reset", reason: "access-changed", code: 4409 }),
+      ],
+      ["a destroyed session", (room: string) => setSessionStatus(room, "destroyed")],
+    ] as const)("still leaves review on %s", async (_state, drive) => {
+      await drivenBy(drive);
+      expect(unavailable).toHaveBeenCalled();
+      expect(roomStale).not.toHaveBeenCalled();
+    });
+
+    it("leaves review as before when nobody can take the signal", async () => {
+      await drivenBy(
+        (room) => setConnectionState(room, { kind: "reset", reason: "branch-generation-stale" }),
+        null,
+      );
+      expect(unavailable).toHaveBeenCalled();
+    });
   });
 
   describe("a refused branch room rebuilt under a painted review", () => {

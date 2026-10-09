@@ -2,9 +2,9 @@
  * useSelectionCommands — one controller's Apply and Discard of a selection of
  * changes on any draft of its Work.
  *
- * The command reads the draft's cached preview for the revision tokens the
- * writer saw; with no active preview there is nothing they saw to send, and the
- * selection is refused as out of date. The command's coverage of the draft's
+ * The command reads the draft's cached preview for the revision tokens and the
+ * generation the writer saw; with no active preview there is nothing they saw to
+ * send, and the selection is refused as out of date. The command's coverage of the draft's
  * last changes rides on its claim, so any review showing the draft follows it
  * (`useReviewCommandCompletion`). The toast is this controller's open review's.
  */
@@ -66,13 +66,16 @@ export function useSelectionCommands({
         coversEveryChange(selection, reviewChanges(cached.operations, cached.hunks));
       let outcome: DraftCommandOutcome;
       if (cached?.status === "active") {
-        const tokens = {
+        // The claim records the generation of the preview the writer saw; the
+        // tokens only fence the request.
+        const basis = {
           liveRevisionToken: cached.liveRevisionToken,
           draftRevisionToken: cached.draftRevisionToken,
+          draftGeneration: cached.draftGeneration,
         };
         outcome = await (mode === "apply"
-          ? session.applySelection(draft, selection, tokens, handlesLast)
-          : session.discardSelection(draft, selection, tokens, handlesLast));
+          ? session.applySelection(draft, selection, basis, handlesLast)
+          : session.discardSelection(draft, selection, basis, handlesLast));
       } else {
         // Without a preview there is nothing the writer saw to apply or discard: out of date.
         outcome = { kind: "change-refused", mode, code: "stale" };
@@ -108,20 +111,6 @@ export function useSelectionCommands({
     [run],
   );
   return { applyChanges, discardChanges };
-}
-
-/** The generation of the draft's cached preview, when it is an active one. */
-export function cachedPreviewGeneration(
-  queryClient: QueryClient,
-  projectId: string,
-  workId: string,
-  documentId: string,
-  draftId: string,
-): string | null {
-  const cached = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-  );
-  return cached?.status === "active" ? cached.draftRevisionToken : null;
 }
 
 /** The listed draft's document name, kept by a review that outlives the draft's place in the list. */
