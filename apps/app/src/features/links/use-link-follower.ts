@@ -116,7 +116,7 @@ export function useLinkFollower({
     if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
       createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
-      { baseUri, projectId, index },
+      { baseUri, projectId },
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();

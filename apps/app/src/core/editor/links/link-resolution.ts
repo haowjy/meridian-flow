@@ -113,6 +113,11 @@ export type DocumentAnswer = Extract<LinkAnswer, { state: "document" }>;
  * Without `local`, every question goes to `remote`.
  */
 export type InternalLinkResolver = {
+  /**
+   * The local document index the port answers from, which is also what a
+   * link written into the holder binds against. Absent for a port with none.
+   */
+  index?: LinkBindingIndex | null;
   local?: (question: LinkQuestion) => LocalLinkAnswer;
   remote: (questions: readonly LinkQuestion[]) => Promise<readonly (LinkAnswer | null)[]>;
 };
@@ -156,16 +161,11 @@ export type LinkAnswerCache = {
    * makes this the app's only invalidation: register again and the last
    * generation's answers are unreachable. `baseUri` is part of what the
    * generation is true of, so a base arriving is a new registration; so is
-   * the binding context (project and local index), which a surface that
-   * writes links passes and chat does not.
+   * the binding context (project, and the port's own index).
    */
   registerResolver: (
     resolve: InternalLinkResolver,
-    options?: {
-      baseUri?: string | null;
-      projectId?: string | null;
-      index?: LinkBindingIndex | null;
-    },
+    options?: { baseUri?: string | null; projectId?: string | null },
   ) => () => void;
   destroy: () => void;
 };
@@ -444,7 +444,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
         binding: {
           holderUri: baseUri,
           projectId: options?.projectId ?? null,
-          index: options?.index ?? null,
+          index: resolve.index ?? null,
         },
         answers: new Map(),
         failed: new Set(),
