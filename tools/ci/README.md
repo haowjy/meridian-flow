@@ -7,9 +7,10 @@
 - `quality-test`: the default unit test projects.
 
 Lint and the small checks share a runner because together they take seconds,
-not minutes. The `quality` required status depends on the entire matrix, runs
-under `always()`, and fails unless every dependency succeeded. Matrix fail-fast
-is disabled so a failing group doesn't cancel the others. All jobs, including
+not minutes. The `quality` required status depends on all three jobs, runs
+under `always()`, and fails unless every dependency succeeded. The jobs are explicit rather
+than matrix children so the aggregate checks each result directly, including
+after partial reruns. A failing group does not cancel the others. All jobs, including
 the aggregate, skip draft PRs.
 
 `package.json`'s `scripts.check` remains the local full gate and the source of
@@ -44,4 +45,4 @@ PR. Wait for CI and inspect `gh run view <run-id> --json jobs`: `quality-static`
 and `quality` must both report `failure`, not `skipped`. Revert the temporary
 commit, push, and require all jobs green before marking ready. Record both run
 URLs and each job's start/end timestamps. This real Actions probe covers the
-matrix aggregation and `always()` behavior a local shell test cannot prove.
+dependency aggregation and `always()` behavior a local shell test cannot prove.

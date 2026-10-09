@@ -8,7 +8,7 @@
  * red CI across several pushes while every local check stayed green. Folding
  * this into `pnpm check` closes that gap for anyone with the dev Postgres up.
  *
- * It must NOT hard-fail a plain `pnpm check` where no database exists — a
+ * It must NOT hard-fail a plain `pnpm check` where no database exists, such as for a
  * contributor without `pnpm dev:infra` running. CI partitions the non-DB
  * checks into parallel jobs; its dedicated `db-tests` job forces this gate
  * with a database. A missing/unreachable local DB skips with a warning
