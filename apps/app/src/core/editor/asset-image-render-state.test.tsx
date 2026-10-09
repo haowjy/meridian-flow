@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 import { getFigureSignedUrl } from "@/client/api/figures-api";
+import { HttpResponseError } from "@/client/api/http-client";
 
 import { type AssetImageRenderState, useAssetImageRenderState } from "./asset-image-render-state";
 import { createStandaloneEditorExtensions } from "./config";
@@ -28,6 +29,8 @@ const GONE = "doc:00000000-0000-4000-8000-0000000000d3";
 const ASSET_ID = "00000000-0000-4000-8000-0000000000d4";
 const SEAL_ID = "00000000-0000-4000-8000-0000000000d5";
 const NEXT = "ahead:00000000-0000-4000-8000-0000000000a3";
+const DELETED_ID = "00000000-0000-4000-8000-0000000000d6";
+const FLAKY_ID = "00000000-0000-4000-8000-0000000000d7";
 
 function documentAnswer(documentId: string, path: string): LinkAnswer {
   return {
@@ -70,14 +73,22 @@ function Probe(props: {
 
 it("renders a picture's ref through the link resolver, and says when nothing is there", async () => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
-  vi.mocked(getFigureSignedUrl).mockImplementation(async ({ assetDocumentId }) => ({
-    assetDocumentId,
-    storageUrl: `s3://bucket/${assetDocumentId}`,
-    mimeType: "image/png",
-    fileType: "image",
-    signedUrl: `https://signed.example/${assetDocumentId}`,
-    signedUrlExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-  }));
+  // The signed-URL route says which uploads are gone (404, which also hides an
+  // unreadable one); anything else is a failure worth retrying.
+  const deleted = new Set([DELETED_ID]);
+  vi.mocked(getFigureSignedUrl).mockImplementation(async ({ assetDocumentId }) => {
+    if (deleted.has(assetDocumentId))
+      throw new HttpResponseError("Document not found", 404, { message: "Document not found" });
+    if (assetDocumentId === FLAKY_ID) throw new HttpResponseError("Bad gateway", 502, null);
+    return {
+      assetDocumentId,
+      storageUrl: `s3://bucket/${assetDocumentId}`,
+      mimeType: "image/png",
+      fileType: "image",
+      signedUrl: `https://signed.example/${assetDocumentId}`,
+      signedUrlExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    };
+  });
   const rows: { row: string; src: string; ref: string | null; drawn: unknown }[] = [
     {
       row: "a settled ahead picture renders the document it settled on",
@@ -112,6 +123,18 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       src: `asset:${ASSET_ID}`,
       ref: null,
       drawn: { kind: "ready", url: `https://signed.example/${ASSET_ID}` },
+    },
+    {
+      row: "a deleted upload says it is no longer available, with nothing to retry",
+      src: `asset:${DELETED_ID}`,
+      ref: null,
+      drawn: { kind: "unavailable", url: null, message: "This image is no longer available." },
+    },
+    {
+      row: "an upload whose signing failed keeps its retry",
+      src: `asset:${FLAKY_ID}`,
+      ref: null,
+      drawn: { kind: "error", url: null },
     },
     {
       row: "a literal source is unchanged",
@@ -175,6 +198,22 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       for (const { row, drawn: expected } of rows)
         expect(drawn.get(row), row).toMatchObject(expected as object);
     });
+
+    // Restoring the document is a catalog change: the gone upload is asked
+    // again and draws.
+    deleted.clear();
+    await act(async () => {
+      resolution?.registerResolver({
+        remote: async (questions) =>
+          questions.map(({ ref, target }) => ANSWERS[ref ?? linkTargetHref(target)] ?? null),
+      });
+    });
+    await vi.waitFor(() =>
+      expect(
+        drawn.get("a deleted upload says it is no longer available, with nothing to retry"),
+        "a restored upload draws again",
+      ).toMatchObject({ kind: "ready", url: `https://signed.example/${DELETED_ID}` }),
+    );
 
     // A retarget (a ref or source update, undo, a peer's edit) reuses the node
     // view: the previous picture must not stay drawn while the new one is out.
