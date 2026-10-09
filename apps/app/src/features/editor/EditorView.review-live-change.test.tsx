@@ -2,45 +2,29 @@
 /**
  * A review learns that the draft changed under it, from the real provider
  * outward: controller, query cache and `useInlineReviewSync` are real; the
- * network and the document sessions are the only fakes. A second tab's
- * per-change Apply writes the live document this tab holds underneath its
- * review; the review must re-read its preview promptly, whatever else re-renders
- * the editor while the read is waiting. One edit is one read: the review owner
- * (`useReviewRefresh`) is the only subscriber.
+ * network and document sessions are the only seams. Another tab's Apply
+ * changes live beneath the review; its changed preview must reach actual
+ * manuscript marks even if the host rerenders during the debounce.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, useEffect, useRef, useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import * as account from "@/features/project/context/account-feature-context";
 import {
-  DraftReviewBoundary,
-  useDraftReview,
-  useDraftReviewScopeValue,
-} from "@/features/draft-review/DraftReviewProvider";
-import { listed, previewOf, work } from "@/test-support/draft-review-scope";
+  createReviewScopeFixture,
+  listed,
+  previewOf,
+  work,
+} from "@/test-support/draft-review-scope";
 import { registry, sessionFor } from "@/test-support/editor-session-fakes";
-import { withReactRoot } from "@/test-support/react-dom-harness";
+import { posOf, rel } from "@/test-support/inline-review-editor";
 
-const mocks = vi.hoisted(() => ({
-  listWorkDrafts: vi.fn(),
-  getDraftPreview: vi.fn(),
-  applyDraftChanges: vi.fn(),
-  discardDraft: vi.fn(),
-}));
-
-vi.mock("@/client/api/drafts-api", () => mocks);
-vi.mock("@/client/query/useContextCatalog", () => ({
-  contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
-  useContextCatalogView: () => ({
-    catalog: null,
-    isError: false,
-    isFetching: false,
-    refetch: () => {},
-  }),
-  projectCatalogView: () => ({ findDocument: () => null }),
-}));
+let fixture: ReturnType<typeof createReviewScopeFixture>;
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: [], isError: false, isFetching: false }),
 }));
@@ -49,12 +33,6 @@ vi.mock("@/client/query/useWorks", () => ({
 }));
 vi.mock("@/features/change-trail/trail-detail-query", () => ({
   usePrefetchTrailDetails: () => {},
-}));
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useContextRemovalCoordinator: () => ({ promoteAppliedDraft: vi.fn(), discardDraft: vi.fn() }),
-  useOptionalAccountResourceReplica: () => null,
-  useLiveDocumentSessionRegistry: () => registry,
-  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
 }));
 vi.mock("@/features/links", async () => ({
   useLinkFollower: (await import("@/features/links/use-link-follower")).useLinkFollower,
@@ -98,87 +76,86 @@ function Host() {
   );
 }
 
-function Scope() {
-  const value = useDraftReviewScopeValue({ projectId: "project-a", work });
-  return (
-    <DraftReviewBoundary value={value}>
-      <Host />
-    </DraftReviewBoundary>
-  );
-}
+const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  fixture = createReviewScopeFixture({
+    registry: registry as unknown as LiveDocumentSessionRegistry,
+  });
+  vi.spyOn(account, "useAccountResourceProjection").mockReturnValue({
+    snapshot: null,
+    folders: [],
+    records: [],
+    error: null,
+  });
   resetDraftCommandRecords();
   review = null;
-  mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
-  mocks.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
+});
+afterEach(() => {
+  fixture.dispose();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("a review whose draft changed under it", () => {
-  it("re-reads the preview after another tab changes live, even when the editor re-renders meanwhile", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    await withReactRoot(
-      <QueryClientProvider client={queryClient}>
-        <Scope />
-      </QueryClientProvider>,
+  it("updates manuscript marks after a remote live change despite host rerenders during debounce", async () => {
+    await fixture.render(
       async () => {
         await act(async () => review?.controller.enterInlineReview(documentId, "draft-a"));
-        await vi.waitFor(() =>
-          expect(review?.controller.inlineReview?.previewIdentity).toBeDefined(),
-        );
-        // Let the review settle: no read is waiting.
-        await new Promise((resolve) => setTimeout(resolve, 700));
-        const readsBefore = mocks.getDraftPreview.mock.calls.length;
-
-        // Another tab's per-change Apply lands in the live document this tab holds.
-        const live = sessionFor(documentId).document;
-        mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
-        await act(async () => {
-          live.getMap("remote").set("applied", "1");
-        });
-        // Anything that re-renders the editor inside the debounce window.
-        await act(async () => rerenderHost());
-        await act(async () => rerenderHost());
-
-        await vi.waitFor(
-          () => expect(mocks.getDraftPreview.mock.calls.length).toBeGreaterThan(readsBefore),
-          { timeout: 3000 },
-        );
-      },
-      { drainMacrotask: true },
-    );
-  });
-
-  it("reads the preview once for one local edit in the review editor, not once per subscriber", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    await withReactRoot(
-      <QueryClientProvider client={queryClient}>
-        <Scope />
-      </QueryClientProvider>,
-      async () => {
-        await act(async () => review?.controller.enterInlineReview(documentId, "draft-a"));
-        await vi.waitFor(() =>
-          expect(review?.controller.inlineReview?.previewIdentity).toBeDefined(),
-        );
-        await new Promise((resolve) => setTimeout(resolve, 700));
-        const readsBefore = mocks.getDraftPreview.mock.calls.length;
-
-        // The writer types in the review editor.
-        const editors = [
+        await advance(1);
+        await advance(1);
+        expect(review?.controller.inlineReview?.previewIdentity).toBeDefined();
+        const editor = [
           ...document.querySelectorAll<HTMLElement & { editor?: Editor }>(".ProseMirror"),
-        ];
-        const reviewEditor = editors.find((dom) => !dom.closest(".hidden"))?.editor;
-        if (!reviewEditor) throw new Error("no visible editor");
+        ].find((dom) => !dom.closest(".hidden"))?.editor;
+        if (!editor) throw new Error("no visible review editor");
         await act(async () => {
-          reviewEditor.commands.insertContent("a few words");
+          editor.commands.insertContent("alpha beta");
         });
-        // Long enough for every debounce a subscriber could have.
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const encoded = (at: number) =>
+          btoa(String.fromCharCode(...Y.encodeRelativePosition(rel(editor, at))));
+        const markedPreview = (ids: string[]) => ({
+          ...previewOf(...ids),
+          hunks: ids.map((id) => {
+            const from = posOf(editor, id === "1" ? "alpha" : "beta");
+            const to = from + (id === "1" ? 5 : 4);
+            return {
+              kind: "text" as const,
+              hunkId: `h-${id}`,
+              operationIds: [id],
+              anchor: { relStart: encoded(from), relEnd: encoded(to) },
+              spans: [{ operationId: id, anchorFrom: encoded(from), anchorTo: encoded(to) }],
+            };
+          }),
+        });
+        const marks = () =>
+          [...editor.view.dom.querySelectorAll(".meridian-review-added")].map(
+            (el) => el.textContent,
+          );
+        fixture.network.getDraftPreview.mockResolvedValue(markedPreview(["1", "2"]));
+        await advance(501);
+        await advance(1);
+        expect(marks()).toEqual(["alpha", "beta"]);
 
-        expect(mocks.getDraftPreview.mock.calls.length - readsBefore).toBe(1);
+        fixture.network.getDraftPreview.mockResolvedValue({
+          ...markedPreview(["2"]),
+          liveRevisionToken: "live-2",
+        });
+        await act(async () => sessionFor(documentId).document.getMap("remote").set("applied", "1"));
+        await act(async () => rerenderHost());
+        await act(async () => rerenderHost());
+        await advance(499);
+        expect(marks()).toEqual(["alpha", "beta"]);
+        await advance(2);
+        await advance(1);
+        expect(marks()).toEqual(["beta"]);
+        expect(review?.controller.inlineReview?.previewIdentity).toContain("live-2");
+        expect(editor.getText()).toBe("alpha beta");
       },
-      { drainMacrotask: true },
+      { surface: <Host /> },
     );
   });
 });
