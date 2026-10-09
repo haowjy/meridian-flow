@@ -15,7 +15,9 @@ never keeps drawing the previous one. An upload the signed-URL route answers
 change). A stored source is never a browser URL: rendered HTML (clipboard,
 drag) and the node-view hook use a source as a URL only through one positive
 allowlist, `browserPictureSource` (http, https, protocol-relative, image
-`data:`). Any other unresolved source draws the error state, never gone.
+`data:`). Any other unresolved source draws unavailable ("Image could not be
+displayed.", no Retry, since retrying cannot change a stored source), never
+gone. Transient signed-URL failures stay on the retryable error.
 
 ## Mental model
 

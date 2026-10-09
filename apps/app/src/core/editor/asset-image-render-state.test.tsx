@@ -155,7 +155,8 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       drawn: { kind: "ready", url: "data:image/png;base64,iVBORw0KGgo=" },
     },
     // A source that is neither a document nor a supported web URL is never
-    // handed to the browser: it would be fetched from the app's own origin.
+    // handed to the browser (it would be fetched from the app's own origin),
+    // and draws with no Retry: retrying cannot change a stored source.
     ...[
       "../map.png",
       "art/../../map.png",
@@ -165,10 +166,10 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       "data:text/html,<p>x</p>",
       "javascript:alert(1)",
     ].map((src) => ({
-      row: `an unusable source is never a URL: ${src}`,
+      row: `a refused source is unavailable, never a URL: ${src}`,
       src,
       ref: null,
-      drawn: { kind: "error", url: null, message: "Image could not be displayed." },
+      drawn: { kind: "unavailable", url: null, message: "Image could not be displayed." },
     })),
     {
       // The binder leaves a contextual source ref-less; it resolves by address
