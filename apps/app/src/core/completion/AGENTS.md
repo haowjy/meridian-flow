@@ -44,9 +44,9 @@ its own Escape precedence. Releasing the lease tears down both halves once.
 reads the one F1 `CatalogCacheView` and delegates explicit cold-Work acquisition
 to its owner. The browser never stores a second tree, enumerates availability,
 or turns wake hints into rows. Root merges only project, user, the current Work
-or no-Work warm view, and a No Work chat's lineage Scratch. Other Works remain authority rows until activated.
-Known-empty sources, folders, and acquired authorities are omitted; cold or
-invalidated metadata cannot prove emptiness. Explicit source and folder URI
+or no-Work warm view, and a No Work chat's lineage Scratch. Other Works remain
+authority rows until activated. Known-empty sources, folders, and acquired
+authorities are omitted; cold metadata cannot prove emptiness. Explicit source and folder URI
 queries retain an empty-state surface, and Back clears that search. No
 placeholder row may become a terminal reference.
 

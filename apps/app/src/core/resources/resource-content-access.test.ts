@@ -423,7 +423,6 @@ it("releases every project registry ownership after the final shared-content lea
           observedHeadRevision: "1",
           cursor: `cursor-${projectId}`,
           entries,
-          invalidatedEntryIds: [],
         },
         resources: [],
         folders: [],

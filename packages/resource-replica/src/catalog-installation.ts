@@ -53,11 +53,7 @@ export function catalogEntryLocation(
 ): ResourceLocation {
   if (!sameCatalogScope(entry.scope, view.scope)) throw new Error("Catalog file scope mismatch");
   const source = view.entries.get(entry.sourceId);
-  if (
-    source?.kind !== "source" ||
-    view.invalidatedEntryIds.has(source.entryId) ||
-    !sameCatalogScope(source.scope, view.scope)
-  )
+  if (source?.kind !== "source" || !sameCatalogScope(source.scope, view.scope))
     throw new Error("Catalog file source is unavailable");
   const parsed = parseContextUri(entry.uri);
   if (
@@ -276,7 +272,6 @@ export function planCatalogInstallation(input: {
       entries: [...input.view.entries.values()].sort((left, right) =>
         left.entryId.localeCompare(right.entryId),
       ),
-      invalidatedEntryIds: [...input.view.invalidatedEntryIds].sort(),
     },
     resources,
   };
@@ -290,7 +285,6 @@ export function catalogViewFromCheckpoint(checkpoint: ResourceCatalogCheckpoint)
     observedHeadRevision: checkpoint.observedHeadRevision,
     cursor: checkpoint.cursor,
     entries: new Map(checkpoint.entries.map((entry) => [entry.entryId, entry])),
-    invalidatedEntryIds: new Set(checkpoint.invalidatedEntryIds),
   });
   return indexed;
 }
