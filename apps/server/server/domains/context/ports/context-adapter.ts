@@ -139,7 +139,12 @@ export interface ContextSchemeAdapter {
   ): Promise<Result<PreparedWrite, AdapterFault>>;
   createTrackedDocument(
     path: string,
-    content: string | PreparedWrite,
+    markdown: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
+  createPreparedDocument(
+    path: string,
+    prepared: PreparedWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */

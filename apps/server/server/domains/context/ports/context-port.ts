@@ -288,12 +288,22 @@ export interface ContextPort {
 
   /**
    * Claim and seed a new tracked URI without ever replacing an existing path.
-   * Text content is prepared here, so only prepared content may be passed
-   * inside a transaction.
+   * Its Markdown is prepared here, outside any transaction; a caller inside
+   * its own transaction prepares first and uses `createPreparedDocument`.
    */
   createTrackedDocument(
     uri: string,
-    content: string | PreparedWrite,
+    markdown: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
+
+  /**
+   * `createTrackedDocument` with content `prepareTrackedDocument` made for
+   * this URI (null: empty); safe inside a transaction.
+   */
+  createPreparedDocument(
+    uri: string,
+    prepared: PreparedWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
