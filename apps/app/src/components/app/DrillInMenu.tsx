@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
 
 export type DrillNode = {
   id: string;
+  /** The document a file entry opens, when it differs from `id`. */
+  documentId?: string;
   name: string;
   icon: LucideIcon;
   /** A folder drills in; anything else is picked. */
@@ -57,8 +59,6 @@ export type DrillInMenuProps = {
   onPick: (node: DrillNode) => void;
   /** Where focus goes when the menu closes without an action; defaults to the trigger. */
   returnFocusRef?: RefObject<HTMLElement | null>;
-  /** Which side of the trigger the menu opens on; it flips when there is no room. */
-  side?: "top" | "bottom";
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
 };
@@ -70,7 +70,6 @@ export function DrillInMenu({
   actions,
   onPick,
   returnFocusRef,
-  side,
   children,
 }: DrillInMenuProps) {
   const [open, setOpen] = useState(false);
@@ -103,7 +102,6 @@ export function DrillInMenu({
       <DropdownMenuContent
         ref={contentRef}
         align="start"
-        side={side}
         className="w-64 max-w-[calc(100vw-1rem)]"
         onKeyDown={(event) => {
           if (event.key === "ArrowLeft" && trail.length > 0) {

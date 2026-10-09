@@ -174,24 +174,29 @@ unresolved client-addressed creation routes, so the collection and other screens
 cannot inherit a prior Work's note. On the phone, and on the Editor screen, a
 Files row opens the document in the Editor instead.
 
-The left rail ends in one **Scratch** control above the account (`chat/ChatScratch.tsx`,
-passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and `NavigationDrawer`).
+The left rail ends in a **Scratch** section above the account (`chat/ChatScratch.tsx`,
+`RailScratchSection`, passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and
+`NavigationDrawer`). It is a tree section in the tree's own style: the head is the tree's
+`RailPaneHeader` (chevron, Scratch icon, "SCRATCH"), clicking it expands upwards or collapses, and the
+body is the chat's Scratch as tree rows (`RailFolderRow`/`RailFileRow` over
+`contextTreeFileRowClassName`), with folders opening in place and the open note highlighted. The
+wording "Scratch for this chat" (a chat's own notes) or "Scratch for <Work>" is the head's tooltip and
+accessible name, not a line of text. The section takes at most 40% of the rail and scrolls itself; the
+project tree keeps the rest. Expanded or collapsed is remembered per viewer on the device
+(`chat/scratch-section-pref.ts`, collapsed by default; the tree's own sections do not persist).
 It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
 chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
-control (it hides) when no chat is on screen, such as the chat index. The row shows
-the Scratch icon, the label and an up chevron (one line; the rail always means the chat on screen, so it names no chat). The menu heading is "Scratch for this chat" for a chat's own notes and "Scratch for <Work>" for a named Work. A collapsed rail
-hides with its control. Its owner is `chatScratchOwner` (`features/chat`): the
+section (it hides, with its divider) when no chat is on screen, such as the chat index. A collapsed
+rail hides with its section. Its owner is `chatScratchOwner` (`features/chat`): the
 chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
 is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
 its lineage's under an "Earlier notes" folder, so a rebind never hides them, and the
-menu follows `thread.workId` as soon as the rebind confirms. The control shows for
-every chat, so the rail never shifts when the first note lands; before it the menu
+section follows `thread.workId` as soon as the rebind confirms. The section shows for
+every chat, so the rail never shifts when the first note lands; before it the body
 says "No notes yet" and the list fills live with the AI's writes (the AI makes the
-notes; there is no New note). On desktop the control opens `DrillInMenu` upwards and a
-pick opens beside the chat (`dock/use-open-scratch-note.ts`). On a phone it sits at
-the foot of the drawer: a tap closes the drawer and `MobileProject` opens
-`ChatScratchSheet` (`components/app/DrillInSheet`, hosted outside the drawer so it
-outlives it), and a pick opens the note full screen. Wherever else a lineage is named (a missing-link
+notes; there is no New note). A pick opens beside the chat by the existing rule
+(`dock/use-open-scratch-note.ts`) and the section stays open. On a phone it sits at the
+foot of the drawer: a pick closes the drawer and opens the note full screen. Wherever else a lineage is named (a missing-link
 dialog, the dock title chip's menu) it is by its first chat's title (`useLineageTitle`), never its handle.
 
 The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with the left tree's

@@ -70,7 +70,7 @@ binaries open as viewer tabs through the viewer host. A store revision (see abov
 slow lookup from replacing a newer pick; an unresolvable document announces an error.
 The phone has no context rail, so a phone never opens a Recent row here.
 
-`useOpenScratchNote()` is the way in for a note picked from a chat's Scratch menu
+`useOpenScratchNote()` is the way in for a note picked from the rail's Scratch section
 (`../chat/ChatScratch.tsx`): the dock document on the Chat screen only, where
 the chat is in the middle; an Editor tab from the Work and Editor screens, where the
 chat is the dock and a dock document would cover it; the full-screen document on a
@@ -93,8 +93,8 @@ The title chip opens a `DrillInMenu` (`components/app/DrillInMenu`) over the
 document's own catalog tree (a Work's Scratch or Uploads, or a chat's Scratch) at the
 document's folder, then Open in Editor and Rename. The tree comes from
 `useCatalogMenuSource` (`../context/use-catalog-menu-source.ts`), the same source the
-rail's Scratch control lists; the menu takes a tree source and an action list.
-On a phone the same source is a `DrillInSheet` bottom sheet with no actions.
+rail's Scratch section draws; the menu takes a tree source and an action list.
+The phone has no dock document, so no menu there.
 
 ### Two views of one document
 

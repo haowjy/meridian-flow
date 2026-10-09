@@ -1,32 +1,35 @@
 /**
- * The chat's Scratch, reached from the foot of the left rail.
+ * The chat's Scratch, as a section at the foot of the left rail.
  *
- * `RailScratchControl` is one full-width row above the account: the Scratch
- * icon, the label and an up chevron. The menu's heading names whose Scratch it is.
- * On desktop it opens `DrillInMenu` upwards; on a phone it asks the project to
- * open `ChatScratchSheet` (the drawer closes first, so the sheet lives outside
- * it). Both list the chat's Scratch: the lineage's notes for a No Work chat,
- * the Work's for a chat on a named Work, with any lineage notes left behind by
- * a rebind under "Earlier notes". Picking a note opens it beside the chat
- * (`useOpenScratchNote`). The list is notes only: the AI makes them, and there
- * is no New note. The control shows for every chat, empty or not, so the rail
- * never shifts when the first note lands.
+ * `RailScratchSection` is a tree section in the left tree's own style: a head
+ * (chevron, Scratch icon, "SCRATCH") that expands upwards or collapses, then
+ * the chat's Scratch as tree rows, with folders opening in place. It always
+ * means the chat on screen, and lists the chat's Scratch: the lineage's notes
+ * for a No Work chat, the Work's for a chat on a named Work, with any lineage
+ * notes left behind by a rebind under "Earlier notes". Picking a note opens it
+ * beside the chat (`useOpenScratchNote`) and the section stays open. It lists
+ * notes only: the AI makes them, and there is no New note. The section shows
+ * for every chat, empty or not, so the rail never shifts when the first note
+ * lands. The wording "Scratch for this chat" / "Scratch for <Work>" is its
+ * tooltip and accessible name rather than a line of text.
  */
 import { t } from "@lingui/core/macro";
-import { ChevronUp } from "lucide-react";
-import type { ComponentProps } from "react";
+import { useState } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
-import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
-import { DrillInSheet } from "@/components/app/DrillInSheet";
+import { useContextTabs } from "@/client/stores";
+import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
-import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
+import { RailPaneHeader } from "../context/RailPaneHeader";
 import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
+import { useDockViewStore } from "../dock/dock-view-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
+import { useProjectScreen } from "../routing/ProjectNavigationContext";
+import { RailEmptyHint, RailFileRow, RailFolderRow } from "../shell/RailSection";
+import { readScratchExpanded, writeScratchExpanded } from "./scratch-section-pref";
 
-/** The chat's Scratch menu source, or null while the chat is unknown (the control hides). */
 function useChatScratch(projectId: string, threadId: string | null) {
   const { threads } = useProjectThreads(projectId);
   const { works, noWork } = useWorks(projectId);
@@ -67,79 +70,125 @@ function useChatScratch(projectId: string, threadId: string | null) {
   };
 }
 
-type RailScratchControlProps = {
+/** The document open beside the writer, if any: the dock's on the Chat screen, the selected tab in the Editor. */
+function useOpenDocumentId(projectId: string, editorWorkId: string | null): string | undefined {
+  const screen = useProjectScreen();
+  const docked = useDockViewStore((state) =>
+    state.occupant?.projectId === projectId ? state.occupant.tab.documentId : undefined,
+  );
+  const { selectedTabIdByWork } = useContextTabs(projectId);
+  if (screen === "chat") return docked;
+  if (screen === "context") return selectedTabIdByWork[editorWorkId ?? ""] ?? undefined;
+  return undefined;
+}
+
+export function RailScratchSection({
+  projectId,
+  threadId,
+  editorWorkId,
+  onPicked,
+}: {
   projectId: string;
   /** The chat on screen: the centre chat on the Chat screen, the dock's chat elsewhere. */
   threadId: string | null;
-  /** A phone opens the sheet instead of a menu; the project owns the sheet. */
-  onOpenSheet?: () => void;
-};
-
-export function RailScratchControl({ projectId, threadId, onOpenSheet }: RailScratchControlProps) {
-  const scratch = useChatScratch(projectId, threadId);
-  if (!scratch) return null;
-  if (onOpenSheet) return <ScratchRow phone onClick={onOpenSheet} />;
-  return (
-    <DrillInMenu
-      tree={scratch.source.tree}
-      currentId={null}
-      openAt={[]}
-      actions={[]}
-      side="top"
-      onPick={(node) => void scratch.pick(node)}
-    >
-      <ScratchRow phone={false} />
-    </DrillInMenu>
-  );
-}
-
-function ScratchRow({ phone, className, ...props }: ComponentProps<"button"> & { phone: boolean }) {
-  const Icon = schemeIcon("scratch");
-  return (
-    <button
-      type="button"
-      {...props}
-      className={cn(
-        "focus-ring flex w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-ink-muted transition-colors hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground",
-        phone ? "min-h-12 active:scale-[0.98]" : "min-h-9",
-        className,
-      )}
-    >
-      <span className="grid size-5 place-items-center text-muted-foreground">
-        <Icon className="size-4" aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-        {schemeLabel("scratch")}
-      </span>
-      <ChevronUp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-    </button>
-  );
-}
-
-/** The phone's Scratch list, opened from the drawer's control. */
-export function ChatScratchSheet({
-  projectId,
-  threadId,
-  open,
-  onOpenChange,
-}: {
-  projectId: string;
-  threadId: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  editorWorkId: string | null;
+  /** Called after a note is picked (the phone drawer closes over the document). */
+  onPicked?: () => void;
 }) {
   const scratch = useChatScratch(projectId, threadId);
+  const openId = useOpenDocumentId(projectId, editorWorkId);
+  const [expanded, setExpanded] = useState(readScratchExpanded);
+  // Folders the writer has toggled; a top-level folder starts open, like the tree's.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
   if (!scratch) return null;
+  const { tree } = scratch.source;
+  const changeExpanded = (next: boolean) => {
+    setExpanded(next);
+    writeScratchExpanded(next);
+  };
   return (
-    <DrillInSheet
-      open={open}
-      onOpenChange={onOpenChange}
-      tree={scratch.source.tree}
-      currentId={null}
-      openAt={[]}
-      onPick={(node) => {
-        if (scratch.pick(node)) onOpenChange(false);
-      }}
-    />
+    <section className="flex min-h-0 flex-col">
+      <RailPaneHeader
+        label={schemeLabel("scratch")}
+        icon={schemeIcon("scratch")}
+        title={tree.heading}
+        ariaLabel={tree.heading}
+        expanded={expanded}
+        onExpandedChange={changeExpanded}
+      />
+      {expanded ? (
+        <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
+          <ScratchRows
+            tree={tree}
+            folderId={null}
+            depth={1}
+            openId={openId}
+            toggled={toggled}
+            onToggle={(id, open) => setToggled((current) => ({ ...current, [id]: !open }))}
+            onPick={(node) => {
+              if (scratch.pick(node)) onPicked?.();
+            }}
+          />
+        </div>
+      ) : null}
+    </section>
   );
+}
+
+function ScratchRows({
+  tree,
+  folderId,
+  depth,
+  openId,
+  toggled,
+  onToggle,
+  onPick,
+}: {
+  tree: DrillTree;
+  folderId: string | null;
+  depth: number;
+  openId: string | undefined;
+  toggled: Record<string, boolean>;
+  onToggle: (id: string, open: boolean) => void;
+  onPick: (node: DrillNode) => void;
+}) {
+  const entries = tree.children(folderId);
+  if (entries.length === 0)
+    return folderId === null ? <RailEmptyHint>{tree.empty}</RailEmptyHint> : null;
+  return entries.map((node) => {
+    if (!node.folder)
+      return (
+        <RailFileRow
+          key={node.id}
+          icon={node.icon}
+          name={node.name}
+          depth={depth}
+          active={openId !== undefined && (node.documentId ?? node.id) === openId}
+          onOpen={() => onPick(node)}
+        />
+      );
+    const open = toggled[node.id] ?? depth === 1;
+    return (
+      <div key={node.id}>
+        <RailFolderRow
+          icon={node.icon}
+          name={node.name}
+          depth={depth}
+          expanded={open}
+          onToggle={() => onToggle(node.id, open)}
+        />
+        {open ? (
+          <ScratchRows
+            tree={tree}
+            folderId={node.id}
+            depth={depth + 1}
+            openId={openId}
+            toggled={toggled}
+            onToggle={onToggle}
+            onPick={onPick}
+          />
+        ) : null}
+      </div>
+    );
+  });
 }
