@@ -66,7 +66,7 @@ function Harness() {
   useEffect(() => {
     update = (next) => setState((previous) => ({ ...previous, ...next }));
   }, []);
-  const groups = [{ documentId: target.documentId, draft: { draftId: target.draftId } }];
+  const files = [{ documentId: target.documentId, draft: { draftId: target.draftId } }];
   const review = {
     controller: {
       workId: target.workId,
@@ -74,9 +74,9 @@ function Harness() {
       enterInlineReview,
       focusReviewChange,
     },
-    groups,
-    groupForDocument: (id: string | null | undefined) =>
-      groups.find((group) => group.documentId === id) ?? null,
+    files,
+    fileForDocument: (id: string | null | undefined) =>
+      files.find((group) => group.documentId === id) ?? null,
     activeEditorDocumentId: target.documentId,
   } as unknown as DraftReviewContextValue;
   return (
@@ -211,7 +211,7 @@ describe("a launch whose route settles before the Editor mounts the document", (
       nameDraftInAddress = () => setAddressed(true);
       update = (next) => setState((previous) => ({ ...previous, ...next }));
     }, []);
-    const groups = [
+    const files = [
       {
         documentId: target.documentId,
         documentName: "One",
@@ -227,10 +227,10 @@ describe("a launch whose route settles before the Editor mounts the document", (
         exitInlineReview: vi.fn(),
         focusReviewChange,
       },
-      groups,
+      files,
       drafts: { status: "ready" },
-      groupForDocument: (id: string | null | undefined) =>
-        groups.find((group) => group.documentId === id) ?? null,
+      fileForDocument: (id: string | null | undefined) =>
+        files.find((group) => group.documentId === id) ?? null,
       activeEditorDocumentId: mounted ? target.documentId : null,
     } as unknown as DraftReviewContextValue;
     return (

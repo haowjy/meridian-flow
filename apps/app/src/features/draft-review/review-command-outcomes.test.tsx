@@ -26,7 +26,7 @@ const ids = (p: ScopeProbe) => p.header.view.items.map(({ change }) => change.cl
 const failure = (p: ScopeProbe) =>
   p.header.view.items.find(({ change }) => change.classId === "class-2")?.failure;
 async function open(p: () => ScopeProbe) {
-  await vi.waitFor(() => expect(p().editor.groups.length).toBeGreaterThan(0));
+  await vi.waitFor(() => expect(p().editor.files.length).toBeGreaterThan(0));
   await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
   await vi.waitFor(() => expect(p().header.view.status).toBe("ready"));
 }

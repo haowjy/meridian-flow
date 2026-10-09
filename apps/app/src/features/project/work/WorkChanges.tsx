@@ -16,7 +16,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +25,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { reviewFileTargets } from "@/features/draft-review/review-files";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
 import { useWorkReviewScope } from "./useWorkReviewScope";
@@ -44,7 +43,7 @@ export function WorkChanges({
 }) {
   const scope = useWorkReviewScope(workId);
   const touch = usePhoneShell() === true;
-  const files = useMemo(() => reviewFileTargets(scope?.groups), [scope?.groups]);
+  const files = scope?.files ?? [];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {

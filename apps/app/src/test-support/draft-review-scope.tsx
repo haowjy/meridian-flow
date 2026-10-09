@@ -1,10 +1,12 @@
 /** Real review scopes and instance-owned network/account seams for composed app tests. */
+
 import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
 import { Doc } from "yjs";
 import * as draftsApi from "@/client/api/drafts-api";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   DraftReviewBoundary,
@@ -14,7 +16,6 @@ import {
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftChangesView } from "@/features/draft-review/draft-changes";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import {
   type ChangeCommandRunner,
   useChangeCommandRunner,

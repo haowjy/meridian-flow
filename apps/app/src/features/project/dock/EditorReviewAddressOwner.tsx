@@ -58,7 +58,7 @@ export function EditorReviewAddressOwner({
       // proposal must not end a review the reducer keeps.
       const match = addressNames(
         inline.documentId,
-        review.groupForDocument(inline.documentId)?.contextPath,
+        review.fileForDocument(inline.documentId)?.contextPath,
       );
       if (activeScreen !== "context" || activeScheme !== "manuscript" || match === "no") {
         review.controller.exitInlineReview();
@@ -89,7 +89,7 @@ export function EditorReviewAddressOwner({
     }
     if (pendingDraftId === requestedDraftId) return;
     if (review.drafts.status !== "ready" && review.drafts.status !== "empty") return;
-    const group = review.groups.find((candidate) => candidate.draft.draftId === requestedDraftId);
+    const group = review.files.find((candidate) => candidate.draft.draftId === requestedDraftId);
     const draft = group?.draft.draftId === requestedDraftId ? group.draft : null;
     const match =
       group?.contextPath && draft ? addressNames(group.documentId, group.contextPath) : "no";

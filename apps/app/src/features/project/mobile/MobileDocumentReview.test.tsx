@@ -102,7 +102,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       const editor = manuscript.editor;
       const dom = editor.view.dom;
       expect(document.querySelector(".ProseMirror")).toBe(dom);
-      await settled(() => expect(probe().editor.groups).toHaveLength(2));
+      await settled(() => expect(probe().editor.files).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
       await settled(() => expect(probe().header.view.items).toHaveLength(2));
       // Chrome's painted-review admission is a real controller operation, not invented controller state.

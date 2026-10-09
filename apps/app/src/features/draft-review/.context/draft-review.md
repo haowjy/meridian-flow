@@ -406,14 +406,13 @@ or discarded comes back from a stale read.
 ## The pending signal and draft-only tab lifecycle
 
 **One client pending projection; one server authority.**
-`pendingReviewDrafts(group)` in `client/query/useWorkDrafts.ts` is the
-per-document client "has changes to review" derivation. `pendingReviewDraft`
-selects its newest draft, while `activeWorkDraftGroups` projects all pending
-groups once for composer surfaces. The strip's and the Work page's pending rows, the identity bar's
-`DraftReviewChip` (self-contained; hides itself during that document's inline
-review so it never coexists with the review header), and the mode selector's
-fast-path count all derive from this filter. Never grow a second client
-is-pending derivation.
+`client/query/useWorkDrafts.ts` exposes one catalog-labelled, stably ordered
+`files` projection and `fileForDocument` lookup. The DB permits one active draft
+per document/Work, so no deduplication or newest-draft competition is needed.
+Live catalog names and paths include optimistic renames; draft-only files keep
+their listed labels. The strip, Work page, Draft chip, Next draft and mode
+selector count all consume this projection. Raw query `drafts` remain separate
+for generation evidence and command fences, never reconstructed from files.
 
 The client projection never authorizes Draft → Auto-apply. The server's
 `work-draft-pending` classifier independently supplies the review list,
@@ -422,9 +421,9 @@ server operations on one classifier prevents the shipped disagreement where the
 dock showed no reviewable change but the mode-switch dialog raw-counted one
 manifest journal row.
 
-Pending membership and presentation order are separate contracts.
-`reviewFileTargets` (`review-files.ts`) builds its own list sorted by `documentName ?? documentId` for the
-DraftDock and the Work page's Changes to review; it must not reorder the shared projection.
+`work-draft-files.ts` owns `sortDraftFiles`: name, then path basename for an
+unnamed file, then document ID, with ID as the tie-breaker. Updates never reorder
+files. `nextReviewFile` retains a closed document's place using its last name.
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
 row + Yjs state) but absent from the live tree until Apply, and the server

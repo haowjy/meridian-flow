@@ -5,8 +5,10 @@ the focused change's bar, the stepper, the Draft chip and its menu, the document
 is one server closure class. The feature also owns the review's state and commands:
 `DraftReviewProvider` (the scope owner), `useDraftReviewController` and
 `draft-review-session` (the command session), `ReviewMessageText` (refusal and
-failure copy) and `review-files` (the file model: `ReviewFileTarget`, the one file
-order `sortDraftFiles`, `nextReviewFile`). Chat, the editor and the project shell
+failure copy) and `review-files` (file navigation via `nextReviewFile`).
+`client/query/useWorkDrafts` exposes the catalog-labelled, stably ordered
+`ReviewFileTarget` files and document lookup; `work-draft-files` owns that
+projection and its one file order (`sortDraftFiles`). Chat, the editor and the project shell
 consume them; none of it is chat rendering. Lifecycle contracts:
 [`.context/draft-review.md`](.context/draft-review.md).
 

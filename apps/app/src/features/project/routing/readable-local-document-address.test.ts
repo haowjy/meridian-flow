@@ -4,7 +4,7 @@ import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import {
   gateLiveView,
   reconcileDocumentAddress,
@@ -171,9 +171,10 @@ describe("gateLiveView", () => {
   const group = (isNewDocument: boolean) =>
     ({
       documentId: "document-id",
+      isNewDocument,
       draft: { draftId: "draft-id", status: "active", isNewDocument },
-    }) as unknown as ThreadDraftGroup;
-  const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
+    }) as unknown as ReviewFileTarget;
+  const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });
   const noTab = () => false;
 
   it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
@@ -202,13 +203,7 @@ describe("gateLiveView", () => {
       gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), noTab),
     ).toEqual({ outcome: "pending", result: undefined });
     expect(
-      gateLiveView(
-        resolved,
-        "manuscript",
-        manifest([]),
-        { status: "loading", groups: null },
-        noTab,
-      ),
+      gateLiveView(resolved, "manuscript", manifest([]), { status: "loading", files: null }, noTab),
     ).toEqual({ outcome: "pending", result: undefined });
     // Apply promoted the tab; the lagging catalog does not get to veto it.
     expect(
@@ -223,7 +218,7 @@ describe("gateLiveView", () => {
       gateLiveView(resolved, "manuscript", manifest([], { isError: true }), ready(), noTab),
     ).toEqual({ outcome: "failed", result: undefined });
     expect(
-      gateLiveView(resolved, "manuscript", manifest([]), { status: "error", groups: [] }, noTab),
+      gateLiveView(resolved, "manuscript", manifest([]), { status: "error", files: [] }, noTab),
     ).toEqual({ outcome: "failed", result: undefined });
   });
 });

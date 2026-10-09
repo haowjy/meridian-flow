@@ -12,13 +12,14 @@
  * desktop, an inline run in the identity row itself (`ReviewStateInline`), so
  * entering review never adds a second header. `touch` raises buttons to 44px.
  */
+
 import { Plural, Trans } from "@lingui/react/macro";
 import type { DraftCommandFailure } from "@/client/query/draft-command-record";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
-import type { ReviewFileTarget } from "./review-files";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;

@@ -9,15 +9,16 @@
  * writer to it; Apply and Discard act on the row and leave the sheet open, so a
  * run of decisions can be made in one place.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { X } from "lucide-react";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
 import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
 import { WorkChangesLink } from "@/features/draft-review/WorkChangesLink";

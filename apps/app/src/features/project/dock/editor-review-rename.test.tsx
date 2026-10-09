@@ -33,8 +33,8 @@ describe("review restoration after a rename", () => {
     const review = {
       controller: { workId, inlineReview: null, enterInlineReview, exitInlineReview: vi.fn() },
       drafts: { status: "ready" },
-      groups: [group],
-      groupForDocument: (id: string | null | undefined) => (id === documentId ? group : null),
+      files: [group],
+      fileForDocument: (id: string | null | undefined) => (id === documentId ? group : null),
       activeEditorDocumentId: documentId,
     } as unknown as DraftReviewContextValue;
     const navigate = vi.fn(async () => ({ kind: "applied" as const }));

@@ -21,7 +21,7 @@ import { type DraftCommandFailure, draftCommandFailure } from "@/client/query/dr
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { selectionOf } from "@/features/draft-review/change-selection";
 import { useDraftReview, useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { reviewFileTargetName, reviewFileTargets } from "@/features/draft-review/review-files";
+import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useChangeCommandRunner } from "@/features/draft-review/useChangeCommandRunner";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { type DockFile, dockFile, dockNotes, isOnStrip, totalChanges } from "./draft-dock-files";
@@ -34,7 +34,7 @@ export type DockFileFailure =
   | { kind: "draft"; failure: DraftCommandFailure };
 
 export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
-  const { groups, controller } = useDraftReview();
+  const { files: listedFiles, controller } = useDraftReview();
   const editor = useEditorDraftReview().controller;
   const { openAiDraft } = useAiDraftLauncher();
   const runner = useChangeCommandRunner(controller);
@@ -43,10 +43,10 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
 
   const candidates = useMemo(
     () =>
-      reviewFileTargets(groups).filter((row) =>
+      listedFiles.filter((row) =>
         row.draft.actorThreads.some((chat) => chat.threadId === threadId),
       ),
-    [groups, threadId],
+    [listedFiles, threadId],
   );
   const targets = useMemo(
     () =>

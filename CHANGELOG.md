@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: consolidate Work draft files into one catalog-labelled, stable-order projection and document lookup; remove draft grouping and recency competition.
+
 - Work batch commands say "Apply all changes" and "Discard all changes" without counting drafts. Discard confirmation covers every document in the Work; review refusal summaries count documents, not drafts.
 
 - Prune duplicate draft-review test tiers while retaining provider-backed generation, selection, refusal and persistence guards. Catalog document-list, Work-page and cold chat-link runtime probes.

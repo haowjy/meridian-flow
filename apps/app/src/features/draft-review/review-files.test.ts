@@ -1,14 +1,11 @@
 /** One file order for every list of draft files, and "Next draft" that follows it. */
 import { describe, expect, it } from "vitest";
 
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { nextReviewFile, reviewFileTargets, sortDraftFiles } from "./review-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { sortDraftFiles } from "@/client/query/work-draft-files";
+import { nextReviewFile } from "./review-files";
 
-const group = (
-  documentId: string,
-  documentName: string | null,
-  updatedAt = "2026-01-01T00:00:00Z",
-) =>
+const group = (documentId: string, documentName: string | null) =>
   ({
     documentId,
     documentName,
@@ -21,9 +18,8 @@ const group = (
       status: "active",
       lastActorTurnId: null,
       actorThreads: [],
-      updatedAt,
     },
-  }) as unknown as ThreadDraftGroup;
+  }) as unknown as ReviewFileTarget;
 
 describe("the file order", () => {
   it("orders a file with no name by its path's name, and ties by id", () => {
@@ -37,7 +33,7 @@ describe("the file order", () => {
 });
 
 describe("nextReviewFile", () => {
-  const rows = reviewFileTargets([
+  const rows = sortDraftFiles([
     group("1", "Chapter 12"),
     group("2", "Chapter 13"),
     group("3", "Interlude"),

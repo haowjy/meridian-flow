@@ -58,16 +58,16 @@ function ScopeProbe({ name }: { name: string }) {
 function reviewValue(workId: string, enterInlineReview = vi.fn()): DraftReviewContextValue {
   const documentId = draftA.documentId;
   const draftId = workId === "work-a" ? draftA.draftId : draftB.draftId;
-  const groups = [{ documentId, draft: { draftId } }];
+  const files = [{ documentId, draft: { draftId } }];
   return {
     controller: {
       workId,
       inlineReview: null,
       enterInlineReview,
     },
-    groups,
-    groupForDocument(candidateDocumentId: string | null | undefined) {
-      return groups.find((group) => group.documentId === candidateDocumentId) ?? null;
+    files,
+    fileForDocument(candidateDocumentId: string | null | undefined) {
+      return files.find((group) => group.documentId === candidateDocumentId) ?? null;
     },
     activeEditorDocumentId: documentId,
   } as unknown as DraftReviewContextValue;
