@@ -656,6 +656,48 @@ export const threadDocuments = pgTable(
   ],
 );
 
+/**
+ * Links shown to the model in a holder document, per thread (host-only
+ * evidence for ref assignment). Independent of transcript blocks, so
+ * compaction and restart keep it. One row per showing key; a later showing
+ * of the same key takes a fresh `seq` from the global sequence, so `seq`
+ * orders showings ("latest"). A fork reads its source's rows up to its cutoff
+ * turn through lineage; nothing is copied.
+ */
+export const threadShownLinks = pgTable(
+  "thread_shown_links",
+  {
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    ref: text("ref").notNull(),
+    address: text("address").notNull(),
+    holderUri: text("holder_uri").notNull(),
+    /** `live` or `draft:<workId>`. */
+    view: text("view").notNull(),
+    turnId: uuid("turn_id").$type<TurnId>().notNull(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "thread_shown_links_pk",
+      columns: [
+        table.threadId,
+        table.documentId,
+        table.ref,
+        table.address,
+        table.holderUri,
+        table.view,
+      ],
+    }),
+  ],
+);
+
 export const userTurnAdmissions = pgTable(
   "user_turn_admissions",
   {
