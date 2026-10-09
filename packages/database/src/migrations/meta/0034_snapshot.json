@@ -2304,7 +2304,8 @@
             "ref",
             "address",
             "holder_uri",
-            "view"
+            "view",
+            "turn_id"
           ]
         }
       },

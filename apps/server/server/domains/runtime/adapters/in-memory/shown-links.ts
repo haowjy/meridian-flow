@@ -1,4 +1,4 @@
-/** In-memory `ShownLinkStore`: the same dedup and fork lineage as the Drizzle adapter. */
+/** In-memory `ShownLinkStore`: the same per-turn rows, dedup and fork lineage as the Drizzle adapter. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ThreadRepository, TurnRepository } from "../../../threads/index.js";
 import {
@@ -48,7 +48,15 @@ export function createInMemoryShownLinkStore(deps: {
           at: ++seq,
         };
         rows.set(
-          JSON.stringify([row.threadId, row.documentId, row.ref, row.address, row.holderUri, view]),
+          JSON.stringify([
+            row.threadId,
+            row.documentId,
+            row.ref,
+            row.address,
+            row.holderUri,
+            view,
+            row.turnId,
+          ]),
           row,
         );
       }

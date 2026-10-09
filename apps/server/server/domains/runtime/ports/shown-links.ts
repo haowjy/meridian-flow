@@ -5,6 +5,10 @@
  * model never sees it. Rows outlive compaction and restart, rolled-back
  * responses keep theirs, and a fork reads its source's rows up to its cutoff
  * turn through lineage. Handoffs and spawned subagents inherit nothing.
+ *
+ * Storage keeps one row per key per turn, so a source's later repeat never
+ * rewrites what a fork saw before its cutoff; readers dedupe only the rows
+ * their lineage makes eligible.
  */
 import type { ShownLink as CorrespondenceShownLink } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
@@ -17,17 +21,25 @@ export interface ShownLink extends CorrespondenceShownLink {
   view: string;
 }
 
-export interface RecordShownLinksInput {
-  threadId: string;
-  turnId: string;
+/** What one result showed the model in one holder document. */
+export interface ShownLinkShowing {
   documentId: string;
   holderUri: string;
+  /** The view the links were actually spelled in. */
   view: LinkView;
   links: readonly SpelledLinkFact[];
 }
 
+export interface RecordShownLinksInput extends ShownLinkShowing {
+  threadId: string;
+  turnId: string;
+}
+
 export interface ShownLinkStore {
-  /** Upsert, keeping the latest showing per key. Joins an ambient transaction if any. */
+  /**
+   * Upsert per key and turn, keeping the greatest sequence when concurrent
+   * writers race. Joins an ambient transaction if any.
+   */
   record(input: RecordShownLinksInput): Promise<void>;
   /** Own rows plus, for a fork, the source thread's rows at turns up to its cutoff, recursively. */
   forDocument(threadId: string, documentId: string): Promise<ShownLink[]>;
@@ -75,7 +87,7 @@ export async function shownLinkLineage(
   }
 }
 
-/** Keeps the latest showing per key across the lineage's rows. */
+/** Keeps the latest showing per key across the lineage's eligible rows. */
 export function latestShowings(rows: readonly ShownLink[]): ShownLink[] {
   const latest = new Map<string, ShownLink>();
   for (const row of rows) {

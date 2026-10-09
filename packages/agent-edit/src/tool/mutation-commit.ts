@@ -216,7 +216,7 @@ export function createMutationCommit(deps: {
     });
     return {
       echo,
-      concurrentEdits: withRunShownLinks(concurrent.info, input.links.codec),
+      concurrentEdits: withRunShownLinks(concurrent.info, input.links),
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
   }

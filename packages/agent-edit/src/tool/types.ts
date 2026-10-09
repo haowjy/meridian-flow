@@ -53,6 +53,8 @@ interface WriteOutcomeBase {
    * inside the shown prefix). Never copied into `result`.
    */
   shownLinks?: readonly SpelledLinkFact[];
+  /** Host-only: the view `shownLinks` were spelled in; set whenever they are. */
+  shownView?: LinkView;
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -259,6 +261,8 @@ export interface ResponseCommitWriteReceipt {
   result: AgentEditResultV1;
   /** Host-only: the links the settled receipt's echo showed the model. */
   shownLinks?: readonly SpelledLinkFact[];
+  /** Host-only: the view `shownLinks` were spelled in; set whenever they are. */
+  shownView?: LinkView;
 }
 
 export interface ResponseStagedCreateOutcome {

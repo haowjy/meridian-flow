@@ -20,7 +20,7 @@ import {
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { containerReadonly, withDraftWork } from "./file-access.js";
-import { LIVE, recordShown } from "./shown-link-capture.js";
+import { showing } from "./shown-link-capture.js";
 import {
   contextToolError,
   isToolError,
@@ -111,15 +111,6 @@ export function createSearchHandler(deps: ToolWiringDeps) {
       const decision = hit.documentId ? access.get(hit.documentId as DocumentId) : undefined;
       return decision ? [{ hit, readonly: decision.level !== "edit" }] : [];
     });
-    // Only returned, authorized hits were shown: their capped passages carry the facts.
-    for (const { hit } of hits) {
-      await recordShown(deps, ctx, {
-        documentId: hit.documentId,
-        holderUri: hit.uri,
-        view: hit.shownView ?? LIVE,
-        links: hit.shownLinks,
-      });
-    }
     return {
       // Host-only facts never reach the model.
       output: hits.map(
@@ -136,6 +127,10 @@ export function createSearchHandler(deps: ToolWiringDeps) {
           ...hit,
           readonly,
         }),
+      ),
+      // Only returned, authorized hits were shown: their capped passages carry the facts.
+      shown: hits.flatMap(({ hit }) =>
+        showing(hit.documentId, hit.uri, { shownLinks: hit.shownLinks, shownView: hit.shownView }),
       ),
       metadata: {
         documentRevisions: hits.map(

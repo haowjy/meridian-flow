@@ -7,7 +7,7 @@ CREATE TABLE "thread_shown_links" (
 	"view" text NOT NULL,
 	"turn_id" uuid NOT NULL,
 	"seq" bigserial NOT NULL,
-	CONSTRAINT "thread_shown_links_pk" PRIMARY KEY("thread_id","document_id","ref","address","holder_uri","view")
+	CONSTRAINT "thread_shown_links_pk" PRIMARY KEY("thread_id","document_id","ref","address","holder_uri","view","turn_id")
 );
 --> statement-breakpoint
 ALTER TABLE "thread_shown_links" ADD CONSTRAINT "thread_shown_links_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

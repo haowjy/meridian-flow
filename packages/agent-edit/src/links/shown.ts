@@ -12,6 +12,7 @@
  * later link wrongly, while a missed one only weakens binding toward a fresh
  * resolve, so every doubt answers "not shown".
  */
+import type { LinkView } from "@meridian/contracts";
 import {
   type DocumentLinkScope,
   type ParsedContentWithSpans,
@@ -122,6 +123,25 @@ function sameFacts(left: readonly (SpelledLinkFact | null)[], right: typeof left
   return spell(left) === spell(right);
 }
 
+/** A command's binding as evidence needs it: the codec that rendered, and the view it spelled in. */
+export interface ShownBinding {
+  codec: Pick<ShownLinkLedger, "shownLinks">;
+  scope: { holder: { view: LinkView } };
+}
+
+/**
+ * Host-only evidence for rendered items: the facts the binding's codec
+ * rendered, and the view it spelled them in. Empty when nothing ref-bearing
+ * was shown.
+ */
+export function shownEvidence(
+  items: readonly AgentEditBlockItem[],
+  links: ShownBinding,
+): { shownLinks?: readonly SpelledLinkFact[]; shownView?: LinkView } {
+  const shownLinks = links.codec.shownLinks(items);
+  return shownLinks.length > 0 ? { shownLinks, shownView: links.scope.holder.view } : {};
+}
+
 /** Every block item a model payload renders: block groups and concurrent runs. */
 export function renderedItems(payload: AgentEditModelPayload | undefined): AgentEditBlockItem[] {
   if (!payload) return [];
@@ -137,14 +157,14 @@ export function renderedItems(payload: AgentEditModelPayload | undefined): Agent
  */
 export function withRunShownLinks(
   info: ConcurrentEditInfo | undefined,
-  ledger: Pick<ShownLinkLedger, "shownLinks">,
+  links: ShownBinding,
 ): ConcurrentEditInfo | undefined {
   if (!info) return info;
   return {
     ...info,
-    runs: info.runs.map((run) => {
-      const shownLinks = ledger.shownLinks(run.blocks.map(modelBlockItem));
-      return shownLinks.length > 0 ? { ...run, shownLinks } : run;
-    }),
+    runs: info.runs.map((run) => ({
+      ...run,
+      ...shownEvidence(run.blocks.map(modelBlockItem), links),
+    })),
   };
 }
