@@ -34,7 +34,6 @@ import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type * as Y from "yjs";
-import { escapeCssIdent } from "@/lib/css-selector";
 import { isRemoteDocumentRebuild } from "../../anchors";
 import {
   inlineReviewClassNames,
@@ -181,16 +180,13 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
       scrollInlineReviewOperationIntoView:
         (operationId) =>
         ({ view }) => {
-          // DOM scroll, not selection scroll. The selection route
-          // (`TextSelection.near` + `tr.scrollIntoView`) proved unreliable
-          // live: it depended on one specific hunk's anchor decoding this
-          // pass and on the view honoring a selection move in a review doc.
-          // The decorated spans already carry their operation ids as a
-          // space-separated DOM attribute, so target the first one in
-          // document order directly.
-          const target = view.dom.querySelector(
-            `[data-review-operations~="${escapeCssIdent(operationId)}"]`,
-          );
+          // Scroll the manuscript block from cached anchors, never painted marks or selection.
+          const geometry = draftInlineReviewPluginKey.getState(view.state)?.geometry;
+          const hunk = geometry?.hunks.find((hunk) => hunk.operationIds.includes(operationId));
+          if (!hunk) return false;
+          const position = hunk.marks[0]?.from ?? hunk.end;
+          const resolved = view.state.doc.resolve(position);
+          const target = view.nodeDOM(resolved.depth > 0 ? resolved.before(1) : position);
           if (!(target instanceof HTMLElement)) return false;
           const reduceMotion =
             typeof window !== "undefined" &&
