@@ -1,6 +1,6 @@
 /** Shared agent-edit and markdown runtime construction for collab compositions. */
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentLifecycle,
@@ -17,15 +17,16 @@ import {
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
-import { scopeMarkdownEngineAssetPaths } from "./asset-path-scope.js";
+import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
+import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
-import { documentRevision } from "./document-revision.js";
+import { createLinkBinder } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
-import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
 
@@ -39,6 +40,7 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
+  | "onLinkSpliceFallback"
 >;
 
 export function createAgentEditRuntime(input: {
@@ -55,21 +57,26 @@ export function createAgentEditRuntime(input: {
   runDocumentWriteHook: DocumentWriteHookRunner;
   resolveDocumentFiletype(documentId: string): Promise<string | null>;
   observability: AgentEditObservability;
-  /** Image paths for `asset:<documentId>` ↔ path translation, loaded per operation. */
-  assetPaths: DocumentAssetPaths;
+  /** How links and image sources spell, loaded per operation (contract §4.4). */
+  links: DocumentLinkScopes;
+  /** Durable ahead-ref registration for refs the model's writes mint. */
+  aheadRefs: AheadRefRegistrar;
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
+  /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
+  inTransaction(): boolean;
 }) {
   const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({
-    schema,
-    assetPathResolver: input.assetPaths.resolver,
-  });
-  const codec = createAgentEditCodec(markupCodec);
+  const markupCodec = mdxCodec({ schema });
+  const codec = createAgentEditCodecFactory(markupCodec);
   const model = yProsemirrorModel(schema);
   const semanticProvenance = createSemanticProvenanceWriter();
   const liveUtilityCore = asLiveAgentEditCore(
     createAgentEditCore({
-      documentRevision,
+      links: createScopedDocumentLinks({
+        scopes: input.links,
+        registrar: input.aheadRefs,
+        viewFor: liveViewFor,
+      }),
       journal: input.journal,
       coordinator: input.agentCoordinator ?? input.coordinator,
       lifecycle: input.lifecycle,
@@ -82,10 +89,10 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     }),
   );
-  const markdownDocuments = scopeMarkdownEngineAssetPaths(
+  const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
       codec: markupCodec,
-      schema,
+      links: input.links,
       model,
       journal: input.journal,
       coordinator: input.coordinator,
@@ -94,16 +101,18 @@ export function createAgentEditRuntime(input: {
       deferUntilCommit: input.deferUntilCommit,
       metaForOrigin,
       afterWrite: input.runDocumentWriteHook,
-      identityPreservingWrite: ({ documentId, markdown, actor }) =>
+      identityPreservingWrite: ({ documentId, content, actor }) =>
         liveUtilityCore.write(
           {
             command: "create",
             file: "document.md",
             documentId,
-            content: markdown,
-            overwrite: true,
+            content: content.markdown,
+            // Bound against the holder's document: overwrite it. Bound fresh: an empty one only.
+            overwrite: !content.fresh,
           },
           {
+            boundNodes: content.blocks,
             actor,
             sessionId:
               actor.kind === "human"
@@ -119,10 +128,21 @@ export function createAgentEditRuntime(input: {
       resolveFiletype: input.resolveDocumentFiletype,
       observeSerializationAnomaly: input.observeSerializationAnomaly,
     }),
-    input.assetPaths,
+    input.links,
   );
+  const linkBinder = createLinkBinder({
+    codec: markupCodec,
+    schema,
+    model,
+    coordinator: input.coordinator,
+    links: input.links,
+    registrar: input.aheadRefs,
+    resolveFiletype: input.resolveDocumentFiletype,
+    inTransaction: input.inTransaction,
+  });
   return {
     codec,
+    linkBinder,
     liveUtilityCore,
     markdownDocuments,
     markupCodec,
@@ -152,14 +172,6 @@ export function attributionFromMeta(meta: UpdateMeta): {
   actorTurnId: TurnId | null;
   actorUserId: import("@meridian/contracts/runtime").UserId | null;
 } {
-  if (meta.origin === "link-update") {
-    return {
-      originType: "link_update",
-      actorTurnId: (meta.actorTurnId as TurnId | undefined) ?? null,
-      actorUserId:
-        (meta.actorUserId as import("@meridian/contracts/runtime").UserId | undefined) ?? null,
-    };
-  }
   if (meta.origin === "system") {
     return {
       originType: "system",

@@ -80,7 +80,7 @@ describe("reply save boundaries", () => {
                     receipt: {
                       writeId: "w1",
                       settlementId: "settlement-1",
-                      revision: "y1:saved",
+                      revision: "y2:saved",
                       result: modelResult({
                         command: "insert",
                         status: "success",

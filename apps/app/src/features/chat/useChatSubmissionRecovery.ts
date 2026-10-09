@@ -377,7 +377,7 @@ export function useChatSubmissionRecovery(
       const mapKey = `${accountId}:${entry.submissionId}`;
       let optimisticTurnId = restoredTurnIds.get(mapKey);
       if (!optimisticTurnId || !existingTurns.some((turn) => turn.id === optimisticTurnId)) {
-        optimisticTurnId = actionsRef.current.appendUserTurn(threadId, entry.text).id;
+        optimisticTurnId = actionsRef.current.appendUserTurn(threadId, entry.blocks).id;
         restoredTurnIds.set(mapKey, optimisticTurnId);
       }
       turnsRef.current.set(entry.submissionId, optimisticTurnId);

@@ -5,7 +5,7 @@ Keep evidence in the active work directory, not in this repository. Record the
 commit, date, stack/provider, outcome, and evidence path after each run. A recipe
 is not a claim that it passed on the current commit.
 
-- [Runtime protocols](runtime-probes.md): RP-1 through RP-11, driven with `./mf`.
+- [Runtime protocols](runtime-probes.md): RP-1 through RP-12, driven with `./mf`.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
 

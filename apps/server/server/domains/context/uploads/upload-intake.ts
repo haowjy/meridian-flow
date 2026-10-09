@@ -70,26 +70,44 @@ export interface UploadIntakeRepository {
   resetObjectStored(projectId: string, intakeId: string): Promise<void>;
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
   finalize(projectId: string, intakeId: string): Promise<UploadReservation>;
-  deleteDraft(
+  /** Locks and validates the exact unused identity a writer asked to delete. */
+  lockForDelete(
     input: DeleteDraftUploadInput,
     actorUserId: string,
-  ): Promise<{
-    result: DeleteDraftUploadResult;
-    objectKey?: string;
-  }>;
+  ): Promise<
+    | { kind: "claimed"; reservation: UploadReservation }
+    | { kind: "refused"; result: DeleteDraftUploadResult; objectKey?: string }
+  >;
+  markDeleted(projectId: string, intakeId: string): Promise<void>;
   /** F5 includes this singular seam in the admission transaction. */
   consume(documentIds: readonly string[]): Promise<void>;
 }
 
-/** ContextFS adapter seam; it is the only content/catalog mutation dependency. */
-export interface UploadContentPort {
+/**
+ * ContextFS adapter seam; it is the only content/catalog mutation dependency.
+ * `bind` runs before finalize's transaction opens: binding tracked text
+ * assigns its link refs and may register ahead refs, which must not wait on the
+ * locks finalize holds (contract §6.2). `persist` applies what it bound.
+ */
+export interface UploadContentPort<Bound = unknown> {
+  bind(input: {
+    reservation: UploadReservation;
+    actorUserId: string;
+    bytes: Uint8Array;
+  }): Promise<{ ok: true; bound: Bound } | { ok: false; definite: boolean }>;
   persist(input: {
     reservation: UploadReservation;
+    bound: Bound;
     actorUserId: string;
     mimeType: string;
     bytes: Uint8Array;
     storageUrl: string | null;
   }): Promise<{ ok: true } | { ok: false; definite: boolean }>;
+  /** Soft-deletes an arrived upload; `stale` when its identity no longer stands at its URI. */
+  remove(input: {
+    reservation: UploadReservation;
+    actorUserId: string;
+  }): Promise<{ ok: true } | { ok: false; stale: true }>;
 }
 
 export interface UploadIntake {
@@ -189,9 +207,9 @@ async function cleanupObject(
   }
 }
 
-export function createUploadIntake(deps: {
+export function createUploadIntake<Bound>(deps: {
   repository: UploadIntakeRepository;
-  content: UploadContentPort;
+  content: UploadContentPort<Bound>;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
 }): UploadIntake {
@@ -264,11 +282,18 @@ export function createUploadIntake(deps: {
       }
 
       try {
+        const bound = await deps.content.bind({
+          reservation,
+          actorUserId: raw.actorUserId,
+          bytes: raw.bytes,
+        });
+        if (!bound.ok) throw Object.assign(new Error("upload binding failed"), bound);
         const finalized = await deps.repository.transaction(async () => {
           const current = await deps.repository.lockForFinalize(raw.owner.projectId, raw.intakeId);
           if (current.state === "finalized") return current;
           const persisted = await deps.content.persist({
             reservation: current,
+            bound: bound.bound,
             actorUserId: raw.actorUserId,
             mimeType,
             bytes: raw.bytes,
@@ -311,7 +336,23 @@ export function createUploadIntake(deps: {
       }
     },
     async deleteDraft(input, actorUserId) {
-      const deleted = await deps.repository.deleteDraft(input, actorUserId);
+      const deleted = await deps.repository.transaction(async () => {
+        const claim = await deps.repository.lockForDelete(input, actorUserId);
+        if (claim.kind === "refused") return claim;
+        const { reservation } = claim;
+        // An arrived upload keeps its identity through the canonical soft delete, so a ref
+        // settled to it answers gone and never captures a later upload at the same address.
+        // A reservation that never finalized has no document row to remove.
+        if (reservation.state === "finalized") {
+          const removed = await deps.content.remove({ reservation, actorUserId });
+          if (!removed.ok) return { result: { kind: "identity_mismatch" as const } };
+        }
+        await deps.repository.markDeleted(reservation.projectId, reservation.intakeId);
+        return {
+          result: { kind: "deleted" as const },
+          objectKey: reservation.storageUrl ? reservation.objectKey : undefined,
+        };
+      });
       if (deleted.objectKey) {
         await cleanupObject(deps.objectStore, deps.eventSink, deleted.objectKey, input.documentId);
       }

@@ -1,6 +1,6 @@
 # Runtime protocol probes
 
-These back up the automated control, compaction, handoff, and history
+These back up the automated control, compaction, handoff, history and link identity
 contracts. They do not replace the project checks. `C` means a compaction turn;
 `B` an assistant continuation; `S` a handoff seed. Only `compact` is an inbox control; the handoff brief runs outside the inbox.
 
@@ -356,5 +356,64 @@ end-to-end as one suite.
 - **Last run:** merge-gate §18–20 PASS for current/from-outside and inspection;
   trashed/malformed variants not recorded there. 2026-09-28 (source commit not recorded).
 
+## RP-12: Link identity
+
+- **Protects:** stored links name documents (`doc:` and `ahead:` refs); every read
+  spells the current path; a rename or move writes nothing into documents that
+  link to the moved one; a deleted target stays gone; the model never sees an id
+  (#729, #730).
+- **Stack:** mock for steps 1 to 6, then the real provider once. The scripts live
+  in the [link identity probe scripts][link-probes]; copy them anywhere and run
+  them from this checkout. Set the evidence directory `E` in each script's header
+  and the database name `DB` in `729-730-V-lib.py` to this worktree's database.
+- **Steps:**
+  1. Concurrent edit during a move. Run `729-730-V-app.py` with each of
+     `prefix`, `unlink`, `inside` and `adjacent`: the holder has
+     `[Target](final.md) waits.`, the thread's draft edits the label, unlinks it,
+     edits inside it or edits the suffix, then the target moves twice and is
+     renamed to `merged-729-730.md`.
+  2. Ahead ref: `729-730-V-ahead.py`. The model writes `[Next](ch9)`; create
+     `ch9.md`, rename it to `ch10.md`, then create a new `ch9.md`.
+  3. Stale path: `729-730-V-stale.py`. The model reads four holders, the target
+     is renamed, then block edits spell the old path with and without `.md`,
+     plus a `find` of the old spelling.
+  4. Gone and restore: `729-730-V-gone.py` (delete, resolver, a new document at
+     the old path) and `729-730-V-restore.py` (a Work-owned `scratch://` target:
+     delete the Work, restore it).
+  5. Move note: `729-730-V-movenote.py` (rename and folder move, counts, journals).
+  6. Gone link in the Editor: with `agent-browser`, open a chapter that links a
+     deleted document and a missing one; capture rest, hover, right-click and
+     click. Make a chat `@` reference through the composer picker, delete its
+     document and reload.
+  7. Real model: restart without `MODEL_PROVIDER=mock` with the provider key
+     exported. `729-730-V-real-a.py <tag>` seeds and runs turn 1; remove the
+     second link occurrence in the browser editor (right-click, Remove link);
+     `729-730-V-real-b.py <tag> before|inflight [delay]` moves the chapter, asks
+     for the label change and reads back.
+- **Expect:** every read, preview and receipt shows the new path. Label edits and
+  unlinks stay what was written (`[Renamed target](merged-729-730.md) waits.`,
+  `Target waits.`, `[Tar drafted get](merged-729-730.md) waits.`,
+  `[Target](merged-729-730.md) returns.`); the suffix is never linked. Holder
+  journals (updates, checkpoints, head sequence, state vector, draft branch
+  journal rows) are identical before and after every move. `ch9` reads `ch9.md`
+  then `ch10.md` and ignores the later `ch9.md`. Stale-path block edits keep the
+  document. A deleted target answers `gone` with no location from
+  `POST /api/projects/:id/links/resolve`, is not captured by a new document at
+  its path, and revives on Work restore. `linkUpdate.links` counts incoming
+  occurrences and `documents` counts holders; a moved document's own links are
+  not counted. The gone link is dashed, unfollowable and says
+  `No longer available` with no Open link; a missing one says
+  `Doesn't exist yet` and offers Create. No `doc:`, `ahead:` or UUID appears in
+  `thread context --all --view raw`.
+- **Evidence:** the `729-730-V-*-result.json` files (preview, live, journal
+  fingerprints, resolver answers, SQL rows), model transcripts, `thread context`
+  captures, chip screenshots and DOM extracts.
+- **Known limit:** a `find` quoting a link's old spelling after a move returns
+  `not_found` with a re-sync hint; one re-read recovers. `./mf doc put
+  --overwrite` is delete plus create, so it is not a writer edit.
+- **Last run:** 2026-10-09 on `7495b8d58`, mock then DeepSeek, all steps passed
+  (report: `impl-729-730/evidence/729-730-V-probes.md` in the same work item).
+
 [c6a]: https://github.com/haowjy/meridian-flow-docs/blob/683395ca9b084cee0196ec9c9070755930d38329/work/agents-milestone-4/evidence/c6a-probe/report.md
 [merge]: https://github.com/haowjy/meridian-flow-docs/blob/a4b1dddbd615bbab334dc6fa7b700245f768d288/work/agents-milestone-4/evidence/merge-gate/REPORT.md
+[link-probes]: https://github.com/haowjy/meridian-flow-docs/tree/6934bec3c8771d80ae9014ccc5a93b61da74f8b1/work/model-tool-surface/experiments

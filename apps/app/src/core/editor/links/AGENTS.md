@@ -12,9 +12,10 @@ address. `classifyLinkTarget` turns an href into `scheme | relative |
 external`, and every consumer reads that one answer: the click, the hover
 hint, the menu, the mark's own rendering, the paste sanitizer. The first two
 are the *internal family* — a Context URI or a path relative to the holder,
-one behavior — and are exactly the server's `DocumentLinkTarget`, so
-`documentLinkTarget()` is a projection, not a translation. `external` is the
-client's alone and never crosses the resolution port. There are no wikilinks:
+one behavior — and are asked about as `{ ref, href }` with the classifier's
+own spelling (`linkTargetHref`). `external` is the client's alone and never
+crosses the resolution port. A link mark's identity is read only through
+`linkKeyOfMark`, and cached only under `linkCacheKey`. There are no wikilinks:
 `[[name]]` is text. Only a paste into an Editor document converts it, to a
 standard link (`WikilinkPasteExtension`, which the Editor alone mounts); paste
 without formatting and a destination in code keep the characters, and an
@@ -29,8 +30,8 @@ offering a dead verb.
 
 **Which chip a link draws is a rule here, not a style.** `linkChip()` maps a
 target and its resolution answer to a state (filled, or dashed when nothing is
-at that address) and a family icon name; every surface emits its
-attributes (the Editor on the decoration spans inside its `<a>`) and the look
+at that address or the document it named is gone) and a family icon name; every surface emits its
+attributes (the Editor on the link mark's `<a>`, from its mark view) and the look
 lives in
 [`components/app/link-chip/`](../../../components/app/link-chip/AGENTS.md).
 Core names families and imports no icons.
@@ -65,27 +66,36 @@ pointer, and calls into it.
   thing: no answer at all, rendered as an ordinary link.
 - **Invalidation is a registration, and a registration is a generation.**
   Registering the port starts a generation that owns its answers, its one
-  question per href, its queue, and its in-flight counter; a question settles
+  question per link key (ref and href), its queue, and its in-flight counter; a question settles
   against the generation that asked it, never against whatever is waiting under
-  that href now. The app registers again when the scope, the project's
-  document catalog, or the holding document's text changes, so there is no
+  that href now. The app registers again when the scope or the project's
+  document catalog changes, so there is no
   `refresh`-shaped verb to call and no reason for a mutation site to reach in
   here. A question a click waits on
   (`resolve()`) is carried into the next generation and asked again; one only
-  the decorations asked is dropped with its generation.
-- **No resolution is ever stored.** The state rides a decoration, not a schema
-  attribute (law 9), so `[Chapter 214](chapter-214.md)` from an LLM needs no extra
-  attributes and no peer receives an answer that was true in someone else's
-  project.
-- **The decorations are mapped on an ordinary keystroke and rebuilt only when
-  something reached a link** — a mark step, an edit inside one, an answer
-  landing. The exception is a remote write: mapping across the whole-document
-  replace reports every position deleted and would erase the drawing, so
-  `isRemoteDocumentRebuild` rebuilds instead.
+  a shown link or picture asked is dropped with its generation, and the
+  editor's requester asks again for whatever is still watched.
+- **A link names a document; no resolution is ever stored.** The mark stores
+  a `ref` (`doc:`/`ahead:`) beside its href, and every producer assigns it through
+  `link-assignment.ts` without parsing or waiting on the network. Where the
+  document is now, and whether the reader can reach it, is drawn on the live
+  element by the views keyed by ref and href (law 9), so no peer receives an answer that was true
+  in someone else's project. A move writes nothing into linking documents.
+- **A picture's source is a link's question.** An `image` or `figure` whose
+  source is a document address, with a ref or without, is answered by this
+  cache under the same key (`pictureKeyOfNode`); its node view draws the
+  answer. No second cache.
+- **The views that draw answers are the only askers.** Each editor has one
+  `LinkRequester`; link mark views and picture node views `watch` their key
+  while mounted and release it on destruction or key change, so a page of
+  links is one batch. Never add a document scan or an answer-only
+  transaction: a view subscribes to the cache itself.
 - **A copied link keeps its document.** The clipboard records each internal
-  link's address beside its href, and every paste target spells it for itself
-  (`link-clipboard.ts`); never paste a relative href into a different holder
-  as written.
+  link's current address, ref and project; a paste in the same project keeps
+  the ref and any other assigns the address fresh (`link-clipboard.ts`).
+  Ref-bearing images and figures travel the same way. Never
+  paste a relative href into a different holder as written, and never trust
+  clipboard metadata as a capability.
 - Register keys and claims from the plugin's `view()`, never TipTap's
   `onCreate` — it fires a macrotask late and the first Ctrl+K misses it.
 

@@ -7,6 +7,7 @@
 import { splitHashline } from "@meridian/agent-edit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -101,7 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     /** A composed runtime with the writer's chapter already live. */
     async function startWithChapter(markdown: string) {
       const runtime = await runtimes.compose();
-      await runtime.ports.documentSync.writeDocument({
+      await writeMarkdown(runtime.ports.documentSync, {
         documentId: DOC_ID,
         markdown,
         origin: { type: "user", actorUserId: USER_ID },

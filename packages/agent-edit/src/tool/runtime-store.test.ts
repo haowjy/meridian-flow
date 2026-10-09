@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
+import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import { blockTexts, documentBytes, humanText, outcomeText } from "./test-support/assertions.js";
 import {
   cloneDoc,
-  codec,
+  codecFactory,
   context,
   harness,
   MemoryCoordinator,
@@ -62,7 +63,8 @@ describe("runtime store", () => {
       journal: ctx.journal,
       coordinator: ctx.coordinator,
       lifecycle: ctx.lifecycle,
-      codec,
+      codec: codecFactory,
+      links: createStaticDocumentLinks(),
       model,
     });
 
@@ -126,7 +128,8 @@ describe("runtime store", () => {
       journal: restartedJournal,
       coordinator: restartedCoordinator,
       lifecycle: restartedLifecycle,
-      codec,
+      codec: codecFactory,
+      links: createStaticDocumentLinks(),
       model,
       undoClientId: REVERSAL_CLIENT_ID,
     });
@@ -167,7 +170,8 @@ describe("runtime store", () => {
       journal: restartedJournal,
       coordinator: restartedCoordinator,
       lifecycle: restartedLifecycle,
-      codec,
+      codec: codecFactory,
+      links: createStaticDocumentLinks(),
       model,
       undoClientId: REVERSAL_CLIENT_ID,
     });
@@ -196,7 +200,8 @@ describe("runtime store", () => {
       journal: initial.journal,
       coordinator: initial.coordinator,
       lifecycle: initial.lifecycle,
-      codec,
+      codec: codecFactory,
+      links: createStaticDocumentLinks(),
       model,
       undoClientId: REVERSAL_CLIENT_ID,
     });
@@ -204,7 +209,8 @@ describe("runtime store", () => {
       journal: initial.journal,
       coordinator: initial.coordinator,
       lifecycle: initial.lifecycle,
-      codec,
+      codec: codecFactory,
+      links: createStaticDocumentLinks(),
       model,
       undoClientId: REVERSAL_CLIENT_ID,
     });

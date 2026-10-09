@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { unresolvedAssetPathResolver } from "./asset-path-resolver.js";
 import { m, paragraph, schema, t } from "./codec-test-support.js";
-import { markdownCodec, mdxCodec } from "./index.js";
+import { markdownCodec, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 
 describe("explicit links and bare URL round trips", () => {
   const codecs = [
     {
       name: "markdown",
-      codec: markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
+      codec: markdownCodec({ schema }),
     },
-    { name: "mdx", codec: mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }) },
+    { name: "mdx", codec: mdxCodec({ schema }) },
   ];
   const addressLink = paragraph(t("kb://a.md", [m("link", { href: "kb://a.md", title: null })]));
 
@@ -41,9 +40,11 @@ describe("explicit links and bare URL round trips", () => {
   ])("$rule", ({ input, initial, expected, mdxExpected }) => {
     for (const { name, codec } of codecs) {
       const target = name === "mdx" ? (mdxExpected ?? expected) : expected;
-      const parsed = codec.parse(input ?? codec.serialize([initial ?? expected])).blocks;
+      const parsed = codec.parse(
+        input ?? codec.serialize([initial ?? expected], UNSCOPED_DOCUMENT_LINKS),
+      ).blocks;
       expect(parsed.map((block) => block.toJSON())).toEqual([target.toJSON()]);
-      const wire = codec.serialize(parsed);
+      const wire = codec.serialize(parsed, UNSCOPED_DOCUMENT_LINKS);
       expect(codec.parse(wire).blocks.map((block) => block.toJSON())).toEqual([target.toJSON()]);
     }
   });

@@ -51,27 +51,31 @@ function harness() {
       row = { ...row, state: "finalized" };
       return row;
     },
-    async deleteDraft(input) {
+    async lockForDelete(input) {
       if (
         !row ||
         row.documentId !== input.documentId ||
         row.canonicalUri !== input.uri ||
         row.locationRevision !== input.expectedRevision
       )
-        return { result: { kind: "identity_mismatch" } };
-      if (row.consumed) return { result: { kind: "already_used" } };
-      if (row.state === "deleted") return { result: { kind: "already_deleted" } };
-      row = { ...row, state: "deleted" };
-      return { result: { kind: "deleted" } };
+        return { kind: "refused", result: { kind: "identity_mismatch" } };
+      if (row.consumed) return { kind: "refused", result: { kind: "already_used" } };
+      if (row.state === "deleted") return { kind: "refused", result: { kind: "already_deleted" } };
+      return { kind: "claimed", reservation: row };
+    },
+    async markDeleted() {
+      if (row) row = { ...row, state: "deleted" };
     },
     async consume() {
       if (row) row = { ...row, consumed: true };
     },
   };
   const content = {
+    bind: vi.fn(async () => ({ ok: true as const, bound: null })),
     persist: vi.fn<() => Promise<{ ok: true } | { ok: false; definite: boolean }>>(async () => ({
       ok: true,
     })),
+    remove: vi.fn(async () => ({ ok: true as const })),
   };
   const objectStore = {
     put: vi.fn(async () => ({ ok: true as const, value: { storageUrl: "object://upload" } })),

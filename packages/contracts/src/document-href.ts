@@ -1,5 +1,5 @@
 /** Resolve and spell standard Markdown document hrefs against Context URIs. */
-import { isProjectScopedScheme, type ParsedContextUri, parseContextUri } from "./context-uri.js";
+import { type ParsedContextUri, parseContextUri } from "./context-uri.js";
 
 export type ResolvedDocumentHref = { uri: string; suffix: string };
 
@@ -7,7 +7,7 @@ export function resolveDocumentHref(
   href: string,
   baseUri: string | null,
 ): ResolvedDocumentHref | null {
-  const { path: rawPath, suffix } = splitSuffix(href);
+  const { path: rawPath, suffix } = splitDocumentHrefSuffix(href);
   if (!rawPath || rawPath.startsWith("/") || rawPath.endsWith("/")) return null;
   const path = decodePath(rawPath);
   if (path === null || !path) return null;
@@ -62,59 +62,9 @@ export function spellDocumentHref(holderUri: string | null, targetUri: string): 
   return format(target.value, encodePath(target.value.path));
 }
 
-/** Preserve relative/full spelling, extension omission, and the untouched suffix. */
-export function respellDocumentHref(
-  href: string,
-  { holderUri, targetUri }: { holderUri: string | null; targetUri: string },
-): string {
-  const { path: rawPath, suffix } = splitSuffix(href);
-  const path = decodePath(rawPath);
-  if (path === null || !path || rawPath.startsWith("/") || rawPath.endsWith("/"))
-    throw new RangeError(`Invalid document href: ${href}`);
-  const full = /^[a-z][a-z0-9+.-]*:\/\//i.test(path);
-  if ((full && !resolveDocumentHref(href, null)) || (!full && /^[a-z][a-z0-9+.-]*:/i.test(path)))
-    throw new RangeError(`Invalid document href: ${href}`);
-  let spelled = spellDocumentHref(full ? null : holderUri, targetUri);
-  const filename = path.slice(path.lastIndexOf("/") + 1);
-  const omittedExtension = filename.lastIndexOf(".") <= 0;
-  const current = resolveDocumentHref(href, holderUri);
-  const target = parseContextUri(targetUri);
-  if (target.ok && current) {
-    const comparableTarget = format(target.value, target.value.path);
-    const dot = comparableTarget.lastIndexOf(".");
-    const extensionless =
-      dot > comparableTarget.lastIndexOf("/") + 1
-        ? comparableTarget.slice(0, dot)
-        : comparableTarget;
-    // Keep equivalent spellings (including percent escapes) byte-for-byte.
-    if (current.uri === comparableTarget || (omittedExtension && current.uri === extensionless))
-      return href;
-  }
-  if (omittedExtension) {
-    const slash = spelled.lastIndexOf("/");
-    const dot = spelled.lastIndexOf(".");
-    if (dot > slash + 1) spelled = spelled.slice(0, dot);
-  }
-  if (rawPath.startsWith("./") && !spelled.includes("://") && !spelled.startsWith(".."))
-    spelled = `./${spelled}`;
-  return spelled + suffix;
-}
-
 /** Canonical catalog comparison seam; document types may later normalize it. */
 export function documentPathKey(path: string): string {
   return path;
-}
-
-/** Address comparison key; Work-scoped addresses must have stable authority. */
-export function documentAddressKey(uri: string): string {
-  const parsed = parseContextUri(uri);
-  if (
-    !parsed.ok ||
-    !parsed.value.path ||
-    (!isProjectScopedScheme(parsed.value.scheme) && parsed.value.authority.kind === "contextual")
-  )
-    throw new RangeError(`Expected an explicit document address: ${uri}`);
-  return format(parsed.value, documentPathKey(parsed.value.path));
 }
 
 /**
@@ -138,7 +88,8 @@ export function matchDocumentPath<T>(
   return loose.length === 1 ? (loose[0] ?? null) : null;
 }
 
-function splitSuffix(value: string): { path: string; suffix: string } {
+/** Split an href at its first `?` or `#`: the path, and the suffix every spelling keeps. */
+export function splitDocumentHrefSuffix(value: string): { path: string; suffix: string } {
   const index = value.search(/[?#]/);
   return index < 0
     ? { path: value, suffix: "" }

@@ -66,7 +66,7 @@ export function renderSearchHits(
       const head = notes.length > 0 ? `${hit.uri} (${notes.join(", ")})` : hit.uri;
       if (cleared(hit)) return `${head}\n${CLEARED_SEARCH_PASSAGES}`;
       const passages = hit.matches.map(({ excerpt, blockHash }) => {
-        const text = verbose ? excerpt : around(excerpt, pattern);
+        const { text } = searchPassage(excerpt, pattern, verbose);
         return blockHash ? toHashline(blockHash, text) : text;
       });
       return [head, ...passages].join("\n");
@@ -87,11 +87,25 @@ function matches(count: number): string {
 }
 
 /**
+ * One passage as the model receives it, and whether that text shows its whole
+ * block. Shown-link evidence keys on `whole` from this same call, so a link the
+ * window cut through or left out is never claimed as shown.
+ */
+export function searchPassage(
+  excerpt: string,
+  pattern: string,
+  verbose: boolean,
+): { text: string; whole: boolean } {
+  return verbose ? { text: excerpt, whole: true } : around(excerpt, pattern);
+}
+
+/**
  * About {@link WINDOW} characters either side of the first match, on one line,
  * cut at word boundaries and marked with `…`. A block whose match can't be
  * located (the query matched its plain text, not its markdown) starts at the top.
+ * Flattening whitespace keeps every link whole, so an uncut window shows them all.
  */
-function around(excerpt: string, pattern: string): string {
+function around(excerpt: string, pattern: string): { text: string; whole: boolean } {
   const flat = excerpt.replace(/\s+/gu, " ").trim();
   const lower = flat.toLowerCase();
   const needles = [pattern, markdownPlainText(pattern)].map((needle) => needle.toLowerCase());
@@ -108,5 +122,10 @@ function around(excerpt: string, pattern: string): string {
     const space = flat.lastIndexOf(" ", end);
     if (space > at + needle.length) end = space;
   }
-  return `${start > 0 ? "…" : ""}${flat.slice(start, end)}${end < flat.length ? "…" : ""}`;
+  const cutStart = start > 0;
+  const cutEnd = end < flat.length;
+  return {
+    text: `${cutStart ? "…" : ""}${flat.slice(start, end)}${cutEnd ? "…" : ""}`,
+    whole: !cutStart && !cutEnd,
+  };
 }

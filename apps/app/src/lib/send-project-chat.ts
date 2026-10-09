@@ -1,5 +1,5 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
-import type { Thread } from "@meridian/contracts/protocol";
+import type { SubmittedReference, Thread, UserMessageBlock } from "@meridian/contracts/protocol";
 import {
   type FirstSendChatSubmission,
   recordChatSubmission,
@@ -45,7 +45,10 @@ export type SendProjectChatArgs = {
   accountId: string;
   threadId?: string;
   projectId: string;
+  /** The composer's message as submitted; `text` is its blocks' text, not trimmed. */
   text: string;
+  blocks: readonly UserMessageBlock[];
+  references: readonly SubmittedReference[];
   submissionId: string;
   activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
@@ -100,6 +103,8 @@ export function sendProjectChat({
   threadId: existingThreadId,
   projectId,
   text,
+  blocks,
+  references,
   submissionId,
   activatedSkillSlugs,
   agent,
@@ -110,8 +115,7 @@ export function sendProjectChat({
 }: SendProjectChatArgs): SendProjectChatResult | null {
   const threadId = existingThreadId ?? crypto.randomUUID();
   const timestamp = new Date(now ?? Date.now()).toISOString();
-  const trimmed = text.trim();
-  const title = deriveTitleFromMessage(trimmed);
+  const title = deriveTitleFromMessage(text.trim());
   const isNew = !existingThreadId;
 
   if (isNew) {
@@ -124,7 +128,9 @@ export function sendProjectChat({
       threadId,
       projectId,
       createdAt: timestamp,
-      text: trimmed,
+      text,
+      blocks: [...blocks],
+      references: [...references],
       activatedSkillSlugs: activatedSkillSlugs ? [...activatedSkillSlugs] : [],
       title,
       workId,
@@ -140,7 +146,7 @@ export function sendProjectChat({
   }
 
   threadActions.markHandoffPending(threadId);
-  const optimisticUserTurnId = threadActions.appendUserTurn(threadId, trimmed).id;
+  const optimisticUserTurnId = threadActions.appendUserTurn(threadId, blocks).id;
   const workingTurnId = crypto.randomUUID();
   threadActions.ensureAssistantTurn(threadId, workingTurnId);
 
@@ -150,14 +156,15 @@ export function sendProjectChat({
     creation: {
       projectId,
       title,
-      text: trimmed,
+      text,
+      blocks,
+      references,
       agentSelection: agent.selection,
       workId,
       optimisticUserTurnId,
       workingTurnId,
       submissionId,
       ...(activatedSkillSlugs?.length ? { activatedSkillSlugs: [...activatedSkillSlugs] } : {}),
-      createProject: false,
     },
   });
   firstSendSessionIds.set(`${accountId}:${submissionId}`, {
@@ -217,7 +224,7 @@ export function rehydrateFirstSendSubmission(
     existingTurns.some((turn) => turn.id === remembered.optimisticUserTurnId);
   const optimisticUserTurnId = reuse
     ? remembered.optimisticUserTurnId
-    : threadActions.appendUserTurn(entry.threadId, entry.text).id;
+    : threadActions.appendUserTurn(entry.threadId, entry.blocks).id;
   const workingTurnId = reuse ? remembered.workingTurnId : crypto.randomUUID();
   threadActions.ensureAssistantTurn(entry.threadId, workingTurnId);
   firstSendSessionIds.set(mapKey, { optimisticUserTurnId, workingTurnId });
@@ -225,12 +232,13 @@ export function rehydrateFirstSendSubmission(
     projectId: entry.projectId,
     title: entry.title,
     text: entry.text,
+    blocks: entry.blocks,
+    references: entry.references,
     agentSelection: entry.agentSelection,
     workId: entry.workId,
     optimisticUserTurnId,
     workingTurnId,
     submissionId: entry.submissionId,
     activatedSkillSlugs: entry.activatedSkillSlugs,
-    createProject: false,
   };
 }

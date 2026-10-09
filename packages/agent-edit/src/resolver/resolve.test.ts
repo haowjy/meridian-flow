@@ -1,4 +1,4 @@
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   buildDocumentSchema,
   createCollabYDoc,
@@ -6,17 +6,15 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
-import type { ResolvedEdit } from "../apply/types.js";
-import { createAgentEditCodec } from "../codec-adapter.js";
+import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
+import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 import { resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {
@@ -86,9 +84,12 @@ describe("resolveWrite", () => {
     expect(edits).toHaveLength(1);
     expect(edits[0]).toMatchObject({
       kind: "textRanges",
-      replacements: [{ span: { start: 0, end: 5 }, newText: "tea" }],
+      replacements: [{ span: { start: 0, end: 5 } }],
       output: "tea",
     });
+    const [edit] = edits;
+    if (edit?.kind !== "textRanges") throw new Error("expected textRanges");
+    expect(edit.replacements.map(inlineReplacementText)).toEqual(["tea"]);
   });
 
   it("scopes find-based writes to the around window", () => {
@@ -183,7 +184,7 @@ describe("resolveWrite", () => {
     });
     const remove = (fragment: string | undefined, scope: string | undefined) =>
       resolveWrite(
-        { doc, model, codec },
+        { doc, model, codec, links: "preassigned" },
         {
           documentAddress: address(fragment),
           command: "remove",
@@ -279,7 +280,7 @@ function resolve(
   params: Omit<ResolveWriteParams, "documentAddress">,
 ): ResolveWriteResult {
   return resolveWrite(
-    { doc, model, codec },
+    { doc, model, codec, links: "preassigned" },
     {
       documentAddress: {
         documentId: "123e4567-e89b-12d3-a456-426614174000",

@@ -4,6 +4,7 @@ import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/mo
 import type { Transaction } from "@tiptap/pm/state";
 
 import type { AnchorRange } from "../anchors";
+import { pictureKeyOfNode } from "../links/link-resolution";
 
 export function isImageFile(file: Pick<File, "type" | "name">): boolean {
   return file.type.startsWith("image/") || /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(file.name);
@@ -82,86 +83,6 @@ export function imageAttrsFromUpload(response: UploadFigureAssetResponse) {
   };
 }
 
-export type MutableAssetPathResolver = import("@meridian/markup").AssetPathResolver & {
-  remember(assetDocumentId: string, path: string): void;
-};
-
-export function createEditorAssetPathResolver(): MutableAssetPathResolver {
-  const pathById = new Map<string, string>();
-  const idByPath = new Map<string, string>();
-  return {
-    remember(assetDocumentId, path) {
-      pathById.set(assetDocumentId, path);
-      idByPath.set(path, assetDocumentId);
-    },
-    pathForAsset(assetDocumentId) {
-      return pathById.get(assetDocumentId) ?? null;
-    },
-    assetForPath(path) {
-      return idByPath.get(path) ?? null;
-    },
-  };
-}
-
-export function resolveAssetRefsForClipboard(
-  slice: Slice,
-  resolver: import("@meridian/markup").AssetPathResolver,
-): Slice {
-  const mapNode = (node: PMNode): PMNode => {
-    if (node.type.name === "image") {
-      const src = String(node.attrs.src ?? "");
-      const path = src.startsWith("asset:")
-        ? resolver.pathForAsset(src.slice("asset:".length))
-        : null;
-      if (!path) return node;
-      return node.type.create({ ...node.attrs, src: path }, null, node.marks);
-    }
-    return node.copy(Fragment.fromArray(node.content.content.map(mapNode)));
-  };
-  return new Slice(
-    Fragment.fromArray(slice.content.content.map(mapNode)),
-    slice.openStart,
-    slice.openEnd,
-  );
-}
-
-function resolveAssetPathsFromClipboard(
-  slice: Slice,
-  resolver: import("@meridian/markup").AssetPathResolver,
-): Slice {
-  const mapNode = (node: PMNode): PMNode => {
-    if (node.type.name === "image") {
-      const src = String(node.attrs.src ?? "");
-      const assetDocumentId = resolver.assetForPath(src);
-      if (!assetDocumentId) return node;
-      return node.type.create({ ...node.attrs, src: `asset:${assetDocumentId}` }, null, node.marks);
-    }
-    return node.copy(Fragment.fromArray(node.content.content.map(mapNode)));
-  };
-  return new Slice(
-    Fragment.fromArray(slice.content.content.map(mapNode)),
-    slice.openStart,
-    slice.openEnd,
-  );
-}
-
-/**
- * What a paste may do with the images it carries — the one seam, so there is
- * one answer to "which pictures can land here".
- *
- * Two kinds arrive. A picture copied from another Meridian document travels as
- * a project-relative path and comes home as the stable ref it left as. Anything
- * else is an address the project does not own, and it lands as a link until it
- * has been imported.
- */
-export function resolveImagesFromClipboard(
-  slice: Slice,
-  schema: Schema,
-  resolver: import("@meridian/markup").AssetPathResolver,
-): { slice: Slice; imports: PastedImageImport[] } {
-  return linkExternalPastedImages(resolveAssetPathsFromClipboard(slice, resolver), schema);
-}
-
 /**
  * An image the clipboard only pointed at, waiting to become an asset.
  *
@@ -176,10 +97,12 @@ export type PastedImageImport = {
 
 /**
  * Every image in a pasted slice that the manuscript cannot hold, turned into a
- * link to itself.
+ * link to itself, with the imports that will replace those links.
  *
- * An image's `src` is a stable `asset:<documentId>` and nothing else. Web HTML
- * carries `<img src="https://…">`, and admitting one writes an address the
+ * An image's `src` is a stable `asset:<documentId>`, or a document address
+ * (beside the `ref` that names its document, or resolved by itself when it has
+ * none), and nothing else; the paste door assigns those sources with the links
+ * (`links/link-assignment.ts` `assignPastedSlice`). Web HTML carries `<img src="https://…">`, and admitting one writes an address the
  * project does not own into the shared document: it expires, it leaks where
  * the writer was reading, and it renders as a broken figure the moment the
  * host says no. So the paste never lands a picture it has not imported — it
@@ -191,7 +114,7 @@ export type PastedImageImport = {
  * rare door (the clipboard's own file item wins for a copied picture), the
  * import nearly always succeeds, and the alternative is base64 on the wire.
  */
-function linkExternalPastedImages(
+export function linkExternalPastedImages(
   slice: Slice,
   schema: Schema,
 ): { slice: Slice; imports: PastedImageImport[] } {
@@ -201,7 +124,9 @@ function linkExternalPastedImages(
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
-      if (!src || src.startsWith("asset:")) return node;
+      // A picture naming a document address (with a ref, or ref-less and
+      // resolved by its address) is the project's own, never a web import.
+      if (!src || src.startsWith("asset:") || pictureKeyOfNode(node.attrs)) return node;
       const alt = node.attrs.alt ? String(node.attrs.alt) : null;
       imports.push({ url: src, alt });
       const marks = linkType ? [...node.marks, linkType.create({ href: src })] : node.marks;
@@ -308,6 +233,23 @@ function boundedImageName(name: string): string {
 
 export function assetDocumentIdFromSrc(src: string): string | null {
   return src.startsWith("asset:") && src.length > 6 ? src.slice(6) : null;
+}
+
+/**
+ * The web URL families a picture may be fetched from as written: an absolute
+ * http(s) URL, a protocol-relative one, or an image `data:` URL.
+ */
+const BROWSER_PICTURE_SOURCE = /^(?:https?:\/\/|\/\/|data:image\/)/i;
+
+/**
+ * A picture source the browser may fetch as written, or null. A positive
+ * allowlist: an `asset:` upload or a document address names a document that
+ * only a signed URL draws, and anything else (`/map.png`, `../map.png`, a
+ * malformed scheme) would be fetched from the app's own origin. Put in an
+ * `<img src>` (a node view, clipboard or drag HTML) none of those is a picture.
+ */
+export function browserPictureSource(src: string): string | null {
+  return BROWSER_PICTURE_SOURCE.test(src) ? src : null;
 }
 
 export function signedUrlRefreshDelayMs(signedUrlExpiresAt: string, nowMs = Date.now()): number {

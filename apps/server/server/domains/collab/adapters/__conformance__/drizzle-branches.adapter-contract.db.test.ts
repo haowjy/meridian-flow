@@ -2,8 +2,8 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { NO_DOCUMENT_ASSET_PATHS } from "../../domain/ports/document-asset-paths.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
+import { createStaticDocumentLinkScopes } from "../in-memory/static-document-link-scopes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -59,13 +59,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
-    const { mdxCodec, unresolvedAssetPathResolver } = await import("@meridian/markup");
-    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
-    const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
-    const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
-    const { createDrizzleProjectWorkAuthorityResolver } = await import(
-      "../../../projects/index.js"
+    const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
+    const { createAgentEditCodecFactory, toDocHandle, yProsemirrorModel } = await import(
+      "@meridian/agent-edit/integration"
     );
+    const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
+    const { createDocumentLastAddress } = await import("../../../context/document-uri-resolver.js");
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
     );
@@ -184,7 +183,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       codec: ReturnType<typeof mdxCodec>,
     ) => ({
       async serializeDocument(_documentId: string, doc: Y.Doc) {
-        return codec.serialize(model.projectBlocks(toDocHandle(doc)));
+        return codec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
       },
     });
     const createPushStores = (
@@ -209,9 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           serializer,
           createDrizzleDocumentProjectionEffects(db),
           changeTrails,
-          createDrizzleDocumentDerivationStore(db, (tx, id) =>
-            resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-          ),
+          createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
         ),
       };
     };
@@ -424,6 +421,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(threadView.members).toEqual([CREATED_ID]);
       expect(liveView.members).toEqual([DOC_ID]);
+
+      // Another project's Work never drafts this project's manifest, whatever the entry point.
+      const FOREIGN_PROJECT_ID = "00000000-0000-4000-8000-000000000609";
+      const FOREIGN_WORK_ID = "00000000-0000-4000-8000-000000000610";
+      await db.insert(projects).values({
+        id: FOREIGN_PROJECT_ID,
+        userId: USER_ID,
+        name: "Foreign Project",
+        slug: "foreign-project",
+      });
+      await db.insert(works).values({
+        id: FOREIGN_WORK_ID,
+        projectId: FOREIGN_PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Foreign Work",
+        slug: "foreign-work",
+      });
+      await expect
+        .soft(
+          store.resolveManifestMembership({
+            projectId: PROJECT_ID as never,
+            workId: FOREIGN_WORK_ID as never,
+          }),
+        )
+        .rejects.toThrow(/outside its project/);
+      expect
+        .soft(
+          await db
+            .select({ id: documentBranches.id })
+            .from(documentBranches)
+            .where(eq(documentBranches.workId, FOREIGN_WORK_ID)),
+        )
+        .toEqual([]);
     });
 
     it("co-promotes only the applied document manifest entry with its content push", async () => {
@@ -449,7 +479,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await livePersistence.lifecycle.ensureDocument(CREATED_B as never);
       const schema = buildDocumentSchema();
       const model = yProsemirrorModel(schema);
-      const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+      const codec = mdxCodec({ schema });
       const docFromMarkdown = (markdown: string) => {
         const doc = createCollabYDoc({ gc: false });
         model.insertBlocks(toDocHandle(doc), null, codec.parse(markdown));
@@ -518,7 +548,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           realChangeTrails.reopenOwners(owners),
       };
       const branchPush = createBranchPushService({
-        assetPaths: NO_DOCUMENT_ASSET_PATHS,
+        links: createStaticDocumentLinkScopes(),
         changeEventDelivery: { deliver() {} },
         branchStore: store,
         ...createPushStores(markdownProjectionSerializer(model, codec), failingChangeTrails),
@@ -526,7 +556,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journal: livePersistence.journal,
         liveCoordinator,
         model,
-        codec,
+        codec: createAgentEditCodecFactory(codec),
       });
 
       const [contentARow] = await db
@@ -572,9 +602,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(pushed.status).toBe("pushed");
       expect(liveView.members).toContain(CREATED_A);
       expect(liveView.members).not.toContain(CREATED_B);
-      expect(codec.serialize(model.projectBlocks(toDocHandle(liveA)))).toContain(
-        "Created A content.",
-      );
+      expect(
+        codec.serialize(model.projectBlocks(toDocHandle(liveA)), UNSCOPED_DOCUMENT_LINKS),
+      ).toContain("Created A content.");
       expect(lineageRows).toHaveLength(2);
       expect(new Set(lineageRows.map((row) => row.receiptId))).toHaveLength(1);
       const trailDetails = await db.select().from(changeTrailDocumentDetails);
