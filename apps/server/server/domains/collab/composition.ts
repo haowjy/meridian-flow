@@ -276,6 +276,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     observability,
     links: deps.links,
     aheadRefs: deps.aheadRefs,
+    inTransaction: isInDrizzleTransaction,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
   });
   const projectionRefresher = { refresh: runDocumentWriteHook };
@@ -547,7 +548,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
-      editDocument: runtime.markdownDocuments.editDocument,
+      bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindStatic: runtime.linkBinder.bindStatic,
     },
     projections: {
       documentDerivations: derivations,

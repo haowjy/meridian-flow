@@ -7,7 +7,6 @@
  */
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
-  bindSources,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
@@ -25,7 +24,6 @@ import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -39,6 +37,7 @@ import type {
 import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
+import type { BoundContent } from "./link-binding.js";
 import {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -79,7 +78,6 @@ type MarkdownDocumentEngineDeps = {
    * scope doors (`document-link-scope-doors.ts`) open it.
    */
   links: DocumentLinkScopes;
-  schema: Schema;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
@@ -88,9 +86,10 @@ type MarkdownDocumentEngineDeps = {
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   afterWrite?: MarkdownWriteHook;
+  /** The whole-document create-overwrite, applying nodes already bound (assignment skipped). */
   identityPreservingWrite(input: {
     documentId: DocumentId;
-    markdown: string;
+    content: BoundContent;
     actor: MutationActor;
   }): Promise<WriteOutcome>;
   resolveFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -115,29 +114,28 @@ export type MarkdownDocumentEngine = {
     origin: RuntimeOrigin,
   ): Promise<Result<MarkdownSetResult, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
+  /**
+   * Whole-document writes take content a `LinkBinder` bound before the
+   * caller's transaction (contract §6.2); none of them parses Markdown.
+   */
   setMarkdown(input: {
     documentId: DocumentId;
-    markdown: string;
+    content: BoundContent;
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
+  /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
     documentId: string,
-    markdown: string,
+    content: BoundContent,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
-    markdown: string;
+    content: BoundContent;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
-  editDocument(input: {
-    documentId: DocumentId;
-    transform: (markdown: string) => string;
-    origin: DocumentWriteOrigin;
-    threadId?: ThreadId;
-  }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
 };
 
 export function createMarkdownDocumentEngine(
@@ -171,30 +169,14 @@ export function createMarkdownDocumentEngine(
     });
   }
 
-  /** Load what `docs` and `written` name, then spell as this document in the live tree. */
+  /** Load what `docs` name, then spell as this document in `view` (default live). */
   async function spelling(
     documentId: DocumentId,
     docs: readonly Y.Doc[],
-    written?: ParsedContent["blocks"],
     view: LinkView = LIVE_VIEW,
   ): Promise<HolderLinkScope> {
-    await deps.links.prepare({
-      holders: [{ documentId, view }],
-      docs,
-      ...(written ? { written } : {}),
-    });
+    await deps.links.prepare({ holders: [{ documentId, view }], docs });
     return deps.links.holder({ documentId, view });
-  }
-
-  /** Parse is pure syntax; the shipped image rule binds known pictures afterwards. */
-  async function bindWritten(
-    documentId: DocumentId,
-    parsed: ParsedContent,
-    schemaType: YjsTrackedSchemaType,
-  ): Promise<ParsedContent> {
-    if (schemaType === "code") return parsed;
-    const links = await spelling(documentId, [], parsed.blocks);
-    return { ...parsed, blocks: bindSources(parsed.blocks, links) };
   }
 
   /**
@@ -233,26 +215,20 @@ export function createMarkdownDocumentEngine(
     }
   }
 
-  function parseMarkdown(
+  /** Bound content of the shape this document stores (one code block for code files). */
+  function contentFor(
     documentId: DocumentId,
-    markdown: string,
-    format: { schemaType: YjsTrackedSchemaType; filetype: string | null },
+    content: BoundContent,
+    format: { schemaType: YjsTrackedSchemaType },
   ): Result<ParsedContent, SyncError> {
-    try {
-      if (format.schemaType === "code") {
-        const content = markdown.length > 0 ? deps.schema.text(markdown) : undefined;
-        return Ok({
-          blocks: [deps.schema.nodes.code_block.create({ language: format.filetype }, content)],
-        });
-      }
-      return Ok(deps.codec.parse(markdown));
-    } catch (cause) {
+    if (content.schemaType !== format.schemaType) {
       return Err({
         code: "corrupt_state",
         documentId,
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: `Content bound as ${content.schemaType} for a ${format.schemaType} document`,
       });
     }
+    return Ok({ blocks: [...content.blocks] });
   }
 
   async function replaceLiveDocumentMarkdown(
@@ -311,17 +287,16 @@ export function createMarkdownDocumentEngine(
 
   async function setMarkdown(input: {
     documentId: DocumentId;
-    markdown: string;
+    content: BoundContent;
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
     const resolvedFormat = await documentFormat(input.documentId);
     if (!resolvedFormat.ok) return resolvedFormat;
     const format = resolvedFormat.value;
-    const parsed = parseMarkdown(input.documentId, input.markdown, format);
-    if (!parsed.ok) return parsed;
-    const bound = await bindWritten(input.documentId, parsed.value, format.schemaType);
-    return replaceDocument(input, bound, format);
+    const content = contentFor(input.documentId, input.content, format);
+    if (!content.ok) return content;
+    return replaceDocument(input, content.value, format);
   }
 
   async function replaceDocument(
@@ -361,14 +336,14 @@ export function createMarkdownDocumentEngine(
     async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
-      const links = await spelling(documentId, [doc], undefined, view);
+      const links = await spelling(documentId, [doc], view);
       return serializeForSchema(documentId, doc, format.value.schemaType, links);
     },
 
     async serializeVersionedDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
-      const links = await spelling(documentId, [doc], undefined, view);
+      const links = await spelling(documentId, [doc], view);
       return versioned(doc, links, (doc) =>
         serializeForSchema(documentId, doc, format.value.schemaType, links),
       );
@@ -380,12 +355,7 @@ export function createMarkdownDocumentEngine(
       // Restore the snapshot's nodes as projected: a Markdown round trip would
       // drop every attribute the codec does not spell.
       const blocks = projectBlocks(documentId, snapshot, (blocks) => blocks);
-      const content =
-        format.value.schemaType === "code"
-          ? parseMarkdown(documentId, blocks[0]?.textContent ?? "", format.value)
-          : Ok({ blocks });
-      if (!content.ok) return content;
-      return replaceDocument({ documentId, origin }, content.value, format.value);
+      return replaceDocument({ documentId, origin }, { blocks }, format.value);
     },
 
     async readAsMarkdown(documentId) {
@@ -412,16 +382,15 @@ export function createMarkdownDocumentEngine(
 
     setMarkdown,
 
-    async seedFromMarkdown(documentId, markdown, origin) {
+    async seedFromMarkdown(documentId, content, origin) {
       const typedDocumentId = documentId as DocumentId;
       const format = await documentFormat(typedDocumentId);
       if (!format.ok) return format;
-      const parsed = parseMarkdown(typedDocumentId, markdown, format.value);
-      if (!parsed.ok) return parsed;
-      const bound = await bindWritten(typedDocumentId, parsed.value, format.value.schemaType);
+      const bound = contentFor(typedDocumentId, content, format.value);
+      if (!bound.ok) return bound;
       const seededDoc = createCollabYDoc({ gc: false });
       seededDoc.transact(() => {
-        deps.model.insertBlocks(toDocHandle(seededDoc), null, bound);
+        deps.model.insertBlocks(toDocHandle(seededDoc), null, bound.value);
       }, yjsTransactionOrigin(origin));
       const canonicalMarkdown = serializeForSchema(
         typedDocumentId,
@@ -448,44 +417,24 @@ export function createMarkdownDocumentEngine(
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
-
-    async editDocument(input) {
-      const format = await documentFormat(input.documentId);
-      if (!format.ok) throwSyncError(format.error);
-      const beforeMarkdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-        serializeForSchema(
-          input.documentId,
-          doc,
-          format.value.schemaType,
-          await spelling(input.documentId, [doc]),
-        ),
-      );
-      const result = await identityPreservingSet({
-        ...input,
-        markdown: input.transform(beforeMarkdown),
-      });
-      if (!result.ok) throwSyncError(result.error);
-      return {
-        ...documentWriteResult(result.value, input.origin),
-        beforeMarkdown,
-      };
-    },
   };
   return engine;
 
   async function identityPreservingSet(input: {
     documentId: DocumentId;
-    markdown: string;
+    content: BoundContent;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
     const format = await documentFormat(input.documentId);
     if (!format.ok) return format;
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
+    const shaped = contentFor(input.documentId, input.content, format.value);
+    if (!shaped.ok) return shaped;
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,
-      markdown: identityPreservingContent(input.markdown, format.value),
+      content: input.content,
       actor,
     });
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
@@ -597,16 +546,6 @@ function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
   if (origin.type === "user") return { kind: "writer" };
   if (origin.type === "import") return { kind: "import", policy: "writer_protected" };
   return { kind: "seed", policy: origin.type === "agent" ? "agent" : "writer_protected" };
-}
-
-function identityPreservingContent(
-  markdown: string,
-  format: { schemaType: YjsTrackedSchemaType; filetype: string | null },
-): string {
-  if (format.schemaType !== "code") return markdown;
-  const longestFence = Math.max(0, ...Array.from(markdown.matchAll(/`+/g), ([run]) => run.length));
-  const fence = "`".repeat(Math.max(3, longestFence + 1));
-  return `${fence}${format.filetype ?? ""}\n${markdown}${markdown.endsWith("\n") ? "" : "\n"}${fence}`;
 }
 
 export class DocumentMutationRejectedError extends Error {

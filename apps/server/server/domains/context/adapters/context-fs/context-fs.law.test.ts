@@ -35,6 +35,7 @@ function createUntitledFs(input: {
   const mutationStore = new InMemoryContextTreeMutationStore(backing);
   return {
     fs: new ContextFS({
+      holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
@@ -57,6 +58,7 @@ function createKbFs(documentSync: object = {}) {
     store,
     mutationStore,
     context: new ContextFS({
+      holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
@@ -83,9 +85,6 @@ function documentSyncProbe() {
     writeDocument: async () => {
       throw new Error("not used");
     },
-    editDocument: async () => {
-      throw new Error("not used");
-    },
   };
   return { documentSync, ensured, seeded };
 }
@@ -94,6 +93,7 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
+    holder: { projectId: "test-project" },
     links: { within: (_key, operation) => operation() },
     store,
     mutationStore: new InMemoryContextTreeMutationStore(backing),
@@ -176,6 +176,7 @@ describe("ContextFS rename filetype invariant", () => {
     const markdownByDocument = new Map<string, string>();
     const mutationStore = new InMemoryContextTreeMutationStore(backing);
     const context = new ContextFS({
+      holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
       mutationStore,
@@ -183,8 +184,9 @@ describe("ContextFS rename filetype invariant", () => {
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
-        seedFromMarkdown: async (documentId: string, markdown: string) => {
-          markdownByDocument.set(documentId, markdown);
+        bindMarkdown: async ({ markdown }: { markdown: string }) => ({ markdown }),
+        seedFromMarkdown: async (documentId: string, content: { markdown: string }) => {
+          markdownByDocument.set(documentId, content.markdown);
           return Ok({ updateSeq: 1 });
         },
       } as never,

@@ -25,6 +25,7 @@ import {
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
+import { writeMarkdown } from "./bound-writes.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -354,7 +355,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
     links,
-    schema: documentSchema,
     model,
     codec: markupCodec,
     journal: persistence.journal,
@@ -536,6 +536,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     runDocumentWriteHook,
     resolveDocumentFiletype: async () => null,
     observability,
+    inTransaction: isInDrizzleTransaction,
   });
   const projections = { refresh: runDocumentWriteHook };
   // Scoped as composition scopes it, so a real link scope sees every model call.
@@ -641,6 +642,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     agentEdit: () => agentEdit,
     reverseTurn: turnReversal.reverseTurn,
     writeDocument: runtime.markdownDocuments.writeDocument,
+    bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...responseFinalizer,
     ...drafts,
   };
@@ -652,13 +654,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
    * write records its authoring response, so `responseId` must then be a UUID.
    */
   async function seedAndStage(responseId: string, options: { liveBeta?: boolean } = {}) {
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId: ALPHA_ID,
       markdown: "Alpha base.",
       origin: { type: "user", actorUserId: USER_ID as never },
       threadId: THREAD_ID,
     });
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId: BETA_ID,
       markdown: "Beta base.",
       origin: { type: "user", actorUserId: USER_ID as never },
@@ -762,7 +764,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     sameIdentityRewrite = false,
   ) {
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId,
       markdown,
       origin: { type: "user", actorUserId: USER_ID as never },
@@ -1618,7 +1620,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   async function seedDiscardedDependencyPush() {
-    await collab.writeDocument({
+    await writeMarkdown(collab, {
       documentId: ALPHA_ID,
       markdown: "Dependency base.",
       origin: { type: "user", actorUserId: USER_ID as never },

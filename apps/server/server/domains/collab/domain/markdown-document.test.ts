@@ -17,8 +17,12 @@ import {
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "../adapters/in-memory/agent-edit.js";
-import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
+import {
+  createStaticDocumentLinkScopes,
+  UNSUPPORTED_AHEAD_REFS,
+} from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCheckpointService } from "../checkpoints.js";
+import { createLinkBinder } from "./link-binding.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
 
 const DOCUMENT_ID = "code-document" as DocumentId;
@@ -33,7 +37,6 @@ function setup(filetype = "typescript") {
   const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
     links: createStaticDocumentLinkScopes(),
-    schema,
     codec: mdxCodec({ schema }),
     model,
     journal,
@@ -54,13 +57,26 @@ function setup(filetype = "typescript") {
     resolveFiletype: async () => filetype,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(eventSink),
   });
-  return { coordinator, engine, eventSink, journal };
+  // Fixed test text names nothing, so it binds without a scope.
+  const binder = createLinkBinder({
+    codec: mdxCodec({ schema }),
+    schema,
+    model,
+    coordinator,
+    links: createStaticDocumentLinkScopes(),
+    registrar: UNSUPPORTED_AHEAD_REFS,
+    resolveFiletype: async () => filetype,
+    inTransaction: () => false,
+  });
+  const bind = (markdown: string) =>
+    binder.bindStatic(markdown, filetype === "png" ? null : filetype);
+  return { bind, coordinator, engine, eventSink, journal };
 }
 
 async function seedCode(setupResult: ReturnType<typeof setup>, source = "const answer = 42;") {
   const written = await setupResult.engine.setMarkdown({
     documentId: DOCUMENT_ID,
-    markdown: source,
+    content: setupResult.bind(source),
     origin: SYSTEM_ORIGIN,
   });
   expect(written.ok).toBe(true);
@@ -74,7 +90,7 @@ describe("code document serialization", () => {
     await expect(
       subject.engine.setMarkdown({
         documentId: DOCUMENT_ID,
-        markdown: "not an image",
+        content: subject.bind("not an image"),
         origin: SYSTEM_ORIGIN,
       }),
     ).resolves.toEqual({
@@ -143,7 +159,7 @@ describe("checkpoint restore", () => {
 
     await subject.engine.setMarkdown({
       documentId: DOCUMENT_ID,
-      markdown: "const changed = true;",
+      content: subject.bind("const changed = true;"),
       origin: SYSTEM_ORIGIN,
     });
     await expect(checkpoints.restore(DOCUMENT_ID, checkpoint.value)).resolves.toEqual({

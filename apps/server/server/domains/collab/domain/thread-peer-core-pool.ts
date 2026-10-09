@@ -88,6 +88,7 @@ type AgentEditObservability = Pick<
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
+  | "onLinkSpliceFallback"
 >;
 
 export function createBranchThreadPeerAgentEditCore(input: {

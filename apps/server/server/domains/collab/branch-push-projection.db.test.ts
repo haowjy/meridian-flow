@@ -143,7 +143,6 @@ describe("branch-push durable projection", () => {
     const codec = mdxCodec({ schema });
     const engine = createMarkdownDocumentEngine({
       links: createStaticDocumentLinkScopes(),
-      schema,
       model,
       codec,
       journal: persistence.journal,
@@ -355,7 +354,6 @@ describe("branch-push durable projection", () => {
     const codec = mdxCodec({ schema });
     const engine = createMarkdownDocumentEngine({
       links: createStaticDocumentLinkScopes(),
-      schema,
       model,
       codec,
       journal: persistence.journal,

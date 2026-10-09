@@ -487,6 +487,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: failingCatalog,
       });
       const context = new ContextFS({
+        holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
@@ -494,6 +495,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: {
           ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
+          bindMarkdown: async ({ markdown }: { markdown: string }) => ({ markdown }),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
         } as never,
       });
@@ -530,6 +532,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         failingCatalog,
       );
       const context = new ContextFS({
+        holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
@@ -537,6 +540,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: {
           ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
+          bindMarkdown: async ({ markdown }: { markdown: string }) => ({ markdown }),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
         } as never,
       });

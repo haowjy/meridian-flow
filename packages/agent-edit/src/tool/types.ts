@@ -205,6 +205,13 @@ export interface WriteContext {
    */
   copiedNodes?: readonly Block[];
   /**
+   * A whole-document `create` whose content the host already bound outside
+   * its transaction (server `LinkBinder`, contract §6.2): these nodes replace
+   * the parse of `content`, which stays only for the semantic IR, and ref
+   * assignment is skipped. Overwrite still aligns them against the old blocks.
+   */
+  boundBlocks?: readonly Block[];
+  /**
    * Host-only showing evidence for this thread: every link the model was
    * shown in a document, with the address shown. Ref assignment reads it;
    * agent-edit never reads thread history itself. Absent for utility, seed

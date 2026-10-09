@@ -44,6 +44,8 @@ export interface ScopePrepareRequest {
   addresses?: readonly string[];
   /** Refs, asset ids and ahead addresses are extracted from these (stored-link extraction). */
   docs?: readonly Y.Doc[];
+  /** Already-bound nodes about to be applied: extracted like `docs`. */
+  nodes?: readonly PMNode[];
   /**
    * Freshly parsed nodes about to be bound: their written addresses resolve
    * against the first holder, so they load after it.

@@ -9,6 +9,13 @@ export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
 export {
+  type BindHolder,
+  type BindMarkdownInput,
+  type BoundContent,
+  type LinkBinder,
+  LinkBindingInsideTransactionError,
+} from "./domain/link-binding.js";
+export {
   type DocumentLinkScopes,
   type HolderLinkScope,
   LIVE_VIEW,
