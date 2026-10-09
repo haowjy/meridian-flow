@@ -33,6 +33,13 @@ import {
 } from "./editor-review-handoff";
 import { ReviewHandoverFrame } from "./review-handover";
 
+// Match the account lifetime: rerenders must keep the same registry identity.
+const registry = {
+  retainBranchRooms: vi.fn(),
+  releaseBranchRooms: vi.fn(),
+  getBranchRoom: sessionFor,
+};
+
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
   getDraftPreview: vi.fn(),
@@ -46,11 +53,7 @@ vi.mock("@/client/query/useContextCatalog", () => ({
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => ({ promoteAppliedDraft: vi.fn(), discardDraft: vi.fn() }),
   useOptionalAccountResourceReplica: () => null,
-  useLiveDocumentSessionRegistry: () => ({
-    retainBranchRooms: vi.fn(),
-    releaseBranchRooms: vi.fn(),
-    getBranchRoom: sessionFor,
-  }),
+  useLiveDocumentSessionRegistry: () => registry,
 }));
 
 const target = (name: string): AiDraftLaunchTarget => ({
