@@ -203,13 +203,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             },
           },
           {
-            door: "host append, after the target moved, keeps every existing ref verbatim",
+            door: "an overwrite after the target moved keeps every ref it leaves in place",
             act: async () => {
               await ok(port.move("manuscript://target.md", "manuscript://moved/target.md"));
               await ok(
-                port.edit(
+                port.write(
                   "manuscript://holder.md",
-                  { kind: "append", content: "\n\n[L](later.md)" },
+                  "[T](moved/target.md) and [S](soon.md).\n\n[L](later.md)",
                   writer,
                 ),
               );
@@ -265,7 +265,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             markdown: "# Upload\n\n[Ahead](manuscript://future.md)\n",
           },
           {
-            door: "a writer save landing between an append's prepare and apply keeps its prose and retarget",
+            door: "a writer save landing between another save's prepare and apply keeps its prose and retarget",
             act: async () => {
               const id = (
                 await ok(
@@ -281,9 +281,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 );
               };
               await ok(
-                port.edit(
+                port.write(
                   "manuscript://interleave.md",
-                  { kind: "append", content: "\n\nAppend." },
+                  "Original.\n\n[T](a.md)\n\nAppend.",
                   writer,
                 ),
               );
@@ -294,14 +294,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           },
           ...[writer, writerInThread].flatMap((actor) =>
             (["before", "after"] as const).map((when) => ({
-              door: `an append merges with a writer's edit and unlink admitted ${when} it applies${"threadId" in actor.origin ? " (in a thread)" : ""}`,
+              door: `a save merges with a writer's edit and unlink admitted ${when} it applies${"threadId" in actor.origin ? " (in a thread)" : ""}`,
               act: async () => {
                 const uri = `manuscript://merge-${when}-${"threadId" in actor.origin}.md`;
                 const id = (await ok(port.createTrackedDocument(uri, "Original.\n\n[T](c.md)")))
                   .documentId;
                 const edit = await writerEdit(id);
                 if (when === "before") afterNextPrepare = edit;
-                await ok(port.edit(uri, { kind: "append", content: "\n\nAppend." }, actor));
+                await ok(port.write(uri, "Original.\n\n[T](c.md)\n\nAppend.", actor));
                 if (when === "after") await edit();
                 return id;
               },
@@ -397,7 +397,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 await ok(ports.documentSync.restore(id, checkpoint.value));
               };
               preparations = 0;
-              await ok(port.edit(uri, { kind: "append", content: "\n\nAppend." }, actor));
+              await ok(port.write(uri, "Checkpoint base.\n\nAppend.", actor));
               expect(await ports.documentSync.currentLiveGeneration(id)).toBe(generation + 1n);
               expect(preparations).toBe(2);
               return id;
@@ -417,19 +417,15 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 await ok(port.move("manuscript://occupant.md", "manuscript://first-moved.md"));
                 await ok(port.createTrackedDocument("manuscript://occupant.md", "Second."));
               };
-              const appended = await ok(
-                port.edit(
-                  "manuscript://occupant.md",
-                  { kind: "append", content: "\n\nAppend." },
-                  writer,
-                ),
+              const saved = await ok(
+                port.write("manuscript://occupant.md", "First.\n\nAppend.", writer),
               );
               expect(await read("manuscript://first-moved.md")).toBe("First.\n\n[A](a.md)\n");
-              expect(appended.documentId).not.toBe(first);
-              return appended.documentId ?? "";
+              expect(saved.documentId).not.toBe(first);
+              return saved.documentId ?? "";
             },
             refs: () => [],
-            markdown: "Second.\n\nAppend.\n",
+            markdown: "First.\n\nAppend.\n",
           },
           {
             door: "repair never publishes an empty document over a projection with no canonical state",

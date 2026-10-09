@@ -10,7 +10,6 @@ import type { PreparedWrite } from "../../collab/index.js";
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
-  ContextEditCommand,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
   ContextListOptions,
@@ -153,11 +152,6 @@ export interface ContextSchemeAdapter {
     path: string,
     options?: ContextWriteOptions,
   ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
-  edit(
-    path: string,
-    command: ContextEditCommand,
-    options?: ContextWriteOptions,
-  ): Promise<Result<AdapterContextWriteResult, AdapterFault>>;
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,

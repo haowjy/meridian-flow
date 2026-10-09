@@ -538,7 +538,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private async prepare(
     path: string,
     existing: ContextDocument | null,
-    markdown: string | ((current: string) => string),
+    markdown: string,
     against?: "current",
   ): Promise<Result<PreparedWrite, AdapterFault>> {
     const { filename } = splitPath(path);
@@ -833,77 +833,6 @@ export class ContextFS implements ContextSchemeAdapter {
       options,
     });
     return created.ok ? Ok({ documentId: created.value.document.id, created: true }) : created;
-  }
-
-  async edit(
-    path: string,
-    command: import("../../ports/context-port.js").ContextEditCommand,
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
-    // Append is prepared against the current document: an insertion after its last block,
-    // so every existing link keeps its ref and edits admitted meanwhile stay.
-    return this.preparedCommand(
-      async () => {
-        const existing = await this.lookupTrackedDocument(path);
-        if (!existing.ok) return existing;
-        if (!existing.value) {
-          return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
-        }
-        return this.prepare(
-          path,
-          existing.value,
-          (current) => current + command.content,
-          "current",
-        );
-      },
-      (prepared) => this.editInTransaction(path, prepared, options),
-    );
-  }
-
-  private async editInTransaction(
-    path: string,
-    content: PreparedWrite,
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) {
-      return { ok: false, error: { code: "io_error", message: "Cannot edit source root" } };
-    }
-    const folderId = await this.findFolderId(dir);
-    if (folderId === MISSING) {
-      return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
-    }
-
-    const { name, extension } = parseFilename(filename);
-    const doc = await this.store.findDocument(folderId, name, extension);
-    if (!doc) {
-      return { ok: false, error: { code: "io_error", message: `File not found: ${path}` } };
-    }
-    if (doc.fileType !== null) {
-      return {
-        ok: false,
-        error: { code: "io_error", message: `Cannot edit binary file as markdown: ${path}` },
-      };
-    }
-    if (!this.preparedFor(path, content, doc)) return Err({ code: "stale_target" });
-    if (!(await this.isVisibleDocument(doc.id))) {
-      const repaired = await this.repairTrackedDocument(doc);
-      if (!repaired.ok) return repaired;
-    }
-
-    const edited = await writeCollabMarkdown({
-      documentSync: this.documentSync,
-      documentId: doc.id,
-      content,
-      provenance: options?.origin,
-    });
-    if (!edited.ok) return edited;
-
-    return Ok({
-      documentId: doc.id,
-      markdown: edited.markdown,
-      updateSeq: edited.updateSeq,
-    });
   }
 
   async writeBinary(

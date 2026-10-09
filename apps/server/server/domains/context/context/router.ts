@@ -456,21 +456,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           });
     },
 
-    async edit(
-      uri: string,
-      command: import("../ports/context-port.js").ContextEditCommand,
-      options?: ContextWriteOptions,
-    ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolveMutation(uri);
-      if (!r.ok) return r;
-      const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
-      const result = await callAdapter(canonical, () => adapter.edit(path, command, options));
-      return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
-    },
-
     async writeBinary(
       uri: string,
       options: ContextWriteBinaryOptions,

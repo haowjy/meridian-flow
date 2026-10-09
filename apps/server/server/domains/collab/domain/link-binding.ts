@@ -6,8 +6,8 @@
  * Binding can mint ahead refs, and registering them opens a root transaction
  * that takes namespace keys. A command transaction that already holds those
  * keys would wait on itself forever, invisibly to PostgreSQL. So every
- * whole-document door (ContextFS write, edit and create, uploads, import,
- * writer writes, host append, seeds) prepares first and passes the result in;
+ * whole-document door (ContextFS write and create, uploads, import, writer
+ * writes, seeds) prepares first and passes the result in;
  * the binder refuses to run inside a transaction so a door that forgot to
  * hoist fails at once.
  *
@@ -111,12 +111,11 @@ export type BindHolder =
 
 export interface BindMarkdownInput {
   holder: BindHolder;
-  /** The new content, or (host append) a function of the holder's current Markdown. */
-  markdown: string | ((current: string) => string);
+  markdown: string;
   /**
    * `current`: prepare against the holder's current document, so every link
    * that stays corresponds to itself and keeps its ref, and unchanged content
-   * keeps its items (overwrite, append). Absent: fresh (seed, import, create).
+   * keeps its items (an actor's overwrite). Absent: fresh (seed, import, create).
    */
   against?: "current";
   /** The version the content is written into; whole-document doors write live. */
@@ -317,26 +316,12 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
           schemaType,
         });
 
+      const { markdown } = input;
       if (schemaType === "code") {
         if (base) await prepare([]);
-        const current = previous[0]?.textContent ?? "";
-        const markdown =
-          typeof input.markdown === "string" ? input.markdown : input.markdown(current);
         return finish([codeBlock(markdown, filetype)], markdown);
       }
 
-      let markdown: string;
-      let current: readonly PMNode[] = [];
-      if (typeof input.markdown === "string") {
-        markdown = input.markdown;
-      } else {
-        // Append spells the current document the way any reader without a thread sees it, so
-        // every old link's spelling corresponds to itself below.
-        await prepare([]);
-        const spelled = previous.length > 0 ? deps.codec.serialize(previous, scopeFor()) : "";
-        current = deps.codec.parse(spelled).blocks;
-        markdown = input.markdown(spelled);
-      }
       const written = deps.codec.parse(markdown).blocks;
       await prepare(written);
       const scope = scopeFor();
@@ -348,7 +333,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         shown: [],
       });
       await register(assigned.minted, scope);
-      return finish(keepUnchangedPrefix(previous, current, written, assigned.nodes), markdown);
+      return finish(assigned.nodes, markdown);
     } finally {
       base?.doc.destroy();
     }
@@ -398,27 +383,4 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       return prepared({ holder, base: null, blocks, markdown, schemaType });
     },
   };
-}
-
-/**
- * Host append: the leading blocks the appended text left as the current
- * document spelled them are the current document's own nodes, so the diff
- * leaves them untouched even where the codec does not spell every attribute.
- * The append then lands after them, anchored to the base's items.
- */
-function keepUnchangedPrefix(
-  previous: readonly PMNode[],
-  current: readonly PMNode[],
-  written: readonly PMNode[],
-  assigned: readonly PMNode[],
-): readonly PMNode[] {
-  if (current.length !== previous.length) return assigned;
-  let kept = 0;
-  while (kept < current.length && kept < written.length) {
-    const spelled = current[kept];
-    const rewritten = written[kept];
-    if (!spelled || !rewritten || !spelled.eq(rewritten)) break;
-    kept++;
-  }
-  return [...previous.slice(0, kept), ...assigned.slice(kept)];
 }

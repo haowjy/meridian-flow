@@ -246,9 +246,6 @@ export interface ContextDeleteOptions extends ContextWriteOptions {
   expected: DeleteContextEntryRequest["expected"];
 }
 
-/** Certified context edits are closed semantic commands, never opaque callbacks. */
-export type ContextEditCommand = { kind: "append"; content: string };
-
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
 export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   fileType: DocumentFileType;
@@ -311,15 +308,6 @@ export interface ContextPort {
     uri: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>>;
-
-  /**
-   * Resolve and apply one semantic edit under the document collab mutex.
-   */
-  edit(
-    uri: string,
-    command: ContextEditCommand,
-    options?: ContextWriteOptions,
-  ): Promise<Result<ContextWriteResult, ContextError>>;
 
   /** Write a binary (storage-backed) file to a URI. Creates parent folders as needed. */
   writeBinary(
