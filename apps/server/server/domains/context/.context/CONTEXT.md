@@ -215,12 +215,10 @@ bind their Markdown (`documentSync.bindMarkdown`) **before**
 namespace-locked transaction (collab `document-authority-and-schema.md`). The
 existing document is looked up outside the transaction for that; the
 transaction looks it up again and checks the bound write was made for what
-occupies the path now. If the occupant changed, the document was restored to
-another authority generation since the base was read, or it no longer has the
-base's clocks, the transaction answers `stale_target` and
-`BoundWrites.command` binds again against what is there (three attempts). An
-edit admitted in between merges with the bound update. An actor's overwrite
-binds against the current document; import and system
+occupies the path now; if the occupant changed, it answers `stale_target`
+and nothing is written. The bound write is desired state: it overwrites what
+the document holds when it applies, like any whole-document save. An actor's
+overwrite binds against the current document; import and system
 writes bind fresh. A new document binds as the canonical URI it will have
 (`ContextFSDeps.holder`: the port's project and the source's Work authority).
 

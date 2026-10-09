@@ -1,7 +1,7 @@
 /**
  * Whole-document write doors bind outside their transaction and apply the
- * bound write inside it (contract §6.2, ledger A2-1): a mutation against
- * the base it read, certified for one holder.
+ * bound write inside it (contract §6.2, ledger A2-1): desired state, applied
+ * as the ordinary overwrite and certified for one holder.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
@@ -65,7 +65,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       return row ? `${row.scheme}://${row.path} in ${row.projectId}` : null;
     }
 
-    it("binds before the transaction: refs survive, concurrent edits merge, holders are certified", async () => {
+    it("binds before the transaction: refs survive, saves are desired state, holders are certified", async () => {
       await deleteDrizzleRows(db, [users]);
       const userId = randomUUID();
       const projectId = randomUUID();
@@ -111,11 +111,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       );
       // Runs once, after the next whole-document write is bound and before it applies.
       let afterNextBind: (() => Promise<void>) | null = null;
-      let bindings = 0;
       const bindMarkdown = ports.documentSync.bindMarkdown;
       ports.documentSync.bindMarkdown = async (input) => {
         const bound = await bindMarkdown(input);
-        bindings++;
         const between = afterNextBind;
         afterNextBind = null;
         await between?.();
@@ -264,37 +262,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             refs: () => [expect.stringMatching(/^ahead:/)],
             markdown: "# Upload\n\n[Ahead](manuscript://future.md)\n",
           },
-          {
-            door: "a writer save landing between another save's bind and apply keeps its prose and retarget",
-            act: async () => {
-              const id = (
-                await ok(
-                  port.createTrackedDocument(
-                    "manuscript://interleave.md",
-                    "Original.\n\n[T](a.md)",
-                  ),
-                )
-              ).documentId;
-              afterNextBind = async () => {
-                await ok(
-                  port.write("manuscript://interleave.md", "Concurrent.\n\n[T](b.md)", writer),
-                );
-              };
-              await ok(
-                port.write(
-                  "manuscript://interleave.md",
-                  "Original.\n\n[T](a.md)\n\nAppend.",
-                  writer,
-                ),
-              );
-              return id;
-            },
-            refs: () => [expect.stringMatching(/^ahead:/)],
-            markdown: "Concurrent.\n\n[T](b.md)\n\nAppend.\n",
-          },
           ...[writer, writerInThread].flatMap((actor) =>
             (["before", "after"] as const).map((when) => ({
-              door: `a save merges with a writer's edit and unlink admitted ${when} it applies${"threadId" in actor.origin ? " (in a thread)" : ""}`,
+              // Desired state: an edit admitted before the save applies is replaced; one made
+              // against the old state and admitted after merges into the blocks the save kept.
+              door: `a save and a writer's edit and unlink admitted ${when} it applies${"threadId" in actor.origin ? " (in a thread)" : ""}`,
               act: async () => {
                 const uri = `manuscript://merge-${when}-${"threadId" in actor.origin}.md`;
                 const id = (await ok(port.createTrackedDocument(uri, "Original.\n\n[T](c.md)")))
@@ -305,8 +277,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 if (when === "after") await edit();
                 return id;
               },
-              refs: () => [],
-              markdown: "Concurrent.\n\nT\n\nAppend.\n",
+              refs: () => (when === "after" ? [] : [expect.stringMatching(/^ahead:/)]),
+              markdown:
+                when === "after"
+                  ? "Concurrent.\n\nT\n\nAppend.\n"
+                  : "Original.\n\n[T](c.md)\n\nAppend.\n",
             })),
           ),
           {
@@ -341,8 +316,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             refs: () => [],
             markdown: "Inserted.\n\nFirst para.\n\nSecond para changed here.\n\nThird.\n",
           },
-          // A2-R1: a save is an ordered block correspondence against its base, not a positional
-          // diff, so a kept paragraph between changed ones stays itself.
+          // A2-R1: a save is an ordered block correspondence against the document, not a
+          // positional diff, so a kept paragraph between changed ones stays itself.
           ...[writer, writerInThread].flatMap((actor) =>
             (["before", "after"] as const).map((when) => ({
               door: `a save inserting above a kept paragraph keeps its items, anchors, and an edit to it admitted ${when} the save${"threadId" in actor.origin ? " (in a thread)" : ""}`,
@@ -379,32 +354,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 return id;
               },
               refs: () => [],
-              markdown: "Alpha.\n\nInserted.\n\nBravo. Concurrent.\n\nChanged Charlie.\n",
+              markdown: `Alpha.\n\nInserted.\n\nBravo.${when === "after" ? " Concurrent." : ""}\n\nChanged Charlie.\n`,
             })),
           ),
-          // A2-R2: a restore replaces the authority generation even when its checkpoint retains
-          // every clock the write was bound against; the write must be bound again.
-          ...[writer, writerInThread].map((actor) => ({
-            door: `a write bound before a restore that kept its base's clocks is bound again${"threadId" in actor.origin ? " (in a thread)" : ""}`,
-            act: async () => {
-              const uri = `manuscript://restored-${"threadId" in actor.origin}.md`;
-              const id = (await ok(port.createTrackedDocument(uri, "Initial."))).documentId;
-              await ok(port.write(uri, "Checkpoint base.", writer));
-              const checkpoint = await ports.documentSync.checkpoint(id, "same base");
-              if (!checkpoint.ok) throw new Error(JSON.stringify(checkpoint.error));
-              const generation = await ports.documentSync.currentLiveGeneration(id);
-              afterNextBind = async () => {
-                await ok(ports.documentSync.restore(id, checkpoint.value));
-              };
-              bindings = 0;
-              await ok(port.write(uri, "Checkpoint base.\n\nAppend.", actor));
-              expect(await ports.documentSync.currentLiveGeneration(id)).toBe(generation + 1n);
-              expect(bindings).toBe(2);
-              return id;
-            },
-            refs: () => [],
-            markdown: "Checkpoint base.\n\nAppend.\n",
-          })),
           {
             door: "a write bound for one holder never lands on the document that replaced it",
             act: async () => {
@@ -417,15 +369,18 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 await ok(port.move("manuscript://occupant.md", "manuscript://first-moved.md"));
                 await ok(port.createTrackedDocument("manuscript://occupant.md", "Second."));
               };
-              const saved = await ok(
-                port.write("manuscript://occupant.md", "First.\n\nAppend.", writer),
+              const saved = await port.write(
+                "manuscript://occupant.md",
+                "First.\n\nAppend.",
+                writer,
               );
+              expect(saved).toMatchObject({ ok: false, error: { code: "stale_target" } });
               expect(await read("manuscript://first-moved.md")).toBe("First.\n\n[A](a.md)\n");
-              expect(saved.documentId).not.toBe(first);
-              return saved.documentId ?? "";
+              expect(await read("manuscript://occupant.md")).toBe("Second.\n");
+              return first;
             },
-            refs: () => [],
-            markdown: "First.\n\nAppend.\n",
+            refs: () => [expect.stringMatching(/^ahead:/)],
+            markdown: "First.\n\n[A](a.md)\n",
           },
           {
             door: "repair never publishes an empty document over a projection with no canonical state",
