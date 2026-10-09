@@ -7,7 +7,7 @@ import type { DocumentSession, DocumentSessionSnapshot } from "./document-sessio
 import { rotateWriterClient } from "./writer-client";
 
 type Carry = Extract<BranchRoomRetirement, { kind: "carried" }>;
-type Entry = { retirement: Carry; revision: number; attempt: AbortController };
+type Entry = { retirement: Carry; revision: number; attempt: AbortController; delivered: boolean };
 type Outcome = "ready" | "retry" | "refused";
 export const WRITER_HANDOFF_ORIGIN = Symbol("writer-handoff");
 
@@ -48,16 +48,18 @@ export class BranchWriterHandoff {
     const entry: Entry = {
       revision: (prior?.revision ?? 0) + 1,
       attempt: new AbortController(),
-      retirement: prior
-        ? {
-            ...retirement,
-            source:
-              prior.retirement.source.generation > retirement.source.generation
-                ? prior.retirement.source
-                : retirement.source,
-            carry: Y.mergeUpdates([prior.retirement.carry, retirement.carry]),
-          }
-        : retirement,
+      delivered: false,
+      retirement:
+        prior && !prior.delivered
+          ? {
+              ...retirement,
+              source:
+                prior.retirement.source.generation > retirement.source.generation
+                  ? prior.retirement.source
+                  : retirement.source,
+              carry: Y.mergeUpdates([prior.retirement.carry, retirement.carry]),
+            }
+          : retirement,
     };
     this.carries.set(room.branchId, entry);
     void this.deliver(room.branchId, entry);
@@ -113,6 +115,10 @@ export class BranchWriterHandoff {
               if (clients.has(session.document.clientID)) {
                 rotateWriterClient(session.document, session.presence.adoptDocumentClient, clients);
               }
+              // The successor outbox owns the filtered bytes now. A later retirement must
+              // not merge the original's discarded anchors back into the next carry.
+              entry.delivered = true;
+              entry.retirement = { ...entry.retirement, carry: update };
               Y.applyUpdate(session.document, update, WRITER_HANDOFF_ORIGIN);
               outcome = await this.wait(session, entry, true);
               if (!this.current(branchId, entry)) return;
@@ -134,7 +140,7 @@ export class BranchWriterHandoff {
         release();
       }
       if (!this.current(branchId, entry)) return;
-      if (outcome === "refused") {
+      if (outcome === "refused" || entry.delivered) {
         this.carries.delete(branchId);
         return;
       }

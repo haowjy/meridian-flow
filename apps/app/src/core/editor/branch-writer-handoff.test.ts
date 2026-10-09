@@ -47,11 +47,17 @@ async function delivered(generation: number, expected: string, baseline: Uint8Ar
   const wire = runtime.wire(room(generation));
   wire.sync(baseline);
   await flush();
-  const session = runtime.pool.peek(room(generation))!;
+  const session = runtime.pool.peek(room(generation));
+  if (!session) throw new Error("No successor session");
   expect(session.document.getText("text").toString()).toBe(expected);
   expect(session.document.store.pendingStructs).toBeNull();
   expect(session.document.store.pendingDs).toBeNull();
-  expect(wire.sent.length).toBeGreaterThan(0);
+  const server = new Y.Doc({ gc: false });
+  Y.applyUpdate(server, baseline);
+  for (const update of wire.sent) Y.applyUpdate(server, update);
+  expect(server.getText("text").toString()).toBe(expected);
+  expect(server.store.pendingStructs).toBeNull();
+  server.destroy();
   // The read before admission cannot publish a recovered draft. Only acknowledgement does.
   expect(runtime.changed).not.toHaveBeenCalled();
   wire.ack();
@@ -96,6 +102,8 @@ it("abandons an unsynced successor, then carries a replay overtaken by its ackno
   reset(2);
   await vi.advanceTimersByTimeAsync(10);
   expect(runtime.wire(room(2)).sent).toEqual([]);
+  expect(runtime.wire(room(2)).document.getText("text").toString()).toBe("");
+  expect(runtime.wire(room(2)).document.store.pendingStructs).toBeNull();
   runtime.wire(room(3)).sync(baseline);
   await flush();
   expect(runtime.wire(room(3)).document.getText("text").toString()).toBe("hello WORLD");

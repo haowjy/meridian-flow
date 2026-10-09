@@ -182,7 +182,7 @@ input arrives as an action addressed to the draft and compares its generation wi
 | O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
 | P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
 | X | The Work's list has no row for the draft | With no K the review ends, unless the newest preview lists changes at R or above (the list lags); K keeps it |
-| S | The editor's room is `branch-generation-stale` or `branch-stale-doc` | The room is cleared and read afresh; the review stays |
+| S | The editor's room is reset as `superseded` (`branch-generation-stale`, named server close or denial) | The room is cleared and read afresh; the review stays |
 | L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
 | B | Whole-draft batch | Its pending and closed actions carry R at batch start |
 
@@ -536,3 +536,11 @@ admission may enrich only the overlay with resolved live-resource metadata.
 Server-side twin: discarding a new-document draft also removes its entry from
 the work manifest branch. Later Apply operations publish the manifest as well as
 document content, so a discarded entry must not remain in that branch.
+
+Review hosts retain a `review-room-ref` rather than only a room name. Session
+retirement hands unacknowledged writer updates to the account-scoped handoff,
+which delivers against the successor's first sync and invalidates reads after
+acknowledgement, even when review has exited. A `rebuild` reset
+(`branch-stale-doc`, 4205) rebuilds the same room under the painted review;
+it does not ask the reducer to navigate to a later generation. Only surviving
+anchors are replayed, including after this tab's own whole-draft Discard.
