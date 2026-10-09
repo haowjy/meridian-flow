@@ -593,7 +593,7 @@ export async function createProductionAppPorts(input: {
     arrivals,
   });
   const uploadIntake = createUploadIntake({
-    repository: createDrizzleUploadIntakeRepository(db, contextCatalog),
+    repository: createDrizzleUploadIntakeRepository(db),
     content: createContextUploadContentPort(contextPorts),
     objectStore,
     eventSink,

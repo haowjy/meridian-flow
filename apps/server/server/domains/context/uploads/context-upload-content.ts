@@ -65,5 +65,19 @@ export function createContextUploadContentPort(
             });
       return result.ok ? { ok: true } : { ok: false, definite: true };
     },
+
+    async remove({ reservation, actorUserId }) {
+      const port = portFor(reservation, actorUserId);
+      if (!port) return { ok: false, stale: true };
+      const removed = await port.delete(reservation.canonicalUri, {
+        expected: { kind: "file", documentId: reservation.documentId },
+      });
+      if (removed.ok) return { ok: true };
+      if (STALE_DELETE.has(removed.error.code)) return { ok: false, stale: true };
+      throw new Error(`Upload ${reservation.intakeId} deletion failed: ${removed.error.code}`);
+    },
   };
 }
+
+/** The upload moved or left its URI: the writer's identity no longer names a file there. */
+const STALE_DELETE = new Set(["not_found", "stale_source", "stale_target", "operation_mismatch"]);
