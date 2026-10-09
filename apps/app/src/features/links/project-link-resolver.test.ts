@@ -59,6 +59,10 @@ type Row = {
   after: (string | null)[];
   /** What reached the server (ref, else href). */
   asked: string[];
+  /** A listener hears the server's answer land. */
+  heard?: boolean;
+  /** What a click right after asking waits for, as `resolve()` answers it. */
+  clicked?: string | null;
 };
 
 const ROWS: Row[] = [
@@ -123,6 +127,8 @@ const ROWS: Row[] = [
     before: ["resolved:Nine"],
     after: ["gone"],
     asked: [AHEAD],
+    heard: true,
+    clicked: "gone",
   },
   {
     rule: "a server failure keeps the local answer",
@@ -142,6 +148,15 @@ const ROWS: Row[] = [
     before: ["resolved:Kael", "pending"],
     after: ["resolved:Kael", null],
     asked: [AHEAD],
+  },
+  {
+    rule: "a failed question with nothing shown meanwhile is heard as no answer",
+    links: [{ ref: AHEAD, href: "manuscript://Ten.md" }],
+    server: { [AHEAD]: "fail" },
+    before: ["pending"],
+    after: [null],
+    asked: [AHEAD],
+    heard: true,
   },
   {
     rule: "a holder whose address has not arrived asks the server nothing",
@@ -187,6 +202,10 @@ it("routes each link to the local index or the server", async () => {
     );
 
     resolution.request(row.links);
+    let heard = false;
+    resolution.subscribe(() => (heard = true));
+    const [first] = row.links;
+    const click = row.clicked !== undefined && first ? resolution.resolve(first) : null;
     expect
       .soft(
         row.links.map((link) => show(resolution.read(link))),
@@ -202,6 +221,8 @@ it("routes each link to the local index or the server", async () => {
       )
       .toEqual(row.after);
     expect.soft(asked, row.rule).toEqual(row.asked);
+    if (row.heard) expect.soft(heard, row.rule).toBe(true);
+    if (click) expect.soft(show(await click), row.rule).toBe(row.clicked);
 
     // A gone link is not followed: nothing opens, and nothing is said.
     const [link] = row.links;

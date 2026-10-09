@@ -129,7 +129,8 @@ export type LinkResolution = {
   /**
    * The answer, waited for — what a click needs, because the writer is already
    * asking to go there. Null carries the same "nothing to say" meaning, and a
-   * previous failure is retried rather than remembered. A registration landing
+   * previous failure is retried rather than remembered. A provisional answer
+   * waits for the server, which may still say gone or name another document. A registration landing
    * while this waits asks the question again in the new generation rather than
    * answering null; only unregistering (or destroying) the port does that.
    */
@@ -208,7 +209,10 @@ type Generation = {
   readonly binding: LinkBindingScope;
   /** Answers, keyed by the link's ref and the classifier's spelling of its href. */
   readonly answers: Map<string, LinkResolutionEntry>;
-  /** Keys whose request failed. Not answers — questions that never got asked. */
+  /**
+   * Keys whose last question failed. Usually no answer stands beside one; a
+   * kept provisional answer may, and a click asks again about it.
+   */
   readonly failed: Set<string>;
   /** The one question out for a key, queued or in flight. */
   readonly asking: Map<string, Request>;
@@ -242,17 +246,19 @@ export function createLinkResolution(): LinkResolution {
     // This request's own entry and no other: after a re-registration the map
     // under this key can hold the next generation's question about it.
     if (generation.asking.get(key) === request) generation.asking.delete(key);
+    const previous = generation.answers.get(key) ?? null;
+    // A failure is remembered even under a kept provisional answer, so a click
+    // asks the server again rather than trusting an answer it never confirmed.
+    if (answer) generation.failed.delete(key);
+    else generation.failed.add(key);
     if (entry) generation.answers.set(key, entry);
-    else {
-      generation.answers.delete(key);
-      generation.failed.add(key);
-    }
+    else generation.answers.delete(key);
     // A generation stops being live only through `retire`, which has already
     // answered this waiter (null, or carried into the next generation). An
     // answer arriving afterwards is about a project state nobody is looking at.
     if (generation !== current) return;
     request.settle(entry);
-    if (entry !== request.provisional) publish();
+    if (entry !== previous) publish();
   };
 
   const pump = (generation: Generation) => {
@@ -401,11 +407,17 @@ export function createLinkResolution(): LinkResolution {
       if (!generation) return null;
       const internal = internalLink(link);
       if (!internal) return null;
-      const known = generation.answers.get(internal.key);
-      if (known && known.state !== "pending") return known;
+      const { key, question } = internal;
+      const known = generation.answers.get(key);
+      // A provisional answer is not settled: the click waits for the server
+      // (whose gone or other document wins), or asks again if it failed.
+      const settled = !generation.asking.has(key) && !generation.failed.has(key);
+      if (known && known.state !== "pending" && settled) return known;
       // A click is the writer asking again, so a failure is worth retrying.
-      generation.failed.delete(internal.key);
-      return askAwaited(generation, internal.key, internal.question);
+      generation.failed.delete(key);
+      const answer = askAwaited(generation, key, question);
+      if (generation.answers.get(key) !== known) publish();
+      return answer;
     },
 
     registerResolver(resolve, options) {

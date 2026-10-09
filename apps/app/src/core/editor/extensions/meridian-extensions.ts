@@ -36,7 +36,7 @@ import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
 import { linkStateAttributes } from "../links/link-resolution-decorations";
-import { getLinkResolution } from "../links/link-storage";
+import { LINK_SURFACE_NAME } from "../links/link-storage";
 import {
   classifyLinkTarget,
   internalClipboardTarget,
@@ -367,7 +367,10 @@ export const MeridianLink = Link.extend({
         0,
       ]);
       const element = dom as HTMLElement;
-      const unsubscribe = linkStateAttributes(element, mark.attrs, getLinkResolution(editor));
+      // Storage, not `getLinkResolution`: a view built while the editor is
+      // constructing sees `isDestroyed` as true, and would never subscribe.
+      const resolution = editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
+      const unsubscribe = linkStateAttributes(element, mark.attrs, resolution);
       return {
         dom: element,
         contentDOM,
