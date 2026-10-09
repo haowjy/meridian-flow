@@ -207,7 +207,11 @@ export class DocumentSessionRegistry
     const session = state.session;
     if (!session) return false;
     const snapshot = session.getSnapshot();
-    if (snapshot.schemaFence || snapshot.status === "detached" || session.refusedLocalEdits())
+    if (
+      snapshot.schemaFence ||
+      snapshot.status === "detached" ||
+      session.resetDisposition === "refused"
+    )
       return false;
     if (
       snapshot.status !== "access-lost" &&
@@ -603,7 +607,7 @@ export class DocumentSessionRegistry
    * rebuilds them in place (`rebuildBranchRoom`).
    */
   private dropRefusedRoom(session: DocumentSession): void {
-    if (this.refusedRoomDrops.has(session) || !session.refusedLocalEdits()) return;
+    if (this.refusedRoomDrops.has(session) || session.resetDisposition !== "refused") return;
     const state = this.liveRooms.get(session.documentId as DocumentId);
     if (state?.session !== session) return;
     const settle = () => {

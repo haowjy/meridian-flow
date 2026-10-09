@@ -122,12 +122,6 @@ export type EditorViewProps = {
 
 let editorSessionOwnerSequence = 0;
 
-/** Resets that say the branch moved on to a later generation, not that the writer lost the room. */
-const STALE_ROOM_REASONS: ReadonlySet<string> = new Set([
-  "branch-generation-stale",
-  WS_CLOSE.BRANCH_STALE.reason,
-]);
-
 /**
  * How long a painted review editor waits for its change marks before showing
  * anyway. The preview is normally already cached from opening the room, so this
@@ -252,7 +246,7 @@ export function EditorView(props: EditorViewProps) {
     let rebuilding = false;
     return boundSession.subscribe((snapshot) => {
       if (rebuilding) return;
-      if (boundSession.refusedLocalEdits()) {
+      if (boundSession.resetDisposition === "refused") {
         // Only the refused characters are lost: the review stays open on a
         // fresh session synced from the server.
         rebuilding = true;
@@ -282,7 +276,7 @@ export function EditorView(props: EditorViewProps) {
         props.onReviewRoomStale &&
         reviewDraftId &&
         connection?.kind === "reset" &&
-        STALE_ROOM_REASONS.has(connection.reason)
+        (connection.disposition === "superseded" || connection.disposition === "rebuild")
       ) {
         props.onReviewRoomStale(props.documentId, reviewDraftId, roomKey);
         return;

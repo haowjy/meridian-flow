@@ -8,6 +8,7 @@
  * brings the review back.
  */
 
+import { WS_CLOSE } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, useEffect } from "react";
@@ -263,7 +264,11 @@ describe("a last Apply", () => {
       });
       mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
       await act(async () => {
-        setConnectionState(staleRoom, { kind: "reset", reason: "branch-generation-stale" });
+        setConnectionState(staleRoom, {
+          kind: "reset",
+          reason: WS_CLOSE.BRANCH_GENERATION_STALE.reason,
+          disposition: "superseded",
+        });
       });
       await vi.waitFor(() =>
         expect(review?.controller.reviewRoomName).toBe("review-room-after-reset"),
