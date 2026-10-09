@@ -6,7 +6,7 @@
  */
 import type { DocumentRevisionEvidence } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { ContextFileEntry } from "../../domains/context/index.js";
+import type { ContextFileEntry, SearchResult } from "../../domains/context/index.js";
 import {
   isSkillsUri,
   type LsEntry,
@@ -15,12 +15,13 @@ import {
   listSkillDir,
   refuseSkillSearch,
   type SearchToolInput,
+  type ShownLinkShowing,
+  searchPassage,
   skillsRootEntries,
   sortLsEntries,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { containerReadonly, withDraftWork } from "./file-access.js";
-import { showing } from "./shown-link-capture.js";
 import {
   contextToolError,
   isToolError,
@@ -98,7 +99,7 @@ function lsFile(entry: ContextFileEntry, verbose: boolean): Omit<LsEntry, "reado
 
 export function createSearchHandler(deps: ToolWiringDeps) {
   return async (input: unknown, ctx: ToolHandlerContext) => {
-    const { pattern, scope, version } = input as SearchToolInput;
+    const { pattern, scope, verbose = false, version } = input as SearchToolInput;
     const skillRefusal = refuseSkillSearch(scope);
     if (skillRefusal) return skillRefusal;
     const call = await listingCall(deps, ctx, version);
@@ -114,24 +115,13 @@ export function createSearchHandler(deps: ToolWiringDeps) {
     return {
       // Host-only facts never reach the model.
       output: hits.map(
-        ({
-          hit: {
-            documentId: _id,
-            revision: _revision,
-            shownLinks: _shown,
-            shownView: _view,
-            ...hit
-          },
-          readonly,
-        }) => ({
+        ({ hit: { documentId: _id, revision: _revision, shown: _shown, ...hit }, readonly }) => ({
           ...hit,
           readonly,
         }),
       ),
-      // Only returned, authorized hits were shown: their capped passages carry the facts.
-      shown: hits.flatMap(({ hit }) =>
-        showing(hit.documentId, hit.uri, { shownLinks: hit.shownLinks, shownView: hit.shownView }),
-      ),
+      // Only returned, authorized hits were shown, and only the passages their text shows whole.
+      shown: hits.flatMap(({ hit }) => shownPassages(hit, pattern, verbose)),
       metadata: {
         documentRevisions: hits.map(
           ({ hit: { documentId, uri, revision } }) =>
@@ -140,4 +130,19 @@ export function createSearchHandler(deps: ToolWiringDeps) {
       },
     };
   };
+}
+
+/**
+ * A hit's showing as the model receives it: a passage whose window cut its
+ * block claims none of its links, since the window may have left one out or
+ * split it. Whole passages keep theirs.
+ */
+function shownPassages(hit: SearchResult, pattern: string, verbose: boolean): ShownLinkShowing[] {
+  const shown = hit.shown;
+  if (!shown) return [];
+  const links = hit.matches.flatMap(({ excerpt }, index) =>
+    searchPassage(excerpt, pattern, verbose).whole ? (shown.passages[index] ?? []) : [],
+  );
+  if (links.length === 0) return [];
+  return [{ documentId: hit.documentId, holderUri: shown.holderUri, view: shown.view, links }];
 }

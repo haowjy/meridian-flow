@@ -1,10 +1,10 @@
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { LinkView } from "@meridian/contracts";
-import type { SpelledLinkFact } from "@meridian/markup";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import type { ShownLink } from "../links/correspondence.js";
+import type { LinkShowing } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
@@ -51,11 +51,10 @@ interface WriteOutcomeBase {
   /**
    * Host-only showing evidence: each link the rendered result showed the
    * model, with the address shown (truncated blocks count only links ending
-   * inside the shown prefix). Never copied into `result`.
+   * inside the shown prefix), and the holder URI and view it was spelled
+   * from. Never copied into `result`.
    */
-  shownLinks?: readonly SpelledLinkFact[];
-  /** Host-only: the view `shownLinks` were spelled in; set whenever they are. */
-  shownView?: LinkView;
+  showing?: LinkShowing;
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -284,10 +283,8 @@ export interface ResponseCommitWriteReceipt {
   writeId: string;
   settlementId: string;
   result: AgentEditResultV1;
-  /** Host-only: the links the settled receipt's echo showed the model. */
-  shownLinks?: readonly SpelledLinkFact[];
-  /** Host-only: the view `shownLinks` were spelled in; set whenever they are. */
-  shownView?: LinkView;
+  /** Host-only: what the settled receipt's echo showed the model, from the commit's own binding. */
+  showing?: LinkShowing;
 }
 
 export interface ResponseStagedCreateOutcome {

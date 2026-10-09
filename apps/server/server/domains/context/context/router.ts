@@ -113,8 +113,7 @@ function toSearchResult(
     matches: hit.matches,
     matchCount: hit.matchCount,
     score: hit.score,
-    ...(hit.shownLinks ? { shownLinks: hit.shownLinks } : {}),
-    ...(hit.shownView ? { shownView: hit.shownView } : {}),
+    ...(hit.shown ? { shown: hit.shown } : {}),
   };
 }
 

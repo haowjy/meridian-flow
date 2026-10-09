@@ -47,6 +47,7 @@ export type LinkScopeMembership = (input: {
   workId?: string | null;
   threadId?: string | null;
   responseId?: string | null;
+  destination?: "live" | "draft";
 }) => Promise<{ members: readonly string[] }>;
 
 type Row = {
@@ -96,8 +97,13 @@ const memberKey = (key: LinkScopeKey) =>
       ? `thread:${key.threadId}`
       : `document:${key.documentId}`;
 
+/** Baseline live is `live`; a reply's live view sees its own staged creates, so it is keyed apart. */
 const viewKey = (view: LinkView) =>
-  view.kind === "live" ? "live" : `draft:${view.workId}:${view.responseId ?? ""}`;
+  view.kind === "live"
+    ? view.responseId
+      ? `live:${view.responseId}`
+      : "live"
+    : `draft:${view.workId}:${view.responseId ?? ""}`;
 
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
@@ -329,10 +335,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
 
   /**
    * Membership of each view about to be spelled or read in, read only once a
-   * present manifest-governed row needs it: the live set always (it tells live
-   * from draft-only), and a draft view's own set, which alone decides what it
-   * holds. A failure propagates: authority failure is never permission to
-   * expose rows.
+   * present manifest-governed row needs it: the baseline live set always (it
+   * tells live from draft-only), and each other view's own set, which alone
+   * decides what it holds: a draft's, or a reply's live view with that reply's
+   * staged creates, each read with its thread and response authority. A
+   * failure propagates: authority failure is never permission to expose rows.
    */
   async function loadMembership(snapshot: Snapshot, views: readonly LinkView[]) {
     const projectId = snapshot.projectId;
@@ -347,12 +354,14 @@ export function createDrizzleDocumentLinkScopes(deps: {
     if (!governed) return;
     await members(snapshot, "live", { projectId });
     for (const view of views) {
-      if (view.kind !== "draft") continue;
-      await members(snapshot, viewKey(view), {
+      const key = viewKey(view);
+      if (key === "live") continue;
+      await members(snapshot, key, {
         projectId,
-        workId: view.workId,
+        workId: view.kind === "draft" ? view.workId : null,
         threadId: snapshot.viewerThreadId,
         responseId: view.responseId ?? null,
+        destination: view.kind,
       });
     }
   }
@@ -496,12 +505,13 @@ function snapshotCatalog(
     if (row.deleted) return "deleted";
     if (row.projectId !== snapshot.projectId || !MANIFEST_SCHEMES.has(row.scheme)) return "live";
     const live = snapshot.membership.get("live");
-    const own = view.kind === "live" ? live : snapshot.membership.get(viewKey(view));
+    const own = snapshot.membership.get(viewKey(view));
     if (!live || !own) {
       miss(`membership:${own ? "live" : viewKey(view)}`);
       return UNLOADED;
     }
-    // The view's own manifest wins: a draft that removed a live document lacks it.
+    // The view's own manifest wins: a draft that removed a live document lacks
+    // it; a reply's staged create is in its own view only, not yet live.
     if (!own.has(row.id)) return null;
     return live.has(row.id) ? "live" : "draft";
   };

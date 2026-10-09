@@ -301,7 +301,11 @@ function createInMemoryBranchPeerStub(
         const blockLinks = model
           .projectBlocks(toDocHandle(doc))
           .map((block) => spelledLinks([block], scope));
-        return Ok({ ...read, links: blockLinks });
+        return Ok({
+          ...read,
+          links: blockLinks,
+          holder: { uri: scope.holder.uri, view: LIVE_VIEW },
+        });
       }),
     async resolveManifestMembership() {
       return { documentId: "" as DocumentId, members: [] };
