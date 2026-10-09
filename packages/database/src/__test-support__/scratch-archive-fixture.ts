@@ -63,6 +63,8 @@ export async function seedScratchArchive(sql: postgres.Sql, userId = archiveId(1
     (${archiveId(14)}, ${archiveId(6)}, ${archiveId(12)}, 'jade-map', 'Lin keeps the jade map.', NULL),
     (${archiveId(15)}, ${archiveId(6)}, NULL, 'root-note', 'A root note.', NULL),
     (${archiveId(16)}, ${archiveId(6)}, ${archiveId(13)}, 'trashed-note', 'Keep this trashed note.', now()),
+    (${archiveId(31)}, ${archiveId(6)}, ${archiveId(13)}, 'hidden-note', 'Live note beneath a trashed folder.', NULL),
+    (${archiveId(32)}, ${archiveId(6)}, ${archiveId(12)}, 'trashed-leaf', 'Trashed note beneath live folders.', now()),
     (${archiveId(17)}, ${archiveId(7)}, NULL, 'second-note', 'Second project note.', NULL),
     (${archiveId(18)}, ${archiveId(9)}, NULL, 'chapter', '[Old Scratch](scratch://@/nested/deep/jade-map.md)\n\n[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map.md>)', NULL)`;
   await sql`INSERT INTO document_yjs_heads (document_id, authority_id, latest_state_vector) VALUES (${archiveId(14)}, ${archiveId(20)}, ${vector})`;
@@ -92,7 +94,10 @@ export async function seedScratchArchive(sql: postgres.Sql, userId = archiveId(1
   await sql`INSERT INTO document_previous_locations (context_source_id, path, document_id) VALUES (${archiveId(6)}, 'earlier-name.md', ${archiveId(14)})`;
   await sql`INSERT INTO document_previous_locations (context_source_id, path, document_id) VALUES
     (${archiveId(8)}, 'Scratch (2)/nested/deep/jade-map.md', ${archiveId(18)}),
-    (${archiveId(8)}, 'unrelated-alias.md', ${archiveId(18)})`;
+    (${archiveId(8)}, 'unrelated-alias.md', ${archiveId(18)}),
+    (${archiveId(8)}, 'Scratch (2)/trashed-folder/trashed-note.md', ${archiveId(18)}),
+    (${archiveId(8)}, 'Scratch (2)/trashed-folder/hidden-note.md', ${archiveId(18)}),
+    (${archiveId(8)}, 'Scratch (2)/nested/deep/trashed-leaf.md', ${archiveId(18)})`;
   await sql`INSERT INTO upload_intakes (project_id, intake_id, actor_user_id, work_id, context_source_id, document_id, fingerprint, byte_digest, filename, mime_type, final_path, object_key, file_type, canonical_uri, location_revision, state) VALUES
     (${archiveId(2)}, 'reserved-intake', ${userId}, ${archiveId(4)}, ${archiveId(6)}, ${archiveId(21)}, 'retained-fingerprint', ${"a".repeat(64)}, 'map.png', 'image/png', 'map.png', ${`uploads/${archiveId(2)}/${archiveId(21)}`}, 'png', 'scratch://@/map.png', ${archiveId(22)}, 'reserved')`;
   for (const [scopeKey, scope] of [

@@ -75,18 +75,22 @@ UPDATE documents d SET context_source_id = m.destination_id,
 FROM scratch_archive_moves m WHERE d.context_source_id = m.old_id;
 --> statement-breakpoint
 -- Claim the newly occupied destination paths, consuming old identity aliases
--- there just as recordDocumentMove does. Unrelated Unfiled history survives.
+-- there just as recordDocumentMove does. Only live, traversable occupants claim
+-- aliases; trashed content still moves without consuming unrelated history.
 WITH RECURSIVE paths AS (
   SELECT f.id, f.context_source_id, f.name AS path
   FROM folders f JOIN scratch_archive_moves m ON m.folder_id = f.id
+  WHERE f.deleted_at IS NULL
   UNION ALL
   SELECT f.id, f.context_source_id, p.path || '/' || f.name
   FROM folders f JOIN paths p ON f.parent_id = p.id AND f.context_source_id = p.context_source_id
+  WHERE f.deleted_at IS NULL
 ), occupied AS (
   SELECT context_source_id, path FROM paths
   UNION ALL
   SELECT d.context_source_id, p.path || '/' || d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END
   FROM documents d JOIN paths p ON d.folder_id = p.id AND d.context_source_id = p.context_source_id
+  WHERE d.deleted_at IS NULL AND d.kind = 'content'
 )
 DELETE FROM document_previous_locations l USING occupied o
 WHERE l.context_source_id = o.context_source_id AND l.path = o.path;
