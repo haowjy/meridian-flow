@@ -38,7 +38,7 @@ prefixes. Agent-edit owns any hash-prefixed adapter layer.
 These concern wire semantics: what Markdown/MDX can say. A stored link's
 `ref` is deliberately not in the wire, so `parse(serialize(blocks))` returns
 every link with `ref: null` and the destination the scope spelled; restoring a
-ref is the binding pass's job, never the codec's. They also exclude CRDT
+ref is ref assignment's job, never the codec's. They also exclude CRDT
 identity and history.
 A newly parsed document cannot replace an existing Yjs replica without losing
 that replica's identities and merge lineage. Arbitrary accepted Markdown may
@@ -109,8 +109,8 @@ project knows it by, else the ref itself: a picture never fails its document.
 Parse is pure syntax: every parsed link has `ref: null` and its destination
 as written, and every image and figure `src` is the source as written. The
 shipped image rule (a known manuscript path becomes `asset:<id>`) runs after
-parse, in the host's binding pass over a prepared scope (agent-edit
-`bindSources`), which is what lets a host load only what the text names.
+parse, in the host's ref assignment over a prepared scope (agent-edit
+`assignSources`), which is what lets a host load only what the text names.
 
 ## Link occurrences
 
@@ -124,7 +124,10 @@ image or figure, or the enclosing top-level block when the AST cannot place it
 ingress preprocessor rewrote it. A span always encloses its occurrence.
 `spelledLinks(blocks, links)` reports `{ ref, address }` for each ref-bearing
 occurrence, spelled by the given scope; a serialization itself never records
-what it showed.
+what it showed. Its Yjs twin, agent-edit's `extractStoredLinks`
+(`links/stored-links.ts`), reads the live fragment for derive, scope loading
+and the revision digest; a parity row in agent-edit pins both walks to the same
+`(kind, ref, href)` sequence.
 
 ## Image wire format
 

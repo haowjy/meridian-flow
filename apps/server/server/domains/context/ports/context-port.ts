@@ -22,7 +22,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup";
 import type { Result } from "../../../shared/result.js";
-import type { PreparedWrite } from "../../collab/index.js";
+import type { BoundWrite } from "../../collab/index.js";
 import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 
@@ -285,19 +285,16 @@ export interface ContextPort {
   ): Promise<Result<ContextWriteResult, ContextError>>;
 
   /**
-   * Prepare content for a tracked document about to be created at `uri`.
+   * Bind content for a tracked document about to be created at `uri`.
    * Runs outside any transaction (it may register ahead refs); a caller that
-   * creates inside its own transaction prepares first (contract §6.2).
+   * creates inside its own transaction binds first (contract §6.2).
    */
-  prepareTrackedDocument(
-    uri: string,
-    content: string,
-  ): Promise<Result<PreparedWrite, ContextError>>;
+  bindTrackedDocument(uri: string, content: string): Promise<Result<BoundWrite, ContextError>>;
 
   /**
    * Claim and seed a new tracked URI without ever replacing an existing path.
-   * Its Markdown is prepared here, outside any transaction; a caller inside
-   * its own transaction prepares first and uses `createPreparedDocument`.
+   * Its Markdown is bound here, outside any transaction; a caller inside
+   * its own transaction binds first and uses `createBoundDocument`.
    */
   createTrackedDocument(
     uri: string,
@@ -306,12 +303,12 @@ export interface ContextPort {
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
   /**
-   * `createTrackedDocument` with content `prepareTrackedDocument` made for
+   * `createTrackedDocument` with content `bindTrackedDocument` made for
    * this URI (null: empty); safe inside a transaction.
    */
-  createPreparedDocument(
+  createBoundDocument(
     uri: string,
-    prepared: PreparedWrite | null,
+    bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 

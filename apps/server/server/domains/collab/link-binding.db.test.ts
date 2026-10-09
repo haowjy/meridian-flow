@@ -1,6 +1,6 @@
 /**
- * Whole-document write doors prepare outside their transaction and apply the
- * prepared write inside it (contract §6.2, ledger A2-1): a mutation against
+ * Whole-document write doors bind outside their transaction and apply the
+ * bound write inside it (contract §6.2, ledger A2-1): a mutation against
  * the base it read, certified for one holder.
  */
 import { createHash, randomUUID } from "node:crypto";
@@ -65,7 +65,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       return row ? `${row.scheme}://${row.path} in ${row.projectId}` : null;
     }
 
-    it("prepares before the transaction: refs survive, concurrent edits merge, holders are certified", async () => {
+    it("binds before the transaction: refs survive, concurrent edits merge, holders are certified", async () => {
       await deleteDrizzleRows(db, [users]);
       const userId = randomUUID();
       const projectId = randomUUID();
@@ -109,17 +109,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             ports.documentSync.storeHocuspocusDocument(documentName, document),
         }),
       );
-      // Runs once, after the next whole-document write is prepared and before it applies.
-      let afterNextPrepare: (() => Promise<void>) | null = null;
-      let preparations = 0;
+      // Runs once, after the next whole-document write is bound and before it applies.
+      let afterNextBind: (() => Promise<void>) | null = null;
+      let bindings = 0;
       const bindMarkdown = ports.documentSync.bindMarkdown;
       ports.documentSync.bindMarkdown = async (input) => {
-        const prepared = await bindMarkdown(input);
-        preparations++;
-        const between = afterNextPrepare;
-        afterNextPrepare = null;
+        const bound = await bindMarkdown(input);
+        bindings++;
+        const between = afterNextBind;
+        afterNextBind = null;
         await between?.();
-        return prepared;
+        return bound;
       };
       const port = app.contextPorts.forProject(projectId, userId, new Map());
       const writer = { origin: { type: "human" as const, userId } };
@@ -182,7 +182,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         let soon: string | null = null;
 
         // Each door registers any ahead ref it mints. The registry refuses to run inside a
-        // transaction, so a row only exists if the door prepared before opening its own.
+        // transaction, so a row only exists if the door bound before opening its own.
         const doors: {
           door: string;
           act: () => Promise<string>;
@@ -246,7 +246,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             refs: () => [expect.stringMatching(/^ahead:/)],
           },
           {
-            door: "an upload prepares before finalize's transaction and persists under its locks",
+            door: "an upload binds before finalize's transaction and persists under its locks",
             act: async () => {
               const bytes = new TextEncoder().encode("# Upload\n\n[Ahead](manuscript://future.md)");
               const uploaded = await app.uploadIntake.intake({
@@ -265,7 +265,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             markdown: "# Upload\n\n[Ahead](manuscript://future.md)\n",
           },
           {
-            door: "a writer save landing between another save's prepare and apply keeps its prose and retarget",
+            door: "a writer save landing between another save's bind and apply keeps its prose and retarget",
             act: async () => {
               const id = (
                 await ok(
@@ -275,7 +275,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                   ),
                 )
               ).documentId;
-              afterNextPrepare = async () => {
+              afterNextBind = async () => {
                 await ok(
                   port.write("manuscript://interleave.md", "Concurrent.\n\n[T](b.md)", writer),
                 );
@@ -300,7 +300,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                 const id = (await ok(port.createTrackedDocument(uri, "Original.\n\n[T](c.md)")))
                   .documentId;
                 const edit = await writerEdit(id);
-                if (when === "before") afterNextPrepare = edit;
+                if (when === "before") afterNextBind = edit;
                 await ok(port.write(uri, "Original.\n\n[T](c.md)\n\nAppend.", actor));
                 if (when === "after") await edit();
                 return id;
@@ -361,7 +361,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
                   const text = blockText(fragment, 1);
                   text.insert(text.length, " Concurrent.");
                 });
-                if (when === "before") afterNextPrepare = edit;
+                if (when === "before") afterNextBind = edit;
                 await ok(
                   port.write(uri, "Alpha.\n\nInserted.\n\nBravo.\n\nChanged Charlie.", actor),
                 );
@@ -383,9 +383,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             })),
           ),
           // A2-R2: a restore replaces the authority generation even when its checkpoint retains
-          // every clock the write was prepared against; the write must be prepared again.
+          // every clock the write was bound against; the write must be bound again.
           ...[writer, writerInThread].map((actor) => ({
-            door: `a write prepared before a restore that kept its base's clocks is prepared again${"threadId" in actor.origin ? " (in a thread)" : ""}`,
+            door: `a write bound before a restore that kept its base's clocks is bound again${"threadId" in actor.origin ? " (in a thread)" : ""}`,
             act: async () => {
               const uri = `manuscript://restored-${"threadId" in actor.origin}.md`;
               const id = (await ok(port.createTrackedDocument(uri, "Initial."))).documentId;
@@ -393,27 +393,27 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               const checkpoint = await ports.documentSync.checkpoint(id, "same base");
               if (!checkpoint.ok) throw new Error(JSON.stringify(checkpoint.error));
               const generation = await ports.documentSync.currentLiveGeneration(id);
-              afterNextPrepare = async () => {
+              afterNextBind = async () => {
                 await ok(ports.documentSync.restore(id, checkpoint.value));
               };
-              preparations = 0;
+              bindings = 0;
               await ok(port.write(uri, "Checkpoint base.\n\nAppend.", actor));
               expect(await ports.documentSync.currentLiveGeneration(id)).toBe(generation + 1n);
-              expect(preparations).toBe(2);
+              expect(bindings).toBe(2);
               return id;
             },
             refs: () => [],
             markdown: "Checkpoint base.\n\nAppend.\n",
           })),
           {
-            door: "a write prepared for one holder never lands on the document that replaced it",
+            door: "a write bound for one holder never lands on the document that replaced it",
             act: async () => {
               const first = (
                 await ok(
                   port.createTrackedDocument("manuscript://occupant.md", "First.\n\n[A](a.md)"),
                 )
               ).documentId;
-              afterNextPrepare = async () => {
+              afterNextBind = async () => {
                 await ok(port.move("manuscript://occupant.md", "manuscript://first-moved.md"));
                 await ok(port.createTrackedDocument("manuscript://occupant.md", "Second."));
               };

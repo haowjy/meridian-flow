@@ -14,7 +14,7 @@ import { resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {
@@ -184,7 +184,7 @@ describe("resolveWrite", () => {
     });
     const remove = (fragment: string | undefined, scope: string | undefined) =>
       resolveWrite(
-        { doc, model, codec, links: "prebound" },
+        { doc, model, codec, links: "preassigned" },
         {
           documentAddress: address(fragment),
           command: "remove",
@@ -280,7 +280,7 @@ function resolve(
   params: Omit<ResolveWriteParams, "documentAddress">,
 ): ResolveWriteResult {
   return resolveWrite(
-    { doc, model, codec, links: "prebound" },
+    { doc, model, codec, links: "preassigned" },
     {
       documentAddress: {
         documentId: "123e4567-e89b-12d3-a456-426614174000",

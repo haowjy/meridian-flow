@@ -50,19 +50,19 @@ takes a holder-bound scope that spells stored links and sources: a ref-bearing
 link as its target's current path in the holder's view, an `asset:<documentId>`
 source as its manuscript-relative path, anything else as stored. Parse is pure
 syntax; ref assignment (agent-edit `assignLinkRefs`, which also turns a known
-manuscript image path into `asset:<id>`) binds what was written.
+manuscript image path into `asset:<id>`) gives what was written its stored refs.
 
-**Whole-document writes prepare outside, apply inside** (`domain/link-binding.ts`,
+**Whole-document writes bind outside, apply inside** (`domain/link-binding.ts`,
 contract §6.2). The engine's writes (`setMarkdown`, `writeDocument`,
-`seedFromMarkdown`) take a `PreparedWrite`, never a Markdown string, and never
+`seedFromMarkdown`) take a `BoundWrite`, never a Markdown string, and never
 parse. A `LinkBinder` makes it, before the caller opens any transaction:
 `bindMarkdown` opens the holder's scope (the document, or the project and the
-address a document about to be created will have), parses, prepares, assigns
+address a document about to be created will have), parses, prepares the scope, assigns
 fresh or against the holder's current document (`against: "current"`: every
 link that stays corresponds to itself and keeps its ref, so an overwrite
 keeps refs verbatim), and registers the ahead refs it minted.
 
-A prepared write is a mutation, not a desired state. Prepared against the
+A bound write is a mutation, not a desired state. Bound against the
 current document, it keeps the base it read through the coordinator (its
 authority identity and generation, and its state vector) and carries the Yjs update that turns that base into the bound result:
 agent-edit's whole-document overwrite of the base (`lowerOverwrite`, the
@@ -72,15 +72,15 @@ carries that overwrite's semantic IR and the certified provenance facts it
 implies, as a separate update (`certified`): a write in a thread or by an agent
 admits both with the update, as agent-edit's own overwrite would, while a
 writer's save outside a thread applies the update alone, since fresh-authorship
-admission refuses the reserved provenance namespace. Do not lower prepared
+admission refuses the reserved provenance namespace. Do not lower bound
 writes with a whole-fragment `updateYFragment` diff: it keeps only a common
 prefix and suffix, so a paragraph inserted above kept prose re-attributes that
 prose to the saver (A2-1's certified-save row).
 Applying merges the update into the live document: a writer's edit, unlink or
-retarget admitted between prepare and apply stays, in either order. One
-agent-edit helper, `admitPreparedUpdate`, admits it under the document's lock
-for every door: in `mergePrepared` for a writer's save, and in agent-edit's
-commit (`applyPrepared`) for a write in a thread or by an agent, including
+retarget admitted between bind and apply stays, in either order. One
+agent-edit helper, `admitBoundUpdate`, admits it under the document's lock
+for every door: in `mergeBound` for a writer's save, and in agent-edit's
+commit (`applyBound`) for a write in a thread or by an agent, including
 against the deferred coordinator's in-transaction copy, which reports the
 committed generation. It checks the base's authority generation (the
 certificate, which also fences the journal append), clock containment and no
@@ -88,8 +88,8 @@ unresolved dependencies after applying (the update's dependency only: a
 restore whose checkpoint keeps every base clock still replaces the
 generation), and that a fresh write (seed, import, create, upload: no base)
 lands in a document with no blocks. Any refusal is `stale_generation`, for
-the caller to prepare again; nothing is checked early outside the lock.
-A prepared write also certifies its holder (`document`
+the caller to bind again; nothing is checked early outside the lock.
+A bound write also certifies its holder (`document`
 by id, `new` by the canonical address it will have, or `static`): the engine
 refuses to apply it to any other document, and ContextFS checks the path's
 occupant under its namespace lock.
@@ -100,8 +100,8 @@ invisibly to PostgreSQL. So `bindMarkdown` throws
 forgot to hoist fails at once. `bindStatic` is for link-free text fixed in code
 (a project's first chapter, seeded inside the bootstrap transaction); it throws
 if the text names anything. `writeDocument` routes an actor's write in a
-thread (and every agent write) through the edit core's `applyPrepared`,
-which merges the prepared update into its runtime and records it as that
+thread (and every agent write) through the edit core's `applyBound`,
+which merges the bound update into its runtime and records it as that
 actor's mutation; a writer's save outside a thread merges
 it directly. There is no string-transform or append write. Seed, import and create bind fresh (pass 3 only).
 
@@ -111,7 +111,7 @@ door names, else its thread's account, else the project owner; and the thread
 it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each operation then calls
 `prepare({ holders, docs, stored, refs, addresses, written })` with what its next
 synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
-(agent-edit `ports/stored-link-extraction.ts`), and one batch loads settlements, rows by
+(agent-edit `links/stored-links.ts`), and one batch loads settlements, rows by
 id and rows at exact or extension-omitted addresses, readability through the
 file policy's list path, and manifest membership only when a row needs it.
 Membership is the same authority ContextFS lists through and is required (DB

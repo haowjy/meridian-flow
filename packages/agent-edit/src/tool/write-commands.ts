@@ -13,23 +13,19 @@ import { writeHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
+import { type BoundUpdate, boundRefusalResult, mergeBoundUpdate } from "./bound-update.js";
+import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { copyEdgeLines, copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
-import { type BoundLinks, bindLinks } from "./link-binding.js";
 import {
   AcceptedMutationSubmissionError,
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
-import {
-  mergePreparedUpdate,
-  type PreparedUpdate,
-  preparedRefusalResult,
-} from "./prepared-update.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import {
   formatApplySuccess,
@@ -84,7 +80,7 @@ export function createWriteCommands(deps: {
   } = deps;
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
 
-  return { read, create, mutate, applyPrepared };
+  return { read, create, mutate, applyBound };
 
   function emptiedDocument(
     runtime: { doc: Y.Doc },
@@ -120,7 +116,7 @@ export function createWriteCommands(deps: {
     for (const update of stagedUpdates) {
       Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
-    const links = await bindLinks(options, {
+    const links = await openCommandLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
       context,
@@ -255,7 +251,7 @@ export function createWriteCommands(deps: {
       }
     }
     const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
-    const links = await bindLinks(options, {
+    const links = await openCommandLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
       ...(copiedNodes ? { stored: copiedNodes } : { written: parsed.parsed.blocks }),
@@ -294,11 +290,11 @@ export function createWriteCommands(deps: {
       if (resolved.edits.length === 0) return formatUnchangedSuccess();
       overwrite = resolved;
     }
-    // Copies carry what they name; written content into an empty document binds fresh.
+    // Copies carry what they name; written content into an empty document is assigned fresh.
     const written =
       copiedNodes || overwrite
         ? parsed.parsed
-        : { blocks: assigner.bindSpan([], parsed.parsed.blocks) };
+        : { blocks: assigner.assignSpan([], parsed.parsed.blocks) };
     await registerMinted(assigner, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
@@ -480,11 +476,11 @@ export function createWriteCommands(deps: {
    * A whole-document write the host bound and lowered outside its transaction
    * (§6.2), recorded as the actor's mutation: nothing is parsed, assigned or
    * aligned again. It stages on the runtime, and the commit admits it under
-   * the document's lock (`admitPreparedUpdate`), never later: it is never
+   * the document's lock (`admitBoundUpdate`), never later: it is never
    * part of a staged reply.
    */
-  async function applyPrepared(
-    input: PreparedUpdate & { documentId: string },
+  async function applyBound(
+    input: BoundUpdate & { documentId: string },
     session: ActorSession,
     context: WriteContext,
   ): Promise<InternalWriteResult> {
@@ -498,14 +494,14 @@ export function createWriteCommands(deps: {
       "create",
     );
     if (isInternalWriteResult(restored)) return restored;
-    const links = await bindLinks(options, { documentId, docs: [runtime.doc], context });
+    const links = await openCommandLinks(options, { documentId, docs: [runtime.doc], context });
     const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(documentId, session.threadId);
-    if (!mergePreparedUpdate(runtime.doc, input, origin, true)) {
+    if (!mergeBoundUpdate(runtime.doc, input, origin, true)) {
       restorePreWriteSnapshot(runtime, preWriteSnapshot);
-      return preparedRefusalResult(documentId, "base_missing");
+      return boundRefusalResult(documentId, "base_missing");
     }
     if (sameBytes(Y.encodeStateAsUpdate(runtime.doc), preWriteSnapshot)) {
       return formatUnchangedSuccess();
@@ -550,7 +546,7 @@ export function createWriteCommands(deps: {
         touchedHashes: new Set([...changes.changed, ...changes.inserted]),
         deletedHashes: changes.deleted,
         preOwnSnapshot: preWriteSnapshot,
-        prepared: input,
+        bound: input,
         ...(turnId ? { turnId } : {}),
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
@@ -608,7 +604,7 @@ export function createWriteCommands(deps: {
     }
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
-    const links = await bindLinks(options, {
+    const links = await openCommandLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
       ...(copiedNodes ? { stored: copiedNodes } : {}),
@@ -616,7 +612,7 @@ export function createWriteCommands(deps: {
       context,
     });
     // Planning fixes scope, matches and a find's reconstructed groups; what
-    // binding will see is only known then, so it loads before binding runs.
+    // ref assignment will see is only known then, so it loads before assignment runs.
     const plan = planWrite(
       { doc: toDocHandle(runtime.doc), model: options.model, codec: links.codec },
       {
@@ -634,7 +630,7 @@ export function createWriteCommands(deps: {
       });
     }
     const assigner = linkAssigner(address.documentId, links.scope, shown);
-    const resolved = plan.ok ? plan.bind(assigner) : plan;
+    const resolved = plan.ok ? plan.assign(assigner) : plan;
     if (!resolved.ok) {
       return errorResponse(
         resolved.error.code,
@@ -867,8 +863,8 @@ export function createWriteCommands(deps: {
     return { ...result, awarenessDegraded: true };
   }
 
-  /** Attach the links the result's rendered blocks showed, spelled with the command's binding. */
-  function withShown(links: BoundLinks, result: InternalWriteResult) {
+  /** Attach the links the result's rendered blocks showed, spelled with the command's links. */
+  function withShown(links: CommandLinks, result: InternalWriteResult) {
     return { ...result, ...shownEvidence(renderedItems(result.model), links) };
   }
 

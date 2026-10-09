@@ -270,9 +270,11 @@ that keep failing rotate through instead of starving the rest.
 
 ## Stored link extraction
 
-Agent-edit's `ports/stored-link-extraction.ts` reads `{ kind, ref, href }` occurrences from a
+Agent-edit's `links/stored-links.ts` (`extractStoredLinks`) reads `{ kind, ref, href }` occurrences from a
 live Yjs fragment: a link occurrence is a maximal run sharing one link mark (href,
 title and ref) whatever other marks split it; a paragraph boundary ends a run.
 Image and figure `src` attributes are occurrences with their own `ref`. Derive
 (index rows and client-mint registration), the link scope's `prepare({ docs })`
-and the view-revision digest share it. Nothing rewrites stored links.
+and the view-revision digest share it. It is the Yjs twin of markup's
+`walkLinkOccurrences`, which ref assignment walks; a parity row in agent-edit's
+`assign-refs.test.ts` pins the two to the same sequence. Nothing rewrites stored links.

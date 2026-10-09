@@ -1,20 +1,20 @@
 /**
  * Whole-document link binding (contract §6.2): written Markdown becomes a
- * `PreparedWrite` here, outside any transaction, and the engine applies it
+ * `BoundWrite` here, outside any transaction, and the engine applies it
  * inside one without parsing again.
  *
  * Binding can mint ahead refs, and registering them opens a root transaction
  * that takes namespace keys. A command transaction that already holds those
  * keys would wait on itself forever, invisibly to PostgreSQL. So every
  * whole-document door (ContextFS write and create, uploads, import, writer
- * writes, seeds) prepares first and passes the result in;
+ * writes, seeds) binds first and passes the result in;
  * the binder refuses to run inside a transaction so a door that forgot to
  * hoist fails at once.
  *
- * Because preparing and applying are separated, a prepared write is a Yjs
+ * Because binding and applying are separated, a bound write is a Yjs
  * mutation against the base it was bound to, never a desired state: anything
  * admitted in between merges with it instead of being undone. It also names
- * the one holder it was prepared for, so it is never applied to another, and
+ * the one holder it was bound for, so it is never applied to another, and
  * certifies the authority generation its base belonged to, so it is never
  * admitted into another (a restore replaces the generation even when its
  * checkpoint keeps every clock the base had).
@@ -53,10 +53,10 @@ import {
   LIVE_VIEW,
 } from "./ports/document-link-scope.js";
 
-declare const preparedBrand: unique symbol;
+declare const boundBrand: unique symbol;
 
-/** The one document a prepared write may be applied to. */
-export type PreparedHolder =
+/** The one document a bound write may be applied to. */
+export type BoundHolder =
   | { kind: "document"; documentId: DocumentId }
   /** The document about to be created at this canonical address; its creator checks the address. */
   | { kind: "new"; uri: string }
@@ -64,22 +64,22 @@ export type PreparedHolder =
   | { kind: "static" };
 
 /**
- * The base a write was prepared against. Two separate checks guard applying
+ * The base a write was bound against. Two separate checks guard applying
  * it: the authority generation must still be the one the base was read from
  * (the certificate), and the document must hold every clock in
  * `stateVector` (the update's dependency). Both are agent-edit's
- * `admitPreparedUpdate`, run under the document's lock by every door.
+ * `admitBoundUpdate`, run under the document's lock by every door.
  */
-export interface PreparedBase {
+export interface BoundBase {
   readonly authority: Readonly<CheckpointAuthority>;
   readonly stateVector: Uint8Array;
 }
 
 /** Written content, bound and turned into a Yjs mutation; only a `LinkBinder` makes one. */
-export interface PreparedWrite {
-  readonly holder: PreparedHolder;
-  /** Null: prepared fresh, from an empty document (seed, import, create, upload). */
-  readonly base: PreparedBase | null;
+export interface BoundWrite {
+  readonly holder: BoundHolder;
+  /** Null: bound fresh, from an empty document (seed, import, create, upload). */
+  readonly base: BoundBase | null;
   /** The Yjs update that turns `base` into the bound result. */
   readonly update: Uint8Array;
   /**
@@ -95,7 +95,7 @@ export interface PreparedWrite {
   readonly markdown: string;
   /** Code files bind to one code block; the engine refuses content of the other shape. */
   readonly schemaType: YjsTrackedSchemaType;
-  readonly [preparedBrand]: true;
+  readonly [boundBrand]: true;
 }
 
 /** The document the content is for: one that exists, or one about to be created. */
@@ -112,7 +112,7 @@ export interface BindMarkdownInput {
   holder: BindHolder;
   markdown: string;
   /**
-   * `current`: prepare against the holder's current document, so every link
+   * `current`: bind against the holder's current document, so every link
    * that stays corresponds to itself and keeps its ref, and unchanged content
    * keeps its items (an actor's overwrite). Absent: fresh (seed, import, create).
    */
@@ -127,13 +127,13 @@ export interface LinkBinder {
    * (fresh, or against the current document), register minted ahead refs,
    * and encode the result as an update against the base.
    */
-  bindMarkdown(input: BindMarkdownInput): Promise<PreparedWrite>;
+  bindMarkdown(input: BindMarkdownInput): Promise<BoundWrite>;
   /**
    * Content fixed in code with no link or source in it (a project's first
    * chapter): parsed without a scope, so it may be bound anywhere. Throws if
    * the content names anything.
    */
-  bindStatic(markdown: string, filetype?: string | null): PreparedWrite;
+  bindStatic(markdown: string, filetype?: string | null): BoundWrite;
 }
 
 export class LinkBindingInsideTransactionError extends Error {
@@ -177,8 +177,8 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
    * blocks left as they were keep their items, with the overwrite's certified
    * provenance written against the base; fresh, a plain insertion.
    */
-  function prepared(input: {
-    holder: PreparedHolder;
+  function boundWrite(input: {
+    holder: BoundHolder;
     base: {
       doc: Y.Doc;
       authority: Readonly<CheckpointAuthority>;
@@ -188,7 +188,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     blocks: readonly PMNode[];
     markdown: string;
     schemaType: YjsTrackedSchemaType;
-  }): PreparedWrite {
+  }): BoundWrite {
     const draft = createCollabYDoc({ gc: false });
     try {
       if (input.base) Y.applyUpdate(draft, Y.encodeStateAsUpdate(input.base.doc));
@@ -204,7 +204,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
           blocks: input.blocks,
         });
         if (!lowered.ok) {
-          throw new Error(`Could not prepare the write: ${lowered.code}: ${lowered.message}`);
+          throw new Error(`Could not bind the write: ${lowered.code}: ${lowered.message}`);
         }
         ir = lowered.ir;
       } else if (input.blocks.length > 0) {
@@ -214,7 +214,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       }
       const update = Y.encodeStateAsUpdate(draft, baseVector);
       // Facts are written after `update` is taken: a writer's fresh save must not carry them.
-      let certified: PreparedWrite["certified"] = null;
+      let certified: BoundWrite["certified"] = null;
       if (ir) {
         const loweredVector = Y.encodeStateVector(draft);
         deps.semanticProvenance.writeCertifiedFacts(toDocHandle(draft), ir, baseVector);
@@ -228,7 +228,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         blocks: input.blocks,
         markdown: input.markdown,
         schemaType: input.schemaType,
-      } as PreparedWrite;
+      } as BoundWrite;
     } finally {
       draft.destroy();
     }
@@ -256,7 +256,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     return { doc: clone, authority: read.authority };
   }
 
-  async function bind(input: BindMarkdownInput): Promise<PreparedWrite> {
+  async function bind(input: BindMarkdownInput): Promise<BoundWrite> {
     const { holder } = input;
     const view = input.view ?? LIVE_VIEW;
     const documentId = "documentId" in holder ? holder.documentId : null;
@@ -264,7 +264,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     const filetype =
       "documentId" in holder ? await deps.resolveFiletype(holder.documentId) : holder.filetype;
     const schemaType = schemaTypeOf(filetype);
-    const preparedHolder: PreparedHolder = documentId
+    const boundHolder: BoundHolder = documentId
       ? { kind: "document", documentId }
       : { kind: "new", uri: holderUri ?? "" };
     const base =
@@ -285,9 +285,10 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
           : deps.links.reader({ uri: holderUri, view });
       /** Called once the scope is prepared: the overwrite of a base spells through it. */
       const finish = (blocks: readonly PMNode[], markdown: string) =>
-        prepared({
-          holder: preparedHolder,
-          base: base && documentId ? { ...base, documentId, codec: codecs.bind(scopeFor()) } : null,
+        boundWrite({
+          holder: boundHolder,
+          base:
+            base && documentId ? { ...base, documentId, codec: codecs.forScope(scopeFor()) } : null,
           blocks,
           markdown,
           schemaType,
@@ -329,9 +330,9 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
 
     bindStatic(markdown, filetype = null) {
       const schemaType = schemaTypeOf(filetype);
-      const holder: PreparedHolder = { kind: "static" };
+      const holder: BoundHolder = { kind: "static" };
       if (schemaType === "code") {
-        return prepared({
+        return boundWrite({
           holder,
           base: null,
           blocks: [codeBlock(markdown, filetype)],
@@ -343,7 +344,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       if (walkLinkOccurrences(blocks).length > 0) {
         throw new Error("Static content names a link or source; bind it with bindMarkdown");
       }
-      return prepared({ holder, base: null, blocks, markdown, schemaType });
+      return boundWrite({ holder, base: null, blocks, markdown, schemaType });
     },
   };
 }

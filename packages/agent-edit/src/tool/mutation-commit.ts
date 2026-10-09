@@ -28,15 +28,15 @@ import type {
   UpdateJournal,
 } from "../ports/update-journal.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
+import {
+  admitBoundUpdate,
+  type BoundRefusal,
+  type BoundUpdate,
+  boundRefusalResult,
+} from "./bound-update.js";
+import type { CommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import type { BoundLinks } from "./link-binding.js";
-import {
-  admitPreparedUpdate,
-  type PreparedRefusal,
-  type PreparedUpdate,
-  preparedRefusalResult,
-} from "./prepared-update.js";
 import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
 
 export interface MutationCommitRuntime {
@@ -52,8 +52,8 @@ export interface SyncedMutationSummary {
 
 export interface MutationEchoInput {
   runtime: MutationCommitRuntime;
-  /** The command's binding; the echo spells through it. */
-  links: BoundLinks;
+  /** The command's links; the echo spells through them. */
+  links: CommandLinks;
   before: readonly BlockSnapshot[];
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
@@ -75,7 +75,7 @@ export interface LiveUpdateCommitInput {
 }
 
 export interface LiveProjectionInput extends LiveUpdateCommitInput {
-  links: BoundLinks;
+  links: CommandLinks;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   preOwnSnapshot?: Uint8Array;
@@ -86,11 +86,11 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
   runtime: MutationCommitRuntime;
   /**
-   * A host-prepared update this mutation stages: admitted under the
-   * document's lock (`admitPreparedUpdate`), and its base's certificate
+   * A host-bound update this mutation stages: admitted under the
+   * document's lock (`admitBoundUpdate`), and its base's certificate
    * fences the journal append.
    */
-  prepared?: PreparedUpdate;
+  bound?: BoundUpdate;
   before: readonly BlockSnapshot[];
   preOwnSnapshot: Uint8Array;
 }
@@ -104,8 +104,8 @@ export interface OwnWriteStep {
 export interface CommitPreflightInput {
   docId: string;
   runtime: MutationCommitRuntime;
-  /** The command's binding: comparison snapshots spell through it, the revision reads its scope. */
-  links: BoundLinks;
+  /** The command's links: comparison snapshots spell through their codec, the revision reads their scope. */
+  links: CommandLinks;
   deletedHashes: ReadonlySet<string>;
   touchedHashes: ReadonlySet<string>;
   interactionContext?: InteractionContext;
@@ -174,7 +174,7 @@ export interface MutationCommit {
   detectConcurrentEdits(input: {
     docId: string;
     runtime: MutationCommitRuntime;
-    links: BoundLinks;
+    links: CommandLinks;
     agentUpdate: Uint8Array;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
@@ -237,7 +237,7 @@ export function createMutationCommit(deps: {
   async function detectConcurrentEdits(input: {
     docId: string;
     runtime: MutationCommitRuntime;
-    links: BoundLinks;
+    links: CommandLinks;
     agentUpdate: Uint8Array;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
@@ -286,15 +286,15 @@ export function createMutationCommit(deps: {
         input.commandName,
         async (liveDoc) => {
           const live = coordinator.documentAuthority?.(liveDoc);
-          if (input.prepared) {
-            const refused = admitUnderLock(liveDoc, input.prepared, live);
-            if (refused) return preparedRefusalResult(input.docId, refused);
+          if (input.bound) {
+            const refused = admitUnderLock(liveDoc, input.bound, live);
+            if (refused) return boundRefusalResult(input.docId, refused);
           }
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
             // A copy with no authority of its own (inside a reply's transaction) still fences
             // the append with the certificate.
-            authority: input.prepared?.base?.authority ?? live,
+            authority: input.bound?.base?.authority ?? live,
             ownTurnId: input.turnId,
             update: mergeUpdates(input.updates.map((entry) => entry.update)),
             ownWrites: [
@@ -338,15 +338,15 @@ export function createMutationCommit(deps: {
     };
   }
 
-  /** Whether the live document, as it is now, admits the prepared update; tried on a copy. */
+  /** Whether the live document, as it is now, admits the bound update; tried on a copy. */
   function admitUnderLock(
     liveDoc: Y.Doc,
-    prepared: PreparedUpdate,
+    bound: BoundUpdate,
     authority: JournalAuthority | undefined,
-  ): PreparedRefusal | null {
+  ): BoundRefusal | null {
     const trial = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     try {
-      return admitPreparedUpdate(trial, prepared, {
+      return admitBoundUpdate(trial, bound, {
         authority,
         model,
         origin: null,
@@ -521,7 +521,7 @@ export function createMutationCommit(deps: {
   function applyConcurrentOnDoc(
     detectionDoc: Y.Doc,
     runtime: MutationCommitRuntime,
-    links: BoundLinks,
+    links: CommandLinks,
     updates: readonly ConcurrentUpdate[],
     _syncVector: Uint8Array,
     turnId: string | undefined,

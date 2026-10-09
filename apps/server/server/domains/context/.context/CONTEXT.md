@@ -173,7 +173,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `prepareTrackedDocument` + `createPreparedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `bindTrackedDocument` + `createBoundDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
@@ -209,24 +209,24 @@ stays `linkUpdate: { links, documents }`.
 ## Whole-document writes
 
 `ContextFS.write` and `createTrackedDocument` with content (the layer is
-`context-fs/prepared-writes.ts`)
-prepare their Markdown (`documentSync.bindMarkdown`) **before**
-`commandExecutor.run`, then apply the `PreparedWrite` inside the
+`context-fs/bound-writes.ts`)
+bind their Markdown (`documentSync.bindMarkdown`) **before**
+`commandExecutor.run`, then apply the `BoundWrite` inside the
 namespace-locked transaction (collab `document-authority-and-schema.md`). The
 existing document is looked up outside the transaction for that; the
-transaction looks it up again and checks the prepared write was made for what
+transaction looks it up again and checks the bound write was made for what
 occupies the path now. If the occupant changed, the document was restored to
 another authority generation since the base was read, or it no longer has the
 base's clocks, the transaction answers `stale_target` and
-`PreparedWrites.command` prepares again against what is there (three attempts). An
-edit admitted in between merges with the prepared update. An actor's overwrite
-prepares against the current document; import and system
-writes prepare fresh. A new document prepares as the canonical URI it will have
+`BoundWrites.command` binds again against what is there (three attempts). An
+edit admitted in between merges with the bound update. An actor's overwrite
+binds against the current document; import and system
+writes bind fresh. A new document binds as the canonical URI it will have
 (`ContextFSDeps.holder`: the port's project and the source's Work authority).
 
-A caller that creates inside its own transaction prepares first:
-`ContextPort.prepareTrackedDocument`, then `createPreparedDocument` with the
-prepared write. Upload intake does this (`UploadContentPort.prepare` runs
+A caller that creates inside its own transaction binds first:
+`ContextPort.bindTrackedDocument`, then `createBoundDocument` with the
+bound write. Upload intake does this (`UploadContentPort.bind` runs
 before finalize's transaction, `persist` applies under its locks).
 
 Repair (`repairTrackedDocument`) restores membership and, if the document has

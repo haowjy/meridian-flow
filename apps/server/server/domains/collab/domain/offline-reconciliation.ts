@@ -188,7 +188,7 @@ export function createOfflineReconciliation(deps: {
       for (const row of journal.updates) Y.applyUpdate(head, row.update);
       const holder = { documentId, view: LIVE_VIEW };
       await deps.links.prepare({ holders: [holder], docs: [head, converged] });
-      return deps.codec.bind(deps.links.holder(holder));
+      return deps.codec.forScope(deps.links.holder(holder));
     } finally {
       head.destroy();
     }

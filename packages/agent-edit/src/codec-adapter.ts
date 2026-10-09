@@ -35,14 +35,14 @@ export interface AgentEditCodec {
 
 /**
  * Parse is pure syntax and needs no scope; serializing does. Each command
- * binds once at entry, after its host prepared the scope, and passes the
- * bound codec down.
+ * takes the codec for its scope once at entry, after its host prepared the
+ * scope, and passes that codec down.
  */
 export interface AgentEditCodecFactory {
   readonly markup: MarkupCodec;
   parse(content: string): ParsedContent;
   parseWithSpans(content: string): ParsedContentWithSpans;
-  bind(links: DocumentLinkScope): AgentEditCodec;
+  forScope(links: DocumentLinkScope): AgentEditCodec;
 }
 
 export function createAgentEditCodecFactory(markup: MarkupCodec): AgentEditCodecFactory {
@@ -50,11 +50,11 @@ export function createAgentEditCodecFactory(markup: MarkupCodec): AgentEditCodec
     markup,
     parse: (content) => markup.parse(content),
     parseWithSpans: (content) => markup.parseWithSpans(content),
-    bind: (links) => bindAgentEditCodec(markup, links),
+    forScope: (links) => agentEditCodecForScope(markup, links),
   };
 }
 
-function bindAgentEditCodec(markup: MarkupCodec, links: DocumentLinkScope): AgentEditCodec {
+function agentEditCodecForScope(markup: MarkupCodec, links: DocumentLinkScope): AgentEditCodec {
   const ledger = createShownLinkLedger(links, markup);
   return {
     markup,

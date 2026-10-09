@@ -58,7 +58,7 @@ export type LiveAgentEditCore = AgentEditCore & {
 
 export type ThreadPeerAgentEditCore = Omit<
   AgentEditCore,
-  "read" | "write" | "applyPrepared" | "commitResponse"
+  "read" | "write" | "applyBound" | "commitResponse"
 > & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;

@@ -1,5 +1,5 @@
 /**
- * Ref assignment: binding written link and source attrs to stored ones, after
+ * Ref assignment: giving written link and source occurrences their stored attrs, after
  * parse (contract §5.2).
  *
  * Parse is pure syntax; everything that needs the document tree happens here,
@@ -22,7 +22,7 @@ import {
 import { type LinkOccurrence, type PMNode, walkLinkOccurrences } from "@meridian/markup";
 import { Fragment } from "prosemirror-model";
 import { type AheadMint, type HolderLinkScope, writtenSourceUri } from "../ports/document-links.js";
-import { type Binding, correspondLinks, type ShownLink } from "./correspondence.js";
+import { correspondLinks, type LinkMatch, type ShownLink } from "./correspondence.js";
 import {
   restoreOutsideSplice,
   type SpliceFallback,
@@ -46,15 +46,15 @@ export interface AssignResult {
   minted: AheadMint[];
 }
 
-/** Bind written nodes against the occurrences they replace. Synchronous, pure over the scope. */
+/** Assign refs to written nodes against the occurrences they replace. Synchronous, pure over the scope. */
 export function assignLinkRefs(input: AssignInput): AssignResult {
-  const blocks = bindSources(input.written, input.scope);
+  const blocks = assignSources(input.written, input.scope);
   const written = walkLinkOccurrences(blocks);
-  const { attrs, minted } = bindOccurrences({ ...input, written });
+  const { attrs, minted } = assignOccurrences({ ...input, written });
   return { nodes: rebuildOccurrences(blocks, written, attrs), minted };
 }
 
-export interface BindOccurrencesInput {
+export interface AssignOccurrencesInput {
   old: readonly LinkOccurrence[];
   /** Written occurrences, already past the `asset:` rule. */
   written: readonly LinkOccurrence[];
@@ -68,7 +68,7 @@ export interface BindOccurrencesInput {
  * and the ahead refs minted for them. Links and sources (images, figures)
  * correspond separately: each kind spells under its own address grammar.
  */
-export function bindOccurrences(input: BindOccurrencesInput): {
+export function assignOccurrences(input: AssignOccurrencesInput): {
   attrs: OccurrenceAttrs[];
   minted: AheadMint[];
 } {
@@ -84,7 +84,7 @@ export function bindOccurrences(input: BindOccurrencesInput): {
       .filter(({ occurrence }) => isKind(occurrence) && !isAsset(occurrence));
     if (writtenIndexes.length === 0) continue;
     const old = input.old.filter((occurrence) => isKind(occurrence) && !isAsset(occurrence));
-    const bound = bindKind({
+    const assigned = assignKind({
       grammar,
       old,
       written: writtenIndexes.map(({ occurrence }) => occurrence),
@@ -94,7 +94,7 @@ export function bindOccurrences(input: BindOccurrencesInput): {
       minted,
     });
     writtenIndexes.forEach(({ index }, position) => {
-      attrs[index] = bound[position] as OccurrenceAttrs;
+      attrs[index] = assigned[position] as OccurrenceAttrs;
     });
   }
   return { attrs, minted };
@@ -139,7 +139,7 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
   },
 };
 
-function bindKind(input: {
+function assignKind(input: {
   grammar: Grammar;
   old: readonly LinkOccurrence[];
   written: readonly LinkOccurrence[];
@@ -153,7 +153,7 @@ function bindKind(input: {
   // Null-ref occurrences (contextual, external) never enter correspondence.
   const referenced = input.old.filter((occurrence) => occurrence.attrs.ref !== null);
   const contextual = input.old.filter((occurrence) => occurrence.attrs.ref === null);
-  const bindings: Binding[] = correspondLinks({
+  const matches: LinkMatch[] = correspondLinks({
     old: referenced.map((occurrence) => {
       const ref = occurrence.attrs.ref as string;
       return {
@@ -174,10 +174,10 @@ function bindKind(input: {
   });
   const contextualTaken = new Set<number>();
   return input.written.map((occurrence, index) => {
-    const binding = bindings[index] ?? { pass: 3 };
+    const match = matches[index] ?? { pass: 3 };
     const writtenSuffix = suffixOf(grammar, occurrence.attrs.href, holderUri);
-    if (binding.pass === 1) {
-      const old = referenced[binding.occurrence] as LinkOccurrence;
+    if (match.pass === 1) {
+      const old = referenced[match.occurrence] as LinkOccurrence;
       return continued(grammar, scope, old.attrs, occurrence.attrs, writtenSuffix);
     }
     // A written link equal to a contextual old one stays contextual (no churn).
@@ -191,12 +191,12 @@ function bindKind(input: {
       contextualTaken.add(twin);
       return (contextual[twin] as LinkOccurrence).attrs;
     }
-    if (binding.pass === 2) {
-      // The binding came from a showing, so a latest showing always exists.
-      const shownAddress = latestShownAddress(input.shown, binding.ref);
-      const address = currentUri(scope, { ref: binding.ref, href: shownAddress }) ?? shownAddress;
+    if (match.pass === 2) {
+      // The match came from a showing, so a latest showing always exists.
+      const shownAddress = latestShownAddress(input.shown, match.ref);
+      const address = currentUri(scope, { ref: match.ref, href: shownAddress }) ?? shownAddress;
       return {
-        ref: binding.ref,
+        ref: match.ref,
         title: occurrence.attrs.title,
         href: storedHref(address, writtenSuffix),
       };
@@ -301,14 +301,14 @@ function isAsset(occurrence: LinkOccurrence): boolean {
  * source the scope cannot claim stays as written; guessing an id would store
  * a reference that can never render.
  */
-export function bindSources(
+export function assignSources(
   blocks: readonly PMNode[],
   scope: Pick<HolderLinkScope, "assetFor">,
 ): PMNode[] {
-  return blocks.map((block) => bindNode(block, scope));
+  return blocks.map((block) => assignSourceNode(block, scope));
 }
 
-function bindNode(node: PMNode, scope: Pick<HolderLinkScope, "assetFor">): PMNode {
+function assignSourceNode(node: PMNode, scope: Pick<HolderLinkScope, "assetFor">): PMNode {
   if (node.type.name === "image" || node.type.name === "figure") {
     const src = typeof node.attrs.src === "string" ? node.attrs.src : "";
     const uri = writtenSourceUri(src);
@@ -324,22 +324,22 @@ function bindNode(node: PMNode, scope: Pick<HolderLinkScope, "assetFor">): PMNod
   let changed = false;
   const children: PMNode[] = [];
   node.forEach((child) => {
-    const bound = bindNode(child, scope);
-    if (bound !== child) changed = true;
-    children.push(bound);
+    const next = assignSourceNode(child, scope);
+    if (next !== child) changed = true;
+    children.push(next);
   });
   return changed ? node.copy(Fragment.fromArray(children)) : node;
 }
 
-/** The write path's binder: one per command, over one prepared scope and one set of showings. */
+/** The write path's ref assigner: one per command, over one prepared scope and one set of showings. */
 export interface WriteLinkAssigner {
-  /** Bind the nodes written over `old` (empty for an insert or a create). */
-  bindSpan(old: readonly PMNode[], written: readonly PMNode[]): PMNode[];
+  /** Assign refs to the nodes written over `old` (empty for an insert or a create). */
+  assignSpan(old: readonly PMNode[], written: readonly PMNode[]): PMNode[];
   /**
-   * Bind a formatted find's parsed spliced group: occurrences outside the
+   * Assign refs in a formatted find's parsed spliced group: occurrences outside the
    * splice keep their old attrs, only the inside ones are assigned (§5.4).
    */
-  bindSplice(input: Omit<SpliceRestoreInput, "prepare" | "bind">): PMNode[];
+  assignSplice(input: Omit<SpliceRestoreInput, "assignSources" | "assignOccurrences">): PMNode[];
   /** Every ahead ref minted so far; the handler registers them before applying. */
   readonly minted: readonly AheadMint[];
 }
@@ -348,7 +348,7 @@ export function createWriteLinkAssigner(input: {
   scope: HolderLinkScope;
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
-  /** Hears each splice that fell back to whole-group binding (possible format churn there). */
+  /** Hears each splice that fell back to whole-group assignment (possible format churn there). */
   onSpliceFallback?: (reason: SpliceFallback) => void;
 }): WriteLinkAssigner {
   const minted: AheadMint[] = [];
@@ -357,27 +357,27 @@ export function createWriteLinkAssigner(input: {
     shown: input.shown,
     ...(input.mint ? { mint: input.mint } : {}),
   };
-  const bindSpan = (old: readonly PMNode[], written: readonly PMNode[]) => {
+  const assignSpan = (old: readonly PMNode[], written: readonly PMNode[]) => {
     const result = assignLinkRefs({ ...common, old: walkLinkOccurrences(old), written });
     minted.push(...result.minted);
     return result.nodes;
   };
   return {
     minted,
-    bindSpan,
-    bindSplice(splice) {
+    assignSpan,
+    assignSplice(splice) {
       const restored = restoreOutsideSplice({
         ...splice,
-        prepare: (blocks) => bindSources(blocks, input.scope),
-        bind(old, written) {
-          const result = bindOccurrences({ ...common, old, written });
+        assignSources: (blocks) => assignSources(blocks, input.scope),
+        assignOccurrences(old, written) {
+          const result = assignOccurrences({ ...common, old, written });
           minted.push(...result.minted);
           return result.attrs;
         },
       });
       if ("nodes" in restored) return restored.nodes;
       input.onSpliceFallback?.(restored.fallback);
-      return bindSpan(splice.oldGroup, splice.parsed.blocks);
+      return assignSpan(splice.oldGroup, splice.parsed.blocks);
     },
   };
 }

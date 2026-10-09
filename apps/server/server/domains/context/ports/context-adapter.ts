@@ -6,7 +6,7 @@
  */
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
 import type { Result } from "../../../shared/result.js";
-import type { PreparedWrite } from "../../collab/index.js";
+import type { BoundWrite } from "../../collab/index.js";
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
@@ -132,19 +132,16 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<AdapterContextWriteResult, AdapterFault>>;
-  /** Prepare content for a document about to be created at `path`, outside any transaction. */
-  prepareTrackedDocument(
-    path: string,
-    content: string,
-  ): Promise<Result<PreparedWrite, AdapterFault>>;
+  /** Bind content for a document about to be created at `path`, outside any transaction. */
+  bindTrackedDocument(path: string, content: string): Promise<Result<BoundWrite, AdapterFault>>;
   createTrackedDocument(
     path: string,
     markdown: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
-  createPreparedDocument(
+  createBoundDocument(
     path: string,
-    prepared: PreparedWrite | null,
+    bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */

@@ -1,14 +1,14 @@
 /**
- * ContextFS's prepare-outside, apply-inside layer for whole-document writes
+ * ContextFS's bind-outside, apply-inside layer for whole-document writes
  * (contract §6.2): written Markdown is bound before the command transaction
  * opens, because binding may register ahead refs, which takes namespace keys
  * the command transaction will hold; the transaction then applies the
- * prepared write and checks it was prepared for what occupies the path now.
+ * bound write and checks it was bound for what occupies the path now.
  */
 import { classifyFiletype, type Filetype, filetypeForPath } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { MarkdownDocumentStore, PreparedWrite } from "../../../collab/index.js";
+import type { BoundWrite, MarkdownDocumentStore } from "../../../collab/index.js";
 import { LinkBindingInsideTransactionError } from "../../../collab/index.js";
 import { splitPath } from "../../context/paths.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
@@ -16,8 +16,8 @@ import type { AdapterFault } from "../../ports/context-adapter.js";
 import type { ContextDocument } from "../../ports/context-document-store.js";
 
 export const DEFAULT_EDITABLE_FILETYPE = "markdown";
-/** How often a write prepares again when its holder changed before it could apply. */
-const PREPARE_ATTEMPTS = 3;
+/** How often a write binds again when its holder changed before it could apply. */
+const BIND_ATTEMPTS = 3;
 
 export function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
   const filetype = filetypeForPath(path);
@@ -32,7 +32,7 @@ export function binaryTrackedWriteFault(path: string): AdapterFault {
   };
 }
 
-export interface PreparedWritesDeps {
+export interface BoundWritesDeps {
   documentSync: Pick<MarkdownDocumentStore, "bindMarkdown">;
   commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
   /** The project a document created here belongs to. */
@@ -43,32 +43,32 @@ export interface PreparedWritesDeps {
   findDocument(path: string): Promise<ContextDocument | null>;
 }
 
-export class PreparedWrites {
-  constructor(private readonly deps: PreparedWritesDeps) {}
+export class BoundWrites {
+  constructor(private readonly deps: BoundWritesDeps) {}
 
   /**
-   * Prepare outside the command transaction, apply inside it. The prepared
-   * write names the holder, generation and state it was prepared against; if
+   * Bind outside the command transaction, apply inside it. The bound
+   * write names the holder, generation and state it was bound against; if
    * the path's occupant, its generation or its state changed in between
-   * (`stale_target`), prepare again against what is there now.
+   * (`stale_target`), bind again against what is there now.
    */
   async command<T>(
-    prepare: () => Promise<Result<PreparedWrite, AdapterFault>>,
-    apply: (prepared: PreparedWrite) => Promise<Result<T, AdapterFault>>,
+    bind: () => Promise<Result<BoundWrite, AdapterFault>>,
+    apply: (bound: BoundWrite) => Promise<Result<T, AdapterFault>>,
   ): Promise<Result<T, AdapterFault>> {
     for (let attempt = 1; ; attempt++) {
-      const prepared = await prepare();
-      if (!prepared.ok) return prepared;
-      const applied = await this.deps.commandExecutor.run(() => apply(prepared.value));
-      if (applied.ok || applied.error.code !== "stale_target" || attempt >= PREPARE_ATTEMPTS) {
+      const bound = await bind();
+      if (!bound.ok) return bound;
+      const applied = await this.deps.commandExecutor.run(() => apply(bound.value));
+      if (applied.ok || applied.error.code !== "stale_target" || attempt >= BIND_ATTEMPTS) {
         return applied;
       }
     }
   }
 
-  /** Whether `prepared` was prepared for what occupies its path now (`null`: nothing). */
-  preparedFor(path: string, prepared: PreparedWrite, occupant: ContextDocument | null): boolean {
-    const { holder } = prepared;
+  /** Whether `bound` was bound for what occupies its path now (`null`: nothing). */
+  boundFor(path: string, bound: BoundWrite, occupant: ContextDocument | null): boolean {
+    const { holder } = bound;
     if (holder.kind === "document") return occupant?.id === holder.documentId;
     if (holder.kind === "new") return occupant === null && holder.uri === this.deps.holderUri(path);
     return false;
@@ -88,12 +88,12 @@ export class PreparedWrites {
    * Bind written Markdown for `existing` (null: a document about to be
    * created at `path`), fresh or `against` its current document.
    */
-  async prepare(
+  async bind(
     path: string,
     existing: ContextDocument | null,
     markdown: string,
     against?: "current",
-  ): Promise<Result<PreparedWrite, AdapterFault>> {
+  ): Promise<Result<BoundWrite, AdapterFault>> {
     const { filename } = splitPath(path);
     if (!filename) return Err({ code: "io_error", message: "Cannot write to source root" });
     const filetype = existing

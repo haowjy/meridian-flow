@@ -10,7 +10,7 @@ import {
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
-import { fakePreparedWrite } from "../../../collab/test-support/bound-writes.js";
+import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
@@ -91,7 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ensureDocument: async () => {},
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
-          bindMarkdown: async (input: BindMarkdownInput) => fakePreparedWrite(input),
+          bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
           seedFromMarkdown: async (documentId: string, { markdown }: { markdown: string }) => {
             await beforeCollabWrite?.();
             const [row] = await db

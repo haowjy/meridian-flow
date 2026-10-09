@@ -1,9 +1,9 @@
 /**
- * Host port for link and image-source spelling and binding (contract §4.3).
+ * Host port for link and image-source spelling and ref assignment (contract §4.3).
  *
- * The host owns the document tree. Before every synchronous render, bind or
+ * The host owns the document tree. Before every synchronous render, assign or
  * apply block, agent-edit awaits `prepare` with everything that block may
- * spell or bind; `scopeFor` then answers synchronously for one holder in one
+ * spell or assign; `scopeFor` then answers synchronously for one holder in one
  * view. Rules live in `@meridian/contracts` (`resolveStoredLink`,
  * `spellStoredLink`); `createHolderLinkScope` applies them over any catalog,
  * so the server adapter and the in-memory one cannot disagree.
@@ -40,13 +40,13 @@ export interface HolderLinkScope extends DocumentLinkScope {
 
 export interface LinkPrepareRequest {
   documentId: string;
-  /** Docs the next synchronous block serializes or binds against (old runtime, overlays). */
+  /** Docs the next synchronous block serializes or assigns against (old runtime, overlays). */
   docs: readonly Y.Doc[];
-  /** Freshly parsed nodes whose written addresses binding may resolve. */
+  /** Freshly parsed nodes whose written addresses ref assignment may resolve. */
   written?: readonly PMNode[];
   /**
    * Nodes that already carry stored attrs and will be spelled as stored:
-   * copies, and content the host already prepared (`WriteContext.prepared`).
+   * copies, and content the host already bound (`applyBound`).
    */
   stored?: readonly PMNode[];
   /** Refs no doc carries yet that will be spelled (ahead refs this write registered). */
@@ -66,7 +66,7 @@ export interface AheadMint {
 }
 
 export interface DocumentLinksPort {
-  /** One batched load; awaited before every synchronous render, bind or apply block. */
+  /** One batched load; awaited before every synchronous render, assign or apply block. */
   prepare(request: LinkPrepareRequest): Promise<void>;
   /** Synchronous; holder and view come from the arguments, the snapshot from the open scope. */
   scopeFor(documentId: string, context: WriteContext | undefined): HolderLinkScope;
@@ -146,8 +146,8 @@ export function createHolderLinkScope(
 }
 
 /**
- * The decoded addresses written links and sources in `blocks` may bind to:
- * what a host must load before binding them. Links resolve against the
+ * The decoded addresses written links and sources in `blocks` may resolve to:
+ * what a host must load before assigning their refs. Links resolve against the
  * holder; sources under the manuscript-root grammar, and a source the href
  * grammar cannot decode (a raw `%`) is read as a bare manuscript path, as the
  * shipped image rule always has.

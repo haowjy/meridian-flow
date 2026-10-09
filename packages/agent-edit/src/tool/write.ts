@@ -5,18 +5,18 @@ import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
+import type { BoundUpdate } from "./bound-update.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
-import type { PreparedUpdate } from "./prepared-update.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
+  BoundWriteContext,
   DocumentCommandName,
-  PreparedWriteContext,
   ReadFunction,
   RedoResult,
   ResponseCommitSuccessResult,
@@ -56,13 +56,13 @@ export interface WriteTool {
   read: ReadFunction;
   write: WriteFunction;
   /**
-   * A whole-document write a host prepared outside its transaction, recorded
+   * A whole-document write a host bound outside its transaction, recorded
    * as `context.actor`'s mutation. A refusal under the document's lock is
-   * `invalid_write` with a `prepared_base` error: prepare it again.
+   * `invalid_write` with a `bound_base` error: bind it again.
    */
-  applyPrepared(
-    input: PreparedUpdate & { documentId: string },
-    context: PreparedWriteContext,
+  applyBound(
+    input: BoundUpdate & { documentId: string },
+    context: BoundWriteContext,
   ): Promise<WriteOutcome>;
   recover(docId: string): Promise<void>;
   commitResponse(
@@ -179,9 +179,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     );
   };
 
-  const applyPrepared: WriteTool["applyPrepared"] = (input, context) =>
+  const applyBound: WriteTool["applyBound"] = (input, context) =>
     execute("create", { documentId: input.documentId }, context, (_, session) =>
-      commands.applyPrepared(input, session, context),
+      commands.applyBound(input, session, context),
     );
 
   function invalidCommand(commandName: AgentEditResultCommand, error: z.ZodError): WriteOutcome {
@@ -257,7 +257,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   return {
     read,
     write,
-    applyPrepared,
+    applyBound,
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseCommitter.commitResponse,
     rollbackResponse: responseCommitter.rollbackResponse,

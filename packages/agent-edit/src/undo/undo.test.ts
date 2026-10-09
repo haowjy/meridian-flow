@@ -22,7 +22,7 @@ import { InMemoryAgentEditJournal } from "../test-support/index.js";
 import { reconstructUndoUpdateFromSnapshot } from "./reconstruction.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 const DOC_ID = "doc-1";
 const FILE = "chapter.md";

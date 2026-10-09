@@ -11,12 +11,12 @@ import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
+import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { internalResultError, isInternalWriteResult } from "./internal-result.js";
-import { type BoundLinks, bindLinks } from "./link-binding.js";
 import { type AgentEditBlockItem, modelResult } from "./model-result.js";
 import type {
   CommitPreflightInput,
@@ -240,14 +240,15 @@ export function createResponseCommitter(deps: {
     onTransition,
   } = deps;
   const responses = new Map<string, ResponseState>();
-  /** Each document's binding for the commit attempt that renders its receipts. */
-  const commitBindings = new WeakMap<ResponseDocumentBuffer, BoundLinks>();
-  const linksOf = (docBuffer: ResponseDocumentBuffer): BoundLinks => {
-    const bound = commitBindings.get(docBuffer);
-    if (!bound) throw new Error(`Response document ${docBuffer.docId} was not bound for commit.`);
-    return bound;
+  /** Each document's command links for the commit attempt that renders its receipts. */
+  const commitLinks = new WeakMap<ResponseDocumentBuffer, CommandLinks>();
+  const linksOf = (docBuffer: ResponseDocumentBuffer): CommandLinks => {
+    const links = commitLinks.get(docBuffer);
+    if (!links)
+      throw new Error(`Response document ${docBuffer.docId} has no links opened for commit.`);
+    return links;
   };
-  /** Receipts and concurrent runs: what the commit binding's codec rendered them as, in its view. */
+  /** Receipts and concurrent runs: what the commit links' codec rendered them as, in its view. */
   const shownSource = (docBuffer: ResponseDocumentBuffer) => linksOf(docBuffer);
   const shownLinksOf = (items: readonly AgentEditBlockItem[], docBuffer: ResponseDocumentBuffer) =>
     shownEvidence(items, shownSource(docBuffer));
@@ -383,9 +384,9 @@ export function createResponseCommitter(deps: {
           return doc;
         });
         try {
-          commitBindings.set(
+          commitLinks.set(
             docBuffer,
-            await bindLinks(deps, {
+            await openCommandLinks(deps, {
               documentId: docBuffer.docId,
               docs: [docBuffer.runtime.doc, ...before],
               context: { responseId, threadId: docBuffer.session.threadId },

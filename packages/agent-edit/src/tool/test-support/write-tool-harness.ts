@@ -27,8 +27,8 @@ import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
 export const codecFactory = createAgentEditCodecFactory(mdxCodec({ schema }));
-/** Bound to no tree: stored hrefs and `asset:` refs spell as stored. */
-export const codec = codecFactory.bind(UNSCOPED_DOCUMENT_LINKS);
+/** Scoped to no tree: stored hrefs and `asset:` refs spell as stored. */
+export const codec = codecFactory.forScope(UNSCOPED_DOCUMENT_LINKS);
 export const model = yProsemirrorModel(schema);
 export const THREAD_ID = "thread-a";
 export const context = { sessionId: "session-a", threadId: THREAD_ID };

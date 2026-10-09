@@ -31,16 +31,16 @@ The memory-only runtime replica is distinct from that host-owned branch.
     for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
     to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
 
-- **Written links bind before alignment and never round-trip.** Every door that
+- **Written links are assigned before alignment and never round-trip.** Every door that
   turns written Markdown into nodes runs ref assignment over the replaced span
-  before block alignment and no-op detection, and applies the bound nodes as
+  before block alignment and no-op detection, and applies the assigned nodes as
   they are. An unchanged link keeps its old attrs verbatim and emits no format
   item; copies, undo, redo and reply save never assign. Ahead refs a write
   mints are registered before it applies or locks anything
   ([link identity](link-correspondence.md)). A host whose door runs inside its
-  own transaction binds first and passes the nodes as
-  `WriteContext.boundBlocks` on a `create`; the core aligns them and never
-  assigns again.
+  own transaction binds the whole document first, outside it, and hands the
+  core the resulting `BoundUpdate` through `applyBound`; the core admits it
+  under the document's lock and never assigns again.
 
 ### Destructive scope targeting and recovery
 

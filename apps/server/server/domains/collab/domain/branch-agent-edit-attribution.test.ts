@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 function fixture(existingUpstream?: Y.Doc) {
-  const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
+  const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(UNSCOPED_DOCUMENT_LINKS);
   const serialize = vi.spyOn(codec, "serializeBlockBodies");
   const upstream = existingUpstream ?? new Y.Doc({ gc: false });
   if (!existingUpstream)
@@ -130,7 +130,9 @@ describe("branch concurrent attribution", () => {
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
     expect(changes[0]?.deletedHashes).toBeUndefined();
-    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
+    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(
+      UNSCOPED_DOCUMENT_LINKS,
+    );
     const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
     expect(blockTexts(f.baseline)).toEqual(["Beta."]);
     expect(echo.info).toBeUndefined();
@@ -216,7 +218,9 @@ describe("branch concurrent attribution", () => {
     const live = cloneYDoc(f.baseline);
     docs.push(live);
     const before = Y.encodeStateVector(live);
-    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
+    const codec = createAgentEditCodecFactory(mdxCodec({ schema })).forScope(
+      UNSCOPED_DOCUMENT_LINKS,
+    );
     model.insertBlocks(toDocHandle(live), null, codec.parse("Writer."));
     f.liveUpdates.push({
       seq: 1,

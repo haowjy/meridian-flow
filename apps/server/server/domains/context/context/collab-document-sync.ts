@@ -3,10 +3,10 @@
  * provenance vocabulary out of the collab domain while routing agent/human
  * writes through the richer write APIs that return attribution metadata.
  *
- * Content arrives prepared (`PreparedWrite`): ContextFS prepares it before
+ * Content arrives bound (`BoundWrite`): ContextFS binds it before
  * opening its command transaction, and this runs inside that transaction. A
  * write whose base's authority generation was replaced, or whose base clocks
- * the document lacks, is `stale_target`, which ContextFS answers by preparing
+ * the document lacks, is `stale_target`, which ContextFS answers by binding
  * again.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -15,10 +15,10 @@ import {
   DocumentSyncError,
 } from "../../collab/domain/markdown-document.js";
 import type {
+  BoundWrite,
   DocumentSeedOrigin,
   DocumentWriteOrigin,
   MarkdownDocumentStore,
-  PreparedWrite,
   SyncError,
 } from "../../collab/index.js";
 import type { AdapterFault } from "../ports/context-adapter.js";
@@ -92,7 +92,7 @@ function thrownFault(error: unknown): AdapterFault {
 export async function writeCollabMarkdown(input: {
   documentSync: MarkdownDocumentStore;
   documentId: string;
-  content: PreparedWrite;
+  content: BoundWrite;
   provenance?: WriteProvenance;
 }): Promise<CollabMarkdownResult> {
   const { documentSync, documentId, content, provenance } = input;

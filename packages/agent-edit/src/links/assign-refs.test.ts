@@ -1,5 +1,7 @@
-// Ref assignment on the real write path: reviewer cases bind as the model binds, and no door loses or churns refs.
+// Ref assignment on the real write path: reviewer cases are assigned as the model means them, and no door loses or churns refs.
 import { documentRef, storedHref } from "@meridian/contracts";
+import { walkLinkOccurrences } from "@meridian/markup";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
@@ -8,6 +10,7 @@ import type { LinkSpliceFallbackDetail } from "../tool/write-deps.js";
 import { assignLinkRefs } from "./assign-refs.js";
 import { type Fixture, reviewerFixtures } from "./correspondence.fixtures.js";
 import type { ShownLink } from "./correspondence.js";
+import { extractStoredLinks } from "./stored-links.js";
 import {
   catalogDocument,
   docFromBlocks,
@@ -115,12 +118,12 @@ function fromFixture(fixture: Fixture, index: number): ReviewerCase {
     })),
     written: fixture.written.map((link) => `[${link.label}](${link.href})`).join(" and "),
     expected: fixture.written.map((link, position) => {
-      const binding = fixture.expected[position] ?? { pass: 3 };
+      const match = fixture.expected[position] ?? { pass: 3 };
       const ref =
-        binding.pass === 1
-          ? documentRef(idOf((fixture.old[binding.occurrence] as Fixture["old"][number]).ref))
-          : binding.pass === 2
-            ? documentRef(idOf(binding.ref))
+        match.pass === 1
+          ? documentRef(idOf((fixture.old[match.occurrence] as Fixture["old"][number]).ref))
+          : match.pass === 2
+            ? documentRef(idOf(match.ref))
             : fresh(link.href);
       return [link.label, ref];
     }),
@@ -129,7 +132,7 @@ function fromFixture(fixture: Fixture, index: number): ReviewerCase {
 
 const reviewerCases: ReviewerCase[] = reviewerFixtures.map(fromFixture);
 
-it("A1-4: reviewer counterexamples bind on the real write path as the model binds", async () => {
+it("A1-4: reviewer counterexamples are assigned on the real write path as the model means them", async () => {
   expect(reviewerCases).toHaveLength(28);
   for (const testCase of reviewerCases) {
     const ctx = linkHarness({
@@ -167,7 +170,7 @@ interface DoorCase {
 const target = ch("target.md");
 const doors: DoorCase[] = [
   {
-    name: "insert binds a new link fresh to the document at its address",
+    name: "insert assigns a new link fresh to the document at its address",
     async run() {
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },
@@ -253,7 +256,7 @@ const doors: DoorCase[] = [
     },
   },
   {
-    name: "a find whose splice is ingress-rewritten binds the whole group and keeps identity",
+    name: "a find whose splice is ingress-rewritten assigns the whole group and keeps identity",
     async run() {
       const fallbacks: LinkSpliceFallbackDetail[] = [];
       const ctx = linkHarness({
@@ -415,7 +418,7 @@ const doors: DoorCase[] = [
           expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md) waits." },
         },
         {
-          name: "insert: pass 2 binds the shown document after a move",
+          name: "insert: pass 2 assigns the shown document after a move",
           old: ["Intro."],
           shown: shownAt(documentRef(D), ch("ch12.md")),
           command: { command: "insert", content: "[Again](ch12) waits." },
@@ -469,7 +472,7 @@ const doors: DoorCase[] = [
     },
   },
   {
-    name: "a partial find binds the destination it reconstructs, loaded before binding",
+    name: "a partial find assigns the destination it reconstructs, loaded before assignment",
     async run() {
       const M = uuid(41);
       const N = uuid(42);
@@ -578,7 +581,67 @@ const doors: DoorCase[] = [
     },
   },
   {
-    name: "a write with no showings binds paths to what they mean now",
+    name: "the Yjs walk names the occurrences assignment walks",
+    async run() {
+      const M = uuid(43);
+      const strong = schema.marks.strong.create();
+      const titled = {
+        text: "Titled",
+        ref: documentRef(D),
+        href: storedHref(target, ""),
+        title: "T",
+      };
+      const linkMark = (ref: string | null) =>
+        schema.marks.link.create({ href: storedHref(target, ""), title: null, ref });
+      const ctx = linkHarness({
+        holder: { id: H, uri: HOLDER },
+        documents: [
+          catalogDocument(D, target),
+          catalogDocument(M, "manuscript://maps/map.png", { image: true }),
+        ],
+        blocks: [
+          // One run split by another mark; adjacent runs differing only by ref or title.
+          schema.node("paragraph", null, [
+            schema.text("Tar", [linkMark(documentRef(D))]),
+            schema.text("get", [linkMark(documentRef(D)), strong]),
+            schema.text("Again", [linkMark(null)]),
+            schema.text(titled.text, [
+              schema.marks.link.create({ href: titled.href, title: titled.title, ref: titled.ref }),
+            ]),
+            schema.node("image", { src: `asset:${M}`, alt: "Map" }),
+          ]),
+          // The same mark on both sides of a paragraph boundary is two runs.
+          paragraph(docLink("Target", D, target)),
+          schema.node("heading", { level: 2 }, [schema.text("Head", [linkMark(documentRef(D))])]),
+          schema.node("bullet_list", { tight: true }, [
+            schema.node("list_item", null, [
+              paragraph({ text: "Web", ref: null, href: "https://example.com" }),
+            ]),
+          ]),
+          schema.node("figure", { src: `asset:${M}`, alt: "Fig", caption: "", ref: null }),
+          schema.node("table", null, [
+            schema.node("table_row", null, [
+              schema.node("table_cell", null, [paragraph(docLink("Cell", D, target))]),
+              schema.node("table_cell", null, [paragraph("plain")]),
+            ]),
+          ]),
+        ],
+      });
+      // A write's own output too: a fresh mint and a resolved ref.
+      await ctx.write({ command: "insert", content: "[Later](later.md) and [Target](target.md)." });
+      const live = ctx.live();
+      const yjs = extractStoredLinks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map(
+        ({ kind, ref, href }) => [kind, ref, href],
+      );
+      const nodes = walkLinkOccurrences(prosemirrorBlocksForDoc(live, schema)).map(
+        ({ kind, attrs }) => [kind, attrs.ref, attrs.href],
+      );
+      expect.soft(nodes.length, this.name).toBe(11);
+      expect.soft(yjs, this.name).toEqual(nodes);
+    },
+  },
+  {
+    name: "a write with no showings assigns paths to what they mean now",
     async run() {
       const ctx = linkHarness({
         holder: { id: H, uri: HOLDER },

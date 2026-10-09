@@ -294,7 +294,7 @@ function createInMemoryBranchPeerStub(
     readEffectiveHashlines: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
         const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
-        const bound = codec.bind(scope);
+        const bound = codec.forScope(scope);
         const read = versioned(doc, scope, (doc) =>
           model.serializeBlockLines(toDocHandle(doc), bound),
         );

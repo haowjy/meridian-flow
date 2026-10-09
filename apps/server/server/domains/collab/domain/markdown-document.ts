@@ -7,7 +7,7 @@
  */
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
-  admitPreparedUpdate,
+  admitBoundUpdate,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
@@ -38,7 +38,7 @@ import type {
 import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
-import type { PreparedWrite } from "./link-binding.js";
+import type { BoundWrite } from "./link-binding.js";
 import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type DocumentLinkScopes,
@@ -90,11 +90,11 @@ type MarkdownDocumentEngineDeps = {
   afterWrite?: MarkdownWriteHook;
   /**
    * A whole-document write recorded as an actor's mutation (thread undo,
-   * receipts): agent-edit merges the prepared update into the live document.
+   * receipts): agent-edit merges the bound update into the live document.
    */
   identityPreservingWrite(input: {
     documentId: DocumentId;
-    content: PreparedWrite;
+    content: BoundWrite;
     actor: MutationActor;
   }): Promise<WriteOutcome>;
   resolveFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -127,28 +127,28 @@ export type MarkdownDocumentEngine = {
   ): Promise<Result<MarkdownSetResult, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /**
-   * Whole-document writes take a write a `LinkBinder` prepared before the
+   * Whole-document writes take a write a `LinkBinder` bound before the
    * caller's transaction (contract §6.2); none of them parses Markdown. Each
-   * applies only to the holder it was prepared for, and merges its update
+   * applies only to the holder it was bound for, and merges its update
    * into the document. A write whose base's authority generation was replaced
    * (its certificate expired), or whose base clocks the document lacks, is
-   * `stale_generation`, for the caller to prepare again.
+   * `stale_generation`, for the caller to bind again.
    */
   setMarkdown(input: {
     documentId: DocumentId;
-    content: PreparedWrite;
+    content: BoundWrite;
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
   /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
   seedFromMarkdown(
     documentId: string,
-    content: PreparedWrite,
+    content: BoundWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
-    content: PreparedWrite;
+    content: BoundWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
@@ -231,13 +231,13 @@ export function createMarkdownDocumentEngine(
     }
   }
 
-  /** A prepared write for this holder, of the shape this document stores (one code block for code files). */
-  function checkPrepared(
+  /** A bound write for this holder, of the shape this document stores (one code block for code files). */
+  function checkBound(
     documentId: DocumentId,
-    content: PreparedWrite,
+    content: BoundWrite,
     format: { schemaType: YjsTrackedSchemaType },
     use: "seed" | "write",
-  ): Result<PreparedWrite, SyncError> {
+  ): Result<BoundWrite, SyncError> {
     assertHolder(documentId, content, use);
     if (content.schemaType !== format.schemaType) {
       return Err({
@@ -250,19 +250,19 @@ export function createMarkdownDocumentEngine(
   }
 
   /**
-   * Merge a prepared update into `draft`, a copy of the live document taken
-   * under its lock, so it is admitted (`admitPreparedUpdate`: certificate,
+   * Merge a bound update into `draft`, a copy of the live document taken
+   * under its lock, so it is admitted (`admitBoundUpdate`: certificate,
    * clocks, fresh-needs-empty) against the generation it lands in. A writer's
    * save outside a thread applies the update alone, without certified facts.
    */
-  function mergePrepared(
+  function mergeBound(
     documentId: DocumentId,
     draft: Y.Doc,
     authority: Readonly<CheckpointAuthority>,
-    content: PreparedWrite,
+    content: BoundWrite,
     yjsOrigin: TransactionOrigin,
   ): Result<void, SyncError> {
-    const refused = admitPreparedUpdate(draft, content, {
+    const refused = admitBoundUpdate(draft, content, {
       authority,
       model: deps.model,
       origin: yjsOrigin,
@@ -327,19 +327,19 @@ export function createMarkdownDocumentEngine(
 
   async function setMarkdown(input: {
     documentId: DocumentId;
-    content: PreparedWrite;
+    content: BoundWrite;
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
     const resolvedFormat = await documentFormat(input.documentId);
     if (!resolvedFormat.ok) return resolvedFormat;
     const format = resolvedFormat.value;
-    const content = checkPrepared(input.documentId, input.content, format, "write");
+    const content = checkBound(input.documentId, input.content, format, "write");
     if (!content.ok) return content;
     return changeDocument(
       input,
       (draft, yjsOrigin, authority) =>
-        mergePrepared(input.documentId, draft, authority, content.value, yjsOrigin),
+        mergeBound(input.documentId, draft, authority, content.value, yjsOrigin),
       format,
     );
   }
@@ -401,7 +401,7 @@ export function createMarkdownDocumentEngine(
       // drop every attribute the codec does not spell.
       const blocks = projectBlocks(documentId, snapshot, (blocks) => blocks);
       // Restore runs under the document's lock against what it holds now: a
-      // whole replacement, not a prepared write.
+      // whole replacement, not a bound write.
       return changeDocument(
         { documentId, origin },
         (draft, yjsOrigin) => {
@@ -444,13 +444,13 @@ export function createMarkdownDocumentEngine(
       const typedDocumentId = documentId as DocumentId;
       const format = await documentFormat(typedDocumentId);
       if (!format.ok) return format;
-      const prepared = checkPrepared(typedDocumentId, content, format.value, "seed");
-      if (!prepared.ok) return prepared;
-      if (prepared.value.base !== null) {
-        throw new Error("A seed takes a fresh write; this one was prepared against a document");
+      const bound = checkBound(typedDocumentId, content, format.value, "seed");
+      if (!bound.ok) return bound;
+      if (bound.value.base !== null) {
+        throw new Error("A seed takes a fresh write; this one was bound against a document");
       }
       const seededDoc = createCollabYDoc({ gc: false });
-      Y.applyUpdate(seededDoc, prepared.value.update, yjsTransactionOrigin(origin));
+      Y.applyUpdate(seededDoc, bound.value.update, yjsTransactionOrigin(origin));
       const canonicalMarkdown = serializeForSchema(
         typedDocumentId,
         seededDoc,
@@ -481,14 +481,14 @@ export function createMarkdownDocumentEngine(
 
   async function identityPreservingSet(input: {
     documentId: DocumentId;
-    content: PreparedWrite;
+    content: BoundWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
     const format = await documentFormat(input.documentId);
     if (!format.ok) return format;
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
-    const shaped = checkPrepared(input.documentId, input.content, format.value, "write");
+    const shaped = checkBound(input.documentId, input.content, format.value, "write");
     if (!shaped.ok) return shaped;
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
@@ -496,7 +496,7 @@ export function createMarkdownDocumentEngine(
       content: input.content,
       actor,
     });
-    if (outcome.status !== "success" && outcome.error?.type === "prepared_base") {
+    if (outcome.status !== "success" && outcome.error?.type === "bound_base") {
       return Err({ code: "stale_generation", documentId: input.documentId });
     }
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
@@ -611,16 +611,16 @@ function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
 }
 
 /**
- * A prepared write certifies one holder; applying it to another document is a
- * bug. A write needs the document it was prepared for; a seed may also take
- * content prepared for the document being created (its creator checks the
+ * A bound write certifies one holder; applying it to another document is a
+ * bug. A write needs the document it was bound for; a seed may also take
+ * content bound for the document being created (its creator checks the
  * address) or fixed static content.
  */
-function assertHolder(documentId: DocumentId, content: PreparedWrite, use: "seed" | "write"): void {
+function assertHolder(documentId: DocumentId, content: BoundWrite, use: "seed" | "write"): void {
   const { holder } = content;
   if (holder.kind === "document" ? holder.documentId !== documentId : use === "write") {
     throw new Error(
-      `Content prepared for ${holder.kind === "document" ? holder.documentId : holder.kind} cannot be applied to ${documentId}`,
+      `Content bound for ${holder.kind === "document" ? holder.documentId : holder.kind} cannot be applied to ${documentId}`,
     );
   }
 }
