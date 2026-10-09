@@ -89,15 +89,13 @@ function checkpointMatchesView(
   const entries = [...view.entries.values()].sort((left, right) =>
     left.entryId.localeCompare(right.entryId),
   );
-  const invalidatedEntryIds = [...view.invalidatedEntryIds].sort();
   return (
     checkpoint !== null &&
     checkpoint.generation === view.generation &&
     checkpoint.appliedRevision === view.appliedRevision &&
     checkpoint.observedHeadRevision === view.observedHeadRevision &&
     checkpoint.cursor === view.cursor &&
-    JSON.stringify(checkpoint.entries) === JSON.stringify(entries) &&
-    JSON.stringify(checkpoint.invalidatedEntryIds) === JSON.stringify(invalidatedEntryIds)
+    JSON.stringify(checkpoint.entries) === JSON.stringify(entries)
   );
 }
 

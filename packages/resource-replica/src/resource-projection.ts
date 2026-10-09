@@ -111,7 +111,6 @@ export function resourceVisibleInProject(
   return catalogs.some(
     (catalog) =>
       catalog.projectId === projectId &&
-      !catalog.invalidatedEntryIds.includes(documentId) &&
       catalog.entries.some((entry) => entry.kind === "file" && entry.entryId === documentId),
   );
 }

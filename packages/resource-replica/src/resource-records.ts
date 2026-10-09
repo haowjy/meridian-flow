@@ -168,7 +168,6 @@ export type ResourceCatalogCheckpoint = Pick<
   projectId: string;
   revision: number;
   entries: readonly CatalogEntry[];
-  invalidatedEntryIds: readonly string[];
 };
 
 export type ResourceWrite = {
