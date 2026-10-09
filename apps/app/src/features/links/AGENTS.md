@@ -46,17 +46,19 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   project, Work, base URI, or catalog revision changes; registering is the
   cache's only invalidation. A move or delete is a scope change: the link is
   spelled the same, and its old answer is now the wrong document or none.
-  An Editor's scope also carries its document's change revision (local, never
-  sent), because a rename rewrites the text an answer was given for. It moves
-  once per burst, 400 ms after the last document-changing edit: once per
-  keystroke would re-ask the server about every unanswered link on every
-  character. Its
-  server fallbacks name the holding document so the server can answer through
-  a pending redirect; chat has no holder.
+  The holder's own text is not an input: an answer is keyed by the link's ref
+  and href, and the same key names the same document whatever else the text
+  says, so two links sharing an href never share an answer and an edit
+  re-asks nothing. A gone ref is never followable.
+- **Local answers never wait on the network.** The resolver's `local` half
+  answers what the complete index can say before any request goes out, and a
+  failed request fails only the questions it carried. An ahead ref at an
+  indexed address shows that document at once and still asks; only a server
+  answer naming another document, or `gone`, replaces it.
 - **No component invalidates the link cache.** A create or rename anywhere is a
   new catalog, and the catalog is what the scope is keyed on. A mutation that
   also pokes the resolution store is a second owner of the same rule.
-- **One follow procedure.** A surface never calls `resolveDocumentLink` or
+- **One follow procedure.** A surface never calls `resolveDocumentLinks` or
   reads the resolution cache to decide what a click does; only this module
   does. Whether a reference is a link at all is `follower.canFollow`, which
   depends on the target and base URI, never on loading. Destination policy

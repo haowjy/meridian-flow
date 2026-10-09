@@ -36,47 +36,17 @@ import {
   linkAt,
   linkAtSelection,
   linkHref,
+  linkRef,
   relocateLink,
 } from "./link-commands";
 import { followLink, linkClickIntent, MIDDLE_BUTTON } from "./link-navigation";
-import { createLinkResolution, type LinkResolution } from "./link-resolution";
+import { createLinkResolution, type LinkKey } from "./link-resolution";
 import { linkResolutionPlugin } from "./link-resolution-decorations";
-import {
-  createLinkSurface,
-  type LinkMenuTarget,
-  type LinkPoint,
-  type LinkSurface,
-} from "./link-surface";
+import { getLinkSurface, LINK_SURFACE_NAME, type LinkSurfaceStorage } from "./link-storage";
+import { createLinkSurface, type LinkMenuTarget, type LinkPoint } from "./link-surface";
 import { classifyLinkTarget } from "./link-target";
 
-const LINK_SURFACE_NAME = "meridianLinkSurface";
-
 const linkSurfacePluginKey = new PluginKey(LINK_SURFACE_NAME);
-
-type LinkSurfaceStorage = { surface: LinkSurface; resolution: LinkResolution };
-
-declare module "@tiptap/core" {
-  interface Storage {
-    meridianLinkSurface: LinkSurfaceStorage;
-  }
-}
-
-/** The link runtime for this editor, or null on one that never mounted it. */
-export function getLinkSurface(editor: Editor | null | undefined): LinkSurface | null {
-  if (!editor || editor.isDestroyed) return null;
-  return editor.storage[LINK_SURFACE_NAME]?.surface ?? null;
-}
-
-/**
- * Where this editor's internal links point, or null on one that never mounted
- * the lane. Separate from the surface store because it answers a different
- * question: the surface knows which link the writer is working on, and this
- * knows what any of them addresses.
- */
-export function getLinkResolution(editor: Editor | null | undefined): LinkResolution | null {
-  if (!editor || editor.isDestroyed) return null;
-  return editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
-}
 
 /**
  * Open the link form over the current selection (§5.5, law 5). No
@@ -101,7 +71,11 @@ function followLinkAtSelection(editor: Editor | null): boolean {
   // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
   // place a plain click would.
   const followed = followLink(
-    { target: classifyLinkTarget(linkHref(link)), disposition: "current" },
+    {
+      target: classifyLinkTarget(linkHref(link)),
+      ref: linkRef(link),
+      disposition: "current",
+    },
     surface.navigator,
   );
   return followed !== "unavailable";
@@ -153,8 +127,9 @@ export const LinkSurfaceExtension = Extension.create({
       });
       if (intent.action === "place-caret") return false;
 
+      const key = linkKeyOf(view, anchor);
       const followed = followLink(
-        { target: classifyLinkTarget(hrefOf(anchor)), disposition: intent.disposition },
+        { target: classifyLinkTarget(key.href), ref: key.ref, disposition: intent.disposition },
         surface.navigator,
       );
       // Nothing to follow — an unrecognized href, or an internal link with no
@@ -199,8 +174,11 @@ export const LinkSurfaceExtension = Extension.create({
                 return owner ? { owner, value: anchor } : null;
               },
               onSettle: (element) => {
-                const target = element && classifyLinkTarget(hrefOf(element));
-                surface.showHint(target && element ? { element, target } : null);
+                const key = element && linkKeyOf(view, element);
+                const target = key && classifyLinkTarget(key.href);
+                surface.showHint(
+                  target && element && key ? { element, target, ref: key.ref } : null,
+                );
               },
             }) ?? null;
 
@@ -226,9 +204,10 @@ export const LinkSurfaceExtension = Extension.create({
               Enter: () => {
                 const anchor = anchorIn(view, document.activeElement);
                 if (!anchor) return false;
+                const key = linkKeyOf(view, anchor);
                 return (
                   followLink(
-                    { target: classifyLinkTarget(hrefOf(anchor)), disposition: "current" },
+                    { target: classifyLinkTarget(key.href), ref: key.ref, disposition: "current" },
                     surface.navigator,
                   ) !== "unavailable"
                 );
@@ -337,13 +316,25 @@ function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
   return {
     anchor: anchorLinkRange(state, { from: link.from, to: link.to }),
     href,
+    ref: linkRef(link),
     target: classifyLinkTarget(href),
     identity: link.identity,
   };
 }
 
-function hrefOf(element: HTMLElement): string {
-  return element.getAttribute("data-meridian-link") ?? element.getAttribute("href") ?? "";
+/**
+ * The stored link under a rendered anchor. The ref never reaches the DOM, so
+ * it is read from the mark at the anchor's own start: one character in, a
+ * one-character link reads the link after it. The rendered href stands in
+ * when the anchor no longer maps to a link.
+ */
+function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
+  const link = linkAt(view.state, view.posAtDOM(anchor, 0));
+  if (link) return { ref: linkRef(link), href: linkHref(link) };
+  return {
+    ref: null,
+    href: anchor.getAttribute("data-meridian-link") ?? anchor.getAttribute("href") ?? "",
+  };
 }
 
 function travelFrom(origin: LinkPoint | null, event: MouseEvent): number {

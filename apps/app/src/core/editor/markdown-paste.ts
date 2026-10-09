@@ -22,7 +22,7 @@
  * parsed blocks rather than on a guess about the raw text.
  */
 
-import { markdownCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { markdownCodec } from "@meridian/markup";
 import {
   Fragment,
   type Node as PMNode,
@@ -34,7 +34,7 @@ import type { EditorProps } from "@tiptap/pm/view";
 
 import type { PluggableList } from "unified";
 
-import { linksAsAddresses } from "./links";
+import { clipboardLinkScope } from "./links";
 
 /**
  * Does this parse carry anything plain-text paste would have thrown away?
@@ -54,9 +54,10 @@ export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
 }
 
 /**
- * Pasted image paths stay literal here: the editor's `transformPasted` maps a
- * known project path back to its `asset:` ref for every paste, text or HTML
- * (`images/image-workflow.ts` `resolveImagesFromClipboard`).
+ * Parsing is pure syntax: every link comes out unbound. The editor's
+ * `transformPasted` binds them for every paste, text or HTML
+ * (`links/link-clipboard.ts`), and maps a known project image path back to
+ * its `asset:` ref (`images/image-workflow.ts` `resolveImagesFromClipboard`).
  */
 export function markdownClipboardParser(
   schema?: Schema,
@@ -128,22 +129,24 @@ function defaultPlainTextPaste(): Slice {
 
 /**
  * Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor
- * structure. Internal links go out as full addresses, so the text means the
- * same thing wherever it lands, holder or not.
+ * structure. Internal links go out as full current addresses, so the text
+ * means the same thing wherever it lands, holder or not. Pasted back, the
+ * editor's paste door binds them fresh (`links/link-clipboard.ts`).
  */
 export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardTextSerializer"]> = (
   copied,
   view,
 ) => {
   const schema = view.state.schema;
-  const slice = linksAsAddresses(copied, view.state);
   const blocks: PMNode[] = [];
-  if (slice.content.firstChild?.isInline) {
-    blocks.push(schema.nodes.paragraph.create(null, slice.content));
+  if (copied.content.firstChild?.isInline) {
+    blocks.push(schema.nodes.paragraph.create(null, copied.content));
   } else {
-    slice.content.forEach((node) => {
+    copied.content.forEach((node) => {
       blocks.push(node);
     });
   }
-  return markdownCodec({ schema }).serializeBlocks(blocks, UNSCOPED_DOCUMENT_LINKS).join("\n\n");
+  return markdownCodec({ schema })
+    .serializeBlocks(blocks, clipboardLinkScope(view.state))
+    .join("\n\n");
 };

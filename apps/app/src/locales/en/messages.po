@@ -1622,6 +1622,7 @@ msgstr "Document name and location"
 msgid "Documents the AI reads in this chat appear here."
 msgstr "Documents the AI reads in this chat appear here."
 
+#: src/core/editor/links/link-resolution-decorations.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -2538,6 +2539,14 @@ msgstr "No fields required; confirm to continue."
 #: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "No files in {containerLabel}."
 msgstr "No files in {containerLabel}."
+
+#: src/core/editor/links/link-resolution-decorations.ts
+#: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/editor/surfaces/link/LinkHint.tsx
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/rich-content/TranscriptReference.tsx
+msgid "No longer available"
+msgstr "No longer available"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"

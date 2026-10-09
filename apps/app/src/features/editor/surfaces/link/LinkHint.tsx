@@ -15,7 +15,8 @@
  * rather than riding up over the app above it.
  *
  * An internal link says two things: where it goes, and — when nothing is at
- * that address yet — that, in the follow's own words.
+ * that address yet, or the document it named is gone — that, in the follow's
+ * own words.
  * The second line is a sentence rather than a warning, because linking a
  * chapter before writing it is how serial writers work (§5.5). While the
  * answer is still in flight it says only the destination: a hint that guessed
@@ -60,7 +61,7 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
   const position = useHintPosition(element, rect, overlay);
   const visible = Boolean(hint) && !suppressed;
   const href = shown ? linkTargetHref(shown.target) : null;
-  const resolution = useLinkResolution(editor, href);
+  const resolution = useLinkResolution(editor, href ? { ref: shown?.ref ?? null, href } : null);
 
   if (!shown || !href || !rect || !overlay || typeof document === "undefined") return null;
 
@@ -82,6 +83,9 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
       ) : null}
       {resolution?.state === "unresolved" ? (
         <span className="meridian-link-hint__note">{t`Doesn't exist yet`}</span>
+      ) : null}
+      {resolution?.state === "gone" ? (
+        <span className="meridian-link-hint__note">{t`No longer available`}</span>
       ) : null}
     </div>,
     overlay,

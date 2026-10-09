@@ -22,6 +22,8 @@ import type { LinkTarget } from "./link-target";
  */
 export type InternalLinkNavigator = (request: {
   target: LinkTarget;
+  /** The stored link's ref: what it names, beside the address it is spelled with. */
+  ref: string | null;
   disposition: LinkFollowDisposition;
 }) => void;
 
@@ -114,11 +116,12 @@ export function canFollowLink(
 
 export type LinkFollowRequest = {
   target: LinkTarget | null;
+  ref: string | null;
   disposition: LinkFollowDisposition;
 };
 
 export function followLink(
-  { target, disposition }: LinkFollowRequest,
+  { target, ref, disposition }: LinkFollowRequest,
   navigator: InternalLinkNavigator | null,
   open: OpenExternalLink = openInNewTab,
 ): LinkFollowResult {
@@ -130,6 +133,6 @@ export function followLink(
     return "opened";
   }
   if (!navigator) return "unavailable";
-  navigator({ target, disposition });
+  navigator({ target, ref, disposition });
   return "navigated";
 }

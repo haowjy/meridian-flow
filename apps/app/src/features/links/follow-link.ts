@@ -46,8 +46,9 @@ export type FollowReporter = {
 
 /**
  * Cached answer: open, report nothing. Otherwise report checking after 250ms,
- * then open or report an outcome. Aborted before the open: never reports,
- * never opens. The signal is not forwarded into `open`.
+ * then open or report an outcome. A gone link opens nothing and says nothing:
+ * its chip already says it is no longer available. Aborted before the open:
+ * never reports, never opens. The signal is not forwarded into `open`.
  *
  * `scopeReady` is for a surface whose scope is not known yet (a chat whose
  * Work is still loading). The 250ms runs from the click, not from the scope
@@ -56,6 +57,7 @@ export type FollowReporter = {
  */
 export async function followProjectLink({
   target,
+  ref = null,
   gesture,
   resolution,
   open,
@@ -64,6 +66,8 @@ export async function followProjectLink({
   scopeReady,
 }: {
   target: LinkTarget;
+  /** The stored link's ref; null for a link with none (chat's syntax links). */
+  ref?: string | null;
   gesture: LinkFollowDisposition;
   resolution: LinkResolution;
   open: LinkDestination;
@@ -72,7 +76,7 @@ export async function followProjectLink({
   scopeReady?: Promise<void>;
 }): Promise<void> {
   if (signal.aborted) return;
-  const href = linkTargetHref(target);
+  const link = { ref, href: linkTargetHref(target) };
   const outcome = (state: LinkFollowOutcome["state"]): LinkFollowOutcome => ({
     state,
     target,
@@ -93,7 +97,7 @@ export async function followProjectLink({
 
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
-  const known = resolution.read(href);
+  const known = resolution.read(link);
   if (known?.state === "resolved") {
     settle();
     reporter.clear();
@@ -101,10 +105,14 @@ export async function followProjectLink({
     return;
   }
 
-  const entry = await resolution.resolve(href);
+  const entry = await resolution.resolve(link);
   settle();
   if (signal.aborted) return;
 
+  if (entry?.state === "gone") {
+    reporter.clear();
+    return;
+  }
   if (entry?.state === "resolved") {
     reporter.clear();
     await open(documentRef(entry.document), gesture);
