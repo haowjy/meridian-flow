@@ -112,7 +112,8 @@ function LinkFields({
   const [href, setHref] = useState(draft.href);
   // The document picked from search, bound by its id at commit.
   const [picked, setPicked] = useState<DocumentRef | null>(null);
-  const draftRef = typeof draft.identity?.attrs.ref === "string" ? draft.identity.attrs.ref : null;
+  const draftLinkRef =
+    typeof draft.identity?.attrs.ref === "string" ? draft.identity.attrs.ref : null;
   const [query, setQuery] = useState("");
   const [choosing, setChoosing] = useState(!draft.href);
   const [selectedDestination, setSelectedDestination] = useState<{
@@ -125,7 +126,7 @@ function LinkFields({
   // destination the writer typed has no ref until it is committed.
   const resolution = useLinkResolution(
     editor,
-    href ? { ref: picked ?? (href === draft.href ? draftRef : null), href } : null,
+    href ? { ref: picked ?? (href === draft.href ? draftLinkRef : null), href } : null,
   );
   const target = classifyLinkTarget(href);
   const destinationLabel =
