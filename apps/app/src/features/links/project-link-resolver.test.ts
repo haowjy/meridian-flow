@@ -34,7 +34,14 @@ const document = (documentId: string, name: string): LinkableDocument => ({
 });
 const DOCUMENTS = [document(KAEL, "Kael"), document(NINE, "Nine")];
 
-const found = (documentId: string, name: string): DocumentLinkAnswer => ({
+const settled = (
+  answer: Extract<DocumentLinkAnswer, { state: "document" | "gone" }>,
+): DocumentLinkAnswer => ({ ...answer, settled: true });
+
+const found = (
+  documentId: string,
+  name: string,
+): Extract<DocumentLinkAnswer, { state: "document" }> => ({
   state: "document",
   document: {
     id: documentId,
@@ -63,6 +70,11 @@ type Row = {
   heard?: boolean;
   /** What a click right after asking waits for, as `resolve()` answers it. */
   clicked?: string | null;
+  /**
+   * A later catalog, registered after the first answers landed, with the
+   * server unreachable: what the same links read before and after it fails.
+   */
+  offline?: { documents: LinkableDocument[]; before: (string | null)[]; after: (string | null)[] };
 };
 
 const ROWS: Row[] = [
@@ -119,6 +131,28 @@ const ROWS: Row[] = [
     before: ["document:Nine"],
     after: ["document:Kael"],
     asked: [AHEAD],
+  },
+  {
+    rule: "a settled ahead ref never answers by its old address again (renumber, then offline)",
+    links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
+    server: { [AHEAD]: settled(found(KAEL, "Kael")) },
+    before: ["document:Nine"],
+    after: ["document:Kael"],
+    asked: [AHEAD],
+    offline: {
+      documents: [document(KAEL, "Ten"), document(NINE, "Nine")],
+      before: ["document:Ten"],
+      after: ["document:Ten"],
+    },
+  },
+  {
+    rule: "an ahead ref settled gone asks like a doc ref, never shows its address",
+    links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
+    server: { [AHEAD]: settled({ state: "gone" }) },
+    before: ["document:Nine"],
+    after: ["gone"],
+    asked: [AHEAD],
+    offline: { documents: DOCUMENTS, before: ["pending"], after: [null] },
   },
   {
     rule: "the server's gone replaces the local answer",
@@ -199,7 +233,8 @@ it("routes each link to the local index or the server", async () => {
       };
     });
     const resolution = createLinkAnswerCache();
-    const scope = { projectId: "p", workId: "w", baseUri: HOLDER, ...row.scope };
+    // Settlements are project-wide facts; each row is its own project.
+    const scope = { projectId: row.rule, workId: "w", baseUri: HOLDER, ...row.scope };
     resolution.registerResolver(
       createProjectLinkResolver(scope, {
         documents: DOCUMENTS,
@@ -252,6 +287,24 @@ it("routes each link to the local index or the server", async () => {
         signal: new AbortController().signal,
       });
       expect.soft(events, row.rule).toEqual(["clear"]);
+    }
+
+    // The renumber case: the catalog moves, then the server cannot be reached.
+    if (row.offline) {
+      server.mockRejectedValue(new Error("offline"));
+      resolution.registerResolver(
+        createProjectLinkResolver(scope, {
+          documents: row.offline.documents,
+          revision: "r2",
+          complete: true,
+        }),
+        { baseUri: scope.baseUri },
+      );
+      resolution.request(row.links);
+      const read = () => row.links.map((link) => show(resolution.read(link)));
+      expect.soft(read(), `${row.rule} (offline)`).toEqual(row.offline.before);
+      await new Promise((landed) => setTimeout(landed, 0));
+      expect.soft(read(), `${row.rule} (offline)`).toEqual(row.offline.after);
     }
   }
 });
