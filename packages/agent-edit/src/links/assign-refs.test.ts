@@ -5,7 +5,10 @@ import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import { prosemirrorBlocksForDoc } from "../model/y-prosemirror.js";
-import { createStaticDocumentLinks } from "../ports/static-document-links.js";
+import {
+  createStaticDocumentLinks,
+  type StaticCatalogDocument,
+} from "../ports/static-document-links.js";
 import { codecFactory, harness, schema } from "../tool/test-support/write-tool-harness.js";
 import type { LinkSpliceFallbackDetail } from "../tool/write-deps.js";
 import { assignLinkRefs } from "./assign-refs.js";
@@ -498,53 +501,103 @@ const doors: DoorCase[] = [
         }
 
       // An upload no path spells reads as its last address in this project, else as an
-      // empty destination; a rewrite of the paragraph as read keeps the picture.
-      const unspellable = [
+      // empty destination; a rewrite of the paragraph as read keeps each picture, even
+      // once it became addressable after the read, and a fresh empty source binds none.
+      const E = uuid(47);
+      const elsewhere = uuid(46);
+      const unspellable: {
+        kind: string;
+        documents: StaticCatalogDocument[];
+        pictures: [id: string, alt: string, spelled: string][];
+        after?: StaticCatalogDocument[];
+        missAtRead?: boolean;
+      }[] = [
         {
           kind: "deleted, its path reused",
           documents: [
             catalogDocument(D, map, { image: true, presence: "deleted" }),
             catalogDocument(B, map, { image: true }),
           ],
-          spelled: map,
+          pictures: [[D, "Map", map]],
         },
-        { kind: "no document", documents: [], spelled: "" },
+        { kind: "no document", documents: [], pictures: [[D, "Map", ""]] },
         {
           kind: "another project's",
-          documents: [catalogDocument(D, map, { image: true, projectId: uuid(46) })],
-          spelled: "",
+          documents: [catalogDocument(D, map, { image: true, projectId: elsewhere })],
+          pictures: [[D, "Map", ""]],
+        },
+        {
+          kind: "another project's, both moved in before the write",
+          documents: [
+            catalogDocument(D, "user://map.png", { image: true, projectId: elsewhere }),
+            catalogDocument(E, "user://plan.png", { image: true, projectId: elsewhere }),
+          ],
+          after: [
+            catalogDocument(D, map, { image: true }),
+            catalogDocument(E, "manuscript://plan.png", { image: true }),
+          ],
+          pictures: [
+            [D, "Map", ""],
+            [E, "Plan", ""],
+          ],
+        },
+        {
+          kind: "a snapshot miss at read",
+          documents: [catalogDocument(D, map, { image: true })],
+          missAtRead: true,
+          pictures: [[D, "Map", ""]],
         },
       ];
       for (const row of unspellable) {
         const label = `${this.name}: upload with ${row.kind}`;
+        const holder = { id: H, uri: "manuscript://holder.md" };
         const ctx = linkHarness({
-          holder: { id: H, uri: "manuscript://holder.md" },
+          holder,
           documents: row.documents,
           blocks: [
             schema.node("paragraph", null, [
               schema.text("See "),
-              schema.node("image", { src: `asset:${D}`, alt: "Map" }),
+              ...row.pictures.flatMap(([id, alt], index) => [
+                ...(index > 0 ? [schema.text(" and ")] : []),
+                schema.node("image", { src: `asset:${id}`, alt }),
+              ]),
               schema.text(" here."),
             ]),
           ],
         });
+        if (row.missAtRead) {
+          // The read's prepare loads the holder but not the pictures it holds.
+          const prepare = ctx.links.prepare;
+          ctx.links.prepare = async (request) => {
+            ctx.links.prepare = prepare;
+            return prepare({ documentId: request.documentId, docs: [] });
+          };
+        }
         const read = await ctx.read();
-        const content = `See ![Map](${row.spelled}) here.`;
+        const pictures = row.pictures.map(([, alt, spelled]) => `![${alt}](${spelled})`);
+        const content = `See ${pictures.join(" and ")} here.`;
         expect.soft(JSON.stringify(read.result), label).not.toMatch(/asset:|doc:/);
         expect.soft(JSON.stringify(read.result), label).toContain(content);
         const shown = (read.showing?.links ?? []).map((fact, at) => ({
           ...fact,
-          holderUri: "manuscript://holder.md",
+          holderUri: holder.uri,
           at,
         }));
+        if (row.after) ctx.catalog.documents = [catalogDocument(H, holder.uri), ...row.after];
         const outcome = await ctx.write(
-          { command: "replace", in: [1, 1], content: `${content} Then more.` },
+          { command: "replace", in: [1, 1], content: `${content} Then ![New]().` },
           shown,
         );
         expect.soft(outcome.status, label).toBe("success");
-        expect
-          .soft(storedLinks(ctx.live()), label)
-          .toEqual([{ label: "Map", ref: null, href: `asset:${D}`, title: null }]);
+        expect.soft(storedLinks(ctx.live()), label).toEqual([
+          ...row.pictures.map(([id, alt]) => ({
+            label: alt,
+            ref: null,
+            href: `asset:${id}`,
+            title: null,
+          })),
+          { label: "New", ref: null, href: "", title: null },
+        ]);
       }
 
       // Cross-kind: one showing names upload D whether a picture or a text link

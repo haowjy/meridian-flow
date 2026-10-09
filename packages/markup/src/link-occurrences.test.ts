@@ -212,6 +212,7 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     .toEqual([
       { ref: `asset:${id.map}`, address: "manuscript://assets/map.png" },
       { ref: `asset:${id.ch2}`, address: "manuscript://assets/old map.png" },
+      { ref: `asset:${id.fig}`, address: "" },
     ]);
 
   // Fresh assignment and address preloading read the one source classifier
