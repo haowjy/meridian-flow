@@ -13,6 +13,7 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import {
   type FileAccess,
@@ -41,7 +42,8 @@ export function isReversalCommand(command: WriteCommand): command is ReversalCom
   return command.command === "undo" || command.command === "redo";
 }
 
-type Histories = { live: ReversalHistory; draft: ReversalHistory | null };
+/** Both journals' reversible writes, and the Work whose draft holds the drafted ones. */
+type Histories = { live: ReversalHistory; draft: ReversalHistory | null; draftWorkId: string };
 
 export function createThreadPeerReversals(input: {
   liveUtilityCore: LiveAgentEditCore;
@@ -51,7 +53,10 @@ export function createThreadPeerReversals(input: {
   /** The live journal's history: its undo and redo reverse live writes live. */
   liveHistory: Pick<ReversalStore, "activeWriteSummary" | "readReversals">;
   fileAccess: Pick<FileAccess, "authorizeAt">;
-  /** Runs one journal's part on its core: staged in the reply, or committed now. */
+  /**
+   * Runs one journal's part on its core: staged in the reply, or committed
+   * now. `context.linkView` is the view of the journal it reverses.
+   */
   reverseIn(
     core: AgentEditCore,
     command: ReversalCommand,
@@ -80,6 +85,7 @@ export function createThreadPeerReversals(input: {
     return {
       live: { active, reversals },
       draft: { active: drafted.activeWrites, reversals: drafted.reversals },
+      draftWorkId: scope.workId,
     };
   }
 
@@ -97,14 +103,22 @@ export function createThreadPeerReversals(input: {
     return side === "live" ? Promise.resolve(input.liveUtilityCore) : input.coreFor(threadId);
   }
 
-  /** The core holding the write a plain undo or redo would reverse. */
-  function latestCore(
+  /** The view a side's reversal spells in: the Work draft its history was read from, or live. */
+  function viewAt(side: ReversalSide, histories: Histories | null, responseId?: string): LinkView {
+    const reply = responseId ? { responseId } : {};
+    return side === "draft" && histories
+      ? { kind: "draft", workId: histories.draftWorkId, ...reply }
+      : { kind: "live", ...reply };
+  }
+
+  /** The side and core holding the write a plain undo or redo would reverse. */
+  async function latest(
     histories: Histories | null,
     threadId: string,
     direction: "undo" | "redo",
-  ): Promise<AgentEditCore> {
-    const [side] = routes(histories, direction, { kind: "latest" }).keys();
-    return coreAt(side ?? "live", threadId);
+  ): Promise<{ core: AgentEditCore; view: LinkView }> {
+    const [side = "live"] = routes(histories, direction, { kind: "latest" }).keys();
+    return { core: await coreAt(side, threadId), view: viewAt(side, histories) };
   }
 
   /**
@@ -149,7 +163,10 @@ export function createThreadPeerReversals(input: {
           const sideCommand =
             route.selection.kind === "last" ? { ...command, last: route.selection.count } : command;
           const core = await coreAt(side, context.threadId);
-          outcomes.push(await input.reverseIn(core, sideCommand, documentId, context, sideGrant));
+          const sideContext = { ...context, linkView: viewAt(side, histories, context.responseId) };
+          outcomes.push(
+            await input.reverseIn(core, sideCommand, documentId, sideContext, sideGrant),
+          );
         } catch (cause) {
           if (!(cause instanceof FileEditRefusedError)) throw cause;
           refused.push(...cause.refused.map((denial) => ({ writeIds: route.handles, denial })));
@@ -160,9 +177,9 @@ export function createThreadPeerReversals(input: {
 
     async getAvailability(docId: string, threadId: string) {
       const histories = await loadHistories(docId as DocumentId, threadId);
-      const [undoCore, redoCore] = await Promise.all([
-        latestCore(histories, threadId, "undo"),
-        latestCore(histories, threadId, "redo"),
+      const [{ core: undoCore }, { core: redoCore }] = await Promise.all([
+        latest(histories, threadId, "undo"),
+        latest(histories, threadId, "redo"),
       ]);
       const undo = await undoCore.getAvailability(docId, threadId);
       const redo = redoCore === undoCore ? undo : await redoCore.getAvailability(docId, threadId);
@@ -177,12 +194,14 @@ export function createThreadPeerReversals(input: {
 
     async undo(docId: string, threadId: string) {
       const histories = await loadHistories(docId as DocumentId, threadId);
-      return (await latestCore(histories, threadId, "undo")).undo(docId, threadId);
+      const { core, view } = await latest(histories, threadId, "undo");
+      return core.undo(docId, threadId, view);
     },
 
     async redo(docId: string, threadId: string) {
       const histories = await loadHistories(docId as DocumentId, threadId);
-      return (await latestCore(histories, threadId, "redo")).redo(docId, threadId);
+      const { core, view } = await latest(histories, threadId, "redo");
+      return core.redo(docId, threadId, view);
     },
   };
 }

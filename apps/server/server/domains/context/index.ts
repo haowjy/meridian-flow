@@ -1,11 +1,16 @@
-export { createDrizzleDocumentAssetPaths } from "./adapters/asset-path-resolver.js";
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
+export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
+export {
+  createDrizzleDocumentLinkScopes,
+  type LinkScopeMembership,
+} from "./adapters/document-link-scope.js";
+export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
@@ -35,7 +40,6 @@ export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
-export { createLinkUpdateWorker, type LinkUpdateWorker } from "./links/link-update-worker.js";
 export type {
   AdapterFault,
   AdapterFileEntry,
@@ -86,6 +90,7 @@ export type {
   WriteProvenance,
 } from "./ports/context-port.js";
 export type { DocumentAddressResolver } from "./ports/document-address.js";
+export type { DocumentArrivals } from "./ports/document-arrivals.js";
 export type {
   DocumentLinkResolver,
   DocumentLinkTarget,
@@ -93,6 +98,11 @@ export type {
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
+export {
+  type AheadRegistration,
+  type LinkAheadRegistry,
+  RegistrationInsideTransactionError,
+} from "./ports/link-ahead-registry.js";
 export type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,

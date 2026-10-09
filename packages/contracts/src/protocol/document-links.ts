@@ -1,11 +1,10 @@
 /**
- * Wire contract for internal document-link resolution.
+ * Address-level document-link resolution shapes, shared by the server's address resolver
+ * and the app's local index. The resolve route's wire shape is `document-link-api.ts`.
  *
  * A link is a standard Markdown link to an address: a Context URI, or a path
- * relative to the document holding the link. The editor classifies an href
- * into one of these and the server resolves it to the one document at that
- * address; `null` back is the normal "nothing there yet" state, not an error,
- * because serial writers link chapters before they write them.
+ * relative to the document holding the link. `null` is the normal "nothing there
+ * yet" state, not an error, because serial writers link chapters before they write them.
  *
  * External links never appear here. They are the client's own business and
  * need no server round trip.
@@ -24,16 +23,4 @@ export interface ResolvedDocumentLink {
   path: string;
   uri: string;
   workId: string | null;
-}
-
-/** POST `/api/projects/:projectId/links/resolve`. */
-export interface ResolveDocumentLinkRequest {
-  workId?: string | null;
-  holder?: { documentId: string; href: string };
-  target: DocumentLinkTarget;
-}
-
-/** `document` is null when nothing is at that address. */
-export interface ResolveDocumentLinkResponse {
-  document: ResolvedDocumentLink | null;
 }

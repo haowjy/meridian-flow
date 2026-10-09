@@ -1,6 +1,6 @@
 // Shared in-memory harness for write-tool module integration tests.
 
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -9,7 +9,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { createAgentEditCodec } from "../../codec-adapter.js";
+import { createAgentEditCodecFactory } from "../../codec-adapter.js";
 import { createAgentEditCore } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
@@ -17,16 +17,18 @@ import {
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
+import type { DocumentLinksPort } from "../../ports/document-links.js";
 import type { AgentEditModel } from "../../ports/model.js";
 import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
+import { createStaticDocumentLinks } from "../../ports/static-document-links.js";
 import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import type { ReversalNoticePort } from "../write-reversal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
-export const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
+export const codecFactory = createAgentEditCodecFactory(mdxCodec({ schema }));
+/** Scoped to no tree: stored hrefs and `asset:` refs spell as stored. */
+export const codec = codecFactory.forScope(UNSCOPED_DOCUMENT_LINKS);
 export const model = yProsemirrorModel(schema);
 export const THREAD_ID = "thread-a";
 export const context = { sessionId: "session-a", threadId: THREAD_ID };
@@ -60,6 +62,8 @@ export function harness(
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
     model?: AgentEditModel;
     semanticProvenance?: SemanticProvenanceWriter;
+    links?: DocumentLinksPort;
+    onLinkSpliceFallback?: Parameters<typeof createAgentEditCore>[0]["onLinkSpliceFallback"];
   } = {},
 ) {
   const agentEditModel = options.model ?? model;
@@ -73,7 +77,8 @@ export function harness(
     journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
-    codec,
+    codec: codecFactory,
+    links: options.links ?? createStaticDocumentLinks(),
     model: agentEditModel,
     semanticProvenance: options.semanticProvenance,
     undoClientId: options.undoClientId,
@@ -102,6 +107,7 @@ export function harness(
     ...(options.afterResponsePreflight
       ? { afterResponsePreflight: options.afterResponsePreflight }
       : {}),
+    ...(options.onLinkSpliceFallback ? { onLinkSpliceFallback: options.onLinkSpliceFallback } : {}),
   });
   const core = {
     ...rawCore,

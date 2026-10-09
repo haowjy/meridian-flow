@@ -95,6 +95,19 @@
   `auto` since D59, so every claim settles `no_op` and drafts wait for the
   writer's Apply. This depends on the read model never rewriting a failed
   turn's status (see the threads read-model projector).
+- **Apply settles ahead refs per completion because drafts cannot move documents**
+  (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
+  live and settles in the tree store's move transaction. So the only documents an
+  Apply brings to an address are draft creates the manifest push publishes, their
+  SQL address is already final, and the completion fence (`withCompletionFence`
+  in `adapters/drizzle-pending-settlement.ts`, `arrivingDocumentIds`) settles them
+  under Work → namespace → holder locks. Draft-held moves would break that: a
+  document's address would depend on the view. Building them changes
+  `context/adapters/document-address.ts` (current address and exact occupant
+  become view-dependent), `context/adapters/document-link-scope.ts` (per-view
+  URIs), `context/links/move-link-count.ts` (the note is counted at Apply), and
+  the completion fence here (moved documents become arrivals, and their old and
+  new namespaces both lock).
 - **Writer Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.

@@ -656,6 +656,51 @@ export const threadDocuments = pgTable(
   ],
 );
 
+/**
+ * Links shown to the model in a holder document, per thread (host-only
+ * evidence for ref assignment). Independent of transcript blocks, so
+ * compaction and restart keep it. One row per showing key per turn: a repeat
+ * in a later turn adds a row rather than moving the earlier one, so a fork
+ * whose cutoff precedes the repeat still reads the showing it saw. Within a
+ * turn the row keeps the greatest `seq` from the global sequence, which orders
+ * showings ("latest"). Readers select the lineage's eligible rows by cutoff
+ * first and only then keep the latest per key; nothing is copied.
+ *
+ * Addresses and holder URIs have no byte bound, so the key stores
+ * `showing_digest`, a SHA-256 of the exact (ref, address, holder, view) tuple,
+ * beside the exact values. Distinct tuples sharing a digest are treated as
+ * impossible; were one to occur, the writer's exact-equality guard leaves the
+ * first showing untouched rather than merging the two.
+ */
+export const threadShownLinks = pgTable(
+  "thread_shown_links",
+  {
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    ref: text("ref").notNull(),
+    address: text("address").notNull(),
+    holderUri: text("holder_uri").notNull(),
+    /** `live` or `draft:<workId>`. */
+    view: text("view").notNull(),
+    showingDigest: text("showing_digest").notNull(),
+    turnId: uuid("turn_id").$type<TurnId>().notNull(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "thread_shown_links_pk",
+      columns: [table.threadId, table.documentId, table.showingDigest, table.turnId],
+    }),
+    check("thread_shown_links_digest_valid", sql`${table.showingDigest} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
 export const userTurnAdmissions = pgTable(
   "user_turn_admissions",
   {

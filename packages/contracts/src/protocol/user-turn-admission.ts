@@ -26,6 +26,28 @@ export type UserMessageBlock =
   | SkillOccurrence
   | { type: "image"; documentId: DocumentId; uri: CanonicalContextUri };
 
+/**
+ * The durable turn block a submitted message block becomes. Server persistence
+ * and the client's optimistic writer row both use it, so the row the writer
+ * sees before admission carries the same occurrences the snapshot will.
+ */
+export function userMessageTurnBlock(block: UserMessageBlock): {
+  blockType: "text" | "image";
+  content: JsonValue;
+} {
+  switch (block.type) {
+    case "text":
+      return { blockType: "text", content: block.text };
+    case "image":
+      return {
+        blockType: "image",
+        content: { type: "image_reference", documentId: block.documentId, uri: block.uri },
+      };
+    default:
+      return { blockType: "text", content: { ...block } };
+  }
+}
+
 export type SubmittedReference = {
   documentId: DocumentId;
   uri: CanonicalContextUri;

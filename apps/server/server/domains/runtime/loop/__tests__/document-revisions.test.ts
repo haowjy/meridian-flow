@@ -55,7 +55,7 @@ describe("document revision settlement", () => {
       },
       documentRevisions: {
         async current() {
-          return new Map([[documentId, "y1:later-writer-edit"]]);
+          return new Map([[documentId, "y2:later-writer-edit"]]);
         },
       },
       responseWrites: {
@@ -68,7 +68,7 @@ describe("document revision settlement", () => {
                 receipt: {
                   writeId: "w1",
                   settlementId: "settlement-1",
-                  revision: "y1:at-apply",
+                  revision: "y2:at-apply",
                   result: modelResult({ command: "create", status: "success", phase: "committed" }),
                 },
               },
@@ -91,10 +91,10 @@ describe("document revision settlement", () => {
     expect(results[0]?.content).toMatchObject({
       output: `status: success; path: ${uri}`,
       result: { command: "create", status: "success", phase: "committed", path: uri },
-      metadata: { documentRevisions: [{ documentId, uri, revision: "y1:at-apply" }] },
+      metadata: { documentRevisions: [{ documentId, uri, revision: "y2:at-apply" }] },
     });
     expect(gateway.requests).toHaveLength(2);
-    expect(JSON.stringify(gateway.requests)).not.toContain("y1:");
+    expect(JSON.stringify(gateway.requests)).not.toContain("y2:");
     expect(JSON.stringify(gateway.requests)).not.toContain("documentRevisions");
   });
 

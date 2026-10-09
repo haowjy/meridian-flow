@@ -72,15 +72,13 @@ export function createDocumentLinkResolver({
   }
   return {
     async resolve(input) {
-      const redirect = input.holder ? await history?.redirect(input) : null;
-      if (redirect) return redirect.uri ? atUri(input, redirect.uri, false) : null;
       const { target } = input;
       const resolved =
         target.kind === "scheme"
           ? resolveDocumentHref(target.uri, null)
           : resolveDocumentHref(target.path, target.baseUri);
       if (!resolved) return null;
-      return atUri(input, resolved.uri, !input.holder);
+      return atUri(input, resolved.uri, input.previousLocations === true);
     },
   };
 }

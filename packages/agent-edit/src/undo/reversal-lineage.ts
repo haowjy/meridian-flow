@@ -229,9 +229,8 @@ function evaluateLineageDependencies(input: {
   for (const update of input.snapshot.updates) {
     if (update.seq <= input.closure.earliestForwardSeq) continue;
     // Canonical branch-settlement rows are replay coverage for the authored
-    // rows in the same admission, not a later semantic edit. Link maintenance
-    // likewise does not create a dependency on the authored paragraph.
-    if (update.meta.origin === "system:reconcile" || update.meta.origin === "link-update") continue;
+    // rows in the same admission, not a later semantic edit.
+    if (update.meta.origin === "system:reconcile") continue;
     if (
       input.closure.lineageSeqs.has(update.seq) ||
       input.reversalOpSeqs?.has(update.seq) ||

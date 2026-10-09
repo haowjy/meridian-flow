@@ -18,12 +18,13 @@ import type { ReviewableDraft } from "./branch-review.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore, WorkDraftDiscard } from "./ports/application-branch-store.js";
-import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
+import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export function createWorkDraftReviewService(input: {
-  assetPaths: DocumentAssetPaths;
+  /** Both sides of a preview spell from one snapshot: live in the live view, the draft in its own. */
+  links: DocumentLinkScopes;
   branches: ApplicationBranchStore;
   discardWorkDraft: WorkDraftDiscard;
   branchCoordinator: BranchCoordinator;
@@ -99,12 +100,12 @@ export function createWorkDraftReviewService(input: {
     workId: WorkId;
     draftId: string;
   }) {
-    return input.assetPaths.within({ documentId: command.documentId }, async () => {
+    return input.links.within({ documentId: command.documentId }, async () => {
       const liveState = await input.liveCoordinator.withDocument(
         command.documentId,
         async (liveDoc) => ({
           state: Y.encodeStateAsUpdate(liveDoc),
-          markdown: await input.documents.serializeDocument(command.documentId, liveDoc),
+          markdown: await input.documents.serializeDocument(command.documentId, liveDoc, LIVE_VIEW),
         }),
       );
       const liveDoc = createCollabYDoc({ gc: false });
@@ -156,7 +157,10 @@ export function createWorkDraftReviewService(input: {
             draftId: command.draftId,
             reviewRoomName: branchRoomName(branch.branchId, branch.generation),
             live: liveState.markdown,
-            markdown: await input.documents.serializeDocument(command.documentId, branch.doc),
+            markdown: await input.documents.serializeDocument(command.documentId, branch.doc, {
+              kind: "draft",
+              workId: command.workId,
+            }),
             isNewDocument: await isDraftOnlyManifestDocument(command),
             liveRevisionToken: await input.latestUpdateSeq(command.documentId),
             draftRevisionToken: branch.generation,

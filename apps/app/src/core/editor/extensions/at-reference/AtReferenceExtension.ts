@@ -11,7 +11,7 @@ import type {
 import { createReferenceBrowserController } from "@/core/completion";
 import { createSuggestionLane, type SuggestionLaneOptions } from "../suggestion";
 import { allowsAtTrigger } from "./at-trigger";
-import { insertDocumentLink } from "./document-link-insertion";
+import { insertDocumentReference, insertLinkAhead } from "./document-link-insertion";
 
 export type AtReferenceCatalog = {
   port: ReferenceCatalogPort;
@@ -23,8 +23,6 @@ export type AtReferenceCatalog = {
   ) => boolean;
   openContext: () => ReferenceBrowserOpenContext | null;
   label: string;
-  /** The URI of the document a reference goes into; what its link is spelled relative to. */
-  holderUri?: string | null;
   /**
    * The Editor's link-ahead row: where a link to a not-yet-written document
    * named `name` would point, or null for none. Omitted where a reference
@@ -41,7 +39,6 @@ function insertReference(
   editor: import("@tiptap/core").Editor,
   range: Range,
   row: Extract<ReferenceRow, { kind: "file" }>,
-  holderUri: string | null,
 ) {
   const reference = row.action.reference;
   if (row.fileKind === "asset") {
@@ -54,10 +51,10 @@ function insertReference(
       })
       .run();
   }
-  return insertDocumentLink(editor, range, {
+  return insertDocumentReference(editor, range, {
     label: reference.label,
+    documentId: reference.documentId,
     uri: reference.uri,
-    holderUri,
   });
 }
 
@@ -94,13 +91,7 @@ const lane = createSuggestionLane<
       onLinkAhead: ({ row, triggerRange }) => {
         yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
         editor.view.dispatch(closeHistory(editor.state.tr));
-        // A link, never a document: the chip is dashed until a follow's
-        // Create makes the document at exactly this address.
-        insertDocumentLink(editor, triggerRange, {
-          label: row.label,
-          uri: row.uri,
-          holderUri: catalog()?.holderUri ?? null,
-        });
+        insertLinkAhead(editor, triggerRange, { label: row.label, uri: row.uri });
       },
       onCompleteSegment: ({ prefix, triggerRange }) => {
         editor.chain().focus().insertContentAt(triggerRange, prefix).run();
@@ -110,7 +101,7 @@ const lane = createSuggestionLane<
         editor.view.dispatch(closeHistory(editor.state.tr));
         const current = catalog();
         if (current?.insertReference) current.insertReference(editor, triggerRange, row);
-        else insertReference(editor, triggerRange, row, current?.holderUri ?? null);
+        else insertReference(editor, triggerRange, row);
       },
     }),
   keyBindings: (menu) => ({

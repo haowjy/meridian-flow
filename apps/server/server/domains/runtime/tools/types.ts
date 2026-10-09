@@ -21,6 +21,7 @@ import type {
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { z } from "zod";
 import type { FunctionTool } from "../gateway/index.js";
+import type { ShownLinkShowing } from "../ports/shown-links.js";
 import type { DocumentTextPolicy } from "./document-text.js";
 import type { InvalidArgumentsResult } from "./invalid-arguments.js";
 import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
@@ -112,6 +113,13 @@ export interface ToolExecutionResult {
    * use this, never `output`, which may be text.
    */
   result: JsonValue;
+  /**
+   * Host-only shown-link candidates the handler returned beside its result
+   * (`{ output, shown }` or `{ isError: true, output, shown }`). Dispatch
+   * records them only when it persists this result; an aborted, timed-out or
+   * thrown call carries none. Never part of `output`, `result` or `metadata`.
+   */
+  shown?: readonly ShownLinkShowing[];
 }
 
 /**

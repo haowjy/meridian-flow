@@ -24,6 +24,7 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
+import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
@@ -36,6 +37,7 @@ import type {
 } from "../domain/branch-push-contracts.js";
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { deriveDocument } from "../domain/document-derivations.js";
+import { manifestMembershipRowDocumentId } from "../domain/manifest-membership-journal.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
@@ -111,6 +113,7 @@ export function createDrizzlePendingSettlementStore(
   derivationStore: DocumentDerivationStore,
   notices?: NoticePort,
   eventSink?: EventSink,
+  arrivals?: DocumentArrivals,
 ): PendingSettlementStore {
   return {
     async joinAdmission(input) {
@@ -192,6 +195,10 @@ export function createDrizzlePendingSettlementStore(
           // Completion touches the draft's Work row; take it before the
           // document lock, in the order every write seam uses (file-access §5).
           await lockWorksInIdOrder(txDb, await pushWorkIds(txDb, input.pushId));
+          // A manifest push publishes draft-created documents: they arrive here. Their
+          // namespace keys go between the Work and holder locks (contract §9.4, O6).
+          const arriving = arrivals ? await arrivingDocumentIds(txDb, input.pushId) : [];
+          if (arriving.length > 0) await arrivals?.lockNamespaces(arriving);
           await lockDocumentMutation(txDb, input.documentId);
           const [owned] = await txDb
             .select({ pushId: branchPushSettlementOutbox.pushId })
@@ -221,6 +228,8 @@ export function createDrizzlePendingSettlementStore(
             throw new Error("Completion fence callback must return synchronously");
           }
           if (result === "retry") throw new CompletionRetry();
+          // Membership is published above, in this transaction: settle against it.
+          if (arriving.length > 0) await arrivals?.settle(arriving);
           const [completed] = await txDb
             .update(branchPushSettlementOutbox)
             .set({
@@ -393,6 +402,31 @@ async function pushWorkIds(db: DrizzleDb, pushId: number): Promise<string[]> {
     .where(eq(pushLineage.id, pushId))
     .limit(1);
   return rows.flatMap((row) => (row.workId ? [row.workId] : []));
+}
+
+/**
+ * Documents whose live manifest entry this push publishes, from its immutable journal rows.
+ * Read after the Work locks and before the namespace and holder locks; the rows never change, so
+ * the read needs no lock of its own. Only a draft's manifest push carries them.
+ */
+async function arrivingDocumentIds(db: DrizzleDb, pushId: number): Promise<DocumentId[]> {
+  const [push] = await db
+    .select({ journalIds: pushLineage.journalIds })
+    .from(pushLineage)
+    .where(eq(pushLineage.id, pushId))
+    .limit(1);
+  if (!push || push.journalIds.length === 0) return [];
+  const rows = await db
+    .select({ updateMeta: branchWriteJournal.updateMeta })
+    .from(branchWriteJournal)
+    .where(
+      and(
+        inArray(branchWriteJournal.id, push.journalIds),
+        sql`${branchWriteJournal.updateMeta}->>'kind' = 'manifest_membership'`,
+        sql`(${branchWriteJournal.updateMeta}->>'present')::boolean IS TRUE`,
+      ),
+    );
+  return [...new Set(rows.flatMap((row) => manifestMembershipRowDocumentId(row) ?? []))].sort();
 }
 
 /** Makes one staged candidate effective inside the completion-fence transaction. */

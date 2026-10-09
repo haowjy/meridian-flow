@@ -32,6 +32,7 @@ import {
   workUpdateMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { formatNotices } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
@@ -51,6 +52,8 @@ export interface AdoptedTurnPreparation {
    * model-only content must live on its own turn.
    */
   extraTurns?: readonly { turn: Turn; blocks: readonly Block[] }[];
+  /** Host-only reference-read candidates, recorded only by the commit that persists `events`. */
+  shown?: readonly ShownLinkShowing[];
 }
 
 /** The loop's view of one drained batch: durable turns/blocks for the loop's in-memory accumulator. */
@@ -62,6 +65,8 @@ export interface InboxDrain {
   events: OrchestratorEvent[];
   /** Ids of the whole claimed batch, acked with the response that carries it. */
   ackIds: string[];
+  /** Host-only candidates from adopted turns' reference reads, recorded with `events`. */
+  shown?: ShownLinkShowing[];
 }
 
 /**
@@ -99,6 +104,7 @@ export async function drainInbox(input: {
   const adoptedTurnsByMessageId = new Map<string, Turn[]>();
   const adoptedBlocks: Block[] = [];
   const adoptedEventsByMessageId = new Map<string, OrchestratorEvent[]>();
+  const shown: ShownLinkShowing[] = [];
   for (const message of batch) {
     if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
       fresh.push(message);
@@ -119,6 +125,7 @@ export async function drainInbox(input: {
         const prepared = await input.prepareAdoptedTurn(existing, blocks);
         blocks = prepared.blocks;
         adoptedEventsByMessageId.set(message.id, [...(prepared.events ?? [])]);
+        shown.push(...(prepared.shown ?? []));
         for (const extra of prepared.extraTurns ?? []) {
           extraTurns.push(extra.turn);
           adoptedBlocks.push(...extra.blocks);
@@ -213,6 +220,7 @@ export async function drainInbox(input: {
     blocks: [...adoptedBlocks, ...plannedBlocks],
     events,
     ackIds: batch.map((message) => message.id),
+    ...(shown.length > 0 ? { shown } : {}),
   };
 }
 

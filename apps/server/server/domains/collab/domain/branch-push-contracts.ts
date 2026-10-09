@@ -1,19 +1,19 @@
 /** Neutral branch-push contracts shared across collab domain services and adapters. */
 
 import type {
+  AgentEditCodecFactory,
   DocumentCoordinator,
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { PendingChangesChoice } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { MarkupCodec } from "@meridian/markup";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
-import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
+import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
 import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
@@ -322,8 +322,9 @@ export type BranchPushServiceInput = {
   journal: UpdateJournal;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
-  codec: MarkupCodec;
-  assetPaths: DocumentAssetPaths;
+  codec: AgentEditCodecFactory;
+  /** Push and settlement scope themselves; the trail text spells through it. */
+  links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
   pushUpdateComputer?: PushUpdateComputer;
   criticalSections?: BranchCriticalSections;

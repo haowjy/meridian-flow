@@ -2,10 +2,18 @@
 
 ## [Unreleased]
 
-- Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
+- Links name the document they point at. Renaming or moving a chapter no longer edits the chapters that link to it: their links follow it and show its new path on the next read, and "Updated N links" counts the links in this project that point at what moved. When the AI edits a link's words, rewrites the paragraph around it, or writes a path it read before the target moved, the link keeps its document; words it unlinks stay plain, and a link it points somewhere new goes there.
+- Links you insert with `@`, Ctrl+K or a paste, and links in imports, uploads and saves, all name their document. Pasting within a project keeps each link on its document; pasting into another project links by address. Copied plain text spells each link's current full address.
+- A link to a deleted or unreadable document stays where you wrote it, drawn dashed, and says "No longer available"; clicking it places the cursor, like any text. It never opens a document that later takes its path, and it works again if the document is restored. A link written before its document exists connects to the first document created, uploaded, moved in, restored or applied from a draft at that exact path, and from then on stays with that document, even when another document later takes that path.
+- A file you reference with `@` in a new chat's first message keeps its document, like one in any later message: once the file is deleted its chip says "No longer available" and never opens a file that later takes its path.
+- An image or figure the AI writes before its file is uploaded shows the picture as soon as a file lands at that path, and keeps showing that file afterwards. Until then it says no image has been uploaded there yet, and one whose file was deleted says it is no longer available. Copying and pasting an image or figure within a project keeps it on its file; pasting into another project links it by path. A picture written as a project address without a link to its file, such as `uploads://seal.png`, shows the file at that address. Changing a picture's source never leaves the previous picture showing while the new one loads. When the AI rewrites an uploaded picture's caption or the paragraph around it, keeping the path it read, the picture keeps its file even after that file moved and another image took its old path.
+- No uploaded picture is ever shown by its internal id. A deleted upload whose path another image took reads, downloads and copies at its own last address in full (`manuscript://...`), so the AI keeps it apart from the new image; a picture whose file this project has no address for reads as `![alt]()`, and the AI rewriting the paragraph around it keeps the picture.
+- A save to a file that another file replaced at the same path while it was being saved is refused instead of landing on the wrong file. Uploading a text file and creating a code file with content work again. A file whose only copy of its text is the stored copy says it can't be repaired instead of opening empty. Downloading a chapter whose live text can't be read fails with a retryable error (503) instead of serving a stale copy.
+- Development: links store a ref (`doc:` or `ahead:`) beside their href. agent-edit binds every written link, image and figure at each write door (correspondence, latest showing, then classify, resolve or mint), registers ahead refs before applying, and reports host-only shown-link facts; a two-client Yjs merge matrix covers #728, #729, #730 and undo after a move. Whole-document writes take a `BoundWrite` bound outside their transaction: assigned blocks, applied as the ordinary overwrite and certified for one holder; a fresh one is refused at admission if the document is no longer empty. Model writes and checkpoint restore apply ProseMirror nodes directly, and the string-transform edit APIs are gone.
+- Development: migration 0032 adds `link_ahead_refs` and `thread_shown_links`, recreates `document_links` keyed by link key and drops `link_redirects`; the link-update worker and the `link-update` journal origin are gone. The resolver endpoint answers batches of `(ref, href)`, and a link the reader cannot reach answers `gone` without a location. Revision tokens move from `y1:` to `y2:` and cover where linked documents and images sit.
+- Development: the link rules server and client share live in `@meridian/markup`: the holder scope over any `HolderCatalog`, pass-3 assignment (`assignFreshLink`, used by agent-edit and the editor's `assignWrittenHref`) and the stored-link walks, loaded from `@meridian/markup/links` and `@meridian/markup/stored-links` so neither the markup root nor the editor's assignment path pulls in codecs, Yjs or the schema builder. The client resolves through `resolveStoredLink` over a catalog on its document index; its ahead-ref settlement memo belongs to the account lifetime, and a ref first answered settled gone learns its document when a later answer names it.
 
-- Development: trim duplicate maintenance-attribution cases; retain four focused risks and one suite-owned PostgreSQL convergence witness.
-- Draft saves no longer credit automatic link rewrites or reconciliation to the writer; authored block credit survives maintenance.
+- Draft saves no longer credit reconciliation to the writer; authored block credit survives it.
 
 - Development: fold six split lifecycle tests into the scenarios they continue: one run lease from acquire through stale release, Agent catalog removal then restore, Retry then the superseded original, fork-ID replay after source trash, and nested presence suspension. Outcome checks stay beside each transition.
 - Development: reconcile the focused suite with current image-path and model-write regression contracts without restoring retired scaffolding.
@@ -18,7 +26,7 @@
 
 - AI writes accept `<img>` without a closing slash. Image paths, alt text and widths survive read-back.
 
-- A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes, downloads and link updates keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one image-path snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading image paths no longer holds up branch edits during reads or Apply.
+- A chapter shows each image at its current path after the image is moved or renamed, and at its last path after it's deleted, so reads, writes and downloads keep working after a restart. Images outside `assets/` resolve too, and a written path to any image in the manuscript becomes a reference to it. A chapter saved while one of its images is deleted points at that image again when it's restored, even if another image took its path meanwhile. Edits made offline and the model's write receipts show image paths too, and accepting a draft or undoing and redoing a turn on a chapter with images reads them at their current paths. Search shares one link snapshot across chapters; draft preview shares one across live and draft text, so an image moved mid-operation cannot create a false difference. Loading link paths no longer holds up branch edits during reads or Apply.
 - Chapter overwrites parse replacement content once, including unchanged writes. Changed writes no longer render three discarded snapshots or an unused echo.
 
 - Large concurrent rewrites bound block matching memory; oversized echoes fall back to block identity.
@@ -88,14 +96,12 @@
 - An archived Work's draft offers no Apply or Discard (the review header, the chat dock and the Changes cards); Review draft still opens it read-only.
 - Switching a Work to auto-apply offers Keep beside Apply for its pending changes; an archived Work offers only Keep.
 - Development: migration 0027 drops `document_branches.push_policy`; turn trail work no longer retries branch pushes.
-- Renaming or moving a document rewrites the links to it in your other documents in the background, keeping custom link words and each link's style (relative path or full address). Until a rewrite lands, the old links still open the moved document, and chat messages that linked it before the move keep opening it until another document takes the old place.
-
 
 - Documents and chat go offline promptly and retry together when the network returns, the tab wakes, or another connection recovers. Resource and working-set sync share the same recovery signals.
 - Gateway: a provider 4xx other than 408 or 429 (such as 402 out of balance) fails at once instead of retrying twice, and the provider's status and message stay on the failed reply (`./mf thread view`).
 - Chat: a reply the AI provider turned down (such as 402 out of balance) reads "The AI provider turned this request down. Trying again won't help until that's fixed." and offers no Retry. Other failed replies keep "This response failed." and Retry.
 
-- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link changed or the rename is refused.
+- Renaming a document or folder that other documents link to says "Updated 3 links" beside the new name for a few seconds, in the tree, the phone file list, Work Files and the title bar. Nothing shows when no link points at what moved or the rename is refused.
 
 - Renaming a folder, or a Scratch or Uploads file in a named Work, lands the moment you confirm: the folder and everything inside it show their new place at once, open documents keep working under their new path, and a rename the server refuses returns to the old name with the error on that item. The repair field offers the latest name you typed.
 
@@ -224,9 +230,6 @@
 - Use one summary rule for compaction and handoff: known-too-large requests roll, warm source requests branch, and cold requests roll. Fail each attempt once and meter returned attempts on the owning turn.
 - Keep brief failures typed, preserve queued replies, and exclude brief calls from future cache baselines.
 
-
-
-
 ### Changed
 - Regenerate the handoff migration in place; keep the inbox control schema limited to compact.
 - Include pending handoff seeds in ordinary placeholder repair; settle interrupted seeds with their card and history read line instead of relaunching them.
@@ -243,7 +246,6 @@
 - Type compaction failure reasons, phases, fit measurements and control IDs in the durable metadata codec, including failures without a planned cut.
 - Expose compaction failure and control metadata, with token counts, in the existing `thread view --json` projection.
 - Persist typed compaction failure reasons and phases on failed C turns and their `turn.error` events. If late arrivals make the successor too large, commit C and fail the successor reply with its normal fit error.
-
 
 - Compaction clears stale document reads, write text, search excerpts and references from model context. Fresh text and writer transcripts stay intact.
 

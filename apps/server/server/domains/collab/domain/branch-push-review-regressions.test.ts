@@ -1,12 +1,13 @@
 /** Regression coverage for branch-push behavior preserved by the candidate pipeline. */
 
 import {
+  createAgentEditCodecFactory,
   type DocumentCoordinator,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -15,6 +16,7 @@ import {
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
+import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import {
   createInMemoryPendingSettlementStore,
   type InMemoryPendingSettlementStore,
@@ -36,8 +38,7 @@ import type {
   WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
-import type { DocumentAssetPaths } from "./ports/document-asset-paths.js";
-import { NO_DOCUMENT_ASSET_PATHS } from "./ports/document-asset-paths.js";
+import type { DocumentLinkScopes, LinkScopeKey } from "./ports/document-link-scope.js";
 
 const CONTENT_ID = "00000000-0000-4000-8000-000000000101" as DocumentId;
 const MANIFEST_ID = "00000000-0000-4000-8000-000000000102" as DocumentId;
@@ -46,7 +47,7 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000104" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000105" as TurnId;
 
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
 function docFromMarkdown(markdown: string): Y.Doc {
@@ -250,7 +251,7 @@ function unsupportedWorkPolicyStore(): WorkPushPolicyStore {
 }
 
 function serviceFixture(input: {
-  assetPaths?: DocumentAssetPaths;
+  links?: DocumentLinkScopes;
   criticalSections?: BranchCriticalSections;
   branches: readonly BranchSnapshot[];
   rows: BranchJournalRow[];
@@ -290,7 +291,7 @@ function serviceFixture(input: {
   return {
     stores,
     service: createBranchPushService({
-      assetPaths: input.assetPaths ?? NO_DOCUMENT_ASSET_PATHS,
+      links: input.links ?? createStaticDocumentLinkScopes(),
       criticalSections: input.criticalSections,
       changeEventDelivery: { deliver() {} },
       branchStore,
@@ -309,13 +310,13 @@ function serviceFixture(input: {
       journal: input.journal,
       liveCoordinator,
       model,
-      codec,
+      codec: createAgentEditCodecFactory(codec),
     }),
   };
 }
 
 async function blindConflictFixture(
-  options: { assetPaths?: DocumentAssetPaths; criticalSections?: BranchCriticalSections } = {},
+  options: { links?: DocumentLinkScopes; criticalSections?: BranchCriticalSections } = {},
 ) {
   const contentLive = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
   const contentBranchDoc = cloneDoc(contentLive);
@@ -426,14 +427,14 @@ describe("branch push review regressions", () => {
   it.each([
     false,
     true,
-  ])("loads image paths before branch locks (companion: %s)", async (companion) => {
+  ])("opens the link scope before branch locks (companion: %s)", async (companion) => {
     const criticalSections = createBranchCriticalSections();
     let loaded = false;
     const fixture = await blindConflictFixture({
       criticalSections,
-      assetPaths: {
-        ...NO_DOCUMENT_ASSET_PATHS,
-        async within(_project, operation) {
+      links: {
+        ...createStaticDocumentLinkScopes(),
+        async within<T>(_key: LinkScopeKey, operation: () => Promise<T>) {
           // Nested settlement reuses the operation's snapshot, just as the adapter does.
           if (!loaded) {
             await criticalSections.withBranches(["branch_content", "branch_manifest"], async () => {

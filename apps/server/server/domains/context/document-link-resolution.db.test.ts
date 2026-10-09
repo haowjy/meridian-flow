@@ -2,20 +2,26 @@
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documentLinks,
   documents,
-  linkRedirects,
+  linkAheadRefs,
   projects,
   users,
   works,
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import {
+  type DocumentLinkRouteDeps,
+  handleDocumentLinkResolveRequest,
+} from "../../lib/document-link-route.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
+import { createLinkScopeObserver } from "../collab/index.js";
+import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
+import { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
 import { createDocumentLinkResolver } from "./document-link-resolution.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -151,26 +157,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).toBeNull();
     });
-    it("pending redirects answer holders before rewrite; chat history follows a rename but a new occupant wins", async () => {
+    it("chat history follows a rename, a document link never does, and a new occupant wins", async () => {
       const db = database.current;
-      const originalTurn = crypto.randomUUID();
       const targetId = await add("manuscript", "old");
       const [target] = await db.select().from(documents).where(eq(documents.id, targetId));
       if (!target) throw new Error("target fixture missing");
-      const holderId = crypto.randomUUID();
-      await db.insert(documents).values({
-        id: holderId,
-        contextSourceId: target.contextSourceId,
-        name: "holder",
-        extension: "md",
-      });
-      await db.insert(documentLinks).values({
-        sourceDocumentId: holderId,
-        href: "old.md",
-        targetProjectId: p,
-        targetKey: "manuscript://old.md",
-        occurrences: 1,
-      });
       const tree = new DrizzleContextTreeMutationStore(db);
       const source = await tree.inspect(target.contextSourceId, "old.md");
       if (source?.kind !== "file") throw new Error("source fixture missing");
@@ -179,7 +170,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           source,
           destinationSourceId: target.contextSourceId,
           destinationPath: "new.md",
-          mover: { userId: u, turnId: originalTurn },
           expectedTarget: { state: "absent" },
           overwrite: false,
           graduateProvisionalName: true,
@@ -192,15 +182,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: u,
         target: { kind: "scheme" as const, uri: "manuscript://old.md" },
       };
-      const holder = { documentId: holderId, href: "old.md" };
-      expect(await r.resolve({ ...input, holder })).toMatchObject({
+      const chat = { ...input, previousLocations: true };
+      expect(await r.resolve(chat)).toMatchObject({
         documentId: targetId,
         uri: "manuscript://new.md",
       });
-      expect(await r.resolve(input)).toMatchObject({ documentId: targetId });
-      expect(
-        await r.resolve({ ...input, holder: { ...holder, href: "newly-typed.md" } }),
-      ).toBeNull();
+      expect(await r.resolve(input)).toBeNull();
       const occupant = crypto.randomUUID();
       await db.insert(documents).values({
         id: occupant,
@@ -208,31 +195,173 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "old",
         extension: "md",
       });
-      // Moving the new occupant cannot steal the pending href or its original mover.
-      const occupied = await tree.inspect(target.contextSourceId, "old.md");
-      if (occupied?.kind !== "file") throw new Error("Missing new occupant");
-      expect(
-        await tree.commitMove({
-          source: occupied,
-          destinationSourceId: target.contextSourceId,
-          destinationPath: "later.md",
-          expectedTarget: { state: "absent" },
-          overwrite: false,
-          graduateProvisionalName: true,
-          destinationFiletype: "markdown",
-          mover: { userId: u, turnId: crypto.randomUUID() },
-        }),
-      ).toMatchObject({ ok: true });
-      expect(await db.select().from(linkRedirects)).toMatchObject([
-        { targetDocumentId: targetId, moverUserId: u, moverTurnId: originalTurn },
+      expect(await r.resolve(chat)).toMatchObject({ documentId: occupant });
+      expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
+    });
+
+    it("answers ref links through the route core: gone never carries a location", async () => {
+      const db = database.current;
+      const live = await add("manuscript", "live");
+      const [{ contextSourceId } = { contextSourceId: "" }] = await db
+        .select({ contextSourceId: documents.contextSourceId })
+        .from(documents)
+        .where(eq(documents.id, live));
+      const sibling = async (name: string) => {
+        const id = crypto.randomUUID();
+        await db.insert(documents).values({ id, contextSourceId, name, extension: "md" });
+        return id;
+      };
+      const deleted = await sibling("deleted");
+      const discarded = await sibling("discarded");
+      const secret = await sibling("secret");
+      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, deleted));
+      const otherProject = crypto.randomUUID();
+      const otherSource = crypto.randomUUID();
+      const foreign = crypto.randomUUID();
+      await db
+        .insert(projects)
+        .values({ id: otherProject, userId: u, name: "Other", slug: "other-project" });
+      await db.insert(contextSources).values({
+        id: otherSource,
+        projectId: otherProject,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+      });
+      await db
+        .insert(documents)
+        .values({ id: foreign, contextSourceId: otherSource, name: "foreign", extension: "md" });
+      const settled = crypto.randomUUID();
+      const unsettled = crypto.randomUUID();
+      const settledGone = crypto.randomUUID();
+      const occupied = crypto.randomUUID();
+      await db.insert(linkAheadRefs).values([
+        {
+          aheadId: settledGone,
+          projectId: p,
+          scheme: "manuscript",
+          path: "deleted.md",
+          settledDocumentId: deleted,
+        },
+        // Rule 4: unsettled, answered by the document at its exact address.
+        { aheadId: occupied, projectId: p, scheme: "manuscript", path: "live.md" },
+        {
+          aheadId: settled,
+          projectId: p,
+          scheme: "manuscript",
+          path: "live.md",
+          settledDocumentId: live,
+        },
+        { aheadId: unsettled, projectId: p, scheme: "manuscript", path: "later.md" },
       ]);
-      // Reinstall an occupant to independently verify current-address precedence.
-      await db.update(documents).set({ name: "old" }).where(eq(documents.id, occupant));
-      expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
-      expect(await r.resolve({ ...input, holder })).toMatchObject({ documentId: targetId });
-      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, targetId));
-      expect(await r.resolve({ ...input, holder })).toBeNull();
-      expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
+      // A discarded draft creation keeps its row but no manifest lists it.
+      const liveMembers = [live, deleted, secret];
+      const provisioned: unknown[] = [];
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: resolver(),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess: {
+            async listAccess(_principal, ids) {
+              return new Map(ids.filter((id) => id !== secret).map((id) => [id, {} as never]));
+            },
+          },
+          membership: async (view) => {
+            provisioned.push(view);
+            return { members: liveMembers };
+          },
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        fileAccess: {
+          async listAccess(_principal, ids) {
+            return new Map(ids.map((id) => [id, {} as never]));
+          },
+        },
+      };
+      const response = await handleDocumentLinkResolveRequest(deps, {
+        projectId: p,
+        userId: u as never,
+        request: {
+          baseUri: "manuscript://holder.md",
+          links: [
+            { ref: `doc:${live}`, href: "manuscript://old-live.md" },
+            { ref: `doc:${deleted}`, href: "manuscript://deleted.md" },
+            { ref: `doc:${discarded}`, href: "manuscript://discarded.md" },
+            { ref: `doc:${secret}`, href: "manuscript://secret.md" },
+            { ref: `doc:${foreign}`, href: "manuscript://foreign.md" },
+            { ref: `ahead:${settled}`, href: "manuscript://elsewhere.md" },
+            { ref: `ahead:${unsettled}`, href: "manuscript://later.md#scene" },
+            { ref: `ahead:${settledGone}`, href: "manuscript://deleted.md" },
+            { ref: `ahead:${occupied}`, href: "manuscript://live.md" },
+            { ref: "doc:not-a-uuid", href: "manuscript://live.md" },
+            { ref: null, href: "live.md" },
+            { ref: null, href: "https://example.com" },
+          ],
+        },
+      });
+      const liveDocument = {
+        state: "document",
+        document: { id: live, title: "live", scheme: "manuscript", path: "live.md" },
+        inDraft: false,
+      };
+      expect(response.answers).toMatchObject([
+        liveDocument,
+        { state: "gone" },
+        { state: "gone" },
+        { state: "gone" },
+        { state: "gone" },
+        liveDocument,
+        { state: "missing", uri: "manuscript://later.md" },
+        { state: "gone" },
+        liveDocument,
+        { state: "gone" },
+        liveDocument,
+        { state: "unresolvable" },
+      ]);
+      // Only rule 3 marks an answer settled; a rule-4 occupant is still by address.
+      expect(response.answers.map((answer) => "settled" in answer)).toEqual([
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      for (const answer of response.answers)
+        if (answer.state === "gone")
+          expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
+      // A Work of another project never reaches draft membership provisioning.
+      const foreignWork = crypto.randomUUID();
+      await db.insert(works).values({
+        id: foreignWork,
+        projectId: otherProject,
+        createdByUserId: u,
+        name: "Foreign",
+        slug: "foreign",
+      });
+      provisioned.length = 0;
+      await expect
+        .soft(
+          handleDocumentLinkResolveRequest(deps, {
+            projectId: p,
+            userId: u as never,
+            request: {
+              baseUri: null,
+              workId: foreignWork,
+              links: [{ ref: `doc:${live}`, href: "manuscript://live.md" }],
+            },
+          }),
+        )
+        .rejects.toMatchObject({ statusCode: 404 });
+      expect.soft(provisioned).toEqual([]);
     });
   });
 }

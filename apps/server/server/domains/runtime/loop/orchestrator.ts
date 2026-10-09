@@ -49,6 +49,7 @@ import {
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
   isAgentEditResultEnvelope,
+  type LinkShowing,
   modelConcurrentResult,
   modelResult,
   type ResponseCommitWriteReceipt,
@@ -104,6 +105,7 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
+import type { ShownLinkShowing, ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
@@ -256,6 +258,8 @@ export interface OrchestratorDeps {
   imageAssets: ImageAssetPort;
   /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
   concurrentRenderBudgetBytes?(request: GenerateRequest): number;
+  /** Shown-link evidence: tool results, reference reads, settled receipts and backfilled concurrent runs record here. */
+  shownLinks: Pick<ShownLinkStore, "record">;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -681,6 +685,10 @@ async function runDrainTurn(
             selection.activeLeafTurnId,
             async () => {
               await reconcileOrphanedPendingWrites(deps, input.threadId);
+              // The reference blocks in `events` are what this turn's request
+              // shows; a discarded or retried preparation never gets here.
+              if (preflight)
+                await recordShownLinks(deps, input.threadId, reservedTurn.id, preflight.shown);
               if (preflight)
                 await persistPreparedPromptBake(
                   preflight.assembled,
@@ -1184,6 +1192,16 @@ async function persistCommittedWriteResult(input: {
   return { block: persisted.result };
 }
 
+/** Records accepted reference-read candidates; callers run it inside the commit persisting their blocks. */
+async function recordShownLinks(
+  deps: Pick<OrchestratorDeps, "shownLinks">,
+  threadId: string,
+  turnId: string,
+  shown: readonly ShownLinkShowing[],
+): Promise<void> {
+  for (const showing of shown) await deps.shownLinks.record({ ...showing, threadId, turnId });
+}
+
 /**
  * Loads text-reference reads for one user turn, returning prepared events and
  * blocks with read results applied. Used both
@@ -1197,8 +1215,8 @@ async function prepareReferenceReads(input: {
   assistantTurnId: string;
   blocks: readonly Block[];
   signal?: AbortSignal;
-}): Promise<{ blocks: Block[]; events: OrchestratorEvent[] }> {
-  const loaded = await loadReferenceReads({
+}): Promise<{ blocks: Block[]; events: OrchestratorEvent[]; shown: ShownLinkShowing[] }> {
+  const { blocks: loaded, shown } = await loadReferenceReads({
     blocks: input.blocks,
     userTurnId: input.userTurnId,
     threadId: input.threadId,
@@ -1206,7 +1224,7 @@ async function prepareReferenceReads(input: {
     reader: input.deps.referenceReader,
     signal: input.signal,
   });
-  if (loaded.length === 0) return { blocks: [...input.blocks], events: [] };
+  if (loaded.length === 0) return { blocks: [...input.blocks], events: [], shown };
   const events = loaded.map((block) => ({
     type: "block.upserted" as const,
     block: contentForBlockInput({
@@ -1223,6 +1241,7 @@ async function prepareReferenceReads(input: {
   return {
     blocks: input.blocks.map((block) => updatedById.get(block.id) ?? block),
     events,
+    shown,
   };
 }
 
@@ -1391,8 +1410,18 @@ function createResponseScope(input: {
   const { deps, threadId, turnId, allBlocks } = input;
   const writes = new Map<
     string,
-    Array<{ block: Block; writeId: string; settlementId: string; uri: string | null }>
+    Array<{
+      block: Block;
+      writeId: string;
+      settlementId: string;
+      uri: string | null;
+    }>
   >();
+  /** Records what a settled receipt or a backfilled concurrent run showed the model, from the binding that rendered it. */
+  const recordShown = async (documentId: string, shown: { showing?: LinkShowing }) => {
+    if (!shown.showing) return;
+    await deps.shownLinks.record({ threadId, turnId, documentId, ...shown.showing });
+  };
   let id = input.responseId;
   let active = true;
   return {
@@ -1427,6 +1456,21 @@ function createResponseScope(input: {
       writes.set(metadata.documentId, blocks);
     },
     async commit() {
+      const persistSettledReceipt = async (
+        documentId: string,
+        write: { block: Block; uri: string | null },
+        receipt: ResponseCommitWriteReceipt,
+      ) => {
+        // The settled receipt replaces the staged echo; both were shown.
+        await recordShown(documentId, receipt);
+        return persistCommittedWriteResult({
+          deps,
+          threadId,
+          block: write.block,
+          documentRevision: { documentId, uri: write.uri, revision: receipt.revision },
+          result: receipt.result,
+        });
+      };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
       const outcome = await deps.responseWrites.commitResponse(
         id,
@@ -1448,19 +1492,11 @@ function createResponseScope(input: {
                     text: refusal.message,
                   })
                 : settled.status === "committed"
-                  ? await persistCommittedWriteResult({
-                      deps,
-                      threadId,
-                      block: write.block,
-                      documentRevision: {
-                        documentId,
-                        uri: write.uri,
-                        revision: settledReceipt(settled.receipts, documentId, write.settlementId)
-                          .revision,
-                      },
-                      result: settledReceipt(settled.receipts, documentId, write.settlementId)
-                        .result,
-                    })
+                  ? await persistSettledReceipt(
+                      documentId,
+                      write,
+                      settledReceipt(settled.receipts, documentId, write.settlementId),
+                    )
                   : await persistUncommittedWriteResult({
                       deps,
                       threadId,
@@ -1491,8 +1527,9 @@ function createResponseScope(input: {
       // Backfill body-complete concurrent runs into the last write result per document.
       for (const { documentId, concurrentEdits: edits } of editsByDocument) {
         const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-        const block = writes.get(documentId)?.at(-1)?.block;
-        if (!block) continue;
+        const last = writes.get(documentId)?.at(-1);
+        if (!last) continue;
+        const block = last.block;
         const content = block.content as JsonObject | null;
         const staged = stagedWriteResult(block);
         if (!content || !staged) continue;
@@ -1517,6 +1554,8 @@ function createResponseScope(input: {
         }));
         const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
         if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
+        // Only runs that fit the render budget were shown.
+        for (const run of boundedEdits.runs) await recordShown(documentId, run);
       }
     },
     async rollback() {
@@ -1644,6 +1683,7 @@ async function executeLoop({
       signal: input.signal,
       knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
       expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
+      recordShown: (turnId, shown) => recordShownLinks(deps, input.threadId, turnId, shown),
       prepareAdoptedTurn: async (turn, blocks) => {
         const withReferences = await prepareReferenceReads({
           deps,
@@ -1664,6 +1704,7 @@ async function executeLoop({
         return {
           blocks: withReferences.blocks,
           events: withReferences.events,
+          shown: withReferences.shown,
           extraTurns:
             skillBody.kind === "created"
               ? [{ turn: skillBody.turn, blocks: [skillBody.block] }]
@@ -2270,6 +2311,7 @@ async function executeLoop({
                 executionReports: deps.repos.executionReports,
                 readSnapshot: deps.repos.readSnapshot,
                 runClaim: deps.runClaim,
+                shownLinks: deps.shownLinks,
               },
               call,
               {

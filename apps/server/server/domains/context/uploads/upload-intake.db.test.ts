@@ -8,10 +8,10 @@ import { describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../../../test-support/file-grants.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
+import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { FileEditRefusedError, runWithEditGrants } from "../../file-policy/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import { createInMemoryObjectStore } from "../../storage/index.js";
-import { createDrizzleDocumentAssetPaths } from "../adapters/asset-path-resolver.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
@@ -59,6 +59,25 @@ if (!RUN) {
       return createDrizzleUploadIntakeRepository(db);
     }
 
+    /** Deletion through the aggregate; `removed` records arrived uploads it soft-deleted. */
+    function deletion(repository: ReturnType<typeof createDrizzleUploadIntakeRepository>) {
+      const removed: string[] = [];
+      const intake = createUploadIntake({
+        repository,
+        content: {
+          bind: async () => ({ ok: true, bound: null }),
+          persist: async () => ({ ok: true }),
+          async remove({ reservation }) {
+            removed.push(reservation.documentId);
+            return { ok: true };
+          },
+        },
+        objectStore: createInMemoryObjectStore(),
+        eventSink: createNoopEventSink(),
+      });
+      return { removed, deleteDraft: intake.deleteDraft };
+    }
+
     const reservation = (
       intakeId: string,
       owner: "none" | "work",
@@ -87,14 +106,14 @@ if (!RUN) {
         const service = (db: Database) => {
           const catalog = createDrizzleContextCatalog(db);
           const contextPorts = createProductionUnifiedContextPortFactory({
-            assetPaths: createDrizzleDocumentAssetPaths(db),
+            links: createTestDocumentLinkScopes(db),
             db,
             documentSync: collab,
             manifestMembership: collab,
             catalogMutations: catalog,
           });
           return createUploadIntake({
-            repository: createDrizzleUploadIntakeRepository(db, catalog),
+            repository: createDrizzleUploadIntakeRepository(db),
             content: createContextUploadContentPort(contextPorts),
             objectStore,
             eventSink: createNoopEventSink(),
@@ -178,23 +197,24 @@ if (!RUN) {
         documentId: identity.documentId,
         uri: identity.canonicalUri,
       };
-      expect((await repo.deleteDraft({ ...base, expectedRevision: "wrong" }, USER)).result).toEqual(
-        { kind: "identity_mismatch" },
-      );
+      const { removed, deleteDraft } = deletion(repo);
+      expect(await deleteDraft({ ...base, expectedRevision: "wrong" }, USER)).toEqual({
+        kind: "identity_mismatch",
+      });
       expect(
-        (await repo.deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER))
-          .result,
+        await deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER),
       ).toEqual({ kind: "deleted" });
       expect(
-        (await repo.deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER))
-          .result,
+        await deleteDraft({ ...base, expectedRevision: identity.locationRevision }, USER),
       ).toEqual({ kind: "already_deleted" });
+      // An arrived upload leaves through the canonical soft delete, never a hard delete.
+      expect(removed).toEqual([identity.documentId]);
       expect(
         await database.current
-          .select()
+          .select({ id: documents.id })
           .from(documents)
           .where(eq(documents.id, identity.documentId as never)),
-      ).toEqual([]);
+      ).toHaveLength(1);
     });
 
     it("refuses a draft delete under a grant its archived Work no longer holds", async () => {
@@ -230,7 +250,7 @@ if (!RUN) {
         .where(eq(works.id, WORK));
 
       const outcome = await runWithEditGrants(access, [grant], () =>
-        repo.deleteDraft(
+        deletion(repo).deleteDraft(
           {
             intakeId: "archived",
             documentId: identity.documentId,
@@ -262,14 +282,14 @@ if (!RUN) {
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(database.current);
       const contextPorts = createProductionUnifiedContextPortFactory({
-        assetPaths: createDrizzleDocumentAssetPaths(database.current),
+        links: createTestDocumentLinkScopes(database.current),
         db: database.current,
         documentSync: collab,
         manifestMembership: collab,
         catalogMutations: catalog,
       });
       const service = createUploadIntake({
-        repository: createDrizzleUploadIntakeRepository(database.current, catalog),
+        repository: createDrizzleUploadIntakeRepository(database.current),
         content: createContextUploadContentPort(contextPorts),
         objectStore: {
           async put() {

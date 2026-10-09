@@ -31,15 +31,34 @@ runtime shapes, and observability records.
 - Context entry validation reserves a leading `@` in every path segment for
   Work authority qualifiers. An `@` elsewhere in a segment remains valid.
 - `document-href.ts` is the one place a standard Markdown link's destination
-  is resolved (`resolveDocumentHref`), spelled (`spellDocumentHref`),
-  respelt while preserving style (`respellDocumentHref`), and matched to a
-  catalog path (`matchDocumentPath` through `documentPathKey`). Address-index
-  keys come only from `documentAddressKey`, which requires explicit Work authority.
+  is resolved (`resolveDocumentHref`), spelled canonically (`spellDocumentHref`),
+  and matched to a catalog path (`matchDocumentPath` through `documentPathKey`).
+  Stored links are never respelt in place: they carry refs and spell on read.
   Both link resolvers, the
   Editor clipboard, `@` insertion, LinkForm and the composer's reference
   spelling call it. Never format a destination from a raw URI or
   re-implement relative resolution: two copies of it once disagreed, and a raw
   `#` or `%` in a filename silently names another document.
+- `document-ref.ts` owns the stored link ref grammar (`doc:<uuid>`,
+  `ahead:<uuid>`; `parseLinkRef` accepts only canonical UUIDs via
+  `parseRequestId`, so a malformed ref is gone and never reaches a lookup;
+  `storedLinkRef` keeps a present malformed attr as a ref so it reaches
+  resolution as gone instead of falling back to its address), the only
+  ahead-ref mint, and `aheadAddress` with `hasFileExtension`, the one rule for
+  what address an ahead ref may be registered at (mint and registry alike).
+  `document-link.ts` owns the one stored-link resolution (`resolveStoredLink`
+  over a host `LinkCatalog`), the one written-link classifier
+  (`classifyWrittenLink`/`classifyWrittenSource`; the single definition of
+  "contextual", and the whole source grammar: a raw `%` is a literal
+  manuscript path, protocol-relative `//host/x` is external; no caller
+  reclassifies), and the speller (`spellStoredLink`).
+  Addresses (`CatalogDocument.uri`, a classified `uri`, `aheadAddress`,
+  registry keys) are decoded canonical URIs; a stored `href`/`src` is an
+  escaped spelling. Build every ref-bearing stored href with
+  `storedHref(uri, suffix)`, never `uri + suffix`: a raw `#`, `?` or `%` in a
+  filename would otherwise become href syntax or decode twice.
+  A ref never appears in Markdown, HTML, URIs or model text; a ref the reader
+  cannot reach spells its stored href, never its target's new location.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.

@@ -17,6 +17,9 @@ import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import type { BindMarkdownInput } from "../../collab/index.js";
+import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
+import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
@@ -24,7 +27,6 @@ import { createDrizzleWorkRepository } from "../../projects/adapters/work-reposi
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { createDocumentAddressResolver } from "../document-address.js";
-import { createDrizzleDocumentAssetPaths } from "./asset-path-resolver.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { ContextFS } from "./context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "./context-fs/drizzle-store.js";
@@ -487,13 +489,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: failingCatalog,
       });
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        holder: { projectId: PROJECT_ID },
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
         scheme: "manuscript",
         documentSync: {
           ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
+          bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
         } as never,
       });
@@ -530,13 +534,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         failingCatalog,
       );
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        holder: { projectId: PROJECT_ID },
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
         scheme: "kb",
         documentSync: {
           ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
+          bindMarkdown: async (input: BindMarkdownInput) => fakeBoundWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
         } as never,
       });

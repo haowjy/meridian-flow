@@ -3,6 +3,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
+import type { ShownLinkShowing } from "../ports/shown-links.js";
 import type { CompactionDecision } from "./compaction/decision.js";
 import type { FinalizedExecution, TerminalCause } from "./execution-finalizer.js";
 import type { drainInbox, InboxDrain } from "./inbox-context.js";
@@ -26,6 +27,11 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   preferredSuccessorTurnId?: TurnId;
   signal?: AbortSignal;
   continueTask?: boolean;
+  /**
+   * Records adopted reference reads' shown links under the turn whose request
+   * carries them, inside the adoption commit; required when a drain has any.
+   */
+  recordShown?: (turnId: TurnId, shown: readonly ShownLinkShowing[]) => Promise<void>;
   /** Admits the run's execution; `adopted` are the outstanding messages it now answers. */
   admit?: (turn: Turn, adopted: readonly InboxMessage[]) => Promise<void>;
   /** Prepare the current placeholder before late arrivals; retried with the same selection. */

@@ -30,7 +30,6 @@ import {
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
-  type CreateThreadRequest,
   type ForkThreadRequest,
   type HandoffBriefRetryRequest,
   type HandoffThreadRequest,
@@ -62,8 +61,6 @@ import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridia
 
 import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
-type CreateThreadInput = CreateThreadRequest;
-
 export type AppendUserMessageInput = {
   threadId: string;
   submissionId: string;
@@ -93,10 +90,6 @@ export async function listThreads(init?: {
   // Server returns domain types; JSON serialization strips brands + converts Dates to strings,
   // yielding the Wire shape the frontend operates on.
   return response.threads as unknown as Thread[];
-}
-
-export function createThread({ data }: { data: CreateThreadInput }): Promise<Thread> {
-  return postJson(API_THREADS_PATH, data) as unknown as Promise<Thread>;
 }
 
 /** Create-or-get a fork under the client-minted `request.id`; a retry lands on the same thread. */

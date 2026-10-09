@@ -34,6 +34,90 @@ document text; absent evidence, null tokens, and failed lookups fail closed.
 Known-null evidence is never resolved against current documents, including
 failed edits with only a historical path.
 
+## Shown links
+
+Each tool result that shows the model a document's links also records them as
+shown-link evidence ([`ports/shown-links.ts`](../ports/shown-links.ts), table
+`thread_shown_links`). A row holds the identity shown (`ref`: a link's
+`doc:`/`ahead:` ref or an uploaded picture's `asset:<id>`, the link index's key
+space; never in model text), the absolute address shown,
+the holder URI, the view (`live` or `draft:<workId>`) and the turn. When a
+write rewrites links, ref assignment binds them to these rows. The model
+never sees them: agent-edit's `showing { holderUri, view, links }` stays
+host-only on `WriteOutcome`, receipts and concurrent runs, a search hit's
+`shown` (holder URI, view, and each passage's links) on the hit, and handlers
+send only `result` or the stripped hit. The executor also strips `shown` and
+`showing` from every handler's value before it computes the persisted
+`result`, so no transcript row, history summary or browser event carries them.
+
+The holder URI and view recorded are the ones the facts were actually spelled
+from, never ones rebuilt from the grant: agent-edit's `showing` carries its
+command links' `scope.holder`, and a search hit's `shown` carries the holder
+ContextFS's read spelled from.
+
+Ordinary tool evidence commits only with the result the model is shown.
+Handlers compute facts but never record: they return them as host-only
+`shown` candidates beside the result, the executor forwards them only for a
+handler result it accepts (never for an abort, a timeout or a throw, even when
+the abandoned handler finishes later), and `dispatchToolCall` records them in
+the transaction that persists the tool result. Handlers get only
+`forDocument`.
+
+| Showing | Candidates from | Recorded |
+|---|---|---|
+| successful read, narrowed or outline | `read` handler (`lib/model-tools/document-tools.ts`) | with the tool result (`loop/tool-dispatch.ts`) |
+| returned, authorized search passages | `search` handler (`listing-tools.ts`) | with the tool result |
+| write echoes, staged or immediate, undo/redo, a partial failure's echo | `writeUnderGrant` | with the tool result |
+| settled receipts | the response save | the response scope's commit (`loop/orchestrator.ts`), inside the save transaction |
+| concurrent runs that fit the render budget | the response save | the response scope's backfill |
+| `@` reference reads | `lib/model-tools/reference-reader.ts` | with the reference blocks: the run-start persist (`loop/orchestrator.ts`) or the adoption commit (`adapters/runtime-delivery.ts`) |
+
+`@` reference blocks persist through run preparation and inbox adoption, not
+tool dispatch. The reader returns its candidates as host-only `shown` beside
+the read; `loadReferenceReads` carries them beside the updated blocks (never
+in their content), through `PreparedRequest.shown` at run start and
+`InboxDrain.shown` at adoption. The commit that persists those blocks records
+them: at run start under the reserved turn, at adoption under the successor
+turn whose request shows them (via `DeliveryBoundary.recordShown`). A
+preparation that fails, is cancelled or is retried after its selection
+changed is discarded whole, candidates included.
+
+The in-memory store keeps its rows in the repositories'
+`InMemoryTransactionOwner`, so on both adapters evidence recorded with a
+result that fails to persist rolls back with it.
+
+Nothing else records evidence. Capture lives in the handlers, never in
+`readDocument`, so a copy's private source read records nothing. Matches past
+the passage cap, `thread_history` items, compaction summaries and handoff briefs
+record nothing either. Never derive evidence from `documentRevisions` metadata:
+that is revision evidence, and history copies carry it with null revisions.
+
+The rows are independent of transcript blocks, so compaction and restart
+lose none of them. A response that rolls back keeps its rows, since the model
+saw the echo.
+
+Storage keeps one row per showing key **per turn** (key: thread, document,
+ref, address, holder URI, view; plus turn). This amends contract §7.3's one
+mutable row per key, which could not keep its own cutoff promise: a source's
+later repeat moved the row past a fork's cutoff and erased what the fork saw.
+Now a repeat in a later turn adds a row; within a turn the row keeps the
+greatest `seq` from the one global sequence. The upsert applies only when
+`excluded.seq > seq`, because a sequence value is drawn before conflict
+arbitration and a writer delayed after drawing can arrive second.
+
+Readers select first and deduplicate second: a fork reads its own rows plus
+its source's rows at turns up to its cutoff position, recursively, and only
+then keeps the latest eligible showing per key (its `at`). PostgreSQL does both
+in one query: one `UNION ALL` branch per lineage segment applies its cutoff,
+then `DISTINCT ON` keeps the greatest `seq` per key. Nothing is copied at
+fork time. Handoffs and spawned children inherit nothing, because they start
+from a brief.
+
+Delivery: `writeUnderGrant` binds `WriteContext.shownLinks` to
+`ShownLinkStore.forDocument(threadId, ·)`. The pool spreads the context
+through, so the field survives. Utility, seed and import writes pass none, so
+their links bind fresh.
+
 ## Tool-owned policy
 
 `ToolRegistration.documentText` (`tools/document-text.ts`) owns each tool's

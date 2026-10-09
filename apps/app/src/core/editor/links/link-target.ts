@@ -5,11 +5,9 @@
  * spellings with one behavior: a Context URI `manuscript://…`, and a path
  * relative to the document holding the link. Both resolve to the one project
  * document at that address and navigate in-app; only `external` leaves the
- * app, and only `external` is decided entirely on the client. The two internal
- * kinds are exactly the server's `DocumentLinkTarget`, so `documentLinkTarget()`
- * is a projection rather than a translation. `[[name]]` is not a spelling:
- * it is text wherever it appears, and a paste turns it into a link
- * (`wikilink-paste.ts`) before it is ever stored.
+ * app, and only `external` is decided entirely on the client. `[[name]]` is
+ * not a spelling: it is text wherever it appears, and a paste turns it into a
+ * link (`wikilink-paste.ts`) before it is ever stored.
  *
  * Two directions live here on purpose. `classifyLinkTarget` reads an href that
  * is already in the document — written by the markdown parser, by an LLM, or
@@ -20,7 +18,6 @@
  */
 
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts";
-import type { DocumentLinkTarget } from "@meridian/contracts/protocol";
 
 export type LinkTarget =
   /** `manuscript://appendix/vault-charter.md`, `scratch://@revision-pass/notes.md`. */
@@ -103,22 +100,6 @@ export function classifyLinkTarget(href: string): LinkTarget | null {
   if (internalScheme(value, scheme)) return { kind: "scheme", uri: value };
   if (INTERNAL_SCHEMES.has(scheme)) return null;
   return externalTarget(value);
-}
-
-/**
- * The link the resolution port should be asked about, or null for an external
- * one. `baseUri` is the URI of the document holding the link: only a relative
- * path needs it, and only the caller knows it.
- */
-export function documentLinkTarget(target: LinkTarget, baseUri: string): DocumentLinkTarget | null {
-  switch (target.kind) {
-    case "scheme":
-      return { kind: "scheme", uri: target.uri };
-    case "relative":
-      return { kind: "relative", path: target.path, baseUri };
-    case "external":
-      return null;
-  }
 }
 
 /**

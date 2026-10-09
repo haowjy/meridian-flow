@@ -1,4 +1,5 @@
 /** Transactional namespace claims and direct-to-identity document location history. */
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contentDocumentPredicate,
@@ -14,15 +15,25 @@ import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 
-function namespaceKey(input: {
+export type ContextNamespace = {
   projectId: string;
   userId: string;
   scheme: string;
   workId: string | null;
-}): string {
+};
+
+export function contextNamespaceKey(input: ContextNamespace): string {
   return input.scheme === "user"
     ? `context-user:${input.userId}`
     : `context-project:${input.projectId}:${input.workId ?? "none"}:${input.scheme}`;
+}
+
+/** Acquire only namespace locks. Callers are responsible for Work checks. */
+export async function lockNamespaceKeys(
+  db: Database,
+  namespaces: readonly ContextNamespace[],
+): Promise<void> {
+  await lockAdvisoryKeys(db, namespaces.map(contextNamespaceKey));
 }
 
 /**
@@ -39,7 +50,7 @@ export async function lockContextNamespaces(
   await requireLockedActiveWorks(db, workIds);
   await lockAdvisoryKeys(db, [
     ...(scopes.some((scope) => scope.scheme === "user") ? [owner.userId] : []),
-    ...scopes.map((scope) => namespaceKey({ ...owner, ...scope })),
+    ...scopes.map((scope) => contextNamespaceKey({ ...owner, ...scope })),
   ]);
 }
 
@@ -48,6 +59,45 @@ export async function lockContextSources(
   db: Database,
   sourceIds: readonly string[],
 ): Promise<void> {
+  const rows = await sourceNamespaces(db, sourceIds);
+  await requireLockedActiveWorks(
+    db,
+    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
+  );
+  await lockAdvisoryKeys(db, [
+    ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
+    ...rows.map(contextNamespaceKey),
+  ]);
+}
+
+/**
+ * Namespace keys of the sources these documents occupy now, deleted rows included (a restore
+ * locks before it unhides). Arrivals that are not authored writes (Apply, Work restore) take
+ * these after their Work locks and before any holder lock (contract §9.2, O6).
+ */
+export async function lockDocumentNamespaces(
+  db: Database,
+  documentIds: readonly string[],
+): Promise<void> {
+  if (documentIds.length === 0) return;
+  const rows = await currentDrizzleDb(db)
+    .selectDistinct({ sourceId: documents.contextSourceId })
+    .from(documents)
+    .where(inArray(documents.id, [...new Set(documentIds)]));
+  await lockNamespaceKeys(
+    db,
+    await sourceNamespaces(
+      db,
+      rows.map((row) => row.sourceId),
+    ),
+  );
+}
+
+async function sourceNamespaces(
+  db: Database,
+  sourceIds: readonly string[],
+): Promise<ContextNamespace[]> {
+  if (sourceIds.length === 0) return [];
   const rows = await currentDrizzleDb(db)
     .select({
       projectId: contextSources.projectId,
@@ -60,21 +110,12 @@ export async function lockContextSources(
     .leftJoin(projects, eq(projects.id, contextSources.projectId))
     .leftJoin(works, eq(works.id, contextSources.workId))
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
-  await requireLockedActiveWorks(
-    db,
-    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
-  );
-  await lockAdvisoryKeys(db, [
-    ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
-    ...rows.map((row) =>
-      namespaceKey({
-        projectId: (row.projectId ?? row.workProjectId) as string,
-        userId: row.userId ?? "",
-        workId: row.workId,
-        scheme: row.scheme,
-      }),
-    ),
-  ]);
+  return rows.map((row) => ({
+    projectId: (row.projectId ?? row.workProjectId) as string,
+    userId: row.userId ?? "",
+    workId: row.workId,
+    scheme: row.scheme,
+  }));
 }
 
 async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<void> {
@@ -82,6 +123,24 @@ async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<
     await currentDrizzleDb(db).execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
     );
+}
+
+/**
+ * Row-lock every document a move mutates (moved files and an overwrite victim), sorted. NO KEY
+ * UPDATE is compatible with the journal's holder FK KEY SHARE but orders a same-source move
+ * against derive certification and other moves of the same rows.
+ */
+export async function lockMovedDocumentRows(
+  db: Database,
+  documentIds: readonly DocumentId[],
+): Promise<void> {
+  if (documentIds.length === 0) return;
+  await currentDrizzleDb(db)
+    .select({ id: documents.id })
+    .from(documents)
+    .where(inArray(documents.id, [...new Set(documentIds)]))
+    .orderBy(documents.id)
+    .for("no key update");
 }
 
 export type NamespaceLocation = { id: string; path: string; kind: "file" | "directory" };
