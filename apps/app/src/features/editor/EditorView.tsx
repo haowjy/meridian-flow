@@ -251,7 +251,7 @@ export function EditorView(props: EditorViewProps) {
   const reviewOnScreen = surface.startsWith("review:");
   return (
     <>
-      <PaintCapture surface={surface} />
+      <PaintCapture surface={surface} state={surface === "pending" ? "pending" : "painted"} />
       {terminal ? (
         schemaStale ? (
           <p data-document-schema-stale>

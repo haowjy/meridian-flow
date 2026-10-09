@@ -1,80 +1,81 @@
 /** Pane continuity: retain the last finished paint while visible content loads. */
-import { Component, createContext, type ReactNode, useContext, useLayoutEffect } from "react";
+import type { ReactNode } from "react";
+import { Component, createContext, createRef, useContext, useLayoutEffect } from "react";
 
-type Paint = { html: string; scrolls: number[]; focused: boolean };
+type Hold = { kind: "idle"; paint: null } | { kind: "holding"; paint: Paint };
+type Surface = { surface: string; state?: "painted" | "pending" | "failed" };
+type FrameProps = { status: string; className?: string; children: ReactNode };
+type Paint = { kind: "captured" | "painted"; html: string; scrolls: number[]; focused: boolean };
 const FrameContext = createContext<PaintHold | null>(null);
 const ScopeContext = createContext(true);
 
-export class PaintHold extends Component<
-  {
-    status: string;
-    className?: string;
-    children: ReactNode;
-  },
-  { paint: Paint | null }
-> {
-  state = { paint: null as Paint | null };
-  private page: HTMLDivElement | null = null;
-  private frame: HTMLDivElement | null = null;
-  private status: HTMLParagraphElement | null = null;
-  private cover: HTMLDivElement | null = null;
+export class PaintHold extends Component<FrameProps, Hold> {
+  static contextType = ScopeContext;
+  state: Hold = { kind: "idle", paint: null };
+  private page = createRef<HTMLDivElement>();
+  private frame = createRef<HTMLDivElement>();
+  private status = createRef<HTMLParagraphElement>();
+  private cover = createRef<HTMLDivElement>();
   private pending = new Set<object>();
-  private captured: Paint | null = null;
+  private lastPainted: Paint | null = null;
   private raf = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  capture = () => {
-    if (this.state.paint || this.pending.size || this.captured || !this.page) return;
-    const copy = this.page.cloneNode(true) as HTMLElement;
-    copy.querySelectorAll('[data-paint-scope="inactive"]').forEach((node) => {
-      node.remove();
-    });
-    copy.querySelectorAll("[id]").forEach((node) => {
-      node.removeAttribute("id");
-    });
-    this.captured = {
+  capture = (refresh = false) => {
+    const page = this.page.current;
+    if (!page || !this.context || this.state.kind === "holding" || this.pending.size) return;
+    if (this.lastPainted?.kind === "captured" && !refresh) {
+      this.lastPainted.focused = page.contains(document.activeElement);
+      return;
+    }
+    const copy = page.cloneNode(true) as HTMLElement;
+    for (const node of copy.querySelectorAll('[data-paint-scope="inactive"]')) node.remove();
+    for (const node of copy.querySelectorAll("[id]")) node.removeAttribute("id");
+    this.lastPainted = {
+      kind: refresh ? "painted" : "captured",
       html: copy.innerHTML,
-      scrolls: Array.from(this.page.querySelectorAll<HTMLElement>(".meridian-editor"))
+      scrolls: Array.from(page.querySelectorAll<HTMLElement>(".meridian-editor"))
         .filter((node) => !node.closest('[data-paint-scope="inactive"]'))
         .map((node) => node.scrollTop),
-      focused: this.page.contains(document.activeElement),
+      focused: page.contains(document.activeElement),
     };
   };
-  decide = () => this.forceUpdate();
   mark = (token: object, pending: boolean) => {
     if (pending) this.pending.add(token);
     else this.pending.delete(token);
-    this.decide();
+    this.forceUpdate();
   };
   componentDidUpdate(_props: Readonly<typeof this.props>, previous: Readonly<typeof this.state>) {
+    if (!this.context) this.lastPainted = null;
     const paint = this.state.paint;
-    if (!paint && this.captured && this.pending.size) {
+    if (!paint && this.lastPainted && this.pending.size) {
       cancelAnimationFrame(this.raf);
       this.raf = 0;
-      this.setState({ paint: this.captured });
+      this.setState({ kind: "holding", paint: this.lastPainted });
       this.timer = setTimeout(() => {
-        this.captured = null;
-        this.setState({ paint: null });
+        this.lastPainted = null;
+        this.setState({ kind: "idle", paint: null });
       }, 10_000);
     } else if (paint && !this.pending.size) {
       clearTimeout(this.timer);
-      this.captured = null;
-      this.setState({ paint: null });
-    } else if (!paint && this.captured && !this.raf) {
+      this.setState({ kind: "idle", paint: null });
+    } else if (!paint && this.lastPainted && !this.raf) {
       // A synchronous layout dispatch must reuse the frame actually painted,
       // not the intermediate DOM of a commit the browser has never shown.
       this.raf = requestAnimationFrame(() => {
         this.raf = 0;
-        if (!this.state.paint) this.captured = null;
+        this.capture(true);
       });
     }
-    if (paint && this.cover) {
-      this.cover.querySelectorAll<HTMLElement>(".meridian-editor").forEach((node, index) => {
+    if (paint && this.cover.current) {
+      for (const [index, node] of this.cover.current
+        .querySelectorAll<HTMLElement>(".meridian-editor")
+        .entries()) {
         node.scrollTop = paint.scrolls[index] ?? 0;
-      });
-      if (paint.focused && !previous.paint) this.status?.focus({ preventScroll: true });
-    } else if (!paint && document.activeElement === this.status) {
-      this.frame?.focus({ preventScroll: true });
+      }
+      if (paint.focused && !previous.paint) this.status.current?.focus({ preventScroll: true });
+    } else if (!paint && document.activeElement === this.status.current) {
+      this.frame.current?.focus({ preventScroll: true });
     }
   }
   componentWillUnmount() {
@@ -86,37 +87,24 @@ export class PaintHold extends Component<
     return (
       <FrameContext.Provider value={this}>
         <div
-          ref={(node) => {
-            this.frame = node;
-          }}
+          ref={this.frame}
           className={`${this.props.className ?? ""} outline-none`}
           tabIndex={-1}
         >
           <div
-            ref={(node) => {
-              this.page = node;
-            }}
+            ref={this.page}
             className="contents"
             data-paint-page
             inert={paint ? true : undefined}
           >
             {this.props.children}
           </div>
-          <p
-            ref={(node) => {
-              this.status = node;
-            }}
-            role="status"
-            tabIndex={-1}
-            className="sr-only outline-none"
-          >
+          <p ref={this.status} role="status" tabIndex={-1} className="sr-only outline-none">
             {paint ? this.props.status : ""}
           </p>
           {paint ? (
             <div
-              ref={(node) => {
-                this.cover = node;
-              }}
+              ref={this.cover}
               data-paint-hold
               inert
               aria-hidden
@@ -130,22 +118,33 @@ export class PaintHold extends Component<
   }
 }
 
-class Capture extends Component<{ surface: string; frame: PaintHold | null; active: boolean }> {
+class Capture extends Component<Surface & { frame: PaintHold | null; active: boolean }> {
   getSnapshotBeforeUpdate(previous: Readonly<typeof this.props>) {
-    if (previous.active && this.props.active && previous.surface !== this.props.surface)
+    if (
+      previous.active &&
+      this.props.active &&
+      previous.state !== "pending" &&
+      previous.surface !== this.props.surface
+    )
       this.props.frame?.capture();
     return null;
   }
   componentDidUpdate(previous: Readonly<typeof this.props>) {
-    if (previous.surface !== this.props.surface) this.props.frame?.decide();
+    if (previous.surface !== this.props.surface) this.props.frame?.forceUpdate();
   }
   render() {
     return null;
   }
 }
-export function PaintCapture({ surface }: { surface: string }) {
+export function PaintCapture({ surface, state = "painted" }: Surface) {
+  usePaintPending(state === "pending");
   return (
-    <Capture surface={surface} frame={useContext(FrameContext)} active={useContext(ScopeContext)} />
+    <Capture
+      surface={surface}
+      state={state}
+      frame={useContext(FrameContext)}
+      active={useContext(ScopeContext)}
+    />
   );
 }
 export function PaintScope({ active, children }: { active: boolean; children: ReactNode }) {
