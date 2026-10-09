@@ -19,7 +19,11 @@ import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-quer
 import { type Dispatch, useLayoutEffect } from "react";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
-import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
+import type {
+  DraftReviewAction,
+  InlineDraftReview,
+  ProposalEvidence,
+} from "./draft-review-session";
 import { reviewChangesOfPreview } from "./review-changes";
 import { draftClaim } from "./useReviewCommandCompletion";
 
@@ -97,7 +101,7 @@ export function useCachedProposal(draft: {
   workId: string;
   documentId: string;
   draftId: string;
-}): { draftGeneration: number; proposal: boolean } | null {
+}): ProposalEvidence | null {
   const { data } = useQuery({
     ...draftPreviewQueryOptions(draft),
     enabled: false,

@@ -176,11 +176,12 @@ input arrives as an action addressed to the draft and compares its generation wi
 | E | Enter the draft | R is the newest proposal the caches know (a cached preview that lists changes, the list row, a claim); K is the claim's if it acted on R; none known leaves R unresolved |
 | C1, C2 | Claim at R begins covering the last changes, or is answered `draftClosed` | K is pending, or closed (a closed K never goes back) |
 | C3 | Claim at R ends without a close | A pending K is withdrawn; a closed one stays |
-| C4, C5 | Claim below R, or above it (or R unresolved) | Ignored, or re-enter the claim's generation |
+| C4, C5 | Claim below R, or above it (or R unresolved) | Ignored, or re-enter the claim's generation (a claim that does not cover the last changes sends no action: it acted on a cached preview, which O3 has already taken up) |
 | O1, O2 | Preview or list read below R, or at R | Ignored, or content refresh only |
 | O3 | Read above R that lists changes (a list row always does) | Re-enter it, over any K (the writer's "Applying" included) |
 | O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
 | P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
+| X | The Work's list has no row for the draft | With no K the review ends, unless the newest preview lists changes at R or above (the list lags); K keeps it |
 | S | The editor's room is `branch-generation-stale` | The room is cleared and read afresh; the review stays |
 | L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
 | B | Whole-draft batch | Its pending and closed actions carry R at batch start |
@@ -195,9 +196,12 @@ stale room to the controller (`onReviewRoomStale`) and leaves review only for
 Invariants: a generation never goes backwards (the preview query keeps a newer
 cached read, `keepNewerGeneration`); a completion belongs to one generation;
 `useReviewChanges` and `useInlineReviewSync` list and project only R's preview;
-arrival order does not change the outcome. The provider's "draft left the list"
-exit holds while the cached preview lists changes at R (the list can lag the
-preview) and asks for the preview afresh instead.
+arrival order does not change the outcome. Row X is the provider's "draft left the
+list" exit made an action: the provider reports the empty row with the newest cached
+preview as evidence and the reducer decides against R, so a proposal that has not
+re-entered yet still counts as the draft being alive. A preview that lists changes
+also gets read afresh; a genuine external close (no proposal at R or above) ends the
+review.
 
 Focus is review state too: `inlineReview.focus` holds the focused change's class
 id with the operations it held, one value for the whole review. When the server

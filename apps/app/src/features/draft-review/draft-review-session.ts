@@ -453,6 +453,9 @@ export type ReviewClaim = { draftGeneration: number; completion?: ReviewCompleti
 
 export type DraftReviewSurface = { kind: "none" } | InlineDraftReview;
 
+/** What the draft's newest cached preview says: the generation it describes and whether it lists changes. */
+export type ProposalEvidence = { draftGeneration: number; proposal: boolean };
+
 /** What a toast says; the render layer owns the words. */
 export type ReviewToastCode = "applied" | "discarded" | "change-gone";
 
@@ -490,6 +493,16 @@ export type DraftReviewAction =
       proposal: boolean;
       claim?: ReviewClaim;
       roomName?: string;
+    }
+  | {
+      /**
+       * The Work's draft list, once authoritative, has no row for the draft (row X). `evidence`
+       * is the draft's newest cached preview, null when none lists an active draft.
+       */
+      type: "draftAbsentFromList";
+      documentId: string;
+      draftId: string;
+      evidence: ProposalEvidence | null;
     }
   | { type: "roomFailed"; documentId: string; draftId: string }
   | { type: "roomStale"; documentId: string; draftId: string; roomName: string }
@@ -551,6 +564,8 @@ export function draftReviewReducer(
       return { ...state, surface: { ...state.surface, focus: action.focus } };
     case "generationObserved":
       return onInline(state, action, (review) => observeGeneration(review, action));
+    case "draftAbsentFromList":
+      return draftAbsentFromList(state, action);
     case "roomFailed":
       return onInline(state, action, (review) =>
         review.roomName === undefined ? { ...review, roomError: true } : review,
@@ -768,6 +783,29 @@ function observeGeneration(
   if (!read.proposal) return withRoom(review);
   const completion = completionAt(read.claim, read.draftGeneration);
   return reenter(review, read.draftGeneration, completion, read.roomName);
+}
+
+/**
+ * Row X: the list has no row for the reviewed draft. With no completion (the
+ * writer's own last change explains a missing row) that is an external close,
+ * unless the newest preview lists changes at the shown generation or a newer
+ * one: the draft is alive and the list lags. A newer generation is the
+ * observer's to take up; deciding here, against R and the evidence together,
+ * keeps the outcome independent of which read arrived first (invariant 4).
+ */
+function draftAbsentFromList(
+  state: DraftReviewState,
+  action: DraftReviewSelection & { evidence: ProposalEvidence | null },
+): DraftReviewState {
+  const review = state.surface;
+  if (review.kind !== "inline" || !surfaceMatchesDraft(review, action) || review.completion) {
+    return state;
+  }
+  const { evidence } = action;
+  const alive =
+    evidence?.proposal === true &&
+    (review.draftGeneration === undefined || evidence.draftGeneration >= review.draftGeneration);
+  return alive ? state : clearInlineState({ ...state, surface: { kind: "none" } });
 }
 
 function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftReviewState {
