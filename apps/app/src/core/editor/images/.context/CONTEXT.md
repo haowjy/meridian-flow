@@ -174,8 +174,9 @@ onto nothing.
 ## The paste-import seam
 
 The clipboard restores identity first: a same-project rich paste keeps a
-picture's recorded ref (an upload gets its `asset:` source back), and every
-other recorded picture arrives as its address with no ref
+picture's recorded ref (an upload gets its `asset:` source back, even when
+copied before the catalog held its address), and every other recorded picture
+arrives as its address with no ref, or not at all when it recorded none
 (`link-clipboard.ts`). The link lane's `assignPastedSlice` then walks the
 pasted slice once, for links and picture sources together: a picture that
 already names a document lands as stored, and one whose source is a manuscript
