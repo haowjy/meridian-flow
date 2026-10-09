@@ -179,7 +179,7 @@ passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and `NavigationDr
 It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
 chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
 control (it hides) when no chat is on screen, such as the chat index. The row shows
-the Scratch icon, the label, that chat's title and an up chevron. A collapsed rail
+the Scratch icon, the label and an up chevron (one line; the menu heading names the chat). A collapsed rail
 hides with its control. Its owner is `chatScratchOwner` (`features/chat`): the
 chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
 is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
