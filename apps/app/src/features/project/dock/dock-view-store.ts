@@ -1,5 +1,6 @@
 /** Session-only view choices and the transient document slot for the project dock. */
 import { create } from "zustand";
+import type { ProjectResultItem } from "@/client/api/project-results-api";
 import type { ServerContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 
@@ -13,6 +14,14 @@ export type DockView = "chat" | "context" | "changes";
  */
 export type DockDocument = { screen: DockDocumentScreen; tab: ServerContextTab };
 type DockDocumentScreen = Exclude<ScreenKey, "context">;
+
+/**
+ * A Results row opened in the dock's document slot. A result is a promoted
+ * artifact read by id, not a project document, so it has no tab or editor; it
+ * shares the slot's rules (it covers the views until closed, and only the Chat
+ * screen's rail opens one).
+ */
+export type DockResult = ProjectResultItem;
 
 type DockViewSet = {
   /** Ordered segments for the switch. */
@@ -36,9 +45,12 @@ const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
 type DockViewState = {
   byScreen: Partial<Record<ScreenKey, DockView>>;
   document: DockDocument | null;
+  result: DockResult | null;
   /** The writer picks a view: it replaces a document the dock was showing. */
   setDockView: (screen: ScreenKey, view: DockView) => void;
   openDocument: (document: DockDocument) => void;
+  openResult: (result: DockResult) => void;
+  /** Closes the slot, whether it holds a document or a result. */
   closeDocument: () => void;
   /** Drop a document that does not belong to where the writer now is. */
   syncDocumentScope: (screen: ScreenKey, workId: string | null) => void;
@@ -47,21 +59,25 @@ type DockViewState = {
 export const useDockViewStore = create<DockViewState>((set) => ({
   byScreen: {},
   document: null,
+  result: null,
   setDockView: (screen, view) =>
     set((state) => ({
       byScreen: { ...state.byScreen, [screen]: view },
       document: state.document?.screen === screen ? null : state.document,
+      result: screen === "chat" ? null : state.result,
     })),
-  openDocument: (document) => set({ document }),
-  closeDocument: () => set({ document: null }),
+  openDocument: (document) => set({ document, result: null }),
+  openResult: (result) => set({ result, document: null }),
+  closeDocument: () => set({ document: null, result: null }),
   syncDocumentScope: (screen, workId) =>
     set((state) => {
-      const { document } = state;
-      if (!document) return state;
+      const { document, result } = state;
+      const keepResult = screen === "chat" ? result : null;
+      if (!document) return keepResult === result ? state : { result: keepResult };
       // A Work's note belongs to that Work's screen.
       const stays =
         document.screen === screen && (screen !== "work" || document.tab.workId === workId);
-      return stays ? state : { document: null };
+      return stays ? state : { document: null, result: keepResult };
     }),
 }));
 
@@ -96,6 +112,8 @@ export function useDockView(screen: ScreenKey): ResolvedDockView & {
   setView: (view: DockView) => void;
   /** The document replacing the views on this screen, if any. */
   document: DockDocument | null;
+  /** The result replacing them, if any (the Chat screen only). */
+  result: DockResult | null;
   closeDocument: () => void;
 } {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
@@ -103,11 +121,13 @@ export function useDockView(screen: ScreenKey): ResolvedDockView & {
   const document = useDockViewStore((state) =>
     state.document?.screen === screen ? state.document : null,
   );
+  const result = useDockViewStore((state) => (screen === "chat" ? state.result : null));
   const closeDocument = useDockViewStore((state) => state.closeDocument);
   return {
     ...resolveDockView(screen, stored),
     setView: (next) => setDockView(screen, next),
     document,
+    result,
     closeDocument,
   };
 }

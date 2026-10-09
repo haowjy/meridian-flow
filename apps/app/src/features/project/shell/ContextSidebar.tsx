@@ -1,19 +1,22 @@
-/** ContextSidebar — right-side project rail summarizing work context sections and deferred artifact surfaces. */
+/**
+ * ContextSidebar — the Chat screen's right rail: the chat's Recent documents and
+ * the project's Results, drawn with the left tree's rows and section heads.
+ * A click opens the row in the dock's document slot, which covers the rail
+ * (it stays mounted underneath) until the document is closed.
+ */
 import { t } from "@lingui/core/macro";
 import type { DocumentFileType } from "@meridian/contracts/protocol";
-import type { LucideIcon } from "lucide-react";
-import { FileText, Image as ImageIcon, Sparkles } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { Clock, Sparkles } from "lucide-react";
 
-import type { ProjectResultItem } from "@/client/api/project-results-api";
 import type { ListQueryStatus } from "@/client/query/list-query";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
+import { fileKindIcon } from "../context/context-file-icon";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
-
+import { useDockViewStore } from "../dock/dock-view-store";
+import { useOpenDocumentIdInDock } from "../dock/use-open-document-id-in-dock";
+import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
 import { ResultsRailBody, useResultsRailModel } from "./ResultsRailSection";
-import { ResultViewerOverlay } from "./ResultViewerOverlay";
 
 /** Thread-context rail (Chat destination, right edge). */
 export type ContextSidebarProps = {
@@ -29,10 +32,10 @@ export type ContextSidebarProps = {
 export function ContextSidebar({ threadId, projectId, visible, onClose }: ContextSidebarProps) {
   const recent = useThreadRecentDocuments(threadId);
   // Results live at the project scope (artifact persistence outlives any
-  // single chat), so the rail tracks `projectId` independently of the
-  // thread state. Open-result is local state — at most one viewer at a time.
-  const [openResult, setOpenResult] = useState<ProjectResultItem | null>(null);
+  // single chat), so the rail tracks `projectId` independently of the thread.
   const results = useResultsRailModel(projectId);
+  const openResult = useDockViewStore((state) => state.openResult);
+  const openDocumentId = useOpenDocumentIdInDock(projectId ?? "");
 
   return (
     <aside aria-label={t`Chat context`} className="flex h-full min-h-0 w-full flex-col">
@@ -43,13 +46,13 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
         visible={visible}
         renderHeader={(args) => <DockHeader {...args} onClose={onClose} />}
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
           <DocumentRailSection
             title={t`Recent`}
-            icon={<FileText className="size-3.5" />}
-            defaultOpen
+            icon={Clock}
             status={recent}
             rows={recent.documents}
+            onOpen={(document) => void openDocumentId(document.documentId)}
             messages={{
               disabled: t`Open a chat to see what the AI referenced.`,
               loading: t`Loading recent documents…`,
@@ -57,23 +60,11 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
               error: t`Couldn't load recent documents.`,
             }}
           />
-          <CollapsibleRailSection
-            title={t`Results`}
-            icon={<Sparkles className="size-3.5" />}
-            count={results.count}
-            defaultOpen
-          >
-            <ResultsRailBody projectId={projectId} model={results} onOpenResult={setOpenResult} />
+          <CollapsibleRailSection title={t`Results`} icon={Sparkles} defaultOpen>
+            <ResultsRailBody projectId={projectId} model={results} onOpenResult={openResult} />
           </CollapsibleRailSection>
         </div>
       </DockShell>
-      {openResult && projectId ? (
-        <ResultViewerOverlay
-          projectId={projectId}
-          result={openResult}
-          onClose={() => setOpenResult(null)}
-        />
-      ) : null}
     </aside>
   );
 }
@@ -83,7 +74,6 @@ type RailDocument = {
   documentId: string;
   name: string;
   extension: string;
-  sizeBytes: number | null;
   editable: boolean;
   fileType: DocumentFileType | null;
 };
@@ -95,28 +85,24 @@ type RailMessages = {
   error: string;
 };
 
-/** One state-machine for both live data rails. */
+/** One state-machine for the live data rail. */
 function DocumentRailSection({
   title,
   icon,
-  defaultOpen = false,
   status,
   rows,
   messages,
+  onOpen,
 }: {
   title: string;
-  icon: ReactNode;
-  defaultOpen?: boolean;
+  icon: typeof Clock;
   status: ListQueryStatus<RailDocument>;
   rows: RailDocument[] | null;
   messages: RailMessages;
+  onOpen: (document: RailDocument) => void;
 }) {
-  // Count is honest: it only exists in the loaded states. Anything else
-  // (disabled, loading, error) hides the count entirely.
-  const count = status.status === "ready" || status.status === "empty" ? (rows?.length ?? 0) : null;
-
   return (
-    <CollapsibleRailSection title={title} icon={icon} count={count} defaultOpen={defaultOpen}>
+    <CollapsibleRailSection title={title} icon={icon} defaultOpen>
       {status.status === "disabled" ? (
         <RailEmptyHint>{messages.disabled}</RailEmptyHint>
       ) : status.status === "loading" ? (
@@ -126,75 +112,23 @@ function DocumentRailSection({
       ) : status.status === "empty" || rows == null || rows.length === 0 ? (
         <RailEmptyHint>{messages.empty}</RailEmptyHint>
       ) : (
-        <ul className="flex flex-col">
-          {rows.map((row) => (
-            <DocumentRow key={row.documentId} document={row} />
-          ))}
+        <ul>
+          {rows.map((row) => {
+            // The tree lists whole file names; the rail names files the same way.
+            const fileName = `${row.name}${row.extension ? `.${row.extension.replace(/^\./, "")}` : ""}`;
+            return (
+              <li key={row.documentId}>
+                <RailFileRow
+                  icon={fileKindIcon(fileName)}
+                  name={fileName}
+                  title={fileName}
+                  onOpen={() => onOpen(row)}
+                />
+              </li>
+            );
+          })}
         </ul>
       )}
     </CollapsibleRailSection>
   );
-}
-
-function DocumentRow({ document }: { document: RailDocument }) {
-  return (
-    <li>
-      <div
-        className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5"
-        title={document.name}
-      >
-        <KindIcon fileType={document.fileType} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm text-foreground">{document.name}</span>
-          <span className="truncate text-meta text-muted-foreground">
-            {formatFileDetail(document.extension, document.sizeBytes)}
-          </span>
-        </span>
-      </div>
-    </li>
-  );
-}
-
-function KindIcon({ fileType }: { fileType: DocumentFileType | null }) {
-  const { Icon, tone } = pickIconForFileType(fileType);
-  return (
-    <RailKindIcon tone={tone}>
-      <Icon className="size-3.5" />
-    </RailKindIcon>
-  );
-}
-
-/* Takes `string`, not `DocumentFileType`: the value is DB `documents.file_type`,
- * unconstrained text that the server types — but never narrows — as the union.
- * Real markdown chapters arrive as `"markdown"`, so a switch that is exhaustive
- * over the declared union returns `undefined` and the caller's destructure takes
- * the whole project view down. Unknown kinds read as generic files.
- */
-export function pickIconForFileType(fileType: string | null): { Icon: LucideIcon; tone: string } {
-  switch (fileType) {
-    case null:
-      return { Icon: FileText, tone: "text-primary" };
-    case "image":
-      return { Icon: ImageIcon, tone: "text-status-streaming" };
-    case "pdf":
-      return { Icon: FileText, tone: "text-destructive" };
-    case "docx":
-      return { Icon: FileText, tone: "text-accent" };
-    default:
-      return { Icon: FileText, tone: "text-muted-foreground" };
-  }
-}
-
-function formatFileDetail(extension: string, sizeBytes: number | null): string {
-  const ext = extension.replace(/^\./, "").toUpperCase();
-  if (sizeBytes == null) return ext || "";
-  const size = formatBytes(sizeBytes);
-  return ext ? `${ext} (${size})` : size;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }

@@ -57,6 +57,20 @@ an Editor route instead, so those never hold a dock document. `DockReveal` is
 `"chat" | "document"`: a document reveal only opens the dock, the slot already holds
 the document.
 
+`useOpenDocumentIdInDock(projectId)` is the way in for a Recent row on the Chat
+screen's context rail. A row carries only a document id, so
+`useLocateProjectDocument` resolves it to its scheme, owner (Work, lineage or project
+area) and file from the resource replica, then the server
+(`ProjectDocumentNavigationAdapter.locate`; nothing navigates and no live session is
+admitted), and `useOpenDocumentInDock` opens the resulting tab. Images, PDFs and
+binaries open as viewer tabs through the viewer host. A latest-click-wins guard keeps a
+slow lookup from replacing a newer pick; an unresolvable document announces an error.
+The slot's `result` sibling holds a Results row (`DockResultView`): the rail's Results
+open there instead of a dialog, with the viewers and no editor, tab or title menu. It
+shares the slot's rules (covers the views, closed by the same button, Chat screen only).
+The phone has no context rail, so a phone never opens either here; its Results view keeps
+its full-screen viewer.
+
 `useOpenScratchNote()` is the way in for a note picked from a chat's Scratch menu
 (`../chat/ChatScratch.tsx`): the dock document on the Chat screen only, where
 the chat is in the middle; an Editor tab from the Work and Editor screens, where the

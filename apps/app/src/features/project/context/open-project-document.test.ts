@@ -73,7 +73,7 @@ it("settles an Uploads background open without admitting an Editor tab", async (
   const result = { kind: "not-editable" as const, document };
   const openTab = vi.fn(() => ({ kind: "ineligible" as const }));
   const adapter = new ProjectDocumentNavigationAdapter({
-    opener: { open: async () => result },
+    opener: { open: async () => result, locate: async () => ({ kind: "located", document }) },
     openTab,
     openRoute: null,
   });
@@ -81,5 +81,42 @@ it("settles an Uploads background open without admitting an Editor tab", async (
   expect(await adapter.open("project", { documentId: "upload", disposition: "background" })).toBe(
     result,
   );
+  expect(openTab).not.toHaveBeenCalled();
+});
+
+it("locates a document's scheme and owner without opening it", async () => {
+  const lineageDocument = {
+    kind: "file" as const,
+    entryId: "note",
+    documentId: "note",
+    scope: { kind: "lineage" as const, projectId: "project", rootThreadId: "root" },
+    sourceId: "scratch",
+    parentId: "scratch",
+    name: "beats.md",
+    aliases: [],
+    path: ["beats.md"],
+    uri: "scratch://@/c1/beats.md",
+    provisionalName: false,
+    editable: true as const,
+    disposition: "tracked" as const,
+    filetype: "markdown" as const,
+    schemaType: "document" as const,
+  };
+  const openTab = vi.fn();
+  const open = vi.fn();
+  const adapter = new ProjectDocumentNavigationAdapter({
+    opener: { open, locate: async () => ({ kind: "located", document: lineageDocument }) },
+    openTab,
+    openRoute: null,
+  });
+
+  const located = await adapter.locate("project", "note");
+
+  expect(located).toMatchObject({
+    kind: "located",
+    scheme: "scratch",
+    owner: { rootThreadId: "root" },
+  });
+  expect(open).not.toHaveBeenCalled();
   expect(openTab).not.toHaveBeenCalled();
 });

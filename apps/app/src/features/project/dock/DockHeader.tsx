@@ -34,7 +34,8 @@ import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { DockDocumentTitle } from "./DockDocumentTitle";
-import type { DockDocument, DockView } from "./dock-view-store";
+import { DockResultTitle } from "./DockResultView";
+import type { DockDocument, DockResult, DockView } from "./dock-view-store";
 import { useDockViewStore } from "./dock-view-store";
 
 export type DockViewSwitchProps = {
@@ -47,6 +48,8 @@ export type DockHeaderSlotArgs = DockViewSwitchProps & {
   projectId: string;
   /** The document that replaces the views while the dock shows one. */
   document: DockDocument | null;
+  /** A Results row shown in the same slot. */
+  result: DockResult | null;
 };
 
 export type DockHeaderProps = DockHeaderSlotArgs & {
@@ -61,6 +64,7 @@ export function DockHeader({
   views,
   onSelectView,
   document: dockDocument,
+  result: dockResult,
   onClose,
   threadSelect,
   threadId,
@@ -78,6 +82,8 @@ export function DockHeader({
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {dockDocument ? (
           <DockDocumentTitle projectId={projectId} document={dockDocument} />
+        ) : dockResult ? (
+          <DockResultTitle result={dockResult} />
         ) : (
           <>
             {view === "chat" ? threadSelect : null}
@@ -87,15 +93,15 @@ export function DockHeader({
           </>
         )}
       </div>
-      {dockDocument ? null : (
+      {dockDocument || dockResult ? null : (
         <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
       )}
-      {onClose || dockDocument ? (
+      {onClose || dockDocument || dockResult ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.
         <div className="flex shrink-0 items-center gap-0.5 px-2">
-          {dockDocument ? (
+          {dockDocument || dockResult ? (
             <IconButton size="sm" tooltip={t`Close document`} onClick={closeDocument}>
               <X className="size-4" aria-hidden />
             </IconButton>

@@ -1,35 +1,21 @@
-/** Renders the project results rail section. */
+/** The Results list: tree-style rows, shared by the desktop rail and the phone Results view. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FileImage, FileSpreadsheet, FileText, type LucideIcon, Sparkles } from "lucide-react";
+import { FileImage, FileSpreadsheet, FileText, type LucideIcon } from "lucide-react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { useProjectResults } from "@/client/query/useProjectResults";
 import { Badge } from "@/components/ui/badge";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { relativeTime } from "@/features/project/relative-time";
-import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
-
-export type ResultsRailSectionProps = {
-  projectId: string | null;
-  /** Called when the user opens a result in the rail viewer overlay. */
-  onOpenResult: (result: ProjectResultItem) => void;
-};
+import { RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
 
 export type ResultsRailModel = {
   status: ReturnType<typeof useProjectResults>;
-  /** `null` hides the count while loading/error/disabled. */
-  count: number | null;
 };
 
 export function useResultsRailModel(projectId: string | null): ResultsRailModel {
-  const status = useProjectResults(projectId);
-  // Count visibility follows the same honest rule as the sibling sections:
-  // only render in `ready`/`empty` so we never fabricate `0` over the top of
-  // a hint that says "couldn't load".
-  const count =
-    status.status === "ready" || status.status === "empty" ? (status.results?.length ?? 0) : null;
-  return { status, count };
+  return { status: useProjectResults(projectId) };
 }
 
 export function ResultsRailBody({
@@ -43,7 +29,7 @@ export function ResultsRailBody({
   const { status } = model;
 
   return (
-    <div className="flex flex-col gap-0.5">
+    <div>
       {status.status === "disabled" ? (
         <RailEmptyHint>
           <Trans>Open a project to see its results.</Trans>
@@ -81,21 +67,6 @@ export function ResultsRailBody({
   );
 }
 
-export function ResultsRailSection({ projectId, onOpenResult }: ResultsRailSectionProps) {
-  const model = useResultsRailModel(projectId);
-
-  return (
-    <CollapsibleRailSection
-      title={t`Results`}
-      icon={<Sparkles className="size-3.5" />}
-      count={model.count}
-      defaultOpen
-    >
-      <ResultsRailBody projectId={projectId} model={model} onOpenResult={onOpenResult} />
-    </CollapsibleRailSection>
-  );
-}
-
 /* Image rows render a `FileImage` mime icon rather than a true thumbnail
  * preview. Preloading thumbnails would fire one signed-URL request per
  * image row on rail open (and expire on every list refetch) — that's
@@ -115,49 +86,31 @@ function ResultRow({
 }) {
   const name = displayName(result);
   const agentName = result.agentName;
+  const when = relativeTime(result.createdAt, Date.now());
   return (
     <li>
-      <div
-        className="group flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 hover:bg-sidebar-accent"
-        title={result.workspacePath}
-      >
-        <button
-          type="button"
-          onClick={onOpen}
-          className="focus-ring flex min-w-0 flex-1 items-start gap-2 rounded text-left"
-          aria-label={t`Open result ${name}`}
-        >
-          <KindIcon mimeType={result.mimeType} />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-sm text-foreground">{name}</span>
-            <span className="truncate text-meta text-muted-foreground">
-              {formatResultDetail(result)}
-            </span>
-          </span>
-        </button>
-        {/* The producing-agent badge reveals its thread; it does not open result content. */}
-        <button
-          type="button"
-          onClick={onOpenProducingThread}
-          className="focus-ring shrink-0"
-          aria-label={t`Open producing turn in ${agentName}`}
-          title={t`Open producing turn`}
-        >
-          <Badge variant="neutral" className="max-w-[8rem] min-w-0 font-medium">
-            <span className="min-w-0 truncate">{agentName}</span>
-          </Badge>
-        </button>
-      </div>
+      <RailFileRow
+        icon={pickIconForMime(result.mimeType).Icon}
+        name={name}
+        title={when ? `${result.workspacePath} (${when})` : result.workspacePath}
+        ariaLabel={t`Open result ${name}`}
+        onOpen={onOpen}
+        // The producing-agent badge reveals its thread; it does not open result content.
+        trailing={
+          <button
+            type="button"
+            onClick={onOpenProducingThread}
+            className="focus-ring shrink-0"
+            aria-label={t`Open producing turn in ${agentName}`}
+            title={t`Open producing turn`}
+          >
+            <Badge variant="neutral" className="max-w-[8rem] min-w-0 font-medium">
+              <span className="min-w-0 truncate">{agentName}</span>
+            </Badge>
+          </button>
+        }
+      />
     </li>
-  );
-}
-
-function KindIcon({ mimeType }: { mimeType: string }) {
-  const { Icon, tone } = pickIconForMime(mimeType);
-  return (
-    <RailKindIcon tone={tone}>
-      <Icon className="size-3.5" />
-    </RailKindIcon>
   );
 }
 
@@ -184,17 +137,4 @@ export function pickIconForMime(mimeType: string): { Icon: LucideIcon; tone: str
     return { Icon: FileSpreadsheet, tone: "text-accent" };
   }
   return { Icon: FileText, tone: "text-primary" };
-}
-
-function formatResultDetail(result: ProjectResultItem): string {
-  const size = formatBytes(result.sizeBytes);
-  const when = relativeTime(result.createdAt, Date.now());
-  return when ? `${size} (${when})` : size;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
