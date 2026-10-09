@@ -31,7 +31,12 @@ import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { BoundLinks } from "./link-binding.js";
-import { status } from "./response-format.js";
+import {
+  admitPreparedUpdate,
+  type PreparedRefusal,
+  type PreparedUpdate,
+  preparedRefusalResult,
+} from "./prepared-update.js";
 import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
 
 export interface MutationCommitRuntime {
@@ -81,11 +86,11 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
   runtime: MutationCommitRuntime;
   /**
-   * The authority generation a host-prepared update's base was read in: it is
-   * admitted only into that generation (checked under the document's lock),
-   * and the journal append is fenced with it.
+   * A host-prepared update this mutation stages: admitted under the
+   * document's lock (`admitPreparedUpdate`), and its base's certificate
+   * fences the journal append.
    */
-  expectedAuthority?: JournalAuthority;
+  prepared?: PreparedUpdate;
   before: readonly BlockSnapshot[];
   preOwnSnapshot: Uint8Array;
 }
@@ -281,17 +286,15 @@ export function createMutationCommit(deps: {
         input.commandName,
         async (liveDoc) => {
           const live = coordinator.documentAuthority?.(liveDoc);
-          const expected = input.expectedAuthority;
-          if (expected && live && !sameJournalAuthority(expected, live)) {
-            return status("invalid_write", "The document was restored; prepare the write again.", {
-              error: { type: "prepared_base", code: "authority_replaced", documentId: input.docId },
-            });
+          if (input.prepared) {
+            const refused = admitUnderLock(liveDoc, input.prepared, live);
+            if (refused) return preparedRefusalResult(input.docId, refused);
           }
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
             // A copy with no authority of its own (inside a reply's transaction) still fences
             // the append with the certificate.
-            authority: expected ?? live,
+            authority: input.prepared?.base?.authority ?? live,
             ownTurnId: input.turnId,
             update: mergeUpdates(input.updates.map((entry) => entry.update)),
             ownWrites: [
@@ -333,6 +336,25 @@ export function createMutationCommit(deps: {
       journalCommitKind: journalCommitKind ?? "durable",
       ...(lateSweep ? { lateSweep } : {}),
     };
+  }
+
+  /** Whether the live document, as it is now, admits the prepared update; tried on a copy. */
+  function admitUnderLock(
+    liveDoc: Y.Doc,
+    prepared: PreparedUpdate,
+    authority: JournalAuthority | undefined,
+  ): PreparedRefusal | null {
+    const trial = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
+    try {
+      return admitPreparedUpdate(trial, prepared, {
+        authority,
+        model,
+        origin: null,
+        certified: true,
+      });
+    } finally {
+      trial.destroy();
+    }
   }
 
   async function commitJournalBatch(
@@ -692,8 +714,4 @@ function emptyConcurrentDetection(): ConcurrentDetectionResult {
     baselineBlocks: [],
     lineageOrigins: [],
   };
-}
-
-function sameJournalAuthority(left: JournalAuthority, right: JournalAuthority): boolean {
-  return left.authorityId === right.authorityId && left.generation === right.generation;
 }

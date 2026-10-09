@@ -10,11 +10,13 @@ import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
+import type { PreparedUpdate } from "./prepared-update.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   DocumentCommandName,
+  PreparedWriteContext,
   ReadFunction,
   RedoResult,
   ResponseCommitSuccessResult,
@@ -53,6 +55,15 @@ const DEFAULT_UNDO_CLIENT_ID = 999;
 export interface WriteTool {
   read: ReadFunction;
   write: WriteFunction;
+  /**
+   * A whole-document write a host prepared outside its transaction, recorded
+   * as `context.actor`'s mutation. A refusal under the document's lock is
+   * `invalid_write` with a `prepared_base` error: prepare it again.
+   */
+  applyPrepared(
+    input: PreparedUpdate & { documentId: string },
+    context: PreparedWriteContext,
+  ): Promise<WriteOutcome>;
   recover(docId: string): Promise<void>;
   commitResponse(
     responseId: string,
@@ -168,12 +179,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     );
   };
 
+  const applyPrepared: WriteTool["applyPrepared"] = (input, context) =>
+    execute("create", { documentId: input.documentId }, context, (_, session) =>
+      commands.applyPrepared(input, session, context),
+    );
+
   function invalidCommand(commandName: AgentEditResultCommand, error: z.ZodError): WriteOutcome {
     return toOutcome(commandName, status("invalid_write", writeSchemaError(error)));
   }
 
   async function execute<
-    Command extends { file: string; documentId?: string; tool_use_id?: string },
+    Command extends { file?: string; documentId?: string; tool_use_id?: string },
   >(
     commandName: DocumentCommandName,
     validCommand: Command,
@@ -241,6 +257,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   return {
     read,
     write,
+    applyPrepared,
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseCommitter.commitResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
