@@ -69,6 +69,9 @@ export function WorkspaceNavBody({
         className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
         style={phone ? { paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" } : undefined}
       >
+        {/* The account sits between Scratch and the way out, so a near miss on
+            Scratch never leaves the project. */}
+        <AccountMenu />
         <Link
           to="/"
           className={cn(
@@ -79,7 +82,6 @@ export function WorkspaceNavBody({
           <ArrowLeft className="size-4 shrink-0" aria-hidden />
           <Trans>View projects</Trans>
         </Link>
-        <AccountMenu />
       </div>
     </>
   );
