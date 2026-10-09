@@ -3,18 +3,21 @@
  * provenance vocabulary out of the collab domain while routing agent/human
  * writes through the richer write APIs that return attribution metadata.
  *
- * Content arrives bound (`BoundContent`): ContextFS binds it before opening
- * its command transaction, and this runs inside that transaction. Host append
- * is a whole write of the current document plus the appended text, bound
- * against the current document so its links keep their refs.
+ * Content arrives prepared (`PreparedWrite`): ContextFS prepares it before
+ * opening its command transaction, and this runs inside that transaction. A
+ * document that no longer holds what the write was prepared against is
+ * `stale_target`, which ContextFS answers by preparing again.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { DocumentMutationRejectedError } from "../../collab/domain/markdown-document.js";
+import {
+  DocumentMutationRejectedError,
+  DocumentSyncError,
+} from "../../collab/domain/markdown-document.js";
 import type {
-  BoundContent,
   DocumentSeedOrigin,
   DocumentWriteOrigin,
   MarkdownDocumentStore,
+  PreparedWrite,
   SyncError,
 } from "../../collab/index.js";
 import type { AdapterFault } from "../ports/context-adapter.js";
@@ -76,6 +79,9 @@ function thrownFault(error: unknown): AdapterFault {
   if (error instanceof DocumentMutationRejectedError) {
     return { code: "invalid_operation" };
   }
+  if (error instanceof DocumentSyncError && error.code === "stale_generation") {
+    return { code: "stale_target" };
+  }
   return {
     code: "io_error",
     message: error instanceof Error ? error.message : String(error),
@@ -85,7 +91,7 @@ function thrownFault(error: unknown): AdapterFault {
 export async function writeCollabMarkdown(input: {
   documentSync: MarkdownDocumentStore;
   documentId: string;
-  content: BoundContent;
+  content: PreparedWrite;
   provenance?: WriteProvenance;
 }): Promise<CollabMarkdownResult> {
   const { documentSync, documentId, content, provenance } = input;

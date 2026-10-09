@@ -37,7 +37,7 @@ import type {
 import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
-import type { BoundContent } from "./link-binding.js";
+import { containsBase, type PreparedWrite } from "./link-binding.js";
 import {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -86,10 +86,13 @@ type MarkdownDocumentEngineDeps = {
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
   afterWrite?: MarkdownWriteHook;
-  /** The whole-document create-overwrite, applying nodes already bound (assignment skipped). */
+  /**
+   * A whole-document write recorded as an actor's mutation (thread undo,
+   * receipts): agent-edit merges the prepared update into the live document.
+   */
   identityPreservingWrite(input: {
     documentId: DocumentId;
-    content: BoundContent;
+    content: PreparedWrite;
     actor: MutationActor;
   }): Promise<WriteOutcome>;
   resolveFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -115,24 +118,27 @@ export type MarkdownDocumentEngine = {
   ): Promise<Result<MarkdownSetResult, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /**
-   * Whole-document writes take content a `LinkBinder` bound before the
-   * caller's transaction (contract §6.2); none of them parses Markdown.
+   * Whole-document writes take a write a `LinkBinder` prepared before the
+   * caller's transaction (contract §6.2); none of them parses Markdown. Each
+   * applies only to the holder it was prepared for, and merges its update
+   * into the document; a document that no longer holds the prepared base is
+   * `stale_generation`, for the caller to prepare again.
    */
   setMarkdown(input: {
     documentId: DocumentId;
-    content: BoundContent;
+    content: PreparedWrite;
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
-  /** Writes only a document with no state yet; otherwise a no-op. */
+  /** Writes only a document with no state yet; otherwise a no-op. Takes fresh writes only. */
   seedFromMarkdown(
     documentId: string,
-    content: BoundContent,
+    content: PreparedWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
-    content: BoundContent;
+    content: PreparedWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
@@ -215,12 +221,14 @@ export function createMarkdownDocumentEngine(
     }
   }
 
-  /** Bound content of the shape this document stores (one code block for code files). */
-  function contentFor(
+  /** A prepared write for this holder, of the shape this document stores (one code block for code files). */
+  function checkPrepared(
     documentId: DocumentId,
-    content: BoundContent,
+    content: PreparedWrite,
     format: { schemaType: YjsTrackedSchemaType },
-  ): Result<ParsedContent, SyncError> {
+    use: "seed" | "write",
+  ): Result<PreparedWrite, SyncError> {
+    assertHolder(documentId, content, use);
     if (content.schemaType !== format.schemaType) {
       return Err({
         code: "corrupt_state",
@@ -228,27 +236,50 @@ export function createMarkdownDocumentEngine(
         message: `Content bound as ${content.schemaType} for a ${format.schemaType} document`,
       });
     }
-    return Ok({ blocks: [...content.blocks] });
+    return Ok(content);
+  }
+
+  function holdsBase(doc: Y.Doc, content: PreparedWrite): boolean {
+    if (content.base === null) return deps.model.getBlocks(toDocHandle(doc)).length === 0;
+    return containsBase(doc, content.base);
+  }
+
+  /**
+   * Merge a prepared update into `draft`: it needs every item of the base it
+   * was prepared against, and a fresh write needs a document with no blocks,
+   * or it would sit beside content it never saw.
+   */
+  function mergePrepared(
+    documentId: DocumentId,
+    draft: Y.Doc,
+    content: PreparedWrite,
+    yjsOrigin: TransactionOrigin,
+  ): Result<void, SyncError> {
+    const stale = Err({ code: "stale_generation", documentId } as const);
+    if (!holdsBase(draft, content)) return stale;
+    Y.applyUpdate(draft, content.update, yjsOrigin);
+    if (draft.store.pendingStructs !== null || draft.store.pendingDs !== null) return stale;
+    return Ok(undefined);
   }
 
   async function replaceLiveDocumentMarkdown(
     documentId: DocumentId,
     liveDoc: Y.Doc,
-    parsed: ParsedContent,
+    mutate: (draft: Y.Doc, yjsOrigin: TransactionOrigin) => Result<void, SyncError>,
     origin: RuntimeOrigin,
     schemaType: YjsTrackedSchemaType,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
-    // This copy stages the replacement so serialization and journal admission
+    // This copy stages the change so serialization and journal admission
     // both complete before the live document is mutated.
     const draft = createCollabYDoc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
     const beforeVector = Y.encodeStateVector(draft);
     const yjsOrigin = yjsTransactionOrigin(origin);
-    draft.transact(() => {
-      const fragment = fragmentOf(draft);
-      if (fragment.length > 0) fragment.delete(0, fragment.length);
-      deps.model.insertBlocks(toDocHandle(draft), null, parsed);
-    }, yjsOrigin);
+    const mutated = mutate(draft, yjsOrigin);
+    if (!mutated.ok) {
+      draft.destroy();
+      return mutated;
+    }
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
     const links = await spelling(documentId, [draft]);
     // Serialize before admission: content the codec can't spell must fail
@@ -287,21 +318,25 @@ export function createMarkdownDocumentEngine(
 
   async function setMarkdown(input: {
     documentId: DocumentId;
-    content: BoundContent;
+    content: PreparedWrite;
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
     const resolvedFormat = await documentFormat(input.documentId);
     if (!resolvedFormat.ok) return resolvedFormat;
     const format = resolvedFormat.value;
-    const content = contentFor(input.documentId, input.content, format);
+    const content = checkPrepared(input.documentId, input.content, format, "write");
     if (!content.ok) return content;
-    return replaceDocument(input, content.value, format);
+    return changeDocument(
+      input,
+      (draft, yjsOrigin) => mergePrepared(input.documentId, draft, content.value, yjsOrigin),
+      format,
+    );
   }
 
-  async function replaceDocument(
+  async function changeDocument(
     input: { documentId: DocumentId; origin: RuntimeOrigin; threadId?: ThreadId },
-    content: ParsedContent,
+    mutate: (draft: Y.Doc, yjsOrigin: TransactionOrigin) => Result<void, SyncError>,
     format: { schemaType: YjsTrackedSchemaType },
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     await deps.lifecycle.ensureDocument(input.documentId);
@@ -311,7 +346,7 @@ export function createMarkdownDocumentEngine(
         replaceLiveDocumentMarkdown(
           input.documentId,
           liveDoc,
-          content,
+          mutate,
           input.origin,
           format.schemaType,
         ),
@@ -355,7 +390,20 @@ export function createMarkdownDocumentEngine(
       // Restore the snapshot's nodes as projected: a Markdown round trip would
       // drop every attribute the codec does not spell.
       const blocks = projectBlocks(documentId, snapshot, (blocks) => blocks);
-      return replaceDocument({ documentId, origin }, { blocks }, format.value);
+      // Restore runs under the document's lock against what it holds now: a
+      // whole replacement, not a prepared write.
+      return changeDocument(
+        { documentId, origin },
+        (draft, yjsOrigin) => {
+          draft.transact(() => {
+            const fragment = fragmentOf(draft);
+            if (fragment.length > 0) fragment.delete(0, fragment.length);
+            deps.model.insertBlocks(toDocHandle(draft), null, { blocks });
+          }, yjsOrigin);
+          return Ok(undefined);
+        },
+        format.value,
+      );
     },
 
     async readAsMarkdown(documentId) {
@@ -386,12 +434,13 @@ export function createMarkdownDocumentEngine(
       const typedDocumentId = documentId as DocumentId;
       const format = await documentFormat(typedDocumentId);
       if (!format.ok) return format;
-      const bound = contentFor(typedDocumentId, content, format.value);
-      if (!bound.ok) return bound;
+      const prepared = checkPrepared(typedDocumentId, content, format.value, "seed");
+      if (!prepared.ok) return prepared;
+      if (prepared.value.base !== null) {
+        throw new Error("A seed takes a fresh write; this one was prepared against a document");
+      }
       const seededDoc = createCollabYDoc({ gc: false });
-      seededDoc.transact(() => {
-        deps.model.insertBlocks(toDocHandle(seededDoc), null, bound.value);
-      }, yjsTransactionOrigin(origin));
+      Y.applyUpdate(seededDoc, prepared.value.update, yjsTransactionOrigin(origin));
       const canonicalMarkdown = serializeForSchema(
         typedDocumentId,
         seededDoc,
@@ -422,15 +471,22 @@ export function createMarkdownDocumentEngine(
 
   async function identityPreservingSet(input: {
     documentId: DocumentId;
-    content: BoundContent;
+    content: PreparedWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
     const format = await documentFormat(input.documentId);
     if (!format.ok) return format;
     if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
-    const shaped = contentFor(input.documentId, input.content, format.value);
+    const shaped = checkPrepared(input.documentId, input.content, format.value, "write");
     if (!shaped.ok) return shaped;
+    // Agent-edit merges the update into its runtime under the same lock; check the base here
+    // so a stale preparation is the caller's to redo, not a rejected mutation.
+    await deps.lifecycle.ensureDocument(input.documentId);
+    const holds = await deps.coordinator.withDocument(input.documentId, async (doc) =>
+      holdsBase(doc, input.content),
+    );
+    if (!holds) return Err({ code: "stale_generation", documentId: input.documentId });
     const actor = mutationActor(input.origin, input.threadId);
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,
@@ -546,6 +602,21 @@ function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
   if (origin.type === "user") return { kind: "writer" };
   if (origin.type === "import") return { kind: "import", policy: "writer_protected" };
   return { kind: "seed", policy: origin.type === "agent" ? "agent" : "writer_protected" };
+}
+
+/**
+ * A prepared write certifies one holder; applying it to another document is a
+ * bug. A write needs the document it was prepared for; a seed may also take
+ * content prepared for the document being created (its creator checks the
+ * address) or fixed static content.
+ */
+function assertHolder(documentId: DocumentId, content: PreparedWrite, use: "seed" | "write"): void {
+  const { holder } = content;
+  if (holder.kind === "document" ? holder.documentId !== documentId : use === "write") {
+    throw new Error(
+      `Content prepared for ${holder.kind === "document" ? holder.documentId : holder.kind} cannot be applied to ${documentId}`,
+    );
+  }
 }
 
 export class DocumentMutationRejectedError extends Error {

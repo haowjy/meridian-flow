@@ -209,17 +209,29 @@ stays `linkUpdate: { links, documents }`.
 ## Whole-document writes
 
 `ContextFS.write`, `edit` (append) and `createTrackedDocument` with content
-bind their Markdown (`documentSync.bindMarkdown`) **before**
-`commandExecutor.run`, then apply the `BoundContent` inside the namespace-locked
-transaction (collab `document-authority-and-schema.md`). The existing document
-is looked up outside the transaction for that; the transaction looks it up
-again, and a concurrent create or edit in between merges by the overwrite's
-alignment. An actor's overwrite and every append bind against the current
-document; import and system writes bind fresh. A new document binds as the
-canonical URI it will have (`ContextFSDeps.holder`: the port's project and the
-source's Work authority). Repair (`repairTrackedDocument`) restores membership
-and, if the document has no Yjs state, an empty one; it never reparses the
-stored projection, whose links spell pre-move paths.
+prepare their Markdown (`documentSync.bindMarkdown`) **before**
+`commandExecutor.run`, then apply the `PreparedWrite` inside the
+namespace-locked transaction (collab `document-authority-and-schema.md`). The
+existing document is looked up outside the transaction for that; the
+transaction looks it up again and checks the prepared write was made for what
+occupies the path now. If the occupant changed, or the document no longer holds
+the prepared base, the transaction answers `stale_target` and
+`preparedCommand` prepares again against what is there (three attempts). An
+edit admitted in between merges with the prepared update. An actor's overwrite
+and every append prepare against the current document; import and system
+writes prepare fresh. A new document prepares as the canonical URI it will have
+(`ContextFSDeps.holder`: the port's project and the source's Work authority).
+
+A caller that creates inside its own transaction prepares first:
+`ContextPort.prepareTrackedDocument`, then `createTrackedDocument` with the
+prepared write. Upload intake does this (`UploadContentPort.prepare` runs
+before finalize's transaction, `persist` applies under its locks).
+
+Repair (`repairTrackedDocument`) restores membership and, if the document has
+no Yjs state, an empty one; it never reparses the stored projection, whose
+links spell pre-move paths. A document whose only content is a non-empty
+projection is incomplete, not repairable: repair fails with that message and
+leaves the row and its bytes as they are for recovery.
 
 ## Ahead refs and arrivals
 

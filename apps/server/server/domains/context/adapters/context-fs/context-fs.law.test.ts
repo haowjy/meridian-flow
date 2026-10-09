@@ -2,7 +2,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
+import type { BindMarkdownInput } from "../../../collab/index.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
+import { fakePreparedWrite } from "../../../collab/test-support/bound-writes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
 import { ContextFS, type ContextFSDeps } from "./context-fs.js";
 import {
@@ -184,7 +186,7 @@ describe("ContextFS rename filetype invariant", () => {
       documentSync: {
         ensureDocument: async () => {},
         readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
-        bindMarkdown: async ({ markdown }: { markdown: string }) => ({ markdown }),
+        bindMarkdown: async (input: BindMarkdownInput) => fakePreparedWrite(input),
         seedFromMarkdown: async (documentId: string, content: { markdown: string }) => {
           markdownByDocument.set(documentId, content.markdown);
           return Ok({ updateSeq: 1 });

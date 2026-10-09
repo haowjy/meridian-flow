@@ -258,6 +258,21 @@ function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): voi
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
 }
 
+/**
+ * Rewrites the whole document as `blocks` by diffing against what it holds:
+ * equal blocks keep their items and changed blocks are updated in place, so
+ * the resulting update is anchored to the state it was computed from and
+ * merges with concurrent edits elsewhere instead of replacing them.
+ */
+export function applyDocumentDiff(doc: Y.Doc, schema: Schema, blocks: readonly PMNode[]): void {
+  updateYFragment(
+    doc,
+    fragmentOf(doc),
+    schema.topNodeType.create(null, [...blocks]),
+    createBindingMetadata(),
+  );
+}
+
 export function applyInlineReplacements(
   doc: Y.Doc,
   block: Y.XmlElement | BlockRef,
