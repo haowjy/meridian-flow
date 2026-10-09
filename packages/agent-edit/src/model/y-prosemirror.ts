@@ -1,10 +1,10 @@
 import type { ParsedContent } from "@meridian/markup";
-import { Fragment, type Mark, type Node as PMNode, type Schema } from "prosemirror-model";
+import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
 import { Transform } from "prosemirror-transform";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { Block, Span } from "../codec-types.js";
+import type { Span } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
 import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
 import type {
@@ -116,14 +116,8 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
 
-    applyInlineReplacements(doc, block, replacements, codec) {
-      return applyInlineReplacements(
-        unwrapDoc(doc),
-        unwrapBlock(block),
-        replacements,
-        codec,
-        schema,
-      );
+    applyInlineReplacements(doc, block, replacements) {
+      return applyInlineReplacements(unwrapDoc(doc), unwrapBlock(block), replacements, schema);
     },
 
     applyBlockReplacement(doc, block, replacement) {
@@ -268,7 +262,6 @@ export function applyInlineReplacements(
   doc: Y.Doc,
   block: Y.XmlElement | BlockRef,
   replacements: readonly InlineTextReplacement[],
-  codec: AgentEditCodec,
   schema: Schema,
 ): InlineReplacementResult {
   const element = unwrapBlock(toRef(block));
@@ -283,57 +276,14 @@ export function applyInlineReplacements(
     };
   }
 
-  const parsedReplacements: Array<{ span: Span; nodes: Block[] }> = [];
-  for (const replacement of replacements) {
-    let parsed: ParsedContent;
-    try {
-      parsed = replacement.newText.length === 0 ? { blocks: [] } : codec.parse(replacement.newText);
-    } catch (cause) {
-      return parseFailure(cause);
-    }
-    const inline = inlineReplacement(parsed);
-    if (!inline.ok) return inline;
-    parsedReplacements.push({ span: replacement.span, nodes: inline.nodes });
-  }
-
   const transform = new Transform(current);
-  for (const replacement of [...parsedReplacements].reverse()) {
-    transform.replaceWith(
-      replacement.span.from,
-      replacement.span.to,
-      Fragment.from(replacement.nodes),
-    );
+  for (const replacement of [...replacements].reverse()) {
+    transform.replaceWith(replacement.span.from, replacement.span.to, replacement.content);
     // Project each exact step while the surrounding Yjs transaction remains open.
     // updateYFragment can then retain equal prose on both sides of every range.
     writePmBlock(doc, element, transform.doc);
   }
   return { ok: true };
-}
-
-function inlineReplacement(
-  parsed: ParsedContent,
-): { ok: true; nodes: Block[] } | { ok: false; code: "invalid_write"; message: string } {
-  if (parsed.blocks.length === 0) return { ok: true, nodes: [] };
-  if (parsed.blocks.length !== 1) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: "Text edits cannot introduce multiple blocks; use an insert/delete structural edit",
-    };
-  }
-  const block = parsed.blocks[0];
-  if (!block?.isTextblock) {
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: `Text edit content must parse to inline text, got ${block?.type.name ?? "nothing"}`,
-    };
-  }
-  const nodes: Block[] = [];
-  block.forEach((child) => {
-    nodes.push(child);
-  });
-  return { ok: true, nodes };
 }
 
 function canReplaceInline(block: PMNode): boolean {
@@ -388,21 +338,6 @@ function serializeBlockBodies(
     if (index !== undefined) selectedPmBlocks.push(pmBlocks[index]);
   }
   return codec.serializeBlockBodies(selectedPmBlocks);
-}
-
-function parseFailure(cause: unknown): InlineReplacementResult {
-  const record = cause instanceof Error ? cause : undefined;
-  const details: Record<string, unknown> = {};
-  const line = (cause as { line?: unknown } | null)?.line;
-  const column = (cause as { column?: unknown } | null)?.column;
-  if (typeof line === "number") details.line = line;
-  if (typeof column === "number") details.column = column;
-  return {
-    ok: false,
-    code: "invalid_write",
-    message: record?.message ?? String(cause),
-    ...(Object.keys(details).length > 0 ? { details } : {}),
-  };
 }
 
 function blockTypeMismatch(

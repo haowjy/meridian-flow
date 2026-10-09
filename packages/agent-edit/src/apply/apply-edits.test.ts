@@ -2,6 +2,7 @@
 
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -25,13 +26,7 @@ describe("applyEdits inline replacement", () => {
     const doc = createDoc("A **bold** plain");
     const [block] = baseModel.getBlocks(doc);
 
-    const result = applyEdits(
-      doc,
-      baseModel,
-      codec,
-      textEdit(block, { start: 5, end: 8 }, "X"),
-      origin,
-    );
+    const result = applyEdits(doc, baseModel, textEdit(block, { start: 5, end: 8 }, "X"), origin);
 
     expectOk(result);
     expect(baseModel.getText(block)).toBe("A bolXlain");
@@ -63,6 +58,7 @@ describe("applyEdits update fidelity", () => {
         kind: "insert",
         after: toRef(baseModel.getBlocks(doc)[0]),
         newText: "Inserted",
+        blocks: codec.parse("Inserted").blocks,
       }),
     ],
     [
@@ -84,7 +80,7 @@ describe("applyEdits update fidelity", () => {
     const fresh = cloneDoc(doc, 9);
     const prevVector = Y.encodeStateVector(doc);
 
-    const result = applyEdits(doc, baseModel, codec, makeEdit(doc), origin);
+    const result = applyEdits(doc, baseModel, makeEdit(doc), origin);
 
     expectOk(result);
     const update = Y.encodeStateAsUpdate(doc, prevVector);
@@ -106,7 +102,6 @@ describe("applyEdits preflight safety", () => {
     const result = applyEdits(
       doc,
       baseModel,
-      codec,
       [
         { documentId: "doc-1", file: "chapter.md", kind: "delete", block: toRef(alpha) },
         textEdit(alpha, { start: 0, end: 5 }, "Changed"),
@@ -137,7 +132,6 @@ describe("mutation and echo composition", () => {
     const result = applyEdits(
       local,
       baseModel,
-      codec,
       textEdit(localAlpha, { start: 6, end: 11 }, "blade"),
       origin,
     );
@@ -354,7 +348,7 @@ function textEdit(
     file: "chapter.md",
     kind: "textRanges",
     block: toRef(element),
-    replacements: [{ span, newText }],
+    replacements: [{ span, content: inlineText(newText) }],
     output: newText,
   };
 }
@@ -436,4 +430,11 @@ function liveXmlElementsInStore(doc: Y.Doc): Y.XmlElement[] {
     }
   }
   return elements;
+}
+
+/** Inline content of one markup paragraph, as the resolver hands it to apply. */
+function inlineText(markup: string): Fragment {
+  return markup.length === 0
+    ? Fragment.empty
+    : (codec.parse(markup).blocks[0]?.content ?? Fragment.empty);
 }

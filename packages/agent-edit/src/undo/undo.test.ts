@@ -7,6 +7,7 @@ import {
   PROSEMIRROR_FRAGMENT_NAME,
   RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
+import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -152,13 +153,12 @@ function applyAgentText(
   const result = applyEdits(
     ctx.doc,
     model,
-    codec,
     {
       documentId: DOC_ID,
       file: FILE,
       kind: "textRanges",
       block: toRef(block),
-      replacements: [{ span, newText }],
+      replacements: [{ span, content: inlineText(newText) }],
       output: newText,
     },
     threadOrigin(ctx, threadId),
@@ -176,13 +176,13 @@ function applyAgentInsert(
   const result = applyEdits(
     ctx.doc,
     model,
-    codec,
     {
       documentId: DOC_ID,
       file: FILE,
       kind: "insert",
       ...(after ? { after: toRef(after) } : {}),
       newText,
+      blocks: codec.parse(newText).blocks,
     },
     threadOrigin(ctx, threadId),
   );
@@ -194,7 +194,7 @@ function applyAgentEdits(
   threadId: string,
   edits: readonly ResolvedEdit[],
 ): void {
-  const result = applyEdits(ctx.doc, model, codec, edits, threadOrigin(ctx, threadId));
+  const result = applyEdits(ctx.doc, model, edits, threadOrigin(ctx, threadId));
   expectOk(result);
 }
 
@@ -230,7 +230,7 @@ function textEdit(
     file: FILE,
     kind: "textRanges",
     block: toRef(element),
-    replacements: [{ span, newText }],
+    replacements: [{ span, content: inlineText(newText) }],
     output: newText,
   };
 }
@@ -289,4 +289,9 @@ function casePartialReversal(): MatrixCase {
   });
   humanDeleteBlock(ctx, 2);
   return { ctx, turnId: "partial", expectedTexts: ["Alpha", "Beta"] };
+}
+
+/** Plain inline content standing in for a resolved text replacement. */
+function inlineText(text: string): Fragment {
+  return text.length === 0 ? Fragment.empty : Fragment.from(schema.text(text));
 }

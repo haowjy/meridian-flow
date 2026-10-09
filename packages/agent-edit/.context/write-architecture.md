@@ -61,7 +61,14 @@ summaries. The write/commit owner takes
 its own snapshots, merges concurrent updates, and produces the final echo.
 Preflight-before-mutate discipline: the write owner validates semantic IR,
 then apply validates all block references. Each edit is preflighted (content
-and offsets) before its transaction mutates the document. Every agent
+and offsets) before its transaction mutates the document.
+ProseMirror nodes are the resolver→apply currency: `insert` carries its
+`blocks`, `textRanges` replacements carry an inline `content` fragment, and
+`block` carries its replacement node. The resolver parses each write once
+(formatted finds parse their spliced range once); apply never parses or
+serializes, so a node attribute the markup codec does not spell survives to
+Yjs. Edit text (`insert.newText`, `textRanges.output`) is semantic-IR
+provenance only. Every agent
 text edit lowers through ProseMirror (`applyInlineReplacements`), the single
 inline mutation seam. `applyTextEdit` remains as the
 model's plain-text verb for undo repair and trims unchanged edge text before
