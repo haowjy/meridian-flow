@@ -7,9 +7,9 @@
  * resolution, so the resolver is registered once per scope and registered
  * again whenever any of them changes. Registering is the cache's only
  * invalidation: it forgets every answer and every failure the previous scope
- * produced. An Editor's scope also carries its document's change revision, so
- * a text change (a rename's rewrite arriving, say) drops the answers the old
- * text asked. Nothing else in the app pokes this cache. A click in flight
+ * produced. The holder's own text is not an input: an answer is keyed by the
+ * link's ref and href, and the same key names the same document whatever else
+ * the text says. Nothing else in the app pokes this cache. A click in flight
  * across a registration is asked again in the new one, so a rename or a
  * catalog refetch never turns into "could not be checked".
  *
@@ -43,7 +43,8 @@ import { createProjectLinkResolver, type LinkResolutionScope } from "./project-l
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
-  follow(target: LinkTarget, gesture?: LinkFollowDisposition): void;
+  /** `ref` is the stored link's ref; a link written as syntax (chat) has none. */
+  follow(target: LinkTarget, gesture?: LinkFollowDisposition, ref?: string | null): void;
   /** Close what is shown; if its follow is still asking, stop that follow. */
   dismiss(): void;
   /** Follow the shown outcome's link again, as the new owner of the dialog. */
@@ -58,6 +59,7 @@ export type LinkFollower = {
 type Shown = {
   owner: AbortController;
   target: LinkTarget;
+  ref: string | null;
   gesture: LinkFollowDisposition;
 };
 
@@ -98,7 +100,6 @@ export function useLinkFollower({
   const workId = ready?.workId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const holderDocumentId = ready?.holderDocumentId ?? null;
-  const documentRevision = ready?.documentRevision ?? 0;
 
   // The latest host callbacks, read when a follow needs them. A host passing a
   // fresh `open` or reporter object each render must not restart or abort
@@ -115,7 +116,7 @@ export function useLinkFollower({
     if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
       createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
-      { baseUri },
+      { baseUri, projectId, index },
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();
@@ -127,10 +128,8 @@ export function useLinkFollower({
     return () => queueMicrotask(unregister);
     // `index` stays the same object while its revision does, so a different one
     // is a different catalog: registering against it is how an answer about the
-    // old one becomes unreachable. The revision is the holder's own text
-    // changing: the same invalidation, so what a link was answered cannot
-    // outlive the words it was answered for.
-  }, [baseUri, documentRevision, holderDocumentId, index, projectId, resolution, workId]);
+    // old one becomes unreachable.
+  }, [baseUri, holderDocumentId, index, projectId, resolution, workId]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
@@ -187,7 +186,7 @@ export function useLinkFollower({
   const start = useCallback(
     // `retrying`: Try again. It owns the shown outcome from the start, so a
     // fast answer can clear the failure it replaces.
-    (target: LinkTarget, gesture: LinkFollowDisposition, retrying: boolean) => {
+    (target: LinkTarget, ref: string | null, gesture: LinkFollowDisposition, retrying: boolean) => {
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
@@ -197,10 +196,10 @@ export function useLinkFollower({
         currentFollow.current = controller;
       }
       inFlight.current.add(controller);
-      if (retrying) shown.current = { owner: controller, target, gesture };
+      if (retrying) shown.current = { owner: controller, target, ref, gesture };
       const owned: FollowReporter = {
         report(outcome) {
-          shown.current = { owner: controller, target, gesture };
+          shown.current = { owner: controller, target, ref, gesture };
           latest.current.reporter.report(outcome);
         },
         clear() {
@@ -222,6 +221,7 @@ export function useLinkFollower({
           });
       void followProjectLink({
         target,
+        ref,
         gesture,
         resolution,
         open: (document, how) => latest.current.open(document, how),
@@ -237,8 +237,8 @@ export function useLinkFollower({
   );
 
   const follow = useCallback(
-    (target: LinkTarget, gesture: LinkFollowDisposition = "current") =>
-      start(target, gesture, false),
+    (target: LinkTarget, gesture: LinkFollowDisposition = "current", ref: string | null = null) =>
+      start(target, ref, gesture, false),
     [start],
   );
 
@@ -254,7 +254,7 @@ export function useLinkFollower({
 
   const retry = useCallback(() => {
     const again = shown.current;
-    if (again) start(again.target, again.gesture, true);
+    if (again) start(again.target, again.ref, again.gesture, true);
   }, [start]);
 
   const followable = scope !== null;

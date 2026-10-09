@@ -9,6 +9,7 @@
  * serves the right-click menu, which must act on the link the pointer hit
  * rather than on wherever the caret happened to be.
  */
+import type { DocumentRef } from "@meridian/contracts";
 import { type Editor, getMarkRange } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import type { Mark } from "@tiptap/pm/model";
@@ -23,6 +24,8 @@ import {
   resolveAnchor,
   resolveAnchorIn,
 } from "../anchors";
+import { bindWrittenHref } from "./link-binding";
+import { getLinkResolution } from "./link-storage";
 import { normalizeLinkHref } from "./link-target";
 
 export type LinkSelection = {
@@ -71,6 +74,12 @@ export function linkHref(link: LinkSelection): string {
   return String(link.attributes.href ?? "");
 }
 
+/** The ref a resolved link carries (`doc:`/`ahead:`), or null for none. */
+export function linkRef(link: LinkSelection): string | null {
+  const { ref } = link.attributes;
+  return typeof ref === "string" && ref ? ref : null;
+}
+
 /**
  * A range that survives what ProseMirror's own mapping cannot — the shared
  * [`EditorAnchor`](../anchors.ts), under the name link surfaces know it by.
@@ -98,7 +107,16 @@ export type LinkDraft = LinkAnchor & {
   href: string;
 };
 
-export type LinkCommit = { text: string; href: string };
+export type LinkCommit = {
+  text: string;
+  href: string;
+  /**
+   * The document the writer picked, when they picked one (the form's document
+   * search): bound by its id, never by parsing `href`. Omitted, the href is
+   * bound like any written link.
+   */
+  ref?: DocumentRef;
+};
 
 export type LinkCommitResult = "applied" | "removed" | "invalid" | "refused";
 
@@ -198,15 +216,11 @@ export function commitLinkDraft(
 
   const normalized = normalizeLinkHref(href);
   if (!normalized) return "invalid";
+  const attrs = committedLinkAttrs(editor, draft, normalized, commit.ref);
 
   if (!draft.needsText && (!commit.text.trim() || commit.text === draft.text)) {
     const applied = runLinkEdit(editor, () =>
-      editor
-        .chain()
-        .focus()
-        .setTextSelection(range)
-        .setLink({ href: normalized, title: null })
-        .run(),
+      editor.chain().focus().setTextSelection(range).setLink(attrs).run(),
     );
     return applied ? "applied" : "refused";
   }
@@ -242,16 +256,38 @@ export function commitLinkDraft(
     const tr = state.tr;
     if (inserted) tr.replaceWith(from, to, state.schema.text(inserted, marks));
     else tr.delete(from, to);
-    tr.addMark(
-      range.from,
-      range.from + text.length,
-      linkType.create({ href: normalized, title: null }),
-    );
+    tr.addMark(range.from, range.from + text.length, linkType.create(attrs));
     editor.view.dispatch(tr);
     editor.commands.focus();
     return true;
   });
   return applied ? "applied" : "refused";
+}
+
+/**
+ * The attrs a committed link stores. Submitting an existing link's own
+ * destination unchanged keeps its attrs, ref included: relabelling a link is
+ * not retargeting it. Any other destination is a retarget and binds fresh,
+ * from the picked document or through `bindWrittenHref` against the holder
+ * and the editor's local index; nothing waits on the network.
+ */
+function committedLinkAttrs(
+  editor: Editor,
+  draft: LinkDraft,
+  href: string,
+  picked: DocumentRef | undefined,
+): { href: string; title: string | null; ref: string | null } {
+  if (!picked && draft.existing && draft.identity && href === draft.href) {
+    const { attrs } = draft.identity;
+    return {
+      href: String(attrs.href ?? href),
+      title: typeof attrs.title === "string" ? attrs.title : null,
+      ref: typeof attrs.ref === "string" ? attrs.ref : null,
+    };
+  }
+  if (picked) return { href, title: null, ref: picked };
+  const scope = getLinkResolution(editor)?.binding;
+  return { ...bindWrittenHref(href, scope?.holderUri ?? null, scope?.index ?? null), title: null };
 }
 
 /**
