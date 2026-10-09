@@ -58,6 +58,45 @@ export async function lockContextSources(
   db: Database,
   sourceIds: readonly string[],
 ): Promise<void> {
+  const rows = await sourceNamespaces(db, sourceIds);
+  await requireLockedActiveWorks(
+    db,
+    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
+  );
+  await lockAdvisoryKeys(db, [
+    ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
+    ...rows.map(contextNamespaceKey),
+  ]);
+}
+
+/**
+ * Namespace keys of the sources these documents occupy now, deleted rows included (a restore
+ * locks before it unhides). Arrivals that are not authored writes (Apply, Work restore) take
+ * these after their Work locks and before any holder lock (contract §9.2, O6).
+ */
+export async function lockDocumentNamespaces(
+  db: Database,
+  documentIds: readonly string[],
+): Promise<void> {
+  if (documentIds.length === 0) return;
+  const rows = await currentDrizzleDb(db)
+    .selectDistinct({ sourceId: documents.contextSourceId })
+    .from(documents)
+    .where(inArray(documents.id, [...new Set(documentIds)]));
+  await lockNamespaceKeys(
+    db,
+    await sourceNamespaces(
+      db,
+      rows.map((row) => row.sourceId),
+    ),
+  );
+}
+
+async function sourceNamespaces(
+  db: Database,
+  sourceIds: readonly string[],
+): Promise<ContextNamespace[]> {
+  if (sourceIds.length === 0) return [];
   const rows = await currentDrizzleDb(db)
     .select({
       projectId: contextSources.projectId,
@@ -70,21 +109,12 @@ export async function lockContextSources(
     .leftJoin(projects, eq(projects.id, contextSources.projectId))
     .leftJoin(works, eq(works.id, contextSources.workId))
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
-  await requireLockedActiveWorks(
-    db,
-    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
-  );
-  await lockAdvisoryKeys(db, [
-    ...rows.flatMap((row) => (row.scheme === "user" && row.userId ? [row.userId] : [])),
-    ...rows.map((row) =>
-      contextNamespaceKey({
-        projectId: (row.projectId ?? row.workProjectId) as string,
-        userId: row.userId ?? "",
-        workId: row.workId,
-        scheme: row.scheme,
-      }),
-    ),
-  ]);
+  return rows.map((row) => ({
+    projectId: (row.projectId ?? row.workProjectId) as string,
+    userId: row.userId ?? "",
+    workId: row.workId,
+    scheme: row.scheme,
+  }));
 }
 
 async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<void> {

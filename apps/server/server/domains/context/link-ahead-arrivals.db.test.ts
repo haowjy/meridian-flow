@@ -1,0 +1,336 @@
+/** Arrival hooks settle ahead refs once, against the final tree (contract §9.3–9.4, L1–L2). */
+import { randomUUID } from "node:crypto";
+import { toDocHandle } from "@meridian/agent-edit/integration";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import { createDb, type Database } from "@meridian/database";
+import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
+import {
+  contextSources,
+  documents,
+  linkAheadRefs,
+  projects,
+  users,
+  works,
+} from "@meridian/database/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { afterAll, describe, expect, it } from "vitest";
+import * as Y from "yjs";
+import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
+import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import {
+  createHarness,
+  PROJECT_ID,
+  resetDatabase,
+  SOURCE_ID,
+  THREAD_ID,
+  USER_ID,
+  WORK_ID,
+} from "../collab/test-support/change-trail-postgres-harness.js";
+import { createNoopEventSink } from "../observability/index.js";
+import { lockNamespaceKeys } from "./adapters/context-fs/document-locations.js";
+import { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
+import { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
+
+const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
+describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (postgres)", () => {
+  // Registration and uploads commit in their own root transactions: committed-data isolation.
+  const db = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 6 });
+  const gate = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 2 });
+  const probe = createDb(process.env.DATABASE_URL ?? "postgres://unused", { max: 2 });
+  afterAll(async () => {
+    await deleteDrizzleRows(db, [users]);
+    await Promise.all([db.close(), gate.close(), probe.close()]);
+  });
+
+  const settlement = async (aheadId: string) => {
+    const [row] = await db.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, aheadId));
+    return row?.settledDocumentId ?? null;
+  };
+
+  it("create, upload, folder move-in and Work restore each settle once against the final tree", async () => {
+    await deleteDrizzleRows(db, [users]);
+    const userId = randomUUID();
+    const projectId = randomUUID();
+    const workId = randomUUID();
+    await db.insert(users).values(conformanceUserValues(userId, "ahead-arrivals"));
+    await db.insert(projects).values({ id: projectId, userId, name: "Arrivals", slug: "arrivals" });
+    await db.insert(works).values([
+      { projectId, createdByUserId: userId, name: "No Work", isNoWork: true },
+      { id: workId, projectId, createdByUserId: userId, name: "Draft", slug: "draft" },
+    ]);
+    await db.insert(contextSources).values([
+      {
+        projectId,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      },
+      { workId, name: "Scratch", slug: "scratch", scope: "work" },
+    ]);
+    const ports = await createProductionAppPorts({
+      db,
+      eventSink: createNoopEventSink(),
+      environment: { OPENAI_API_KEY: "sk-test-ahead-arrivals" },
+    });
+    const app = composeAppServices(ports);
+    try {
+      const authority = await ports.workAuthorityResolver.byId(projectId, workId);
+      if (!authority?.workSlug) throw new Error("Fixture Work missing");
+      const port = app.contextPorts.forProject(
+        projectId,
+        userId,
+        new Map([[authority.workSlug, authority]]),
+      );
+      const register = (address: string) => {
+        const aheadId = randomUUID();
+        return app.linkAheadRegistry
+          .register([{ aheadId, holderProjectId: projectId as never, address }])
+          .then(() => aheadId);
+      };
+      const create = async (uri: string) => {
+        const created = await port.createTrackedDocument(uri, "");
+        if (!created.ok) throw new Error(JSON.stringify(created.error));
+        return created.value.documentId;
+      };
+
+      // Tracked create, then delete and recreate at the same path: the second never captures.
+      const chapter = await register("manuscript://ch1.md");
+      expect(await settlement(chapter)).toBeNull();
+      const first = await create("manuscript://ch1.md");
+      expect(await settlement(chapter)).toBe(first);
+      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, first));
+      const second = await create("manuscript://ch1.md");
+      expect(second).not.toBe(first);
+      expect(await settlement(chapter)).toBe(first);
+
+      // A manuscript image: live membership is published after the upload commits.
+      const image = await register("manuscript://art/map.png");
+      const upload = await port.writeBinary("manuscript://art/map.png", {
+        fileType: "image",
+        storageUrl: "memory://map.png",
+        mimeType: "image/png",
+        sizeBytes: 3,
+      });
+      if (!upload.ok) throw new Error(JSON.stringify(upload.error));
+      const [map] = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(and(eq(documents.name, "map"), eq(documents.extension, "png")));
+      expect(await settlement(image)).toBe(map?.id);
+
+      // Folder move-in settles against the moved tree; the ref at the vacated path stays put.
+      const moved = await create("manuscript://drafts/ch2.md");
+      const vacated = await register("manuscript://drafts/ch2.md");
+      expect(await settlement(vacated)).toBe(moved);
+      const destination = await register("manuscript://part-two/ch2.md");
+      expect(await port.move("manuscript://drafts", "manuscript://part-two")).toMatchObject({
+        ok: true,
+      });
+      expect(await settlement(destination)).toBe(moved);
+      expect(await settlement(vacated)).toBe(moved);
+
+      // Work restore: the hidden document reappears at its address and settles the waiting ref.
+      const notes = await create("scratch://@draft/notes.md");
+      await ports.workRepo.softDelete(workId as WorkId);
+      // A ref that missed the arrival (client window): unsettled while the Work was deleted.
+      const waiting = randomUUID();
+      await db.insert(linkAheadRefs).values({
+        aheadId: waiting,
+        projectId: projectId as never,
+        scheme: "scratch",
+        workId: workId as WorkId,
+        path: "notes.md",
+      });
+      await ports.workRepo.restore(workId as WorkId);
+      expect(await settlement(waiting)).toBe(notes);
+    } finally {
+      await app.shutdown();
+    }
+  });
+
+  it("Apply settles in the completion that publishes membership, Work → namespace → holder", async () => {
+    await resetDatabase(db);
+    const registryFor = (harness: () => ReturnType<typeof createHarness>) =>
+      createDrizzleDocumentArrivals(
+        db,
+        createDrizzleLinkAheadRegistry(db, (input) =>
+          harness().crossWorkProbeFixture().branchStore.resolveManifestMembership(input),
+        ),
+      );
+    let crash = false;
+    let warm!: ReturnType<typeof createHarness>;
+    warm = createHarness(db, {
+      arrivals: registryFor(() => warm),
+      afterDurableCommit: async () => {
+        if (crash) {
+          crash = false;
+          throw new Error("crash after the durable push commit");
+        }
+      },
+    });
+    const fixture = warm.crossWorkProbeFixture();
+    const registry = createDrizzleLinkAheadRegistry(db, (input) =>
+      fixture.branchStore.resolveManifestMembership(input),
+    );
+
+    /** A document the draft creates: SQL identity and a Work-draft manifest entry only. */
+    async function draftCreate(name: string) {
+      const documentId = randomUUID() as DocumentId;
+      await db.insert(documents).values({
+        id: documentId,
+        contextSourceId: SOURCE_ID,
+        name,
+        extension: "md",
+        fileType: "markdown",
+      });
+      await fixture.persistence.lifecycle.ensureDocument(documentId);
+      const emptyLive = new Y.Doc({ gc: false });
+      const branch = await fixture.branchStore.ensureWorkDraftBranch({
+        documentId,
+        workId: WORK_ID,
+        liveDoc: emptyLive,
+      });
+      emptyLive.destroy();
+      const content = new Y.Doc({ gc: false });
+      fixture.model.insertBlocks(
+        toDocHandle(content),
+        null,
+        fixture.markupCodec.parse(`${name} text.`),
+      );
+      await fixture.branchCoordinator.commitUpdate({
+        branchId: branch.branchId,
+        updateData: Y.encodeStateAsUpdate(content),
+        source: "agent",
+        threadId: THREAD_ID,
+      });
+      content.destroy();
+      await fixture.branchStore.recordManifestDocumentCreated(documentId, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        threadId: THREAD_ID,
+      });
+      const aheadId = randomUUID();
+      await registry.register([
+        { aheadId, holderProjectId: PROJECT_ID as never, address: `manuscript://${name}.md` },
+      ]);
+      // The SQL row exists, but only the draft's manifest holds it: not an arrival yet.
+      expect(await settlement(aheadId)).toBeNull();
+      return { documentId, aheadId };
+    }
+    const apply = async (documentId: DocumentId) => {
+      const drafts = await fixture.collab.draftReview.list({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+      });
+      const draft = drafts.find((candidate) => candidate.documentId === documentId);
+      if (!draft) throw new Error(`missing draft for ${documentId}`);
+      return fixture.collab.draftReview.applyWorkDraft({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        documentId,
+        draftId: draft.draftId,
+        userId: USER_ID as never,
+      });
+    };
+
+    // Single, warm: the completion queues on the namespace key holding the Work lock and no
+    // holder lock, then settles in the same transaction that publishes membership.
+    const single = await draftCreate("arrival-one");
+    const [manifest] = await db
+      .select({ id: documents.id })
+      .from(documents)
+      .where(eq(documents.kind, "manifest"));
+    const namespace = {
+      projectId: PROJECT_ID,
+      userId: USER_ID,
+      scheme: "manuscript",
+      workId: null,
+    };
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked!: () => void;
+    const taken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const gateTx = runInDrizzleTransaction(gate, async () => {
+      await lockNamespaceKeys(gate, [namespace]);
+      locked();
+      await held;
+    });
+    try {
+      await taken;
+      const applying = apply(single.documentId);
+      await waitForNamespaceWaiter(db, `context-project:${PROJECT_ID}:none:manuscript`);
+      const holderFree = await probe.transaction(async (tx) => {
+        const [row] = await tx.execute<{ free: boolean }>(
+          sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${`document-mutation:${manifest?.id}`}, 0::bigint)) AS free`,
+        );
+        return row?.free;
+      });
+      const work = await probe
+        .transaction((tx) =>
+          tx.execute(sql`SELECT id FROM works WHERE id = ${WORK_ID} FOR NO KEY UPDATE NOWAIT`),
+        )
+        .then(
+          () => "free",
+          () => "locked",
+        );
+      const order = { holderFree, work };
+      expect(order).toEqual({ holderFree: true, work: "locked" });
+      expect(await settlement(single.aheadId)).toBeNull();
+      release();
+      await expect(applying).resolves.toMatchObject({ status: "applied" });
+      expect(await settlement(single.aheadId)).toBe(single.documentId);
+    } finally {
+      release();
+      await gateTx;
+    }
+
+    // Batch: switching the Work to auto-apply pushes every pending draft.
+    const batch = [await draftCreate("arrival-two"), await draftCreate("arrival-three")];
+    await expect(
+      fixture.realBranchPush.setWorkPushPolicy({
+        workId: WORK_ID as WorkId,
+        policy: "auto",
+        pending: "apply",
+      }),
+    ).resolves.toMatchObject({ status: "updated" });
+    for (const arrival of batch) {
+      expect(await settlement(arrival.aheadId)).toBe(arrival.documentId);
+    }
+    await db.update(works).set({ aiWriteMode: "draft" }).where(eq(works.id, WORK_ID));
+
+    // Recovered: a crash after the durable commit leaves membership and settlement unpublished
+    // together; recovery runs the same completion and publishes both.
+    const recovered = await draftCreate("arrival-four");
+    crash = true;
+    await expect(apply(recovered.documentId)).rejects.toThrow("crash after the durable push");
+    expect(await settlement(recovered.aheadId)).toBeNull();
+    await db.execute(
+      sql`UPDATE branch_push_settlement_outbox SET lease_expires_at = to_timestamp(0), available_at = to_timestamp(0) WHERE state = 'pending'`,
+    );
+    let cold!: ReturnType<typeof createHarness>;
+    cold = createHarness(db, { arrivals: registryFor(() => cold) });
+    expect(await cold.recoverPendingLiveSettlements()).toBeGreaterThan(0);
+    expect(await settlement(recovered.aheadId)).toBe(recovered.documentId);
+    warm.destroyWarmState();
+    cold.destroyWarmState();
+  });
+});
+
+async function waitForNamespaceWaiter(db: Database, key: string) {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    const rows = await db.execute<{ waiting: number }>(sql`
+      SELECT count(*)::int AS waiting FROM pg_locks l
+      WHERE l.locktype = 'advisory' AND NOT l.granted
+        AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+        AND ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended(${key}, 0::bigint)`);
+    if ((rows[0]?.waiting ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`nothing queued behind ${key}`);
+}

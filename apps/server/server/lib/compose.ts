@@ -36,6 +36,7 @@ import {
   createDocumentRevisions,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
+  createDrizzleDocumentArrivals,
   createDrizzleDocumentAssetPaths,
   createDrizzleDocumentLinkHistory,
   createDrizzleFigureDocumentRepository,
@@ -508,8 +509,17 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
+  // Built before the collab domain it serves: membership binds late, like the catalog's.
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, (input) => {
+    if (!boundManifestMembership) {
+      throw new Error("Manifest membership resolver used before the collab domain was bound");
+    }
+    return boundManifestMembership.resolveManifestMembership(input);
+  });
+  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const documentSync = createCollabDomain({
     db,
+    arrivals,
     fileAccess,
     assetPaths,
     eventSink,
@@ -540,10 +550,6 @@ export async function createProductionAppPorts(input: {
     },
   });
   boundManifestMembership = documentSync;
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
-    db,
-    documentSync.resolveManifestMembership,
-  );
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     objectStore,
@@ -565,6 +571,7 @@ export async function createProductionAppPorts(input: {
     kickLinkUpdates: linkUpdates.kick,
     catalogMutations: contextCatalog,
     eventSink,
+    arrivals,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, contextCatalog),
@@ -603,6 +610,7 @@ export async function createProductionAppPorts(input: {
     db,
     projectionMutation: workProjectionMutation,
     fileAccessChanges,
+    arrivals,
   });
   const creditLedger = createDrizzleCreditLedger(db);
   const stripeGateway = stripeReady(environment)

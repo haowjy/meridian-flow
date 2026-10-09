@@ -5,6 +5,7 @@ export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
+export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
@@ -87,6 +88,7 @@ export type {
   WriteProvenance,
 } from "./ports/context-port.js";
 export type { DocumentAddressResolver } from "./ports/document-address.js";
+export type { DocumentArrivals } from "./ports/document-arrivals.js";
 export type {
   DocumentLinkResolver,
   DocumentLinkTarget,

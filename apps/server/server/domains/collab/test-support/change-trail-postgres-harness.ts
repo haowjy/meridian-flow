@@ -16,6 +16,7 @@ import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
+import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
@@ -244,6 +245,8 @@ export type ChangeTrailHarnessOptions = {
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
   afterLiveApply?: () => void;
+  /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
+  arrivals?: DocumentArrivals;
 };
 
 export type MatrixDraftStep = {
@@ -379,6 +382,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       resolvePersistedDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
     ),
     notices,
+    undefined,
+    options.arrivals,
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
     const doc = hocuspocus.documents.get(documentId);

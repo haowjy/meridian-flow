@@ -118,7 +118,12 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     let settled = 0;
     for (const documentId of new Set(documentIds)) {
       const address = await this.currentAddress(documentId);
-      if (address && (await this.isLive(address, documentId))) {
+      // Every arrival calls this; the manifest read is paid only when a ref waits here.
+      if (
+        address &&
+        (await this.hasUnsettled(address)) &&
+        (await this.isLive(address, documentId))
+      ) {
         settled += await this.settle(address, documentId);
       }
     }
@@ -293,6 +298,26 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return (await this.isLive(address, documentId)) ? documentId : null;
   }
 
+  private async hasUnsettled(address: Address): Promise<boolean> {
+    const [row] = await currentDrizzleDb(this.db)
+      .select({ id: linkAheadRefs.aheadId })
+      .from(linkAheadRefs)
+      .where(and(this.atAddress(address), isNull(linkAheadRefs.settledDocumentId)))
+      .limit(1);
+    return Boolean(row);
+  }
+
+  private atAddress(address: Address) {
+    return and(
+      eq(linkAheadRefs.projectId, address.projectId),
+      eq(linkAheadRefs.scheme, address.scheme),
+      address.workId === null
+        ? isNull(linkAheadRefs.workId)
+        : eq(linkAheadRefs.workId, address.workId),
+      eq(linkAheadRefs.path, address.path),
+    );
+  }
+
   /** Compare-and-set on `settled_document_id IS NULL`; at most one settler wins a row. */
   private async settle(address: Address, documentId: string, aheadId?: string): Promise<number> {
     const rows = await currentDrizzleDb(this.db)
@@ -300,12 +325,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       .set({ settledDocumentId: documentId, settledAt: new Date() })
       .where(
         and(
-          eq(linkAheadRefs.projectId, address.projectId),
-          eq(linkAheadRefs.scheme, address.scheme),
-          address.workId === null
-            ? isNull(linkAheadRefs.workId)
-            : eq(linkAheadRefs.workId, address.workId),
-          eq(linkAheadRefs.path, address.path),
+          this.atAddress(address),
           isNull(linkAheadRefs.settledDocumentId),
           aheadId ? eq(linkAheadRefs.aheadId, aheadId) : undefined,
         ),
