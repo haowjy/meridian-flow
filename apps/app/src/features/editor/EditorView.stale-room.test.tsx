@@ -7,7 +7,7 @@
  * review must then bind the new generation's room.
  */
 
-import { branchRoomName } from "@meridian/contracts/protocol";
+import { branchRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -84,6 +84,7 @@ const pool = new BranchRoomPool({
       roomKey,
       persistence: { kind: "none" },
       transportFactory: () => ({
+        unacknowledgedUpdates: () => null,
         synced: true,
         whenSynced: Promise.resolve(),
         subscribeStatus: (listener) => {
@@ -159,7 +160,7 @@ afterEach(() => pool.invalidate());
 
 describe("a reset review room with its two owners", () => {
   it.each([
-    "branch-generation-stale",
+    WS_CLOSE.BRANCH_GENERATION_STALE.reason,
     "branch-stale-doc",
   ] as const)("binds the next generation's room after %s", async (reason) => {
     const oldRoom = branchRoomName(`stale-room-${reason}`, 1);
@@ -184,7 +185,13 @@ describe("a reset review room with its two owners", () => {
         mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
         // The reset arrives inside a React flush, so the editor's and the refresh's cleanups
         // run while the old session is still retiring.
-        await act(async () => transportStatus.get(oldRoom)?.({ kind: "reset", reason }));
+        await act(async () =>
+          transportStatus.get(oldRoom)?.({
+            kind: "reset",
+            reason,
+            disposition: reason === WS_CLOSE.BRANCH_STALE.reason ? "rebuild" : "superseded",
+          }),
+        );
 
         await vi.waitFor(() => expect(review?.controller.reviewRoomName).toBe(newRoom));
         await vi.waitFor(() => expect(surfaces()).toEqual(["review"]));

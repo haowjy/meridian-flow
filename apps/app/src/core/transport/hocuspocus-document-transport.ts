@@ -39,12 +39,13 @@ import {
 } from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import type { Awareness } from "y-protocols/awareness";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import type {
   DocumentSessionAccess,
   DocumentSessionConnectionState,
   DocumentSessionResetReason,
   DocumentSessionTransportProvider,
+  ResetDisposition,
 } from "@/core/editor/document-session";
 
 import type { ConnectivityHintsPort } from "./connectivity-hints";
@@ -185,34 +186,32 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
   return { kind: "unauthorized", reason, code };
 }
 
-function resetState(
-  reason: DocumentSessionResetReason,
-  code?: number,
-): DocumentSessionConnectionState {
-  return { kind: "reset", reason, code };
-}
-
-function branchResetReason(reason: string): DocumentSessionResetReason | null {
-  if (reason === "branch-generation-stale") return "branch-generation-stale";
-  if (reason === WS_CLOSE.BRANCH_STALE.reason) return WS_CLOSE.BRANCH_STALE.reason;
-  return null;
-}
+const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
+  [WS_CLOSE.BRANCH_GENERATION_STALE.reason]: "superseded",
+  [WS_CLOSE.BRANCH_STALE.reason]: "rebuild",
+  [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
+  [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
+  [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
+};
 
 export function classifyDocumentTransportClose(
   roomName: string,
-  event: { code: number; reason: string },
+  event: { code?: number; reason: string },
+  hasUnacknowledgedEdits = false,
 ): DocumentSessionConnectionState | null {
-  if (isTerminalDenialClose(event)) return terminalState(event.reason, event.code);
-  if (event.code === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.code) {
-    return resetState(WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason, event.code);
+  const reason = event.reason as DocumentSessionResetReason;
+  const disposition = Object.hasOwn(RESET_DISPOSITIONS, reason) ? RESET_DISPOSITIONS[reason] : null;
+  if (disposition) {
+    if (
+      (disposition === "superseded" || disposition === "rebuild") &&
+      !roomName.startsWith("branch:")
+    )
+      return null;
+    if (disposition === "refused" && !hasUnacknowledgedEdits) return null;
+    return { kind: "reset", reason, disposition, code: event.code };
   }
-  if (event.code === WS_CLOSE.DOCUMENT_SCHEMA_STALE.code) {
-    return resetState(WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason, event.code);
-  }
-  const branchReason = branchResetReason(event.reason);
-  if (roomName.startsWith("branch:") && branchReason) {
-    return resetState(branchReason, event.code);
-  }
+  if (event.code !== undefined && isTerminalDenialClose({ code: event.code, reason: event.reason }))
+    return terminalState(event.reason, event.code);
   return null;
 }
 
@@ -234,7 +233,7 @@ export function createHocuspocusDocumentTransport({
   const changeEventListeners = new Set<(message: ChangeEventWsMessage) => void>();
   const acknowledgementListeners = new Set<(acknowledged: boolean) => void>();
   const acknowledgement = createServerAcknowledgementTracker((acknowledged) => {
-    if (acknowledged) localEditsPending = false;
+    if (acknowledged && !terminal) outbox = null;
     for (const listener of acknowledgementListeners) listener(acknowledged);
   });
   const websocket = new RoomScopedHocuspocusWebsocket(
@@ -248,8 +247,7 @@ export function createHocuspocusDocumentTransport({
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.
   let currentAccess: DocumentSessionAccess | null = null;
-  // A local update the server has not yet acknowledged.
-  let localEditsPending = false;
+  let outbox: Uint8Array | null = null;
   let terminal = false;
   let destroyed = false;
   let resolveSynced!: () => void;
@@ -276,6 +274,7 @@ export function createHocuspocusDocumentTransport({
   function publishTerminal(state: DocumentSessionConnectionState): void {
     if (terminal) return;
     terminal = true;
+    document.off("update", handleDocumentUpdate);
     stopHints();
     acknowledgement.endConnection();
     publish(state);
@@ -298,14 +297,14 @@ export function createHocuspocusDocumentTransport({
   }
 
   let observedClientID = document.clientID;
-  function handleDocumentUpdate(_update: Uint8Array, origin: unknown): void {
+  function handleDocumentUpdate(update: Uint8Array, origin: unknown): void {
     if (observedClientID !== document.clientID) {
       observedClientID = document.clientID;
       if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_OVERLAY === "1") {
         notifyYjsRoomAttached(roomName, observedClientID);
       }
     }
-    if (origin !== provider) localEditsPending = true;
+    if (origin !== provider) outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
   }
 
   function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
@@ -315,19 +314,16 @@ export function createHocuspocusDocumentTransport({
 
   function handleAuthenticationFailed({ reason }: onAuthenticationFailedParameters): void {
     if (destroyed) return;
-    publishTerminal(terminalState(reason));
+    publishTerminal(classifyDocumentTransportClose(roomName, { reason }) ?? terminalState(reason));
   }
 
   function handleClose({ event }: onCloseParameters): void {
     if (terminal || destroyed) return;
-    if (event.code === WS_CLOSE.ACCESS_CHANGED.code) {
+    if (event.reason === WS_CLOSE.ACCESS_CHANGED.reason) {
       // Frozen until the reconnect's authenticated message names the new scope.
       publishAccess("read");
-      if (localEditsPending)
-        publishTerminal(resetState(WS_CLOSE.ACCESS_CHANGED.reason, event.code));
-      return;
     }
-    const state = classifyDocumentTransportClose(roomName, event);
+    const state = classifyDocumentTransportClose(roomName, event, outbox !== null);
     if (state) publishTerminal(state);
   }
 
@@ -374,6 +370,7 @@ export function createHocuspocusDocumentTransport({
   if (provider.synced) resolveSynced();
 
   return {
+    unacknowledgedUpdates: () => outbox,
     get synced() {
       return provider.synced;
     },
