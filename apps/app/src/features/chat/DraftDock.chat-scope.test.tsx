@@ -23,6 +23,7 @@ import { useDraftDock } from "./useDraftDock";
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 const navigate = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
+  vi.useFakeTimers();
   resetDraftCommandRecords();
   navigate.mockClear();
   i18n.loadAndActivate({ locale: "en", messages: {} });
@@ -33,6 +34,7 @@ beforeEach(() => {
 afterEach(() => {
   fixture.dispose();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 const pacing = { threadId: "thread-a", title: "Pacing pass" };
 const lore = { threadId: "thread-b", title: "Lore pass" };
@@ -64,6 +66,21 @@ const click = (name: string) =>
     expect(button).toBeDefined();
     button?.click();
   });
+
+/** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
+async function settled(check: () => void) {
+  for (let attempt = 0; ; attempt += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25);
+    });
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (attempt === 19) throw error;
+    }
+  }
+}
 
 it("hides the queued chat batch, restores only the refused file, then discards its shared selection", async () => {
   const network = fixture.network;
@@ -98,7 +115,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
   network.discardDraft.mockResolvedValue({ ...discarded(false), draftId: "draft-chapter-12" });
   await fixture.render(
     async (probe) => {
-      await vi.waitFor(() => expect(text()).toContain("3 changes"));
+      await settled(() => expect(text()).toContain("3 changes"));
       expect(text()).toContain("Lore pass");
       await click("Apply");
       expect(strip()).toBeNull();
@@ -116,7 +133,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
         ],
       ]);
       await act(async () => first.resolve({ status: "stale", draftId: "draft-chapter-12" }));
-      await vi.waitFor(() => expect(network.applyDraftChanges).toHaveBeenCalledTimes(2));
+      await settled(() => expect(network.applyDraftChanges).toHaveBeenCalledTimes(2));
       expect(network.applyDraftChanges.mock.calls[1]).toEqual([
         "project-a",
         "work-a",
@@ -128,7 +145,7 @@ it("hides the queued chat batch, restores only the refused file, then discards i
           draftRevisionToken: "draft-14",
         },
       ]);
-      await vi.waitFor(() =>
+      await settled(() =>
         expect(text()).toContain(
           "This chat's changes in chapter-12 were updated. Check them and apply again.",
         ),
@@ -139,14 +156,14 @@ it("hides the queued chat batch, restores only the refused file, then discards i
       await act(async () =>
         second.resolve({ ...applied(false, "7"), draftId: "draft-chapter-14" }),
       );
-      await vi.waitFor(() => expect(probe().chat.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().chat.controller.isDisposing).toBe(false));
       const remaining = await probe().mountDraftChanges({
         projectId: "project-a",
         workId: "work-a",
         documentId: "chapter-14",
         draftId: "draft-chapter-14",
       });
-      await vi.waitFor(() =>
+      await settled(() =>
         expect(remaining().items.map((item) => item.change.operationIds)).toEqual([["8"]]),
       );
       await click("Discard");
@@ -163,14 +180,14 @@ it("hides the queued chat batch, restores only the refused file, then discards i
           },
         ],
       ]);
-      await vi.waitFor(() => expect(strip()).toBeNull());
+      await settled(() => expect(strip()).toBeNull());
       const writer = await probe().mountDraftChanges({
         projectId: "project-a",
         workId: "work-a",
         documentId: "chapter-12",
         draftId: "draft-chapter-12",
       });
-      await vi.waitFor(() =>
+      await settled(() =>
         expect(writer().items.map((item) => item.change.operationIds)).toEqual([["4"]]),
       );
       expect(navigate).not.toHaveBeenCalled();

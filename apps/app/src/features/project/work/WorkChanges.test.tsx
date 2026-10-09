@@ -28,6 +28,7 @@ let room: Doc;
 const retain = vi.fn();
 const navigate = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
+  vi.useFakeTimers();
   resetDraftCommandRecords();
   navigate.mockClear();
   i18n.loadAndActivate({ locale: "en", messages: {} });
@@ -46,6 +47,7 @@ afterEach(() => {
   fixture.dispose();
   room.destroy();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 const draftB = {
   ...listed,
@@ -95,6 +97,21 @@ const click = (label: string) =>
     button(label)?.click();
   });
 
+/** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
+async function settled(check: () => void) {
+  for (let attempt = 0; ; attempt += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25);
+    });
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (attempt === 19) throw error;
+    }
+  }
+}
+
 it("applies an unopened C row, then discards every C draft despite filtering without moving Editor A", async () => {
   const network = fixture.network;
   network.listWorkDrafts.mockImplementation(async (_project, work) => ({
@@ -113,13 +130,13 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
   }));
   await fixture.render(
     async (probe) => {
-      await vi.waitFor(() => expect(probe().third.groups).toHaveLength(2));
+      await settled(() => expect(probe().third.groups).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-      await vi.waitFor(() => expect(probe().header.view.items).toHaveLength(2));
+      await settled(() => expect(probe().header.view.items).toHaveLength(2));
       const editorReview = probe().editor.controller.inlineReview;
-      await vi.waitFor(() => expect(retain).toHaveBeenCalled());
+      await settled(() => expect(retain).toHaveBeenCalled());
       await click("Changes in Chapter 13");
-      await vi.waitFor(() =>
+      await settled(() =>
         expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(2),
       );
       await act(async () =>
@@ -146,7 +163,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       expect(probe().third.controller.inlineReview).toBeNull();
       expect(probe().editor.controller.inlineReview).toEqual(editorReview);
       await act(async () => answer.resolve({ ...applied(false, "1"), draftId: "draft-b" }));
-      await vi.waitFor(() => expect(probe().third.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().third.controller.isDisposing).toBe(false));
       await click("Filter files");
       expect(button("Changes in Filtered chapter")).toBeUndefined();
       await act(async () =>
@@ -158,13 +175,13 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       expect(document.body.textContent).toContain("Discard all changes?");
       expect(network.discardDraft).not.toHaveBeenCalled();
       await click("Discard");
-      await vi.waitFor(() =>
+      await settled(() =>
         expect(network.discardDraft.mock.calls).toEqual([
           ["project-a", "work-c", "document-b", { draftId: "draft-b" }],
           ["project-a", "work-c", "document-c", { draftId: "draft-c" }],
         ]),
       );
-      await vi.waitFor(() => expect(probe().third.controller.isDisposing).toBe(false));
+      await settled(() => expect(probe().third.controller.isDisposing).toBe(false));
       expect(probe().editor.controller.inlineReview).toEqual(editorReview);
       expect(probe().header.view.items.map((item) => item.change.operationIds)).toEqual([
         ["1"],
