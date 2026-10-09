@@ -3,14 +3,11 @@
  * surface (transcript, composer, Editor) draws the same thing by emitting the
  * same attributes and never restyles it locally.
  *
- * Internal links are a tag chip (`core/editor/links/link-chip.ts`). A chip is
- * either an element carrying `data-link-chip` (filled or dashed) and
- * `data-link-chip-icon` (the document family), or an `<a>` whose descendants
- * carry `data-link-chip-part` and the icon: the Editor, where the link mark is
- * one `<a>` around the whole label but its state rides decoration spans inside
- * it, one per text node. Drawing the box on the `<a>` keeps a label with mixed
- * formatting one chip, and leaves the marked text, the caret, and the Yjs
- * document exactly as they were. Each family's mask image arrives as
+ * Internal links are a tag chip (`core/editor/links/link-chip.ts`): an element
+ * carrying `data-link-chip` (filled or dashed) and `data-link-chip-icon` (the
+ * document family). In the Editor that element is the link mark's `<a>`, one
+ * element around the whole label, so a label with mixed formatting is one
+ * chip. Each family's mask image arrives as
  * `--link-chip-icon` from `family-icons.ts`, injected once into the document
  * head, so the shapes are defined in one place.
  *
@@ -27,8 +24,7 @@
  * chip is an anchor inside rendered prose.
  */
 
-/* `:is()` lists the two forms of one chip; every rule below names both. */
-:is([data-link-chip], a:has([data-link-chip-part])) {
+[data-link-chip] {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background-color: var(--link-chip-fill, var(--color-muted));
@@ -48,7 +44,7 @@
    inline-block: an atomic inline is a line-break opportunity, so the icon
    could end one line and the name start the next. An inline box glued to the
    first word cannot be separated from it. */
-:is([data-link-chip], a:has([data-link-chip-part]))::before {
+[data-link-chip]::before {
   padding-left: 0.95em;
   margin-right: 0.25em;
   background-color: var(--color-muted-foreground);
@@ -64,7 +60,7 @@
    before they write them, so this is an outline, never a warning. The dashed
    border carries the quietness; the name stays at reading contrast (muted ink
    is at least 4.5:1 on every surface a chip sits on, hovered or not). */
-:is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"])) {
+[data-link-chip="dashed"] {
   border-color: var(--color-border);
   border-style: dashed;
   background-color: transparent;
@@ -72,31 +68,27 @@
 }
 
 /* Prose gives bold its own ink; inside a quiet chip it stays quiet. */
-:is([data-link-chip="dashed"], a:has([data-link-chip-part="dashed"])) strong {
+[data-link-chip="dashed"] strong {
   color: inherit;
 }
 
 /* Only a chip that goes somewhere answers the pointer. A transcript or
-   composer chip says so with an enabled `role="link"`; an Editor chip goes
-   somewhere unless its document is gone (a plain click follows it), so its
-   anchor form answers without needing a role, and a gone one, like chat's
-   unavailable reference, does not answer at all. */
-:is(
-  [data-link-chip][role="link"]:not([aria-disabled="true"]),
-  a:has([data-link-chip-part]):not(:has([data-link-state="gone"]))
-):hover {
+   composer chip says so with an enabled `role="link"`; an Editor chip is its
+   link mark's `<a>`, which goes somewhere unless its document is gone (a plain
+   click follows it), so it answers without needing a role, and a gone one is
+   `aria-disabled` and, like chat's unavailable reference, does not answer. */
+:is([data-link-chip][role="link"], a[data-link-chip]):not([aria-disabled="true"]):hover {
   background-color: var(--link-chip-fill-hover, var(--color-sidebar-accent));
 }
 
-:is(
-  [data-link-chip="dashed"][role="link"]:not([aria-disabled="true"]),
-  a:has([data-link-chip-part="dashed"]):not(:has([data-link-state="gone"]))
+:is([data-link-chip="dashed"][role="link"], a[data-link-chip="dashed"]):not(
+  [aria-disabled="true"]
 ):hover {
   background-color: var(--link-chip-fill, var(--color-muted));
 }
 
 /* The outline replaces prose links' focus glow, which would ring the box twice. */
-:is([data-link-chip], a:has([data-link-chip-part])):focus-visible {
+[data-link-chip]:focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
   box-shadow: none;
