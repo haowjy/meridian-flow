@@ -15,9 +15,10 @@ It is not a thread replica: no assistant turns, no cursors, no rendered rows.
   record/retire takes an explicit `accountId` and is refused when it is not the
   current bind. Reads for a non-current account return nothing.
 - Store the exact dispatch fingerprint fields (text, blocks, references,
-  activatedSkillSlugs). A replay with the same `submissionId` but different
-  payload trips the server's `idempotency_conflict`. Never persist the TipTap
-  draft snapshot.
+  activatedSkillSlugs) for every kind, a new chat's first send included: a
+  replay rebuilt from text alone would drop its `@` references. A replay with
+  the same `submissionId` but different payload trips the server's
+  `idempotency_conflict`. Never persist the TipTap draft snapshot.
 - Lifecycle: record before dispatch; retire on acknowledgement or definitive
   rejection; keep on ambiguous. The owning hook (`features/chat`) decides which
   outcome occurred; this module only stores and retires.
