@@ -279,6 +279,17 @@ export const MeridianTableCell = TableCell.extend({
   },
 });
 
+/**
+ * The stored link target (`doc:`/`ahead:`) on links, images and figures.
+ * Never rendered to the DOM and never read back from it: a ref is not a
+ * browser attribute, and HTML from anywhere must not be able to claim one.
+ */
+const LINK_REF_ATTRIBUTE = {
+  default: null,
+  rendered: false,
+  parseHTML: () => null,
+};
+
 // ─── Customized extensions ──────────────────────────────────────────
 // Extensions that add behavior beyond what TipTap defaults provide.
 
@@ -338,6 +349,7 @@ export const MeridianLink = Link.extend({
           element.getAttribute("href"),
       },
       title: { default: null },
+      ref: LINK_REF_ATTRIBUTE,
     };
   },
 }).configure({
@@ -442,6 +454,7 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
       title: { default: null },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
       width: IMAGE_WIDTH_ATTRIBUTE,
+      ref: LINK_REF_ATTRIBUTE,
     };
   },
 
@@ -582,6 +595,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
       label: { default: null },
       caption: { default: "" },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
+      ref: LINK_REF_ATTRIBUTE,
     };
   },
 

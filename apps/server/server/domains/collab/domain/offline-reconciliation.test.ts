@@ -4,7 +4,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -18,9 +18,9 @@ const THREAD_ID = "thread-offline";
 const TURN_ID = "turn-agent";
 const RESPONSE_ID = "response-agent";
 const schema = buildDocumentSchema();
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
-const agentCodec = createAgentEditCodec(codec);
+const agentCodec = createAgentEditCodec(codec, UNSCOPED_DOCUMENT_LINKS);
 
 describe("offline reconciliation", () => {
   it("records hidden writer content once in the ordinary receipt shape", async () => {

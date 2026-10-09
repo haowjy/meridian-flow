@@ -4,9 +4,9 @@ Shared ProseMirror structural contract used by TipTap/Yjs editor code.
 
 - Preserve structural compatibility between server document logic and the app's
   separately built TipTap editor. Every attr or node added here is mirrored by
-  hand in `apps/app/src/core/editor/extensions/meridian-extensions.ts`, and
-  `apps/app/src/core/editor/schema-parity.test.ts` mechanically guards node/mark
-  names and structural specs against that mirror.
+  hand in `apps/app/src/core/editor/extensions/meridian-extensions.ts`. No test
+  guards that mirror mechanically, so a schema change updates both files in
+  the same commit.
 - Export structural node/mark specs, `buildDocumentSchema()`, schema versioning,
   the shared fragment name, reserved client-ID policy, and the Y.Doc factory.
   DOM parsing/rendering belongs to TipTap extensions and markdown serializers,
@@ -32,12 +32,14 @@ classify the transition from its immutable predecessor.
 | New node/mark, or new attribute with a default | Minor `x.(y+1).0` |
 | Content expression or attribute default changed | Next minor `x.(y+1).0` or next major `(x+1).0.0`; review must confirm the minor path only loosens the schema |
 | Node/mark/attribute removed or renamed, fragment renamed, or Yjs encoding changed | Major `(x+1).0.0`, human ruling, and migration plan |
+| Any change a human ruling declares major (an added attr that changes what stored content means) | Major `(x+1).0.0`; the entry's `compatibilityNote` cites the ruling and the reset or migration |
 
 Minor is additive even for `0.x`. Patch changes must keep the surface
 identical. A major is expected never; do not append an entry around a
 removal or encoding change without the required ruling and migration plan.
-Schema changes must still update TipTap extensions, markdown adapters, and
-schema parity coverage together.
+Schema changes must still update TipTap extensions and markdown adapters
+together. `1.0.0` added `ref` to `link`, `image` and `figure` by ruling (#729/#730):
+old heads are unreadable and collab state is reset, not migrated.
 
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the schema surface and
 compatibility rules.

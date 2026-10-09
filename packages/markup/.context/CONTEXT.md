@@ -4,13 +4,16 @@
 
 `@meridian/markup` exports:
 
-- Presets: `markdownCodec({ schema, assetPathResolver })` and
-  `mdxCodec({ schema, components, assetPathResolver })`.
-- `unresolvedAssetPathResolver`, the one exported `AssetPathResolver` adapter
-  (knows no assets: refs stay refs, paths stay literal). Project-backed
-  resolvers live with their consumers; the fixed-table
-  `createAssetPathResolver(entries)` is a test helper in
-  `src/codec-test-support.ts`, not a package export.
+- Presets: `markdownCodec({ schema, assetForPath? })` and
+  `mdxCodec({ schema, components, assetForPath? })`. `assetForPath` is the
+  transitional image rule (see Link scope); lane F2 of #729/#730 removes it.
+- `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS`, the one exported scope
+  (no tree: every stored href and src spells as written, `asset:` refs stay
+  refs). Holder-bound scopes live with their consumers; the fixed-table
+  `createAssetFixture(entries)` is a test helper in `src/codec-test-support.ts`,
+  not a package export.
+- `walkLinkOccurrences(blocks)` and `spelledLinks(blocks, links)`
+  (`link-occurrences.ts`), see Link occurrences.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
   surfaces that spell a link without serializing a document (a chat
   reference, a clipboard fallback). It shares the link mark's destination rule.
@@ -26,13 +29,19 @@ Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 package root. Tests or preset internals that need them import from sibling
 `markdown/index.js` / `mdx/index.js` modules instead.
 
-`MarkupCodec` exposes only `parse`, `serialize`, `serializeBlock`, and
-`serializeBlocks`. `serializeBlock`/`serializeBlocks` return normalized block
-bodies without hash prefixes. Agent-edit owns any hash-prefixed adapter layer.
+`MarkupCodec` exposes only `parse`, `parseWithSpans`, `serialize`,
+`serializeBlock`, and `serializeBlocks`. Every serialize call takes the
+`DocumentLinkScope` explicitly; nothing is captured at construction.
+`serializeBlock`/`serializeBlocks` return normalized block bodies without hash
+prefixes. Agent-edit owns any hash-prefixed adapter layer.
 
 ## Round-trip guarantees
 
-These concern supported durable document semantics, not CRDT identity or history.
+These concern wire semantics: what Markdown/MDX can say. A stored link's
+`ref` is deliberately not in the wire, so `parse(serialize(blocks))` returns
+every link with `ref: null` and the destination the scope spelled; restoring a
+ref is the binding pass's job, never the codec's. They also exclude CRDT
+identity and history.
 A newly parsed document cannot replace an existing Yjs replica without losing
 that replica's identities and merge lineage. Arbitrary accepted Markdown may
 normalize on first parse; canonical wire spelling then stabilizes.
@@ -80,23 +89,44 @@ codec like any other block (see Hard breaks and emphasis).
 
 ## MDX components
 
-`ParseContext` and `SerializeContext` carry the schema and the asset-path
-resolver. The MDX plugin
+`ParseContext` carries the schema and the transitional `assetForPath`;
+`SerializeContext` carries the schema and the call's `DocumentLinkScope`. The
+MDX plugin
 creates fresh `createJsxLeafCodec(components)` and
 `createJsxContainerCodec(components)` instances so component lookup is captured
 in closures. `registeredComponent(components, name)` remains a helper with an
 explicit registry parameter.
 
-## Asset paths
+## Link scope
 
-Images hold a stable `asset:<documentId>` src inside ProseMirror; markdown holds
-a project-relative path. `AssetPathResolver` is the only translation seam, and
-it is required — a consumer with no project asset namespace passes
-`unresolvedAssetPathResolver`. A picture never fails its document:
-`pathForAsset` returns null for an id with no document, and the codec spells it
-as the `asset:` ref itself, which parses back to the same reference.
-`assetForPath` returns null for anything the project does not know, so external
-and unknown paths stay literal.
+Stored links, images and figures may carry a `ref` (`doc:<id>`, `ahead:<id>`,
+see `@meridian/contracts` `document-ref.ts`). The codec never reads or writes
+it: serialization asks the call's `DocumentLinkScope` for every destination
+(`spellLink` for link marks and HTML-table anchors, `spellSource` for `image`
+and `figure` sources) and writes only the spelled `href`. A scope spells a
+resolvable ref as its target's current path, anything else as stored
+(`spellStoredLink` in contracts), and an `asset:` source as the path the
+project knows it by, else the ref itself: a picture never fails its document.
+
+Parse is pure syntax for links: every parsed link has `ref: null` and its
+destination as written. Until lane F2 of #729/#730 moves it into the binding
+pass, images and figures keep the shipped rule at parse:
+`ParseContext.assetForPath` turns a known manuscript path into `asset:<id>`;
+unknown and external paths stay literal.
+
+## Link occurrences
+
+`walkLinkOccurrences(blocks)` is the one traversal of stored link occurrences:
+document order, table cells row-major, one entry per maximal run of text
+sharing one link mark (marks of a different kind do not split it), one per
+`image` and `figure` (`src` reported as `href`). `parseWithSpans` returns one
+source span per occurrence in that order: the AST position of the link run,
+image or figure, or the enclosing top-level block when the AST cannot place it
+(raw-HTML table anchors, a link wrapping an image), or the whole text when the
+ingress preprocessor rewrote it. A span always encloses its occurrence.
+`spelledLinks(blocks, links)` reports `{ ref, address }` for each ref-bearing
+occurrence, spelled by the given scope; a serialization itself never records
+what it showed.
 
 ## Image wire format
 
@@ -207,7 +237,7 @@ A link is a standard Markdown link, `[text](destination "title")`, in both
 presets; there is no wikilink syntax. `[[anything]]` is literal text on parse
 and serializes with its openers escaped (`\[\[name]]`), so it reads back as the
 same text. Images are `![alt](src)`; uploaded pictures keep their
-`asset:<id>` identity inside the editor and travel as resolver paths.
+`asset:<id>` identity inside the editor and travel as scope-spelled paths.
 
 The link mark spells its destination so the parser reads it back exactly
 (`markdownLinkDestination`): bare when it can be, else enclosed in `<…>` with
@@ -215,8 +245,9 @@ backslashes and angle brackets escaped. Neither form may span lines, so a line
 ending travels percent-encoded, which the document href resolver
 (`@meridian/contracts` `resolveDocumentHref`) decodes back. The final bytes are
 the Markdown stringifier's: a destination with spaces goes out enclosed
-(`[x](<chapter 1.md>)`). Resolution never occurs in the codec; an unresolved destination
-round-trips unchanged.
+(`[x](<chapter 1.md>)`). Resolution never occurs in the codec: the scope
+it is handed spells the destination, and a no-ref destination round-trips
+unchanged.
 
 Wire recognition does not authorize creating a Context file at a destination.
 The app's shared Context entry-name validator owns filename policy separately.

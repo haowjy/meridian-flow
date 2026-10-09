@@ -1,6 +1,18 @@
 /** Per-operation image path lookup for the synchronous markup codec. */
 
-import { type AssetPathResolver, unresolvedAssetPathResolver } from "@meridian/markup";
+import { type DocumentLinkScope, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+
+/** Stable asset identity ↔ current manuscript-root-relative path, for one operation. */
+export interface AssetPathResolver {
+  /**
+   * The current (or, once deleted, last) path of an asset document, or null for
+   * an id with no document at all. The codec spells null as the `asset:` ref
+   * itself, which parses back to the same reference.
+   */
+  pathForAsset(assetDocumentId: string): string | null;
+  /** Return an asset document id only for a path known to the current project. */
+  assetForPath(path: string): string | null;
+}
 
 /**
  * Where an image sits is a fact of the document tree, so it is read from there
@@ -39,8 +51,31 @@ export type AssetPathProject = (
   documentIds?: readonly string[];
 };
 
+const UNRESOLVED_ASSET_PATHS: AssetPathResolver = {
+  pathForAsset: () => null,
+  assetForPath: () => null,
+};
+
 /** For compositions with no project tree (in-memory, tests): no image is known. */
 export const NO_DOCUMENT_ASSET_PATHS: DocumentAssetPaths = {
-  resolver: unresolvedAssetPathResolver,
+  resolver: UNRESOLVED_ASSET_PATHS,
   within: (_project, operation) => operation(),
 };
+
+/**
+ * Transitional (#729/#730 lane F2 deletes it with this port): the serialize
+ * scope the codec spells through until the server has a holder-bound document
+ * link scope. Links spell their stored href; an `asset:` source spells the
+ * path the innermost `within` knows it by, else the ref itself.
+ */
+export function assetPathLinkScope(resolver: AssetPathResolver): DocumentLinkScope {
+  return {
+    spellLink: UNSCOPED_DOCUMENT_LINKS.spellLink,
+    spellSource(attrs) {
+      const path = attrs.src.startsWith("asset:")
+        ? resolver.pathForAsset(attrs.src.slice("asset:".length))
+        : null;
+      return path ? { href: path, address: null } : UNSCOPED_DOCUMENT_LINKS.spellSource(attrs);
+    },
+  };
+}

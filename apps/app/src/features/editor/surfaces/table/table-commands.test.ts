@@ -5,7 +5,7 @@
  * the table states a writer actually reaches — header on and off, a merged
  * cell, the edges — and assert the reason, not just the refusal.
  */
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { Editor, type JSONContent } from "@tiptap/core";
 import { CellSelection } from "@tiptap/pm/tables";
 import { afterEach, describe, expect, it } from "vitest";
@@ -169,11 +169,10 @@ function mergedCellBlocks(current: Editor): [string, string][] {
 function expectWireFixpoint(current: Editor) {
   const codec = mdxCodec({
     schema: current.schema,
-    assetPathResolver: unresolvedAssetPathResolver,
     components: {},
   });
   const blocks = [...current.state.doc.content.content];
-  const reparsed = codec.parse(codec.serialize(blocks)).blocks;
+  const reparsed = codec.parse(codec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS)).blocks;
   expect(reparsed.map((block) => block.toJSON())).toEqual(blocks.map((block) => block.toJSON()));
 }
 

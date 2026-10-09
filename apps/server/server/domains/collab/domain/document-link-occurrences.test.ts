@@ -173,7 +173,7 @@ it.each([
     expect(text.toDelta()).toEqual([
       {
         insert: relabel ? "Moved" : "Target",
-        attributes: { link: { href: "Hand.md", title: "manual" } },
+        attributes: { link: { href: "Hand.md", title: "manual", ref: null } },
       },
       { insert: " waits." },
     ]);
