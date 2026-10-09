@@ -3,11 +3,13 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documents, turns } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
 export function createDrizzleCollabLookups(db: Database) {
   return {
+    /** Reads on the open transaction, if any: a document created in it has its row only there. */
     async resolveDocumentFiletype(documentId: string): Promise<string | null> {
-      const [row] = await db
+      const [row] = await currentDrizzleDb(db)
         .select({ filetype: documents.fileType })
         .from(documents)
         .where(eq(documents.id, documentId as never))

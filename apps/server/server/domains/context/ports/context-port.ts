@@ -22,6 +22,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { SpelledLinkFact } from "@meridian/markup";
 import type { Result } from "../../../shared/result.js";
+import type { PreparedWrite } from "../../collab/index.js";
 import type { WorkRef } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 
@@ -278,10 +279,24 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
 
-  /** Claim and seed a new tracked URI without ever replacing an existing path. */
-  createTrackedDocument(
+  /**
+   * Prepare content for a tracked document about to be created at `uri`.
+   * Runs outside any transaction (it may register ahead refs); a caller that
+   * creates inside its own transaction prepares first (contract §6.2).
+   */
+  prepareTrackedDocument(
     uri: string,
     content: string,
+  ): Promise<Result<PreparedWrite, ContextError>>;
+
+  /**
+   * Claim and seed a new tracked URI without ever replacing an existing path.
+   * Text content is prepared here, so only prepared content may be passed
+   * inside a transaction.
+   */
+  createTrackedDocument(
+    uri: string,
+    content: string | PreparedWrite,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 

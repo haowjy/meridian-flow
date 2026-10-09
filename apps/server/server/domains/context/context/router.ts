@@ -12,6 +12,7 @@ import {
 import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import type { PreparedWrite } from "../../collab/index.js";
 import type {
   AdapterFault,
   AdapterFileEntry,
@@ -339,9 +340,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return ensured.ok ? Ok({ ...ensured.value, uri: canonical }) : ensured;
     },
 
-    async createTrackedDocument(
+    async prepareTrackedDocument(
       uri: string,
       content: string,
+    ): Promise<Result<PreparedWrite, ContextError>> {
+      const r = await resolveMutation(uri);
+      if (!r.ok) return r;
+      const { adapter, path, canonical } = r.value;
+      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
+      return callAdapter(canonical, () => adapter.prepareTrackedDocument(path, content));
+    },
+
+    async createTrackedDocument(
+      uri: string,
+      content: string | PreparedWrite,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
       const r = await resolveMutation(uri);

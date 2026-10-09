@@ -20,7 +20,7 @@ import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
 import type { DocumentWriteHookRunner } from "./document-projection-refresher.js";
-import { createLinkBinder, type LinkBinderDeps } from "./link-binding.js";
+import { createLinkBinder } from "./link-binding.js";
 import {
   createMarkdownDocumentEngine,
   type MarkdownSerializationAnomalyObserver,
@@ -64,8 +64,6 @@ export function createAgentEditRuntime(input: {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
   /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
   inTransaction(): boolean;
-  /** Showings an agent's whole-document write binds against (the thread's shown-link store). */
-  shownLinks?: LinkBinderDeps["shownLinks"];
 }) {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
@@ -113,7 +111,7 @@ export function createAgentEditRuntime(input: {
             overwrite: true,
           },
           {
-            boundBlocks: content.blocks,
+            prepared: { blocks: content.blocks, update: content.update },
             actor,
             sessionId:
               actor.kind === "human"
@@ -140,7 +138,6 @@ export function createAgentEditRuntime(input: {
     registrar: input.aheadRefs,
     resolveFiletype: input.resolveDocumentFiletype,
     inTransaction: input.inTransaction,
-    ...(input.shownLinks ? { shownLinks: input.shownLinks } : {}),
   });
   return {
     codec,

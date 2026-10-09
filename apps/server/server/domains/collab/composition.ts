@@ -1,7 +1,6 @@
 /** Production dependency graph for the server collab domain. */
 
 import type { Database } from "@meridian/database";
-import * as Y from "yjs";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -97,7 +96,6 @@ import {
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
-import type { LinkBinderDeps } from "./domain/link-binding.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import {
@@ -131,8 +129,6 @@ type CollabDomainDeps = {
   links: DocumentLinkScopes;
   /** Durable registration of ahead refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
-  /** Links a thread was shown in a document: whole-document agent binds correspond to them. */
-  shownLinks?: LinkBinderDeps["shownLinks"];
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
@@ -280,7 +276,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     links: deps.links,
     aheadRefs: deps.aheadRefs,
     inTransaction: isInDrizzleTransaction,
-    ...(deps.shownLinks ? { shownLinks: deps.shownLinks } : {}),
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
   });
   const projectionRefresher = { refresh: runDocumentWriteHook };
