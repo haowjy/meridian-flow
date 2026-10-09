@@ -30,7 +30,7 @@ import { createDrizzleContextOperationReceipts } from "./adapters/context-operat
 import { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
-import { createContextPortRouter } from "./context/router.js";
+import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
   createLineageContextDocumentStore,
@@ -301,39 +301,50 @@ function buildUnifiedContextPort(input: {
       : buildNoWorkContextFsAdapters(assembly, scope.projectId);
   for (const [scheme, adapter] of primaryAdapters) adapters.set(scheme, adapter);
 
-  const lineageAdapters = (lineage: ScratchLineage) =>
-    new Map<ContextScheme, ContextSchemeAdapter>([
-      [
-        "scratch",
-        contextFsAdapter(assembly, {
-          store: storeResolvers.resolveLineageStore(scope.projectId, lineage.rootThreadId),
-          mutationStore: storeResolvers.resolveMutationStore({ projectId: scope.projectId }),
-          commandTransaction: input.commandTransaction,
-          scheme: "scratch",
-        }),
-      ],
-    ]);
+  const lineageSource = (lineage: ScratchLineage): ContextSourceBinding => ({
+    adapter: contextFsAdapter(assembly, {
+      store: storeResolvers.resolveLineageStore(scope.projectId, lineage.rootThreadId),
+      mutationStore: storeResolvers.resolveMutationStore({ projectId: scope.projectId }),
+      commandTransaction: input.commandTransaction,
+      scheme: "scratch",
+    }),
+    authority: { kind: "lineage", rootThreadRef: lineage.rootThreadRef },
+  });
+  const sources = new Map<
+    ContextScheme,
+    ContextSourceBinding | (() => Promise<ContextSourceBinding | null>)
+  >(
+    [...adapters].map(([scheme, adapter]) => [
+      scheme,
+      {
+        adapter,
+        authority: (WORK_SCOPED_CONTEXTFS_SCHEMES as readonly string[]).includes(scheme)
+          ? scope.kind === "work"
+            ? scope.authority
+            : { kind: "none" }
+          : { kind: "contextual" },
+      },
+    ]),
+  );
   const ownLineageId =
     scope.kind === "work" && scope.thread?.scratchOwner?.scope === "lineage"
       ? scope.thread.scratchOwner.rootThreadId
       : scope.kind === "project"
         ? (scope.lineage?.rootThreadId ?? null)
         : null;
+  if (ownLineageId)
+    sources.set("scratch", async () => {
+      const lineage = await storeResolvers.lineages.byId(scope.projectId, ownLineageId);
+      return lineage ? lineageSource(lineage) : null;
+    });
   return createContextPortRouter({
-    ownLineage: ownLineageId
-      ? () => storeResolvers.lineages.byId(scope.projectId, ownLineageId)
-      : undefined,
-    resolveLineage: (ref) => storeResolvers.lineages.byRef(scope.projectId, ref),
+    sources,
+    resolveLineageSource: async (ref) => {
+      const lineage = await storeResolvers.lineages.byRef(scope.projectId, ref);
+      return lineage ? lineageSource(lineage) : null;
+    },
     rootForThreadRef: (ref) => storeResolvers.lineages.rootForThreadRef(scope.projectId, ref),
     listLineages: () => storeResolvers.lineages.list(scope.projectId),
-    lineageAdapters,
-    adapters,
-    adapterAuthorities: new Map(
-      WORK_SCOPED_CONTEXTFS_SCHEMES.map((scheme) => [
-        scheme,
-        scope.kind === "work" ? scope.authority : { kind: "none" },
-      ]),
-    ),
     workAuthorities,
     primaryWorkAuthority: scope.kind === "work" ? scope.authority : undefined,
     resolveWorkAdapters: (targetAuthority) =>

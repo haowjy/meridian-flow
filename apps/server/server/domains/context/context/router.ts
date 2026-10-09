@@ -40,24 +40,27 @@ import type {
   FileEntry,
   FileRef,
   SearchResult,
+  WriteProvenance,
 } from "../ports/context-port.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
+export interface ContextSourceBinding {
+  adapter: ContextSchemeAdapter;
+  authority: CanonicalContextAuthority;
+}
+
 export interface ContextPortRouterDeps {
-  ownLineage?: () => Promise<import("../scratch-owner.js").ScratchLineage | null>;
-  resolveLineage?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
+  resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   rootForThreadRef?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
   listLineages?: () => Promise<import("../scratch-owner.js").ScratchLineage[]>;
-  lineageAdapters?: (
-    lineage: import("../scratch-owner.js").ScratchLineage,
-  ) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   moveLinks?: ConstructorParameters<typeof ContextTreeMover>[2];
   operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
-  adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
-  /** Canonical Work authority for Work-scoped adapters already present in the base map. */
-  adapterAuthorities?: ReadonlyMap<ContextScheme, CanonicalContextAuthority>;
+  sources: ReadonlyMap<
+    ContextScheme,
+    ContextSourceBinding | (() => Promise<ContextSourceBinding | null>)
+  >;
   /** Non-deleted, same-project Work authorities indexed only by exact slug. */
   workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   /** Primary Work for bare Work-scoped URIs in this router. */
@@ -94,13 +97,40 @@ function entryCreationDenied(uri: string): Result<never, ContextError> {
   return Err({ code: "invalid_operation", uri, message: ENTRY_CREATION_DENIED_MESSAGE });
 }
 
-function crossSchemeCreationDenied(
-  source: Dispatch,
-  destination: Dispatch,
-): Result<never, ContextError> | null {
-  return source.scheme !== destination.scheme && !destination.adapter.capabilities.creatable
-    ? entryCreationDenied(destination.canonical)
-    : null;
+interface MutationDispatch extends Dispatch {
+  requireCreation: (kind: "entry" | "intake") => Result<void, ContextError>;
+}
+
+function sameOwner(a: CanonicalContextAuthority, b: CanonicalContextAuthority): boolean {
+  if (!("kind" in a)) return !("kind" in b) && a.workId === b.workId;
+  if (!("kind" in b) || a.kind !== b.kind) return false;
+  return a.kind !== "lineage" || (b.kind === "lineage" && a.rootThreadRef === b.rootThreadRef);
+}
+
+/** Intake bypasses general entry creation, never the source's actor policy. */
+function mutationDispatch(dispatch: Dispatch, origin?: WriteProvenance): MutationDispatch {
+  const { adapter, authority, canonical } = dispatch;
+  const actorCanCreate =
+    !("kind" in authority && authority.kind === "lineage") || origin?.type === "agent";
+  return {
+    ...dispatch,
+    requireCreation(kind) {
+      if (!adapter.capabilities.writable || !actorCanCreate)
+        return Err({ code: "permission_denied", uri: canonical });
+      if (kind === "entry" && !adapter.capabilities.creatable)
+        return entryCreationDenied(canonical);
+      return Ok(undefined);
+    },
+  };
+}
+
+function moveCreationDenied(source: Dispatch, destination: MutationDispatch) {
+  if (source.scheme === destination.scheme && sameOwner(source.authority, destination.authority))
+    return null;
+  const permission = destination.requireCreation(
+    source.scheme === destination.scheme ? "intake" : "entry",
+  );
+  return permission.ok ? null : permission;
 }
 
 function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContextAuthority): string {
@@ -195,7 +225,15 @@ export function unknownWorkMessage(slug: string): string {
 }
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
-  const { adapters, parseOptions } = deps;
+  const { sources, parseOptions } = deps;
+  async function contextualSources() {
+    const bindings = new Map<ContextScheme, ContextSourceBinding>();
+    for (const [scheme, source] of sources) {
+      const binding = typeof source === "function" ? await source() : source;
+      if (binding) bindings.set(scheme, binding);
+    }
+    return bindings;
+  }
   const treeMover = new ContextTreeMover(
     deps.commandTransaction,
     deps.operationReceipts,
@@ -207,28 +245,18 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     if (!parsed.ok) return parsed;
     const { scheme, authority, path } = parsed.value;
 
-    let adapterMap = adapters;
+    const contextual = authority.kind === "contextual" ? sources.get(scheme) : undefined;
+    const binding = typeof contextual === "function" ? await contextual() : contextual;
+    let adapter = binding?.adapter;
     let canonicalAuthority: CanonicalContextAuthority =
-      authority.kind === "contextual"
-        ? (deps.adapterAuthorities?.get(scheme) ?? authority)
-        : authority.kind === "none"
-          ? authority
-          : { kind: "contextual" };
+      binding?.authority ?? (authority.kind === "none" ? authority : { kind: "contextual" });
     let workScopeId =
       authority.kind === "contextual" ? (deps.primaryWorkAuthority?.workId ?? null) : null;
-    if (
-      scheme === "scratch" &&
-      (authority.kind === "lineage" || (authority.kind === "contextual" && deps.ownLineage))
-    ) {
-      const lineage =
-        authority.kind === "lineage"
-          ? await deps.resolveLineage?.(authority.rootThreadRef)
-          : await deps.ownLineage?.();
-      if (!lineage) {
-        const owner =
-          authority.kind === "lineage"
-            ? await deps.rootForThreadRef?.(authority.rootThreadRef)
-            : null;
+    if ("kind" in canonicalAuthority && canonicalAuthority.kind === "lineage") workScopeId = null;
+    if (scheme === "scratch" && authority.kind === "lineage") {
+      const lineageSource = await deps.resolveLineageSource?.(authority.rootThreadRef);
+      if (!lineageSource) {
+        const owner = await deps.rootForThreadRef?.(authority.rootThreadRef);
         return Err({
           code: "invalid_uri",
           uri,
@@ -237,18 +265,19 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             : "Scratch requires a first chat handle. Use scratch://x in a chat, or scratch://@/c12/x. List chats with ls scratch://@/.",
         });
       }
-      adapterMap = deps.lineageAdapters?.(lineage) ?? new Map();
-      canonicalAuthority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+      adapter = lineageSource.adapter;
+      canonicalAuthority = lineageSource.authority;
       workScopeId = null;
     } else if (authority.kind === "none") {
       const noWork = await deps.resolveNoWork?.();
       if (noWork) {
-        adapterMap = noWork.adapters;
+        adapter = noWork.adapters.get(scheme);
         workScopeId = noWork.workId;
       }
     } else if (
       authority.kind === "contextual" &&
       !workScopeId &&
+      !("kind" in canonicalAuthority && canonicalAuthority.kind === "lineage") &&
       (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme)
     ) {
       const noWork = await deps.resolveNoWork?.();
@@ -264,7 +293,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         });
       }
       try {
-        adapterMap = deps.resolveWorkAdapters?.(resolvedAuthority) ?? adapters;
+        adapter = deps.resolveWorkAdapters
+          ? deps.resolveWorkAdapters(resolvedAuthority).get(scheme)
+          : (await contextualSources()).get(scheme)?.adapter;
         workScopeId = resolvedAuthority.workId;
         canonicalAuthority = resolvedAuthority;
       } catch (error) {
@@ -276,7 +307,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       }
     }
 
-    if (scheme === "scratch" && authority.kind === "contextual" && !adapterMap.has("scratch"))
+    if (scheme === "scratch" && authority.kind === "contextual" && !adapter)
       return Err({
         code: "invalid_uri",
         uri,
@@ -285,7 +316,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       });
     const canonical = toCanonical(scheme, path, canonicalAuthority);
 
-    const adapter = adapterMap.get(scheme);
     if (!adapter) {
       return Err({
         code: "invalid_uri",
@@ -303,11 +333,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     });
   }
 
-  async function resolveMutation(uri: string): Promise<Result<Dispatch, ContextError>> {
+  async function resolveMutation(
+    uri: string,
+    origin?: WriteProvenance,
+  ): Promise<Result<MutationDispatch, ContextError>> {
     const resolved = await resolve(uri);
     if (!resolved.ok) return resolved;
     const validation = validateContextEntryPath(resolved.value.path, { allowRoot: true });
-    if (validation.ok) return resolved;
+    if (validation.ok) return Ok(mutationDispatch(resolved.value, origin));
     return Err({
       code: "invalid_uri",
       uri: resolved.value.canonical,
@@ -348,20 +381,17 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       content: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolveMutation(uri);
+      const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
-      if (
-        "kind" in r.value.authority &&
-        r.value.authority.kind === "lineage" &&
-        options?.origin?.type !== "agent"
-      ) {
+      const creation = r.value.requireCreation("intake");
+      if (!creation.ok) {
         const existing = await callAdapter(canonical, () => adapter.stat(path));
         if (!existing.ok) return existing;
-        if (!existing.value) return Err({ code: "permission_denied", uri: canonical });
+        if (!existing.value) return creation;
       }
       const result = await callAdapter(canonical, () => adapter.write(path, content, options));
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
@@ -371,19 +401,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextEnsureTrackedDocumentResult, ContextError>> {
-      const r = await resolveMutation(uri);
+      const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
-      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
-      if (
-        "kind" in r.value.authority &&
-        r.value.authority.kind === "lineage" &&
-        options?.origin?.type !== "agent"
-      )
-        return Err({ code: "permission_denied", uri: canonical });
+      const creation = r.value.requireCreation("entry");
+      if (!creation.ok) return creation;
       const ensured = await callAdapter(canonical, () =>
         adapter.ensureTrackedDocument(path, options),
       );
@@ -395,20 +417,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       content: string,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
-      const r = await resolveMutation(uri);
+      const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if (
-        r.value.authority &&
-        "kind" in r.value.authority &&
-        r.value.authority.kind === "lineage" &&
-        options?.origin?.type !== "agent"
-      )
-        return Err({ code: "permission_denied", uri: canonical });
-      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-      if (!adapter.capabilities.creatable && !options?.documentId) {
-        return entryCreationDenied(canonical);
-      }
+      const creation = r.value.requireCreation(options?.documentId ? "intake" : "entry");
+      if (!creation.ok) return creation;
       return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
     },
 
@@ -416,12 +429,12 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       homeUri,
       options,
     ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>> {
+      // Untitled allocation is a writer creation seam, not an AI note operation.
       const r = await resolveMutation(homeUri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if ("kind" in r.value.authority && r.value.authority.kind === "lineage")
-        return Err({ code: "permission_denied", uri: canonical });
-      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
+      const creation = r.value.requireCreation("intake");
+      if (!creation.ok) return creation;
 
       const locations: Array<{
         scheme: ContextScheme;
@@ -436,18 +449,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         workScopeId: string | null,
         candidate: ContextSchemeAdapter,
       ) => {
-        const key = `${scheme}:${JSON.stringify(authority)}`;
+        const key = uriFor(scheme, "", authority);
         if (locationKeys.has(key)) return;
         locationKeys.add(key);
         locations.push({ scheme, authority, workScopeId, adapter: candidate });
       };
       const noWork = await deps.resolveNoWork?.();
-      for (const [scheme, candidate] of adapters) {
+      for (const [scheme, { adapter: candidate, authority }] of await contextualSources()) {
         const workScoped = (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
         addLocation(
           scheme,
-          deps.adapterAuthorities?.get(scheme) ?? { kind: "contextual" },
-          workScoped ? (deps.primaryWorkAuthority?.workId ?? noWork?.workId ?? null) : null,
+          authority,
+          workScoped && !("kind" in authority && authority.kind === "lineage")
+            ? (deps.primaryWorkAuthority?.workId ?? noWork?.workId ?? null)
+            : null,
           candidate,
         );
       }
@@ -482,7 +497,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         });
       }
 
-      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
+      const entryCreation = r.value.requireCreation("entry");
+      if (!entryCreation.ok) return entryCreation;
       const created = await callAdapter(canonical, () =>
         adapter.createUntitledDocument(path, options),
       );
@@ -509,7 +525,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       command: import("../ports/context-port.js").ContextEditCommand,
       options?: ContextWriteOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolveMutation(uri);
+      const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) {
@@ -523,12 +539,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options: ContextWriteBinaryOptions,
     ): Promise<Result<ContextWriteResult, ContextError>> {
-      const r = await resolveMutation(uri);
+      const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
+      const creation = r.value.requireCreation("intake");
+      if (!creation.ok) return creation;
       if (!adapter.capabilities.creatable && path.includes("/")) {
         return Err({
           code: "invalid_operation",
@@ -536,12 +551,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           message: UPLOAD_FOLDER_CREATION_DENIED_MESSAGE,
         });
       }
-      if (
-        "kind" in r.value.authority &&
-        r.value.authority.kind === "lineage" &&
-        options.origin?.type !== "agent"
-      )
-        return Err({ code: "permission_denied", uri: canonical });
       const result = await callAdapter(canonical, () => adapter.writeBinary(path, options));
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
@@ -553,11 +562,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     ): Promise<Result<ContextMoveResult, ContextError>> {
       const source = await resolve(sourceUri);
       if (!source.ok) return source;
-      const destination = await resolveMutation(destinationUri);
+      const destination = await resolveMutation(destinationUri, options?.origin);
       if (!destination.ok) return destination;
       if (
         source.value.scheme === destination.value.scheme &&
-        JSON.stringify(source.value.authority) === JSON.stringify(destination.value.authority)
+        sameOwner(source.value.authority, destination.value.authority)
       ) {
         if (!source.value.adapter.capabilities.writable) {
           return Err({ code: "permission_denied", uri: source.value.canonical });
@@ -568,7 +577,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       ) {
         return Err({ code: "permission_denied", uri: destination.value.canonical });
       }
-      const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
+      const creationDenied = moveCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
       return treeMover.move(source.value, destination.value, options);
     },
@@ -578,13 +587,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!source.ok) return source;
       const destination = await resolveMutation(destinationUri);
       if (!destination.ok) return destination;
-      if (
-        "kind" in destination.value.authority &&
-        destination.value.authority.kind === "lineage" &&
-        JSON.stringify(source.value.authority) !== JSON.stringify(destination.value.authority)
-      )
-        return Err({ code: "permission_denied", uri: destination.value.canonical });
-      const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
+      const creationDenied = moveCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
       return treeMover.commitWriterLocation(
         source.value,
@@ -598,7 +601,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       uri: string,
       options: ContextDeleteOptions,
     ): Promise<Result<DeleteContextEntryResult, ContextError>> {
-      const r = await resolveMutation(uri);
+      const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       if (!r.value.adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: r.value.canonical });
@@ -607,19 +610,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     },
 
     async mkdir(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>> {
-      const r = await resolveMutation(uri);
+      const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
-      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
-      if (
-        "kind" in r.value.authority &&
-        r.value.authority.kind === "lineage" &&
-        options?.origin?.type !== "agent"
-      )
-        return Err({ code: "permission_denied", uri: canonical });
+      const creation = r.value.requireCreation("entry");
+      if (!creation.ok) return creation;
       return callAdapter(canonical, () => adapter.mkdir(path, options));
     },
 
@@ -630,14 +625,12 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!uri) {
         return Ok({
           uri: null,
-          entries: [
-            ...new Set([...adapters.keys(), ...(deps.ownLineage ? ["scratch" as const] : [])]),
-          ]
-            .sort()
-            .map((scheme) => ({
+          entries: [...(await contextualSources())]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([scheme, { adapter }]) => ({
               kind: "directory" as const,
               uri: `${scheme}://`,
-              readonly: !(adapters.get(scheme)?.capabilities.writable ?? false),
+              readonly: !adapter.capabilities.writable,
             })),
         });
       }
@@ -679,24 +672,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       }
 
       const hits: SearchResult[] = [];
-      for (const [scheme, adapter] of adapters) {
+      for (const [scheme, { adapter, authority }] of await contextualSources()) {
         if (!adapter.capabilities.searchable) continue;
         const result = await callAdapter(`${scheme}://`, () => adapter.search(query));
         if (!result.ok) continue;
-        const authority = deps.adapterAuthorities?.get(scheme) ?? { kind: "contextual" as const };
         for (const hit of result.value) hits.push(toSearchResult(scheme, authority, hit));
-      }
-      if (deps.ownLineage) {
-        const own = await resolve("scratch://");
-        if (own.ok) {
-          const found = await callAdapter(own.value.canonical, () =>
-            own.value.adapter.search(query),
-          );
-          if (found.ok)
-            hits.push(
-              ...found.value.map((hit) => toSearchResult("scratch", own.value.authority, hit)),
-            );
-        }
       }
       hits.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       return Ok(hits);
