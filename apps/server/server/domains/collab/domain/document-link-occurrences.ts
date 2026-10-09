@@ -71,7 +71,8 @@ export function applyDocumentLinkSubstitutions(
   if (!fragment.doc) throw new Error("Link rewriting requires an integrated snapshot fragment");
   const occurrences = extractDocumentLinkOccurrences(fragment);
   let changed = 0;
-  fragment.doc.transact(() => {
+  fragment.doc.transact((transaction) => {
+    const rewrittenTexts = new Set<Y.XmlText>();
     for (const occurrence of occurrences.reverse()) {
       const substitution = substitutions.get(occurrence.href);
       if (!substitution) continue;
@@ -91,31 +92,28 @@ export function applyDocumentLinkSubstitutions(
                 ? stem(newFilename)
                 : null
             : null;
-        // Clear before retargeting: format(newHref) alone leaves an old-href
-        // restore before the end marker. A draft's ProseMirror edit can replace
-        // that marker, exposing the restore on plain text after the next move.
         if (label !== null && label !== words) {
           // Insert inside the old run with its own marks, delete around it, then
           // retarget. This preserves concurrent hand retargets (L4's probe).
           text.insert(first.start + 1, label, first.attributes);
           text.delete(first.start, 1);
           text.delete(first.start + label.length, words.length - 1);
-          text.format(first.start, label.length, { link: null });
           text.format(first.start, label.length, {
             link: { ...first.attributes.link, href: substitution.href },
           });
         } else {
           if (occurrence.href === substitution.href) continue;
           for (const run of runs) {
-            text.format(run.start, run.length, { link: null });
             text.format(run.start, run.length, {
               link: { ...run.attributes.link, href: substitution.href },
             });
           }
         }
+        rewrittenTexts.add(text);
       }
       changed++;
     }
+    for (const text of rewrittenTexts) removeOverriddenLinkFormats(text, transaction);
   });
   return changed;
 }
@@ -123,4 +121,22 @@ export function applyDocumentLinkSubstitutions(
 function stem(filename: string): string {
   const dot = filename.lastIndexOf(".");
   return dot > 0 ? filename.slice(0, dot) : filename;
+}
+
+/** Remove only link markers overridden before the next visible character. */
+function removeOverriddenLinkFormats(text: Y.XmlText, transaction: Y.Transaction): void {
+  // format(newHref) leaves an old-href restore before the existing end marker.
+  // A draft PM edit can replace that marker; the next move then exposes the
+  // restore on plain text. Delete overridden markers in the maintenance update.
+  // Do not clear/reapply the range: that changes leading-boundary arbitration
+  // and can overwrite a concurrent manual retarget that would otherwise win.
+  let pending: Y.Item | null = null;
+  for (let item = text._start; item; item = item.right) {
+    if (item.deleted) continue;
+    if (item.countable) pending = null;
+    else if (item.content instanceof Y.ContentFormat && item.content.key === "link") {
+      pending?.delete(transaction);
+      pending = item;
+    }
+  }
 }

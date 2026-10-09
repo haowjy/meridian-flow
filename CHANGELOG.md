@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Moving a linked file keeps plain draft text unlinked, even after earlier moves and draft edits.
+- Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 
 - Development: trim duplicate maintenance-attribution cases; retain four focused risks and one suite-owned PostgreSQL convergence witness.
 - Draft saves no longer credit automatic link rewrites or reconciliation to the writer; authored block credit survives maintenance.

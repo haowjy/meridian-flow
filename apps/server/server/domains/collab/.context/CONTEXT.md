@@ -233,12 +233,14 @@ the update reach an already-loaded room and schedule the ordinary live-to-draft
 pull. This operation neither opens a room under database locks nor owns redirect
 storage or lifecycle eligibility (the caller checks those).
 
-Link retargeting clears the old link mark on each exact run before applying
-the new attributes in the same Yjs transaction. A direct `format(newHref)`
-leaves an old-href restore before the original end marker. ProseMirror can
-replace that marker while editing a draft; a later move then exposes the old
-href on unlinked text. Publish the normalized boundary as part of maintenance,
-not as a read-time repair. Other marks and text identities stay intact.
+Link retargeting removes overridden link-format markers from each touched
+Y.XmlText before publishing the maintenance transaction. A direct
+`format(newHref)` leaves an old-href restore before the original end marker.
+ProseMirror can replace that marker while editing a draft; a later move then
+exposes the old href on unlinked text. Delete only markers superseded within
+the same zero-width gap. Clearing/reapplying the range changes leading-boundary
+arbitration and can override concurrent manual retargets. Other marks, visible
+text, and surviving format boundaries stay intact; reads never scrub output.
 
 `link-update` journal metadata persists as `link_update` with the mover's user
 or turn ID, but never denotes AI authorship or a reviewable AI write. Its inserted
