@@ -268,9 +268,11 @@ const doors: DoorCase[] = [
         projectId: PROJECT,
         documents: [catalogDocument(H, HOLDER), catalogDocument(D, target)],
       });
+      const written = codecFactory.parse("| a | b |\n| - | - |\n| [A](target.md) | x |").blocks;
+      await links.prepare({ documentId: H, docs: [], written });
       const table = assignLinkRefs({
         old: [],
-        written: codecFactory.parse("| a | b |\n| - | - |\n| [A](target.md) | x |").blocks,
+        written,
         scope: links.scopeFor(H, undefined),
         holderDocumentId: H,
         shown: [],
@@ -282,7 +284,7 @@ const doors: DoorCase[] = [
       });
       const before = storedLinks(ctx.live());
       const formats = formatItemCount(ctx.live());
-      const content = ctx.markdown().replace("<p>x</p>", "<p>y</p>");
+      const content = (await ctx.markdown()).replace("<p>x</p>", "<p>y</p>");
       await ctx.write({ command: "replace", in: [1, 1], content });
       expect
         .soft(
@@ -291,7 +293,7 @@ const doors: DoorCase[] = [
         )
         .toEqual([documentRef(D)]);
       expect.soft(storedLinks(ctx.live()), this.name).toEqual(before);
-      expect.soft(ctx.markdown(), this.name).toContain("<p>y</p>");
+      expect.soft(await ctx.markdown(), this.name).toContain("<p>y</p>");
       expect.soft(formatItemCount(ctx.live()) - formats, this.name).toBe(0);
     },
   },
@@ -322,12 +324,16 @@ const doors: DoorCase[] = [
       });
       const before = storedLinks(ctx.live());
       const formats = formatItemCount(ctx.live());
-      const same = await ctx.write({ command: "create", overwrite: true, content: ctx.markdown() });
+      const same = await ctx.write({
+        command: "create",
+        overwrite: true,
+        content: await ctx.markdown(),
+      });
       expect.soft(same.result.unchanged, this.name).toBe(true);
       await ctx.write({
         command: "create",
         overwrite: true,
-        content: ctx.markdown().replace("Second.", "Second, revised."),
+        content: (await ctx.markdown()).replace("Second.", "Second, revised."),
       });
       expect.soft(storedLinks(ctx.live()), this.name).toEqual(before);
       expect.soft(formatItemCount(ctx.live()) - formats, this.name).toBe(0);
@@ -449,9 +455,66 @@ const doors: DoorCase[] = [
         const outcome = await ctx.write(row.command, [row.shown]);
         expect.soft(outcome.status, label).toBe("success");
         expect.soft(storedLinks(ctx.live()).at(-1)?.ref, label).toBe(row.expected.ref);
-        expect.soft(ctx.markdown(), label).toBe(row.expected.markdown);
+        expect.soft(await ctx.markdown(), label).toBe(row.expected.markdown);
         expect.soft(ctx.links.minted, label).toEqual([]);
       }
+    },
+  },
+  {
+    name: "a partial find binds the destination it reconstructs, loaded before binding",
+    async run() {
+      const M = uuid(41);
+      const N = uuid(42);
+      const ctx = linkHarness({
+        holder: { id: H, uri: HOLDER },
+        documents: [
+          catalogDocument(D, ch("old.md")),
+          catalogDocument(E, ch("other.txt")),
+          catalogDocument(M, "manuscript://maps/old.png", { image: true }),
+          catalogDocument(N, "manuscript://maps/new.png", { image: true }),
+        ],
+        blocks: [
+          paragraph(docLink("Target", D, ch("old.md")), " waits."),
+          schema.node("paragraph", null, [schema.node("image", { src: `asset:${M}`, alt: "Map" })]),
+        ],
+      });
+      // `other` reconstructs `[Target](other)`: only E (other.txt) is there, uniquely.
+      const retarget = await ctx.write({ command: "replace", find: "old.md", content: "other" });
+      expect.soft(retarget.status, this.name).toBe("success");
+      const image = await ctx.write({ command: "replace", find: "old.png", content: "new.png" });
+      expect.soft(image.status, this.name).toBe("success");
+      const blocks = prosemirrorBlocksForDoc(ctx.live(), schema);
+      expect.soft(storedLinks(ctx.live())[0]?.ref, this.name).toBe(documentRef(E));
+      expect.soft(blocks[1]?.firstChild?.attrs.src, this.name).toBe(`asset:${N}`);
+      expect.soft(ctx.links.minted, this.name).toEqual([]);
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
+      expect
+        .soft(await ctx.markdown(), this.name)
+        .toBe("[Target](other.txt) waits.\n\n![Map](maps/new.png)");
+    },
+  },
+  {
+    name: "a copy prepares the refs it carries: no snapshot misses",
+    async run() {
+      const ctx = linkHarness({
+        holder: { id: H, uri: HOLDER },
+        documents: [catalogDocument(D, ch("old.md")), catalogDocument(E, ch("other.md"))],
+        blocks: [paragraph(docLink("Target", D, ch("old.md")))],
+      });
+      const copied = [paragraph(docLink("Other", E, ch("other.md")), " too.")];
+      const outcome = await ctx.core.write(
+        {
+          command: "replace",
+          file: "holder.md",
+          documentId: H,
+          in: [1, 1],
+          from: { path: "src.md" },
+        } as never,
+        { sessionId: "session-a", threadId: "thread-a", copiedNodes: copied },
+      );
+      expect.soft(outcome.status, this.name).toBe("success");
+      expect.soft(storedLinks(ctx.live())[0]?.ref, this.name).toBe(documentRef(E));
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
   },
   {

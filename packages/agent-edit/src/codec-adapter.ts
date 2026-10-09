@@ -14,6 +14,8 @@ export interface AgentEditCodec {
   readonly markup: MarkupCodec;
 
   parse(content: string): ParsedContent;
+  /** Parse with each link occurrence's source span (pure syntax, like `parse`). */
+  parseWithSpans(content: string): ParsedContentWithSpans;
   serialize(blocks: PMNode[]): string;
   serializeBlockBodies(blocks: readonly PMNode[]): string[];
 
@@ -49,6 +51,7 @@ function bindAgentEditCodec(markup: MarkupCodec, links: DocumentLinkScope): Agen
   return {
     markup,
     parse: (content) => markup.parse(content),
+    parseWithSpans: (content) => markup.parseWithSpans(content),
     serialize: (blocks) => markup.serialize(blocks, links),
     serializeBlockBodies: (blocks) => markup.serializeBlocks(blocks, links),
 

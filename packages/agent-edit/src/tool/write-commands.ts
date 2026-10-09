@@ -9,7 +9,7 @@ import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign
 import { renderedItems, shownLinksForItems } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
-import { resolveWrite } from "../resolver/resolve.js";
+import { planWrite, resolveWrite } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
@@ -252,7 +252,7 @@ export function createWriteCommands(deps: {
     const links = await bindLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
-      ...(copiedNodes ? {} : { written: parsed.parsed.blocks }),
+      ...(copiedNodes ? { stored: copiedNodes } : { written: parsed.parsed.blocks }),
       shown,
       context,
     });
@@ -522,32 +522,34 @@ export function createWriteCommands(deps: {
       return status("invalid_write", `from selected no blocks in ${from?.path}.`);
     }
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
-    const writtenContent = copiedNodes
-      ? undefined
-      : parseQuietly("content" in selectors ? selectors.content : undefined);
-    const shown = await shownLinksFor(address.documentId, context);
+    const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
     const links = await bindLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
-      ...(writtenContent ? { written: writtenContent.blocks } : {}),
+      ...(copiedNodes ? { stored: copiedNodes } : {}),
       shown,
       context,
     });
-    const assigner = linkAssigner(address.documentId, links.scope, shown);
-    const resolved = resolveWrite(
-      {
-        doc: toDocHandle(runtime.doc),
-        model: options.model,
-        codec: links.codec,
-        links: assigner,
-      },
+    // Planning fixes scope, matches and a find's reconstructed groups; what
+    // binding will see is only known then, so it loads before binding runs.
+    const plan = planWrite(
+      { doc: toDocHandle(runtime.doc), model: options.model, codec: links.codec },
       {
         ...selectors,
-        ...(writtenContent ? { parsedContent: writtenContent } : {}),
         documentAddress: address,
         ...(copiedNodes ? { blocks: copiedNodes } : {}),
       },
     );
+    if (plan.ok && plan.written.length > 0) {
+      await options.links.prepare({
+        documentId: address.documentId,
+        docs: [],
+        written: plan.written,
+        context,
+      });
+    }
+    const assigner = linkAssigner(address.documentId, links.scope, shown);
+    const resolved = plan.ok ? plan.bind(assigner) : plan;
     if (!resolved.ok) {
       return errorResponse(
         resolved.error.code,
@@ -807,7 +809,6 @@ export function createWriteCommands(deps: {
       scope,
       holderDocumentId: documentId,
       shown,
-      codec: options.codec,
       ...(options.onLinkSpliceFallback
         ? {
             onSpliceFallback: (reason) => options.onLinkSpliceFallback?.({ documentId, reason }),
@@ -822,16 +823,6 @@ export function createWriteCommands(deps: {
    */
   async function registerMinted(assigner: WriteLinkAssigner): Promise<void> {
     if (assigner.minted.length > 0) await options.links.registerAhead(assigner.minted);
-  }
-
-  /** Written content parsed early so the scope can load what it names; errors surface in resolve. */
-  function parseQuietly(content: unknown) {
-    if (typeof content !== "string" || content.length === 0) return undefined;
-    try {
-      return options.codec.parse(content);
-    } catch {
-      return undefined;
-    }
   }
 
   function validateResolvedIr(

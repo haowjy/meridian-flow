@@ -133,13 +133,13 @@ function catalogNow() {
 }
 
 /** Spells a client's first block under the post-move catalog. */
-function spelled(doc: Y.Doc): string {
+async function spelled(doc: Y.Doc): Promise<string> {
   const ctx = linkHarness({
     holder: { id: HOLDER_ID, uri: HOLDER },
     documents: catalogNow(),
     doc: clone(doc, 1),
   });
-  return ctx.markdown().split("\n\n")[0] ?? "";
+  return (await ctx.markdown()).split("\n\n")[0] ?? "";
 }
 
 interface MatrixRow {
@@ -185,7 +185,7 @@ async function runFourWays(row: MatrixRow, producer: Producer): Promise<void> {
   }
   for (const { way, doc } of results) {
     expect.soft(stored(doc), `${label}: stored, ${way}`).toEqual(row.expected);
-    expect.soft(spelled(doc), `${label}: spelled, ${way}`).toBe(row.markdown);
+    expect.soft(await spelled(doc), `${label}: spelled, ${way}`).toBe(row.markdown);
   }
   const reference = results[0]?.doc as Y.Doc;
   for (const { way, doc } of results.slice(1))
@@ -397,7 +397,7 @@ async function repeatedRenames(kind: "adjacent prose (#728)" | "label edits insi
             [label, D_REF],
             [suffix, null],
           ]);
-          expect.soft(spelled(doc), name).toBe(`[${label}](${path})${suffix}`);
+          expect.soft(await spelled(doc), name).toBe(`[${label}](${path})${suffix}`);
         }
         shownAt = ch(path);
       }
@@ -454,7 +454,7 @@ async function undoAfterMove(writerId: number, otherId: number) {
         ["Target", ref],
         [" waits.", null],
       ]);
-      expect.soft(ctx.markdown(doc).split("\n\n")[0], name).toBe("[Target](new.md) waits.");
+      expect.soft((await ctx.markdown(doc)).split("\n\n")[0], name).toBe("[Target](new.md) waits.");
     }
   }
 }
