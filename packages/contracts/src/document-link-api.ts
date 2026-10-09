@@ -30,9 +30,11 @@ export type DocumentLinkAnswer =
         workId: string | null;
       };
       inDraft: boolean;
+      /** An ahead ref answered through its settlement: it never answers by address again. */
+      settled?: true;
     }
-  /** A ref the reader cannot reach: no uri, no title. */
-  | { state: "gone" }
+  /** A ref the reader cannot reach: no uri, no title. `settled` as on `document`. */
+  | { state: "gone"; settled?: true }
   /** An unsettled ahead ref, or a no-ref address with nothing there: Create. */
   | { state: "missing"; uri: string }
   /** External, malformed, or contextual outside any Work. */
