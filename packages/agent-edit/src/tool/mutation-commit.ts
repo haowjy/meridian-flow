@@ -22,6 +22,7 @@ import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
+  JournalAuthority,
   JournalBatchAppendEntry,
   JournalCommitKind,
   UpdateJournal,
@@ -30,6 +31,7 @@ import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { BoundLinks } from "./link-binding.js";
+import { status } from "./response-format.js";
 import type { DocumentCommandName, InteractionContext, MutationActor } from "./types.js";
 
 export interface MutationCommitRuntime {
@@ -78,6 +80,12 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 
 export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
   runtime: MutationCommitRuntime;
+  /**
+   * The authority generation a host-prepared update's base was read in: it is
+   * admitted only into that generation (checked under the document's lock),
+   * and the journal append is fenced with it.
+   */
+  expectedAuthority?: JournalAuthority;
   before: readonly BlockSnapshot[];
   preOwnSnapshot: Uint8Array;
 }
@@ -272,8 +280,18 @@ export function createMutationCommit(deps: {
         input.docId,
         input.commandName,
         async (liveDoc) => {
+          const live = coordinator.documentAuthority?.(liveDoc);
+          const expected = input.expectedAuthority;
+          if (expected && live && !sameJournalAuthority(expected, live)) {
+            return status("invalid_write", "The document was restored; prepare the write again.", {
+              error: { type: "prepared_base", code: "authority_replaced", documentId: input.docId },
+            });
+          }
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
+            // A copy with no authority of its own (inside a reply's transaction) still fences
+            // the append with the certificate.
+            authority: expected ?? live,
             ownTurnId: input.turnId,
             update: mergeUpdates(input.updates.map((entry) => entry.update)),
             ownWrites: [
@@ -359,6 +377,8 @@ export function createMutationCommit(deps: {
       journalEntries: readonly JournalBatchAppendEntry[];
       preflight?: CapturedConcurrentDetection;
       onJournalAccepted?(journalCommitKind: JournalCommitKind): void;
+      /** Fences the journal append; absent, the live document's own authority. */
+      authority?: JournalAuthority;
     },
   ): Promise<ApplyWithRecheckResult & { journalCommitKind: JournalCommitKind | null }> {
     const journalCommitKind =
@@ -367,7 +387,7 @@ export function createMutationCommit(deps: {
             await commitJournalBatch(
               input.journalEntries.map((entry) => ({
                 ...entry,
-                authority: coordinator.documentAuthority?.(liveDoc),
+                authority: input.authority ?? coordinator.documentAuthority?.(liveDoc),
               })),
             )
           ).journalCommitKind
@@ -672,4 +692,8 @@ function emptyConcurrentDetection(): ConcurrentDetectionResult {
     baselineBlocks: [],
     lineageOrigins: [],
   };
+}
+
+function sameJournalAuthority(left: JournalAuthority, right: JournalAuthority): boolean {
+  return left.authorityId === right.authorityId && left.generation === right.generation;
 }

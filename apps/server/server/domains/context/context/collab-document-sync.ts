@@ -5,8 +5,9 @@
  *
  * Content arrives prepared (`PreparedWrite`): ContextFS prepares it before
  * opening its command transaction, and this runs inside that transaction. A
- * document that no longer holds what the write was prepared against is
- * `stale_target`, which ContextFS answers by preparing again.
+ * write whose base's authority generation was replaced, or whose base clocks
+ * the document lacks, is `stale_target`, which ContextFS answers by preparing
+ * again.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import {

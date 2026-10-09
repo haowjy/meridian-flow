@@ -151,7 +151,18 @@ export interface ResponseCommitterTransitionDetail {
   droppedUpdateCount?: number;
 }
 
-export type WriteErrorDetail = ResponseLifecycleErrorDetail;
+/**
+ * A host-prepared write (`WriteContext.prepared`) whose base's authority
+ * generation was replaced before it could be admitted; the host prepares it
+ * again against the document as it is now.
+ */
+export interface PreparedBaseExpiredDetail {
+  type: "prepared_base";
+  code: "authority_replaced";
+  documentId: string;
+}
+
+export type WriteErrorDetail = ResponseLifecycleErrorDetail | PreparedBaseExpiredDetail;
 
 interface InteractionContextBase {
   /** Durable peer state captured before the host pulls concurrent upstream changes. */
@@ -215,10 +226,16 @@ export interface WriteContext {
    * nothing is parsed, assigned or aligned again. A prepared overwrite also
    * carries its certified intent: the IR and the provenance facts the host
    * wrote for it against the base, admitted with the update.
+   *
+   * `authority` certifies the generation the base was read in. The commit
+   * admits the update only while the document is still in it, and fences the
+   * journal append with it; otherwise the write is `invalid_write` with a
+   * `prepared_base` error, for the host to prepare again.
    */
   prepared?: {
     blocks: readonly Block[];
     update: Uint8Array;
+    authority?: import("../ports/update-journal.js").JournalAuthority;
     certified?: { ir: SemanticEditIRV1; provenance: Uint8Array };
   };
   /**
