@@ -4,9 +4,9 @@ import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
-import { Doc } from "yjs";
 import * as draftsApi from "@/client/api/drafts-api";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   DraftReviewBoundary,
@@ -276,14 +276,21 @@ export function createReviewScopeFixture(
   for (const endpoint of Object.values(network))
     endpoint.mockReturnValue(new Promise<never>(() => {}));
   const removal = options.removal ?? new ContextRemovalCoordinator();
-  const roomDocument = new Doc();
-  // This is only a refresh subscription source, not a delivery/paint witness.
+  const rooms = new Map<string, DocumentSession>();
+  // Detached sessions supply subscription truth without claiming a wire/paint witness.
   const registry =
     options.registry ??
     ({
       retainBranchRooms: () => {},
       releaseBranchRooms: () => {},
-      getBranchRoom: () => ({ document: roomDocument }),
+      getBranchRoom: (roomKey: string) => {
+        let room = rooms.get(roomKey);
+        if (!room) {
+          room = new DocumentSession({ roomKey, persistence: { kind: "none" } });
+          rooms.set(roomKey, room);
+        }
+        return room;
+      },
     } as unknown as LiveDocumentSessionRegistry);
   const seams = [
     vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
@@ -299,7 +306,7 @@ export function createReviewScopeFixture(
     dispose() {
       for (const spy of [...Object.values(network), ...seams]) spy.mockRestore();
       if (!options.removal) removal.dispose();
-      roomDocument.destroy();
+      for (const room of rooms.values()) room.destroy();
     },
   };
 }

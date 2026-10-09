@@ -11,8 +11,12 @@
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import { act, useState } from "react";
+import { act, useCallback, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  type ReviewRoomOwner,
+  useReviewRoomOwner,
+} from "@/features/draft-review/useReviewRoomOwner";
 import {
   failRebuild,
   finishRebuild,
@@ -25,6 +29,7 @@ import {
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
 
+let roomOwner: ReviewRoomOwner;
 const unavailable = vi.fn();
 const setInlineReviewShown = vi.fn();
 const controller: {
@@ -63,7 +68,7 @@ vi.mock("@/features/change-trail/trail-detail-query", () => ({
   usePrefetchTrailDetails: () => {},
 }));
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
-  useDraftReview: () => ({ controller }),
+  useDraftReview: () => ({ controller, roomOwner }),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry,
@@ -113,7 +118,7 @@ function Harness({ initial }: { initial: Omit<EditorViewProps, "onReviewRoomStal
     : (props.session ?? sessionFor(props.documentId));
   return (
     <QueryClientProvider client={queryClient}>
-      <EditorView
+      <BoundEditor
         projectId="project-a"
         reviewWorkId="work-a"
         onReviewRoomStale={() => {}}
@@ -122,6 +127,32 @@ function Harness({ initial }: { initial: Omit<EditorViewProps, "onReviewRoomStal
       />
     </QueryClientProvider>
   );
+}
+
+function BoundEditor(props: EditorViewProps) {
+  const dispatch = useCallback(
+    (action: import("@/features/draft-review/draft-review-session").DraftReviewAction) => {
+      if (action.type === "exitInline") props.onReviewSessionUnavailable?.();
+      if (action.type === "roomStale")
+        props.onReviewRoomStale?.(action.documentId, action.draftId, action.roomName);
+    },
+    [props.onReviewSessionUnavailable, props.onReviewRoomStale],
+  );
+  roomOwner = useReviewRoomOwner({
+    projectId: "project-a",
+    workId: "work-a",
+    review: props.reviewDraftId
+      ? {
+          kind: "inline",
+          documentId: props.documentId,
+          draftId: props.reviewDraftId,
+          roomName: props.reviewRoomName ?? undefined,
+        }
+      : null,
+    disposing: false,
+    dispatch,
+  });
+  return <EditorView {...props} />;
 }
 
 describe("review transitions", () => {

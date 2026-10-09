@@ -22,6 +22,7 @@ import {
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import { listed, preview, work } from "@/test-support/draft-review-scope";
+import { sessionFor } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
@@ -48,7 +49,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => ({
     retainBranchRooms: vi.fn(),
     releaseBranchRooms: vi.fn(),
-    getBranchRoom: () => ({ document: { on: vi.fn(), off: vi.fn() } }),
+    getBranchRoom: sessionFor,
   }),
 }));
 

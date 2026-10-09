@@ -2,7 +2,7 @@
 
 import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { isCancelledError, type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import {
@@ -13,7 +13,6 @@ import {
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
 import {
   DraftCommandOutcomeUnknownError,
   settleConfirmedChange,
@@ -37,12 +36,10 @@ import {
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
   inlineReviewFromState,
-  type ProposalEvidence,
   type ReviewToast,
 } from "./draft-review-session";
 import { type ReviewFocus, reviewChangesOfPreview } from "./review-changes";
 import { draftClaim, useReviewCommandCompletion } from "./useReviewCommandCompletion";
-import { useReviewGeneration } from "./useReviewGeneration";
 import {
   listedDocumentName,
   type SelectionCommand,
@@ -50,9 +47,6 @@ import {
 } from "./useSelectionCommands";
 
 export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
-
-/** How many times in a row a room read is read again after a refresh cancelled it. */
-const MAX_CANCELLED_ROOM_READS = 5;
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
 export type ReviewChangeTarget = ReviewFocus & { anchorOperationId: string };
@@ -146,15 +140,6 @@ export type DraftReviewController = {
    * place; it neither exits nor guesses the new room.
    */
   reviewRoomStale: (documentId: string, draftId: string, roomName: string) => void;
-  /**
-   * The Work's draft list has no row for the reviewed draft. The review ends
-   * unless the newest preview evidence shows the draft alive (row X).
-   */
-  reviewDraftAbsentFromList: (
-    documentId: string,
-    draftId: string,
-    evidence: ProposalEvidence | null,
-  ) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
   inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
@@ -231,76 +216,6 @@ export function useDraftReviewController({
   const dispositionLocked = isDisposing || draftsFrozen;
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
-
-  // The review's room is the preview's: found through the one fenced preview
-  // query, read fresh, so the read joins any in flight, commits to the shared
-  // cache only through the fence (a change handled meanwhile cannot come back),
-  // and what it reports is addressed to the draft, so a review that has moved on
-  // takes nothing from it. A review asks for a room by having none: entering,
-  // re-entering a generation, and a room reported stale all clear it.
-  const reviewedDocumentId = inlineReview?.documentId;
-  const reviewedDraftId = inlineReview?.draftId;
-  const reviewedGeneration = inlineReview?.draftGeneration;
-  const roomWanted = inlineReview !== null && !inlineReview.roomName && !inlineReview.roomError;
-  useEffect(() => {
-    if (!roomWanted || !reviewedDocumentId || !reviewedDraftId) return;
-    const draft = { projectId, workId, documentId: reviewedDocumentId, draftId: reviewedDraftId };
-    let owned = true;
-    // A refresh's invalidation cancels the read in flight and starts another.
-    // The read that began it follows its replacement, but one that joined it is
-    // rejected with the cancellation, which says nothing of the room. While this
-    // attempt is owned, read again (joining the replacement, or fresh); only a
-    // fetch that failed reports the room failed. A cancel loop is bounded.
-    const readFresh = async () => {
-      for (let cancelled = 0; ; cancelled++) {
-        try {
-          return await queryClient.fetchQuery({ ...draftPreviewQueryOptions(draft), staleTime: 0 });
-        } catch (error) {
-          if (!isCancelledError(error) || !owned || cancelled >= MAX_CANCELLED_ROOM_READS)
-            throw error;
-        }
-      }
-    };
-    void (async () => {
-      let preview = await readFresh();
-      // A read already in flight can predate the generation the review shows; it
-      // has settled, so one more read starts after it.
-      const shown = stateRef.current.surface;
-      if (
-        preview.status === "active" &&
-        shown.kind === "inline" &&
-        shown.draftId === reviewedDraftId &&
-        shown.draftGeneration !== undefined &&
-        preview.draftGeneration < shown.draftGeneration
-      )
-        preview = await readFresh();
-      if (!owned || preview.status !== "active") return;
-      dispatch({
-        type: "generationObserved",
-        documentId: reviewedDocumentId,
-        draftId: reviewedDraftId,
-        draftGeneration: preview.draftGeneration,
-        proposal: preview.inlineModelPresent && reviewChangesOfPreview(preview).length > 0,
-        claim: draftClaim(queryClient, draft),
-        roomName: preview.reviewRoomName,
-      });
-    })().catch(() => {
-      if (owned)
-        dispatch({ type: "roomFailed", documentId: reviewedDocumentId, draftId: reviewedDraftId });
-    });
-    return () => {
-      owned = false;
-    };
-  }, [
-    roomWanted,
-    reviewedDocumentId,
-    reviewedDraftId,
-    reviewedGeneration,
-    projectId,
-    workId,
-    queryClient,
-    dispatch,
-  ]);
 
   async function settleConfirmedApply(
     tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
@@ -460,13 +375,6 @@ export function useDraftReviewController({
     dispatch({ type: "roomStale", documentId, draftId, roomName });
   }, []);
 
-  const reviewDraftAbsentFromList = useCallback(
-    (documentId: string, draftId: string, evidence: ProposalEvidence | null) => {
-      dispatch({ type: "draftAbsentFromList", documentId, draftId, evidence });
-    },
-    [],
-  );
-
   const exitInlineReview = useCallback(() => {
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
     if (inline) {
@@ -553,7 +461,6 @@ export function useDraftReviewController({
   }, []);
 
   useReviewCommandCompletion({ projectId, workId, activeRef, stateRef, dispatch });
-  useReviewGeneration({ projectId, workId, inlineReview, activeRef, dispatch });
 
   const { applyChanges, discardChanges } = useSelectionCommands({
     projectId,
@@ -604,7 +511,6 @@ export function useDraftReviewController({
       dismissToast,
       enterInlineReview,
       reviewRoomStale,
-      reviewDraftAbsentFromList,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
@@ -635,7 +541,6 @@ export function useDraftReviewController({
       dismissToast,
       enterInlineReview,
       reviewRoomStale,
-      reviewDraftAbsentFromList,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
