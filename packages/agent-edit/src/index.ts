@@ -38,6 +38,15 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
+export type {
+  Binding,
+  CorrespondenceInput,
+  CorrespondenceResult,
+  OldOccurrence,
+  ShownLink,
+  WrittenLink,
+} from "./link-correspondence.js";
+export { correspondLinks, correspondLinksWithDiagnostics } from "./link-correspondence.js";
 export type { BlockHashLookup, BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId, lookupBlockHash } from "./model/block-hash.js";
 export type { Hashline } from "./model/hashline.js";
