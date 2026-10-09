@@ -440,8 +440,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      const creation = r.value.requireCreation("entry");
-      if (!creation.ok) return creation;
+      // Binding prepares syntax and refs; creation policy belongs to the later
+      // createBoundDocument call, which carries the upload reservation identity.
+      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
       return callAdapter(canonical, () => adapter.bindTrackedDocument(path, content));
     },
 
