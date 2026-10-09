@@ -9,6 +9,7 @@ is not a claim that it passed on the current commit.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
+- [CI quality groups](../../tools/ci/README.md): partition coverage and required-status failure propagation.
 
 ## Script-backed checks
 
