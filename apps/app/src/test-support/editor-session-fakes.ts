@@ -26,8 +26,6 @@ export const sessionHorizons = new Map<
   { localPersistence: Promise<void>; firstServerSync: Promise<void> }
 >();
 
-/** Rooms whose pending edits the server refused: the review rebuilds them from server state. */
-export const refusedRooms = new Set<string>();
 let rebuild: { resolve: (session: DocumentSession) => void; reject: () => void } | null = null;
 
 export function sessionFor(roomKey: string): DocumentSession {
@@ -57,7 +55,12 @@ export function sessionFor(roomKey: string): DocumentSession {
     awareness,
     presence: createLocalPresence(awareness),
     markerStore: new SessionMarkerStore("writer"),
-    refusedLocalEdits: () => refusedRooms.has(roomKey),
+    get resetDisposition() {
+      const state = sessionSnapshots.get(roomKey)?.connectionState;
+      return state?.kind === "reset" ? state.disposition : null;
+    },
+    unacknowledgedUpdates: () => null,
+    hasUnacknowledgedEdits: () => false,
     whenLocalPersistenceSynced: () =>
       sessionHorizons.get(roomKey)?.localPersistence ?? Promise.resolve(),
     whenSynced: () => sessionHorizons.get(roomKey)?.firstServerSync ?? Promise.resolve(),
@@ -107,7 +110,6 @@ export function setSessionStatus(roomKey: string, status: DocumentSessionSnapsho
 
 /** A fresh session for `roomKey`: the rebuild's result once the server state has synced. */
 export function finishRebuild(roomKey: string): void {
-  refusedRooms.delete(roomKey);
   sessions.delete(roomKey);
   rebuild?.resolve(sessionFor(roomKey));
   rebuild = null;

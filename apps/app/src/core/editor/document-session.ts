@@ -115,13 +115,17 @@ export type DocumentSessionResetReason =
   | typeof WS_CLOSE.BRANCH_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | "branch-generation-stale";
+  | typeof WS_CLOSE.BRANCH_GENERATION_STALE.reason;
+
+/** How a terminal room reset treats its unacknowledged writer updates. */
+export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
   | {
       kind: "reset";
       reason: DocumentSessionResetReason;
+      disposition: ResetDisposition;
       code?: number;
     };
 
@@ -135,6 +139,8 @@ export type DocumentSessionConnectionState =
  * value and `offline` could never fire.
  */
 export type DocumentSessionTransportProvider = {
+  /** Local updates not acknowledged on this connection, merged; null when none. */
+  unacknowledgedUpdates(): Uint8Array | null;
   synced?: boolean;
   whenSynced?: Promise<void>;
   /**
@@ -342,7 +348,7 @@ export class DocumentSession {
     if (this.destroyed) {
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
     }
-    if (this.refusedLocalEdits()) {
+    if (this.resetDisposition === "refused") {
       // A reconnect would replay the refused edits from this Y.Doc.
       throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
     }
@@ -368,12 +374,16 @@ export class DocumentSession {
     this.startLocalPeers();
   }
 
-  /** The server refused this Y.Doc's pending edits; only a rebuilt room may sync again. */
-  refusedLocalEdits(): boolean {
-    return (
-      this.transportState?.kind === "reset" &&
-      this.transportState.reason === WS_CLOSE.ACCESS_CHANGED.reason
-    );
+  get resetDisposition(): ResetDisposition | null {
+    return this.transportState?.kind === "reset" ? this.transportState.disposition : null;
+  }
+
+  unacknowledgedUpdates(): Uint8Array | null {
+    return this.transportProvider?.unacknowledgedUpdates() ?? null;
+  }
+
+  hasUnacknowledgedEdits(): boolean {
+    return this.unacknowledgedUpdates() !== null;
   }
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {

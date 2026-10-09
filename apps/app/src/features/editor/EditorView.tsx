@@ -19,11 +19,13 @@
  * with no remount. Only a review room whose pending edits the server refused
  * is rebuilt, from the server's state.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { projectResourceLocation, resourceForDocumentIdentity } from "@meridian/resource-replica";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -51,6 +53,7 @@ import {
 } from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { reviewRoomRef } from "@/features/draft-review/review-room-ref";
 import { useLinkableDocuments } from "@/features/links";
 import {
   useAccountResourceProjection,
@@ -104,7 +107,6 @@ export type EditorViewProps = {
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
   /** Active draft room for inline review; absent means bind to the live document room. */
-  reviewDraftId?: string | null;
   /** Generation-fenced room name for the active branch review room, supplied by the preview DTO. */
   reviewRoomName?: string | null;
   /** Work that owns the draft review — required to query the hunk model when reviewing. */
@@ -114,19 +116,17 @@ export type EditorViewProps = {
   /**
    * Called when the review room is of a generation the server has closed
    * (`branch-generation-stale`): the review is still wanted, and its owner reads
-   * the draft's current room. Without it a stale room ends the review like any
-   * other unavailable session.
+   * the draft's current room. Required whenever the host supplies a review.
    */
-  onReviewRoomStale?: (documentId: string, draftId: string, roomName: string) => void;
-};
+} & (
+  | {
+      reviewDraftId?: string | null;
+      onReviewRoomStale: (documentId: string, draftId: string, roomName: string) => void;
+    }
+  | { reviewDraftId?: null; onReviewRoomStale?: never }
+);
 
 let editorSessionOwnerSequence = 0;
-
-/** Resets that say the branch moved on to a later generation, not that the writer lost the room. */
-const STALE_ROOM_REASONS: ReadonlySet<string> = new Set([
-  "branch-generation-stale",
-  WS_CLOSE.BRANCH_STALE.reason,
-]);
 
 /**
  * How long a painted review editor waits for its change marks before showing
@@ -174,6 +174,7 @@ export function EditorView(props: EditorViewProps) {
   // the branch editor owns input, the live manuscript stays painted but read-only.
   const reviewRequested = Boolean(props.reviewDraftId);
   const registry = useLiveDocumentSessionRegistry();
+  const queryClient = useQueryClient();
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   // The review mount whose editor exists. Until then the live editor stays on
   // screen, so entering review never shows an empty body.
@@ -231,7 +232,21 @@ export function EditorView(props: EditorViewProps) {
     }
     const ownerId = sessionOwnerIdRef.current;
     if (!ownerId) return;
-    registry.retainBranchRooms(ownerId, [roomKey]);
+    if (!props.projectId || !props.reviewWorkId || !reviewDraftId || !props.onReviewRoomStale) {
+      throw new Error("Review hosts require a draft target and onReviewRoomStale");
+    }
+    registry.retainBranchRooms(ownerId, [
+      reviewRoomRef(
+        queryClient,
+        {
+          projectId: props.projectId,
+          workId: props.reviewWorkId,
+          documentId: props.documentId,
+          draftId: reviewDraftId,
+        },
+        roomKey,
+      ),
+    ]);
     let session: DocumentSession;
     try {
       session = registry.getBranchRoom(roomKey);
@@ -245,47 +260,57 @@ export function EditorView(props: EditorViewProps) {
       setReplaced(null);
       registry.releaseBranchRooms(ownerId);
     };
-  }, [inReview, settled, registry, roomKey]);
+  }, [
+    inReview,
+    settled,
+    registry,
+    roomKey,
+    queryClient,
+    props.projectId,
+    props.reviewWorkId,
+    props.documentId,
+    reviewDraftId,
+    props.onReviewRoomStale,
+  ]);
 
   useEffect(() => {
     if (!inReview || boundSession?.roomKey !== roomKey) return;
     let rebuilding = false;
     return boundSession.subscribe((snapshot) => {
       if (rebuilding) return;
-      if (boundSession.refusedLocalEdits()) {
-        // Only the refused characters are lost: the review stays open on a
-        // fresh session synced from the server.
-        rebuilding = true;
-        // Hold what is painted, then unbind before the retired session's Y.Doc is destroyed
-        // under the editor. A replacement still waiting to paint keeps the copy already held.
-        if (reviewPaintedRef.current) {
-          const held = captureReview(reviewHostRef.current);
-          if (held && reviewIdentity) setReplaced({ identity: reviewIdentity, markup: held });
-        }
-        setBoundSession(null);
-        const attempt = Symbol("review-rebuild");
-        rebuildAttemptRef.current = attempt;
-        void registry.rebuildBranchRoom(roomKey).then(
-          (rebuilt) => {
-            if (rebuildAttemptRef.current === attempt) setBoundSession(rebuilt);
-          },
-          () => {
-            if (rebuildAttemptRef.current !== attempt) return;
-            setReplaced(null);
-            props.onReviewSessionUnavailable?.();
-          },
-        );
-        return;
-      }
       const connection = snapshot.connectionState;
-      if (
-        props.onReviewRoomStale &&
-        reviewDraftId &&
-        connection?.kind === "reset" &&
-        STALE_ROOM_REASONS.has(connection.reason)
-      ) {
-        props.onReviewRoomStale(props.documentId, reviewDraftId, roomKey);
-        return;
+      switch (connection?.kind === "reset" ? connection.disposition : null) {
+        case "superseded":
+          if (reviewDraftId) props.onReviewRoomStale?.(props.documentId, reviewDraftId, roomKey);
+          return;
+        case "rebuild":
+        case "refused": {
+          // Hold the painted review while the pool and handoff join the same fresh session.
+          rebuilding = true;
+          // Hold what is painted, then unbind before the retired session's Y.Doc is destroyed
+          // under the editor. A replacement still waiting to paint keeps the copy already held.
+          if (reviewPaintedRef.current) {
+            const held = captureReview(reviewHostRef.current);
+            if (held && reviewIdentity) setReplaced({ identity: reviewIdentity, markup: held });
+          }
+          setBoundSession(null);
+          const attempt = Symbol("review-rebuild");
+          rebuildAttemptRef.current = attempt;
+          void registry.rebuildBranchRoom(roomKey).then(
+            (rebuilt) => {
+              if (rebuildAttemptRef.current === attempt) setBoundSession(rebuilt);
+            },
+            () => {
+              if (rebuildAttemptRef.current !== attempt) return;
+              setReplaced(null);
+              props.onReviewSessionUnavailable?.();
+            },
+          );
+          return;
+        }
+        case "schema":
+          props.onReviewSessionUnavailable?.();
+          return;
       }
       if (
         snapshot.status === "destroyed" ||

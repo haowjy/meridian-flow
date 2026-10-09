@@ -32,7 +32,8 @@ export {
   type LocalResourceLifetimePort,
 } from "./document-session-coordination-contract";
 
-import { BranchRoomPool } from "./branch-room-pool";
+import { BranchRoomPool, type BranchRoomRef } from "./branch-room-pool";
+import { BranchWriterHandoff } from "./branch-writer-handoff";
 import type {
   LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
@@ -70,6 +71,7 @@ export class DocumentSessionRegistry
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
   private readonly branchRooms: BranchRoomPool;
+  private readonly writerHandoff: BranchWriterHandoff;
   private readonly retainedByOwner = new Map<string, Map<DocumentId, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
@@ -109,6 +111,7 @@ export class DocumentSessionRegistry
       document,
       awareness,
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
+    epochSignal: AbortSignal = new AbortController().signal,
   ) {
     this.branchRooms = new BranchRoomPool({
       openSession: (roomKey) => {
@@ -118,6 +121,14 @@ export class DocumentSessionRegistry
       },
       teardownOwner: this.teardownOwner,
       teardownGraceMs,
+      retired: (retirement) => {
+        if (retirement.kind === "carried") this.writerHandoff.carry(retirement);
+      },
+    });
+    this.writerHandoff = new BranchWriterHandoff({
+      pool: this.branchRooms,
+      epochSignal,
+      retryDelaysMs: [100, 500, 1_000, 5_000],
     });
     if (!accountId) return;
     this.accountId = accountId;
@@ -207,7 +218,11 @@ export class DocumentSessionRegistry
     const session = state.session;
     if (!session) return false;
     const snapshot = session.getSnapshot();
-    if (snapshot.schemaFence || snapshot.status === "detached" || session.refusedLocalEdits())
+    if (
+      snapshot.schemaFence ||
+      snapshot.status === "detached" ||
+      session.resetDisposition === "refused"
+    )
       return false;
     if (
       snapshot.status !== "access-lost" &&
@@ -251,8 +266,8 @@ export class DocumentSessionRegistry
     return () => this.retainedObservers.delete(observer);
   }
 
-  retainBranchRooms(ownerId: string, roomKeys: Iterable<string>): void {
-    this.branchRooms.retain(ownerId, roomKeys);
+  retainBranchRooms(ownerId: string, refs: readonly BranchRoomRef[]): void {
+    this.branchRooms.retain(ownerId, refs);
   }
 
   releaseBranchRooms(ownerId: string): void {
@@ -298,6 +313,7 @@ export class DocumentSessionRegistry
   beginCloseAccountRuntime(): void {
     if (this.accountRuntimeState !== "open") return;
     this.accountRuntimeState = "closing";
+    this.writerHandoff.dispose();
     this.localResources?.beginClose();
     this.coordination?.beginClose();
   }
@@ -332,6 +348,7 @@ export class DocumentSessionRegistry
   invalidateAll(): Promise<void> {
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
+    this.writerHandoff.dispose();
     this.branchRooms.invalidate();
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);
@@ -603,7 +620,7 @@ export class DocumentSessionRegistry
    * rebuilds them in place (`rebuildBranchRoom`).
    */
   private dropRefusedRoom(session: DocumentSession): void {
-    if (this.refusedRoomDrops.has(session) || !session.refusedLocalEdits()) return;
+    if (this.refusedRoomDrops.has(session) || session.resetDisposition !== "refused") return;
     const state = this.liveRooms.get(session.documentId as DocumentId);
     if (state?.session !== session) return;
     const settle = () => {
