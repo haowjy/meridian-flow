@@ -66,8 +66,19 @@ export function useReviewRoomOwner({
   const row = rows?.find((row) => row.draftId === draftId && row.documentId === documentId);
   // List omission after a close must not erase the draft-only destination's intent.
   if (draftOnly || row) kind.current.draftOnly = draftOnly || row?.isNewDocument === true;
-  const selected = useRef(review);
-  selected.current = review;
+  const selected = useRef({ review, pendingWriterGeneration });
+  selected.current = { review, pendingWriterGeneration };
+  const observeAbsence = (terminal = false) => {
+    const generation = selected.current.pendingWriterGeneration;
+    dispatch({
+      type: "reviewAbsent",
+      documentId,
+      draftId,
+      terminal,
+      draftOnly: kind.current.draftOnly,
+      evidence: generation === null ? null : { draftGeneration: generation, proposal: true },
+    });
+  };
   const [binding, setBinding] = useState<{
     session: DocumentSession | null;
     key: string;
@@ -86,18 +97,22 @@ export function useReviewRoomOwner({
   useLayoutEffect(() => {
     if (!documentId || !draftId) return;
     const claim = draftClaim(queryClient, draft);
-    const observations = reviewRoomObservations(rows, preview, draft, pendingWriterGeneration);
+    const observations = reviewRoomObservations(
+      rows,
+      preview,
+      draft,
+      pendingWriterGeneration,
+      kind.current.draftOnly,
+    );
     for (const action of observations) {
       if (
-        action.type !== "draftAbsentFromList" ||
+        action.type !== "reviewAbsent" ||
         (entryAnswered === target && !review?.completion && !disposing)
       )
         dispatch(action.type === "generationObserved" ? { ...action, claim } : action);
     }
     if (
-      observations.some(
-        (action) => action.type === "draftAbsentFromList" && action.evidence?.proposal,
-      ) &&
+      observations.some((action) => action.type === "reviewAbsent" && action.evidence?.proposal) &&
       !review?.completion &&
       !disposing
     ) {
@@ -143,7 +158,7 @@ export function useReviewRoomOwner({
     void (async () => {
       let answer = await read();
       if (!current()) return;
-      const shown = selected.current;
+      const shown = selected.current.review;
       if (
         answer.status === "active" &&
         shown?.draftGeneration !== undefined &&
@@ -152,52 +167,28 @@ export function useReviewRoomOwner({
         answer = await read();
       if (!current()) return;
       setEntryAnswered(target);
-      if (answer.status === "gone") {
-        dispatch(
-          kind.current.draftOnly
-            ? { type: "roomFailed", documentId, draftId }
-            : { type: "exitInline" },
-        );
-        return;
-      }
-      dispatch({
-        type: "generationObserved",
-        documentId,
-        draftId,
-        draftGeneration: answer.draftGeneration,
-        proposal: answer.inlineModelPresent && reviewChangesOfPreview(answer).length > 0,
-        claim: draftClaim(queryClient, draft),
-        roomName: answer.reviewRoomName,
-      });
+      if (answer.status === "gone") observeAbsence();
+      else
+        dispatch({
+          type: "generationObserved",
+          documentId,
+          draftId,
+          draftGeneration: answer.draftGeneration,
+          proposal: answer.inlineModelPresent && reviewChangesOfPreview(answer).length > 0,
+          claim: draftClaim(queryClient, draft),
+          roomName: answer.reviewRoomName,
+        });
     })().catch((error: unknown) => {
       if (!current()) return;
       setEntryAnswered(target);
-      dispatch(
-        error &&
-          typeof error === "object" &&
-          "status" in error &&
-          error.status === 404 &&
-          !kind.current.draftOnly
-          ? { type: "exitInline" }
-          : { type: "roomFailed", documentId, draftId },
-      );
+      if (error && typeof error === "object" && "status" in error && error.status === 404)
+        observeAbsence();
+      else dispatch({ type: "roomFailed", documentId, draftId });
     });
     return () => {
       owned = false;
     };
-  }, [
-    wanted,
-    target,
-    key,
-    projectId,
-    workId,
-    documentId,
-    draftId,
-    generation,
-    queryClient,
-    registry,
-    dispatch,
-  ]);
+  }, [wanted, target, key, queryClient, registry, dispatch]);
 
   useEffect(() => {
     if (!roomName || !documentId || !draftId) {
@@ -214,10 +205,8 @@ export function useReviewRoomOwner({
       horizon.current.registry === registry;
     const unavailable = () => {
       if (!current()) return;
-      if (kind.current.draftOnly) {
-        dispatch({ type: "roomStale", documentId, draftId, roomName });
-        dispatch({ type: "roomFailed", documentId, draftId });
-      } else dispatch({ type: "exitInline" });
+      dispatch({ type: "roomStale", documentId, draftId, roomName });
+      observeAbsence(true);
     };
     let rebuilding = false;
     let unsubscribe: (() => void) | undefined;
@@ -299,18 +288,7 @@ export function useReviewRoomOwner({
       unsubscribe?.();
       registry.releaseBranchRooms(owner.current);
     };
-  }, [
-    projectId,
-    workId,
-    documentId,
-    draftId,
-    roomName,
-    key,
-    scope,
-    registry,
-    queryClient,
-    dispatch,
-  ]);
+  }, [key, scope, registry, queryClient, dispatch]);
 
   const session =
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
@@ -334,6 +312,7 @@ export function reviewRoomObservations(
   preview: import("@meridian/contracts/drafts").DraftPreviewResponse | undefined,
   draft: { documentId: string; draftId: string },
   pendingWriterGeneration: number | null = null,
+  draftOnly = false,
 ): DraftReviewAction[] {
   const actions: DraftReviewAction[] = [];
   const row = rows?.find(
@@ -360,8 +339,13 @@ export function reviewRoomObservations(
     (!evidence?.proposal || pendingWriterGeneration > evidence.draftGeneration)
       ? { draftGeneration: pendingWriterGeneration, proposal: true }
       : evidence;
-  if (rows && !row)
-    actions.push({ type: "draftAbsentFromList", ...draft, evidence: changesEvidence });
+  if ((rows && !row) || preview?.status === "gone")
+    actions.push({
+      type: "reviewAbsent",
+      ...draft,
+      evidence: changesEvidence,
+      draftOnly: draftOnly && preview?.status === "gone",
+    });
   return actions;
 }
 

@@ -437,13 +437,16 @@ export type DraftReviewAction =
     }
   | {
       /**
-       * The Work's draft list, once authoritative, has no row for the draft (row X). `evidence`
-       * is changes observed in the cached preview or session-layer writer delivery.
+       * A list omission, gone preview or unavailable room (row X). Evidence
+       * includes cached changes and pending writer delivery at its generation.
        */
-      type: "draftAbsentFromList";
+      type: "reviewAbsent";
       documentId: string;
       draftId: string;
       evidence: ProposalEvidence | null;
+      draftOnly?: boolean;
+      /** A terminal session or failed rebuild is not a transient missing read. */
+      terminal?: boolean;
     }
   | { type: "roomFailed"; documentId: string; draftId: string }
   | { type: "roomStale"; documentId: string; draftId: string; roomName: string }
@@ -512,8 +515,8 @@ export function draftReviewReducer(
       return { ...state, surface: { ...state.surface, focus: action.focus } };
     case "generationObserved":
       return onInline(state, action, (review) => observeGeneration(review, action));
-    case "draftAbsentFromList":
-      return draftAbsentFromList(state, action);
+    case "reviewAbsent":
+      return reviewAbsent(state, action);
     case "roomFailed":
       return onInline(state, action, (review) =>
         review.roomName === undefined ? { ...review, roomError: true } : review,
@@ -731,26 +734,35 @@ function observeGeneration(
 }
 
 /**
- * Row X: the list has no row for the reviewed draft. With no completion (the
+ * Row X: a read or room reports the reviewed draft absent. With no completion (the
  * writer's own last change explains a missing row) that is an external close,
  * unless the preview or session layer shows changes at the shown generation
  * or a newer one: the draft is alive and the list lags. A newer generation is the
  * observer's to take up; deciding here, against R and the evidence together,
  * keeps the outcome independent of which read arrived first (invariant 4).
  */
-function draftAbsentFromList(
+function reviewAbsent(
   state: DraftReviewState,
-  action: DraftReviewSelection & { evidence: ProposalEvidence | null },
+  action: Extract<DraftReviewAction, { type: "reviewAbsent" }>,
 ): DraftReviewState {
   const review = state.surface;
-  if (review.kind !== "inline" || !surfaceMatchesDraft(review, action) || review.completion) {
+  if (
+    review.kind !== "inline" ||
+    !surfaceMatchesDraft(review, action) ||
+    (review.completion && !action.terminal)
+  ) {
     return state;
   }
   const { evidence } = action;
   const alive =
     evidence?.proposal === true &&
     (review.draftGeneration === undefined || evidence.draftGeneration >= review.draftGeneration);
-  return alive ? state : clearInlineState({ ...state, surface: { kind: "none" } });
+  if (alive && !action.terminal) return state;
+  return action.draftOnly
+    ? review.roomError
+      ? state
+      : { ...state, surface: { ...review, roomName: undefined, roomError: true } }
+    : clearInlineState({ ...state, surface: { kind: "none" } });
 }
 
 function stateAfterInlineModelAvailable(
