@@ -170,8 +170,7 @@ export function useReviewChanges(
   const status: ReviewChangesView["status"] = !inline
     ? "idle"
     : active
-      ? !completion &&
-        adoptsGeneration(inline, {
+      ? adoptsGeneration(inline, {
           draftGeneration: active.draftGeneration,
           proposal: active.inlineModelPresent && reviewChangesOfPreview(active).length > 0,
         })

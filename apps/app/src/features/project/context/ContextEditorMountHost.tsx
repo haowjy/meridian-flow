@@ -22,6 +22,7 @@ import { useRequestedReview } from "../dock/editor-review-handoff";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
+  useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
 } from "./account-feature-context";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
@@ -70,6 +71,7 @@ export function ContextEditorMountHost({
   onUntitledBecameNonEmpty,
   readOnly = false,
 }: ContextEditorMountHostProps) {
+  const removal = useContextRemovalCoordinator();
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   const activeTab = trackedTabs.find((tab) => tab.documentId === activeTabId);
   const requestedReview = useRequestedReview({
@@ -119,7 +121,6 @@ export function ContextEditorMountHost({
           ? reviewRoomNameForDraft(tab.documentId, selectedReviewDraftId)
           : null;
         const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
-        const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
         // A draft-only document has no live room until Apply promotes it, and
         // the server refuses one. Review hosts the draft branch alone.
         const branchOnly = tab.kind === "tracked" && tab.draftOnly === true;
@@ -180,50 +181,7 @@ export function ContextEditorMountHost({
                 ) : null}
                 {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-                {failed || !hosted ? null : waitingForReviewRoom && controller.reviewRoomError ? (
-                  <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-                    <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
-                      <p className="font-medium text-foreground text-sm">
-                        <Trans>Couldn't open review mode.</Trans>
-                      </p>
-                      <p className="text-muted-foreground text-xs">
-                        {branchOnly ? (
-                          <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
-                        ) : (
-                          <Trans>Try again, or return to the live document.</Trans>
-                        )}
-                      </p>
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            if (selectedReviewDraftId) {
-                              controller.enterInlineReview(tab.documentId, selectedReviewDraftId);
-                              return;
-                            }
-                            controller.exitInlineReview();
-                          }}
-                        >
-                          <Trans>Retry</Trans>
-                        </Button>
-                        {branchOnly ? null : (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => controller.exitInlineReview()}
-                          >
-                            <Trans>Back to live</Trans>
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  // While the review room resolves, the live editor stays on
-                  // screen (a draft-only tab has none, so its shell holds the place).
+                {failed || !hosted ? null : (
                   <>
                     {active && isActive ? (
                       <>
@@ -246,6 +204,11 @@ export function ContextEditorMountHost({
                       enabled={Boolean(reviewDraftId && active)}
                     />
                     <EditorView
+                      draftOnly={branchOnly}
+                      onCloseDraftOnly={() => {
+                        const closing = removal.writerClose(projectId, tab.documentId);
+                        if (closing instanceof Promise) closing.catch(reportError);
+                      }}
                       projectId={projectId}
                       documentId={tab.documentId}
                       session={session ?? undefined}

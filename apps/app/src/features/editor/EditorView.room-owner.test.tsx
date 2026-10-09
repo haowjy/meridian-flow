@@ -7,6 +7,7 @@ import { act, useEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { PaintCapture, PaintHold, usePaintPending } from "@/components/app/PaintHold";
 import { BranchRoomPool } from "@/core/editor/branch-room-pool";
 import {
   DocumentSession,
@@ -18,6 +19,7 @@ import {
   useDraftReview,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import {
   applied,
   change,
@@ -120,18 +122,20 @@ const poolRegistry = {
 
 let review: ReturnType<typeof useDraftReview> | null = null;
 let draftOnly = false;
+let supplyMarks = true;
 
 function Host() {
   const value = useDraftReview();
   review = value;
   const { inlineReview, reviewRoomName, inlineReviewModelAvailable } = value.controller;
   useEffect(() => {
-    if (inlineReview && reviewRoomName) {
+    if (supplyMarks && inlineReview && reviewRoomName) {
       inlineReviewModelAvailable("preview-1", inlineReview.documentId, inlineReview.draftId);
     }
   }, [inlineReview, reviewRoomName, inlineReviewModelAvailable]);
   return (
     <EditorView
+      draftOnly={draftOnly}
       documentId={documentId}
       projectId="project-a"
       session={draftOnly ? undefined : sessionFor(documentId)}
@@ -147,14 +151,19 @@ function Scope() {
   const value = useDraftReviewScopeValue({ projectId: "project-a", work });
   return (
     <DraftReviewBoundary value={value}>
-      <Host />
+      <PaintHold status="Opening review">
+        <ReviewChromeWitness />
+        <Host />
+      </PaintHold>
     </DraftReviewBoundary>
   );
 }
 
 const surfaces = () =>
   [...document.querySelectorAll<HTMLElement>("[data-editor-surface]")]
-    .filter((wrapper) => !wrapper.classList.contains("hidden"))
+    .filter(
+      (wrapper) => !wrapper.classList.contains("hidden") && !wrapper.closest("[data-paint-hold]"),
+    )
     .map((wrapper) => wrapper.dataset.editorSurface);
 
 beforeEach(() => {
@@ -162,6 +171,7 @@ beforeEach(() => {
   syncs.clear();
   teardowns.clear();
   draftOnly = false;
+  supplyMarks = true;
   vi.clearAllMocks();
   resetDraftCommandRecords();
   review = null;
@@ -188,7 +198,7 @@ async function settled(check: () => void) {
 }
 const mounted = () => {
   const wrapper = [...document.querySelectorAll<HTMLElement>("[data-editor-surface]")].find(
-    (node) => !node.classList.contains("hidden"),
+    (node) => !node.classList.contains("hidden") && !node.closest("[data-paint-hold]"),
   );
   const node = wrapper?.querySelector<HTMLElement & { editor?: import("@tiptap/core").Editor }>(
     ".ProseMirror",
@@ -196,7 +206,7 @@ const mounted = () => {
   if (!node?.editor) throw new Error("No painted editor");
   return node.editor;
 };
-async function run(run: (client: QueryClient, room: string) => Promise<void>) {
+async function run(run: (client: QueryClient, room: string) => Promise<void>, enter = true) {
   const room = branchRoomName("review-owner", 1);
   mocks.getDraftPreview.mockResolvedValue({ ...previewOf("2"), reviewRoomName: room });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -205,8 +215,10 @@ async function run(run: (client: QueryClient, room: string) => Promise<void>) {
       <Scope />
     </QueryClientProvider>,
     async () => {
-      await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
-      await settled(() => expect(surfaces()).toEqual(["review"]));
+      if (enter) {
+        await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+        await settled(() => expect(surfaces()).toEqual(["review"]));
+      } else if (!draftOnly) await settled(() => expect(mounted()).toBeTruthy());
       await run(client, room);
     },
     { drainMacrotask: false },
@@ -237,7 +249,7 @@ it.each([
           reason: WS_CLOSE.BRANCH_GENERATION_STALE.reason,
         }),
       );
-      expect(document.querySelector("[data-review-replacing]")?.textContent).toContain(
+      expect(document.querySelector("[data-paint-hold]")?.textContent).toContain(
         "The held review.",
       );
       mocks.getDraftPreview.mockResolvedValue({
@@ -259,14 +271,14 @@ it.each([
       );
     }
     await settled(() => expect(review?.roomOwner.session).not.toBeNull());
-    const frozen = document.querySelector<HTMLElement>("[data-review-replacing]");
+    const frozen = document.querySelector<HTMLElement>("[data-paint-hold]");
     expect(frozen?.hasAttribute("inert")).toBe(true);
     expect(frozen?.textContent).toContain("The held review.");
     expect(frozen?.querySelector("[contenteditable=true]")).toBeTruthy(); // Copied DOM is inert, not another editor.
     expect(surfaces()).toEqual([]);
     await act(async () => sync.resolve());
     await settled(() => expect(surfaces()).toEqual(["review"]));
-    expect(document.querySelector("[data-review-replacing]")).toBeNull();
+    expect(document.querySelector("[data-paint-hold]")).toBeNull();
     expect(mounted()).not.toBe(oldEditor);
     expect(review?.roomOwner.inputEligible).toBe(true);
     expect(sessionFor(documentId).document).toBe(live);
@@ -321,10 +333,17 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     expect(surfaces()).toEqual(["live"]);
     expect(mounted()).toBe(live);
     expect(live.isEditable).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(16));
+    const refusalSync = deferredReviewAnswer<void>();
+    const branch = review?.roomOwner.session;
+    if (!branch) throw new Error("Missing branch session");
+    vi.spyOn(branch, "whenLocalPersistenceSynced").mockReturnValue(refusalSync.promise);
     await act(async () => {
       discard.resolve(discarded(false));
       await done;
     });
+    expect(document.querySelector("[data-paint-hold]")?.textContent).toContain("Warm live edit.");
+    await act(async () => refusalSync.resolve());
     await settled(() => expect(surfaces()).toEqual(["review"]));
     const apply = deferredReviewAnswer<ReturnType<typeof applied>>();
     mocks.applyDraftChanges.mockReturnValue(apply.promise);
@@ -384,4 +403,100 @@ it("a retired rebuild answer cannot replace a later review", async () => {
     expect(mounted()).toBe(currentEditor);
     expect(review?.roomOwner.inputEligible).toBe(true);
   });
+});
+
+it("entering review holds the live frame until review paints", async () => {
+  await run(async (_client, room) => {
+    await act(async () => mounted().commands.insertContent("Last painted live."));
+    const sync = deferredReviewAnswer<void>();
+    syncs.set(room, sync);
+    await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+    expect(document.querySelector("[data-paint-hold]")?.textContent).toContain(
+      "Last painted live.",
+    );
+    expect(surfaces()).toEqual([]);
+    await act(async () => sync.resolve());
+    await settled(() => expect(surfaces()).toEqual(["review"]));
+    expect(document.querySelector("[data-paint-hold]")).toBeNull();
+  }, false);
+});
+
+it("a draft-only tab without a review is terminal, not an empty pending editor", async () => {
+  draftOnly = true;
+  await run(async () => {
+    expect(document.body.textContent).toContain("Couldn't open this draft.");
+    expect(document.querySelector("[data-paint-hold]")).toBeNull();
+    expect(
+      [...document.querySelectorAll("button")].some((node) => node.textContent === "Close"),
+    ).toBe(true);
+  }, false);
+});
+
+function ReviewChromeWitness() {
+  const { controller } = useDraftReview();
+  const view = useReviewChanges(controller);
+  usePaintPending(view.status === "loading");
+  return (
+    <>
+      <PaintCapture surface={view.status} />
+      <p data-review-state>
+        {view.finished
+          ? "Finished"
+          : view.status === "ready" && !view.items.length
+            ? "No listed changes"
+            : view.status}
+      </p>
+    </>
+  );
+}
+
+it("an incoming proposal holds the painted chrome across the room observation precursor", async () => {
+  await run(async (client) => {
+    await act(async () => mounted().commands.insertContent("Painted generation one."));
+    const room = branchRoomName("review-owner", 2);
+    const sync = deferredReviewAnswer<void>();
+    syncs.set(room, sync);
+    mocks.getDraftPreview.mockResolvedValue({
+      ...previewOf("3"),
+      draftGeneration: 2,
+      reviewRoomName: room,
+    });
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+    await act(async () =>
+      client.setQueryData(
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.draftId),
+        { ...previewOf("3"), draftGeneration: 2, reviewRoomName: room },
+      ),
+    );
+    await settled(() => expect(document.querySelector("[data-paint-hold]")).not.toBeNull());
+    expect(document.querySelector("[data-paint-hold]")?.textContent).toContain(
+      "Painted generation one.",
+    );
+    expect(document.querySelector("[data-paint-hold]")?.textContent).not.toContain(
+      "No listed changes",
+    );
+    await act(async () => sync.resolve());
+    await settled(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
+  });
+});
+
+it("schema-stale is terminal before marks or the marks wait", async () => {
+  supplyMarks = false;
+  await run(async (_client, room) => {
+    await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+    await settled(() => expect(review?.roomOwner.session).not.toBeNull());
+    expect(surfaces()).toEqual([]);
+    await act(async () =>
+      transportStatus.get(room)?.({
+        kind: "reset",
+        disposition: "schema",
+        reason: WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason,
+      }),
+    );
+    expect(document.querySelector("[data-document-schema-stale]")?.textContent).toContain(
+      "temporarily unavailable",
+    );
+    expect(document.querySelector("[data-paint-hold]")).toBeNull();
+    expect(review?.roomOwner.inputEligible).toBe(false);
+  }, false);
 });

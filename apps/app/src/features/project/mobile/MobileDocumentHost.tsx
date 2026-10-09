@@ -306,7 +306,9 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     activeContextScheme &&
       activeContextPath &&
       (!activeTab
-        ? !(isError || catalogResolved)
+        ? addressState === "pending" ||
+          (isFetching && !catalogResolved) ||
+          !(isError || catalogResolved)
         : activeTab.editable && !failed && !bindableLiveSession),
   );
   usePaintPending(opening);
