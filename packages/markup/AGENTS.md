@@ -29,7 +29,9 @@ outside it.
   agree.
 - Every serialize call takes a `DocumentLinkScope`. A consumer with no document
   tree passes `UNSCOPED_DOCUMENT_LINKS`, which spells stored hrefs and keeps
-  `asset:` refs as refs; never supply a permissive stand-in. A stored link `ref`
+  `asset:` refs as refs, so only stored-bytes comparisons and tests use it;
+  anything a reader sees spells through a holder scope, which never shows an
+  id. Never supply a permissive stand-in. A stored link `ref`
   is never read from or written to Markdown, HTML or MDX.
 - Parse never resolves anything. A host's ref assignment that claims a source as
   `asset:<id>` must decline anything it cannot resolve to exactly one asset,

@@ -497,6 +497,56 @@ const doors: DoorCase[] = [
           }
         }
 
+      // An upload no path spells reads as its last address in this project, else as an
+      // empty destination; a rewrite of the paragraph as read keeps the picture.
+      const unspellable = [
+        {
+          kind: "deleted, its path reused",
+          documents: [
+            catalogDocument(D, map, { image: true, presence: "deleted" }),
+            catalogDocument(B, map, { image: true }),
+          ],
+          spelled: map,
+        },
+        { kind: "no document", documents: [], spelled: "" },
+        {
+          kind: "another project's",
+          documents: [catalogDocument(D, map, { image: true, projectId: uuid(46) })],
+          spelled: "",
+        },
+      ];
+      for (const row of unspellable) {
+        const label = `${this.name}: upload with ${row.kind}`;
+        const ctx = linkHarness({
+          holder: { id: H, uri: "manuscript://holder.md" },
+          documents: row.documents,
+          blocks: [
+            schema.node("paragraph", null, [
+              schema.text("See "),
+              schema.node("image", { src: `asset:${D}`, alt: "Map" }),
+              schema.text(" here."),
+            ]),
+          ],
+        });
+        const read = await ctx.read();
+        const content = `See ![Map](${row.spelled}) here.`;
+        expect.soft(JSON.stringify(read.result), label).not.toMatch(/asset:|doc:/);
+        expect.soft(JSON.stringify(read.result), label).toContain(content);
+        const shown = (read.showing?.links ?? []).map((fact, at) => ({
+          ...fact,
+          holderUri: "manuscript://holder.md",
+          at,
+        }));
+        const outcome = await ctx.write(
+          { command: "replace", in: [1, 1], content: `${content} Then more.` },
+          shown,
+        );
+        expect.soft(outcome.status, label).toBe("success");
+        expect
+          .soft(storedLinks(ctx.live()), label)
+          .toEqual([{ label: "Map", ref: null, href: `asset:${D}`, title: null }]);
+      }
+
       // Cross-kind: one showing names upload D whether a picture or a text link
       // showed it, and each written occurrence stores D in its own form. A link
       // takes D's document ref and its written suffix; a picture takes `asset:D`.

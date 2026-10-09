@@ -370,9 +370,12 @@ const rows: Array<{
 }> = [
   {
     name: "a read records what it rendered, in the view it was spelled in",
-    async act() {
+    async act(check) {
       const h = await harness();
-      const { threadId } = await runTurn(h, [toolCall("read", { path: "user://source.md" })]);
+      const { threadId, results } = await runTurn(h, [
+        toolCall("read", { path: "user://source.md" }),
+      ]);
+      check(JSON.stringify(results), "read output carries no host facts").not.toMatch(HOST_FACTS);
       return {
         store: h.store,
         threadId,

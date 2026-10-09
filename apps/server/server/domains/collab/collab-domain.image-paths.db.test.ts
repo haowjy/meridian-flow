@@ -118,9 +118,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
         fileType: "markdown",
       });
+      // Two uploads no path spells: a deleted cover whose path a new cover took,
+      // and an id with no document behind it.
+      const OLD_COVER = "00000000-0000-4000-8000-000000000718";
+      const LOST = "00000000-0000-4000-8000-000000000719";
+      const cover = { contextSourceId: SOURCE_ID, name: "cover", extension: "png" };
+      await db.insert(documents).values([
+        { ...cover, id: OLD_COVER, fileType: "image", deletedAt: new Date() },
+        { ...cover, id: "00000000-0000-4000-8000-00000000071a", fileType: "image" },
+      ]);
       await writeMarkdown(collab, {
         documentId: secondDocumentId as never,
-        markdown: "![Map](assets/map.png)",
+        markdown: `See ![Map](assets/map.png), ![Old cover](asset:${OLD_COVER}) and ![Lost map](asset:${LOST}).`,
         origin: { type: "user", actorUserId: USER_ID as never },
       });
       let moveAfterRead = true;
@@ -178,6 +187,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!next.ok) throw new Error(JSON.stringify(next.error));
       expect(next.value).toHaveLength(2);
       for (const hit of next.value) expect(JSON.stringify(hit.matches)).toContain("art/map.png");
+      const second = hits.value.find((hit) => hit.documentId === secondDocumentId);
+      expect(JSON.stringify(second?.matches)).toContain(
+        "![Old cover](manuscript://cover.png) and ![Lost map]()",
+      );
+
+      // The model's read spells them alike, and records the deleted cover where it showed it.
+      const grant = testFileGrant(DRAFT_DESTINATION, secondDocumentId);
+      const read = await collab.agentEdit().read(
+        { file: "chapter-two.md", documentId: secondDocumentId },
+        {
+          sessionId: "session-read",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          grant: { ...grant, facts: { ...grant.facts, projectId: PROJECT_ID as never } },
+        },
+      );
+      expect.soft(JSON.stringify(read.result), "model read").not.toMatch(/asset:|doc:/);
+      expect
+        .soft(JSON.stringify(read.result), "model read")
+        .toContain("![Old cover](manuscript://cover.png) and ![Lost map]()");
+      expect.soft(read.showing?.links, "read showing").toContainEqual({
+        ref: `asset:${OLD_COVER}`,
+        address: "manuscript://cover.png",
+      });
     });
 
     it("keeps one link snapshot when an image moves between preview serializations", async () => {

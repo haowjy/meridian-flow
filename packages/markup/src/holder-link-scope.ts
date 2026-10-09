@@ -46,6 +46,15 @@ export interface HolderLinkScope extends DocumentLinkScope {
 }
 
 /**
+ * Where an upload is spelled. `path`: it holds its manuscript image path, read
+ * against the manuscript root (the shipped rule). `last`: the last address its
+ * own document row had in this project, spelled in full, as a gone link spells
+ * its stored address; a deleted upload whose path another image now holds is
+ * told apart from that image this way.
+ */
+export type AssetAddress = { kind: "path"; path: string } | { kind: "last"; uri: string };
+
+/**
  * A `LinkCatalog` plus the two lookups the scope adds: pass 3's
  * extension-omitted match and the `asset:` image rule. `undefined` always
  * means "not loaded" (a snapshot miss), `null` "loaded, nothing there".
@@ -53,13 +62,20 @@ export interface HolderLinkScope extends DocumentLinkScope {
 export interface HolderCatalog extends LinkCatalog {
   /** Exact, then unique extension-omitted; nameable, readable and present in this view. */
   documentFor(uri: string): CatalogDocument | null | undefined;
-  /** The manuscript-root path an `asset:<id>` source spells, or null (spell the ref). */
-  assetPath(assetDocumentId: string): string | null | undefined;
+  /** Where an `asset:<id>` source is spelled; null when this project knows no image row for the id. */
+  assetAddress(assetDocumentId: string): AssetAddress | null | undefined;
   /** The asset id a written manuscript image path names, or null (keep it literal). */
   assetFor(manuscriptUri: string): string | null | undefined;
 }
 
 const ASSET_PREFIX = "asset:";
+
+/**
+ * An upload with no address this reader may be shown (no row, another
+ * project's id, a snapshot miss): an empty destination, which carries no id
+ * and binds to nothing when written back.
+ */
+export const UNSPELLED_UPLOAD: SpelledHref = Object.freeze({ href: "", address: null });
 /** Bare image sources are manuscript-root-relative (IMAGE_SOURCE_BASE). */
 const MANUSCRIPT_SCHEME = /^manuscript:\/\//i;
 
@@ -84,13 +100,13 @@ export function createHolderLinkScope(
     spellLink: (attrs) => spellStoredLink(attrs, holder, resolve(attrs), "holder"),
     spellSource(attrs): SpelledHref {
       if (attrs.src.startsWith(ASSET_PREFIX)) {
-        const id = attrs.src.slice(ASSET_PREFIX.length);
-        const path = catalog.assetPath(id);
-        if (path === undefined) onMiss(attrs.src);
-        // The upload's identity is its src; the reader is shown where it is now.
-        return path
-          ? { href: path, address: `manuscript://${path}` }
-          : { href: attrs.src, address: null };
+        const address = catalog.assetAddress(attrs.src.slice(ASSET_PREFIX.length));
+        if (address === undefined) onMiss(attrs.src);
+        // The upload's identity is its src, which no reader is ever shown.
+        if (!address) return UNSPELLED_UPLOAD;
+        return address.kind === "path"
+          ? { href: address.path, address: `manuscript://${address.path}` }
+          : { href: storedHref(address.uri, ""), address: address.uri };
       }
       const link = { ref: attrs.ref, href: attrs.src };
       return spellStoredLink(link, holder, resolve(link), "manuscript-root");
