@@ -85,7 +85,9 @@ claim is released, because the server reuses a closed draft's id for the next
 proposal and a retained answer would close that fresh generation. A review that
 opens on the draft after the claim ended therefore shows whatever the draft's
 list row and preview say now.
-The claim, not the sender, owns this; a refused duplicate never begins it.
+The claim, not the sender, owns this (completion dispatched by the sending
+controller was lost when the writer opened the draft mid-command); a refused
+duplicate never begins it.
 `useChangeCommandRunner` is the transport surfaces use: the Editor's controller
 runs a draft it has open in the caller's Work (the toast and focus belong to the
 review the writer is in); every other draft runs in the caller's scope. A batch
