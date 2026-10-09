@@ -6,6 +6,7 @@ import {
   clipboardLinkProject,
   clipboardLinkRef,
   clipboardPictureRef,
+  clipboardUploadRef,
   internalClipboardTarget,
   LINK_ADDRESS_ATTRIBUTE,
   LINK_PROJECT_ATTRIBUTE,
@@ -112,9 +113,10 @@ function copyLinkHref(source: Element, target: Element): void {
 /**
  * What an internal link or picture named where it was copied: its address,
  * and its ref and project, each only in the shape the copy writes (a picture's
- * ref may be an upload's `asset:<id>`). The link transform after this decides
- * whether the ref is kept (same project) or the address is bound fresh.
- * Returns the address.
+ * ref may be an upload's `asset:<id>`, recorded with no address when copied
+ * before the catalog held it). The link transform after this decides whether
+ * the ref is kept (same project) or the address is bound fresh. Returns the
+ * address.
  */
 function copyRecordedTarget(
   source: Element,
@@ -125,7 +127,7 @@ function copyRecordedTarget(
   if (address) target.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
   const ref = readRef(source.getAttribute(LINK_REF_ATTRIBUTE));
   const project = clipboardLinkProject(source.getAttribute(LINK_PROJECT_ATTRIBUTE));
-  if (address && ref && project) {
+  if (ref && project && (address || clipboardUploadRef(ref))) {
     target.setAttribute(LINK_REF_ATTRIBUTE, ref);
     target.setAttribute(LINK_PROJECT_ATTRIBUTE, project);
   }
@@ -136,12 +138,16 @@ function copyImageAttributes(source: Element, target: Element): boolean {
   // A picture copied from a Meridian document names a document address,
   // which is its source here; nothing a browser would fetch on its own.
   const address = copyRecordedTarget(source, target, clipboardPictureRef);
-  const rawSrc = source.getAttribute("src");
-  if (!address && rawSrc === null) return false;
-  const src = address ?? rawSrc?.trim() ?? "";
-  if (!address && !isSafeImageSrc(src)) return false;
-
-  target.setAttribute("src", src);
+  // An upload recorded with no address keeps no source here: the link
+  // transform restores its `asset:` source in the same project or drops it.
+  const recordedUpload = !address && target.hasAttribute(LINK_REF_ATTRIBUTE);
+  if (!recordedUpload) {
+    const rawSrc = source.getAttribute("src");
+    if (!address && rawSrc === null) return false;
+    const src = address ?? rawSrc?.trim() ?? "";
+    if (!address && !isSafeImageSrc(src)) return false;
+    target.setAttribute("src", src);
+  }
   for (const attribute of ["alt", "title"] as const) {
     const value = source.getAttribute(attribute);
     if (value !== null) target.setAttribute(attribute, value);
