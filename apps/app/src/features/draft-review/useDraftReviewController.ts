@@ -215,6 +215,22 @@ export function useDraftReviewController({
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
 
+  function proposalAdvanced(
+    selection: DraftReviewSelection,
+    generation: number | undefined,
+  ): boolean {
+    const review = stateRef.current.surface;
+    const shown =
+      review.kind === "inline" &&
+      review.documentId === selection.documentId &&
+      review.draftId === selection.draftId
+        ? review.draftGeneration
+        : undefined;
+    return [shown, newestKnownProposal(queryClient, { projectId, workId, ...selection })].some(
+      (known) => known !== undefined && (generation === undefined || known > generation),
+    );
+  }
+
   async function settleConfirmedApply(
     tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
   ): Promise<void> {
@@ -249,7 +265,7 @@ export function useDraftReviewController({
         ...(batch && row?.isNewDocument !== true ? { completesDraft: true as const } : {}),
       };
     },
-    apply: async ({ documentId, draftId }) => {
+    apply: async ({ documentId, draftId }, draftGeneration) => {
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
@@ -261,6 +277,7 @@ export function useDraftReviewController({
             threadId,
             documentId,
             draftId,
+            draftGeneration,
             onAnswered: () =>
               answerDraftCommandClosed(
                 { projectId, workId, documentId, draftId },
@@ -272,7 +289,8 @@ export function useDraftReviewController({
         return "unknown";
       // Confirmed is terminal for the command: the batch advances now. Tab
       // promotion and the route repair are navigation's business and run on.
-      void settleConfirmedApply(tab);
+      if (!proposalAdvanced({ documentId, draftId }, draftGeneration))
+        void settleConfirmedApply(tab);
       return "applied";
     },
     discard: async ({ documentId, draftId }) => {
@@ -342,12 +360,10 @@ export function useDraftReviewController({
     draftDiscardStarted: (selection) => {
       contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
     },
-    draftApplied: ({ documentId, draftId }) => {
-      dispatch({ type: "applySucceeded", documentId, draftId });
-    },
-    draftDiscarded: ({ documentId, draftId }) => {
-      dispatch({ type: "discardSucceeded", draftId });
-      contextRemoval.discardDraft(projectId, workId, documentId, draftId);
+    draftSettled: (selection, draftGeneration, mode) => {
+      dispatch({ type: "reviewDisposed", ...selection, draftGeneration });
+      if (mode === "discard" && !proposalAdvanced(selection, draftGeneration))
+        contextRemoval.discardDraft(projectId, workId, selection.documentId, selection.draftId);
     },
   };
 
