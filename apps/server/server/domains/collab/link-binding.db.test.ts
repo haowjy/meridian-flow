@@ -28,6 +28,7 @@ import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
 import { LinkBindingInsideTransactionError } from "./domain/link-binding.js";
+import { materializeRootLineageForDoc } from "./domain/provenance.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)(
@@ -40,12 +41,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       await db.close();
     });
 
-    /** Stored refs in document order, read from the journal (what every reader spells from). */
-    async function storedRefs(documentId: string): Promise<(string | null)[]> {
+    /** The document as its journal holds it (what every reader spells from). */
+    async function journalDoc(documentId: string): Promise<Y.Doc> {
       const snapshot = await createDrizzleJournal(db).read(documentId);
       const doc = new Y.Doc({ gc: false });
       if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
       for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
+      return doc;
+    }
+    /** Stored refs in document order. */
+    async function storedRefs(documentId: string): Promise<(string | null)[]> {
+      const doc = await journalDoc(documentId);
       const refs = extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map(
         (occurrence) => occurrence.ref,
       );
@@ -293,6 +299,38 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               markdown: "Concurrent.\n\nT\n\nAppend.\n",
             })),
           ),
+          {
+            door: "a save in a thread is the overwrite agent-edit certifies: prose it kept keeps its roots",
+            act: async () => {
+              const uri = "manuscript://certified.md";
+              const id = (
+                await ok(
+                  port.createTrackedDocument(uri, "First para.\n\nSecond para here.\n\nThird."),
+                )
+              ).documentId;
+              const base = await journalDoc(id);
+              const baseVector = Y.decodeStateVector(Y.encodeStateVector(base));
+              base.destroy();
+              await ok(
+                port.write(
+                  uri,
+                  "Inserted.\n\nFirst para.\n\nSecond para changed here.\n\nThird.",
+                  writerInThread,
+                ),
+              );
+              // Only the new paragraph and word are the saver's; every paragraph the save kept
+              // keeps its items, and so the authorship it had.
+              const saved = await journalDoc(id);
+              const freshUnits = materializeRootLineageForDoc(saved)
+                .filter(({ root }) => root.clock >= (baseVector.get(root.clientID) ?? 0))
+                .reduce((sum, { root }) => sum + root.length, 0);
+              saved.destroy();
+              expect(freshUnits).toBe("Inserted.".length + " changed".length);
+              return id;
+            },
+            refs: () => [],
+            markdown: "Inserted.\n\nFirst para.\n\nSecond para changed here.\n\nThird.\n",
+          },
           {
             door: "a write prepared for one holder never lands on the document that replaced it",
             act: async () => {
