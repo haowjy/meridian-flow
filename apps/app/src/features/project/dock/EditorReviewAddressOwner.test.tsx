@@ -207,7 +207,7 @@ describe("EditorReviewAddressOwner", () => {
     );
   });
 
-  describe("a finished review the server has closed", () => {
+  describe("a review whose draft the list no longer names", () => {
     const finished = {
       documentId: draft.documentId,
       draftId: draft.draftId,
@@ -266,7 +266,7 @@ describe("EditorReviewAddressOwner", () => {
       );
     });
 
-    it("an unfinished review whose draft left the list still exits", async () => {
+    it("an unfinished review whose draft left the list is left to the review's own list decision", async () => {
       const exit = vi.fn();
       await withReactRoot(
         <Harness
@@ -280,7 +280,7 @@ describe("EditorReviewAddressOwner", () => {
           await act(async () =>
             setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
           );
-          expect(exit).toHaveBeenCalledOnce();
+          expect(exit).not.toHaveBeenCalled();
         },
       );
     });

@@ -53,15 +53,13 @@ export function EditorReviewAddressOwner({
     if (inline) {
       ownedReview.current = true;
       restoring.current = null;
-      const group = review.groupForDocument(inline.documentId);
-      // A review the writer finished holds on its own: the server closed its
-      // draft, so the list no longer names the document, and only the address
-      // can say the writer left.
-      const match = group
-        ? addressNames(inline.documentId, group.contextPath)
-        : inline.completion
-          ? addressNames(inline.documentId, undefined)
-          : "no";
+      // Only the address says the writer left. Whether the draft is still in the
+      // list is the review's own decision (row X): a list that lags behind a new
+      // proposal must not end a review the reducer keeps.
+      const match = addressNames(
+        inline.documentId,
+        review.groupForDocument(inline.documentId)?.contextPath,
+      );
       if (activeScreen !== "context" || activeScheme !== "manuscript" || match === "no") {
         review.controller.exitInlineReview();
         return;

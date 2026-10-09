@@ -201,7 +201,9 @@ list" exit made an action: the provider reports the empty row with the newest ca
 preview as evidence and the reducer decides against R, so a proposal that has not
 re-entered yet still counts as the draft being alive. A preview that lists changes
 also gets read afresh; a genuine external close (no proposal at R or above) ends the
-review.
+review. The Editor address owner (`EditorReviewAddressOwner`) ends a review only when the
+address leaves its document; whether the list still names the draft is row X's alone, so a
+list behind a re-entered proposal cannot end it from a second place.
 
 Focus is review state too: `inlineReview.focus` holds the focused change's class
 id with the operations it held, one value for the whole review. When the server
