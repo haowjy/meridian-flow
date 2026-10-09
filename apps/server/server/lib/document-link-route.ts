@@ -15,7 +15,7 @@ import {
   type ResolveDocumentLinksResponse,
   resolveDocumentHref,
 } from "@meridian/contracts";
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { DocumentLinkScopes } from "../domains/collab/index.js";
 import type { DocumentLinkResolver, DocumentLinkTarget } from "../domains/context/index.js";
@@ -23,6 +23,7 @@ import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
 import { requireProjectOwner } from "../domains/projects/index.js";
 import type { ProjectRepository } from "../domains/projects/ports/project-repository.js";
+import { throwContextWorkUnavailableHttpError } from "./context-error-http.js";
 
 export interface DocumentLinkRouteDeps {
   projectRepo: ProjectRepository;
@@ -41,6 +42,13 @@ export async function handleDocumentLinkResolveRequest(
   const { projectId, userId, request } = input;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
   const workId = request.workId ?? null;
+  // The selected Work must be this project's; a draft view is never provisioned for any other.
+  if (
+    workId &&
+    !(await deps.workAuthorityResolver.byId(projectId as ProjectId, workId as WorkId))
+  ) {
+    throwContextWorkUnavailableHttpError("work_missing");
+  }
   // A Work's draft view is the live tree plus what that draft created.
   const view: LinkView = workId ? { kind: "draft", workId } : { kind: "live" };
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);

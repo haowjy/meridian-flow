@@ -70,13 +70,15 @@ export interface UploadIntakeRepository {
   resetObjectStored(projectId: string, intakeId: string): Promise<void>;
   lockForFinalize(projectId: string, intakeId: string): Promise<UploadReservation>;
   finalize(projectId: string, intakeId: string): Promise<UploadReservation>;
-  deleteDraft(
+  /** Locks and validates the exact unused identity a writer asked to delete. */
+  lockForDelete(
     input: DeleteDraftUploadInput,
     actorUserId: string,
-  ): Promise<{
-    result: DeleteDraftUploadResult;
-    objectKey?: string;
-  }>;
+  ): Promise<
+    | { kind: "claimed"; reservation: UploadReservation }
+    | { kind: "refused"; result: DeleteDraftUploadResult; objectKey?: string }
+  >;
+  markDeleted(projectId: string, intakeId: string): Promise<void>;
   /** F5 includes this singular seam in the admission transaction. */
   consume(documentIds: readonly string[]): Promise<void>;
 }
@@ -101,6 +103,11 @@ export interface UploadContentPort<Prepared = unknown> {
     bytes: Uint8Array;
     storageUrl: string | null;
   }): Promise<{ ok: true } | { ok: false; definite: boolean }>;
+  /** Soft-deletes an arrived upload; `stale` when its identity no longer stands at its URI. */
+  remove(input: {
+    reservation: UploadReservation;
+    actorUserId: string;
+  }): Promise<{ ok: true } | { ok: false; stale: true }>;
 }
 
 export interface UploadIntake {
@@ -329,7 +336,23 @@ export function createUploadIntake<Prepared>(deps: {
       }
     },
     async deleteDraft(input, actorUserId) {
-      const deleted = await deps.repository.deleteDraft(input, actorUserId);
+      const deleted = await deps.repository.transaction(async () => {
+        const claim = await deps.repository.lockForDelete(input, actorUserId);
+        if (claim.kind === "refused") return claim;
+        const { reservation } = claim;
+        // An arrived upload keeps its identity through the canonical soft delete, so a ref
+        // settled to it answers gone and never captures a later upload at the same address.
+        // A reservation that never finalized has no document row to remove.
+        if (reservation.state === "finalized") {
+          const removed = await deps.content.remove({ reservation, actorUserId });
+          if (!removed.ok) return { result: { kind: "identity_mismatch" as const } };
+        }
+        await deps.repository.markDeleted(reservation.projectId, reservation.intakeId);
+        return {
+          result: { kind: "deleted" as const },
+          objectKey: reservation.storageUrl ? reservation.objectKey : undefined,
+        };
+      });
       if (deleted.objectKey) {
         await cleanupObject(deps.objectStore, deps.eventSink, deleted.objectKey, input.documentId);
       }

@@ -426,6 +426,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(threadView.members).toEqual([CREATED_ID]);
       expect(liveView.members).toEqual([DOC_ID]);
+
+      // Another project's Work never drafts this project's manifest, whatever the entry point.
+      const FOREIGN_PROJECT_ID = "00000000-0000-4000-8000-000000000609";
+      const FOREIGN_WORK_ID = "00000000-0000-4000-8000-000000000610";
+      await db.insert(projects).values({
+        id: FOREIGN_PROJECT_ID,
+        userId: USER_ID,
+        name: "Foreign Project",
+        slug: "foreign-project",
+      });
+      await db.insert(works).values({
+        id: FOREIGN_WORK_ID,
+        projectId: FOREIGN_PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "Foreign Work",
+        slug: "foreign-work",
+      });
+      await expect
+        .soft(
+          store.resolveManifestMembership({
+            projectId: PROJECT_ID as never,
+            workId: FOREIGN_WORK_ID as never,
+          }),
+        )
+        .rejects.toThrow(/outside its project/);
+      expect
+        .soft(
+          await db
+            .select({ id: documentBranches.id })
+            .from(documentBranches)
+            .where(eq(documentBranches.workId, FOREIGN_WORK_ID)),
+        )
+        .toEqual([]);
     });
 
     it("co-promotes only the applied document manifest entry with its content push", async () => {

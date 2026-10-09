@@ -282,6 +282,28 @@ if (!RUN) {
         ).rejects.toBeInstanceOf(RangeError);
       }
       expect(await database.select().from(linkAheadRefs)).toHaveLength(1);
+
+      // A valid address past PostgreSQL's B-tree tuple limit registers and is found exactly.
+      let seed = 913;
+      const segment = () =>
+        Array.from({ length: 90 }, () => {
+          seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
+          return String.fromCharCode(0x4e00 + (seed % 18_000));
+        }).join("");
+      const long = `manuscript://${Array.from({ length: 18 }, segment).join("/")}.md`;
+      const longRegistration = { ...registration, aheadId: DOCUMENT_2, address: long };
+      await expect.soft(registry.register([longRegistration])).resolves.toBeUndefined();
+      await expect.soft(registry.register([longRegistration])).resolves.toBeUndefined();
+      expect
+        .soft(
+          (
+            await database
+              .select({ path: linkAheadRefs.path, settled: linkAheadRefs.settledDocumentId })
+              .from(linkAheadRefs)
+              .where(eq(linkAheadRefs.aheadId, DOCUMENT_2))
+          ).map((row) => [`manuscript://${row.path}`, row.settled]),
+        )
+        .toEqual([[long, null]]);
     });
   });
 }
