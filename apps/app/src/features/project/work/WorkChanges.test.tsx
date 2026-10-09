@@ -187,7 +187,11 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
         ["1"],
         ["2"],
       ]);
-      expect(retain.mock.calls.flatMap(([, rooms]) => rooms)).toEqual(["room-draft-a"]);
+      expect(
+        retain.mock.calls.flatMap(([, rooms]) =>
+          rooms.map((room: { roomKey: string }) => room.roomKey),
+        ),
+      ).toEqual(["room-draft-a"]);
       expect(navigate).not.toHaveBeenCalled();
     },
     {
