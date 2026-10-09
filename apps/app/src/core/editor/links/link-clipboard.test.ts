@@ -11,6 +11,8 @@ import { EditorState } from "@tiptap/pm/state";
 import { expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
+import { registerImageIngressHost } from "../images/image-ingress-runtime";
+import { insertImageFile } from "../images/image-uploads";
 import { markdownClipboardSerializer } from "../markdown-paste";
 import { sanitizePastedHTML } from "../sanitize-paste";
 import { LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
@@ -50,7 +52,7 @@ function paste(html: string, holder: string | null, projectId = "project-a") {
   return plugin.props.transformPastedHTML?.call(plugin, html, null as never);
 }
 
-it("carries what a copied link names across the clipboard", () => {
+it("carries what a copied link names across the clipboard", async () => {
   const rows = [
     {
       row: "a relative link pastes as the address it named",
@@ -301,6 +303,18 @@ it("carries what a copied link names across the clipboard", () => {
   );
   const uploadSerialized = uploadSource.view.serializeForClipboard(uploadSource.state.doc.slice(0));
   uploadSource.destroy();
+  // A completed upload copied before the catalog holds it: the clipboard
+  // carries its recorded `asset:` identity with no address (decision L42).
+  const early = pictureEditor("project-a", []);
+  registerImageIngressHost(early, {
+    upload: async () => ({ src: `asset:${UPLOAD}`, alt: null }),
+    fetchBytes: async () => null,
+  });
+  insertImageFile(early, new File(["png"], "new.png", { type: "image/png" }), 1);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const earlyCopied = {
+    html: early.view.serializeForClipboard(early.state.doc.slice(0)).dom.innerHTML,
+  };
   const pictureRows = [
     {
       row: "a same-project paste keeps each picture's ref at its current address",
@@ -362,6 +376,30 @@ it("carries what a copied link names across the clipboard", () => {
       copied: { html: uploadSerialized.dom.innerHTML },
       into: pictureEditor("project-a", []),
       pasted: [{ type: "image", src: `asset:${UPLOAD}`, ref: null }],
+    },
+    {
+      row: "an upload copied before the catalog holds it pastes back into its own editor",
+      copied: earlyCopied,
+      into: early,
+      pasted: [
+        { type: "image", src: `asset:${UPLOAD}`, ref: null },
+        { type: "image", src: `asset:${UPLOAD}`, ref: null },
+      ],
+    },
+    {
+      row: "an upload copied before the catalog holds it pastes into another same-project editor",
+      copied: earlyCopied,
+      into: pictureEditor("project-a", []),
+      pasted: [{ type: "image", src: `asset:${UPLOAD}`, ref: null }],
+    },
+    {
+      // No address was recorded, so another project has nothing to bind.
+      row: "an upload copied before the catalog holds it is not pasted into another project",
+      copied: earlyCopied,
+      into: pictureEditor("project-b", [
+        { documentId: OTHER_MAP, uri: "manuscript://art/new.png" },
+      ]),
+      pasted: [],
     },
     {
       row: "another project binds an upload fresh at its current address",
