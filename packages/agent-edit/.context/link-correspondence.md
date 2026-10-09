@@ -35,7 +35,7 @@ Attribute policy, per written occurrence:
 | pass 1, title and suffix unchanged | the old attrs verbatim: no format item is emitted |
 | pass 1, title or suffix changed | old ref, written title, `storedHref(current address, written suffix)`; an upload keeps `asset:<id>`, `ref: null` and takes only the title |
 | a written link equal (href and title) to a contextual old one | that old attrs object: contextual stays contextual |
-| pass 2 | the shown ref, written title, `storedHref(current address or latest shown, suffix)`; a shown upload stores `asset:<id>`, `ref: null` |
+| pass 2 | the shown identity in the occurrence's own form, written title: a picture stores an upload (shown as `asset:<id>` or `doc:<id>`) as `asset:<id>`, `ref: null`; anything else stores the ref (`doc:<id>` for a shown upload) and `storedHref(current address or latest shown, written suffix)` |
 | pass 3 | `asset:<id>` for a known picture, `doc:<id>` with the document's address, a minted ahead ref, or `ref: null` |
 
 `occurrences.ts` rebuilds only the named occurrences; every other node is

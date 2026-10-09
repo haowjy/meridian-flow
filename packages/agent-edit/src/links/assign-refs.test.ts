@@ -496,6 +496,64 @@ const doors: DoorCase[] = [
             expect.soft(storedLinks(ctx.live()).at(-1)?.href, label).toBe(`asset:${B}`);
           }
         }
+
+      // Cross-kind: one showing names upload D whether a picture or a text link
+      // showed it, and each written occurrence stores D in its own form. A link
+      // takes D's document ref and its written suffix; a picture takes `asset:D`.
+      const moved = "manuscript://moved.png";
+      const crossKind = [
+        {
+          kind: "link after a picture showing",
+          old: schema.node("paragraph", null, [
+            schema.node("image", { src: `asset:${D}`, ref: null, alt: "Map" }),
+          ]),
+          content: "[View the map](map.png#region)",
+          expected: (at: string) => ({
+            label: "View the map",
+            ref: documentRef(D),
+            href: storedHref(at, "#region"),
+            title: null,
+          }),
+          echo: (at: string) => `[View the map](${at.slice("manuscript://".length)}#region)`,
+        },
+        {
+          kind: "picture after a link showing",
+          old: paragraph(docLink("Map", D, map)),
+          content: "![Copy](map.png)",
+          expected: () => ({ label: "Copy", ref: null, href: `asset:${D}`, title: null }),
+          echo: (at: string) => `![Copy](${at.slice("manuscript://".length)})`,
+        },
+      ];
+      for (const row of crossKind)
+        for (const [isMoved, occupied] of [
+          [false, false],
+          [true, true],
+        ] as const) {
+          const label = `${this.name}: ${row.kind}${isMoved ? ", moved and path reoccupied" : ""}`;
+          const ctx = linkHarness({
+            holder: { id: H, uri: "manuscript://holder.md" },
+            documents: [catalogDocument(D, map, { image: true })],
+            blocks: [row.old],
+          });
+          const read = await ctx.read();
+          const at = isMoved ? moved : map;
+          ctx.catalog.documents = [
+            catalogDocument(H, "manuscript://holder.md"),
+            catalogDocument(D, at, { image: true }),
+            ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
+          ];
+          const shown = (read.showing?.links ?? []).map((fact, position) => ({
+            ...fact,
+            holderUri: "manuscript://holder.md",
+            at: position,
+          }));
+          const outcome = await ctx.write({ command: "insert", content: row.content }, shown);
+          expect.soft(outcome.status, label).toBe("success");
+          expect.soft(storedLinks(ctx.live()).at(-1), label).toEqual(row.expected(at));
+          const echo = JSON.stringify(outcome.result);
+          expect.soft(echo, label).toContain(row.echo(at).replaceAll('"', '\\"'));
+          expect.soft(echo, label).not.toMatch(new RegExp(`asset:|doc:|${D}`));
+        }
     },
   },
   {
