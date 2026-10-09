@@ -132,12 +132,15 @@ export function renderReviewScopes(
     onOpenDraft?: (row: ReviewFileTarget) => void;
     /** A surface that reads the scopes, as the project shell offers them (the Work page's list). */
     surface?: ReactNode;
+    /** A surface that lives in the Chat's scope (the composer strip), beside the Editor's. */
+    chatSurface?: ReactNode;
   } = {},
 ): Promise<void> {
   const {
     reviewed: initialReviewed = { documentId: "document-a", draftId: "draft-a" },
     onOpenDraft = () => {},
     surface = null,
+    chatSurface = null,
   } = options;
   const current: Partial<ScopeProbe> = {};
   let lateView: ReviewChangesView | null = null;
@@ -206,6 +209,9 @@ export function renderReviewScopes(
           <DraftReviewBoundary value={editor}>
             <HeaderProbe />
           </DraftReviewBoundary>
+          {chatSurface ? (
+            <DraftReviewBoundary value={chat}>{chatSurface}</DraftReviewBoundary>
+          ) : null}
         </WorkReviewScopesProvider>
       </EditorReviewScope>
     );
