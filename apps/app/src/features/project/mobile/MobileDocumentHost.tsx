@@ -18,7 +18,7 @@ import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
-import { PaintCapture, PaintHold, usePaintPending } from "@/components/app/PaintHold";
+import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -315,9 +315,9 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
           !(isError || catalogResolved)
         : activeTab.editable && !failed && !bindableLiveSession),
   );
-  usePaintPending(opening);
   const capture = (
     <PaintCapture
+      state={opening ? "pending" : failed || isError ? "failed" : "painted"}
       surface={
         opening
           ? "opening"
