@@ -178,6 +178,8 @@ export function createWriteCommands(deps: {
       return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
     }
     const content = command.command === "create" ? (command.content ?? "") : "";
+    // Host-bound content (§6.2) arrives as nodes and is never assigned again.
+    const boundBlocks = command.command === "create" ? context.boundBlocks : undefined;
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
@@ -192,8 +194,9 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const parsed: ParseForCommandResult = copiedNodes
-      ? { ok: true, parsed: { blocks: [...copiedNodes] } }
+    const given = copiedNodes ?? boundBlocks;
+    const parsed: ParseForCommandResult = given
+      ? { ok: true, parsed: { blocks: [...given] } }
       : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
@@ -248,11 +251,15 @@ export function createWriteCommands(deps: {
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
     }
-    const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
+    const shown = given ? [] : await shownLinksFor(address.documentId, context);
     const links = await bindLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
-      ...(copiedNodes ? {} : { written: parsed.parsed.blocks }),
+      ...(copiedNodes
+        ? {}
+        : boundBlocks
+          ? { bound: boundBlocks }
+          : { written: parsed.parsed.blocks }),
       shown,
       context,
     });
@@ -266,14 +273,14 @@ export function createWriteCommands(deps: {
     }
     let overwrite: Extract<ReturnType<typeof resolveWrite>, { ok: true }> | undefined;
     if (overwriting && existingBlocks.length > 0) {
-      const empty = copiedNodes ? copiedNodes.length === 0 : content.length === 0;
+      const empty = given ? given.length === 0 : content.length === 0;
       // Overwrite is whole-document correspondence: resolve binds against every old block.
       const resolved = resolveWrite(
         {
           doc: toDocHandle(runtime.doc),
           model: options.model,
           codec: links.codec,
-          links: assigner,
+          ...(boundBlocks ? {} : { links: assigner }),
         },
         empty
           ? {
@@ -302,11 +309,10 @@ export function createWriteCommands(deps: {
       if (resolved.edits.length === 0) return formatUnchangedSuccess();
       overwrite = resolved;
     }
-    // Copies carry what they name; written content into an empty document binds fresh.
+    // Copies and host-bound content carry what they name; written content into
+    // an empty document binds fresh.
     const written =
-      copiedNodes || overwrite
-        ? parsed.parsed
-        : { blocks: assigner.bindSpan([], parsed.parsed.blocks) };
+      given || overwrite ? parsed.parsed : { blocks: assigner.bindSpan([], parsed.parsed.blocks) };
     await registerMinted(assigner);
     const writeIdentity = await nextWriteIdentity(
       address.documentId,

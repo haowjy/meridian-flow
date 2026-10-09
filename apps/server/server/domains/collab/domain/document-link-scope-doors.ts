@@ -41,11 +41,10 @@ export function scopeMarkdownEngine(
     readAsMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readAsMarkdown(documentId)),
     setMarkdown: (input) => scopes.within(by(input.documentId), () => engine.setMarkdown(input)),
-    seedFromMarkdown: (documentId, markdown, origin) =>
-      scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, markdown, origin)),
+    seedFromMarkdown: (documentId, content, origin) =>
+      scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
-    editDocument: (input) => scopes.within(by(input.documentId), () => engine.editDocument(input)),
   };
 }
 

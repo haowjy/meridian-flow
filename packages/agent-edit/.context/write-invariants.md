@@ -37,7 +37,10 @@ The memory-only runtime replica is distinct from that host-owned branch.
   they are. An unchanged link keeps its old attrs verbatim and emits no format
   item; copies, undo, redo and reply save never assign. Ahead refs a write
   mints are registered before it applies or locks anything
-  ([link identity](link-correspondence.md)).
+  ([link identity](link-correspondence.md)). A host whose door runs inside its
+  own transaction binds first and passes the nodes as
+  `WriteContext.boundBlocks` on a `create`; the core aligns them and never
+  assigns again.
 
 ### Destructive scope targeting and recovery
 

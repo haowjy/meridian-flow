@@ -49,15 +49,35 @@ composition root passes a required `DocumentLinkScopes` port
 takes a holder-bound scope that spells stored links and sources: a ref-bearing
 link as its target's current path in the holder's view, an `asset:<documentId>`
 source as its manuscript-relative path, anything else as stored. Parse is pure
-syntax; writes run `bindSources` (agent-edit) after parsing, which turns a
-known manuscript image path into `asset:<id>`, so an image's identity survives
-a move while Markdown keeps a readable path.
+syntax; ref assignment (agent-edit `assignLinkRefs`, which also turns a known
+manuscript image path into `asset:<id>`) binds what was written.
+
+**Whole-document writes bind outside, apply inside** (`domain/link-binding.ts`,
+contract §6.2). The engine's writes (`setMarkdown`, `writeDocument`,
+`seedFromMarkdown`) take `BoundContent`, never a Markdown string, and never
+parse. A `LinkBinder` makes it, before the caller opens any transaction:
+`bindMarkdown` opens the holder's scope (the document, or the project and the
+address a document about to be created will have), parses, prepares, assigns
+fresh or against the holder's current document (`against: "current"`: every
+link that stays corresponds to itself and keeps its ref, so an overwrite or a
+host append keeps refs verbatim), and registers the ahead refs it minted.
+Registration opens a root transaction that takes namespace keys; inside a
+command transaction that already holds them it would wait on itself forever,
+invisibly to PostgreSQL. So `bindMarkdown` throws
+`LinkBindingInsideTransactionError` inside any transaction, and a door that
+forgot to hoist fails at once. `bindStatic` is for link-free text fixed in code
+(a project's first chapter, seeded inside the bootstrap transaction); it throws
+if the text names anything. `writeDocument` routes an actor's write through the
+edit core's create-overwrite with `WriteContext.boundBlocks`, which aligns the
+bound nodes against the old blocks and skips assignment. There is no
+string-transform write: host append binds `current + appended` itself. Seed,
+import and create bind fresh (pass 3 only).
 
 The codec asks synchronously, so the tree is read per operation, never cached.
 `within(key, op)` opens a snapshot keyed by project and reader (the account a
 door names, else its thread's account, else the project owner; and the thread
 it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each operation then calls
-`prepare({ holders, docs, refs, addresses, written })` with what its next
+`prepare({ holders, docs, nodes, refs, addresses, written })` with what its next
 synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
 (`domain/stored-link-extraction.ts`), and one batch loads settlements, rows by
 id and rows at exact or extension-omitted addresses, readability through the

@@ -43,6 +43,11 @@ export interface LinkPrepareRequest {
   docs: readonly Y.Doc[];
   /** Freshly parsed nodes whose written addresses binding may resolve. */
   written?: readonly PMNode[];
+  /**
+   * Nodes the host already bound (`WriteContext.boundBlocks`): their stored
+   * refs and sources load like a doc's, since the command spells them next.
+   */
+  bound?: readonly PMNode[];
   shown?: readonly ShownLink[];
   context?: WriteContext;
 }

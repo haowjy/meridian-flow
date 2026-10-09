@@ -80,6 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let beforeCollabWrite: (() => Promise<void>) | null = null;
       const mutationStore = new DrizzleContextTreeMutationStore(db);
       const context = new ContextFS({
+        holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
         mutationStore,
@@ -88,7 +89,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ensureDocument: async () => {},
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
-          seedFromMarkdown: async (documentId: string, markdown: string) => {
+          // Bound content is opaque here: the fake stores its source Markdown.
+          bindMarkdown: async ({ markdown }: { markdown: string }) => ({ markdown }),
+          seedFromMarkdown: async (documentId: string, { markdown }: { markdown: string }) => {
             await beforeCollabWrite?.();
             const [row] = await db
               .select({ filetype: documents.fileType })

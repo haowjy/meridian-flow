@@ -19,6 +19,7 @@ import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
 import type { LinkScopeKey } from "./domain/ports/document-link-scope.js";
+import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
   createTestDocumentLinkScopes,
   lateBoundManifestMembership,
@@ -76,7 +77,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "image",
         mimeType: "image/png",
       });
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.\n\n![Map](assets/map.png)",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -117,7 +118,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
         fileType: "markdown",
       });
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: secondDocumentId as never,
         markdown: "![Map](assets/map.png)",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -129,6 +130,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
       }
       const context = new ContextFS({
+        holder: { projectId: PROJECT_ID },
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
@@ -253,7 +255,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         return started;
       };
       let collab = start();
-      await collab.seedFromMarkdown(DOC_ID, "Holder.", { type: "system" });
+      await collab.seedFromMarkdown(DOC_ID, collab.bindStatic("Holder."), { type: "system" });
       await collab.reconcileProjectManifest(PROJECT_ID as never);
       const CREATED_ID = "00000000-0000-4000-8000-000000000714";
       const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
@@ -334,6 +336,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const markdown = await collab.readEffectiveMarkdown(view);
       const hashlines = await collab.readEffectiveHashlines(view);
       const search = await new ContextFS({
+        holder: { projectId: PROJECT_ID },
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
