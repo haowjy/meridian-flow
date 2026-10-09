@@ -63,6 +63,7 @@ export function harness(
     model?: AgentEditModel;
     semanticProvenance?: SemanticProvenanceWriter;
     links?: DocumentLinksPort;
+    onLinkSpliceFallback?: Parameters<typeof createAgentEditCore>[0]["onLinkSpliceFallback"];
   } = {},
 ) {
   const agentEditModel = options.model ?? model;
@@ -106,6 +107,7 @@ export function harness(
     ...(options.afterResponsePreflight
       ? { afterResponsePreflight: options.afterResponsePreflight }
       : {}),
+    ...(options.onLinkSpliceFallback ? { onLinkSpliceFallback: options.onLinkSpliceFallback } : {}),
   });
   const core = {
     ...rawCore,

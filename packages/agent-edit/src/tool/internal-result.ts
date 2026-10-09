@@ -1,5 +1,6 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
 
+import type { SpelledLinkFact } from "@meridian/markup";
 import type { Block } from "../codec-types.js";
 import { type AgentEditModelPayload, isWriteStatus } from "./model-result.js";
 import type {
@@ -14,6 +15,8 @@ export type InternalWriteResult = InternalWriteResultBase &
 
 interface InternalWriteResultBase {
   revision?: string | null;
+  /** Host-only: the links the rendered result showed the model. */
+  shownLinks?: readonly SpelledLinkFact[];
   /** The blocks a read selected, for a host copying them. */
   nodes?: readonly Block[];
   model?: AgentEditModelPayload;

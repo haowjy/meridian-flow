@@ -2,6 +2,7 @@
 import type * as Y from "yjs";
 
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
+import type { SpliceFallback } from "../links/find-splice.js";
 import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
@@ -17,6 +18,11 @@ import type {
   WriteIdempotencyHitDetail,
 } from "./types.js";
 import type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./write-reversal.js";
+
+export interface LinkSpliceFallbackDetail {
+  documentId: string;
+  reason: SpliceFallback;
+}
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
@@ -39,6 +45,12 @@ export interface CreateWriteToolOptions {
   createRuntimeDoc?: () => Y.Doc;
   reversalNoticePort?: ReversalNoticePort;
   onInvariantViolation?: (message: string) => void;
+  /**
+   * A formatted find could not tell the links outside its splice apart and
+   * bound the whole block group instead: identity still follows
+   * correspondence, but unchanged links there may churn their formatting.
+   */
+  onLinkSpliceFallback?: (event: LinkSpliceFallbackDetail) => void;
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;

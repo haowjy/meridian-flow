@@ -1,5 +1,6 @@
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { BlockRef, DocHandle } from "../handles.js";
+import type { FindSplice } from "../links/find-splice.js";
 import { markdownPlainText, markdownTextView } from "../model/markdown-text-view.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { BlockScope } from "./scope.js";
@@ -186,4 +187,41 @@ function notFound(message: string): FindResult {
 
 function invalid(message: string): FindResult {
   return { ok: false, code: "invalid_write", message };
+}
+
+/** The spliced group text and the one span covering every splice in it. */
+export interface SplicedGroup {
+  text: string;
+  splice: FindSplice;
+}
+
+/**
+ * Splice the written content into a serialized group at every match: the
+ * pre-splice text is `source`, and `splice` gives the offsets ref assignment
+ * restores around (§5.4).
+ */
+export function spliceFindMatches(
+  source: string,
+  matches: readonly TextFindMatch[],
+  rangeStart: number,
+  content: string,
+  command: "insert" | "replace" | "remove",
+): SplicedGroup {
+  let result = source;
+  let start = source.length;
+  let oldEnd = 0;
+  for (const match of [...matches].reverse()) {
+    const matchStart = match.rangeStart + match.matchStart - rangeStart;
+    const end = match.rangeStart + match.matchEnd - rangeStart;
+    const spliceStart = command === "insert" ? end : matchStart;
+    result = result.slice(0, spliceStart) + content + result.slice(end);
+    start = Math.min(start, spliceStart);
+    oldEnd = Math.max(oldEnd, end);
+  }
+  // Text between several splices is inside the union too: the suffix after
+  // the last splice is the only text that shifts.
+  return {
+    text: result,
+    splice: { start, oldEnd, newEnd: oldEnd + result.length - source.length },
+  };
 }

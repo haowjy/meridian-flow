@@ -4,6 +4,12 @@ import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
+import {
+  renderedItems,
+  type ShownRenderSource,
+  shownLinksForItems,
+  withRunShownLinks,
+} from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -245,6 +251,24 @@ export function createResponseCommitter(deps: {
     const bound = commitBindings.get(docBuffer);
     if (!bound) throw new Error(`Response document ${docBuffer.docId} was not bound for commit.`);
     return bound;
+  };
+  /** Receipts and concurrent runs spell from the runtime the save rendered them from. */
+  const shownSource = (docBuffer: ResponseDocumentBuffer): ShownRenderSource => {
+    const links = linksOf(docBuffer);
+    return {
+      doc: toDocHandle(docBuffer.runtime.doc),
+      model: deps.model,
+      codec: links.codec,
+      scope: links.scope,
+      parser: deps.codec,
+    };
+  };
+  const shownLinksOf = (
+    items: Parameters<typeof shownLinksForItems>[0],
+    docBuffer: ResponseDocumentBuffer,
+  ) => {
+    const shownLinks = shownLinksForItems(items, shownSource(docBuffer));
+    return shownLinks.length > 0 ? { shownLinks } : {};
   };
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
   const closedResponseOrder: string[] = [];
@@ -519,7 +543,12 @@ export function createResponseCommitter(deps: {
           updateCount: docBuffer.updates.length,
           receipts: settledWriteReceipts(docBuffer, applied.revision, lateSweep),
           ...(applied.concurrent.detection.info
-            ? { concurrentEdits: applied.concurrent.detection.info }
+            ? {
+                concurrentEdits: withRunShownLinks(
+                  applied.concurrent.detection.info,
+                  shownSource(docBuffer),
+                ),
+              }
             : {}),
           ...(lateSweep ? { lateSweep } : {}),
         };
@@ -707,7 +736,12 @@ export function createResponseCommitter(deps: {
       documentsById.set(docBuffer.docId, {
         ...current,
         ...(rechecked.concurrent.detection.info
-          ? { concurrentEdits: rechecked.concurrent.detection.info }
+          ? {
+              concurrentEdits: withRunShownLinks(
+                rechecked.concurrent.detection.info,
+                shownSource(docBuffer),
+              ),
+            }
           : {}),
         ...(rechecked.lateSweep ? { lateSweep: rechecked.lateSweep } : {}),
       });
@@ -780,6 +814,7 @@ export function createResponseCommitter(deps: {
             phase: "committed",
             ...(receipt.model ? { payload: receipt.model } : {}),
           }),
+          ...shownLinksOf(renderedItems(receipt.model), docBuffer),
         };
       } finally {
         beforeDoc.destroy();
