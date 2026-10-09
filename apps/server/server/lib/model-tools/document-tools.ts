@@ -201,11 +201,13 @@ async function writeUnderGrant(
   // was a partial failure's echo. An error without echo text carries no facts.
   const shown = showingOf(address.documentId, written);
   if (written.isError) return { isError: true, output: written.result, shown };
+  // The showing is host-only evidence: it leaves here only as `shown`.
+  const { showing: _showing, ...outcome } = written;
   // Undo and redo go where history says, so only forward writes name a destination.
   const reversal = parsed.command === "undo" || parsed.command === "redo";
   const routed = reversal
-    ? withRefusedWrites(written)
-    : withDestination(written, grant.destination);
+    ? withRefusedWrites(outcome)
+    : withDestination(outcome, grant.destination);
   return { ...routed, shown } as WriteOutcome & { isError: false; shown: ShownLinkShowing[] };
 }
 

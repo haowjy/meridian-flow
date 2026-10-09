@@ -11,27 +11,18 @@
  * the binder refuses to run inside a transaction so a door that forgot to
  * hoist fails at once.
  *
- * Because binding and applying are separated, a bound write is a Yjs
- * mutation against the base it was bound to, never a desired state: anything
- * admitted in between merges with it instead of being undone. It also names
- * the one holder it was bound for, so it is never applied to another, and
- * certifies the authority generation its base belonged to, so it is never
- * admitted into another (a restore replaces the generation even when its
- * checkpoint keeps every clock the base had).
- *
- * Against a base, the mutation is agent-edit's whole-document overwrite of it
- * (`lowerOverwrite`), so the write also carries that overwrite's semantic IR
- * and the certified provenance facts it implies, written against the base.
+ * A bound write is desired state: its assigned blocks, applied under the
+ * document's lock as agent-edit's ordinary whole-document overwrite, which
+ * keeps the items of blocks left as they were and computes the write's IR and
+ * authorship there. Like any whole-document save, it replaces what was
+ * admitted before it applied. It names the one holder it was bound for, so
+ * it is never applied to another; bound fresh, it lands only in an empty
+ * document.
  */
 import {
-  type AgentEditCodec,
   assignLinkRefs,
-  createAgentEditCodecFactory,
   type DocumentCoordinator,
   isDocumentNotFoundError,
-  lowerOverwrite,
-  type SemanticEditIRV1,
-  type SemanticProvenanceWriter,
   toDocHandle,
   writtenAddresses,
   type YProsemirrorDocumentModel,
@@ -43,9 +34,7 @@ import { type MarkupCodec, type PMNode, walkLinkOccurrences } from "@meridian/ma
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
-import { documentAuthority } from "./document-handle.js";
 import { aheadRegistrations } from "./document-links-port.js";
-import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type AheadRefRegistrar,
   type DocumentLinkScopes,
@@ -63,33 +52,17 @@ export type BoundHolder =
   /** Fixed, link-free content (`bindStatic`): seeds any new document. */
   | { kind: "static" };
 
-/**
- * The base a write was bound against. Two separate checks guard applying
- * it: the authority generation must still be the one the base was read from
- * (the certificate), and the document must hold every clock in
- * `stateVector` (the update's dependency). Both are agent-edit's
- * `admitBoundUpdate`, run under the document's lock by every door.
- */
-export interface BoundBase {
-  readonly authority: Readonly<CheckpointAuthority>;
-  readonly stateVector: Uint8Array;
-}
-
-/** Written content, bound and turned into a Yjs mutation; only a `LinkBinder` makes one. */
+/** Written content with its links bound; only a `LinkBinder` makes one. */
 export interface BoundWrite {
   readonly holder: BoundHolder;
-  /** Null: bound fresh, from an empty document (seed, import, create, upload). */
-  readonly base: BoundBase | null;
-  /** The Yjs update that turns `base` into the bound result. */
-  readonly update: Uint8Array;
   /**
-   * The overwrite's certified intent, when it changed a base: its IR, and
-   * the provenance facts it implies as an update on top of `update`. Only
-   * certified (thread and agent) writes admit them; a writer's fresh save
-   * applies `update` alone.
+   * Bound without a current document (seed, import, create, upload): its
+   * links were assigned against nothing, so it applies only to an empty
+   * document. Otherwise it was bound against the holder's document and
+   * overwrites whatever that document holds when it applies.
    */
-  readonly certified: { readonly ir: SemanticEditIRV1; readonly provenance: Uint8Array } | null;
-  /** The bound result's blocks, so a writer can load what they name; never reparsed. */
+  readonly fresh: boolean;
+  /** The desired blocks: refs assigned, minted ahead refs registered; never reparsed. */
   readonly blocks: readonly PMNode[];
   /** Source Markdown, for provenance and diagnostics only; never reparsed. */
   readonly markdown: string;
@@ -124,8 +97,7 @@ export interface BindMarkdownInput {
 export interface LinkBinder {
   /**
    * Outside any transaction: open the holder's scope, parse, prepare, assign
-   * (fresh, or against the current document), register minted ahead refs,
-   * and encode the result as an update against the base.
+   * (fresh, or against the current document) and register minted ahead refs.
    */
   bindMarkdown(input: BindMarkdownInput): Promise<BoundWrite>;
   /**
@@ -147,7 +119,6 @@ export interface LinkBinderDeps {
   codec: MarkupCodec;
   schema: Schema;
   model: YProsemirrorDocumentModel;
-  semanticProvenance: SemanticProvenanceWriter;
   coordinator: Pick<DocumentCoordinator, "withDocument">;
   links: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
@@ -156,8 +127,6 @@ export interface LinkBinderDeps {
 }
 
 export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
-  const codecs = createAgentEditCodecFactory(deps.codec);
-
   function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
     const classification = classifyFiletype(filetype);
     if (classification.kind === "tracked") return classification.schemaType;
@@ -172,88 +141,28 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     );
   }
 
-  /**
-   * Encode `blocks` as a mutation of `base`: its whole-document overwrite, so
-   * blocks left as they were keep their items, with the overwrite's certified
-   * provenance written against the base; fresh, a plain insertion.
-   */
-  function boundWrite(input: {
-    holder: BoundHolder;
-    base: {
-      doc: Y.Doc;
-      authority: Readonly<CheckpointAuthority>;
-      documentId: DocumentId;
-      codec: AgentEditCodec;
-    } | null;
-    blocks: readonly PMNode[];
-    markdown: string;
-    schemaType: YjsTrackedSchemaType;
-  }): BoundWrite {
-    const draft = createCollabYDoc({ gc: false });
-    try {
-      if (input.base) Y.applyUpdate(draft, Y.encodeStateAsUpdate(input.base.doc));
-      const baseVector = Y.encodeStateVector(draft);
-      let ir: SemanticEditIRV1 | null = null;
-      if (input.base) {
-        const lowered = lowerOverwrite({
-          doc: draft,
-          model: deps.model,
-          codec: input.base.codec,
-          documentId: input.base.documentId,
-          content: input.markdown,
-          blocks: input.blocks,
-        });
-        if (!lowered.ok) {
-          throw new Error(`Could not bind the write: ${lowered.code}: ${lowered.message}`);
-        }
-        ir = lowered.ir;
-      } else if (input.blocks.length > 0) {
-        draft.transact(() => {
-          deps.model.insertBlocks(toDocHandle(draft), null, { blocks: [...input.blocks] });
-        });
-      }
-      const update = Y.encodeStateAsUpdate(draft, baseVector);
-      // Facts are written after `update` is taken: a writer's fresh save must not carry them.
-      let certified: BoundWrite["certified"] = null;
-      if (ir) {
-        const loweredVector = Y.encodeStateVector(draft);
-        deps.semanticProvenance.writeCertifiedFacts(toDocHandle(draft), ir, baseVector);
-        certified = { ir, provenance: Y.encodeStateAsUpdate(draft, loweredVector) };
-      }
-      return {
-        holder: input.holder,
-        base: input.base ? { authority: input.base.authority, stateVector: baseVector } : null,
-        update,
-        certified,
-        blocks: input.blocks,
-        markdown: input.markdown,
-        schemaType: input.schemaType,
-      } as BoundWrite;
-    } finally {
-      draft.destroy();
-    }
+  function boundWrite(input: Omit<BoundWrite, typeof boundBrand>): BoundWrite {
+    return input as BoundWrite;
   }
 
-  /**
-   * The holder's current document, as a private clone, with the authority
-   * generation it was read in; null if it has no state yet.
-   */
-  async function currentDocument(
-    documentId: DocumentId,
-  ): Promise<{ doc: Y.Doc; authority: Readonly<CheckpointAuthority> } | null> {
-    let read: { state: Uint8Array; authority: Readonly<CheckpointAuthority> };
+  /** The holder's current nodes, projected from a private clone; null if it has no state yet. */
+  async function currentBlocks(documentId: DocumentId): Promise<PMNode[] | null> {
+    let state: Uint8Array;
     try {
-      read = await deps.coordinator.withDocument(documentId, async (doc) => ({
-        state: Y.encodeStateAsUpdate(doc),
-        authority: documentAuthority(doc),
-      }));
+      state = await deps.coordinator.withDocument(documentId, async (doc) =>
+        Y.encodeStateAsUpdate(doc),
+      );
     } catch (cause) {
       if (isDocumentNotFoundError(cause)) return null;
       throw cause;
     }
     const clone = createCollabYDoc({ gc: false });
-    Y.applyUpdate(clone, read.state);
-    return { doc: clone, authority: read.authority };
+    try {
+      Y.applyUpdate(clone, state);
+      return [...deps.model.projectBlocks(toDocHandle(clone))];
+    } finally {
+      clone.destroy();
+    }
   }
 
   async function bind(input: BindMarkdownInput): Promise<BoundWrite> {
@@ -267,55 +176,34 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     const boundHolder: BoundHolder = documentId
       ? { kind: "document", documentId }
       : { kind: "new", uri: holderUri ?? "" };
-    const base =
-      input.against === "current" && documentId ? await currentDocument(documentId) : null;
-    try {
-      const previous = base ? [...deps.model.projectBlocks(toDocHandle(base.doc))] : [];
-      const prepare = async (written: readonly PMNode[]) => {
-        await deps.links.prepare({
-          holders: documentId ? [{ documentId, view }] : [],
-          stored: previous,
-          written,
-          ...(documentId ? {} : { addresses: writtenAddresses(written, holderUri), views: [view] }),
-        });
-      };
-      const scopeFor = (): HolderLinkScope =>
-        documentId
-          ? deps.links.holder({ documentId, view })
-          : deps.links.reader({ uri: holderUri, view });
-      /** Called once the scope is prepared: the overwrite of a base spells through it. */
-      const finish = (blocks: readonly PMNode[], markdown: string) =>
-        boundWrite({
-          holder: boundHolder,
-          base:
-            base && documentId ? { ...base, documentId, codec: codecs.forScope(scopeFor()) } : null,
-          blocks,
-          markdown,
-          schemaType,
-        });
+    const previous =
+      input.against === "current" && documentId ? await currentBlocks(documentId) : null;
+    const finish = (blocks: readonly PMNode[], markdown: string) =>
+      boundWrite({ holder: boundHolder, fresh: previous === null, blocks, markdown, schemaType });
 
-      const { markdown } = input;
-      if (schemaType === "code") {
-        if (base) await prepare([]);
-        return finish([codeBlock(markdown, filetype)], markdown);
-      }
+    const { markdown } = input;
+    if (schemaType === "code") return finish([codeBlock(markdown, filetype)], markdown);
 
-      const written = deps.codec.parse(markdown).blocks;
-      await prepare(written);
-      const scope = scopeFor();
-      const assigned = assignLinkRefs({
-        old: walkLinkOccurrences(previous),
-        written,
-        scope,
-        shown: [],
-      });
-      if (assigned.minted.length > 0) {
-        await deps.registrar.register(aheadRegistrations(assigned.minted));
-      }
-      return finish(assigned.nodes, markdown);
-    } finally {
-      base?.doc.destroy();
+    const written = deps.codec.parse(markdown).blocks;
+    await deps.links.prepare({
+      holders: documentId ? [{ documentId, view }] : [],
+      stored: previous ?? [],
+      written,
+      ...(documentId ? {} : { addresses: writtenAddresses(written, holderUri), views: [view] }),
+    });
+    const scope: HolderLinkScope = documentId
+      ? deps.links.holder({ documentId, view })
+      : deps.links.reader({ uri: holderUri, view });
+    const assigned = assignLinkRefs({
+      old: walkLinkOccurrences(previous ?? []),
+      written,
+      scope,
+      shown: [],
+    });
+    if (assigned.minted.length > 0) {
+      await deps.registrar.register(aheadRegistrations(assigned.minted));
     }
+    return finish(assigned.nodes, markdown);
   }
 
   return {
@@ -334,7 +222,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       if (schemaType === "code") {
         return boundWrite({
           holder,
-          base: null,
+          fresh: true,
           blocks: [codeBlock(markdown, filetype)],
           markdown,
           schemaType,
@@ -344,7 +232,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       if (walkLinkOccurrences(blocks).length > 0) {
         throw new Error("Static content names a link or source; bind it with bindMarkdown");
       }
-      return boundWrite({ holder, base: null, blocks, markdown, schemaType });
+      return boundWrite({ holder, fresh: true, blocks, markdown, schemaType });
     },
   };
 }

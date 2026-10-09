@@ -62,48 +62,40 @@ fresh or against the holder's current document (`against: "current"`: every
 link that stays corresponds to itself and keeps its ref, so an overwrite
 keeps refs verbatim), and registers the ahead refs it minted.
 
-A bound write is a mutation, not a desired state. Bound against the
-current document, it keeps the base it read through the coordinator (its
-authority identity and generation, and its state vector) and carries the Yjs update that turns that base into the bound result:
-agent-edit's whole-document overwrite of the base (`lowerOverwrite`, the
+A bound write is desired state: its assigned blocks, plus the holder it was
+bound for and whether it was bound fresh. It is applied under the document's
+lock through agent-edit's ordinary whole-document overwrite (the
 correspondence a `create` with overwrite resolves), so unchanged blocks keep
-their items and so does unchanged prose in a changed block. The write also
-carries that overwrite's semantic IR and the certified provenance facts it
-implies, as a separate update (`certified`): a write in a thread or by an agent
-admits both with the update, as agent-edit's own overwrite would, while a
-writer's save outside a thread applies the update alone, since fresh-authorship
-admission refuses the reserved provenance namespace. Do not lower bound
-writes with a whole-fragment `updateYFragment` diff: it keeps only a common
-prefix and suffix, so a paragraph inserted above kept prose re-attributes that
-prose to the saver (A2-1's certified-save row).
-Applying merges the update into the live document: a writer's edit, unlink or
-retarget admitted between bind and apply stays, in either order. One
-agent-edit helper, `admitBoundUpdate`, admits it under the document's lock
-for every door: in `mergeBound` for a writer's save, and in agent-edit's
-commit (`applyBound`) for a write in a thread or by an agent, including
-against the deferred coordinator's in-transaction copy, which reports the
-committed generation. It checks the base's authority generation (the
-certificate, which also fences the journal append), clock containment and no
-unresolved dependencies after applying (the update's dependency only: a
-restore whose checkpoint keeps every base clock still replaces the
-generation), and that a fresh write (seed, import, create, upload: no base)
-lands in a document with no blocks. Any refusal is `stale_generation`, for
-the caller to bind again; nothing is checked early outside the lock.
+their items and so does unchanged prose in a changed block.
+`writeDocument` routes an actor's write in a thread (and every agent write)
+through the edit core's `create` with the nodes as `WriteContext.boundNodes`:
+the core aligns them against the document, computes the overwrite's semantic
+IR and certified provenance there, and records the write as that actor's
+mutation (L21's kept-paragraph authorship holds by construction). A writer's
+save outside a thread applies the same correspondence to the engine's
+staged copy (`overwriteWithAssigned`) and carries no certified facts, since
+fresh-authorship admission refuses the reserved provenance namespace. Do not
+lower whole-document writes with a whole-fragment `updateYFragment` diff: it
+keeps only a common prefix and suffix, so a paragraph inserted above kept
+prose re-attributes that prose to the saver (A2-1's certified-save row).
+Like any whole-document save, applying replaces whatever was admitted before
+it: anchoring the write to the state it was bound against would only protect
+the moment between bind and apply. An edit made against the old state and
+admitted after the save merges into the blocks it kept.
+A write bound fresh (seed, import, create, upload) lands only in a document
+with no blocks: the core's `create` without overwrite refuses one that has
+content, and the engine answers `stale_generation`.
 A bound write also certifies its holder (`document`
 by id, `new` by the canonical address it will have, or `static`): the engine
 refuses to apply it to any other document, and ContextFS checks the path's
-occupant under its namespace lock.
+occupant under its namespace lock and answers `stale_target` when it changed.
 Registration opens a root transaction that takes namespace keys; inside a
 command transaction that already holds them it would wait on itself forever,
 invisibly to PostgreSQL. So `bindMarkdown` throws
 `LinkBindingInsideTransactionError` inside any transaction, and a door that
 forgot to hoist fails at once. `bindStatic` is for link-free text fixed in code
 (a project's first chapter, seeded inside the bootstrap transaction); it throws
-if the text names anything. `writeDocument` routes an actor's write in a
-thread (and every agent write) through the edit core's `applyBound`,
-which merges the bound update into its runtime and records it as that
-actor's mutation; a writer's save outside a thread merges
-it directly. There is no string-transform or append write. Seed, import and create bind fresh (pass 3 only).
+if the text names anything. There is no string-transform or append write. Seed, import and create bind fresh (pass 3 only).
 
 The codec asks synchronously, so the tree is read per operation, never cached.
 `within(key, op)` opens a snapshot keyed by project and reader (the account a

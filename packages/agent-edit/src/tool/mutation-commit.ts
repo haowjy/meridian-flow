@@ -22,18 +22,11 @@ import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
-  JournalAuthority,
   JournalBatchAppendEntry,
   JournalCommitKind,
   UpdateJournal,
 } from "../ports/update-journal.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
-import {
-  admitBoundUpdate,
-  type BoundRefusal,
-  type BoundUpdate,
-  boundRefusalResult,
-} from "./bound-update.js";
 import type { CommandLinks } from "./command-links.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
@@ -85,12 +78,6 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 
 export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
   runtime: MutationCommitRuntime;
-  /**
-   * A host-bound update this mutation stages: admitted under the
-   * document's lock (`admitBoundUpdate`), and its base's certificate
-   * fences the journal append.
-   */
-  bound?: BoundUpdate;
   before: readonly BlockSnapshot[];
   preOwnSnapshot: Uint8Array;
 }
@@ -285,16 +272,8 @@ export function createMutationCommit(deps: {
         input.docId,
         input.commandName,
         async (liveDoc) => {
-          const live = coordinator.documentAuthority?.(liveDoc);
-          if (input.bound) {
-            const refused = admitUnderLock(liveDoc, input.bound, live);
-            if (refused) return boundRefusalResult(input.docId, refused);
-          }
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
-            // A copy with no authority of its own (inside a reply's transaction) still fences
-            // the append with the certificate.
-            authority: input.bound?.base?.authority ?? live,
             ownTurnId: input.turnId,
             update: mergeUpdates(input.updates.map((entry) => entry.update)),
             ownWrites: [
@@ -336,25 +315,6 @@ export function createMutationCommit(deps: {
       journalCommitKind: journalCommitKind ?? "durable",
       ...(lateSweep ? { lateSweep } : {}),
     };
-  }
-
-  /** Whether the live document, as it is now, admits the bound update; tried on a copy. */
-  function admitUnderLock(
-    liveDoc: Y.Doc,
-    bound: BoundUpdate,
-    authority: JournalAuthority | undefined,
-  ): BoundRefusal | null {
-    const trial = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
-    try {
-      return admitBoundUpdate(trial, bound, {
-        authority,
-        model,
-        origin: null,
-        certified: true,
-      });
-    } finally {
-      trial.destroy();
-    }
   }
 
   async function commitJournalBatch(
@@ -399,8 +359,6 @@ export function createMutationCommit(deps: {
       journalEntries: readonly JournalBatchAppendEntry[];
       preflight?: CapturedConcurrentDetection;
       onJournalAccepted?(journalCommitKind: JournalCommitKind): void;
-      /** Fences the journal append; absent, the live document's own authority. */
-      authority?: JournalAuthority;
     },
   ): Promise<ApplyWithRecheckResult & { journalCommitKind: JournalCommitKind | null }> {
     const journalCommitKind =
@@ -409,7 +367,7 @@ export function createMutationCommit(deps: {
             await commitJournalBatch(
               input.journalEntries.map((entry) => ({
                 ...entry,
-                authority: input.authority ?? coordinator.documentAuthority?.(liveDoc),
+                authority: coordinator.documentAuthority?.(liveDoc),
               })),
             )
           ).journalCommitKind

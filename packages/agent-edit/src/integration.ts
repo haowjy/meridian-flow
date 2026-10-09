@@ -15,7 +15,7 @@ export {
   snapshotBlocks,
   touchedBlockHashesBetween,
 } from "./apply/echo.js";
-export { type LoweredOverwrite, lowerOverwrite } from "./apply/overwrite.js";
+export { overwriteWithAssigned } from "./apply/overwrite.js";
 export type {
   ConcurrentEditInfo,
   ConcurrentEditRun,
@@ -133,11 +133,6 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
-export {
-  admitBoundUpdate,
-  type BoundRefusal,
-  type BoundUpdate,
-} from "./tool/bound-update.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
