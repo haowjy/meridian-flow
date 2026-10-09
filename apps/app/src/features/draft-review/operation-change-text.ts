@@ -3,29 +3,6 @@ import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 
 export type OperationChangeText = { removed: string | null; added: string | null };
 
-/** The agent operations whose changes share a hunk with the writer's own edits. */
-export function operationsWithWriterEdits(
-  operations: readonly ReviewOperation[],
-  hunks: readonly ReviewHunk[],
-): ReadonlySet<string> {
-  const kindById = new Map(operations.map((op) => [op.operationId, op.kind]));
-  const mixed = new Set<string>();
-  for (const hunk of hunks) {
-    let sawAgent = false;
-    let sawWriter = false;
-    for (const opId of hunk.operationIds) {
-      const kind = kindById.get(opId);
-      if (kind === "agent") sawAgent = true;
-      else if (kind === "writer") sawWriter = true;
-    }
-    if (!sawAgent || !sawWriter) continue;
-    for (const opId of hunk.operationIds) {
-      if (kindById.get(opId) === "agent") mixed.add(opId);
-    }
-  }
-  return mixed;
-}
-
 /**
  * What these hunks took out and put in. An unclassified text hunk has no
  * operation to carry an excerpt, so its own `insertedText` is the insertion;
