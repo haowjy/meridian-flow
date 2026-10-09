@@ -14,7 +14,6 @@ export type ProjectSearch = {
   scheme?: ProjectContextTreeScheme;
   folder?: string;
   path?: string;
-  results?: "";
   /** The Editor's Work. */
   work?: string;
   /** A chat's Scratch note: its lineage, by the first chat's id. */
@@ -33,7 +32,6 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
     left.scheme === right.scheme &&
     left.folder === right.folder &&
     left.path === right.path &&
-    left.results === right.results &&
     left.work === right.work &&
     left.chat === right.chat &&
     left.filter === right.filter &&
@@ -156,7 +154,6 @@ export function openContextRouteSearch(
     scheme: target.scheme,
     folder: segments.length ? `/${segments.join("/")}` : undefined,
     path: target.path,
-    results: undefined,
   });
 }
 
@@ -201,9 +198,7 @@ export type ProjectRouteCommands = {
 function stripEmptySearch(search: ProjectSearch): ProjectSearch {
   return Object.fromEntries(
     Object.entries(search).filter(
-      ([key, value]) =>
-        value !== undefined &&
-        (key === "results" || key === "path" || key === "work" || value !== ""),
+      ([key, value]) => value !== undefined && (key === "path" || key === "work" || value !== ""),
     ),
   ) as ProjectSearch;
 }
@@ -230,7 +225,6 @@ export function applyContextRepairIfCurrent(
       scheme: undefined,
       folder: undefined,
       path: undefined,
-      results: undefined,
     });
   }
   return openContextRouteSearch(latest, repair.next);

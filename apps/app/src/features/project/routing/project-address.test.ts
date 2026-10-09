@@ -215,7 +215,6 @@ describe("readable project addresses", () => {
   it.each([
     `?work=${WORK}&work=`,
     "?settings=profile&settings=usage",
-    "?results=&results=1",
     "?unknown=%FE",
   ])("rejects raw query ambiguity %s", (search) => {
     expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
@@ -227,10 +226,10 @@ describe("readable project addresses", () => {
         `${P}/editor/manuscript/chapter.md?work=${WORK.toUpperCase()}&settings=usage&doc=ignored&unknown=1`,
       ),
     ).toMatchObject({ href: `${P}/editor/manuscript/chapter.md?work=${WORK}&settings=usage` });
-    expect(
-      parse(`${P}/chats/${CHAT}?work=${WORK}&doc=ignored&results=&settings=profile`),
-    ).toMatchObject({ href: `${P}/chats/${CHAT}?results=&settings=profile` });
-    expect(parse(`${P}/works/${WORK}?work=${OTHER_WORK}&results=`)).toMatchObject({
+    expect(parse(`${P}/chats/${CHAT}?work=${WORK}&doc=ignored&settings=profile`)).toMatchObject({
+      href: `${P}/chats/${CHAT}?settings=profile`,
+    });
+    expect(parse(`${P}/works/${WORK}?work=${OTHER_WORK}`)).toMatchObject({
       href: `${P}/works/${WORK}`,
     });
   });

@@ -137,12 +137,6 @@ msgid "{0} finished"
 msgstr "{0} finished"
 
 #. placeholder {0}: schemeLabel(tab.scheme)
-#. placeholder {1}: work.name
-#: src/features/project/dock/DockDocumentTitle.tsx
-#~ msgid "{0} for {1}"
-#~ msgstr "{0} for {1}"
-
-#. placeholder {0}: schemeLabel(tab.scheme)
 #: src/features/project/dock/DockDocumentTitle.tsx
 msgid "{0} for {ownerName}"
 msgstr "{0} for {ownerName}"
@@ -600,10 +594,6 @@ msgstr "Back online (all changes saved)"
 msgid "Back to {title}"
 msgstr "Back to {title}"
 
-#: src/features/project/mobile/MobileProject.tsx
-msgid "Back to chat"
-msgstr "Back to chat"
-
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 msgid "Back to live"
@@ -828,10 +818,6 @@ msgstr "Choose a home"
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
 
-#: src/components/app/DrillInSheet.tsx
-#~ msgid "Choose a note to open."
-#~ msgstr "Choose a note to open."
-
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
 msgstr "Choose agent"
@@ -863,7 +849,6 @@ msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/features/links/FollowOutcomeContent.tsx
-#: src/features/project/mobile/MobileResultViewerOverlay.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -1231,10 +1216,6 @@ msgstr "Couldn't load recent documents."
 msgid "Couldn't load references."
 msgstr "Couldn't load references."
 
-#: src/features/project/shell/RailSection.tsx
-msgid "Couldn't load results."
-msgstr "Couldn't load results."
-
 #: src/features/chat/TurnList.tsx
 msgid "Couldn't load the conversation this fork continues."
 msgstr "Couldn't load the conversation this fork continues."
@@ -1243,10 +1224,6 @@ msgstr "Couldn't load the conversation this fork continues."
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
-
-#: src/features/project/mobile/ResultViewerContent.tsx
-msgid "Couldn't load this result."
-msgstr "Couldn't load this result."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -2293,14 +2270,6 @@ msgstr "Loading references…"
 msgid "Loading report…"
 msgstr "Loading report…"
 
-#: src/features/project/mobile/ResultViewerContent.tsx
-msgid "Loading result…"
-msgstr "Loading result…"
-
-#: src/features/project/mobile/ResultsList.tsx
-msgid "Loading results…"
-msgstr "Loading results…"
-
 #: src/core/editor/FigureNodeView.tsx
 msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
@@ -2609,10 +2578,6 @@ msgstr "No projects yet"
 msgid "No report text was returned."
 msgstr "No report text was returned."
 
-#: src/features/project/mobile/ResultsList.tsx
-msgid "No results yet."
-msgstr "No results yet."
-
 #: src/features/project/work/WorkFilesView.tsx
 msgid "No scratch notes match “{search}”."
 msgstr "No scratch notes match “{search}”."
@@ -2728,10 +2693,6 @@ msgstr "Open a chat to see what the AI referenced."
 msgid "Open a document from the project tree, or start a new one."
 msgstr "Open a document from the project tree, or start a new one."
 
-#: src/features/project/mobile/ResultsList.tsx
-msgid "Open a project to see its results."
-msgstr "Open a project to see its results."
-
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
@@ -2773,22 +2734,6 @@ msgstr "Open navigation"
 #: src/features/project/context/viewers/ImageViewer.tsx
 msgid "Open original"
 msgstr "Open original"
-
-#: src/features/project/mobile/ResultsList.tsx
-msgid "Open producing turn"
-msgstr "Open producing turn"
-
-#: src/features/project/mobile/ResultsList.tsx
-msgid "Open producing turn in {agentName}"
-msgstr "Open producing turn in {agentName}"
-
-#: src/features/project/mobile/ResultsList.tsx
-msgid "Open result {name}"
-msgstr "Open result {name}"
-
-#: src/features/project/mobile/MobileProject.tsx
-msgid "Open results"
-msgstr "Open results"
 
 #: src/features/chat/derivation/SourceChatLink.tsx
 msgid "Open source chat {name}"
@@ -3136,6 +3081,10 @@ msgstr "Reset size"
 msgid "Resize right rail"
 msgstr "Resize right rail"
 
+#: src/features/project/chat/ChatScratch.tsx
+msgid "Resize Scratch"
+msgstr "Resize Scratch"
+
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize sidebar"
 msgstr "Resize sidebar"
@@ -3156,10 +3105,6 @@ msgstr "Restore {0}"
 #: src/features/project/work/WorkCollection.tsx
 msgid "Restoring"
 msgstr "Restoring"
-
-#: src/features/project/mobile/MobileProject.tsx
-msgid "Results"
-msgstr "Results"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume where I left off on any device"
@@ -3305,10 +3250,6 @@ msgstr "Scratch for {0}"
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Scratch for {chatTitle}"
 msgstr "Scratch for {chatTitle}"
-
-#: src/features/project/chat/ChatScratch.tsx
-#~ msgid "Scratch for {name}"
-#~ msgstr "Scratch for {name}"
 
 #: src/features/project/chat/ChatScratch.tsx
 msgid "Scratch for this chat"

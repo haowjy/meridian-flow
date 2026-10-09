@@ -135,7 +135,7 @@ export function useWorkRoute({
     if (!navigation || !rememberedWork) return;
     const destination: ProjectDestination = { kind: "work", workId: rememberedWork.id };
     await navigation.navigate(
-      { ...address, destination, workView: undefined, worksView: undefined, results: false },
+      { ...address, destination, workView: undefined, worksView: undefined },
       { replace: false },
     );
   }, []);

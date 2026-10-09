@@ -14,7 +14,7 @@
  * tooltip and accessible name rather than a line of text.
  */
 import { t } from "@lingui/core/macro";
-import { useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
@@ -26,9 +26,15 @@ import { RailPaneHeader } from "../context/RailPaneHeader";
 import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import { useDockViewStore } from "../dock/dock-view-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
+import { ResizeHandle } from "../layout/ResizeHandle";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { RailEmptyHint, RailFileRow, RailFolderRow } from "../shell/RailSection";
-import { readScratchExpanded, writeScratchExpanded } from "./scratch-section-pref";
+import {
+  readScratchExpanded,
+  readScratchHeight,
+  writeScratchExpanded,
+  writeScratchHeight,
+} from "./scratch-section-pref";
 
 function useChatScratch(projectId: string, threadId: string | null) {
   const { threads } = useProjectThreads(projectId);
@@ -82,11 +88,16 @@ function useOpenDocumentId(projectId: string, editorWorkId: string | null): stri
   return undefined;
 }
 
+/** Each pane keeps this much when the writer resizes between the tree and Scratch. */
+const MIN_PANE_PX = 120;
+const HEIGHT_VAR = "--scratch-section-height";
+
 export function RailScratchSection({
   projectId,
   threadId,
   editorWorkId,
   onPicked,
+  resizable = false,
 }: {
   projectId: string;
   /** The chat on screen: the centre chat on the Chat screen, the dock's chat elsewhere. */
@@ -94,10 +105,14 @@ export function RailScratchSection({
   editorWorkId: string | null;
   /** Called after a note is picked (the phone drawer closes over the document). */
   onPicked?: () => void;
+  /** Desktop only: a handle on the divider above the expanded section resizes it. */
+  resizable?: boolean;
 }) {
   const scratch = useChatScratch(projectId, threadId);
   const openId = useOpenDocumentId(projectId, editorWorkId);
   const [expanded, setExpanded] = useState(readScratchExpanded);
+  const [height, setHeight] = useState(readScratchHeight);
+  const sectionRef = useRef<HTMLElement | null>(null);
   // Folders the writer has toggled; a top-level folder starts open, like the tree's.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   if (!scratch) return null;
@@ -107,7 +122,49 @@ export function RailScratchSection({
     writeScratchExpanded(next);
   };
   return (
-    <section className="flex min-h-0 flex-col">
+    <section
+      ref={sectionRef}
+      className="relative flex min-h-0 shrink flex-col border-t border-border-subtle py-1"
+      // Content-sized up to 40% of the rail by default; the handle's variable (set live
+      // while dragging, and from the saved height) replaces both.
+      style={
+        expanded
+          ? ({
+              height: `var(${HEIGHT_VAR}, auto)`,
+              maxHeight: `max(40%, var(${HEIGHT_VAR}, 0px))`,
+              minHeight: height === null ? undefined : MIN_PANE_PX,
+              ...(height === null ? {} : { [HEIGHT_VAR]: `${height}px` }),
+            } as CSSProperties)
+          : undefined
+      }
+    >
+      {resizable && expanded ? (
+        <ResizeHandle
+          gridRef={sectionRef}
+          cssVariableName={HEIGHT_VAR}
+          widthPx={height}
+          minWidthPx={MIN_PANE_PX}
+          maxWidthPx={Number.MAX_SAFE_INTEGER}
+          orientation="vertical"
+          dragDirection={-1}
+          ariaLabel={t`Resize Scratch`}
+          measure={() => {
+            const section = sectionRef.current;
+            const tree = section?.previousElementSibling;
+            const own = section?.getBoundingClientRect().height ?? MIN_PANE_PX;
+            const above = tree?.getBoundingClientRect().height ?? 0;
+            return { value: own, min: MIN_PANE_PX, max: own + above - MIN_PANE_PX };
+          }}
+          onCommit={(next) => {
+            setHeight(next);
+            writeScratchHeight(next);
+          }}
+          onReset={() => {
+            setHeight(null);
+            writeScratchHeight(null);
+          }}
+        />
+      ) : null}
       <RailPaneHeader
         label={schemeLabel("scratch")}
         icon={schemeIcon("scratch")}

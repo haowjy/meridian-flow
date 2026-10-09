@@ -128,7 +128,6 @@ export function ReadableProjectRoute({
           projectId: project.id,
           destination: { kind: "chat-index" },
           work: NONE,
-          results: false,
         };
   const destination = address.destination;
   const activeScreen = screen(destination);
@@ -457,7 +456,6 @@ export function ReadableProjectRoute({
       draftId: undefined,
       workView: next.kind === "work" ? address.workView : undefined,
       worksView: undefined,
-      results: false,
     };
   }
   const contextDestination = useCallback(
@@ -533,7 +531,6 @@ export function ReadableProjectRoute({
             : workSelectionFor(destination, target.workId, current.noWorkId),
           ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
           draftId,
-          results: false,
         } as ProjectAddress,
         state,
       };
@@ -673,7 +670,6 @@ export function ReadableProjectRoute({
               address: {
                 ...current.address,
                 destination: { kind: "editor" as const },
-                results: false,
               },
               state: undefined,
             }
@@ -752,7 +748,6 @@ export function ReadableProjectRoute({
         ? `/${documentDestination.path}`
         : undefined,
     folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
-    results: address.results ? "" : undefined,
     view: address.workView ?? address.worksView,
   };
   const selectScreen = (next: ScreenKey) => {
@@ -878,15 +873,12 @@ export function ReadableProjectRoute({
             activeContextChat={search.chat ?? null}
             reviewDraftId={address.draftId}
             reviewAddressDocumentId={addressDocumentId}
-            resultsOpen={address.results}
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}
             onExitContextScheme={() => browse(null)}
             onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
             onOpenContextTarget={openContext}
             onSetEditorReviewDraftId={setEditorReviewDraftId}
-            onOpenResults={() => go({ ...address, results: true }, { replace: true })}
-            onCloseResults={() => go({ ...address, results: false }, { replace: true })}
           />
         </ProjectDocumentNavigationProvider>
       </ChatNavigationProvider>

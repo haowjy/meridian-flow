@@ -2,8 +2,10 @@
 
 ## [Unreleased]
 
-- On the Chat screen, clicking a Recent document in the right context rail opens it in the editor beside the chat, in the side panel that covers the rail until you close it. The rail now looks like the left sidebar, with the same rows and section head, and no longer shows file sizes. The rail's Results section is gone from the desktop (Results remain on the phone).
-- A SCRATCH section at the bottom of the left sidebar, styled like the file tree's sections, lists the notes the AI keeps for the chat on screen, even before its first note. Click its heading to expand it upwards (it remembers whether it was open), and open folders in place. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the section sits at the bottom of the menu drawer. The open note is highlighted. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
+- Unfiled now has its own inbox icon, so it no longer looks like Scratch. It shows in the sidebar and on Unfiled link chips.
+- The phone's Results screen and its button in the chat top bar are removed.
+- On the Chat screen, clicking a Recent document in the right context rail opens it in the editor beside the chat, in the side panel that covers the rail until you close it. The rail now looks like the left sidebar, with the same rows and section head, and no longer shows file sizes. Results are gone from the rail, and the phone's Results screen is removed.
+- A SCRATCH section at the bottom of the left sidebar, styled like the file tree's sections, lists the notes the AI keeps for the chat on screen, even before its first note. Click its heading to expand it upwards (it remembers whether it was open), and open folders in place. On desktop, drag the divider above it to change how much of the sidebar it takes (double-click to reset); it remembers that too. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the section sits at the bottom of the menu drawer. The open note is highlighted. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
 
 - A chat's Scratch keeps its name, and links and doors to its notes keep opening, after the chat that started it is deleted while a fork continues.
 

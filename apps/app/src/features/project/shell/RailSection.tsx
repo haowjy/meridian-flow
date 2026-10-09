@@ -6,7 +6,6 @@
  * tree's `RowIcon` and `Twistie`, and the empty hint takes the tree's. They
  * therefore read as the same surface as the tree.
  */
-import { Trans } from "@lingui/react/macro";
 import type { LucideIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -126,8 +125,6 @@ export function RailEmptyHint({ children }: { children: ReactNode }) {
 }
 
 /** Error row with a retry link, shown when a rail section fails to load. */
-export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label?: ReactNode }) {
-  return (
-    <InlineErrorRow message={label ?? <Trans>Couldn't load results.</Trans>} onRetry={onRetry} />
-  );
+export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label: ReactNode }) {
+  return <InlineErrorRow message={label} onRetry={onRetry} />;
 }

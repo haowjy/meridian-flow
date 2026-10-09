@@ -53,7 +53,7 @@ describe("guarded context route repair", () => {
 });
 
 describe("context route command", () => {
-  it("updates Work, scheme, folder, path, and Results as one transition", () => {
+  it("updates Work, scheme, folder, and path as one transition", () => {
     expect(
       openContextRouteSearch(
         {
@@ -62,7 +62,6 @@ describe("context route command", () => {
           scheme: "scratch",
           folder: "/old",
           path: "/old/file.md",
-          results: "",
         },
         { scheme: "manuscript", path: "/Act Two/Arrival.md", workId: "work-a" },
       ),

@@ -330,7 +330,6 @@ export function planContextAvailabilityBatch(
           scheme: undefined,
           folder: undefined,
           path: undefined,
-          results: undefined,
         };
       }
     }

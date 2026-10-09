@@ -96,6 +96,7 @@ export function LeftSidebar({
             projectId={projectId}
             threadId={chatThreadId}
             editorWorkId={editorWorkId}
+            resizable
           />
         }
       >

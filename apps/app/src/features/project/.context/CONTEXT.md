@@ -181,8 +181,11 @@ The left rail ends in a **Scratch** section above the account (`chat/ChatScratch
 body is the chat's Scratch as tree rows (`RailFolderRow`/`RailFileRow` over
 `contextTreeFileRowClassName`), with folders opening in place and the open note highlighted. The
 wording "Scratch for this chat" (a chat's own notes) or "Scratch for <Work>" is the head's tooltip and
-accessible name, not a line of text. The section takes at most 40% of the rail and scrolls itself; the
-project tree keeps the rest. Expanded or collapsed is remembered per viewer on the device
+accessible name, not a line of text. The section is content-sized up to 40% of the rail and scrolls
+itself; the project tree keeps the rest. On desktop the writer can resize between the two: the shell's
+`ResizeHandle` (vertical orientation, `measure` and `onReset`) sits on the divider above the expanded
+section ("Resize Scratch", Up/Down keys, double-click resets), each pane keeps at least 120px, and the
+height is remembered with the expanded flag. Collapsed has no handle, and the phone drawer has none. Expanded or collapsed (and the chosen height) is remembered per viewer on the device
 (`chat/scratch-section-pref.ts`, collapsed by default; the tree's own sections do not persist).
 It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
 chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
@@ -204,8 +207,8 @@ parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), r
 `RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its
 file name only (no size). The rail is Recent only. A Recent row opens in the dock's document slot
 (`dock/use-open-document-id-in-dock.ts`); the rail stays mounted under the slot, so no "current
-row" mark is shown. The phone has no such rail. Results appear only on the phone, as its own
-`?results=` surface (`mobile/MobileResultsView`).
+row" mark is shown. The phone has no such rail, and no Results surface (the app has none; the
+server still records `project_results`).
 
 The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
@@ -472,7 +475,7 @@ overlays. The first segment after `/p/<project>` is always a screen.
 /p/<id>/editor[?work=<workId>]           Editor, nothing open
 /p/<id>/editor/<scheme>/<path>[?work=…&draft=<draftId>]  document, optionally in review
 /p/<id>/editor/browse[/<scheme>/<path>]  folder
-?settings=<section> on any screen; ?results on a chat or the Editor
+?settings=<section> on any screen
 ```
 
 A context `ProjectDestination` never carries a Work; the address's `work` is the one Work

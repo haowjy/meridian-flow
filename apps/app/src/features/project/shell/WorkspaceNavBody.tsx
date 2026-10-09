@@ -60,19 +60,10 @@ export function WorkspaceNavBody({
         ))}
       </div>
 
-      <div className="min-h-0 flex-1">{children}</div>
+      <div className={cn("min-h-0 flex-1", !phone && "min-h-[120px]")}>{children}</div>
 
-      {scratch ? (
-        // The section renders nothing with no chat on screen; `empty:hidden` drops its divider then.
-        // At most 40% of the rail, so the tree above keeps the rest; the section scrolls itself.
-        <div
-          className={cn(
-            "flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-border-subtle py-1 empty:hidden",
-          )}
-        >
-          {scratch}
-        </div>
-      ) : null}
+      {/* The Scratch section draws its own divider, so none shows with no chat on screen. */}
+      {scratch}
 
       <div
         className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
