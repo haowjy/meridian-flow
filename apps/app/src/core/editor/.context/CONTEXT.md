@@ -46,7 +46,7 @@ lifetime.
   edits (4409): it drops the room, clearing its local copy. Hosts unbind while
   `whenRefusedRoomDropped` runs and reopen after; a refused review room is
   rebuilt by `useReviewRoomOwner`, which owns acquisition and replacement;
-  the editor only captures inert markup and reports paint. A branch room whose last owner released during the
+  the editor only reports paint. A branch room whose last owner released during the
   teardown drain is not reopened when the drain ends, so a rebuild cannot leave
   an unowned session behind. Retaining and releasing only record ownership
   (`get` and `rebuild` open rooms), so one owner's release never reacquires a

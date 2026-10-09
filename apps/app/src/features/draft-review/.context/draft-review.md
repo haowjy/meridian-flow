@@ -190,11 +190,11 @@ preview together, interprets list silence, acquires and retains the selected
 session, and joins the pool's replacement on reset. `useReviewCommandCompletion`
 reports generation-tagged claims to the same reducer. The editor binds the
 supplied session and reports actual paint; refresh watches it without acquiring
-another room. Before replacing a painted session the editor captures inert
-`FrozenReview` markup, which stays until its successor paints. Room retention
+another room. While a replacement session has not painted, `EditorView` shows its
+pending surface and the pane's `PaintHold` keeps the last frame. Room retention
 still supplies `reviewRoomRef` to the pool; writer handoff, draining and teardown
 quarantine are exclusively session-layer operations. The owner exposes the
-session, input eligibility and capture/paint callbacks, not a second presentation
+session, input eligibility and the paint callback, not a second presentation
 phase snapshot.
 Invariants: a generation never goes backwards (the preview query keeps a newer
 cached read, `keepNewerGeneration`); a completion belongs to one generation;
@@ -293,27 +293,19 @@ review still owns the attempt and only a fetch that failed is the room error. Th
 is keyed by its own branch room, never by the live binding, so a rename (which
 re-mints the live binding) does not remount the painted review.
 
-Entering review holds the plain live view, header included, until the review
-editor exists and its change marks have arrived, then switches body and chrome
-in one frame. `EditorView` reports `shown` on the inline surface
-(`controller.setInlineReviewShown`, from a layout effect); the header and the
-identity-bar chip read it. The live text is read-only from the click. If the
-marks never arrive the review shows anyway after 1.5 s.
+Entering review, a room rebuild and a move from one draft's review to another
+all put `EditorView` on its `pending` surface until the review editor exists and
+its change marks have arrived (or 1.5 s), then switch body and chrome in one
+frame. The pane's [`PaintHold`](../../../components/app/PaintHold.md) keeps the
+last painted frame inert meanwhile; no review code owns that hold. `EditorView`
+reports `shown` on the inline surface (`controller.setInlineReviewShown`, from a
+layout effect); the header and the identity-bar chip read it.
 
 When the server refuses a review room's pending edits (4409), the room is
-rebuilt in place by `useReviewRoomOwner` and the review stays open. While the rebuild runs, `EditorView`
-shows an inert copy of the painted review (`FrozenReviewMarkup`), detached from
-input before the retired Y.Doc is destroyed, so neither live prose nor an empty
-shell appears under a review the writer is still in. The copy belongs to one
-review identity (document, room, draft) and one rebuild attempt: it renders for
-no other review, and a retired attempt's completion or failure is ignored. Do
-not keep the old TipTap view mounted instead; the registry destroys the reset
-branch's Y.Doc, so that would need a new detach-and-retain contract.
-
-A move from one draft's review to another's keeps the review being left painted
-and inert (`features/project/dock/review-handover`, a markup copy over the page)
-until the target's header and marks have painted, then swaps in one frame; see
-`features/draft-review/AGENTS.md`.
+rebuilt in place by `useReviewRoomOwner` and the review stays open; a retired
+attempt's completion or failure is ignored. Do not keep the old TipTap view
+mounted across the rebuild; the registry destroys the reset branch's Y.Doc, so
+that would need a new detach-and-retain contract.
 
 Review mode is a full-width Editor; the dock remains in the writer's chosen
 open/collapsed state and view. There is no in-editor review split.
