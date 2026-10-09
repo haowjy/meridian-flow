@@ -123,7 +123,7 @@ type LocalLinkAnswer =
   | { kind: "unasked" }                                   // cannot be asked here; cached as failed
   | { kind: "ask"; provisional: DocumentAnswer | null }; // shown at once while asking
 type InternalLinkResolver = {
-  index?: LinkBindingIndex | null;                        // what it answers from, and binds against
+  index?: LinkAssignmentIndex | null;                     // what it answers from, and assigns against
   local?: (question: LinkQuestion) => LocalLinkAnswer;    // synchronous, at ask time
   remote: (
     questions: readonly LinkQuestion[],                   // only what `local` sent on; at most 200
@@ -169,8 +169,9 @@ the server's `gone` or other document wins for a click as it does for the
 chip. Any change to a cached entry publishes, a failure included.
 
 The registration's options and the port's own `index` are also the editor's
-binding scope (`resolution.binding`): the holder's address, its project, and
-the local document index that `link-binding.ts` binds written links against.
+assignment scope (`resolution.assignment`): the holder's address, its project,
+and the local document index that `link-assignment.ts` assigns written links
+against.
 
 ### A registration is a generation
 
@@ -349,26 +350,27 @@ outside the document rather than throwing: it is called from inside a Yjs
 update handler, where a throw is swallowed and the editor quietly stops
 applying peer writes.
 
-## Binding written links
+## Assigning written links
 
 A stored internal link carries a `ref` (`doc:<id>`, or `ahead:<uuid>` for an
 address nothing is at yet) beside its `href`, the full address it was written
-with. Every client producer binds without parsing and without the network
-(`link-binding.ts`):
+with. Every client producer assigns it without parsing and without the network
+(`link-assignment.ts`):
 
 | Producer | Writes |
 |---|---|
 | `@` document row | `doc:<id>`, href its current full URI |
 | `@` link-ahead row | `mintAheadRef()`, href `aheadAddress(uri, "link")` |
-| Ctrl+K, toolbar, menu Edit (`commitLinkDraft`) | a picked document's `doc:`, else `bindWrittenHref`; an unchanged destination keeps the link's attrs, any other is a retarget with a fresh binding |
+| Ctrl+K, toolbar, menu Edit (`commitLinkDraft`) | a picked document's `doc:`, else `assignWrittenHref`; an unchanged destination keeps the link's attrs, any other is a retarget assigned fresh |
 | pasted `[[…]]` | the catalog row's `doc:`, else a minted ahead ref at the link-ahead address |
-| any paste (Markdown, HTML without metadata, another project's rich copy) | `bindPastedNodes` on every link still unbound, in the link clipboard plugin's `transformPasted` |
+| any paste (Markdown, HTML without metadata, another project's rich copy) | `assignPastedNodes` on every link still without a ref, in the link clipboard plugin's `transformPasted` |
 | same-project rich paste | the copied ref, at the copied current address |
 | image uploads | `asset:` src, no ref |
 
-`bindWrittenHref` classifies (`classifyWrittenLink`): external and contextual
-links keep `ref: null` and their href; an internal one gets the local index's
-document (`indexedDocumentAt`, the server's address rule) or a fresh ahead ref.
+`assignWrittenHref` is markup's `assignFreshLink`, the pass 3 agent-edit
+assigns with, over the local index: external and contextual links keep
+`ref: null` and their href; an internal one gets the local index's document
+(`indexedDocumentAt`, the server's address rule) or a fresh ahead ref.
 A missing or incomplete index is safe: an ahead ref minted for an occupied
 address settles on its occupant server-side.
 

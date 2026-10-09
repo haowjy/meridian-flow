@@ -1,30 +1,32 @@
 /**
- * What the internal links of one resolution scope name: the local answer from
- * the scope's document index where it can give one, synchronously, then the
- * server for the rest, in batches.
+ * What the internal links of one resolution scope name: the local answer the
+ * shared link rules give over the scope's catalog (`project-link-catalog.ts`),
+ * synchronously, then the server for the rest, in batches. This module holds
+ * only that split, the transport, and what a server answer teaches the
+ * settlement memo; the rules are `resolveStoredLink`'s.
  *
- * - A `doc:` ref the complete index holds resolves locally to that document,
- *   wherever it lives now.
- * - An `ahead:` ref the server has answered through its settlement (rule 3)
- *   is, from then on, exactly a `doc:` ref to what it settled on: the project's
- *   settlement memo keeps that fact across catalog changes, so a renumber that
- *   puts another document at the old address never answers for it, online or
- *   off.
+ * - A `doc:` ref, or an `ahead:` ref the memo knows settled on a document,
+ *   resolves locally when the complete index holds that document, wherever it
+ *   lives now. A settled ref never answers by its old address again, online
+ *   or off, so a renumber that puts another document there never answers
+ *   for it.
  * - Any other `ahead:` ref asks the server, because settlement is server
  *   state. Until it answers, a document the complete index holds at exactly
  *   the ref's stored address is the answer, shown at once (a Follow-Create,
  *   say, before the server has settled the ref). Only a server `document`
  *   naming another document, or `gone`, replaces it; with nothing there, the
  *   server's `missing` is "doesn't exist yet".
- * - A link with no ref resolves by its address: the local index first
- *   (`matchDocumentPath`, through `indexedDocumentAt`), then the server.
- *
- * The local index answers only when it is complete; an incomplete one cannot
- * prove which document is at an address, and a `doc:` ref it does not hold
- * may name another Work's Scratch, or a document the reader lost.
+ * - A link with no ref resolves by its address: the complete index first
+ *   (`matchDocumentPath`, through the catalog's `documentFor`), then the
+ *   server.
  */
 
-import { type DocumentLinkAnswer, parseLinkRef, resolveDocumentHref } from "@meridian/contracts";
+import {
+  type DocumentLinkAnswer,
+  parseLinkRef,
+  resolveDocumentHref,
+  resolveStoredLink,
+} from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
@@ -32,14 +34,14 @@ import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import {
   type DocumentAnswer,
   type InternalLinkResolver,
-  indexedDocumentAt,
-  indexedDocumentAtExactly,
   type LinkAnswer,
   type LinkTarget,
   type LocalLinkAnswer,
   linkTargetHref,
 } from "@/core/editor/links";
 
+import type { LinkSettlements } from "./link-settlements";
+import { createProjectLinkCatalog } from "./project-link-catalog";
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
 
 /**
@@ -67,59 +69,41 @@ const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
 const answered = (answer: LinkAnswer): LocalLinkAnswer => ({ kind: "answered", answer });
 
-/**
- * What a project's ahead refs are known to have settled on: a document id, or
- * gone. A settlement never unsets (a hard delete goes to gone, which the
- * server says anyway), so a fact is written once and outlives every
- * registration and every surface in the project.
- */
-type AheadSettlements = Map<string, string | "gone">;
-const settlementsByProject = new Map<string, AheadSettlements>();
-
-function projectSettlements(projectId: string): AheadSettlements {
-  let settlements = settlementsByProject.get(projectId);
-  if (!settlements) {
-    settlements = new Map();
-    settlementsByProject.set(projectId, settlements);
-  }
-  return settlements;
-}
-
 export function createProjectLinkResolver(
   scope: LinkResolutionScope,
   index: LinkableDocumentIndex,
+  settlements: LinkSettlements,
 ): InternalLinkResolver {
   const { projectId, workId, baseUri, holderDocumentId } = scope;
-  const settlements = projectSettlements(projectId);
+  const memo = settlements.forProject(projectId);
+  const catalog = createProjectLinkCatalog(projectId, index, memo);
+  const indexedAnswer = (documentId: string) => {
+    const document = catalog.indexed(documentId);
+    return document ? documentAnswer(document) : null;
+  };
   return {
     index,
     local({ ref, target }) {
       // A relative path with no base cannot be asked; the base arriving is a
       // new registration, which asks it again.
       if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
-      const parsed = parseLinkRef(ref);
-      // A malformed ref names nothing; it never falls back to its address.
-      if (ref !== null && !parsed) return answered(GONE);
-      // A settled ahead ref names what it settled on, like a doc ref; settled
-      // gone names nothing the index can hold, so the server says.
-      const settled = parsed?.kind === "ahead" ? settlements.get(parsed.aheadId) : undefined;
-      const documentId = parsed?.kind === "doc" ? parsed.documentId : settled;
-      if (index.complete && (parsed?.kind !== "ahead" || documentId)) {
-        const local =
-          documentId !== undefined
-            ? index.documents.find((document) => document.documentId === documentId)
-            : addressedDocument(index.documents, target, baseUri);
-        const answer = local ? documentAnswer(local) : null;
+      const resolution = resolveStoredLink({ ref, href: linkTargetHref(target) }, catalog);
+      let provisional: DocumentAnswer | null = null;
+      if (resolution.kind === "gone") return answered(GONE);
+      if (resolution.kind === "address") {
+        const uri = addressOf(target, baseUri);
+        const document = uri ? catalog.documentFor(uri) : null;
+        const answer = document ? indexedAnswer(document.documentId) : null;
         if (answer) return answered(answer);
       }
-      // Rule 4 on the client, at once: an ahead ref not known to be settled
-      // names whatever the complete index holds at exactly its stored
-      // address. The server still decides; see `LocalLinkAnswer`.
-      const atAddress =
-        parsed?.kind === "ahead" && settled === undefined && index.complete
-          ? indexedDocumentAtExactly(index.documents, linkTargetHref(target))
-          : null;
-      const provisional = atAddress ? documentAnswer(atAddress) : null;
+      if (resolution.kind === "document") {
+        const answer = indexedAnswer(resolution.document.documentId);
+        // Rule 4 (an ahead ref not known settled, at its exact address) is
+        // the server's to confirm; see `LocalLinkAnswer`.
+        const confirmed = resolution.settled || parseLinkRef(ref)?.kind === "doc";
+        if (answer && confirmed) return answered(answer);
+        provisional = answer;
+      }
       // A holder whose own address has not arrived asks the server nothing: a
       // question with no holder address is chat's, which may fall back to
       // previous locations.
@@ -139,28 +123,23 @@ export function createProjectLinkResolver(
         if (!answer) return null;
         const ahead = parseLinkRef(questions[at]?.ref);
         const settledOn = settlementOf(answer);
-        // Set once: a settlement never moves, so a later answer cannot change it.
-        if (ahead?.kind === "ahead" && settledOn && !settlements.has(ahead.aheadId))
-          settlements.set(ahead.aheadId, settledOn);
+        if (ahead?.kind === "ahead" && settledOn !== undefined)
+          memo.learn(ahead.aheadId, settledOn);
         return serverAnswer(answer);
       });
     },
   };
 }
 
-/** A no-ref link's local answer: the document the index holds at its address. */
-function addressedDocument(
-  documents: readonly LinkableDocument[],
-  target: LinkTarget,
-  baseUri: string | null,
-): LinkableDocument | null {
+/** A no-ref link's decoded address, or null when it has none. */
+function addressOf(target: LinkTarget, baseUri: string | null): string | null {
   const resolved =
     target.kind === "scheme"
       ? resolveDocumentHref(target.uri, null)
       : target.kind === "relative"
         ? resolveDocumentHref(target.path, baseUri)
         : null;
-  return resolved ? indexedDocumentAt(documents, resolved.uri) : null;
+  return resolved?.uri ?? null;
 }
 
 /**
@@ -188,11 +167,14 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   }
 }
 
-/** What a rule-3 answer says an ahead ref settled on; null for any other answer. */
-function settlementOf(answer: DocumentLinkAnswer): string | "gone" | null {
-  if (answer.state === "document") return answer.settled ? answer.document.id : null;
-  if (answer.state === "gone") return answer.settled ? "gone" : null;
-  return null;
+/**
+ * What a rule-3 answer says an ahead ref settled on: its document, null for
+ * settled gone (identity unknown), undefined for any other answer.
+ */
+function settlementOf(answer: DocumentLinkAnswer): string | null | undefined {
+  if (answer.state === "document") return answer.settled ? answer.document.id : undefined;
+  if (answer.state === "gone") return answer.settled ? null : undefined;
+  return undefined;
 }
 
 function documentAnswer(document: LinkableDocument): DocumentAnswer | null {

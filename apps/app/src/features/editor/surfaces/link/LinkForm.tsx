@@ -111,7 +111,7 @@ function LinkFields({
 }) {
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
-  // The document picked from search, bound by its id at commit, and how the
+  // The document picked from search, assigned by its id at commit, and how the
   // form names it.
   const [selected, setSelected] = useState<{
     ref: DocumentRef;
@@ -158,7 +158,7 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              // Bound the way the Editor's `@` binds it: by the document's id,
+              // Assigned the way the Editor's `@` assigns it: by the document's id,
               // spelled with its full address.
               setHref(storedHref(row.action.reference.uri, ""));
               setSelected({

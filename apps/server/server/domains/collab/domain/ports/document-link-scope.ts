@@ -13,9 +13,8 @@
  * snapshot answers for the operation that opened it and nested doors join it;
  * work that only inherited a settled snapshot, such as a timer, opens its own.
  */
-import type { HolderLinkScope } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { PMNode } from "@meridian/markup";
+import type { HolderLinkScope, PMNode } from "@meridian/markup";
 import type * as Y from "yjs";
 
 export type { HolderLinkScope };

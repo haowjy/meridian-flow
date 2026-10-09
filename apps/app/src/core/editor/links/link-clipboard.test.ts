@@ -66,7 +66,7 @@ it("carries what a copied link names across the clipboard", () => {
       pasted: { link: "manuscript://a/kael.md", ref: KAEL_REF },
     },
     {
-      row: "another project's paste drops the ref for a fresh binding",
+      row: "another project's paste drops the ref for a fresh assignment",
       copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: KAEL_REF },
       into: { holder: "manuscript://b/new.md", project: "project-b" },
       pasted: { link: "manuscript://a/kael.md", ref: null },

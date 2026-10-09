@@ -83,16 +83,16 @@ export function imageAttrsFromUpload(response: UploadFigureAssetResponse) {
 }
 
 /** The editor's known asset ids ↔ project-relative paths, for clipboard round trips. */
-export type AssetPathResolver = {
+export type AssetClipboardIndex = {
   pathForAsset(assetDocumentId: string): string | null;
   assetForPath(path: string): string | null;
 };
 
-export type MutableAssetPathResolver = AssetPathResolver & {
+export type MutableAssetClipboardIndex = AssetClipboardIndex & {
   remember(assetDocumentId: string, path: string): void;
 };
 
-export function createEditorAssetPathResolver(): MutableAssetPathResolver {
+export function createAssetClipboardIndex(): MutableAssetClipboardIndex {
   const pathById = new Map<string, string>();
   const idByPath = new Map<string, string>();
   return {
@@ -109,13 +109,11 @@ export function createEditorAssetPathResolver(): MutableAssetPathResolver {
   };
 }
 
-export function resolveAssetRefsForClipboard(slice: Slice, resolver: AssetPathResolver): Slice {
+export function resolveAssetRefsForClipboard(slice: Slice, index: AssetClipboardIndex): Slice {
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
-      const path = src.startsWith("asset:")
-        ? resolver.pathForAsset(src.slice("asset:".length))
-        : null;
+      const path = src.startsWith("asset:") ? index.pathForAsset(src.slice("asset:".length)) : null;
       if (!path) return node;
       return node.type.create({ ...node.attrs, src: path }, null, node.marks);
     }
@@ -128,11 +126,11 @@ export function resolveAssetRefsForClipboard(slice: Slice, resolver: AssetPathRe
   );
 }
 
-function resolveAssetPathsFromClipboard(slice: Slice, resolver: AssetPathResolver): Slice {
+function resolveAssetPathsFromClipboard(slice: Slice, index: AssetClipboardIndex): Slice {
   const mapNode = (node: PMNode): PMNode => {
     if (node.type.name === "image") {
       const src = String(node.attrs.src ?? "");
-      const assetDocumentId = resolver.assetForPath(src);
+      const assetDocumentId = index.assetForPath(src);
       if (!assetDocumentId) return node;
       return node.type.create({ ...node.attrs, src: `asset:${assetDocumentId}` }, null, node.marks);
     }
@@ -157,9 +155,9 @@ function resolveAssetPathsFromClipboard(slice: Slice, resolver: AssetPathResolve
 export function resolveImagesFromClipboard(
   slice: Slice,
   schema: Schema,
-  resolver: AssetPathResolver,
+  index: AssetClipboardIndex,
 ): { slice: Slice; imports: PastedImageImport[] } {
-  return linkExternalPastedImages(resolveAssetPathsFromClipboard(slice, resolver), schema);
+  return linkExternalPastedImages(resolveAssetPathsFromClipboard(slice, index), schema);
 }
 
 /**

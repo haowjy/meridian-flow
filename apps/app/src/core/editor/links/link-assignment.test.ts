@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Every client producer binds the link it writes: a document it knows by id,
+ * Every client producer assigns the link it writes a ref: a document it knows by id,
  * an indexed address by the local index, anything else internal to a fresh
- * ahead ref. External links stay unbound, and an unchanged submit keeps the
+ * ahead ref. External links get none, and an unchanged submit keeps the
  * link it edits.
  */
 import { Editor } from "@tiptap/core";
@@ -100,7 +100,7 @@ function wikilinks(text: string): Stored[] {
 
 const STALE = '<p><a data-meridian-link="manuscript://volume-1/old-name.md">Kael</a> waits.</p>';
 
-it("binds what each producer writes", () => {
+it("assigns what each producer writes", () => {
   const rows: [string, () => Stored[], Stored[]][] = [
     [
       "@ document row: doc ref at its full address",
@@ -141,7 +141,7 @@ it("binds what each producer writes", () => {
       [{ text: "Kael", ref: `doc:${CH1}`, href: "manuscript://volume-1/chapter-1.md#scene" }],
     ],
     [
-      "Ctrl+K new link to an external URL: unbound, as written",
+      "Ctrl+K new link to an external URL: no ref, as written",
       () => ctrlK(editor(), 1, 5, "https://example.com/kael"),
       [{ text: "Kael", ref: null, href: "https://example.com/kael" }],
     ],
@@ -184,7 +184,7 @@ it("binds what each producer writes", () => {
       [{ text: "chapter-9", ref: "ahead:*", href: "manuscript://volume-1/chapter-9.md#Gate" }],
     ],
     [
-      "Markdown paste: indexed, unwritten and external links each bound by pass 3",
+      "Markdown paste: indexed, unwritten and external links each assigned by pass 3",
       () =>
         paste(
           editor("<p></p>"),
@@ -199,7 +199,7 @@ it("binds what each producer writes", () => {
   ];
   // Rich copy and paste end to end: the copy records the ref beside its
   // address, the paste sanitizer and kept-ref transform let it through, the
-  // mark parses it, and binding keeps it in its own project only.
+  // mark parses it, and assignment keeps it in its own project only.
   const richPaste = (projectId: string) => {
     const source = editor(STALE);
     source.commands.setTextSelection({ from: 1, to: 5 });
@@ -219,7 +219,7 @@ it("binds what each producer writes", () => {
       [{ text: "Kael", ref: `doc:${MOVED}`, href: "manuscript://volume-1/old-name.md" }],
     ],
     [
-      "rich paste into another project binds fresh from the address",
+      "rich paste into another project assigns fresh from the address",
       () => richPaste("project-2"),
       [{ text: "Kael", ref: "ahead:*", href: "manuscript://volume-1/old-name.md" }],
     ],

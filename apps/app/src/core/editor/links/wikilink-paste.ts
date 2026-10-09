@@ -13,7 +13,7 @@
  *
  * A target resolves as Obsidian's does, with a fixed order where Obsidian's
  * last step is "the first one it finds" (`rankWikilinkMatches`). A match is
- * bound to its document's id (`doc:`), spelled with its full address; one that
+ * assigned its document's id (`doc:`), spelled with its full address; one that
  * names no document becomes the same dashed link the `@` menu's link-ahead row
  * writes, with a fresh ahead ref for the address that row's rule gives
  * (`linkAhead`), one per address per paste.
@@ -30,7 +30,7 @@ import {
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { Fragment, type MarkType, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 
-import type { BoundLink, LinkBindingDocument } from "./link-binding";
+import type { AssignedLink, LinkAssignmentDocument } from "./link-assignment";
 
 type WikilinkTarget = {
   /** Folders before the name, as written (`["Arc 1"]` for `Arc 1/Kael`). */
@@ -54,7 +54,7 @@ export type WikilinkPasteCatalog = {
   /** The holder's address; null while it has none. */
   holderUri: string | null;
   /** The documents a pasted link may name: the Editor's link index, in the areas a link names. */
-  targets: readonly LinkBindingDocument[];
+  targets: readonly LinkAssignmentDocument[];
   /** Where a link to a document nobody has written goes (the link-ahead row's rule). */
   linkAhead: (name: string, folders: readonly string[]) => { uri: string } | null;
 };
@@ -180,7 +180,7 @@ function rankWikilinkMatches(
 }
 
 /**
- * The link each pasted `[[…]]` becomes: bound to the document it names, or to
+ * The link each pasted `[[…]]` becomes: assigned the document it names, or
  * a fresh ahead ref at the link-ahead address when it names none; null leaves
  * it text. Built once per paste: the candidates are located once and bucketed
  * by filename, so a link only ranks the documents that share its name, and a
@@ -188,7 +188,7 @@ function rankWikilinkMatches(
  */
 function wikilinkResolver(
   catalog: WikilinkPasteCatalog,
-): (occurrence: WikilinkOccurrence) => BoundLink | null {
+): (occurrence: WikilinkOccurrence) => AssignedLink | null {
   const byName = new Map<string, Located[]>();
   for (const { documentId, uri } of catalog.targets) {
     const located = locate(uri, documentId);
@@ -202,7 +202,7 @@ function wikilinkResolver(
   // Ranking ignores case, so its answer is cached under the lowercased path;
   // a link-ahead address keeps the writer's casing, so it is asked each time.
   const matches = new Map<string, Located | null>();
-  // One address pasted twice shares one binding, as in `bindPastedNodes`.
+  // One address pasted twice shares one assignment, as in `assignPastedNodes`.
   const aheadRefs = new Map<string, AheadRef>();
   return (occurrence) => {
     const { target } = occurrence;
@@ -270,7 +270,7 @@ export function linkPastedWikilinks(
 function linkText(
   node: PMNode,
   link: MarkType,
-  resolve: (occurrence: WikilinkOccurrence) => BoundLink | null,
+  resolve: (occurrence: WikilinkOccurrence) => AssignedLink | null,
 ): PMNode[] {
   const text = node.text ?? "";
   if (node.marks.some((mark) => mark.type.spec.code)) return [node];
@@ -283,9 +283,12 @@ function linkText(
     let piece: PMNode | null;
     if ("literal" in occurrence) piece = schema.text(occurrence.literal, node.marks);
     else {
-      const bound = linked ? null : resolve(occurrence);
-      piece = bound
-        ? schema.text(occurrence.label, link.create({ ...bound, title: null }).addToSet(node.marks))
+      const assigned = linked ? null : resolve(occurrence);
+      piece = assigned
+        ? schema.text(
+            occurrence.label,
+            link.create({ ...assigned, title: null }).addToSet(node.marks),
+          )
         : null;
     }
     if (!piece) continue;

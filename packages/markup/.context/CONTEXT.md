@@ -5,11 +5,16 @@
 `@meridian/markup` exports:
 
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
-- `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS`, the one exported scope
-  (no tree: every stored href and src spells as written, `asset:` refs stay
-  refs). Holder-bound scopes live with their consumers; the fixed-table
+- `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
+  href and src spells as written, `asset:` refs stay refs). The fixed-table
   `createAssetFixture(entries)` is a test helper in `src/codec-test-support.ts`,
   not a package export.
+- The link rules every host shares (`holder-link-scope.ts`, see Shared link
+  rules): `createHolderLinkScope(holder, catalog)` over a `HolderCatalog`,
+  `assignFreshLink` (pass 3), `classifyWrittenHref`, `writtenAddresses` and
+  `writtenSourceUri`.
+- `extractStoredLinks(fragment)` and `storedLinkKeys(...)` (`stored-links.ts`),
+  the Yjs twin of the occurrence walk.
 - `walkLinkOccurrences(blocks)` and `spelledLinks(blocks, links)`
   (`link-occurrences.ts`), see Link occurrences.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
@@ -112,6 +117,22 @@ shipped image rule (a known manuscript path becomes `asset:<id>`) runs after
 parse, in the host's ref assignment over a prepared scope (agent-edit
 `assignSources`), which is what lets a host load only what the text names.
 
+## Shared link rules
+
+Server, agent-edit and client resolve and assign through this package, so
+none of them can disagree; the rules themselves are contracts'
+`resolveStoredLink`, `spellStoredLink` and `classifyWrittenLink`. Each host
+implements `HolderCatalog` over its own data (the server's prepared snapshot,
+agent-edit's static catalog, the client's document index plus its settlement
+memo). `undefined` from a catalog lookup is "not held": the server records a
+snapshot miss, the client asks the server. `assignFreshLink` is pass 3 of ref
+assignment for a written href or source: classify, then the document
+`documentFor` finds (exact, then unique extension-omitted) spelled with
+`storedHref`, else a minted ahead ref at `aheadAddress`; agent-edit's
+`assignOccurrences` and the client's `assignWrittenHref` both call it. These
+read Yjs (`yjs`, `@meridian/prosemirror-schema` for the fragment name), which
+both apps already load; markup stays a leaf below agent-edit.
+
 ## Link occurrences
 
 `walkLinkOccurrences(blocks)` is the one traversal of stored link occurrences:
@@ -124,8 +145,8 @@ image or figure, or the enclosing top-level block when the AST cannot place it
 ingress preprocessor rewrote it. A span always encloses its occurrence.
 `spelledLinks(blocks, links)` reports `{ ref, address }` for each ref-bearing
 occurrence, spelled by the given scope; a serialization itself never records
-what it showed. Its Yjs twin, agent-edit's `extractStoredLinks`
-(`links/stored-links.ts`), reads the live fragment for derive, scope loading
+what it showed. Its Yjs twin, `extractStoredLinks` (`stored-links.ts`), reads
+the live fragment for derive, scope loading
 and the revision digest; a parity row in agent-edit pins both walks to the same
 `(kind, ref, href)` sequence.
 

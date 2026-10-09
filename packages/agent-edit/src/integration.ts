@@ -46,12 +46,6 @@ export type { AssignInput, AssignResult } from "./links/assign-refs.js";
 export { assignLinkRefs, assignSources } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
 export type { LinkShowing } from "./links/shown.js";
-export {
-  extractStoredLinks,
-  type StoredLinkKeys,
-  type StoredLinkOccurrence,
-  storedLinkKeys,
-} from "./links/stored-links.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
@@ -69,14 +63,7 @@ export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
   AheadMint,
   DocumentLinksPort,
-  HolderCatalog,
-  HolderLinkScope,
   LinkPrepareRequest,
-} from "./ports/document-links.js";
-export {
-  createHolderLinkScope,
-  writtenAddresses,
-  writtenSourceUri,
 } from "./ports/document-links.js";
 export type {
   AgentEditModel,
