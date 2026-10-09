@@ -62,11 +62,9 @@ export function useReviewRoomOwner({
   selected.current = review;
   const [binding, setBinding] = useState<{
     session: DocumentSession | null;
-    replacing: boolean;
     key: string;
   }>({
     session: null,
-    replacing: false,
     key: "",
   });
   const [painted, setPainted] = useState<DocumentSession | null>(null);
@@ -178,9 +176,7 @@ export function useReviewRoomOwner({
   useEffect(() => {
     if (!roomName || !documentId || !draftId) {
       setBinding((prior) =>
-        prior.session === null && !prior.replacing && prior.key === key
-          ? prior
-          : { session: null, replacing: false, key },
+        prior.session === null && prior.key === key ? prior : { session: null, key },
       );
       return;
     }
@@ -203,9 +199,7 @@ export function useReviewRoomOwner({
     const bind = (session: DocumentSession) => {
       if (!current()) return;
       setBinding((prior) =>
-        prior.session === session && prior.key === key && !prior.replacing
-          ? prior
-          : { session, replacing: false, key },
+        prior.session === session && prior.key === key ? prior : { session, key },
       );
       unsubscribe = session.subscribe((snapshot) => {
         if (!current() || rebuilding) return;
@@ -215,13 +209,13 @@ export function useReviewRoomOwner({
           switch (connection.disposition) {
             case "superseded":
               rebuilding = true;
-              setBinding({ session: null, replacing: true, key });
+              setBinding({ session: null, key });
               dispatch({ type: "roomStale", documentId, draftId, roomName });
               return;
             case "rebuild":
             case "refused":
               rebuilding = true;
-              setBinding({ session: null, replacing: true, key });
+              setBinding({ session: null, key });
               void registry.rebuildBranchRoom(roomName).then(
                 (replacement) => {
                   if (!current()) return;
@@ -243,9 +237,7 @@ export function useReviewRoomOwner({
           connection?.kind === "reset"
         ) {
           setBinding((prior) =>
-            prior.session === null && !prior.replacing && prior.key === key
-              ? prior
-              : { session: null, replacing: false, key },
+            prior.session === null && prior.key === key ? prior : { session: null, key },
           );
           unavailable();
         }
@@ -278,24 +270,14 @@ export function useReviewRoomOwner({
   const session =
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
   paintTarget.current = session;
-  const phase = !review
-    ? "idle"
-    : review.completion?.phase === "closed"
-      ? "settled"
-      : review.roomError
-        ? "failed"
-        : binding.replacing
-          ? "replacing"
-          : session
-            ? "bound"
-            : "locating";
   return {
-    generation,
-    roomName,
     session,
-    phase,
-    paintEligible: session !== null,
-    inputEligible: session !== null && painted === session && phase === "bound",
+    inputEligible:
+      session !== null &&
+      painted === session &&
+      review !== null &&
+      !review.roomError &&
+      review.completion?.phase !== "closed",
     reportPaint,
     onBeforeReplace,
   } as const;

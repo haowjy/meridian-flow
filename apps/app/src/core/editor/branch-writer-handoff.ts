@@ -7,7 +7,7 @@ import type { DocumentSession, DocumentSessionSnapshot } from "./document-sessio
 import { rotateWriterClient } from "./writer-client";
 
 type Carry = BranchRoomCarry;
-type Entry = { retirement: Carry; revision: number; attempt: AbortController; delivered: boolean };
+type Entry = { retirement: Carry; attempt: AbortController; delivered: boolean };
 type Outcome = "ready" | "retry" | "refused";
 export const WRITER_HANDOFF_ORIGIN = Symbol("writer-handoff");
 
@@ -46,7 +46,6 @@ export class BranchWriterHandoff {
     const prior = this.carries.get(room.branchId);
     prior?.attempt.abort();
     const entry: Entry = {
-      revision: (prior?.revision ?? 0) + 1,
       attempt: new AbortController(),
       delivered: false,
       retirement:
