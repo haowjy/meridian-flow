@@ -96,10 +96,30 @@ msgstr ""
 msgid "“{name}” doesn't exist yet"
 msgstr ""
 
+#. placeholder {0}: notes.newDocuments.length
+#: src/features/chat/DraftDockMessages.tsx
+msgid "{0, plural, one {{newNames} is a new document. Review it to apply.} other {{newNames} are new documents. Review them to apply.}}"
+msgstr ""
+
 #. placeholder {0}: stats.callCount
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
+
+#. placeholder {0}: notes.tiedChanges
+#: src/features/chat/DraftDockMessages.tsx
+msgid "{0, plural, one {# change also holds an edit from {tiedWith}. Apply and Discard take both.} other {# changes also hold edits from {tiedWith}. Apply and Discard take both.}}"
+msgstr ""
+
+#. placeholder {0}: notes.tiedChanges
+#: src/features/chat/DraftDockMessages.tsx
+msgid "{0, plural, one {# change also holds an edit from {tiedWith}.} other {# changes also hold edits from {tiedWith}.}}"
+msgstr ""
+
+#. placeholder {0}: notes.needsDraftCommand
+#: src/features/chat/DraftDockMessages.tsx
+msgid "{0, plural, one {# change needs Apply draft or Discard draft.} other {# changes need Apply draft or Discard draft.}}"
+msgstr ""
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -114,6 +134,11 @@ msgstr ""
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
+msgstr ""
+
+#. placeholder {0}: notes.newDocuments.length
+#: src/features/chat/DraftDockMessages.tsx
+msgid "{0, plural, one {New document. Review it to apply.} other {New documents. Review them to apply.}}"
 msgstr ""
 
 #. placeholder {0}: readDocuments.size
@@ -131,7 +156,7 @@ msgstr "{0}"
 msgid "{0} additional balance"
 msgstr ""
 
-#. placeholder {0}: dock.rows.length
+#. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr ""
@@ -209,6 +234,10 @@ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -392,6 +421,10 @@ msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "A new document is discarded as a whole. Use Discard draft."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
+msgid "A new document is handled as a whole. Review it to apply."
 msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
@@ -580,8 +613,8 @@ msgid "Apply"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Apply all"
-msgstr ""
+#~ msgid "Apply all"
+#~ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Apply all {total} drafts"
@@ -795,6 +828,10 @@ msgstr ""
 
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Changes couldn't load."
 msgstr ""
 
 #: src/features/project/work/WorkChangeFile.tsx
@@ -1177,6 +1214,14 @@ msgstr ""
 msgid "Couldn't apply this change. Try again."
 msgstr ""
 
+#: src/features/chat/DraftDockMessages.tsx
+msgid "Couldn't apply this chat's changes."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
+msgid "Couldn't apply this chat's changes. Try again."
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply this draft."
 msgstr ""
@@ -1185,6 +1230,7 @@ msgstr ""
 msgid "Couldn't apply this draft. Try again."
 msgstr ""
 
+#: src/features/chat/DraftDockMessages.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't apply. Check your connection and try again."
@@ -1200,6 +1246,14 @@ msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
+msgid "Couldn't confirm whether these applied. Check what is left before you try again."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
+msgid "Couldn't confirm whether these were discarded. Check what is left before you try again."
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
@@ -1263,6 +1317,14 @@ msgstr ""
 msgid "Couldn't discard this change. Try again."
 msgstr ""
 
+#: src/features/chat/DraftDockMessages.tsx
+msgid "Couldn't discard this chat's changes."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
+msgid "Couldn't discard this chat's changes. Try again."
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft."
 msgstr ""
@@ -1271,6 +1333,7 @@ msgstr ""
 msgid "Couldn't discard this draft. Try again."
 msgstr ""
 
+#: src/features/chat/DraftDockMessages.tsx
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
@@ -1702,8 +1765,8 @@ msgid "Discard"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Discard all"
-msgstr ""
+#~ msgid "Discard all"
+#~ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Discard all {total} drafts"
@@ -1714,8 +1777,8 @@ msgid "Discard all 1 draft"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-msgid "Discard all changes?"
-msgstr ""
+#~ msgid "Discard all changes?"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Discard changes"
@@ -1724,6 +1787,10 @@ msgstr ""
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Discard draft"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Discard this chat's changes?"
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
@@ -1760,7 +1827,7 @@ msgstr ""
 msgid "Dock view"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
+#: src/features/chat/useDraftDock.ts
 msgid "Document"
 msgstr ""
 
@@ -3340,6 +3407,7 @@ msgstr ""
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -4097,6 +4165,14 @@ msgstr ""
 msgid "This chat uses {0}."
 msgstr ""
 
+#: src/features/chat/DraftDockMessages.tsx
+msgid "This chat's changes in {fileName} were updated. Check them and apply again."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
+msgid "This chat's changes in {fileName} were updated. Check them and discard again."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "This chat's current Work could not be found. Refresh the page and try again."
@@ -4277,6 +4353,10 @@ msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "This Work was deleted more than {WORK_DELETE_RETENTION_DAYS} days ago and can’t be restored."
+msgstr ""
+
+#: src/features/chat/DraftDockMessages.tsx
+msgid "Those changes are no longer in the draft."
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
