@@ -80,10 +80,19 @@ export function EditorReviewScope({
   return <EditorReviewContext.Provider value={value}>{children}</EditorReviewContext.Provider>;
 }
 
-/** The review of the Editor the writer is working in; falls back to the ambient scope when no Editor scope is offered. */
+/**
+ * The review of the Editor the writer is working in; falls back to the ambient
+ * scope when no Editor scope is offered. The Work page has no ambient scope of
+ * its own, so the Editor's is read first and the ambient one only when it is absent.
+ */
 export function useEditorDraftReview(): DraftReviewContextValue {
-  const ambient = useDraftReview();
-  return useContext(EditorReviewContext) ?? ambient;
+  const editor = useContext(EditorReviewContext);
+  const ambient = useContext(DraftReviewContext);
+  const value = editor ?? ambient;
+  if (!value) {
+    throw new Error("useEditorDraftReview must be used within an Editor or draft review scope");
+  }
+  return value;
 }
 
 export function useDraftReviewScopeValue({

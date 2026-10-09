@@ -787,6 +787,7 @@ export function ReadableProjectRoute({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
+      openWork={routeCommands.openWork}
       captureNavigation={captureNavigation}
       isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}

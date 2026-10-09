@@ -8,6 +8,7 @@ import {
   type DraftReviewContextValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
@@ -110,7 +111,7 @@ const requested = { documentId: target.documentId, draftId: target.draftId };
 describe("opening a review on given operations", () => {
   beforeEach(() => {
     focusReviewChange.mockClear();
-    enterInlineReview.mockClear();
+    enterInlineReview.mockReset();
     openReview = null;
     update = null;
   });
@@ -186,5 +187,100 @@ describe("opening a review on given operations", () => {
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async () => expect(focusReviewChange).not.toHaveBeenCalled(),
     );
+  });
+});
+
+/**
+ * A launch from another screen (the Work page's change row): the route settles
+ * while the Editor has not mounted the document yet, and the address now names
+ * the draft. The address owner must wait for the launch's claim, not restore the
+ * review itself as a second launch that names no change.
+ */
+describe("a launch whose route settles before the Editor mounts the document", () => {
+  const route = vi.fn();
+  let mountEditor: (() => void) | null = null;
+  let nameDraftInAddress: (() => void) | null = null;
+
+  function CrossScreenHarness() {
+    const [mounted, setMounted] = useState(false);
+    const [addressed, setAddressed] = useState(false);
+    const [state, setState] = useState<Model>(model.current);
+    model.current = state;
+    useEffect(() => {
+      mountEditor = () => setMounted(true);
+      nameDraftInAddress = () => setAddressed(true);
+      update = (next) => setState((previous) => ({ ...previous, ...next }));
+    }, []);
+    const groups = [
+      {
+        documentId: target.documentId,
+        documentName: "One",
+        contextPath: target.contextPath,
+        draft: { draftId: target.draftId },
+      },
+    ];
+    const review = {
+      controller: {
+        workId: target.workId,
+        inlineReview: state.inline,
+        enterInlineReview,
+        exitInlineReview: vi.fn(),
+        focusReviewChange,
+      },
+      groups,
+      drafts: { status: "ready" },
+      groupForDocument: (id: string | null | undefined) =>
+        groups.find((group) => group.documentId === id) ?? null,
+      activeEditorDocumentId: mounted ? target.documentId : null,
+    } as unknown as DraftReviewContextValue;
+    return (
+      <EditorReviewHandoffProvider projectId="project-1" openContextRoute={route}>
+        <CommandCapture />
+        <EditorReviewAddressOwner
+          review={review}
+          requestedDraftId={addressed ? target.draftId : undefined}
+          activeScreen="context"
+          activeScheme="manuscript"
+          activePath={target.contextPath}
+          activeDocumentId={target.documentId}
+          onSetDraftId={vi.fn()}
+        />
+        <DraftReviewBoundary value={review}>
+          <EditorReviewIntentClaimant editorWorkId={target.workId} activeScheme="manuscript" />
+        </DraftReviewBoundary>
+      </EditorReviewHandoffProvider>
+    );
+  }
+
+  it("focuses the change it named once the Editor has the document", async () => {
+    // The route's address names the draft as the navigation applies.
+    route.mockReset().mockImplementation(async () => {
+      nameDraftInAddress?.();
+      return { kind: "applied" };
+    });
+    model.current = { inline: null, preview: null, changes: [] };
+    // Entering the review is what makes the controller report it open.
+    enterInlineReview.mockImplementation((documentId: string, draftId: string) =>
+      update?.({ inline: { documentId, draftId, shown: false } }),
+    );
+    await withReactRoot(<CrossScreenHarness />, async () => {
+      await act(async () => {
+        await openReview?.(target);
+      });
+      // The route settled and the address names the draft; the launch is the only one.
+      expect(route).toHaveBeenCalledOnce();
+      await act(async () => mountEditor?.());
+      expect(enterInlineReview).toHaveBeenCalledWith("doc-1", "draft-1");
+      await act(async () =>
+        update?.({
+          inline: { ...requested, shown: true },
+          preview: { status: "active" },
+          changes,
+        }),
+      );
+      expect(focusReviewChange).toHaveBeenCalledExactlyOnceWith(requested, changes[1], {
+        scroll: true,
+      });
+    });
   });
 });

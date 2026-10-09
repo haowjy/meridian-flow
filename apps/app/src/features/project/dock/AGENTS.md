@@ -1,43 +1,35 @@
-# features/project/dock — Dock view container + Changes settle surface
+# features/project/dock — Dock view container
 
 ## Purpose
 
-The right dock is a **view container** that sits in the project shell's `dock`
-grid slot. It has per-screen view sets (Chat-main: Context | Changes;
-Work/Editor-main: Chat | Changes, with transient File on Work) and a single header row with a contained
-segmented switch.
-The **Changes** view is the work-scoped settle surface: the change list of the
-review open in the Editor (one line per server closure class, with Apply and
-Discard unless the change is unattributed or the server marks its class not
-actionable), inside the Work's draft files in one stable order (`ReviewFiles`):
-the open file is expanded in place and never jumps to the top, the others are
-rows to open, and the Work-wide Apply all and Discard all are in the list's own
-menu. Whole-draft Apply and Discard for the open file stay in the identity row.
-It reads the Editor scope's controller, not the
-Chat's. It works on every screen, with or without a mounted manuscript, so
-entering review never has to leave the screen the writer is on.
+The right dock is a **container** that sits in the project shell's `dock` grid
+slot and holds one occupant: the chat on Work and Editor, the context rail on
+Chat. It owns the header row, the view store and, on Work, the transient file
+view. It has no Changes view: each scope of draft review has its own surface
+(the chat's composer strip, the document's list in its identity row and the
+phone sheet, the Work page's Changes to review), and the dock keeps no draft
+review state.
 
-This is NOT the chat surface or the context rail — those are the dock's
-*occupants* (`ChatSurface`, `ContextSidebar`), wrapped by `DockShell`. The dock
-itself owns only the view-switch chrome, the view store, and the Changes view
-body.
+This is NOT the chat surface or the context rail: those are the dock's
+*occupants* (`ChatSurface`, `ContextSidebar`), wrapped by `DockShell`.
 
 ## Mental model
 
 `DockShell` wraps the dock occupant's native body in both placements:
 
-- **`center` placement**: passthrough — no header, no Changes swap. The occupant
-  is a normal center pane. This keeps the chat surface at the same tree depth
-  across center↔dock moves so React never reconciles it away.
+- **`center` placement**: passthrough, no header. The occupant is a normal
+  center pane. This keeps the chat surface at the same tree depth across
+  center↔dock moves so React never reconciles it away.
 - **`dock` placement**: the caller-supplied header slot renders (`DockHeader`
-  on desktop, `mobile/MobileChatSheetHeader` for the phone chat sheet), and the
-  body is hidden + inert when the writer switches to the Changes view. The
-  primary body **stays mounted** — chat survives a view switch the same way it
-  survives a collapsed dock.
+  on desktop, `mobile/MobileChatSheetHeader` for the phone chat sheet). On Work,
+  a Scratch or Uploads file opened from the page adds a transient **File** view;
+  the occupant's body **stays mounted**, hidden and inert, while it shows.
 
-`useDockView(screen)` resolves the active view from a session-only store. The
-native view is always present; Changes joins it only while `hasDockChanges`
-finds an active draft.
+The dock's views are a function of the screen (`resolveDockView`): Work `[chat]`,
+Chat `[context]`, Editor `[chat]`, plus `file` on Work while a file is open. The
+segmented switch exists only when there are two (Work with a file: Chat and
+File); otherwise the header is the occupant's own (the chat's, or the context
+rail's) and shows no switch.
 
 ## Key rules
 
@@ -46,26 +38,21 @@ finds an active draft.
    placement change is a grid-area move, never a remount. If the dock occupant
    relies on a different wrapper for center vs. dock, the invariant is broken.
 
-2. **Primary body stays mounted when Changes is active.** Do not unmount
-   `children` when `view === "changes"` — hide it (opacity-0, inert). Chat state
-   and document sessions must survive a view switch.
+2. **Primary body stays mounted under the file view.** Do not unmount `children`
+   when `view === "file"`: hide it (opacity-0, inert). Chat state and document
+   sessions must survive a view switch.
 
-3. **resolveDockView is a pure fallback.** `resolveDockView(screen, stored, hasFile)`
-   is a pure function with no React dependency — testable in isolation. It defaults
-   to the occupant's native view when no stored choice exists, falls back when a
-   stored choice is invalid for the current screen's set, and adds a transient
-   File segment only while a Work file is available.
+3. **resolveDockView is a pure function.** `resolveDockView(screen, hasFile)`
+   has no React dependency and is testable in isolation.
 
-4. **Session-only view store.** `useDockViewStore` has no `persist`. A fresh
-   reload starts from defaults — no stale view survives. Placement, width, and
-   collapse are owned by the surface-prefs store; this store only tracks the view
-   choice.
+4. **Session-only store.** `useDockViewStore` has no `persist`: the transient
+   file slot does not survive a reload. Placement, width, and collapse are owned
+   by the surface-prefs store.
 
 5. **One label source.** `DockViewLabel` is the single place dock view labels
    are spelled, and `DockViewSwitch` is the one place that renders the segmented
-   switch (`components/ui/segmented-tabs`, shared with the chat index filter) —
-   the header has no separate section title. The left slot belongs to the
-   occupant: the chat puts its switcher there (the dock has no chat index).
+   switch (`components/ui/segmented-tabs`, shared with the chat index filter).
+   The left slot belongs to the occupant: the chat puts its switcher there.
    `DockShell`'s `renderHeader` slot is what lets the phone chat sheet use its
    own header (`mobile/MobileChatSheetHeader`) instead of `DockHeader`, which
    stays desktop-only.
@@ -74,18 +61,12 @@ finds an active draft.
    a complete boundary. The active segment may use page paper only inside that
    boundary; it never connects to the page like a tab chip.
 
-7. **Empty Changes is absent.** `reviewFileTargets` is the shared active-row projection.
-   `DockShell` uses its `hasReviewFiles` wrapper for segment visibility, while
-   `DockChangesView` renders the projected rows directly.
-
 ## Anti-patterns
 
 - **Don't unmount the primary body.** It breaks the surface-parking invariant
   and loses chat state.
-- **Don't add a badge or count to the Changes segment.** Discovery lives
-  in the composer DraftDock strip.
-- **Don't show an empty Changes segment.** When its final row disappears,
-  `DockShell` returns to the occupant's native view.
+- **Don't put draft review state or a Changes list in the dock.** Draft review
+  lives in the scopes' own surfaces; Draft chip, identity row and Work page.
 - **Don't persist the dock view choice.** A stale view across reloads is worse
   than starting fresh.
 - **Don't add a tailwind-merge dependency on `border-border-subtle`.** See the
@@ -93,10 +74,11 @@ finds an active draft.
 
 ## Downlinks
 
-- [`.context/CONTEXT.md`](.context/CONTEXT.md) — contracts, architecture, tailwind-merge trap, runtime registration seam
+- [`.context/CONTEXT.md`](.context/CONTEXT.md) — contracts, architecture, tailwind-merge trap
 - [`../.context/CONTEXT.md`](../.context/CONTEXT.md) — project shell layout, slot topology, surface-prefs store
-- [`../../draft-review/AGENTS.md`](../../draft-review/AGENTS.md) — draft review controller, provider, file model
+- [`../../draft-review/AGENTS.md`](../../draft-review/AGENTS.md) — draft review controller, provider, change lists
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — the DraftDock composer strip
+- [`../work/WorkChanges.tsx`](../work/WorkChanges.tsx) — the Work page's Changes to review
 - [`../../editor/DraftReviewBand.tsx`](../../editor/DraftReviewBand.tsx) — the review controls inside the identity row
 - [KB: Draft Review Commands Keep Authority on the Server](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md)
 
@@ -116,4 +98,8 @@ A launch may name `focusOperationIds`. The claimant that enters the review
 mounts `FocusOpenedReview`, which focuses and scrolls to the change holding
 them once, when that very review has painted and its preview has loaded. A
 review being left that is still painted is never focused, and ids no longer in
-the preview open the review at the top.
+the preview open the review at the top. The route can settle before the Editor
+has mounted the document, with the address already naming the draft: the address
+owner restores no review for a draft whose launch is still unclaimed
+(`usePendingEditorReviewDraftId`), because a restore is a second launch and the
+latest launch decides the focus.

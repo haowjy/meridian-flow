@@ -1,6 +1,6 @@
 /**
- * Work Files tab: drafts to review and scratch notes as one grouped list in
- * the same row grammar as the Chats tab and the Editor's recents.
+ * Work Files tab: the Work's changes to review and its scratch notes as one
+ * grouped list in the same row grammar as the Chats tab and the Editor's recents.
  * `useWorkFiles` owns the tab's state so the page toolbar can host its actions;
  * a new note on its way in is `useWorkNoteIntake`'s. An archived Work is not
  * `editable`: New note stays in place but disabled, rows only open, and a
@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import { RuledList, type RuledRow } from "../RuledList";
 import { useWorkNoteIntake } from "./use-work-note-intake";
-import { WorkDrafts } from "./WorkDrafts";
+import { WorkChanges } from "./WorkChanges";
 import { WorkFileGroup, WorkFileGroupLoading, WorkFileGroupNote } from "./WorkFileGroup";
 import { FolderRow, NoteAttemptRow, ScratchFileRow } from "./WorkFileRows";
 import {
@@ -164,7 +164,7 @@ export function WorkFilesView({
 
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
-      <WorkDrafts projectId={projectId} workId={work.id} matchesSearch={matchesSearch} />
+      <WorkChanges projectId={projectId} workId={work.id} matchesSearch={matchesSearch} />
       <WorkFileGroup label={t`Scratch`}>
         {scratch.isError ? (
           <InlineErrorRow message={t`Scratch couldn’t load`} onRetry={scratch.refetch} />

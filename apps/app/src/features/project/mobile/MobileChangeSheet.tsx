@@ -1,14 +1,13 @@
 /**
- * MobileChangeSheet — the change list on a phone: a sheet that rises over the
- * manuscript, dimmed behind it. It is the dock's Changes tab in touch form
- * (`ReviewFiles`): every draft file in the one file order, the open file
- * expanded in place to its changes or the state that stands in for them
- * (`OpenFileChanges`: the same one the dock shows), and the Work's Apply all
- * and Discard all. It opens whatever the open file's change count is, so a
- * formatting-only or just-finished file still reaches the other drafts.
- * Tapping a change closes the sheet and takes the writer to it; tapping another file opens that file's review; Apply and
- * Discard act on the row and leave the sheet open, so a run of decisions can be
- * made in one place.
+ * MobileChangeSheet — this document's change list on a phone: a sheet that
+ * rises over the manuscript, dimmed behind it. It is the same list the desktop
+ * identity row opens (`DocumentChanges`: the changes, or the state that stands
+ * in for them, such as Applying, formatting-only or No changes left with the
+ * way on), with "All changes in <Work>" at its foot for the Work's other drafts.
+ * It opens whatever the change count is, so a formatting-only or just-finished
+ * draft still reaches that link. Tapping a change closes the sheet and takes the
+ * writer to it; Apply and Discard act on the row and leave the sheet open, so a
+ * run of decisions can be made in one place.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -16,23 +15,17 @@ import { X } from "lucide-react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import {
-  type ReviewFile,
-  ReviewFiles,
-  type ReviewFilesBatch,
-} from "@/features/draft-review/ReviewFiles";
+import { DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
 import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
-import { OpenFileChanges } from "../dock/OpenFileChanges";
+import { WorkChangesLink } from "@/features/draft-review/WorkChangesLink";
 
 export function MobileChangeSheet({
   open,
   onOpenChange,
   view,
-  files,
-  batch,
   next,
   onOpenNext,
   controller,
@@ -40,12 +33,13 @@ export function MobileChangeSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   view: ReviewChangesView;
-  files: readonly ReviewFile[];
-  batch: ReviewFilesBatch;
-  /** The draft after the open one, offered when the open file is finished. */
+  /** The draft after the open one, offered when this one is finished. */
   next: ReviewFileTarget | null;
   onOpenNext: (row: ReviewFileTarget) => void;
-  controller: Pick<DraftReviewController, "toast" | "dismissToast" | "exitInlineReview">;
+  controller: Pick<
+    DraftReviewController,
+    "projectId" | "workId" | "toast" | "dismissToast" | "exitInlineReview"
+  >;
 }) {
   const count = view.items.length;
   return (
@@ -73,29 +67,24 @@ export function MobileChangeSheet({
           <Trans>Tap a change to go to it in the manuscript.</Trans>
         </SheetDescription>
         <div className="min-h-0 overflow-y-auto overscroll-contain px-2 pb-2">
-          <ReviewFiles
+          <DocumentChanges
             touch
-            batch={batch}
-            files={files.map((file) => ({
-              ...file,
-              onOpen: () => {
-                onOpenChange(false);
-                file.onOpen();
-              },
-            }))}
-          >
-            <OpenFileChanges
-              touch
-              view={view}
-              controller={controller}
-              onFocused={() => onOpenChange(false)}
-              next={next}
-              onOpenNext={(row) => {
-                onOpenChange(false);
-                onOpenNext(row);
-              }}
-            />
-          </ReviewFiles>
+            view={view}
+            controller={controller}
+            onFocused={() => onOpenChange(false)}
+            next={next}
+            onOpenNext={(row) => {
+              onOpenChange(false);
+              onOpenNext(row);
+            }}
+          />
+          <WorkChangesLink
+            touch
+            projectId={controller.projectId}
+            workId={controller.workId}
+            onOpen={() => onOpenChange(false)}
+            className="mt-1 rounded-none border-t border-border-subtle"
+          />
         </div>
         {/* The scrim sits over the manuscript's own toast: this one rides the sheet's top edge, undimmed. */}
         <ReviewToast

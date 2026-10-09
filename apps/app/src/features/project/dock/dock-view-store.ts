@@ -1,39 +1,31 @@
-/** Session-only view choices and transient Work file state for the project dock. */
+/** The project dock's views per screen, and the Work page's transient file view. */
 import { t } from "@lingui/core/macro";
 import { create } from "zustand";
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 
-/** Dock destinations. File is transient and only offered while a Work file is open. */
-export type DockView = "chat" | "context" | "changes" | "file";
-type StoredDockView = Exclude<DockView, "file">;
+/** Dock destinations: the occupant's own view, and the Work page's transient File. */
+export type DockView = "chat" | "context" | "file";
 
 export type DockFile = { workId: string; tab: Extract<ContextTab, { kind: "viewer" }> };
 type DockFileSlot = DockFile & { active: boolean };
 
-type DockViewSet = {
-  /** Ordered segments for the switch. */
-  views: readonly StoredDockView[];
-  /** Shown when the writer has made no explicit choice this session. */
-  default: StoredDockView;
-  /** The occupant's native (non-Changes) view — its content stays mounted. */
-  primary: StoredDockView;
-};
-
 /**
- * The view set is a function of the dock occupant, which the screen fixes:
- * the Chat screen docks the context rail; Work/Editor dock the chat surface.
+ * What the dock holds is a function of the screen: the Chat screen docks the
+ * context rail; Work and Editor dock the chat surface. The occupant is the dock's
+ * only view, except on Work, where a Scratch or Uploads file opened from the page
+ * adds a second one (`file`), so the switch exists only then.
  */
-const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
-  work: { views: ["chat", "changes"], default: "chat", primary: "chat" },
-  chat: { views: ["context", "changes"], default: "context", primary: "context" },
-  context: { views: ["chat", "changes"], default: "chat", primary: "chat" },
+const DOCK_OCCUPANT: Record<ScreenKey, Exclude<DockView, "file">> = {
+  work: "chat",
+  chat: "context",
+  context: "chat",
 };
 
 type DockViewState = {
-  /** Writer-selected non-file view only. A transient file never replaces this choice. */
-  byScreen: Partial<Record<ScreenKey, StoredDockView>>;
+  /** Work only: the transient file, and whether it is the view on show. */
   workFile: DockFileSlot | null;
+  /** `file` shows the Work's transient file; any other view returns to the occupant. */
   setDockView: (screen: ScreenKey, view: DockView) => void;
   openWorkFile: (file: DockFile) => void;
   closeWorkFile: () => void;
@@ -41,20 +33,15 @@ type DockViewState = {
   leaveWork: () => void;
 };
 
+/** Session-only: a fresh reload starts on the occupant. */
 export const useDockViewStore = create<DockViewState>((set) => ({
-  byScreen: {},
   workFile: null,
   setDockView: (screen, view) =>
     set((state) => {
-      if (view === "file") {
-        if (screen !== "work" || !state.workFile || state.workFile.active) return state;
-        return { workFile: { ...state.workFile, active: true } };
-      }
-      const next = {
-        byScreen: { ...state.byScreen, [screen]: view },
-      };
-      if (screen !== "work" || !state.workFile?.active) return next;
-      return { ...next, workFile: { ...state.workFile, active: false } };
+      if (screen !== "work" || !state.workFile) return state;
+      if (view === "file")
+        return state.workFile.active ? state : { workFile: { ...state.workFile, active: true } };
+      return state.workFile.active ? { workFile: { ...state.workFile, active: false } } : state;
     }),
   openWorkFile: (file) => set({ workFile: { ...file, active: true } }),
   closeWorkFile: () => set({ workFile: null }),
@@ -68,35 +55,16 @@ export const useDockViewStore = create<DockViewState>((set) => ({
 
 export type ResolvedDockView = {
   view: DockView;
+  /** The switch's segments: the occupant, then the transient file when there is one. */
   views: readonly DockView[];
-  primaryView: DockView;
 };
 
-/** Resolve the explicit choice/default and include the transient file segment when present. */
-export function resolveDockView(
-  screen: ScreenKey,
-  stored: StoredDockView | undefined,
-  hasFile: boolean,
-): ResolvedDockView {
-  const set = DOCK_VIEW_SETS[screen];
-  const explicit = stored && set.views.includes(stored) ? stored : set.default;
-  const views =
-    hasFile && screen === "work"
-      ? [set.views[0], "file" as const, ...set.views.slice(1)]
-      : set.views;
-  return { view: explicit, views, primaryView: set.primary };
-}
-
-/** Remove the Changes destination when its model is empty. */
-export function withoutEmptyChanges(
-  resolved: ResolvedDockView,
-  hasChanges: boolean,
-): ResolvedDockView {
-  if (hasChanges) return resolved;
+/** The dock's views for a screen, and the one on show when no file is. */
+export function resolveDockView(screen: ScreenKey, hasFile: boolean): ResolvedDockView {
+  const occupant = DOCK_OCCUPANT[screen];
   return {
-    ...resolved,
-    view: resolved.view === "changes" ? resolved.primaryView : resolved.view,
-    views: resolved.views.filter((view) => view !== "changes"),
+    view: occupant,
+    views: hasFile && screen === "work" ? [occupant, "file"] : [occupant],
   };
 }
 
@@ -106,11 +74,10 @@ export function useDockView(screen: ScreenKey): ResolvedDockView & {
   file: DockFile | null;
   closeFile: () => void;
 } {
-  const stored = useDockViewStore((state) => state.byScreen[screen]);
   const setDockView = useDockViewStore((state) => state.setDockView);
   const workFile = useDockViewStore((state) => (screen === "work" ? state.workFile : null));
   const closeFile = useDockViewStore((state) => state.closeWorkFile);
-  const resolved = resolveDockView(screen, stored, workFile !== null);
+  const resolved = resolveDockView(screen, workFile !== null);
   return {
     ...resolved,
     view: workFile?.active ? "file" : resolved.view,

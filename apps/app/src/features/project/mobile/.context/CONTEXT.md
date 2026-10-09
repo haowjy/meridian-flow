@@ -115,13 +115,16 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
   `env(safe-area-inset-bottom)` or the on-screen keyboard
   (`--mobile-keyboard-height`, from `MobileKeyboardAware`, which the review column
   uses). The desktop's margin bar steps aside on the phone shell.
-- **Sheet** (`MobileChangeSheet`): the list button opens the Work's files as a
-  bottom sheet over the dimmed manuscript, with the desktop dock's open-file body
-  (`dock/OpenFileChanges`: changes, Applying, No changes left with Next draft,
-  formatting-only) in its `touch` form. It opens and stays open at zero changes.
-  A row tap closes the sheet and focuses the change; Apply and Discard act
-  and leave it open. The toast rides the sheet's top edge, since the scrim covers
-  the manuscript's own.
+- **Sheet** (`MobileChangeSheet`): the list button opens THIS document's changes
+  as a bottom sheet over the dimmed manuscript, with the same body the desktop
+  identity row's popover shows (`draft-review/DocumentChanges`: changes, Applying,
+  No changes left with Next draft, formatting-only) in its `touch` form, and
+  "All changes in <Work>" at its foot (`WorkChangesLink`, one transition to the
+  Work's Files tab; absent in No Work). It lists no other file and has no Apply
+  all or Discard all: those are the Work page's. It opens and stays open at zero
+  changes. A row tap closes the sheet and focuses the change; Apply and Discard
+  act and leave it open. The toast rides the sheet's top edge, since the scrim
+  covers the manuscript's own.
 - Every control is a 44px target (`touch` on `ReviewChangeRow`, `ReviewChangeBar`,
   `ReviewStepper` and `DraftSwitcher`).
 - The review body is read-only on the phone, like the live document. A tap must

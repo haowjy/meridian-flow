@@ -119,7 +119,7 @@ review is open, so a command's late answer cannot move focus in a new document.
 `useInlineReviewFocus` (in `EditorView`) syncs it, Show changes (`marksVisible`)
 and the pulse on arrivals with the editor, and reports a click on a mark back
 (`reportFocusedChange`, which compares the change the active mark belongs to,
-not only the mark). The stepper, the bar and the dock list read it from
+not only the mark). The stepper, the bar and the document's change list read it from
 `useReviewChanges`.
 
 An archived Work's drafts are frozen (D30): the server refuses Apply and
@@ -128,8 +128,8 @@ scope's Work, or a disposition in flight) disables every disposition control
 beside the existing archived notice; Review stays available. A new disposition
 control reads the same flag.
 
-Bulk Apply/Discard is one controller command over a captured target list; the
-dock does not infer command completion from busy/idle render edges. Whole-draft
+Bulk Apply/Discard is one controller command over a captured target list; no
+surface infers command completion from busy/idle render edges. Whole-draft
 Apply addresses the current branch rather than preview operation ids or a
 revision token. The server settles the complete branch state at command time,
 including writer rows created after the last preview. For whole-draft Apply the
@@ -138,7 +138,7 @@ command scope; per-change Apply is the one command that sends them. Apply/Discar
 are session outcomes rendered by the review header rather than ignored
 promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
 (`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
-the draft's rows, and named in the dock's typed error state. It never navigates (no answer moves
+the draft's rows, and named in the batch's typed error state (`dockDispositionError`). It never navigates (no answer moves
 the writer). The review the writer is in is part of the batch: `batchStarted` sets its completion to
 `pending` (the header says "Applying"/"Discarding"), its own answer closes it (`completion: closed`,
 "No changes left") instead of clearing it, and a batch that ends without closing it withdraws the
@@ -216,10 +216,12 @@ Show changes, Discard draft and Apply draft, all delegating to the controller.
 Apply draft and Discard draft open the next draft in the switcher at once (or
 leave the review for live when none is left). The server owns one active Work-draft branch per
 `(documentId, workId)` and aggregates every contributing thread into that
-branch, so review has one active row per document. The dock's `DockChangesView` lists the reviewed document's changes, one line
-each (`features/draft-review`), read from the live preview through the **Editor
-scope's** controller (`useEditorDraftReview`); the dock sits in the Chat's
-boundary, whose controller never has a review open. A row's Apply and Discard
+branch, so review has one active row per document. The document's own change list
+(`DocumentChanges`, in the identity row's popover and the phone's sheet) lists the
+reviewed document's changes, one line each (`features/draft-review`), read from the
+live preview through the Editor scope's controller; a surface outside the Editor's
+boundary (the Work page) reads it with `useEditorDraftReview` or lists any other
+draft with `useDraftChanges`. A row's Apply and Discard
 take their selection from review state, so they work with no manuscript
 mounted. Only focusing needs the editor: `controller.focusReviewChange` reads
 the review editor off the inline-review runtime to emphasize and scroll to the
@@ -248,8 +250,8 @@ preview without a model is an invariant violation, logged loudly and ignored saf
 
 The server reviewable list emits only current-generation drafts with reviewable
 content. `pendingReviewDrafts` is the shared client presentation seam that
-filters rows without review content and orders the remaining drafts for the dock
-and inline-review launcher. Branch lifecycle status is not review evidence: a
+filters rows without review content and orders the remaining drafts for the composer strip, the Work page
+and the inline-review launcher. Branch lifecycle status is not review evidence: a
 reusable manifest branch may remain active while carrying only bookkeeping.
 Closed lifecycle rows, bookkeeping-only branches, and draft-level Undo receipts
 are not part of this boundary.
@@ -302,7 +304,7 @@ or discarded comes back from a stale read.
 `pendingReviewDrafts(group)` in `client/query/useWorkDrafts.ts` is the
 per-document client "has changes to review" derivation. `pendingReviewDraft`
 selects its newest draft, while `activeWorkDraftGroups` projects all pending
-groups once for composer surfaces. The dock's pending rows, the identity bar's
+groups once for composer surfaces. The strip's and the Work page's pending rows, the identity bar's
 `DraftReviewChip` (self-contained; hides itself during that document's inline
 review so it never coexists with the review header), and the mode selector's
 fast-path count all derive from this filter. Never grow a second client
@@ -317,7 +319,7 @@ manifest journal row.
 
 Pending membership and presentation order are separate contracts.
 `reviewFileTargets` (`review-files.ts`) builds its own list sorted by `documentName ?? documentId` for the
-DraftDock and the Changes view; it must not reorder the shared projection.
+DraftDock and the Work page's Changes to review; it must not reorder the shared projection.
 
 **Draft-only tabs.** A NEW document proposed by a draft is real (documents
 row + Yjs state) but absent from the live tree until Apply, and the server
@@ -381,10 +383,10 @@ admission may enrich only the overlay with resolved live-resource metadata.
     (`review-failed`, recorded by the editor handoff and never over a pending
     command), shown on the draft by the header (the open draft's own line, or
     the `failedElsewhere` notice with Open for the Work's other drafts), the
-    switcher row, the composer strip, the Work Files row, the Changes view's
-    other-drafts rows, and the identity-bar chip (which turns into a retry). It
+    switcher row, the composer strip, the Work page's Changes to review row, and
+    the identity-bar chip (which turns into a retry). It
     clears on the next Apply or Discard on that draft; opening Review clears
-    only a failed launch, so Open on a refused draft keeps its message. Work Files and the dock also offer Dismiss. A later list read
+    only a failed launch, so Open on a refused draft keeps its message. The Work page and the strip also offer Dismiss. A later list read
     that no longer lists the draft drops it too, so it never reaches a later
     proposal that reuses the draft id.
 - **Rejected and unknown Apply.** A response with a status is a rejection

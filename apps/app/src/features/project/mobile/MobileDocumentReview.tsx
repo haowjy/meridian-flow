@@ -1,7 +1,8 @@
 /**
  * MobileDocumentReview — wraps a phone document's editor with the review's
  * chrome while that document is under inline review: the header above it, the
- * selected change's bar below it, the change-list sheet over it, the toast.
+ * selected change's bar below it, this document's change-list sheet over it,
+ * the toast.
  * With no review of this document it is only the column the editor sits in.
  *
  * Every command goes through the same controller the desktop uses
@@ -13,14 +14,17 @@
  * The editor keeps one place in this tree whether or not a review is open, so
  * entering and leaving review never remounts it.
  */
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
-import { nextReviewFile, type ReviewFileTarget } from "@/features/draft-review/review-files";
+import {
+  nextReviewFile,
+  type ReviewFileTarget,
+  reviewFileTargets,
+} from "@/features/draft-review/review-files";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
-import { useReviewFileList } from "@/features/draft-review/useReviewFileList";
 import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -131,11 +135,7 @@ function ReviewBottom({
   const { controller, groups } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
   const view = useReviewChanges(controller);
-  const { files, rows, batch } = useReviewFileList({
-    review: { controller, groups },
-    view,
-    openDraft: openReviewFile,
-  });
+  const rows = useMemo(() => reviewFileTargets(groups), [groups]);
 
   return (
     <>
@@ -144,8 +144,6 @@ function ReviewBottom({
         open={listOpen}
         onOpenChange={onListOpenChange}
         view={view}
-        files={files}
-        batch={batch}
         next={nextReviewFile(
           rows,
           documentId,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The phone's review chrome: the header (switcher, stepper, count), the
- * selected change's bar, the change-list sheet, and the way the editor keeps
+ * selected change's bar, this document's change-list sheet, and the way the editor keeps
  * its place in the tree through all of it. The controller and the changes are
  * stubbed; what is asserted is what the writer can do by touch.
  */
@@ -96,6 +96,15 @@ const view = vi.hoisted(() => ({
   discard: vi.fn(async () => {}),
 }));
 const launcher = vi.hoisted(() => ({ openReviewFile: vi.fn(), openAiDraft: vi.fn() }));
+const openWork = vi.hoisted(() => vi.fn(async () => undefined));
+/** The project's Works: the document's own Work is "w"; No Work is not among them. */
+const works = vi.hoisted(() => ({
+  list: [{ id: "w", name: "Arc One", isNoWork: false }] as {
+    id: string;
+    name: string;
+    isNoWork: boolean;
+  }[],
+}));
 
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
@@ -107,6 +116,8 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
 }));
 vi.mock("@/features/draft-review/useReviewChanges", () => ({ useReviewChanges: () => view }));
 vi.mock("../dock/useAiDraftLauncher", () => ({ useAiDraftLauncher: () => launcher }));
+vi.mock("@/client/query/useWorks", () => ({ useWorks: () => ({ works: works.list }) }));
+vi.mock("../routing/ProjectNavigationContext", () => ({ useOpenWork: () => openWork }));
 
 const all = [change("c1"), change("c2", { includesWriterEdits: true }), change("c3")];
 
@@ -142,8 +153,10 @@ beforeEach(() => {
     view.discard,
     launcher.openReviewFile,
     launcher.openAiDraft,
+    openWork,
   ])
     fn.mockClear();
+  works.list = [{ id: "w", name: "Arc One", isNoWork: false }];
 });
 
 /** The stubs are plain objects: a test changes one, then clicks `[data-flip]` to re-render over it. */
@@ -307,44 +320,6 @@ describe("the phone review header", () => {
       await act(async () => menuItem("Discard draft")?.click());
       expect(controller.discard).toHaveBeenCalledWith("doc-12", "draft-doc-12");
       expect(launcher.openReviewFile).toHaveBeenCalledOnce();
-    });
-  });
-
-  it("lists every draft file once in the sheet, the open one expanded, and applies all from it", async () => {
-    await render(async () => {
-      await act(async () => named("Show the 3 changes")?.click());
-      const sheetText = sheet()?.textContent ?? "";
-      // The open file expands in place; the other is a row to open.
-      expect(sheet()?.querySelector("[data-review-file-open]")?.textContent).toContain(
-        "Chapter 12",
-      );
-      expect(sheetText).toContain("Chapter 13");
-      expect(sheetText).toContain("2 drafts to review");
-      await act(async () =>
-        named("All drafts")?.dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-        ),
-      );
-      await act(async () => menuItem("Apply all 2 drafts")?.click());
-      expect(controller.disposeDrafts).toHaveBeenCalledWith("apply", [
-        { documentId: "doc-12", draftId: "draft-doc-12" },
-        { documentId: "doc-13", draftId: "draft-doc-13" },
-      ]);
-    });
-  });
-
-  it("opens another file from the sheet and closes the sheet", async () => {
-    await render(async () => {
-      await act(async () => named("Show the 3 changes")?.click());
-      const row = Array.from(sheet()?.querySelectorAll<HTMLElement>("button") ?? []).find((node) =>
-        node.textContent?.includes("Chapter 13"),
-      );
-      await act(async () => row?.click());
-      expect(launcher.openReviewFile).toHaveBeenCalledWith(
-        expect.objectContaining({ documentId: "doc-13" }),
-        "w",
-      );
-      expect(sheet()).toBeNull();
     });
   });
 
@@ -518,43 +493,75 @@ describe("the change-list sheet", () => {
     });
   });
 
-  it("stays open when the last change is handled, and says the file is done beside the other drafts", async () => {
+  it("lists this document's changes only: no other draft, no Work-wide commands", async () => {
+    await render(async () => {
+      await act(async () => named("Show the 3 changes")?.click());
+      const text = sheet()?.textContent ?? "";
+      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(3);
+      for (const gone of [
+        "Chapter 12",
+        "Chapter 13",
+        "drafts to review",
+        "Apply all",
+        "Discard all",
+      ]) {
+        expect(text).not.toContain(gone);
+      }
+      expect(named("All drafts")).toBeUndefined();
+    });
+  });
+
+  it("ends in the way to the Work's Files tab, and closes as it goes", async () => {
+    await render(async () => {
+      await act(async () => named("Show the 3 changes")?.click());
+      expect(sheet()?.textContent).toContain("All changes in Arc One");
+      await act(async () => named("All changes in Arc One")?.click());
+      // One transition to the Work's Files tab; the sheet gets out of the way.
+      expect(openWork).toHaveBeenCalledExactlyOnceWith(
+        { kind: "work-detail", workId: "w", view: "files" },
+        { replace: false },
+      );
+      expect(sheet()).toBeNull();
+    });
+  });
+
+  it("offers no link to a Work page in No Work", async () => {
+    works.list = [];
+    await render(async () => {
+      await act(async () => named("Show the 3 changes")?.click());
+      expect(sheet()).not.toBeNull();
+      expect(sheet()?.textContent).not.toContain("All changes in");
+    });
+  });
+
+  it("stays open when the last change is handled, and says the draft is done with the way on", async () => {
     await render(async () => {
       await act(async () => named("Show the 3 changes")?.click());
       expect(sheet()).not.toBeNull();
       await flip(() => Object.assign(view, { items: [], finished: true }));
       expect(sheet()).not.toBeNull();
       expect(sheet()?.textContent).toContain("No changes left");
-      expect(sheet()?.textContent).toContain("Chapter 13");
-      expect(named("All drafts")).toBeDefined();
+      expect(sheet()?.textContent).toContain("All changes in Arc One");
+      expect(sheet()?.textContent).not.toContain("Chapter 13");
     });
   });
 
-  it("opens for a formatting-only file, with the other drafts and Apply all still in it", async () => {
+  it("opens for a formatting-only draft, with the way to the Work's other drafts still in it", async () => {
     Object.assign(view, { items: [], unlisted: true });
     await render(async () => {
       expect(header()?.querySelector("[aria-label='Next change']")).toBeNull();
-      await act(async () => named("Show the draft files")?.click());
+      await act(async () => named("Show the changes list")?.click());
       expect(sheet()).not.toBeNull();
       expect(sheet()?.textContent).toContain("Formatting changes remain");
-      expect(sheet()?.textContent).toContain("Chapter 13");
-      expect(named("All drafts")).toBeDefined();
-      const row = Array.from(sheet()?.querySelectorAll<HTMLElement>("button") ?? []).find((node) =>
-        node.textContent?.includes("Chapter 13"),
-      );
-      await act(async () => row?.click());
-      expect(launcher.openReviewFile).toHaveBeenCalledWith(
-        expect.objectContaining({ documentId: "doc-13" }),
-        "w",
-      );
-      expect(sheet()).toBeNull();
+      expect(sheet()?.textContent).toContain("All changes in Arc One");
+      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
     });
   });
 
-  it("holds a finished review's file in the list and offers the next draft", async () => {
+  it("offers the next draft when this one is finished, and goes to it", async () => {
     Object.assign(view, { items: [], finished: true });
     await render(async () => {
-      await act(async () => named("Show the draft files")?.click());
+      await act(async () => named("Show the changes list")?.click());
       expect(sheet()?.textContent).toContain("No changes left");
       const next = Array.from(sheet()?.querySelectorAll<HTMLElement>("button") ?? []).find(
         (node) => node.textContent === "Next draft",

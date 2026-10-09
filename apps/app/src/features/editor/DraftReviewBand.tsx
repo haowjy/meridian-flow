@@ -6,13 +6,21 @@
  * Apply act on one change; these name their scope). Everything is sized to the row's 22px box, so
  * entering or leaving review moves nothing below it.
  *
+ * The list button, left of the stepper, opens this document's own change list
+ * (`DocumentChanges`) in a popover under the row, with "All changes in <Work>"
+ * at its foot. Unlike the stepper, which needs a positive count, it is there in
+ * every review state (loading, formatting-only, finished, marks hidden), because
+ * the state lines and the way to the Work's other drafts live in it too. Opening
+ * it is independent of marks visibility. Choosing a row focuses its change and
+ * closes the list; Apply and Discard on a row leave it open.
+ *
  * Narrow rows give up room in a fixed order, always on one row (the container
  * is the identity bar's own `@container`, so a closed sidebar or open dock
  * counts): the breadcrumb's middle folders become `…` (in `IdentityPath`),
  * "Show changes" becomes an icon toggle with the same name, `4 of 4` becomes
  * `4/4` and Discard draft / Apply draft shorten to Discard / Apply, and the
- * file name truncates. The Draft chip, Discard and Apply never
- * hide. Apply draft and Discard draft move straight to the next draft in the
+ * file name truncates. The Draft chip, the list button (an icon from the
+ * start), Discard and Apply never hide. Apply draft and Discard draft move straight to the next draft in the
  * menu, or back to live when none is left; the model is shared with the phone
  * header (`useReviewHeader`).
  *
@@ -21,10 +29,14 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, List, Loader2 } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
   ReviewFailureNotices,
@@ -32,7 +44,12 @@ import {
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
 import type { ReviewFileTarget } from "@/features/draft-review/review-files";
-import { useReviewFailures, useReviewHeader } from "@/features/draft-review/useReviewHeader";
+import {
+  type ReviewHeaderModel,
+  useReviewFailures,
+  useReviewHeader,
+} from "@/features/draft-review/useReviewHeader";
+import { WorkChangesLink } from "@/features/draft-review/WorkChangesLink";
 import { cn } from "@/lib/utils";
 
 export type DraftReviewBandProps = {
@@ -66,6 +83,7 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
         className="flex shrink-0 items-center gap-1.5 font-sans text-xs"
         data-draft-review-controls
       >
+        <ChangeListPopover header={header} />
         {listed ? (
           <>
             <ReviewStepper
@@ -128,6 +146,52 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
         )}
       </span>
     </>
+  );
+}
+
+/**
+ * This document's change list, under the row: its changes, or the state line
+ * that stands in for them, then the way to the Work's other drafts. An icon
+ * that never gives up its place in a narrow row.
+ */
+function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
+  const [open, setOpen] = useState(false);
+  const { controller, view } = header;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <IconButton
+          tooltip={changeListLabel(view.items.length)}
+          className="size-5.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
+        >
+          <List aria-hidden className="size-3.5" />
+        </IconButton>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        data-draft-change-list
+        className="flex max-h-[min(28rem,70svh)] w-96 max-w-[calc(100vw-2rem)] flex-col p-0"
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
+          <DocumentChanges
+            view={view}
+            controller={controller}
+            next={header.next}
+            onOpenNext={(row) => {
+              setOpen(false);
+              header.openDraft(row);
+            }}
+            onFocused={() => setOpen(false)}
+          />
+        </div>
+        <WorkChangesLink
+          projectId={controller.projectId}
+          workId={controller.workId}
+          onOpen={() => setOpen(false)}
+          className="shrink-0 rounded-t-none border-t border-border-subtle px-3.5"
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 

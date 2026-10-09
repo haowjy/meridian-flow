@@ -3,7 +3,11 @@ import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } fr
 import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
-import type { ContextRouteRequest, ContextRouteTarget } from "./project-route";
+import type {
+  ContextRouteRequest,
+  ContextRouteTarget,
+  ProjectRouteCommands,
+} from "./project-route";
 
 export type OpenContextOptions = {
   replace?: boolean;
@@ -25,6 +29,7 @@ const ProjectNavigationContext = createContext<{
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
   screen?: ScreenKey;
   open: OpenContextRoute;
+  openWork?: ProjectRouteCommands["openWork"];
   capture?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
 } | null>(null);
@@ -32,6 +37,7 @@ const ProjectNavigationContext = createContext<{
 export function ProjectNavigationProvider({
   children,
   openContextRoute,
+  openWork,
   captureNavigation,
   isCurrentContextRoute,
   screen,
@@ -40,6 +46,7 @@ export function ProjectNavigationProvider({
   screen?: ScreenKey;
   children: ReactNode;
   openContextRoute: OpenContextRoute;
+  openWork?: ProjectRouteCommands["openWork"];
   captureNavigation?: () => () => boolean;
   isCurrentContextRoute?: (target: ContextRouteTarget) => boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
@@ -49,6 +56,7 @@ export function ProjectNavigationProvider({
       value={{
         screen,
         open: openContextRoute,
+        openWork,
         capture: captureNavigation,
         isCurrentContextRoute,
         registerLeaveGuard,
@@ -61,6 +69,11 @@ export function ProjectNavigationProvider({
 
 export function useOpenContextRoute(): OpenContextRoute | null {
   return useContext(ProjectNavigationContext)?.open ?? null;
+}
+
+/** Opens a Work's page (one route transition); null outside a project route. */
+export function useOpenWork(): ProjectRouteCommands["openWork"] | null {
+  return useContext(ProjectNavigationContext)?.openWork ?? null;
 }
 
 /** Capture before an asynchronous create; completion must not steal a later destination. */

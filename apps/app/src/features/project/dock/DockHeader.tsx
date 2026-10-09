@@ -6,8 +6,9 @@
  * border. Layout: `[left slot] … [segmented view switch] [close]`. The left
  * slot hosts the chat select/rename dropdown while Chat is active; the view
  * switch carries the view identity, so there is no separate section title. The
- * switch disappears when only one view is available because a single segment
- * cannot select anything. The left slot truncates before the switch or close
+ * switch exists only when two views do (the Work page's chat and its transient
+ * file); otherwise the header is the occupant's own, the chat's or the context
+ * rail's, because a single segment cannot select anything. The left slot truncates before the switch or close
  * ever compress.
  *
  * Desktop-only: the phone chat sheet supplies its own header
@@ -111,8 +112,6 @@ function DockViewLabel({ view }: { view: DockView }) {
       return <Trans>Chat</Trans>;
     case "context":
       return <Trans>Context</Trans>;
-    case "changes":
-      return <Trans>Changes</Trans>;
     case "file":
       return null;
   }

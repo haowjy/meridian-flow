@@ -9,7 +9,7 @@
  * changing only its persistent slot's grid-area.
  *
  * In the dock it renders through `DockShell`, which adds the chat switcher
- * header and can swap the body to the work-scoped Changes view. The shell is a
+ * header (and, on Work, the transient file view over the body). The shell is a
  * passthrough in `center` placement so this subtree keeps the same tree
  * position across center↔dock moves — the chat is never reconciled away.
  *
