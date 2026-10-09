@@ -327,6 +327,15 @@ it("carries what a copied link names across the clipboard", async () => {
     html: earlyFigure.view.serializeForClipboard(earlyFigure.state.doc.slice(0)).dom.innerHTML,
   };
   earlyFigure.destroy();
+  // A stored source is never a browser URL: the copy names its picture in the
+  // metadata, and an `<img src>` the clipboard serializer builds is fetched.
+  for (const [label, html] of [
+    ["ref pictures", copied.html],
+    ["an upload", uploadSerialized.dom.innerHTML],
+    ["an early upload", earlyCopied.html],
+    ["an early upload figure", earlyFigureCopied.html],
+  ])
+    expect.soft(html, `${label}: no fetchable source`).not.toMatch(/\ssrc=/);
   const pictureRows: {
     row: string;
     copied: { html: string } | { text: string };
