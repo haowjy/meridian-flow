@@ -179,6 +179,53 @@ describe("DraftDock chat scope", () => {
     });
   });
 
+  it("shows Review alone from the first paint for a new-document-only chat, before its preview lands", async () => {
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [draftItem("ch-13", "chapter-13", [pacing], { isNewDocument: true })],
+    });
+    let land!: () => void;
+    mocks.getDraftPreview.mockReturnValue(
+      new Promise((resolve) => {
+        land = () => {
+          serverHolds("ch-13", [op("1", "pacing")]);
+          resolve(previews["draft-ch-13"]);
+        };
+      }),
+    );
+    await render(async () => {
+      await stripShows("chapter-13");
+      expect(text()).not.toMatch(/\d+ changes?/);
+      expect(button("Apply")).toBeUndefined();
+      expect(button("Discard")).toBeUndefined();
+      expect(button("Review draft")).toBeDefined();
+      await act(async () => land());
+      await stripShows("1 change");
+      expect(button("Apply")).toBeUndefined();
+      expect(button("Discard")).toBeUndefined();
+      expect(button("Review draft")).toBeDefined();
+    });
+  });
+
+  it("keeps Apply and Discard disabled while a normal file beside a new document is still loading", async () => {
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [
+        draftItem("ch-12", "chapter-12", [pacing]),
+        draftItem("ch-13", "chapter-13", [pacing], { isNewDocument: true }),
+      ],
+    });
+    mocks.getDraftPreview.mockReturnValue(new Promise(() => {}));
+    serverHolds("ch-12", [op("1", "pacing")]);
+    serverHolds("ch-13", [op("2", "pacing")]);
+    await render(async () => {
+      await stripShows("2 documents");
+      await vi.waitFor(() => {
+        expect(button("Apply")?.disabled).toBe(true);
+        expect(button("Discard")?.disabled).toBe(true);
+      });
+      expect(button("Review draft")).toBeDefined();
+    });
+  });
+
   it("Apply sends each file one command naming all of this chat's changes with both tokens", async () => {
     mocks.listWorkDrafts.mockResolvedValue({
       drafts: [
