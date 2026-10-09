@@ -18,10 +18,6 @@ import {
 } from "@/client/query/project-invalidation";
 import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
-import {
-  plainComposerDoc,
-  serializeComposerDraft,
-} from "@/components/app/composer/composer-document";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import {
   rehydrateFirstSendSubmission,
@@ -141,23 +137,23 @@ export function useThreadHandoff(
         return;
       }
       const envelope = {
-        ...serializeComposerDraft(plainComposerDoc(creation.text)),
+        submissionId: creation.submissionId ?? crypto.randomUUID(),
+        acceptedRevision: 0,
+        text: creation.text,
+        blocks: creation.blocks,
+        references: creation.references,
         activatedSkillSlugs: creation.activatedSkillSlugs ?? [],
       };
       // Capture the account bind before dispatch: an A→B→A return while the
       // POST is in flight must not delete the entry the new session needs.
       const epoch = getChatSubmissionEpoch();
       void controller
-        .submit(
-          threadId,
-          creation.submissionId ? { ...envelope, submissionId: creation.submissionId } : envelope,
-          {
-            optimisticUserTurnId: creation.optimisticUserTurnId,
-            keepOptimisticOnFailure: true,
-            activateProjection: (after) =>
-              isCurrent(lifetime) && snapshotResume.activateProjection(after),
-          },
-        )
+        .submit(threadId, envelope, {
+          optimisticUserTurnId: creation.optimisticUserTurnId,
+          keepOptimisticOnFailure: true,
+          activateProjection: (after) =>
+            isCurrent(lifetime) && snapshotResume.activateProjection(after),
+        })
         .then((outcome) => {
           if (!isCurrent(lifetime)) return;
           if (outcome.kind === "accepted") {

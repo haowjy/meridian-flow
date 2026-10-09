@@ -26,8 +26,10 @@ import {
 import * as transportProvider from "@/client/providers/TransportProvider";
 import type { ThreadStoreActions } from "@/client/stores";
 import * as stores from "@/client/stores";
+import { serializeComposerDraft } from "@/components/app/composer/composer-document";
 import { FakeThreadSocket } from "@/core/transport/test-support/FakeThreadSocket";
 import { WsThreadTransport } from "@/core/transport/WsThreadTransport";
+import { sendProjectChat } from "@/lib/send-project-chat";
 import { ErrorBlock } from "./ErrorBlock";
 import { usePendingInbox } from "./usePendingInbox";
 import { useThreadActivity } from "./useThreadActivity";
@@ -70,6 +72,48 @@ vi.mock("@/lib/send-project-chat", async (importOriginal) => {
   };
 });
 
+const REFERENCE = {
+  documentId: "01900000-0000-7000-8000-000000000001",
+  uri: "manuscript://refdoc2.md",
+} as const;
+
+/** What the composer submits for "Draft " plus an `@` pick of refdoc2.md. */
+function referencedMessage() {
+  return serializeComposerDraft({
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Draft " },
+          {
+            type: "composerReference",
+            attrs: {
+              reference: {
+                ...REFERENCE,
+                fileType: "markdown",
+                authority: { kind: "project", projectId: "project-1" },
+                label: "refdoc2.md",
+                imageCapable: false,
+                upload: null,
+              },
+            },
+          },
+        ],
+      },
+    ],
+  });
+}
+
+const referencedPayload = {
+  text: "Draft [refdoc2.md](manuscript://refdoc2.md)",
+  blocks: [
+    { type: "text", text: "Draft " },
+    { type: "reference", text: "[refdoc2.md](manuscript://refdoc2.md)", ...REFERENCE },
+  ],
+  references: [{ ...REFERENCE, purpose: "reference" }],
+};
+
 function firstSend(): FirstSendChatSubmission {
   return {
     kind: "first-send",
@@ -78,6 +122,8 @@ function firstSend(): FirstSendChatSubmission {
     projectId: "project-1",
     createdAt: "2026-09-22T12:00:00.000Z",
     text: "Draft the fight scene",
+    blocks: [{ type: "text", text: "Draft the fight scene" }],
+    references: [],
     activatedSkillSlugs: [],
     title: "Draft the fight scene",
     workId: null,
@@ -189,7 +235,13 @@ async function mount(
 
 describe("useThreadHandoff first-send journal reload", () => {
   it("rehydrates from the journal with no sessionStorage and reuses the submission id", async () => {
-    recordChatSubmission(ACCOUNT, firstSend());
+    const message = referencedMessage();
+    recordChatSubmission(ACCOUNT, {
+      ...firstSend(),
+      text: message.text,
+      blocks: [...message.blocks],
+      references: [...message.references],
+    });
     const threadActions = actions();
     const run = controller();
     mocks.createProjectThread.mockResolvedValue(persistedThread);
@@ -207,10 +259,10 @@ describe("useThreadHandoff first-send journal reload", () => {
     );
     expect(run.submit).toHaveBeenCalledWith(
       THREAD_ID,
-      expect.objectContaining({ submissionId: "sub-first", text: "Draft the fight scene" }),
+      expect.objectContaining({ submissionId: "sub-first", ...referencedPayload }),
       expect.objectContaining({ optimisticUserTurnId: "turn_local_1" }),
     );
-    expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, "Draft the fight scene");
+    expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, referencedPayload.text);
     await act(async () => {
       await vi.waitFor(() => expect(readChatSubmissions(ACCOUNT)).toEqual([]));
     });
@@ -345,11 +397,22 @@ describe("first-send account fence", () => {
 
 describe("real-store first-send retry", () => {
   it("subscribes only after acceptance and shares the subscription with projection listeners", async () => {
-    recordChatSubmission(ACCOUNT, firstSend());
     const creation = scenarioGate<Thread>();
     const admission = scenarioGate<SendMessageResponse>();
     const scenario = new ThreadRunScenario({ append: () => admission.promise });
-    scenario.store.getState().markPendingCreation({ threadId: THREAD_ID });
+    const message = referencedMessage();
+    // The new-chat composer's first send, as `useCreationComposer` hands it over.
+    vi.spyOn(crypto, "randomUUID").mockReturnValueOnce(THREAD_ID);
+    sendProjectChat({
+      accountId: ACCOUNT,
+      projectId: "project-1",
+      ...message,
+      submissionId: "sub-first",
+      agent: { name: "General", slug: "general", selection: firstSend().agentSelection },
+      workId: "no-work",
+      threadActions: scenario.store.getState(),
+      selectChat: () => undefined,
+    });
     controllers.push(scenario.controller);
     mocks.createProjectThread.mockReturnValue(creation.promise);
     const socket = new FakeThreadSocket();
@@ -390,6 +453,9 @@ describe("real-store first-send retry", () => {
       expect(socket.sent).toEqual([]);
       await act(async () => creation.resolve(persistedThread));
       expect(socket.sent).toEqual([]);
+      expect(scenario.appendRequests.map(({ data }) => data)).toEqual([
+        expect.objectContaining({ submissionId: "sub-first", ...referencedPayload }),
+      ]);
       await act(async () => admission.resolve(defaultSendResponse({ threadId: THREAD_ID })));
       expect(socket.sent.map((frame) => JSON.parse(frame))).toEqual([
         { type: "subscribe", threadId: THREAD_ID, lastSeq: "42" },
