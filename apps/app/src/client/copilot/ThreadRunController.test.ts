@@ -65,7 +65,9 @@ describe("ThreadRunController write outcomes", () => {
     const scenario = makeScenario({ retire: () => gate.promise });
     const session = {};
     scenario.controller.beginRecoverySession(session);
-    const row = scenario.store.getState().appendUserTurn("thread_1", "Hello");
+    const row = scenario.store
+      .getState()
+      .appendUserTurn("thread_1", [{ type: "text", text: "Hello" }]);
     const pending = scenario.controller.retireSubmission(
       "thread_1",
       "sub-1",
@@ -108,7 +110,9 @@ describe("ThreadRunController write outcomes", () => {
     scenario.controller.beginRecoverySession(sibling);
     scenario.controller.endRecoverySession(ended);
 
-    const endedRow = scenario.store.getState().appendUserTurn("thread_1", "Ended");
+    const endedRow = scenario.store
+      .getState()
+      .appendUserTurn("thread_1", [{ type: "text", text: "Ended" }]);
     await expect(
       scenario.controller.lookupSubmission(
         "thread_1",
@@ -119,7 +123,9 @@ describe("ThreadRunController write outcomes", () => {
     ).resolves.toMatchObject({ kind: "ambiguous" });
 
     // The sibling token still owns its own reconciliation and settles normally.
-    const siblingRow = scenario.store.getState().appendUserTurn("thread_1", "Sibling");
+    const siblingRow = scenario.store
+      .getState()
+      .appendUserTurn("thread_1", [{ type: "text", text: "Sibling" }]);
     await expect(
       scenario.controller.lookupSubmission(
         "thread_1",

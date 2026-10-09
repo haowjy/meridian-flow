@@ -18,7 +18,9 @@ It is not a thread replica: no assistant turns, no cursors, no rendered rows.
   activatedSkillSlugs) for every kind, a new chat's first send included: a
   replay rebuilt from text alone would drop its `@` references. A replay with
   the same `submissionId` but different payload trips the server's
-  `idempotency_conflict`. Never persist the TipTap draft snapshot.
+  `idempotency_conflict`. Never persist the TipTap draft snapshot. The
+  displayed writer row is built from the same blocks (`appendUserTurn`), so a
+  live or recovered row keeps each reference's document like the snapshot does.
 - Lifecycle: record before dispatch; retire on acknowledgement or definitive
   rejection; keep on ambiguous. The owning hook (`features/chat`) decides which
   outcome occurred; this module only stores and retires.
