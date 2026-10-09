@@ -54,6 +54,7 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
               error: t`Couldn't load recent documents.`,
             }}
           />
+          <RailEmptyHint>{t`Pick a document from the left or the chat to open it here.`}</RailEmptyHint>
         </div>
       </DockShell>
     </aside>

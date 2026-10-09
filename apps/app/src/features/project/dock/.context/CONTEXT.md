@@ -70,6 +70,12 @@ binaries open as viewer tabs through the viewer host. A store revision (see abov
 slow lookup from replacing a newer pick; an unresolvable document announces an error.
 The phone has no context rail, so a phone never opens a Recent row here.
 
+With no document open, the Chat screen's rail header shows the same chip, "Open document", through `DockTitleMenu` (one component for both states): it opens at the root list with the project title and
+no actions, and a pick opens in the dock like any other. On that screen the left project tree's
+file clicks are chat doors too (`LeftSidebar` opens through `useOpenChatDocument`, images, PDFs and
+binaries included since the dock's viewer host shows them) and the tree's highlighted row follows the
+dock document; on the Editor and Work screens and the phone a tree click is unchanged.
+
 Chat doors (link chips, receipt rows, passage and tool-result doors, `@` references) open
 through `useOpenChatDocument` (`../context/open-chat-document.ts`), the one wrapper they share
 over `useOpenProjectDocument`. It offers the resolved tab to `BesideChatContext`, which

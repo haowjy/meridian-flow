@@ -13,7 +13,8 @@ import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
-import { useOpenProjectDocument } from "../context/open-project-document";
+import { useOpenChatDocument, useOpensBesideChat } from "../context/open-chat-document";
+import { useDockViewStore } from "../dock/dock-view-store";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
@@ -59,14 +60,22 @@ export function LeftSidebar({
   onSelectContextPath,
   onCollapse,
 }: LeftSidebarProps) {
-  const openDocument = useOpenProjectDocument(projectId);
+  // A tree click is a document door like the chat's: beside the chat on the Chat screen,
+  // an Editor tab elsewhere (the screen rule lives in `useOpenChatDocument`).
+  const openDocument = useOpenChatDocument(projectId);
+  const besideChat = useOpensBesideChat();
   const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
-    if (!file.editable) {
+    // The dock hosts images, PDFs and binaries in its viewer; elsewhere they keep the route.
+    if (!file.editable && !besideChat) {
       onSelectContextPath(file.path, scheme);
       return;
     }
     void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
   };
+  // On the Chat screen the row to highlight is the document open in the dock.
+  const docked = useDockViewStore((state) =>
+    activeScreen === "chat" && state.occupant?.projectId === projectId ? state.occupant.tab : null,
+  );
 
   return (
     <nav
@@ -104,8 +113,8 @@ export function LeftSidebar({
           <ContextTreePanel
             projectId={projectId}
             editorWorkId={editorWorkId}
-            activeScheme={activeContextScheme}
-            activePath={activeContextPath}
+            activeScheme={docked ? docked.scheme : activeContextScheme}
+            activePath={docked ? docked.path : activeContextPath}
             onSelectFile={handleSelectFile}
           />
         ) : null}

@@ -35,6 +35,11 @@ export function claimDock(): DockClaim {
   return () => useDockViewStore.getState().revision === revision;
 }
 
+/** Whether chat doors (and the left tree) open documents beside the chat here: the Chat screen, wide. */
+export function useOpensBesideChat(): boolean {
+  return useContext(BesideChatContext) !== null;
+}
+
 export type ChatDocumentRequest = OpenProjectDocumentRequest & {
   /** Claimed when the door began, so a lookup before this open is inside the claim. */
   claim?: DockClaim;

@@ -2709,6 +2709,10 @@ msgstr ""
 msgid "Open conversation"
 msgstr ""
 
+#: src/features/project/dock/DockDocumentTitle.tsx
+msgid "Open document"
+msgstr ""
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
 msgstr ""
@@ -2798,6 +2802,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
+msgstr ""
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Pick a document from the left or the chat to open it here."
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts

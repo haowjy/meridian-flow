@@ -117,35 +117,44 @@ export function useProjectMenuSource({
   title,
   scratch,
   document,
-  documentOwner,
-  documentHeading,
 }: {
   projectId: string;
   /** The root heading: the project's title. */
   title: string;
   /** The Scratch to offer at the root, or null when no chat or Work is in view. */
   scratch: ScratchSource | null;
-  /** The open document's scheme and owner. */
-  document: { scheme: ProjectContextTreeScheme };
-  documentOwner: ContextOwner;
-  /** What to call the document's own area when it is not one the root offers. */
-  documentHeading: string;
+  /**
+   * The open document's scheme and owner, and what to call its own area when
+   * the root does not offer it; null when no document is open (the menu opens
+   * at the root).
+   */
+  document: {
+    scheme: ProjectContextTreeScheme;
+    owner: ContextOwner;
+    heading: string;
+  } | null;
 }): ProjectMenuSource {
   const projectViews = useContextCatalogViews(projectId, EDITOR_CONTEXT_SCHEMES, {
     workId: null,
   });
   const scratchArea = useScratchArea(projectId, scratch, { listed: true, id: "area:scratch" });
+  const documentScheme = document?.scheme ?? null;
+  const documentOwner = document?.owner ?? null;
+  const documentHeading = document?.heading ?? "";
   const sameAsScratch =
-    document.scheme === "scratch" &&
+    documentScheme === "scratch" &&
     scratch !== null &&
+    documentOwner !== null &&
     (scratch.owner.rootThreadId !== undefined
       ? scratch.owner.rootThreadId === documentOwner.rootThreadId
       : documentOwner.rootThreadId === undefined &&
         (scratch.owner.workId ?? null) === (documentOwner.workId ?? null));
-  const sameAsProject = (EDITOR_CONTEXT_SCHEMES as readonly string[]).includes(document.scheme);
-  const hiddenNeeded = !sameAsScratch && !sameAsProject;
-  const hidden = useContextCatalogView(projectId, document.scheme, {
-    ...documentOwner,
+  const sameAsProject =
+    documentScheme !== null &&
+    (EDITOR_CONTEXT_SCHEMES as readonly string[]).includes(documentScheme);
+  const hiddenNeeded = documentScheme !== null && !sameAsScratch && !sameAsProject;
+  const hidden = useContextCatalogView(projectId, documentScheme ?? "scratch", {
+    ...(documentOwner ?? {}),
     enabled: hiddenNeeded,
   });
 
@@ -160,14 +169,14 @@ export function useProjectMenuSource({
       listed: true,
     }));
     if (scratchArea) list.push(scratchArea);
-    if (hiddenNeeded)
+    if (hiddenNeeded && documentScheme && documentOwner)
       list.push({
         id: "area:document",
-        scheme: document.scheme,
+        scheme: documentScheme,
         owner: documentOwner,
-        name: schemeLabel(document.scheme),
+        name: schemeLabel(documentScheme),
         title: documentHeading,
-        icon: schemeIcon(document.scheme),
+        icon: schemeIcon(documentScheme),
         catalog: hidden.catalog,
         listed: false,
       });
@@ -176,7 +185,7 @@ export function useProjectMenuSource({
     projectViews,
     scratchArea,
     hiddenNeeded,
-    document.scheme,
+    documentScheme,
     documentOwner,
     documentHeading,
     hidden.catalog,
@@ -190,7 +199,9 @@ export function useProjectMenuSource({
     ? areas.find((area) => area.id === "area:document")
     : sameAsScratch
       ? scratchArea
-      : areas.find((area) => area.scheme === document.scheme);
+      : documentScheme
+        ? areas.find((area) => area.scheme === documentScheme)
+        : undefined;
   return {
     tree,
     tabFor: (rowId) => menuTabFor(areas, rowId),
