@@ -108,7 +108,7 @@ function activateOnKey(handler: () => void) {
   };
 }
 
-function Twistie({ expanded }: { expanded: boolean }) {
+export function Twistie({ expanded }: { expanded: boolean }) {
   return (
     <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
       <ChevronRight

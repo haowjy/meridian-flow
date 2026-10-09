@@ -11,7 +11,7 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { RailScratchControl } from "../chat/ChatScratch";
+import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
@@ -91,7 +91,13 @@ export function LeftSidebar({
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"
-        scratch={<RailScratchControl projectId={projectId} threadId={chatThreadId} />}
+        scratch={
+          <RailScratchSection
+            projectId={projectId}
+            threadId={chatThreadId}
+            editorWorkId={editorWorkId}
+          />
+        }
       >
         {contextLive ? (
           <ContextTreePanel

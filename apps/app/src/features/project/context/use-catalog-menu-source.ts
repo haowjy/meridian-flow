@@ -1,5 +1,5 @@
 /**
- * The tree behind a Scratch menu: what `DrillInMenu` and `DrillInSheet` browse.
+ * The tree behind a Scratch listing: what `DrillInMenu` browses and the rail's Scratch section draws.
  *
  * One source serves the left rail's Scratch control and the dock document's
  * title chip, so both list the same notes the same way. Its catalog is the
@@ -42,6 +42,7 @@ function listChildren(catalog: CatalogContextView, parentId: string | null): Dri
   return sortNodes(
     catalog.children(parentId ?? catalog.root.entryId).map((node) => ({
       id: node.entryId,
+      documentId: node.kind === "dir" ? undefined : node.documentId,
       name: node.name,
       folder: node.kind === "dir",
       icon: node.kind === "dir" ? Folder : fileKindIcon(node),

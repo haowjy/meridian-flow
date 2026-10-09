@@ -1,16 +1,17 @@
 /**
- * RailSection — building blocks for the right context rail's lists (Recent and
- * Results). They are the left file tree's own parts: section heads are
+ * RailSection — building blocks for the lists drawn beside the left file tree:
+ * the right context rail's Recent and the left rail's Scratch. They are the
+ * tree's own parts: section heads are
  * `RailPaneHeader`, file rows wear `contextTreeFileRowClassName` with the
- * tree's `RowIcon`, and the empty hint takes the tree's. The right rail
- * therefore reads as the same surface as the left one.
+ * tree's `RowIcon` and `Twistie`, and the empty hint takes the tree's. They
+ * therefore read as the same surface as the tree.
  */
 import { Trans } from "@lingui/react/macro";
 import type { LucideIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { RowIcon, rowPaddingLeft } from "../context/ContextTreeRows";
+import { RowIcon, rowPaddingLeft, Twistie } from "../context/ContextTreeRows";
 import { contextTreeFileRowClassName } from "../context/context-row-geometry";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 
@@ -51,6 +52,8 @@ export function RailFileRow({
   ariaLabel,
   onOpen,
   trailing,
+  active = false,
+  depth = 1,
 }: {
   icon: LucideIcon;
   name: string;
@@ -58,17 +61,21 @@ export function RailFileRow({
   ariaLabel?: string;
   onOpen: () => void;
   trailing?: ReactNode;
+  /** The document is open beside the writer; the row keeps the tree's selected fill. */
+  active?: boolean;
+  depth?: number;
 }) {
   return (
     <div
-      className={contextTreeFileRowClassName(false)}
-      style={{ paddingLeft: rowPaddingLeft(1) }}
+      className={contextTreeFileRowClassName(active)}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
       title={title}
     >
       <button
         type="button"
         onClick={onOpen}
         aria-label={ariaLabel}
+        aria-current={active ? "true" : undefined}
         className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
@@ -76,6 +83,39 @@ export function RailFileRow({
         <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
       </button>
       {trailing}
+    </div>
+  );
+}
+
+/** One folder row, as the tree draws it: a twistie, the folder glyph and its name. */
+export function RailFolderRow({
+  icon,
+  name,
+  expanded,
+  onToggle,
+  depth = 1,
+}: {
+  icon: LucideIcon;
+  name: string;
+  expanded: boolean;
+  onToggle: () => void;
+  depth?: number;
+}) {
+  return (
+    <div
+      className={contextTreeFileRowClassName(false)}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="focus-ring flex min-w-0 flex-1 items-center self-stretch rounded-md text-left"
+      >
+        <Twistie expanded={expanded} />
+        <RowIcon icon={icon} />
+        <span className="ml-0.5 min-w-0 flex-1 truncate">{name}</span>
+      </button>
     </div>
   );
 }

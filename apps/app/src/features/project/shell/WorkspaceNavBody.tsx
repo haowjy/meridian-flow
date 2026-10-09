@@ -27,7 +27,7 @@ export type WorkspaceNavBodyProps = {
   presentation: WorkspaceNavPresentation;
   /** Persistent navigation content between the controls and account row. */
   children?: ReactNode;
-  /** The chat's Scratch control, pinned above the account row. */
+  /** The chat's Scratch section, pinned above the account row. */
   scratch?: ReactNode;
 };
 
@@ -63,11 +63,11 @@ export function WorkspaceNavBody({
       <div className="min-h-0 flex-1">{children}</div>
 
       {scratch ? (
-        // The control renders nothing with no chat on screen; `empty:hidden` drops its divider then.
+        // The section renders nothing with no chat on screen; `empty:hidden` drops its divider then.
+        // At most 40% of the rail, so the tree above keeps the rest; the section scrolls itself.
         <div
           className={cn(
-            "shrink-0 border-t border-border-subtle px-2 empty:hidden",
-            phone ? "pt-2" : "py-1.5",
+            "flex max-h-[40%] min-h-0 shrink-0 flex-col border-t border-border-subtle py-1 empty:hidden",
           )}
         >
           {scratch}

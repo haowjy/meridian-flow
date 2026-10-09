@@ -589,7 +589,6 @@ msgstr ""
 
 #. placeholder {0}: folder.name
 #: src/components/app/DrillInMenu.tsx
-#: src/components/app/DrillInSheet.tsx
 msgid "Back from {0}"
 msgstr ""
 
@@ -830,8 +829,8 @@ msgid "Choose a listed option"
 msgstr ""
 
 #: src/components/app/DrillInSheet.tsx
-msgid "Choose a note to open."
-msgstr ""
+#~ msgid "Choose a note to open."
+#~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
@@ -2657,7 +2656,6 @@ msgid "Nothing here yet"
 msgstr ""
 
 #: src/components/app/DrillInMenu.tsx
-#: src/components/app/DrillInSheet.tsx
 msgid "Nothing here yet."
 msgstr ""
 

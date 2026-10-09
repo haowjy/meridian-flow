@@ -7,7 +7,6 @@ import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
-import { ChatScratchSheet } from "../chat/ChatScratch";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
@@ -58,11 +57,6 @@ export function MobileProject(props: MobileProjectProps) {
   };
   useDockReveal((view) => openChatSheet(view));
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [scratchOpen, setScratchOpen] = useState(false);
-  // The sheet belongs to the chat it was opened for: leaving that chat (or the
-  // chat screen) closes it rather than leaving a request for the next chat.
-  const scratchChatId = displayedChatThreadId(props.chatDisplay);
-  useEffect(() => setScratchOpen(false), [scratchChatId]);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
   const localTab =
@@ -193,13 +187,6 @@ export function MobileProject(props: MobileProjectProps) {
         onSelectScreen={props.onSelectScreen}
         onSelectContextPath={props.onSelectContextPath}
         chatThreadId={displayedChatThreadId(props.chatDisplay)}
-        onOpenScratch={() => setScratchOpen(true)}
-      />
-      <ChatScratchSheet
-        projectId={props.projectId}
-        threadId={displayedChatThreadId(props.chatDisplay)}
-        open={scratchOpen}
-        onOpenChange={setScratchOpen}
       />
     </div>
   );

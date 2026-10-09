@@ -9,6 +9,7 @@ export function RailPaneHeader({
   label,
   icon: Icon,
   ariaLabel,
+  title,
   expanded,
   onExpandedChange,
   actions,
@@ -19,6 +20,8 @@ export function RailPaneHeader({
   icon: LucideIcon;
   /** Optional richer accessible name (e.g. "Work: {name}"). */
   ariaLabel?: string;
+  /** Tooltip, for a header whose richer name is not shown as a line. */
+  title?: string;
   expanded: boolean;
   /** Click toggles; ArrowLeft/ArrowRight force collapse/expand. */
   onExpandedChange: (expanded: boolean) => void;
@@ -32,6 +35,7 @@ export function RailPaneHeader({
         type="button"
         aria-expanded={expanded}
         aria-label={ariaLabel}
+        title={title}
         onClick={() => onExpandedChange(!expanded)}
         onKeyDown={(event) => {
           // VS Code pane header keys: Left collapses, Right expands.
