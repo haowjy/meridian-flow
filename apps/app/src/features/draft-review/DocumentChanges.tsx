@@ -1,20 +1,28 @@
 /**
- * OpenFileChanges — the open file's body under its heading in `ReviewFiles`: its
- * changes in document order, or the state that stands in for them (loading,
- * Applying or Discarding the last change, "No changes left" with the way on,
- * formatting-only). The dock's Changes tab and the phone's changes sheet both
- * render it, so the file's state reads the same in either list; the rows
- * themselves are `DocumentChangeRows`. `touch` raises the rows and buttons to 44px.
+ * DocumentChanges — the open review's own change list: its changes in document
+ * order, or the state that stands in for them (loading, Applying or Discarding
+ * the last change, "No changes left" with the way on, formatting-only,
+ * marks hidden). The identity row's list popover and the phone's change sheet
+ * both render it, so the document's state reads the same in either; the rows
+ * themselves are `DocumentChangeRows`. A row focuses its change in the
+ * manuscript. `touch` raises the rows and buttons to 44px.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
-import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
-import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
+import { DocumentChangeRows } from "./DocumentChangeRows";
+import type { ReviewFileTarget } from "./review-files";
+import type { DraftReviewController } from "./useDraftReviewController";
+import type { ReviewChangesView } from "./useReviewChanges";
 
-export function OpenFileChanges({
+/** The name of the button that opens the document's change list: the count when there is one. */
+export function changeListLabel(count: number): string {
+  if (count === 0) return t`Show the changes list`;
+  return count === 1 ? t`Show the 1 change` : t`Show the ${count} changes`;
+}
+
+export function DocumentChanges({
   view,
   controller,
   next,

@@ -81,11 +81,13 @@ Two self-contained surfaces, both resolving their own state from
   Live; its Draft item opens the review.
 - `DraftReviewBand` — the review controls inside `DocumentIdentityBar`, in the
   same row as the path (there is no separate header above it), once
-  `inlineReview.shown`: the version chip (Draft), the stepper, Show changes,
+  `inlineReview.shown`: the version chip (Draft), the document's change-list
+  button (an icon, in every review state, opening a popover with
+  `DocumentChanges` and "All changes in <Work>"), the stepper, Show changes,
   Discard draft and Apply draft. The row takes the dock tint while a draft is
   reviewed. As the row narrows it collapses in a fixed order (folders, Show
-  changes label, stepper count, file name, button labels); the chip, Discard
-  and Apply stay. A line under the row appears only for a failed whole-draft
+  changes label, stepper count, file name, button labels); the chip, the list
+  icon, Discard and Apply stay. A line under the row appears only for a failed whole-draft
   command, "No changes left" with Next draft, or "Formatting changes remain".
   Its parts live in `features/draft-review`.
 - The focused change's bar is the `review-change-bar` chrome surface

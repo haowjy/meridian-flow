@@ -8,14 +8,15 @@
  * same `useReviewHeader` model. The row appears with the painted review, never
  * over the live text held until then (the caller gates it on `inlineReview.shown`).
  *
- * The list button is the way to the Work's draft files and Apply all, so it
- * stays while the row shows: the open file is always in that list, even with no
- * change left to step through (formatting only, or just finished). Only the
- * stepper depends on the change count.
+ * The list button opens this document's changes and the way to the Work's other
+ * drafts, so it stays while the row shows, even with no change left to step
+ * through (formatting only, or just finished). Only the stepper depends on the
+ * change count.
  */
 import { t } from "@lingui/core/macro";
 import { List } from "lucide-react";
 
+import { changeListLabel } from "@/features/draft-review/DocumentChanges";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { ReviewHeaderNotices } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
@@ -75,13 +76,7 @@ export function MobileReviewHeader({
         <button
           type="button"
           aria-haspopup="dialog"
-          aria-label={
-            count === 0
-              ? t`Show the draft files`
-              : count === 1
-                ? t`Show the 1 change`
-                : t`Show the ${count} changes`
-          }
+          aria-label={changeListLabel(count)}
           onClick={onOpenList}
           className="focus-ring flex h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-md px-2 text-sm text-muted-foreground tabular-nums active:scale-[0.98]"
         >

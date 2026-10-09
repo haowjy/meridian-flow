@@ -192,9 +192,16 @@ export function useOpenEditorReview(): EditorReviewCommand {
   return command;
 }
 
-/** Draft currently crossing the route-to-Editor handoff, if any. */
+/**
+ * Draft currently crossing the route-to-Editor handoff, if any: its route
+ * command is running, or its launch is waiting for the Editor to claim it (the
+ * route can settle before the Editor mounts the document). The address owner
+ * restores no review for it meanwhile; a restore is a second launch, and the
+ * latest one decides which change the review opens on.
+ */
 export function usePendingEditorReviewDraftId(): string | null {
-  return useContext(EditorReviewIntentContext)?.routingDraftId ?? null;
+  const handoff = useContext(EditorReviewIntentContext);
+  return handoff?.routingDraftId ?? handoff?.intent?.draftId ?? null;
 }
 
 /**

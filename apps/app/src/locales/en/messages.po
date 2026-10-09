@@ -101,11 +101,6 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
-#. placeholder {0}: file.changeCount
-#: src/features/draft-review/ReviewFiles.tsx
-msgid "{0, plural, one {# change} other {# changes}}"
-msgstr "{0, plural, one {# change} other {# changes}}"
-
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 msgid "{0, plural, one {# more draft did not apply} other {# more drafts did not apply}}"
@@ -328,9 +323,9 @@ msgstr "{title} added to Favorites"
 msgid "{title} removed from Favorites"
 msgstr "{title} removed from Favorites"
 
-#: src/features/draft-review/ReviewFiles.tsx
-msgid "{total, plural, one {# draft to review} other {# drafts to review}}"
-msgstr "{total, plural, one {# draft to review} other {# drafts to review}}"
+#: src/features/project/work/WorkChanges.tsx
+msgid "{total, plural, one {Discard 1 draft?} other {Discard all # drafts?}}"
+msgstr "{total, plural, one {Discard 1 draft?} other {Discard all # drafts?}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -509,10 +504,6 @@ msgstr "AI"
 msgid "AI assistant"
 msgstr "AI assistant"
 
-#: src/features/project/dock/DockChangesView.tsx
-msgid "AI edits wait here for your review."
-msgstr "AI edits wait here for your review."
-
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
@@ -541,17 +532,17 @@ msgstr "Alignment applies to paragraphs, headings, and tables."
 msgid "All"
 msgstr "All"
 
+#: src/features/draft-review/WorkChangesLink.tsx
+msgid "All changes in {name}"
+msgstr "All changes in {name}"
+
 #: src/features/project/chat-index/ChatIndexButton.tsx
 msgid "All chats"
 msgstr "All chats"
 
-#: src/features/draft-review/ReviewFiles.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "All drafts"
 msgstr "All drafts"
-
-#: src/features/draft-review/ReviewFiles.tsx
-msgid "All drafts in {title}"
-msgstr "All drafts in {title}"
 
 #: src/features/project/work/useWorkChrome.tsx
 msgid "All Work"
@@ -560,10 +551,6 @@ msgstr "All Work"
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr "Alt text"
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "Another Work"
-msgstr "Another Work"
 
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
@@ -596,11 +583,11 @@ msgstr "Apply"
 msgid "Apply all"
 msgstr "Apply all"
 
-#: src/features/draft-review/ReviewFiles.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Apply all {total} drafts"
 msgstr "Apply all {total} drafts"
 
-#: src/features/draft-review/ReviewFiles.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Apply all 1 draft"
 msgstr "Apply all 1 draft"
 
@@ -613,8 +600,8 @@ msgstr "Apply draft"
 msgid "Apply draft or Discard draft handles this."
 msgstr "Apply draft or Discard draft handles this."
 
+#: src/features/draft-review/DocumentChanges.tsx
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Applying"
 msgstr "Applying"
 
@@ -670,9 +657,9 @@ msgstr "Back to {title}"
 msgid "Back to chat"
 msgstr "Back to chat"
 
+#: src/features/draft-review/DocumentChanges.tsx
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
-#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Back to live"
 msgstr "Back to live"
 
@@ -802,15 +789,21 @@ msgstr "Changed {relativeTime}"
 msgid "Changed 1 Work"
 msgstr "Changed 1 Work"
 
-#: src/features/project/dock/DockHeader.tsx
 #: src/features/project/mobile/MobileChangeSheet.tsx
 msgid "Changes"
 msgstr "Changes"
 
-#. placeholder {0}: fileName(file)
-#: src/features/draft-review/ReviewFiles.tsx
-msgid "Changes in {0}"
-msgstr "Changes in {0}"
+#: src/features/draft-review/DocumentChangeRows.tsx
+msgid "Changes couldn’t load"
+msgstr "Changes couldn’t load"
+
+#: src/features/project/work/WorkChangeFile.tsx
+msgid "Changes in {name}"
+msgstr "Changes in {name}"
+
+#: src/features/project/work/WorkChanges.tsx
+msgid "Changes to review"
+msgstr "Changes to review"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Changing work"
@@ -1703,6 +1696,7 @@ msgstr "Diagram"
 #: src/features/draft-review/ReviewChangeParts.tsx
 #: src/features/editor/DraftReviewBand.tsx
 #: src/features/project/ProjectCreationNotice.tsx
+#: src/features/project/work/WorkChanges.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
 msgstr "Discard"
@@ -1711,11 +1705,11 @@ msgstr "Discard"
 msgid "Discard all"
 msgstr "Discard all"
 
-#: src/features/draft-review/ReviewFiles.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Discard all {total} drafts"
 msgstr "Discard all {total} drafts"
 
-#: src/features/draft-review/ReviewFiles.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Discard all 1 draft"
 msgstr "Discard all 1 draft"
 
@@ -1740,8 +1734,8 @@ msgstr "Discard with your edits"
 msgid "Discarded"
 msgstr "Discarded"
 
+#: src/features/draft-review/DocumentChanges.tsx
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Discarding"
 msgstr "Discarding"
 
@@ -1827,10 +1821,6 @@ msgstr "Drafted file"
 #: src/features/chat/command-descriptor.ts
 msgid "Drafting"
 msgstr "Drafting"
-
-#: src/features/project/work/WorkDrafts.tsx
-msgid "Drafts to review"
-msgstr "Drafts to review"
 
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
@@ -2064,9 +2054,13 @@ msgstr "Form payload is malformed."
 msgid "Formatting changes remain"
 msgstr "Formatting changes remain"
 
-#: src/features/project/dock/OpenFileChanges.tsx
+#: src/features/draft-review/DocumentChanges.tsx
 msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr "Formatting changes remain. Apply draft or Discard draft finishes them."
+
+#: src/features/project/work/WorkChangeFile.tsx
+msgid "Formatting changes remain. Review the draft to apply or discard them."
+msgstr "Formatting changes remain. Review the draft to apply or discard them."
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -2303,6 +2297,7 @@ msgid "Jump to in chat"
 msgstr "Jump to in chat"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Keep"
 msgstr "Keep"
 
@@ -2652,6 +2647,10 @@ msgstr "New chat"
 msgid "New document"
 msgstr "New document"
 
+#: src/features/project/work/WorkChangeFile.tsx
+msgid "New document. Review it to apply."
+msgstr "New document. Review it to apply."
+
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -2680,8 +2679,8 @@ msgstr "New Work"
 msgid "Next change"
 msgstr "Next change"
 
+#: src/features/draft-review/DocumentChanges.tsx
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/OpenFileChanges.tsx
 msgid "Next draft"
 msgstr "Next draft"
 
@@ -2703,8 +2702,9 @@ msgstr "No archived Work."
 msgid "No billing activity yet."
 msgstr "No billing activity yet."
 
+#: src/features/draft-review/DocumentChanges.tsx
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-#: src/features/project/dock/OpenFileChanges.tsx
+#: src/features/project/work/WorkChangeFile.tsx
 msgid "No changes left"
 msgstr "No changes left"
 
@@ -2754,10 +2754,6 @@ msgstr "No messages yet."
 #: src/features/agents/AgentPicker.tsx
 msgid "No model"
 msgstr "No model"
-
-#: src/features/project/dock/DockChangesView.tsx
-msgid "No pending changes"
-msgstr "No pending changes"
 
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
@@ -3018,11 +3014,7 @@ msgstr "Paste"
 msgid "Paused to reread"
 msgstr "Paused to reread"
 
-#: src/features/project/work/WorkDrafts.tsx
-msgid "Pending draft"
-msgstr "Pending draft"
-
-#: src/features/project/work/WorkDrafts.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
 
@@ -3362,11 +3354,15 @@ msgstr "Resume where I left off on any device"
 msgid "Retry"
 msgstr "Retry"
 
+#: src/features/draft-review/DocumentChangeRows.tsx
+msgid "Retry changes"
+msgstr "Retry changes"
+
 #: src/features/home/ProjectLibrary.tsx
 msgid "Retry loading"
 msgstr "Retry loading"
 
-#: src/features/project/work/WorkDrafts.tsx
+#: src/features/project/work/WorkChanges.tsx
 msgid "Retry Pending drafts"
 msgstr "Retry Pending drafts"
 
@@ -3394,10 +3390,6 @@ msgstr "Retry Work"
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Returned from the billing portal."
 msgstr "Returned from the billing portal."
-
-#: src/features/draft-review/ReviewFiles.tsx
-msgid "Review"
-msgstr "Review"
 
 #: src/features/chat/DraftDock.tsx
 msgid "Review draft"
@@ -3594,17 +3586,17 @@ msgstr "Show less"
 msgid "Show more"
 msgstr "Show more"
 
-#: src/features/project/mobile/MobileReviewHeader.tsx
+#: src/features/draft-review/DocumentChanges.tsx
 msgid "Show the {count} changes"
 msgstr "Show the {count} changes"
 
-#: src/features/project/mobile/MobileReviewHeader.tsx
+#: src/features/draft-review/DocumentChanges.tsx
 msgid "Show the 1 change"
 msgstr "Show the 1 change"
 
-#: src/features/project/mobile/MobileReviewHeader.tsx
-msgid "Show the draft files"
-msgstr "Show the draft files"
+#: src/features/draft-review/DocumentChanges.tsx
+msgid "Show the changes list"
+msgstr "Show the changes list"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Show the whole brief"
@@ -4173,10 +4165,6 @@ msgstr "This document is read only right now."
 msgid "This document is still opening."
 msgstr "This document is still opening."
 
-#: src/features/draft-review/ReviewFiles.tsx
-msgid "This draft"
-msgstr "This draft"
-
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
 msgstr "This draft is no longer here. It may have been applied or discarded elsewhere."
@@ -4442,11 +4430,10 @@ msgid "Untitled chat"
 msgstr "Untitled chat"
 
 #: src/features/chat/document-display-name.ts
-#: src/features/draft-review/ReviewFiles.tsx
 msgid "Untitled document"
 msgstr "Untitled document"
 
-#: src/features/project/work/WorkDrafts.tsx
+#: src/features/project/work/WorkChangeFile.tsx
 msgid "Untitled manuscript"
 msgstr "Untitled manuscript"
 

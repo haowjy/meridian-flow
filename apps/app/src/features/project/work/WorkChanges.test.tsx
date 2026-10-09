@@ -17,7 +17,6 @@ import { ThreadStoreProvider } from "@/client/stores";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import {
-  DraftReviewBoundary,
   type DraftReviewContextValue,
   EditorReviewScope,
 } from "@/features/draft-review/DraftReviewProvider";
@@ -495,6 +494,8 @@ describe("Apply all and Discard all", () => {
   });
 });
 
+// The Work page sits under no draft review boundary of its own: the project shell
+// offers the Editor's scope (`EditorReviewScope`) and nothing ambient.
 describe("the scope that runs a Work page's batch", () => {
   const scopeFor = (workId: string) =>
     ({
@@ -528,17 +529,15 @@ describe("the scope that runs a Work page's batch", () => {
     };
     await withReactRoot(
       surface(
-        <DraftReviewBoundary value={scopes.chat}>
-          <EditorReviewScope value={scopes.editor}>
-            <WorkReviewScopesProvider chat={scopes.chat} third={scopes.third}>
-              <WorkChanges
-                projectId="project-a"
-                workId={pageWork as ParsedRequestId}
-                matchesSearch={() => true}
-              />
-            </WorkReviewScopesProvider>
-          </EditorReviewScope>
-        </DraftReviewBoundary>,
+        <EditorReviewScope value={scopes.editor}>
+          <WorkReviewScopesProvider chat={scopes.chat} third={scopes.third}>
+            <WorkChanges
+              projectId="project-a"
+              workId={pageWork as ParsedRequestId}
+              matchesSearch={() => true}
+            />
+          </WorkReviewScopesProvider>
+        </EditorReviewScope>,
       ),
       () => run(scopes),
     );
@@ -605,17 +604,15 @@ describe("the scope that runs a Work page's batch", () => {
         controller: { ...scopes.third.controller, dispositionLocked: archived },
       } as DraftReviewContextValue;
       return (
-        <DraftReviewBoundary value={scopes.chat}>
-          <EditorReviewScope value={scopes.editor}>
-            <WorkReviewScopesProvider chat={scopes.chat} third={third}>
-              <WorkChanges
-                projectId="project-a"
-                workId={"work-t" as ParsedRequestId}
-                matchesSearch={() => true}
-              />
-            </WorkReviewScopesProvider>
-          </EditorReviewScope>
-        </DraftReviewBoundary>
+        <EditorReviewScope value={scopes.editor}>
+          <WorkReviewScopesProvider chat={scopes.chat} third={third}>
+            <WorkChanges
+              projectId="project-a"
+              workId={"work-t" as ParsedRequestId}
+              matchesSearch={() => true}
+            />
+          </WorkReviewScopesProvider>
+        </EditorReviewScope>
       );
     }
     await withReactRoot(surface(<Page />), async () => {

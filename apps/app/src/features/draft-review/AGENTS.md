@@ -1,7 +1,7 @@
 # features/draft-review — the writer's changes under review
 
 The pieces every surface shows a review's changes with: the change list's rows,
-the focused change's bar, the stepper, the Draft chip and its menu, the file list, the toast. One change
+the focused change's bar, the stepper, the Draft chip and its menu, the document's change list, the toast. One change
 is one server closure class. The feature also owns the review's state and commands:
 `DraftReviewProvider` (the scope owner), `useDraftReviewController` and
 `draft-review-session` (the command session), `ReviewMessageText` (refusal and
@@ -36,7 +36,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
 - **`useReviewChanges(controller)`** reads the preview (`useDraftPreview`) and
   the change command records and returns the changes, the focused one, and
   `focus`, `step`, `apply`, `discard`. It takes the controller as an argument:
-  the review lives in the **Editor** scope and the dock sits in the Chat's, so a
+  the review lives in the **Editor** scope and the Work page and the chat's strip sit in other scopes, so a
   surface outside the Editor passes `useEditorDraftReview().controller`.
 - **Any draft's change list, any draft's selection commands.**
   `DocumentChangeRows` renders a `DraftChangesView` (`draft-changes`): the open
@@ -99,22 +99,23 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   per Work today, so those are the two; listing drafts of one document across
   Works needs an endpoint the server does not have), plus Rename, and on the
   phone Apply draft, Discard draft and Hide changes. It names no other file.
-- **One file order, one Changes list.** Every list of draft files (composer strip,
-  dock Changes tab, Work files, phone changes sheet, Next draft) uses
+- **Three scopes, three surfaces; one file order.** Each list of changes is 1:1
+  with the thing it sits on. This chat's changes are the composer strip. This
+  document's are `DocumentChanges` (`DocumentChangeRows` plus the open review's
+  state lines), in the identity row's list popover on the desktop
+  (`DraftReviewBand`, a button present in every review state) and in the phone's
+  change sheet, each ending in `WorkChangesLink` ("All changes in <Work>", one
+  transition to the Work's Files tab, nothing in No Work). This Work's are the Work
+  page's Changes to review (`features/project/work/WorkChanges`): every draft file
+  once, a row expanding in place to its changes, with Apply all and Discard all
+  (whole drafts, `disposeDrafts`) in its menu. Every list of draft files uses
   `sortDraftFiles` (name, then id; never update time, which reshuffles as the AI
-  writes). Moving between files and the Work-wide Apply all and Discard all
-  live in `ReviewFiles` (dock tab and phone sheet, built by
-  `useReviewFileList`). One list is one Work: its menu and its count are of the
-  rows it acts on (a finished review still shown is listed, not counted), and the
-  chat's drafts from another Work are a second named list with its own menu. The
-  files keep their identity when only the focus moves, and a closed row is
-  memoized. Every file once, the open file expanded in place with
-  its changes in document order (`reviewChanges` breaks ties on class id so a
-  refreshed preview never reorders them).
+  writes), and a change list keeps document order (`reviewChanges` breaks ties on
+  class id so a refreshed preview never reorders them). Moving between files on the
+  desktop is the Work page or Next draft; the dock keeps no draft state.
 - **Presentational components take no controller.** `ReviewChangeRow`,
-  `ReviewChangeBar`, `ReviewStepper`, `DraftSwitcher`, `ReviewFiles` and
-  `ReviewToast` are handed props and callbacks, so the phone's change sheet and
-  bar reuse them. `touch` is their phone form (44px targets); `DraftSwitcher`
+  `ReviewChangeBar`, `ReviewStepper`, `DraftSwitcher` and `ReviewToast` are handed
+  props and callbacks, so the phone's change sheet and bar reuse them. `touch` is their phone form (44px targets); `DraftSwitcher`
   takes `draftCommands` and `marks` to carry what the phone header has no room for.
 
 ## Key rules
@@ -196,7 +197,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   last change's command, never from how many changes are left on screen.
   `pending` (with the mode and the document's name): the command is in flight,
   its outcome unknown. The change is already gone from the list (optimistic),
-  but header and dock say "Applying" or "Discarding", not "No changes left", and
+  but the header and the change list say "Applying" or "Discarding", not "No changes left", and
   offer no way on. `closed`: the server's `draftClosed: true` answer. "Last
   change" is predicted from what **remains**: unclassified hunks and
   non-actionable classes count (`reviewChanges` lists them), so a last classified
@@ -208,11 +209,11 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   state, set from the answer before the list and preview re-reads; neither the
   provider nor the address owner exits a closed review because its draft left
   the list. The client keeps no list of "cleared" drafts. `useReviewChanges`
-  derives `completing`, `finished` and `unlisted` once (header and dock all read
+  derives `completing`, `finished` and `unlisted` once (the header and the lists all read
   them). `finished` is `completion.phase === "closed"` and nothing else: an empty
   list never means finished. `unlisted` is a draft that is still open whose read
   lists no change and no command hides one (formatting the server does not
-  represent): the header and dock say "Formatting changes remain", with Apply
+  represent): the header and the change list say "Formatting changes remain", with Apply
   draft and Discard draft available and no Next draft.
 - The editor follows it. A last Discard shows the warm live editor at the click
   (live already is the finished text, and the review room's reset would show
@@ -245,8 +246,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   whole-draft Discard has no unknown outcome: a lost answer is `discard-offline`. The copy promises no automatic update: only
   a read after the failure can resolve the change, and one can find it still there. A rejected
   whole-draft Apply is held on that draft's record (`apply-offline`, `apply-refused`, `apply-server-error`) and shown
-  wherever the draft is listed (switcher row, composer strip, Work files, Changes
-  tab) after the review moved on to the next draft; it never navigates back.
+  wherever the draft is listed (switcher row, composer strip, the Work page's
+  Changes to review) after the review moved on to the next draft; it never navigates back.
   The review the writer is in also says it: `useReviewHeader.failedElsewhere`
   lists the Work's other drafts that hold a refusal or lost answer, and
   `ReviewHeaderNotices` shows each by name with an Open button, on both shells

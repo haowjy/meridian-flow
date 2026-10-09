@@ -1,7 +1,7 @@
 # QA: draft-review runtime probes
 
 Repeatable browser probes for the AI draft-review surface (DraftDock, bulk
-dispositions, review-from-dock). Run them whenever a change touches draft
+dispositions, review from the Work page). Run them whenever a change touches draft
 disposition state, the dock, or the review launcher — they catch the class of
 bug that unit tests around React Query state miss: stale-row windows, silent
 no-op verbs, stuck pending states.
@@ -18,18 +18,17 @@ no-op verbs, stuck pending states.
   Capture `agent-browser console` and `errors` at the end of every scenario —
   a clean console is part of every pass criterion below.
 
-## Probe A — review-from-dock
+## Probe A — review from the Work page
 
-Regression guard for #152 (server sent `contextPath: null`, making the dock's
-Review verb a silent no-op).
+Regression guard for #152 (server sent `contextPath: null`, making a draft
+row's Review a silent no-op).
 
 1. Get the mock assistant to produce a draft on an existing document. Open the
-   dock's Changes view.
+   Work page's Files tab ("Changes to review").
 2. The row must show the real document title, not a placeholder.
-3. Click Review. PASS: the app navigates to the Context view for that document
+3. Click the file's name. PASS: the app navigates to the Context view for that document
    (`screen=context&scheme=manuscript&path=<doc path>` in the URL) and the
-   inline review UI appears in the editor. FAIL: dock switches views but
-   nothing else happens.
+   inline review UI appears in the editor. FAIL: nothing happens.
 4. Repeat with a draft that creates a **new** document (write directive
    targeting a filename that doesn't exist). PASS: the dock row shows the
    `New` badge; the editor tab opens and inline review renders before Apply

@@ -1,35 +1,32 @@
 /**
- * DockShell — the tabbed container both dock occupants render through.
+ * DockShell — the container both dock occupants render through.
  *
- * Gives the dock its one header row (view switch + close, via a caller-supplied
- * header slot) and swaps the body between the occupant's native content
- * (`children`) and the work-scoped Changes view. The header only appears in
- * `dock` placement; in `center` the shell is a passthrough so the chat surface
- * can move center↔dock without its live subtree ever reconciling to a
- * different position (the persistent-surface invariant — `children` sits at
- * the same tree depth in both placements).
+ * Gives the dock its one header row (via a caller-supplied header slot) and, on
+ * Work, swaps the body between the occupant's native content (`children`) and
+ * the transient Work file view. The header only appears in `dock` placement; in
+ * `center` the shell is a passthrough so the chat surface can move center↔dock
+ * without its live subtree ever reconciling to a different position (the
+ * persistent-surface invariant: `children` sits at the same tree depth in both
+ * placements).
  *
  * The header is a slot, not a fixed component: the desktop dock renders
  * `DockHeader`, and the phone chat sheet renders its own header built from
- * `MobileTopBar` chrome. `DockShell` owns only the view-switch state
- * (`useDockView`) and hands it to whichever header the caller supplies.
+ * `MobileTopBar` chrome. `DockShell` owns only the view state (`useDockView`)
+ * and hands it to whichever header the caller supplies.
  *
- * The primary body stays MOUNTED when Changes is active: chat must survive a
+ * The primary body stays MOUNTED while the file view shows: chat must survive a
  * view switch the same way it survives a collapsed dock, so it is hidden and
- * `inert` rather than unmounted. Changes overlays it, so nothing reflows.
+ * `inert` rather than unmounted. The file view overlays it, so nothing reflows.
  */
 
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 
-import { useDraftReview, useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { hasReviewFiles } from "@/features/draft-review/review-files";
 import { cn } from "@/lib/utils";
 
 import type { ScreenKey } from "../shell/screens";
-import { DockChangesView } from "./DockChangesView";
 import { DockFileView } from "./DockFileView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
-import { useDockView, withoutEmptyChanges } from "./dock-view-store";
+import { useDockView } from "./dock-view-store";
 
 export type DockShellProps = {
   projectId: string;
@@ -47,32 +44,10 @@ export function DockShell({
   renderHeader,
   children,
 }: DockShellProps) {
-  const dockView = useDockView(screen);
-  const { groups } = useDraftReview();
-  // The Editor's review shows here too, so Changes stays reachable while it is
-  // open or its Work has drafts, even when the chat is in another Work.
-  const editorReview = useEditorDraftReview();
-  const hasChanges =
-    hasReviewFiles(groups) ||
-    hasReviewFiles(editorReview.groups) ||
-    editorReview.controller.inlineReview !== null;
-  const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
-  const { setView, file } = dockView;
+  const { view, views, setView, file } = useDockView(screen);
   const inDock = placement === "dock";
-  const overlay = !inDock
-    ? null
-    : view === "file" && screen === "work" && file
-      ? "file"
-      : view === "changes"
-        ? "changes"
-        : null;
-  const showPrimary = overlay === null;
-
-  useEffect(() => {
-    if (!hasChanges && dockView.view === "changes") {
-      setView(primaryView);
-    }
-  }, [dockView.view, hasChanges, primaryView, setView]);
+  const showFile = inDock && view === "file" && screen === "work" && file !== null;
+  const showPrimary = !showFile;
 
   return (
     <>
@@ -94,8 +69,7 @@ export function DockShell({
         >
           {typeof children === "function" ? children(showPrimary) : children}
         </div>
-        {overlay === "changes" ? <DockChangesView className="absolute inset-0" /> : null}
-        {overlay === "file" && file ? (
+        {showFile && file ? (
           <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
             <DockFileView projectId={projectId} file={file} />
           </div>

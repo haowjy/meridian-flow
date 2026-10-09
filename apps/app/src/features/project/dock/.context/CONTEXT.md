@@ -1,7 +1,6 @@
 # features/project/dock — Contracts, architecture, rationale
 
-Reference depth for the dock view container and work-scoped Changes view.
-Read [`AGENTS.md`](../AGENTS.md) first.
+Reference depth for the dock view container. Read [`AGENTS.md`](../AGENTS.md) first.
 
 ## Contracts
 
@@ -11,45 +10,41 @@ Read [`AGENTS.md`](../AGENTS.md) first.
 React tree depth in both `center` and `dock` placements. In `center`, the shell
 is a bare passthrough — the occupant renders directly inside the grid cell. In
 `dock`, the shell wraps with the caller's header (via the `renderHeader` slot)
-and the Changes overlay, but `children` still renders at the same nesting level
-(inside the same `relative flex min-h-0 flex-1` div). When the occupant moves
-between center↔dock in the grid, React's reconciliation sees the same
-component at the same position.
+and, on Work, the transient file overlay, but `children` still renders at the
+same nesting level (inside the same `relative flex min-h-0 flex-1` div). When the
+occupant moves between center↔dock in the grid, React's reconciliation sees the
+same component at the same position.
 
-The primary body stays **mounted** when the Changes view is active. It is hidden
-via `opacity-0 pointer-events-none` + the `inert` attribute. This means:
+The primary body stays **mounted** while the file view shows. It is hidden via
+`opacity-0 pointer-events-none` + the `inert` attribute. This means:
 
 - Chat state (WebSocket, scroll, composer draft) survives a view switch.
 - Document sessions survive a view switch.
-- The body does not reflow — Changes overlays it with `absolute inset-0`.
+- The body does not reflow — the file view overlays it with `absolute inset-0`.
 
-**Violation consequence:** unmounting `children` when Changes is active would
+**Violation consequence:** unmounting `children` while the file shows would
 lose chat state, force reconnection on return, and break the surface-parking
 contract the project shell relies on.
 
-### `resolveDockView` pure fallback
+### `resolveDockView` pure function
 
-`resolveDockView(screen: ScreenKey, stored: DockView | undefined, hasFile: boolean)`
-is a pure function:
+`resolveDockView(screen: ScreenKey, hasFile: boolean)` is a pure function:
 
-- If `stored` is a valid view for the screen's set, it is the active view.
-- Otherwise, the screen's `default` is used (the occupant's native view).
-- The Work file segment is inserted while a transient Work file is available.
-- The screen's view set and primary view are always returned alongside.
+- The view is the occupant's: `chat` on Work and Editor, `context` on Chat.
+- `views` is the switch's segments: the occupant, plus `file` only on Work while
+  a transient Work file is available. Only that case has a switch.
 
-This is deliberately separated from the React hook (`useDockView`) so the
-fallback logic is unit-testable. The hook only adds the Zustand binding.
+This is deliberately separated from the React hook (`useDockView`) so it is
+unit-testable. The hook only adds the Zustand binding.
 
-On Work, `workFile` is a separate transient `{ workId, tab, active }` slot in
-the same session-only store. While populated, `file` joins the Chat/Changes
-segments. Opening a file activates its view without changing the writer's
-explicit Chat/Changes choice; selecting either of those parks the file view,
-and selecting File again reactivates it. Closing the slot returns to the last
-explicit view (or Chat by default). Chat remains mounted and inert underneath
-the viewer. `ProjectView` owns route reconciliation and calls `enterWork` or
-`leaveWork` to clear a stale slot on Work change, the Work collection, or any
-other destination. Pending creation routes use their client Work identity too.
-No file view is persisted across reloads.
+On Work, `workFile` is a transient `{ workId, tab, active }` slot in the
+session-only store. While populated, `file` joins the chat as a segment. Opening
+a file activates its view; selecting Chat parks the file view, and selecting File
+again reactivates it. Closing the slot returns to Chat. Chat remains mounted and
+inert underneath the viewer. `ProjectView` owns route reconciliation and calls
+`enterWork` or `leaveWork` to clear a stale slot on Work change, the Work
+collection, or any other destination. Pending creation routes use their client
+Work identity too. No file view is persisted across reloads.
 
 `useAiDraftLauncher` takes `screen` from the route-owned
 `ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
@@ -57,28 +52,19 @@ recreate the removed project query grammar to choose a dock view.
 
 ### Dock view store
 
-`useDockViewStore` is a Zustand store keyed by `ScreenKey`:
+`useDockViewStore` is a Zustand store holding the transient `workFile` slot:
 
-- **Session-only, no `persist`.** A fresh reload starts from each screen's
-  default. A stale view choice across reloads is worse than a fresh start.
+- **Session-only, no `persist`.** A fresh reload starts from the occupant.
 - **No placement data.** Width, collapse, and grid placement are owned by the
   surface-prefs store (`layout/surface-prefs-store.ts`), not here.
-- **Explicit choice only.** The store only records writer-initiated view switches;
-  the default is not written to the store.
-
-### Changes availability
-
-`reviewFileTargets(groups)` in `features/draft-review/review-files.ts` is the shared
-active-row projection. `DockShell` uses its `hasReviewFiles` wrapper for segment
-visibility, while `DockChangesView` renders those rows and owns its empty
-branch. When the final row disappears, `DockShell` immediately renders the
-native view and updates the session choice.
+- **No draft review data.** Changes lists live in the surfaces of the scope they
+  list (the chat strip, the identity row and phone sheet, the Work page).
 
 ### Slot material contract
 
 The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
 `bg-sidebar` plus the `border-l` seam against the center pane. Dock components (header,
-Changes view, occupant body) must not paint a hardcoded background — the slot
+file view, occupant body) must not paint a hardcoded background — the slot
 paints the material. Transparent/surface-subtle fills are correct, and tonal
 steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
 (`bg-sidebar`). One bounded exception: `DockViewSwitch` (shared by `DockHeader`
@@ -87,34 +73,6 @@ track (a recessed ink-mix well) whose active segment surfaces paper
 (`bg-background`) — the paper stays inside the track's boundary, so the dock
 still reads as one chrome surface. Any other `bg-background` or `bg-card` in
 the dock is a bug (the dock is a sidebar).
-
-### Changes view: controller seam
-
-`DockChangesView` lists the change of the review open in the **Editor**; the open
-file's body is `OpenFileChanges`, shared with the phone's sheet. The
-dock sits in the Chat's `DraftReviewBoundary`, whose controller never has a
-review open, so the view reads the Editor scope's value through
-`useEditorDraftReview()` (`EditorReviewScope`, offered by `ProjectView`) and
-passes that controller to `useReviewChanges`. Reading the ambient controller was
-the old Changes view's bug: it listed nothing for a review that was open. It
-owns no review session; it renders `features/draft-review` rows and dispatches
-through the Editor controller:
-
-- `view.focus(change, { scroll: true })` — click a row, focus it in the manuscript
-- `view.apply(change)` / `view.discard(change)` — per-change commands
-- `view.locked` — the global disposition lock, disabling every row together
-
-The tab is `ReviewFiles`: every draft file of the Work once, in the shared
-review-file order, with the open file expanded in place (`OpenFileChanges`:
-its changes in document order, Applying, No changes left with Next draft, or
-formatting-only) and Apply all / Discard all as the Work's menu. When the
-Chat's Work differs, its files are a second, named section with its own menu.
-A draft the server closed is not listed: it has left the Work's draft list,
-and no client mark hides it.
-
-The review session owner is `useDraftReviewController` in
-`features/draft-review`; the dock only renders review state and dispatches
-actions.
 
 ### Claim-based inline-review editor registration
 
@@ -137,18 +95,13 @@ flowchart LR
     Grid[SlotGrid] -->|dock grid-area| DockShell
     DockShell -->|center: passthrough| Occupant[ChatSurface / ContextSidebar]
     DockShell -->|dock: header + overlay| Occupant
-DockShell -->|dock: view=changes| Changes[DockChangesView]
-DockShell -->|Work view=file| File[ContextViewerBareHost]
+    DockShell -->|Work view=file| File[ContextViewerBareHost]
     Occupant -->|dock placement, renderHeader slot| Header[DockHeader / MobileChatSheetHeader]
-    Changes --> Files[ReviewFiles: the Work's draft files and Apply all]
-    Files --> Open[OpenFileChanges for the open file]
-    Open --> Row[ReviewChangeRow per change]
-    Row --> Verbs[Apply and Discard one change, when actionable]
 ```
 
 `DockShell` is the single component both dock occupants (`ChatSurface`,
 `ContextSidebar`) render through. There is no "ChatDock" or "ContextDock"
-wrapper — the same shell handles both, with the screen determining the view set.
+wrapper — the same shell handles both, with the screen determining the views.
 
 ## Traps
 
@@ -220,7 +173,7 @@ so switching screens and coming back restores it.
 
 ### Combined region unit = change unit
 
-The dock renders the closure classes the server hands it. Combining dependent
+Every change list renders the closure classes the server hands it. Combining dependent
 regions into one unit happens upstream. `reviewChanges` groups directly by the
 required `closureClassId` and never repairs or reconstructs class membership.
 One server closure class = one change = one Apply and one Discard, sent with

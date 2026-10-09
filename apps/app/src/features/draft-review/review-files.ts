@@ -1,9 +1,9 @@
-/** docked-drafts — pure assembly rules for the composer-attached DraftDock. */
+/** review-files — the Work's draft files as the lists show them: one target per document, in one order. */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 
 import { pendingReviewDraft, type ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 
-/** One document's active draft line in the dock. */
+/** One document's active draft, as a file in a list of the Work's drafts. */
 export type ReviewFileTarget = {
   documentId: string;
   documentName: string | null;
@@ -20,7 +20,7 @@ export type ReviewFileTarget = {
 };
 
 /**
- * Collapse work draft groups into dock rows. Each document contributes at most
+ * Collapse work draft groups into file rows. Each document contributes at most
  * one row for its active draft, in the one file order (`sortDraftFiles`).
  */
 export function reviewFileTargets(
@@ -43,8 +43,8 @@ export function reviewFileTargets(
 }
 
 /**
- * The one order every list of draft files uses (the composer strip, the dock's
- * Changes tab, Work Files, the phone's changes sheet, and "Next draft"): by the
+ * The one order every list of draft files uses (the composer strip, the Work
+ * page's Changes to review, and "Next draft"): by the
  * name each file is shown under, then by id. Drafts carry no creation time and
  * an update time would reshuffle the list as the AI keeps writing, so a file
  * keeps its place until its name changes.
@@ -62,7 +62,7 @@ export function sortDraftFiles<
 
 /**
  * The draft the review moves to when the writer is done with this one: the next
- * document in the dock's order, wrapping to the first, and none when this is
+ * document in the file order, wrapping to the first, and none when this is
  * the only one left (the review then returns to live).
  */
 export function nextReviewFile(
@@ -82,13 +82,6 @@ export function nextReviewFile(
   }
   const after = at < 0 ? [] : ordered.slice(at + 1).filter((row) => row.documentId !== documentId);
   return after[0] ?? others[0];
-}
-
-/**
- * Whether the work-scoped Changes view has active work to show.
- */
-export function hasReviewFiles(groups: ThreadDraftGroup[] | null | undefined): boolean {
-  return reviewFileTargets(groups).length > 0;
 }
 
 /**

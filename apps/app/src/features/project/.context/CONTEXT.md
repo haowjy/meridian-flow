@@ -163,9 +163,14 @@ the viewer, and the contained dock switch can return to Chat or close the file.
 `viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
 Scratch and Uploads. The Files tab shows Drafts and Scratch only; Work Uploads
 have no Files tab surface (composer attachments still land there, see
-[TODO](TODO)). A "Drafts to review" row launches review through the same
-`useAiDraftLauncher` handoff as the other review launchers, not a plain
-document open. Files search uses one name matcher across drafts and Scratch;
+[TODO](TODO)). The "Changes to review" group (`WorkChanges`) lists the Work's draft files; a
+row's name launches review through the same `useAiDraftLauncher` handoff as the
+other review launchers, not a plain document open, and the row expands in place
+to that draft's changes (`useDraftChanges`, previewed only once expanded). Its
+menu runs Apply all and Discard all across every draft of the Work through the
+scope that covers it (`useWorkReviewScope`: the Editor's, else the chat's, else
+a third scope `ProjectView` mounts for a Work neither has). No Work has no Work
+page and so no Work-wide list. Files search uses one name matcher across drafts and Scratch;
 rename collisions use direct catalog siblings, and a failed New note remains as
 a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
 (`compareTreePlaces`), a new note sorted by the path it will land at, so a
@@ -317,7 +322,7 @@ not the project-title header.
 Only `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
 at the main pane/dock band seam — arbitrary surface tokens there re-expose the
 notch wedge on palette change.
-Chat|Changes in the dock is a CONTAINED
+The dock's Chat|File switch (Work only, while a file is open) is a CONTAINED
 segmented track (a recessed ink-mix well whose active segment surfaces paper
 inside the track's own boundary), deliberately not tab chips: only the page
 rises out of a band. Two chips wear the tab grammar — the document tabs and
