@@ -233,7 +233,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ id: foreign, contextSourceId: otherSource, name: "foreign", extension: "md" });
       const settled = crypto.randomUUID();
       const unsettled = crypto.randomUUID();
+      const settledGone = crypto.randomUUID();
+      const occupied = crypto.randomUUID();
       await db.insert(linkAheadRefs).values([
+        {
+          aheadId: settledGone,
+          projectId: p,
+          scheme: "manuscript",
+          path: "deleted.md",
+          settledDocumentId: deleted,
+        },
+        // Rule 4: unsettled, answered by the document at its exact address.
+        { aheadId: occupied, projectId: p, scheme: "manuscript", path: "live.md" },
         {
           aheadId: settled,
           projectId: p,
@@ -282,6 +293,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             { ref: `doc:${foreign}`, href: "manuscript://foreign.md" },
             { ref: `ahead:${settled}`, href: "manuscript://elsewhere.md" },
             { ref: `ahead:${unsettled}`, href: "manuscript://later.md#scene" },
+            { ref: `ahead:${settledGone}`, href: "manuscript://deleted.md" },
+            { ref: `ahead:${occupied}`, href: "manuscript://live.md" },
             { ref: "doc:not-a-uuid", href: "manuscript://live.md" },
             { ref: null, href: "live.md" },
             { ref: null, href: "https://example.com" },
@@ -303,10 +316,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { state: "missing", uri: "manuscript://later.md" },
         { state: "gone" },
         liveDocument,
+        { state: "gone" },
+        liveDocument,
         { state: "unresolvable" },
       ]);
+      // Only rule 3 marks an answer settled; a rule-4 occupant is still by address.
+      expect(response.answers.map((answer) => "settled" in answer)).toEqual([
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+      ]);
       for (const answer of response.answers)
-        if (answer.state === "gone") expect(Object.keys(answer)).toEqual(["state"]);
+        if (answer.state === "gone")
+          expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
       // A Work of another project never reaches draft membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({

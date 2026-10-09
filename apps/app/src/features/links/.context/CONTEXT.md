@@ -10,18 +10,21 @@ for what a link means before it reaches this module.
 cache (the Editor passes the per-editor cache its decorations draw from):
 
 ```ts
-resolution.registerResolver(createProjectLinkResolver(scope, index), { baseUri, projectId, index });
+resolution.registerResolver(createProjectLinkResolver(scope, index), { baseUri, projectId });
 // local, synchronously, per question:
 //   malformed ref                          -> gone (never the address)
 //   doc:<id> the complete index holds      -> that document, wherever it lives now
 //   no ref, address the complete index has -> that document (matchDocumentPath)
 //   relative with no base, or a holder before its own address -> not asked
-//   ahead ref, complete index holds exactly its stored address
+//   ahead ref the settlement memo holds    -> exactly a doc ref to what it settled on
+//                                             (settled gone: ask, never the address)
+//   other ahead ref, complete index holds exactly its stored address
 //                                          -> that document now (design rule 4), and ask
 //   everything else                        -> ask
 // remote, per batch of asked questions (at most 200):
 //   one POST of { workId, baseUri, links: [{ ref, href }] }; answers in request order:
-//   document -> resolved;  gone -> gone;  missing, unresolvable -> unresolved
+//   document -> document;  gone -> gone;  missing -> missing;  unresolvable -> no answer
+//   `settled: true` (rule 3) on an ahead ref's document or gone -> the settlement memo
 //   a provisional local answer stands unless the server says gone or another document
 ```
 
@@ -29,11 +32,20 @@ The address answers apply one rule (`matchDocumentPath` from
 `@meridian/contracts`, beside `resolveDocumentHref`, through
 `indexedDocumentAt`): the exact path, or the path with its final extension
 omitted when exactly one document fits. Addresses are unique, so there is no
-"several documents" answer. An ahead ref always asks the server, because
-settlement is server state; the local exact-address step turns it solid at
+"several documents" answer. An ahead ref not known to be settled asks the
+server, because settlement is server state; the local exact-address step turns it solid at
 once when a local-first arrival (a follow's Create) sits there, and a server
 `document` naming another document, or `gone`, replaces it. A failed request
 keeps it.
+
+**A settlement is a fact the client keeps.** The resolve endpoint marks an
+ahead ref's answer `settled: true` when it came through the ref's settlement
+(design rule 3). The resolver records it in a project-scoped memo
+(`aheadId -> documentId | "gone"`), set once and never unset, outside every
+generation and shared by every surface in the project. From then on the ref is
+answered exactly like `doc:<id>`, never by its address, so a renumber that
+puts another document at the old address never draws or opens it, online or
+off, and the chip does not flash on catalog changes.
 
 `baseUri` is the URI of the document holding the link. Only a `relative` target
 needs it, and without one the question is not asked (a null answer, cached as

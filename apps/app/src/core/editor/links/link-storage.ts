@@ -5,12 +5,12 @@
 
 import type { Editor } from "@tiptap/core";
 
-import type { LinkResolution } from "./link-resolution";
+import type { LinkAnswerCache } from "./link-resolution";
 import type { LinkSurface } from "./link-surface";
 
 export const LINK_SURFACE_NAME = "meridianLinkSurface";
 
-export type LinkSurfaceStorage = { surface: LinkSurface; resolution: LinkResolution };
+export type LinkSurfaceStorage = { surface: LinkSurface; resolution: LinkAnswerCache };
 
 declare module "@tiptap/core" {
   interface Storage {
@@ -30,7 +30,7 @@ export function getLinkSurface(editor: Editor | null | undefined): LinkSurface |
  * question: the surface knows which link the writer is working on, and this
  * knows what any of them addresses.
  */
-export function getLinkResolution(editor: Editor | null | undefined): LinkResolution | null {
+export function getLinkAnswerCache(editor: Editor | null | undefined): LinkAnswerCache | null {
   if (!editor || editor.isDestroyed) return null;
   return editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
 }

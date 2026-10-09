@@ -25,7 +25,8 @@ import {
   resolveAnchorIn,
 } from "../anchors";
 import { bindWrittenHref } from "./link-binding";
-import { getLinkResolution } from "./link-storage";
+import { linkKeyOfMark } from "./link-resolution";
+import { getLinkAnswerCache } from "./link-storage";
 import { normalizeLinkHref } from "./link-target";
 
 export type LinkSelection = {
@@ -67,17 +68,6 @@ export function linkAt(state: EditorState, pos: number): LinkSelection | null {
 
 export function linkAttributesAtSelection(editor: Editor): Record<string, unknown> | null {
   return linkAtSelection(editor)?.attributes ?? null;
-}
-
-/** The href a resolved link carries, as a string a classifier can read. */
-export function linkHref(link: LinkSelection): string {
-  return String(link.attributes.href ?? "");
-}
-
-/** The ref a resolved link carries (`doc:`/`ahead:`), or null for none. */
-export function linkRef(link: LinkSelection): string | null {
-  const { ref } = link.attributes;
-  return typeof ref === "string" && ref ? ref : null;
 }
 
 /**
@@ -141,7 +131,7 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
     identity: link.identity,
     needsText: false,
     text: editor.state.doc.textBetween(link.from, link.to),
-    href: linkHref(link),
+    href: linkKeyOfMark(link.attributes).href,
   };
 }
 
@@ -279,14 +269,15 @@ function committedLinkAttrs(
 ): { href: string; title: string | null; ref: string | null } {
   if (!picked && draft.existing && draft.identity && href === draft.href) {
     const { attrs } = draft.identity;
+    const stored = linkKeyOfMark(attrs);
     return {
-      href: String(attrs.href ?? href),
+      href: stored.href || href,
       title: typeof attrs.title === "string" ? attrs.title : null,
-      ref: typeof attrs.ref === "string" ? attrs.ref : null,
+      ref: stored.ref,
     };
   }
   if (picked) return { href, title: null, ref: picked };
-  const scope = getLinkResolution(editor)?.binding;
+  const scope = getLinkAnswerCache(editor)?.binding;
   return { ...bindWrittenHref(href, scope?.holderUri ?? null, scope?.index ?? null), title: null };
 }
 

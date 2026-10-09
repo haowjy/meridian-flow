@@ -31,10 +31,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
-  createLinkResolution,
+  createLinkAnswerCache,
   isInternalLinkTarget,
+  type LinkAnswerCache,
   type LinkFollowDisposition,
-  type LinkResolution,
   type LinkTarget,
 } from "@/core/editor/links";
 
@@ -84,14 +84,14 @@ export function useLinkFollower({
    * one: created once and never destroyed, because `destroy()` drops listeners
    * and a StrictMode remount would keep using it. Unregistering is the cleanup.
    */
-  resolution?: LinkResolution | null;
+  resolution?: LinkAnswerCache | null;
   /** False while the surface is mounted but hidden: follows abort, and what is shown is dismissed. */
   active?: boolean;
   open: LinkDestination;
   reporter: FollowReporter;
 }): LinkFollower {
-  const [ownedResolution] = useState<LinkResolution | null>(() =>
-    providedResolution === undefined ? createLinkResolution() : null,
+  const [ownedResolution] = useState<LinkAnswerCache | null>(() =>
+    providedResolution === undefined ? createLinkAnswerCache() : null,
   );
   const resolution = providedResolution === undefined ? ownedResolution : providedResolution;
   const ready = scope !== null && scope !== "pending" ? scope : null;
@@ -116,7 +116,7 @@ export function useLinkFollower({
     if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
       createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
-      { baseUri, projectId, index },
+      { baseUri, projectId },
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();

@@ -12,9 +12,11 @@ import { LINK_SURFACE_NAME } from "./link-storage";
 const GONE_REF = "doc:00000000-0000-4000-8000-0000000000aa";
 const KAEL = "manuscript://Kael.md";
 
-it("marks a gone link present at mount on its <a>, without a document change", async () => {
+it("marks a gone link present at mount on its <a>, and hands its presses to the editor", async () => {
   const onUpdate = vi.fn();
   const editor = new Editor({
+    // Attached, so the chip can take focus for Enter.
+    element: document.body.appendChild(document.createElement("div")),
     extensions: createStandaloneEditorExtensions({}),
     content: {
       type: "doc",
@@ -28,7 +30,13 @@ it("marks a gone link present at mount on its <a>, without a document change", a
               text: "Kael",
               marks: [{ type: "link", attrs: { href: KAEL, ref: GONE_REF } }],
             },
-            { type: "text", text: "." },
+            { type: "text", text: ". " },
+            // An empty ref is no ref, on every surface that reads the mark.
+            {
+              type: "text",
+              text: "Nine",
+              marks: [{ type: "link", attrs: { href: "manuscript://Nine.md", ref: "" } }],
+            },
           ],
         },
       ],
@@ -37,16 +45,47 @@ it("marks a gone link present at mount on its <a>, without a document change", a
   });
   try {
     editor.storage[LINK_SURFACE_NAME].resolution.registerResolver({
-      remote: async (questions) => questions.map(() => ({ state: "gone", document: null })),
+      remote: async (questions) =>
+        questions.map(({ ref }) => ({ state: ref === null ? "missing" : "gone", document: null })),
     });
     editor.storage[LINK_SURFACE_NAME].resolution.request([{ ref: GONE_REF, href: KAEL }]);
 
     const anchor = editor.view.dom.querySelector("a");
     await vi.waitFor(() => expect(anchor?.getAttribute("aria-disabled")).toBe("true"));
     expect(anchor?.getAttribute("aria-description")).toBe("No longer available");
+    const noRef = editor.view.dom.querySelectorAll("a")[1];
+    await vi.waitFor(() => expect(noRef?.hasAttribute("aria-description")).toBe(true));
+    expect.soft(noRef?.getAttribute("aria-description"), "empty ref").toBe("Doesn't exist yet");
     // The view's MutationObserver delivers asynchronously; let it run.
     await new Promise((settled) => setTimeout(settled, 0));
     expect(onUpdate).not.toHaveBeenCalled();
+
+    // Known gone, a press is the editor's: the click falls through to place
+    // the caret, and Enter and Alt+Enter mean what they mean in text.
+    const navigate = vi.fn();
+    editor.storage[LINK_SURFACE_NAME].surface.registerNavigator(navigate);
+    const click = editor.view.state.plugins.find((plugin) =>
+      (plugin as unknown as { key: string }).key.startsWith(LINK_SURFACE_NAME),
+    )?.props.handleDOMEvents?.click;
+    const press = new MouseEvent("click", { button: 0, bubbles: true });
+    anchor?.dispatchEvent(press);
+    expect
+      .soft(click?.call(null as never, editor.view, press as PointerEvent), "click")
+      .toBe(false);
+    expect.soft(navigate, "click follows nothing").not.toHaveBeenCalled();
+    editor.commands.setTextSelection(6);
+    anchor?.focus();
+    const enter = (altKey: boolean) =>
+      editor.view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", altKey, bubbles: true }),
+      );
+    navigate.mockClear();
+    enter(true);
+    expect.soft(navigate, "Alt+Enter follows nothing").not.toHaveBeenCalled();
+    navigate.mockClear();
+    enter(false);
+    expect.soft(navigate, "Enter follows nothing").not.toHaveBeenCalled();
+    expect.soft(editor.state.doc.childCount, "Enter splits the paragraph").toBe(2);
   } finally {
     editor.destroy();
   }

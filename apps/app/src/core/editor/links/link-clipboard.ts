@@ -37,7 +37,7 @@ import { DOMSerializer, type Mark, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
 import { bindPastedSlice } from "./link-binding";
-import type { LinkKey, LinkResolution } from "./link-resolution";
+import { type LinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
 
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
@@ -50,7 +50,7 @@ export const LINK_PROJECT_ATTRIBUTE = "data-meridian-project";
  */
 export const LINK_KEPT_REF_ATTRIBUTE = "data-meridian-kept-ref";
 
-const linkClipboardPluginKey = new PluginKey<LinkResolution>("meridianLinkClipboard");
+const linkClipboardPluginKey = new PluginKey<LinkAnswerCache>("meridianLinkClipboard");
 
 /**
  * The full address an internal href names from its holder, spelled as an href
@@ -88,9 +88,9 @@ function qualifiedByHolder(uri: string, holderUri: string | null): string {
  * resolved to, at that document's current address, else the address its href
  * names. Null for an external or unresolvable link.
  */
-function currentLinkAddress(link: LinkKey, resolution: LinkResolution | null): string | null {
+function currentLinkAddress(link: LinkKey, resolution: LinkAnswerCache | null): string | null {
   const entry = link.ref && resolution ? resolution.read(link) : null;
-  if (entry?.state === "resolved")
+  if (entry?.state === "document")
     return storedHref(entry.document.uri, splitDocumentHrefSuffix(link.href).suffix);
   return linkHrefAddress(link.href, resolution?.baseUri ?? null);
 }
@@ -116,9 +116,10 @@ export function clipboardLinkProject(value: string | null): string | null {
 }
 
 /** Copy, HTML flavour: what one rendered link mark names, beside its href. */
-function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkResolution): void {
-  const href = String(mark.attrs.href ?? "");
-  const ref = clipboardLinkRef(typeof mark.attrs.ref === "string" ? mark.attrs.ref : null);
+function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkAnswerCache): void {
+  const stored = linkKeyOfMark(mark.attrs);
+  const href = stored.href;
+  const ref = clipboardLinkRef(stored.ref);
   const address = currentLinkAddress({ ref, href }, resolution);
   if (address) element.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
   const projectId = resolution.binding?.projectId ?? null;
@@ -184,7 +185,7 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
  * holder's address, project and local index. Its HTML transform runs after
  * the paste sanitizer, which keeps well-formed metadata only.
  */
-export function linkClipboardPlugin(schema: Schema, resolution: LinkResolution): Plugin {
+export function linkClipboardPlugin(schema: Schema, resolution: LinkAnswerCache): Plugin {
   const base = DOMSerializer.fromSchema(schema);
   const renderLink = base.marks.link;
   const marks = renderLink
@@ -198,7 +199,7 @@ export function linkClipboardPlugin(schema: Schema, resolution: LinkResolution):
         },
       }
     : base.marks;
-  return new Plugin<LinkResolution>({
+  return new Plugin<LinkAnswerCache>({
     key: linkClipboardPluginKey,
     state: { init: () => resolution, apply: (_transaction, value) => value },
     props: {
