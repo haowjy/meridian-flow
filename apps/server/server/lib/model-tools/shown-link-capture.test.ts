@@ -14,7 +14,7 @@ import type { WriteOutcome } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import type { SpelledLinkFact } from "@meridian/markup";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createInMemoryUnifiedContextPortFactory } from "../../domains/context/index.js";

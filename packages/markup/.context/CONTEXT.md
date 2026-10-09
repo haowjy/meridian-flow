@@ -2,21 +2,13 @@
 
 ## Public surface
 
-`@meridian/markup` exports:
+The root `@meridian/markup` exports:
 
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
 - `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
   href and src spells as written, `asset:` refs stay refs). The fixed-table
   `createAssetFixture(entries)` is a test helper in `src/codec-test-support.ts`,
   not a package export.
-- The link rules every host shares (`holder-link-scope.ts`, see Shared link
-  rules): `createHolderLinkScope(holder, catalog)` over a `HolderCatalog`,
-  `assignFreshLink` (pass 3), `classifyWrittenHref`, `writtenAddresses` and
-  `writtenSourceUri`.
-- `extractStoredLinks(fragment)` and `storedLinkKeys(...)` (`stored-links.ts`),
-  the Yjs twin of the occurrence walk.
-- `walkLinkOccurrences(blocks)` and `spelledLinks(blocks, links)`
-  (`link-occurrences.ts`), see Link occurrences.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
   surfaces that spell a link without serializing a document (a chat
   reference, a clipboard fallback). It shares the link mark's destination rule.
@@ -26,6 +18,21 @@
 - `builtInComponents` (reserved wire components handled by dedicated codecs) and
   `documentComponentRegistry` (the product component set every document surface
   shares).
+
+Two subpath entries carry the link rules, so a consumer loads only what it
+uses (the client's assignment path loads neither codecs nor Yjs; the root
+loads neither Yjs nor the schema builder):
+
+- `@meridian/markup/links` (`links.ts`): the rules every host shares
+  (`holder-link-scope.ts`, see Shared link rules): `createHolderLinkScope(holder,
+  catalog)` over a `HolderCatalog`, `assignFreshLink` (pass 3),
+  `classifyWrittenHref`, `writtenAddresses` and `writtenSourceUri`; and
+  `walkLinkOccurrences(blocks)` / `spelledLinks(blocks, links)`
+  (`link-occurrences.ts`), see Link occurrences.
+- `@meridian/markup/stored-links` (`stored-links.ts`): `extractStoredLinks(fragment)`
+  and `storedLinkKeys(...)`, the Yjs twin of the occurrence walk. It takes the
+  fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
+  builder.
 
 Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 `mdxBlockCodecs`, and required-block-name lists) are not exported from the
@@ -129,9 +136,10 @@ snapshot miss, the client asks the server. `assignFreshLink` is pass 3 of ref
 assignment for a written href or source: classify, then the document
 `documentFor` finds (exact, then unique extension-omitted) spelled with
 `storedHref`, else a minted ahead ref at `aheadAddress`; agent-edit's
-`assignOccurrences` and the client's `assignWrittenHref` both call it. These
-read Yjs (`yjs`, `@meridian/prosemirror-schema` for the fragment name), which
-both apps already load; markup stays a leaf below agent-edit.
+`assignOccurrences` and the client's `assignWrittenHref` both call it. Only the
+`stored-links` entry reads Yjs (`yjs`, plus the fragment name from the
+side-effect-free `@meridian/prosemirror-schema/protocol`); markup stays a leaf
+below agent-edit.
 
 ## Link occurrences
 

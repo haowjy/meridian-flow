@@ -13,7 +13,7 @@
 import type { ShownLink as CorrespondenceShownLink } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { SpelledLinkFact } from "@meridian/markup";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 
 /** One recorded showing; `at` is its global sequence, larger is more recent. */
 export interface ShownLink extends CorrespondenceShownLink {

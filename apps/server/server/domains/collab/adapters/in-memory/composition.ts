@@ -6,7 +6,7 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { spelledLinks } from "@meridian/markup";
+import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createAllowAllFileAccess } from "../../../file-policy/index.js";

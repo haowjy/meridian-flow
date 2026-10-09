@@ -7,8 +7,9 @@
  * write did not touch: each takes its old twin's attrs verbatim. Only the
  * occurrences inside the splice go through ref assignment.
  */
-import type { LinkOccurrence, ParsedContentWithSpans, PMNode } from "@meridian/markup";
-import { walkLinkOccurrences } from "@meridian/markup";
+import type { ParsedContentWithSpans, PMNode } from "@meridian/markup";
+import type { LinkOccurrence } from "@meridian/markup/links";
+import { walkLinkOccurrences } from "@meridian/markup/links";
 import type { OccurrenceAttrs } from "./occurrences.js";
 import { rebuildOccurrences } from "./occurrences.js";
 

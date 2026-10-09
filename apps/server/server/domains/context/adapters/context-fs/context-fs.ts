@@ -14,7 +14,7 @@ import {
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { SpelledLinkFact } from "@meridian/markup";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {

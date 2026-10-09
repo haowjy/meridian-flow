@@ -20,7 +20,7 @@ import type {
   MoveContextEntryRequest,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
-import type { SpelledLinkFact } from "@meridian/markup";
+import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { WorkRef } from "../../file-policy/index.js";
