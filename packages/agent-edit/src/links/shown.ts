@@ -8,6 +8,7 @@
  * bind a later link wrongly, while a missed one only weakens binding toward a
  * fresh resolve, so every doubt answers "not shown".
  */
+import type { LinkView } from "@meridian/contracts";
 import {
   type LinkOccurrence,
   type ParsedContentWithSpans,
@@ -112,6 +113,18 @@ export function shownLinksForItems(
   return [...facts.values()];
 }
 
+/**
+ * Host-only evidence for rendered items: the facts and the view the binding
+ * spelled them in. Empty when nothing ref-bearing was shown.
+ */
+export function shownEvidence(
+  items: readonly AgentEditBlockItem[],
+  source: ShownRenderSource,
+): { shownLinks?: readonly SpelledLinkFact[]; shownView?: LinkView } {
+  const shownLinks = shownLinksForItems(items, source);
+  return shownLinks.length > 0 ? { shownLinks, shownView: source.scope.holder.view } : {};
+}
+
 /** Every block item a model payload renders: block groups and concurrent runs. */
 export function renderedItems(payload: AgentEditModelPayload | undefined): AgentEditBlockItem[] {
   if (!payload) return [];
@@ -132,9 +145,9 @@ export function withRunShownLinks(
   if (!info) return info;
   return {
     ...info,
-    runs: info.runs.map((run) => {
-      const shownLinks = shownLinksForItems(run.blocks.map(modelBlockItem), source);
-      return shownLinks.length > 0 ? { ...run, shownLinks } : run;
-    }),
+    runs: info.runs.map((run) => ({
+      ...run,
+      ...shownEvidence(run.blocks.map(modelBlockItem), source),
+    })),
   };
 }
