@@ -12,7 +12,7 @@ const tab = (path: string, workId = "work-a") => ({
   fileType: "binary" as const,
 });
 
-afterEach(() => useDockViewStore.setState({ byScreen: {}, document: null }));
+afterEach(() => useDockViewStore.setState({ byScreen: {}, document: null, result: null }));
 
 describe("dock document slot", () => {
   it("opens, replaces, and closes without disturbing the writer's view choice", () => {
@@ -54,5 +54,38 @@ describe("dock document slot", () => {
     expect(useDockViewStore.getState().document).not.toBeNull();
     store.syncDocumentScope("work", "work-a");
     expect(useDockViewStore.getState().document).toBeNull();
+  });
+});
+
+describe("dock result slot", () => {
+  const result = { id: "result-1" } as Parameters<
+    ReturnType<typeof useDockViewStore.getState>["openResult"]
+  >[0];
+
+  it("shares one slot with the document and closes with it", () => {
+    const store = useDockViewStore.getState();
+    store.openDocument({ screen: "chat", tab: tab("first.md") });
+    store.openResult(result);
+    expect(useDockViewStore.getState()).toMatchObject({ document: null, result });
+
+    useDockViewStore.getState().openDocument({ screen: "chat", tab: tab("second.md") });
+    expect(useDockViewStore.getState().result).toBeNull();
+
+    useDockViewStore.getState().openResult(result);
+    useDockViewStore.getState().closeDocument();
+    expect(useDockViewStore.getState()).toMatchObject({ document: null, result: null });
+  });
+
+  it("belongs to the Chat screen's rail only", () => {
+    useDockViewStore.getState().openResult(result);
+    useDockViewStore.getState().syncDocumentScope("chat", null);
+    expect(useDockViewStore.getState().result).toBe(result);
+
+    useDockViewStore.getState().syncDocumentScope("work", "work-a");
+    expect(useDockViewStore.getState().result).toBeNull();
+
+    useDockViewStore.getState().openResult(result);
+    useDockViewStore.getState().setDockView("chat", "changes");
+    expect(useDockViewStore.getState().result).toBeNull();
   });
 });

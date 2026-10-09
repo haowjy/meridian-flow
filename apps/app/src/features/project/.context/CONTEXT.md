@@ -194,6 +194,15 @@ the foot of the drawer: a tap closes the drawer and `MobileProject` opens
 outlives it), and a pick opens the note full screen. The lineage is named by its first chat's title (`useLineageTitle`), never by
 its handle.
 
+The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with the left tree's
+parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), rows are
+`RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its
+file name only (no size). A Recent row opens in the dock's document slot
+(`dock/use-open-document-id-in-dock.ts`) and a Results row opens there as a viewer
+(`DockResultView`); the rail stays mounted under the slot, so no "current row" mark is shown.
+The phone has no such rail: its Results view (`MobileResultsView`) shares the Results rows and
+keeps its full-screen viewer.
+
 The chat index is `/p/<project>/chats`; the bare project URL replaces itself there. It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
 server-side filter, applied before pagination, and so is title search. The

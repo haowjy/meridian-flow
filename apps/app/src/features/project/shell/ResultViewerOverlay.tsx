@@ -65,6 +65,7 @@ export function ResultViewerContent({
   name = displayName(result),
   fitImagesToWidth = false,
   statusStyle,
+  bare = false,
 }: {
   projectId: string;
   result: ProjectResultItem;
@@ -72,6 +73,8 @@ export function ResultViewerContent({
   fitImagesToWidth?: boolean;
   /** Host-owned padding for status-only states before viewer frame mounts. */
   statusStyle?: CSSProperties;
+  /** The host's own chrome already names the result, so the viewer shows no header. */
+  bare?: boolean;
 }) {
   const signed = useProjectResultSignedUrl(projectId, result.id);
 
@@ -99,6 +102,7 @@ export function ResultViewerContent({
       mimeType={result.mimeType}
       name={name}
       path={result.workspacePath}
+      bare={bare}
       fitImagesToWidth={fitImagesToWidth}
     />
   );
@@ -109,15 +113,17 @@ function ViewerPicker({
   mimeType,
   name,
   path,
+  bare,
   fitImagesToWidth = false,
 }: {
   url: string;
   mimeType: string;
   name: string;
   path: string;
+  bare: boolean;
   fitImagesToWidth?: boolean;
 }) {
-  const header = { name, path };
+  const header = bare ? undefined : { name, path };
   if (mimeType.startsWith("image/")) {
     return (
       <ReadOnlyViewerFrame header={header} footer={imageViewerFooter({ url, name })}>

@@ -1267,6 +1267,10 @@ msgstr "Couldn't open review mode."
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
+#: src/features/project/dock/use-open-document-id-in-dock.ts
+msgid "Couldn’t open this document."
+msgstr "Couldn’t open this document."
+
 #: src/features/chat/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
 msgstr "Couldn't open this draft. Try again."
@@ -3158,7 +3162,6 @@ msgstr "Restoring"
 
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
-#: src/features/project/shell/ResultsRailSection.tsx
 msgid "Results"
 msgstr "Results"
 
