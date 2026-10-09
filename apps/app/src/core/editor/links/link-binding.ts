@@ -25,7 +25,7 @@ import {
   mintAheadRef,
   parseContextUri,
   resolveDocumentHref,
-  spellDocumentHref,
+  storedHref,
 } from "@meridian/contracts";
 import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
 
@@ -62,12 +62,12 @@ export function bindWrittenHref(
   if (indexed)
     return {
       ref: documentRef(indexed.documentId),
-      href: spellDocumentHref(null, indexed.uri) + written.suffix,
+      href: storedHref(indexed.uri, written.suffix),
     };
   const address = aheadAddress(written.uri, "link");
   // Only a scheme root has no address to mint for; it stays a plain link.
   if (!address) return { ref: null, href };
-  return { ref: mintAheadRef(), href: spellDocumentHref(null, address) + written.suffix };
+  return { ref: mintAheadRef(), href: storedHref(address, written.suffix) };
 }
 
 /**
@@ -102,9 +102,9 @@ export function indexedDocumentAt<T extends LinkBindingDocument>(
  */
 export function indexedDocumentAtExactly<T extends LinkBindingDocument>(
   documents: readonly T[],
-  storedHref: string,
+  href: string,
 ): T | null {
-  const stored = resolveDocumentHref(storedHref, null);
+  const stored = resolveDocumentHref(href, null);
   if (!stored) return null;
   return documents.find((document) => document.uri === stored.uri) ?? null;
 }

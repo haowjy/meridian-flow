@@ -1,15 +1,16 @@
 /**
  * What the internal links of one resolution scope name: the local answer from
- * the scope's document index where it can give one, then the server, in one
- * batched request.
+ * the scope's document index where it can give one, synchronously, then the
+ * server for the rest, in batches.
  *
  * - A `doc:` ref the complete index holds resolves locally to that document,
  *   wherever it lives now.
  * - An `ahead:` ref always asks the server, because settlement is server
- *   state. A `document` or `gone` answer is final. A `missing` answer means
- *   the ref is unsettled, so it resolves by its exact stored address: a
- *   document the complete index holds there is the answer (a Follow-Create,
- *   say, before the server has settled the ref), and nothing there is missing.
+ *   state. Until it answers, a document the complete index holds at exactly
+ *   the ref's stored address is the answer, shown at once (a Follow-Create,
+ *   say, before the server has settled the ref). Only a server `document`
+ *   naming another document, or `gone`, replaces it; with nothing there, the
+ *   server's `missing` is "doesn't exist yet".
  * - A link with no ref resolves by its address: the local index first
  *   (`matchDocumentPath`, through `indexedDocumentAt`), then the server.
  *
@@ -24,14 +25,14 @@ import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import {
-  documentLinkTarget,
   type InternalLinkResolver,
   indexedDocumentAt,
   indexedDocumentAtExactly,
   type LinkAnswer,
   type LinkTarget,
+  type LocalLinkAnswer,
   linkTargetHref,
-  MAX_BATCH,
+  type ResolvedLinkAnswer,
 } from "@/core/editor/links";
 
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
@@ -53,70 +54,59 @@ export type LinkResolutionScope = {
    * no holder address is chat's, which may fall back to previous locations.
    */
   holderDocumentId?: string | null;
-  /**
-   * How many times the holder's text has changed in this editor. Local, never
-   * sent: it is only a reason to register again, so an answer cannot outlive
-   * the text it answered once a rewrite (or any edit) has landed.
-   */
-  documentRevision?: number;
 };
 
 const GONE: LinkAnswer = Object.freeze({ state: "gone", document: null });
 const UNRESOLVED: LinkAnswer = Object.freeze({ state: "unresolved", document: null });
+const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
-type ServerQuestion = { at: number; ref: string | null; href: string; ahead: boolean };
+const answered = (answer: LinkAnswer): LocalLinkAnswer => ({ kind: "answered", answer });
 
 export function createProjectLinkResolver(
   scope: LinkResolutionScope,
   index: LinkableDocumentIndex,
 ): InternalLinkResolver {
   const { projectId, workId, baseUri, holderDocumentId } = scope;
-  return async (questions) => {
-    // Null for a question that could not be asked: a relative path with no
-    // base, or a holder whose own address has not arrived. An unasked question
-    // must not render as a missing document; the base arriving is a new
-    // registration, which asks it again.
-    const answers: (LinkAnswer | null)[] = questions.map(() => null);
-    const remote: ServerQuestion[] = [];
-    questions.forEach(({ ref, target }, at) => {
-      const request = documentLinkTarget(target, baseUri ?? "");
-      if (!request || (request.kind === "relative" && !baseUri)) return;
+  return {
+    local({ ref, target }) {
+      // A relative path with no base cannot be asked; the base arriving is a
+      // new registration, which asks it again.
+      if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
       const parsed = parseLinkRef(ref);
       // A malformed ref names nothing; it never falls back to its address.
-      if (ref !== null && !parsed) {
-        answers[at] = GONE;
-        return;
+      if (ref !== null && !parsed) return answered(GONE);
+      if (index.complete && parsed?.kind !== "ahead") {
+        const local =
+          parsed?.kind === "doc"
+            ? index.documents.find((document) => document.documentId === parsed.documentId)
+            : addressedDocument(index.documents, target, baseUri);
+        if (local) return answered(resolvedAnswer(local));
       }
-      const local = !index.complete
-        ? null
-        : parsed?.kind === "doc"
-          ? (index.documents.find((document) => document.documentId === parsed.documentId) ?? null)
-          : parsed === null
-            ? addressedDocument(index.documents, target, baseUri)
-            : null;
-      if (local) {
-        answers[at] = resolvedAnswer(local);
-        return;
-      }
-      if (holderDocumentId && !baseUri) return;
-      remote.push({ at, ref, href: linkTargetHref(target), ahead: parsed?.kind === "ahead" });
-    });
+      // Rule 4 on the client, at once: an ahead ref that may still be
+      // unsettled names whatever the complete index holds at exactly its
+      // stored address. The server still decides; see `LocalLinkAnswer`.
+      const atAddress =
+        parsed?.kind === "ahead" && index.complete
+          ? indexedDocumentAtExactly(index.documents, linkTargetHref(target))
+          : null;
+      const provisional = atAddress ? resolvedEntry(atAddress) : null;
+      // A holder whose own address has not arrived asks the server nothing: a
+      // question with no holder address is chat's, which may fall back to
+      // previous locations.
+      if (holderDocumentId && !baseUri) return provisional ? answered(provisional) : UNASKED;
+      return { kind: "ask", provisional };
+    },
 
-    for (let start = 0; start < remote.length; start += MAX_BATCH) {
-      const batch = remote.slice(start, start + MAX_BATCH);
+    async remote(questions) {
       const response = await resolveDocumentLinks(projectId, {
         workId,
         baseUri,
-        links: batch.map(({ ref, href }) => ({ ref, href })),
+        links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
       });
-      if (response.answers.length !== batch.length)
+      if (response.answers.length !== questions.length)
         throw new Error("link resolution answered out of shape");
-      batch.forEach((question, offset) => {
-        const answer = response.answers[offset];
-        if (answer) answers[question.at] = serverAnswer(answer, question, index);
-      });
-    }
-    return answers;
+      return response.answers.map((answer) => (answer ? serverAnswer(answer) : null));
+    },
   };
 }
 
@@ -135,11 +125,7 @@ function addressedDocument(
   return resolved ? indexedDocumentAt(documents, resolved.uri) : null;
 }
 
-function serverAnswer(
-  answer: DocumentLinkAnswer,
-  question: ServerQuestion,
-  index: LinkableDocumentIndex,
-): LinkAnswer {
+function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer {
   switch (answer.state) {
     case "document": {
       const { document } = answer;
@@ -152,23 +138,19 @@ function serverAnswer(
     }
     case "gone":
       return GONE;
-    case "missing": {
-      // Rule 4 on the client: an unsettled ahead ref names whatever the
-      // complete local index holds at exactly its stored address.
-      const local =
-        question.ahead && index.complete
-          ? indexedDocumentAtExactly(index.documents, question.href)
-          : null;
-      return local ? resolvedAnswer(local) : UNRESOLVED;
-    }
+    case "missing":
     case "unresolvable":
       return UNRESOLVED;
   }
 }
 
 function resolvedAnswer(document: LinkableDocument): LinkAnswer {
+  return resolvedEntry(document) ?? UNRESOLVED;
+}
+
+function resolvedEntry(document: LinkableDocument): ResolvedLinkAnswer | null {
   const link = resolvedLink(document);
-  return link ? { state: "resolved", document: link } : UNRESOLVED;
+  return link ? { state: "resolved", document: link } : null;
 }
 
 function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {

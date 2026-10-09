@@ -19,9 +19,15 @@ vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLinks: vi.fn(
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const server = vi.mocked(resolveDocumentLinks);
 
+const IDS: Record<string, string> = {
+  first: "00000000-0000-4000-8000-000000000001",
+  second: "00000000-0000-4000-8000-000000000002",
+  pane: "00000000-0000-4000-8000-000000000003",
+};
+
 function doc(name: string): ResolvedDocumentLink {
   return {
-    documentId: `doc-${name}`,
+    documentId: IDS[name] ?? "",
     title: name,
     scheme: "manuscript",
     path: `${name}.md`,
@@ -137,7 +143,7 @@ describe("useLinkFollower", () => {
     await answer("First", doc("first"));
 
     // Nothing was shown, so the second follow has nothing of its own to clear.
-    expect(events).toEqual(["open:doc-second:current"]);
+    expect(events).toEqual([`open:${IDS.second}:current`]);
   });
 
   it("never opens a follow cancelled while checking", async () => {
@@ -149,27 +155,5 @@ describe("useLinkFollower", () => {
     await answer("Pane", doc("pane"));
 
     expect(events).toEqual(["report:checking", "clear"]);
-  });
-
-  it("drops a cached server answer when the holder revision changes", async () => {
-    const holding: LinkResolutionScope = {
-      ...scope,
-      baseUri: "manuscript://Holder.md",
-      holderDocumentId: "doc-holder",
-      documentRevision: 0,
-    };
-    const link = { ref: null, href: "manuscript://Ch6.md" };
-    // One catalog throughout: only the holder's text changes.
-    const index = catalog("a");
-    render({ scope: holding, index });
-    act(() => resolution.request([link]));
-    await answer("Ch6", doc("old-ch6"));
-
-    expect(resolution.read(link)?.state).toBe("resolved");
-
-    // A rewrite arrived: the same text now spells a different document.
-    render({ scope: { ...holding, documentRevision: 1 }, index });
-    await elapse(0);
-    expect(resolution.read(link)).toBeNull();
   });
 });

@@ -324,11 +324,12 @@ function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
 
 /**
  * The stored link under a rendered anchor. The ref never reaches the DOM, so
- * it is read from the mark one character into the anchor; the rendered href
- * stands in when the anchor no longer maps to a link.
+ * it is read from the mark at the anchor's own start: one character in, a
+ * one-character link reads the link after it. The rendered href stands in
+ * when the anchor no longer maps to a link.
  */
 function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
-  const link = linkAt(view.state, view.posAtDOM(anchor, 0) + 1);
+  const link = linkAt(view.state, view.posAtDOM(anchor, 0));
   if (link) return { ref: linkRef(link), href: linkHref(link) };
   return {
     ref: null,

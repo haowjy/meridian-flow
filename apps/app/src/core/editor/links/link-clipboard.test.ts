@@ -18,12 +18,17 @@ const schema = new Schema({
   },
 });
 
+const KAEL_REF = "doc:00000000-0000-4000-8000-00000000000a";
+
 function clipboard(holder: string | null, projectId = "project-a") {
   const resolution = createLinkResolution();
-  resolution.registerResolver(async (questions) => questions.map(() => null), {
-    baseUri: holder,
-    projectId,
-  });
+  resolution.registerResolver(
+    { remote: async (questions) => questions.map(() => null) },
+    {
+      baseUri: holder,
+      projectId,
+    },
+  );
   return linkClipboardPlugin(schema, resolution);
 }
 
@@ -47,13 +52,13 @@ it.each([
   },
   {
     row: "a same-project paste keeps the ref",
-    copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: "doc:kael" },
+    copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: KAEL_REF },
     into: { holder: "manuscript://b/new.md", project: "project-a" },
-    pasted: { link: "manuscript://a/kael.md", ref: "doc:kael" },
+    pasted: { link: "manuscript://a/kael.md", ref: KAEL_REF },
   },
   {
     row: "another project's paste drops the ref for a fresh binding",
-    copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: "doc:kael" },
+    copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: KAEL_REF },
     into: { holder: "manuscript://b/new.md", project: "project-b" },
     pasted: { link: "manuscript://a/kael.md", ref: null },
   },

@@ -17,8 +17,9 @@
  * would be a transient surface the kernel never heard about — and this one can
  * open a quarter second late, long after the writer summoned something else.
  *
- * A holder location change, a base URI arriving, a rename, and a change to the document's
- * own text are all scope changes the follower re-registers on, so nothing here remounts the collaborative editor.
+ * A holder location change, a base URI arriving, and a rename are all scope
+ * changes the follower re-registers on, so nothing here remounts the
+ * collaborative editor.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -35,7 +36,6 @@ import {
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
-import { useDocumentRevision } from "./useDocumentRevision";
 
 /**
  * The Editor's destination: the document opens in this editor's pane, or on
@@ -80,8 +80,6 @@ export function ProjectLinkRuntime({
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
 
-  const documentRevision = useDocumentRevision(editor);
-
   // The holder's Work arrives with its resource record. Until then the scope is
   // pending, so a click waits for the real scope instead of being dropped.
   const scope = useMemo<LinkResolutionScope | "pending" | null>(
@@ -89,9 +87,9 @@ export function ProjectLinkRuntime({
       !active || !projectId
         ? null
         : workId
-          ? { projectId, workId, baseUri, holderDocumentId: documentId, documentRevision }
+          ? { projectId, workId, baseUri, holderDocumentId: documentId }
           : "pending",
-    [active, baseUri, documentId, documentRevision, projectId, workId],
+    [active, baseUri, documentId, projectId, workId],
   );
   const reporter = useMemo<FollowReporter>(
     () => ({

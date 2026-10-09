@@ -13,7 +13,7 @@ import {
   documentRef,
   type LinkRef,
   mintAheadRef,
-  spellDocumentHref,
+  storedHref,
 } from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
 
@@ -28,7 +28,7 @@ export function insertDocumentReference(
   return insertDocumentLink(editor, range, {
     label: document.label,
     ref: documentRef(document.documentId),
-    href: spellDocumentHref(null, document.uri),
+    href: storedHref(document.uri, ""),
   });
 }
 
@@ -48,7 +48,7 @@ export function insertLinkAhead(
   return insertDocumentLink(editor, range, {
     label: row.label,
     ref: mintAheadRef(),
-    href: spellDocumentHref(null, address),
+    href: storedHref(address, ""),
   });
 }
 

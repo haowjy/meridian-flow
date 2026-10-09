@@ -1,7 +1,7 @@
 /** Destination and display-text editing over the anchored link commands. */
 
 import { t } from "@lingui/core/macro";
-import { type DocumentRef, documentRef, spellDocumentHref } from "@meridian/contracts";
+import { type DocumentRef, documentRef, storedHref } from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
@@ -159,7 +159,7 @@ function LinkFields({
             onSelect: ({ row }) => {
               // Bound the way the Editor's `@` binds it: by the document's id,
               // spelled with its full address.
-              setHref(spellDocumentHref(null, row.action.reference.uri));
+              setHref(storedHref(row.action.reference.uri, ""));
               setPicked(documentRef(row.action.reference.documentId));
               setSelectedDestination({ label: row.label, location: row.location });
               setText((current) => current || row.label);

@@ -7,9 +7,9 @@
  * resolution, so the resolver is registered once per scope and registered
  * again whenever any of them changes. Registering is the cache's only
  * invalidation: it forgets every answer and every failure the previous scope
- * produced. An Editor's scope also carries its document's change revision, so
- * a text change (a rename's rewrite arriving, say) drops the answers the old
- * text asked. Nothing else in the app pokes this cache. A click in flight
+ * produced. The holder's own text is not an input: an answer is keyed by the
+ * link's ref and href, and the same key names the same document whatever else
+ * the text says. Nothing else in the app pokes this cache. A click in flight
  * across a registration is asked again in the new one, so a rename or a
  * catalog refetch never turns into "could not be checked".
  *
@@ -36,7 +36,6 @@ import {
   type LinkFollowDisposition,
   type LinkResolution,
   type LinkTarget,
-  linkTargetHref,
 } from "@/core/editor/links";
 
 import { type FollowReporter, followProjectLink, type LinkDestination } from "./follow-link";
@@ -52,10 +51,9 @@ export type LinkFollower = {
   retry(): void;
   /**
    * Internal, and relative only with a base URI. Independent of loading: a
-   * link that can be followed once the scope arrives is followable now. A
-   * link already known to be gone is not.
+   * link that can be followed once the scope arrives is followable now.
    */
-  canFollow(target: LinkTarget, ref?: string | null): boolean;
+  canFollow(target: LinkTarget): boolean;
 };
 
 type Shown = {
@@ -102,7 +100,6 @@ export function useLinkFollower({
   const workId = ready?.workId ?? null;
   const baseUri = ready?.baseUri ?? null;
   const holderDocumentId = ready?.holderDocumentId ?? null;
-  const documentRevision = ready?.documentRevision ?? 0;
 
   // The latest host callbacks, read when a follow needs them. A host passing a
   // fresh `open` or reporter object each render must not restart or abort
@@ -131,10 +128,8 @@ export function useLinkFollower({
     return () => queueMicrotask(unregister);
     // `index` stays the same object while its revision does, so a different one
     // is a different catalog: registering against it is how an answer about the
-    // old one becomes unreachable. The revision is the holder's own text
-    // changing: the same invalidation, so what a link was answered cannot
-    // outlive the words it was answered for.
-  }, [baseUri, documentRevision, holderDocumentId, index, projectId, resolution, workId]);
+    // old one becomes unreachable.
+  }, [baseUri, holderDocumentId, index, projectId, resolution, workId]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
@@ -264,12 +259,11 @@ export function useLinkFollower({
 
   const followable = scope !== null;
   const canFollow = useCallback(
-    (target: LinkTarget, ref: string | null = null) =>
+    (target: LinkTarget) =>
       followable &&
       isInternalLinkTarget(target) &&
-      (target.kind !== "relative" || baseUri !== null) &&
-      resolution?.read({ ref, href: linkTargetHref(target) })?.state !== "gone",
-    [baseUri, followable, resolution],
+      (target.kind !== "relative" || baseUri !== null),
+    [baseUri, followable],
   );
 
   return useMemo(

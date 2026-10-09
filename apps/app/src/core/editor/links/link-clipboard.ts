@@ -28,8 +28,8 @@ import {
   parseContextUri,
   parseLinkRef,
   resolveDocumentHref,
-  spellDocumentHref,
   splitDocumentHrefSuffix,
+  storedHref,
 } from "@meridian/contracts";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { type DocumentLinkScope, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -68,7 +68,7 @@ function linkHrefAddress(href: string, holderUri: string | null): string | null 
       ? resolveDocumentHref(target.uri, null)
       : resolveDocumentHref(target.path, holderUri);
   if (!resolved) return null;
-  return spellDocumentHref(null, qualifiedByHolder(resolved.uri, holderUri)) + resolved.suffix;
+  return storedHref(qualifiedByHolder(resolved.uri, holderUri), resolved.suffix);
 }
 
 function qualifiedByHolder(uri: string, holderUri: string | null): string {
@@ -91,7 +91,7 @@ function qualifiedByHolder(uri: string, holderUri: string | null): string {
 function currentLinkAddress(link: LinkKey, resolution: LinkResolution | null): string | null {
   const entry = link.ref && resolution ? resolution.read(link) : null;
   if (entry?.state === "resolved")
-    return spellDocumentHref(null, entry.document.uri) + splitDocumentHrefSuffix(link.href).suffix;
+    return storedHref(entry.document.uri, splitDocumentHrefSuffix(link.href).suffix);
   return linkHrefAddress(link.href, resolution?.baseUri ?? null);
 }
 
@@ -102,9 +102,7 @@ function currentLinkAddress(link: LinkKey, resolution: LinkResolution | null): s
 export function clipboardLinkAddress(value: string | null): string | null {
   if (!value) return null;
   const resolved = resolveDocumentHref(value, null);
-  return resolved && spellDocumentHref(null, resolved.uri) + resolved.suffix === value
-    ? value
-    : null;
+  return resolved && storedHref(resolved.uri, resolved.suffix) === value ? value : null;
 }
 
 /** A recorded ref read back from untrusted clipboard HTML, or null. */

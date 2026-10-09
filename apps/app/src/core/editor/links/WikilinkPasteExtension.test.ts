@@ -18,7 +18,7 @@ const DOCUMENTS = [
   "manuscript://volume-1/Jade Gate.md",
   "kb://places/Jade Gate.md",
   "kb://characters/Lin Feng.md",
-].map((uri, at) => ({ documentId: `doc-${at}`, uri }));
+].map((uri, at) => ({ documentId: `00000000-0000-4000-8000-00000000000${at}`, uri }));
 
 const live: Editor[] = [];
 afterEach(() => {
@@ -98,7 +98,9 @@ it("keeps the characters when dropped into a code block, and links them dropped 
 
   const prose = editor(DOCUMENTS, "<p>x</p>");
   drop(prose, 2, { "text/plain": "see [[Lin Feng]] here" });
-  expect(links(prose)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md", "doc:doc-4"]]);
+  expect(links(prose)).toEqual([
+    ["Lin Feng", "kb://characters/Lin Feng.md", "doc:00000000-0000-4000-8000-000000000004"],
+  ]);
 });
 
 it("gives paste without formatting the characters, while an ordinary paste links", () => {
@@ -112,7 +114,9 @@ it("gives paste without formatting the characters, while an ordinary paste links
 
   const ordinary = editor(DOCUMENTS);
   paste(ordinary, { "text/plain": "Lin met [[Lin Feng]]." });
-  expect(links(ordinary)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md", "doc:doc-4"]]);
+  expect(links(ordinary)).toEqual([
+    ["Lin Feng", "kb://characters/Lin Feng.md", "doc:00000000-0000-4000-8000-000000000004"],
+  ]);
 });
 
 const menuPaste = () => new Event("paste") as ClipboardEvent;
