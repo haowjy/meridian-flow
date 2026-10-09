@@ -6,7 +6,8 @@ The root `@meridian/markup` exports:
 
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
 - `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
-  href and src spells as written, `asset:` refs stay refs). The fixed-table
+  href and src spells as written, `asset:` refs stay refs). It is for
+  comparing stored bytes and for tests; no reader is ever spelled through it. The fixed-table
   `createAssetFixture(entries)` is a test helper in `src/codec-test-support.ts`,
   not a package export.
 - `formatMarkdownLink(label, href)`: a plain-text `[label](destination)` for
@@ -116,16 +117,20 @@ it: serialization asks the call's `DocumentLinkScope` for every destination
 and `figure` sources) and writes only the spelled `href`. A scope spells a
 resolvable ref as its target's current path, anything else as stored
 (`spellStoredLink` in contracts), and an `asset:` source as the path the
-project knows it by, else the ref itself: a picture never fails its document.
+project knows it by, else its row's last address in full, else an empty
+destination (`UNSPELLED_UPLOAD`): a picture never fails its document, and no
+id ever reaches a reader.
 
 Parse is pure syntax: every parsed link has `ref: null` and its destination
 as written, and every image and figure `src` is the source as written. The
 shipped image rule (a known manuscript path becomes `asset:<id>`) runs after
 parse, in pass 3 of the host's ref assignment over a prepared scope (agent-edit
 `assignLinkRefs`), which is what lets a host load only what the text names. An
-upload's `asset:<id>` is its identity: `spellSource` reports its manuscript
-address, and `spelledLinks` records a fact keyed `asset:<id>` there, so a
-rewrite that keeps the shown path continues the upload.
+upload's `asset:<id>` is its identity: `spellSource` reports the address it
+spelled, and `spelledLinks` records a fact keyed `asset:<id>` there, so a
+rewrite that keeps the shown address continues the upload. An upload spelled
+as an empty destination records nothing; a rewrite that writes `()` back
+unchanged keeps it, by the same equality rule that keeps a contextual link.
 
 ## Shared link rules
 
