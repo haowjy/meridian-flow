@@ -6,20 +6,20 @@
  * never from `readDocument`, so a copy's private source read shows nothing.
  * Also hands the thread's evidence to agent-edit writes (§7.4).
  */
-import type { LinkView } from "@meridian/contracts";
-import type { SpelledLinkFact } from "@meridian/markup";
+import type { LinkShowing } from "@meridian/agent-edit/integration";
 import type { ShownLinkShowing, ShownLinkStore } from "../../domains/runtime/index.js";
 
-/** The candidate for one holder, in the view the facts were spelled in; none without facts. */
-export function showing(
+/**
+ * The candidate for one holder, exactly as its render spelled it: facts,
+ * holder URI and view all come from the binding that rendered. None without
+ * facts. The caller never supplies a holder URI: one resolved before or after
+ * the render could name a base the model was not shown.
+ */
+export function showingOf(
   documentId: string,
-  holderUri: string,
-  shown: { shownLinks?: readonly SpelledLinkFact[]; shownView?: LinkView },
+  shown: { showing?: LinkShowing },
 ): ShownLinkShowing[] {
-  const links = shown.shownLinks;
-  if (!links || links.length === 0) return [];
-  if (!shown.shownView) throw new Error(`Shown links for ${documentId} carry no view.`);
-  return [{ documentId, holderUri, view: shown.shownView, links }];
+  return shown.showing ? [{ documentId, ...shown.showing }] : [];
 }
 
 /** `WriteContext.shownLinks` for a thread's agent writes. */

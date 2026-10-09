@@ -5,11 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import {
-  type CanonicalContextAuthority,
-  canonicalContextUri,
-  type LinkView,
-} from "@meridian/contracts";
+import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/contracts";
 import {
   classifyFiletype,
   type Filetype,
@@ -27,6 +23,7 @@ import type {
   DocumentLinkScopes,
   DocumentSeedOrigin,
   EffectiveReadVersion,
+  HashlineRead,
   MarkdownDocumentStore,
   PreparedWrite,
   SyncError,
@@ -1023,14 +1020,17 @@ export class ContextFS implements ContextSchemeAdapter {
           });
           if (!found) continue;
           const { entries: passageEntries, ...match } = found;
-          // Only the returned passages were shown, never the matches past the cap.
-          const shownLinks = passageEntries.flatMap((entry) => read.value.links[entry] ?? []);
+          // Only the returned passages can be shown, never the matches past the cap.
+          const passages = passageEntries.map((entry) => read.value.links[entry] ?? []);
+          const { holder } = read.value;
           hits.push({
             path: row.path,
             documentId: row.document.id,
             revision: read.value.revision,
             ...match,
-            ...(shownLinks.length > 0 ? { shownLinks, shownView: this.searchView() } : {}),
+            ...(holder?.uri && passages.some((links) => links.length > 0)
+              ? { shown: { holderUri: holder.uri, view: holder.view, passages } }
+              : {}),
           });
         }
         return Ok(hits);
@@ -1053,14 +1053,6 @@ export class ContextFS implements ContextSchemeAdapter {
       );
     }
     return out;
-  }
-
-  /** The view a search's passages spell their links in. */
-  private searchView(): LinkView {
-    const view = this.threadView();
-    return view?.destination === "draft"
-      ? { kind: "draft", workId: view.workId }
-      : { kind: "live" };
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */
@@ -1103,6 +1095,7 @@ export class ContextFS implements ContextSchemeAdapter {
         hashlines: boolean;
         revision: string | null;
         links: readonly (readonly SpelledLinkFact[])[];
+        holder?: HashlineRead["holder"];
       },
       SyncError
     >
@@ -1119,6 +1112,7 @@ export class ContextFS implements ContextSchemeAdapter {
             hashlines: true,
             revision: hashlines.value.revision,
             links: hashlines.value.links,
+            holder: hashlines.value.holder,
           })
         : hashlines;
     }

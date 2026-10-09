@@ -58,18 +58,22 @@ function setup() {
 it("A1-9: a truncated echo or narrowed read never claims a link that was cut off", async () => {
   const rows: Array<{ name: string; facts: () => Promise<unknown>; expected: unknown }> = [
     {
-      name: "a whole read shows every link at its current address",
-      facts: async () => (await setup().read()).shownLinks,
-      expected: [fact(C, "c.md"), fact(B, "b.md"), fact(A, "a-moved.md")],
+      name: "a whole read shows every link at its current address, from the holder that spelled it",
+      facts: async () => (await setup().read()).showing,
+      expected: {
+        holderUri: HOLDER,
+        view: { kind: "live" },
+        links: [fact(C, "c.md"), fact(B, "b.md"), fact(A, "a-moved.md")],
+      },
     },
     {
       name: "a narrowed read shows only the selected block's links",
-      facts: async () => (await setup().read({ in: [4, 4] })).shownLinks,
+      facts: async () => (await setup().read({ in: [4, 4] })).showing?.links,
       expected: [fact(A, "a-moved.md")],
     },
     {
       name: "an outline read shows only heading links",
-      facts: async () => (await setup().read({ format: "outline" })).shownLinks,
+      facts: async () => (await setup().read({ format: "outline" })).showing?.links,
       expected: [fact(C, "c.md")],
     },
     {
@@ -78,7 +82,7 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
         const ctx = setup();
         const outcome = await ctx.write({ command: "replace", in: [3, 3], content: "Edited." });
         // Context blocks 2 and 4 around the edit; block 2's link starts past word eight.
-        return outcome.shownLinks;
+        return outcome.showing?.links;
       },
       expected: [fact(A, "a-moved.md")],
     },
@@ -87,7 +91,7 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
       facts: async () => {
         const ctx = setup();
         const outcome = await ctx.write({ command: "insert", content: "Tail." });
-        return outcome.shownLinks;
+        return outcome.showing?.links;
       },
       expected: undefined,
     },

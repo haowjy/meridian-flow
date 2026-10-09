@@ -4,6 +4,7 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -206,6 +207,8 @@ export type VersionedDocumentRead<T> = { content: T; revision: string | null };
 export type HashlineRead = VersionedDocumentRead<string[]> & {
   /** Aligned with `content`: the ref-bearing links each block spells. */
   links: readonly (readonly SpelledLinkFact[])[];
+  /** The holder `links` were spelled from, as the read's own binding named it. */
+  holder: { uri: string | null; view: LinkView };
 };
 
 /**
@@ -385,11 +388,18 @@ export type BranchPeerShadowAccess = {
       responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
+  /**
+   * A view's manifest members. With `responseId` and `threadId`, that reply's
+   * staged creates count too, but only those staged for `destination` when it
+   * is given. `destination: "live"` reads the live manifest even in a thread:
+   * thread and response then only name whose staged creates count.
+   */
   resolveManifestMembership(input: {
     projectId: ProjectId;
     workId?: WorkId | null;
     threadId?: ThreadId | null;
     responseId?: string | null;
+    destination?: "live" | "draft";
   }): Promise<{ documentId: DocumentId; members: string[] }>;
   reconcileProjectManifest(projectId: ProjectId): Promise<void>;
   /** A cross-project move's live membership, inside the move transaction. */
