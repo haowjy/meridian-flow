@@ -621,8 +621,7 @@ msgstr "Apply draft"
 msgid "Apply draft or Discard draft handles this."
 msgstr "Apply draft or Discard draft handles this."
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Applying"
 msgstr "Applying"
 
@@ -678,8 +677,7 @@ msgstr "Back to {title}"
 msgid "Back to chat"
 msgstr "Back to chat"
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Back to live"
 msgstr "Back to live"
@@ -974,7 +972,7 @@ msgid "Close chat"
 msgstr "Close chat"
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Close review"
 msgstr "Close review"
 
@@ -1781,8 +1779,7 @@ msgstr "Discard with your edits"
 msgid "Discarded"
 msgstr "Discarded"
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Discarding"
 msgstr "Discarding"
 
@@ -2097,11 +2094,11 @@ msgstr "Fork from here"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Formatting changes remain"
 msgstr "Formatting changes remain"
 
-#: src/features/draft-review/DocumentChanges.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Formatting changes remain. Apply draft or Discard draft finishes them."
 msgstr "Formatting changes remain. Apply draft or Discard draft finishes them."
 
@@ -2726,8 +2723,7 @@ msgstr "New Work"
 msgid "Next change"
 msgstr "Next change"
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 msgid "Next draft"
 msgstr "Next draft"
 
@@ -2749,8 +2745,7 @@ msgstr "No archived Work."
 msgid "No billing activity yet."
 msgstr "No billing activity yet."
 
-#: src/features/draft-review/DocumentChanges.tsx
-#: src/features/draft-review/ReviewHeaderNotices.tsx
+#: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/project/work/WorkChangeFile.tsx
 msgid "No changes left"
 msgstr "No changes left"

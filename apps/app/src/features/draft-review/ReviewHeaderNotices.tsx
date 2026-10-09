@@ -13,27 +13,15 @@
  * entering review never adds a second header. `touch` raises buttons to 44px.
  */
 import { Plural, Trans } from "@lingui/react/macro";
-import { Loader2 } from "lucide-react";
 import type { DraftCommandFailure } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ReviewNextAction, type ReviewStateProps, ReviewStatusContent } from "./ReviewCompletion";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { ReviewFileTarget } from "./review-files";
 
 /** More refused drafts than this are summarised, so the notice never outgrows the header. */
 const MAX_NAMED_FAILURES = 3;
-
-export type ReviewStateProps = {
-  finished: boolean;
-  /** The draft is open and lists no change: what remains is handled by Apply draft or Discard draft. */
-  unlisted?: boolean;
-  /** The last change's command is in flight: nothing is finished yet. */
-  completing?: "apply" | "discard" | null;
-  next: ReviewFileTarget | null;
-  draftOnly: boolean;
-  onOpenNext: (row: ReviewFileTarget) => void;
-  onShowLive: () => void;
-};
 
 export function ReviewFailureNotices({
   commandError,
@@ -90,119 +78,53 @@ export function ReviewFailureNotices({
   );
 }
 
-/** The phone's rows for the review's state. */
+/** The phone's row for the review's state, with 44px actions by touch. */
 export function ReviewStateNotice({
-  completing = null,
-  unlisted = false,
-  finished,
-  next,
-  draftOnly,
-  onOpenNext,
-  onShowLive,
   touch = false,
+  ...state
 }: ReviewStateProps & { touch?: boolean }) {
-  const button = touch ? "h-11 px-4 text-sm" : undefined;
+  if (!state.completing && !state.finished && !state.unlisted) return null;
   return (
-    <>
-      {completing ? (
-        <div
-          className={cn(
-            "flex items-center gap-2 border-border border-t px-4 text-muted-foreground",
-            touch ? "py-2.5" : "py-1.5",
-          )}
-          role="status"
-          aria-busy
-        >
-          <Loader2 className="size-3 animate-spin" aria-hidden />
-          <p>{completing === "apply" ? <Trans>Applying</Trans> : <Trans>Discarding</Trans>}</p>
-        </div>
+    <div
+      className={cn(
+        "flex items-center gap-3 border-border border-t px-4",
+        touch ? (state.finished ? "py-1" : "py-2.5") : "py-1.5",
+      )}
+      role="status"
+      aria-busy={!!state.completing}
+    >
+      <span className="flex flex-1 items-center gap-2 text-muted-foreground">
+        <ReviewStatusContent {...state} />
+      </span>
+      {state.finished ? (
+        <ReviewNextAction {...state} className={touch ? "h-11 px-4 text-sm" : undefined} />
       ) : null}
-      {unlisted ? (
-        <p
-          className={cn(
-            "border-border border-t px-4 text-muted-foreground",
-            touch ? "py-2.5" : "py-1.5",
-          )}
-          role="status"
-        >
-          <Trans>Formatting changes remain</Trans>
-        </p>
-      ) : null}
-      {finished ? (
-        <div
-          className={cn(
-            "flex items-center gap-3 border-border border-t px-4",
-            touch ? "py-1" : "py-1.5",
-          )}
-          role="status"
-        >
-          <p className="flex-1 text-muted-foreground">
-            <Trans>No changes left</Trans>
-          </p>
-          {next ? (
-            <Button size="xs" className={button} onClick={() => onOpenNext(next)}>
-              <Trans>Next draft</Trans>
-            </Button>
-          ) : (
-            <Button size="xs" variant="outline" className={button} onClick={onShowLive}>
-              {draftOnly ? <Trans>Close review</Trans> : <Trans>Back to live</Trans>}
-            </Button>
-          )}
-        </div>
-      ) : null}
-    </>
+    </div>
   );
 }
 
-/** The desktop's run for the review's state, inside the identity row, at the 22px box. */
-export function ReviewStateInline({
-  completing = null,
-  unlisted = false,
-  finished,
-  next,
-  draftOnly,
-  onOpenNext,
-  onShowLive,
-}: ReviewStateProps) {
-  const button = "h-5.5";
-  if (finished) {
-    return (
-      <span role="status" className="flex shrink-0 items-center gap-2 font-sans text-xs">
-        <span className="whitespace-nowrap text-muted-foreground">
-          <Trans>No changes left</Trans>
-        </span>
-        {next ? (
-          <Button size="xs" className={button} onClick={() => onOpenNext(next)}>
-            <Trans>Next draft</Trans>
-          </Button>
-        ) : (
-          <Button size="xs" variant="outline" className={button} onClick={onShowLive}>
-            {draftOnly ? <Trans>Close review</Trans> : <Trans>Back to live</Trans>}
-          </Button>
-        )}
-      </span>
-    );
-  }
-  if (completing) {
-    return (
+/** The desktop's state stays inside the identity row's 22px box. */
+export function ReviewStateInline(state: ReviewStateProps) {
+  if (!state.finished && !state.completing && !state.unlisted) return null;
+  return (
+    <span
+      role="status"
+      aria-busy={!!state.completing}
+      className="flex min-w-0 items-center gap-2 font-sans text-xs"
+    >
       <span
-        role="status"
-        aria-busy
-        className="flex shrink-0 items-center gap-1.5 font-sans text-muted-foreground text-xs"
+        className={cn(
+          "text-muted-foreground",
+          state.unlisted
+            ? "min-w-0 truncate"
+            : "flex shrink-0 items-center gap-1.5 whitespace-nowrap",
+        )}
       >
-        <Loader2 className="size-3 animate-spin" aria-hidden />
-        {completing === "apply" ? <Trans>Applying</Trans> : <Trans>Discarding</Trans>}
+        <ReviewStatusContent {...state} />
       </span>
-    );
-  }
-  if (unlisted) {
-    return (
-      <span role="status" className="min-w-0 truncate font-sans text-muted-foreground text-xs">
-        <Trans>Formatting changes remain</Trans>
-      </span>
-    );
-  }
-  return null;
+      {state.finished ? <ReviewNextAction {...state} className="h-5.5" /> : null}
+    </span>
+  );
 }
 
 /** The phone's notices: failures, then the review's state, each a row under the header. */
