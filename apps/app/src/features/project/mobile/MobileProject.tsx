@@ -1,7 +1,7 @@
 /** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
-import { MessageSquare, Sparkles } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
