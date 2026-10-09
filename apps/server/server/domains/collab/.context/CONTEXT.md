@@ -28,8 +28,8 @@ Effective markdown/hashline reads return content and revision from the same
 callback. `readEffectiveRevision` uses their synchronous pull/fallback chain.
 Every effective read, `readEffectiveRevision` included, names a
 `destination`: `live` reads live authority (plus the reply's own staged live
-writes) and never touches a Work draft, kept or not; `draft` reads the thread
-view. A reply's staged writes overlay only reads of the destination they were
+writes) and never touches a Work draft, kept or not; `draft` names its Work
+and reads the thread view, its links spelled in that Work's view. A reply's staged writes overlay only reads of the destination they were
 pinned to, so a live read never shows the reply's drafted edits. A thread rebind is resolved anew on each query. A draft read with no
 thread peer flushes live into the shared Work draft and reads it; it never
 creates a peer, so search stays read-only in branch topology while seeing the
