@@ -13,7 +13,8 @@ Scratch source; never route Scratch to it. A lineage handle names the first chat
 trashed included, never a fork. Only the AI creates lineage notes; writer create,
 intake and moves into a lineage are refused. Lineage provisioning and
 trash/restore liveness belong to `adapters/lineage-scratch-lifecycle.ts`; reuse
-it rather than adding another guard.
+it rather than adding another guard. A hidden-to-live lineage transition settles
+waiting ahead refs under its namespace lock in the same transaction.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is
 model-only, resolved by `runtime/loop/skill-files.ts` per thread binding, and

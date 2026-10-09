@@ -444,7 +444,7 @@ export function createLineageContextDocumentStore(
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
-  const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations);
+  const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations, arrivals);
   const find = async () => {
     const [row] = await currentDrizzleDb(db)
       .select({ id: contextSources.id })

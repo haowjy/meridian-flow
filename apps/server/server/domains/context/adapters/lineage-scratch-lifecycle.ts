@@ -1,9 +1,11 @@
 /** One lifecycle owner for lineage provisioning and trash reconciliation. */
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, threads } from "@meridian/database/schema";
-import { and, eq, inArray, type SQLWrapper, sql } from "drizzle-orm";
+import { contextSources, documents, threads } from "@meridian/database/schema";
+import { and, eq, inArray, isNotNull, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
+import type { DocumentArrivals } from "../ports/document-arrivals.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
 
 export class LineageScratchUnavailableError extends Error {
@@ -27,6 +29,7 @@ export interface LineageScratchLifecycle {
 export function createDrizzleLineageScratchLifecycle(
   db: Database,
   catalog?: ContextCatalogMutationPort,
+  arrivals?: Pick<DocumentArrivals, "settle">,
 ): LineageScratchLifecycle {
   // Use the Scratch namespace boundary already held by context commands. Taking
   // a second lineage lock after that boundary would invert catalog lock order.
@@ -90,6 +93,16 @@ export function createDrizzleLineageScratchLifecycle(
         for (const projectId of [...new Set(roots.map((root) => root.projectId))].sort())
           await lock(projectId);
         for (const rootThreadId of [...new Set(roots.map((root) => root.id))].sort()) {
+          const hidden = await currentDrizzleDb(db)
+            .select({ id: contextSources.id })
+            .from(contextSources)
+            .where(
+              and(
+                eq(contextSources.scope, "lineage"),
+                eq(contextSources.rootThreadId, rootThreadId),
+                isNotNull(contextSources.deletedAt),
+              ),
+            );
           const sources = await currentDrizzleDb(db)
             .update(contextSources)
             .set({
@@ -101,7 +114,27 @@ export function createDrizzleLineageScratchLifecycle(
                 eq(contextSources.rootThreadId, rootThreadId),
               ),
             )
-            .returning({ id: contextSources.id });
+            .returning({ id: contextSources.id, deletedAt: contextSources.deletedAt });
+          const restored = sources.filter(
+            (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
+          );
+          if (arrivals && restored.length) {
+            const content = await currentDrizzleDb(db)
+              .select({ id: documents.id })
+              .from(documents)
+              .where(
+                and(
+                  inArray(
+                    documents.contextSourceId,
+                    restored.map((source) => source.id),
+                  ),
+                  eq(documents.kind, "content"),
+                ),
+              );
+            // The registry filters deleted documents/ancestors and only settles once.
+            // Reconciliation already holds the Scratch namespace in this transaction.
+            await arrivals.settle(content.map((document) => document.id as DocumentId));
+          }
           await catalog?.refreshSources(sources.map((source) => source.id));
         }
       }),
