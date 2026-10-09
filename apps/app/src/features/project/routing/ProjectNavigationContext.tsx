@@ -86,12 +86,6 @@ export function useIsCurrentContextRoute() {
   return useContext(ProjectNavigationContext)?.isCurrentContextRoute;
 }
 
-export function useProjectScreen(): ScreenKey {
-  const screen = useContext(ProjectNavigationContext)?.screen;
-  if (!screen) throw new Error("Project screen navigation is required");
-  return screen;
-}
-
 /** Keep one registered decision owner while its metadata state changes. */
 export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
   const register = useContext(ProjectNavigationContext)?.registerLeaveGuard;
