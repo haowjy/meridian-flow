@@ -6,6 +6,7 @@
 import { useCallback } from "react";
 import type { ServerContextTab } from "@/client/stores";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useOpenContextRoute, useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useDockViewStore } from "./dock-view-store";
@@ -13,7 +14,8 @@ import { useDockViewStore } from "./dock-view-store";
 export function useOpenDocumentInDock() {
   const screen = useProjectScreen();
   const phone = usePhoneShell();
-  const openDocument = useDockViewStore((state) => state.openDocument);
+  const projectId = useProjectDocumentNavigationProjectId();
+  const open = useDockViewStore((state) => state.open);
   const openContextRoute = useOpenContextRoute();
   const { revealDock } = useChatNavigation();
   return useCallback(
@@ -30,9 +32,10 @@ export function useOpenDocumentInDock() {
         );
         return;
       }
-      openDocument({ screen, tab });
+      if (!projectId) return;
+      open({ kind: "document", projectId, screen, tab });
       revealDock("document");
     },
-    [openContextRoute, openDocument, phone, revealDock, screen],
+    [openContextRoute, open, phone, projectId, revealDock, screen],
   );
 }

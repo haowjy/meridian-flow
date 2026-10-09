@@ -6,22 +6,23 @@
  * navigating until the document is known.
  */
 import { t } from "@lingui/core/macro";
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { announceError } from "@/client/stores";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useLocateProjectDocument } from "../context/open-project-document";
+import { useDockViewStore } from "./dock-view-store";
 import { useOpenDocumentInDock } from "./use-open-document-in-dock";
 
 export function useOpenDocumentIdInDock(projectId: string) {
   const locate = useLocateProjectDocument(projectId);
   const openInDock = useOpenDocumentInDock();
-  // Only the latest click opens: an earlier, slower lookup must not replace it.
-  const latest = useRef(0);
   return useCallback(
     async (documentId: string) => {
-      const attempt = ++latest.current;
+      // A slow lookup must not replace what the writer chose since: any change
+      // to the dock's occupant while it ran means it stands down.
+      const { revision } = useDockViewStore.getState();
       const located = await locate(documentId);
-      if (attempt !== latest.current || located.kind === "cancelled") return;
+      if (useDockViewStore.getState().revision !== revision || located.kind === "cancelled") return;
       const tab =
         located.kind === "located"
           ? serverTabFromFile(located.scheme, located.file, located.owner)

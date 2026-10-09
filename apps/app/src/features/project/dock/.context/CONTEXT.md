@@ -40,16 +40,20 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 
 ### Dock document slot
 
-`document` in the same session-only store is `{ screen, tab }`: the one document the
-dock shows on Work or Chat. `useDockView(screen)` returns it only for its own screen.
+`occupant` in the same session-only store is the one thing the dock shows on Work or Chat:
+`{ kind: "document", projectId, screen, tab }` or, on the Chat screen only,
+`{ kind: "result", projectId, screen, result }`. `useDockView(screen, projectId)` returns
+it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
-`DockDocumentView` and `DockHeader` swaps the view switch for the document's title
-chip, a Close document button, and the collapse toggle. Opening a second document
-replaces the first. `setDockView` on the document's screen clears it, so revealing
+`DockDocumentView` (or `DockResultView`) and `DockHeader` swaps the view switch for the
+title chip, a Close document button, and the collapse toggle. Opening a second one
+replaces the first. `setDockView` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the writer's last explicit view.
-`ProjectView` calls `syncDocumentScope(screen, workId)`: a Work's note is dropped when
-the Work or the screen changes; a Chat-screen note stays on the Chat screen. No
-document is persisted across reloads.
+`ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
+when the project or the screen changes, and a Work's note when the Work changes; a
+Chat-screen occupant stays on the Chat screen. Every change bumps `revision`; a slow open
+(`use-open-document-id-in-dock.ts`) reads it first and stands down if it moved, which is
+the only race handling the slot has. Nothing is persisted across reloads.
 
 `useOpenDocumentInDock()` is the way in for a Work Files note. It opens the dock
 document and `revealDock("document")`; on the Editor screen and on the phone it opens

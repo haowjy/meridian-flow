@@ -179,11 +179,11 @@ export type ProjectViewProps = {
 };
 
 export function ProjectView(props: ProjectViewProps) {
-  const syncDockDocumentScope = useDockViewStore((state) => state.syncDocumentScope);
+  const syncDockOccupantScope = useDockViewStore((state) => state.syncOccupantScope);
   useLayoutEffect(() => {
     const workId = props.activeScreen === "work" ? routeWorkId(props.routeWork) : null;
-    syncDockDocumentScope(props.activeScreen, workId);
-  }, [props.activeScreen, props.routeWork, syncDockDocumentScope]);
+    syncDockOccupantScope(props.projectId, props.activeScreen, workId);
+  }, [props.projectId, props.activeScreen, props.routeWork, syncDockOccupantScope]);
   const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId, props.project);
   const projectTitle = cachedProject?.title ?? props.project.title;
