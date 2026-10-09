@@ -31,7 +31,7 @@ offering a dead verb.
 **Which chip a link draws is a rule here, not a style.** `linkChip()` maps a
 target and its resolution answer to a state (filled, or dashed when nothing is
 at that address or the document it named is gone) and a family icon name; every surface emits its
-attributes (the Editor on the decoration spans inside its `<a>`) and the look
+attributes (the Editor on the link mark's `<a>`, from its mark view) and the look
 lives in
 [`components/app/link-chip/`](../../../components/app/link-chip/AGENTS.md).
 Core names families and imports no icons.
@@ -73,22 +73,23 @@ pointer, and calls into it.
   `refresh`-shaped verb to call and no reason for a mutation site to reach in
   here. A question a click waits on
   (`resolve()`) is carried into the next generation and asked again; one only
-  the decorations asked is dropped with its generation.
+  a shown link or picture asked is dropped with its generation, and the
+  editor's requester asks again for whatever is still watched.
 - **A link names a document; no resolution is ever stored.** The mark stores
   a `ref` (`doc:`/`ahead:`) beside its href, and every producer assigns it through
   `link-assignment.ts` without parsing or waiting on the network. Where the
-  document is now, and whether the reader can reach it, rides a decoration
-  keyed by ref and href (law 9), so no peer receives an answer that was true
+  document is now, and whether the reader can reach it, is drawn on the live
+  element by the views keyed by ref and href (law 9), so no peer receives an answer that was true
   in someone else's project. A move writes nothing into linking documents.
 - **A picture's source is a link's question.** An `image` or `figure` whose
   source is a document address, with a ref or without, is answered by this
-  cache under the same key (`pictureKeyOfNode`), asked by the same document
-  scan; its node view draws the answer. No second cache.
-- **The decorations are mapped on an ordinary keystroke and rebuilt only when
-  something reached a link** — a mark step, an edit inside one, an answer
-  landing. The exception is a remote write: mapping across the whole-document
-  replace reports every position deleted and would erase the drawing, so
-  `isRemoteDocumentRebuild` rebuilds instead.
+  cache under the same key (`pictureKeyOfNode`); its node view draws the
+  answer. No second cache.
+- **The views that draw answers are the only askers.** Each editor has one
+  `LinkRequester`; link mark views and picture node views `watch` their key
+  while mounted and release it on destruction or key change, so a page of
+  links is one batch. Never add a document scan or an answer-only
+  transaction: a view subscribes to the cache itself.
 - **A copied link keeps its document.** The clipboard records each internal
   link's current address, ref and project; a paste in the same project keeps
   the ref and any other assigns the address fresh (`link-clipboard.ts`).
