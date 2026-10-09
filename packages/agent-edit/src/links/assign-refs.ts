@@ -6,7 +6,9 @@
  * over a prepared holder scope. Each written occurrence takes, in order: the
  * ref of the old occurrence it continues (pass 1), the ref the model was
  * last shown at its address (pass 2), or a fresh classify, resolve or mint
- * (pass 3). The shipped image rule (`asset:`) runs first.
+ * (pass 3). Pictures follow the same passes; the shipped image rule (`asset:`)
+ * is part of pass 3, so a new occupant of a shown path never captures a
+ * picture that continues its identity (L39).
  */
 import {
   type AheadRef,
@@ -25,7 +27,6 @@ import {
   walkLinkOccurrences,
   writtenSourceUri,
 } from "@meridian/markup/links";
-import { Fragment } from "prosemirror-model";
 import type { AheadMint } from "../ports/document-links.js";
 import { correspondLinks, type LinkMatch, type ShownLink } from "./correspondence.js";
 import {
@@ -53,15 +54,13 @@ export interface AssignResult {
 
 /** Assign refs to written nodes against the occurrences they replace. Synchronous, pure over the scope. */
 export function assignLinkRefs(input: AssignInput): AssignResult {
-  const blocks = assignSources(input.written, input.scope);
-  const written = walkLinkOccurrences(blocks);
+  const written = walkLinkOccurrences(input.written);
   const { attrs, minted } = assignOccurrences({ ...input, written });
-  return { nodes: rebuildOccurrences(blocks, written, attrs), minted };
+  return { nodes: rebuildOccurrences(input.written, written, attrs), minted };
 }
 
 export interface AssignOccurrencesInput {
   old: readonly LinkOccurrence[];
-  /** Written occurrences, already past the `asset:` rule. */
   written: readonly LinkOccurrence[];
   scope: HolderLinkScope;
   shown: readonly ShownLink[];
@@ -233,7 +232,11 @@ function continued(
   };
 }
 
-/** Pass 3: markup's `assignFreshLink` in this view; a minted ref is registered by the host. */
+/**
+ * Pass 3: a source naming a picture the project knows takes the shipped image
+ * rule; anything else is markup's `assignFreshLink` in this view. A minted ref
+ * is registered by the host.
+ */
 function fresh(
   input: {
     grammar: Grammar;
@@ -245,6 +248,10 @@ function fresh(
 ): OccurrenceAttrs {
   const { grammar, scope } = input;
   const { href, title } = occurrence.attrs;
+  if (grammar.kind === "source") {
+    const asset = assetFor(scope, href);
+    if (asset) return { ref: null, href: `asset:${asset}`, title };
+  }
   const assigned = assignFreshLink({
     href,
     grammar: grammar.kind,
@@ -288,39 +295,13 @@ function isAsset(occurrence: LinkOccurrence): boolean {
 }
 
 /**
- * The shipped image rule: a written `image`/`figure` source naming a picture
- * the project knows becomes `asset:<id>`, so the reference survives moves. A
- * source the scope cannot claim stays as written; guessing an id would store
- * a reference that can never render.
+ * The shipped image rule: a written source naming a picture the project knows
+ * becomes `asset:<id>`. A source the scope cannot claim is assigned like a
+ * link; guessing an id would store a reference that can never render.
  */
-export function assignSources(
-  blocks: readonly PMNode[],
-  scope: Pick<HolderLinkScope, "assetFor">,
-): PMNode[] {
-  return blocks.map((block) => assignSourceNode(block, scope));
-}
-
-function assignSourceNode(node: PMNode, scope: Pick<HolderLinkScope, "assetFor">): PMNode {
-  if (node.type.name === "image" || node.type.name === "figure") {
-    const src = typeof node.attrs.src === "string" ? node.attrs.src : "";
-    const uri = writtenSourceUri(src);
-    const assetId = uri ? scope.assetFor(uri) : null;
-    if (!assetId) return node;
-    return node.type.create(
-      { ...node.attrs, src: `asset:${assetId}`, ref: null },
-      node.content,
-      node.marks,
-    );
-  }
-  if (node.isLeaf) return node;
-  let changed = false;
-  const children: PMNode[] = [];
-  node.forEach((child) => {
-    const next = assignSourceNode(child, scope);
-    if (next !== child) changed = true;
-    children.push(next);
-  });
-  return changed ? node.copy(Fragment.fromArray(children)) : node;
+function assetFor(scope: HolderLinkScope, src: string): string | null {
+  const uri = writtenSourceUri(src);
+  return uri ? scope.assetFor(uri) : null;
 }
 
 /** The write path's ref assigner: one per command, over one prepared scope and one set of showings. */
@@ -331,7 +312,7 @@ export interface WriteLinkAssigner {
    * Assign refs in a formatted find's parsed spliced group: occurrences outside the
    * splice keep their old attrs, only the inside ones are assigned (§5.4).
    */
-  assignSplice(input: Omit<SpliceRestoreInput, "assignSources" | "assignOccurrences">): PMNode[];
+  assignSplice(input: Omit<SpliceRestoreInput, "assignOccurrences">): PMNode[];
   /** Every ahead ref minted so far; the handler registers them before applying. */
   readonly minted: readonly AheadMint[];
 }
@@ -360,7 +341,6 @@ export function createWriteLinkAssigner(input: {
     assignSplice(splice) {
       const restored = restoreOutsideSplice({
         ...splice,
-        assignSources: (blocks) => assignSources(blocks, input.scope),
         assignOccurrences(old, written) {
           const result = assignOccurrences({ ...common, old, written });
           minted.push(...result.minted);

@@ -43,7 +43,7 @@ export {
   subtractLineageRanges,
 } from "./lineage/range-set.js";
 export type { AssignInput, AssignResult } from "./links/assign-refs.js";
-export { assignLinkRefs, assignSources } from "./links/assign-refs.js";
+export { assignLinkRefs } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
 export type { LinkShowing } from "./links/shown.js";
 export type { BlockItemId } from "./model/block-hash.js";
