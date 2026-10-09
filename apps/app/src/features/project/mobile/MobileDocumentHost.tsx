@@ -46,8 +46,12 @@ export type MobileDocumentHostProps = {
  * hosts below swap, and a status line replaces the editor, as the route settles).
  */
 export function MobileDocumentHost(props: MobileDocumentHostProps) {
+  const name = props.localTab?.name ?? props.route.tab?.name;
   return (
-    <PaintHold status={t`Opening draft`} className="relative h-full min-h-0">
+    <PaintHold
+      status={name ? t`Opening ${name}` : t`Opening draft`}
+      className="relative h-full min-h-0"
+    >
       <PaintCapture
         surface={`${props.localTab ? "local" : props.route.tab?.kind === "tracked" && props.route.tab.draftOnly ? "draft-only" : "server"}:${props.localTab?.documentId ?? props.route.tab?.documentId ?? props.route.path}`}
       />

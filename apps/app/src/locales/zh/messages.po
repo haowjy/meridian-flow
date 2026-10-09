@@ -678,7 +678,7 @@ msgid "Back to chat"
 msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Back to live"
 msgstr ""
 
@@ -952,6 +952,7 @@ msgstr ""
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
 
+#: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
@@ -1404,7 +1405,7 @@ msgstr ""
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr ""
 
@@ -1412,6 +1413,10 @@ msgstr ""
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr ""
+
+#: src/features/editor/EditorView.tsx
+msgid "Couldn't open this draft."
+msgstr "无法打开此草稿。"
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
@@ -3003,7 +3008,13 @@ msgstr ""
 msgid "Open this document in a project to upload figures."
 msgstr ""
 
-#: src/features/project/dock/review-handover.tsx
+#. placeholder {0}: activeTab.name
+#: src/features/project/context/ContextViewer.tsx
+#~ msgid "Opening {0}"
+#~ msgstr ""
+
+#: src/features/project/context/ContextViewer.tsx
+#: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening {name}"
 msgstr ""
 
@@ -3016,7 +3027,8 @@ msgstr ""
 msgid "Opening document…"
 msgstr ""
 
-#: src/features/project/dock/review-handover.tsx
+#: src/features/project/context/ContextViewer.tsx
+#: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening draft"
 msgstr ""
 
@@ -3385,6 +3397,7 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
+#: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -4376,11 +4389,11 @@ msgstr ""
 msgid "Try again"
 msgstr ""
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Try again, or close this tab. The draft stays in your list."
 msgstr ""
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Try again, or return to the live document."
 msgstr ""
 
