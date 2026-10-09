@@ -1,10 +1,15 @@
 /** Stored-link extraction and substitution contracts, independent of DB orchestration. */
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
+import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import * as links from "./document-link-occurrences.js";
 
-function seed(paragraphs: readonly (readonly [string, string, Record<string, unknown>?][])[]) {
+function seed(
+  paragraphs: readonly (readonly [string, string | null, Record<string, unknown>?][])[],
+) {
   const doc = new Y.Doc({ gc: false });
+  doc.clientID = 100;
   const fragment = doc.getXmlFragment("prosemirror");
   for (const runs of paragraphs) {
     const p = new Y.XmlElement("paragraph");
@@ -12,7 +17,10 @@ function seed(paragraphs: readonly (readonly [string, string, Record<string, unk
     fragment.push([p]);
     p.push([text]);
     for (const [words, href, marks] of runs)
-      text.insert(text.length, words, { link: { href, title: "keep" }, ...marks });
+      text.insert(text.length, words, {
+        ...(href === null ? {} : { link: { href, title: "keep" } }),
+        ...marks,
+      });
   }
   return { doc, fragment };
 }
@@ -21,40 +29,6 @@ const words = (fragment: Y.XmlFragment) =>
     .extractDocumentLinkOccurrences(fragment)
     .filter((o) => o.kind === "text")
     .map((o) => [o.href, o.words]);
-
-it.each([
-  ["chapter.md", "gate.md", true],
-  ["chapter", "gate", true],
-  ["chapter", "chapter", false],
-  ["chapter ", "chapter ", true],
-])("relabels exact filename words, never custom words %s", (before, after, relabel) => {
-  const { doc, fragment } = seed([
-    [
-      [before.slice(0, 1), "chapter.md", { strong: {} }],
-      [before.slice(1), "chapter.md", { em: {} }],
-    ],
-  ]);
-  expect(
-    links.applyDocumentLinkSubstitutions(
-      fragment,
-      new Map([
-        [
-          "chapter.md",
-          {
-            href: "gate.md",
-            ...(relabel ? { oldFilename: "chapter.md", newFilename: "gate.md" } : {}),
-          },
-        ],
-      ]),
-    ),
-  ).toBe(1);
-  expect(words(fragment)).toEqual([["gate.md", after]]);
-  const occurrence = links.extractDocumentLinkOccurrences(fragment)[0];
-  if (occurrence?.kind !== "text") throw new Error("Missing text occurrence");
-  expect(occurrence.runs[0]?.attributes).toMatchObject({ strong: {}, link: { title: "keep" } });
-  if (!relabel) expect(occurrence.runs[1]?.attributes.em).toEqual({});
-  doc.destroy();
-});
 
 it("groups marks but not paragraphs, rewrites chains once and touches only literal src", () => {
   const { doc, fragment } = seed([
@@ -91,5 +65,120 @@ it("groups marks but not paragraphs, rewrites chains once and touches only liter
     ["six.md", "five.md"],
   ]);
   expect(external.getAttribute("src")).toBe("https://example.com/image.png");
+  doc.destroy();
+});
+
+// The first move leaves formatting history that a later PM write normalizes.
+it.each([
+  { edit: "adjacent prose", block: 0, label: "Target", prose: " returns." },
+  { edit: "link label", block: 0, label: "Tar drafted get", prose: " waits." },
+  { edit: "another paragraph", block: 1, label: "Target", prose: " waits." },
+])("keeps old hrefs off plain draft text after editing $edit", ({ block, label, prose }) => {
+  const { doc, fragment } = seed([[["Target", "target.md"]], [["Other paragraph.", null]]]);
+  const text = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
+  text.insert(text.length, " waits.", {});
+  const draft = new Y.Doc({ gc: false });
+  draft.clientID = 200;
+  Y.applyUpdate(draft, Y.encodeStateAsUpdate(doc));
+  rewrite(doc, "target.md", "final.md", 300);
+  Y.applyUpdate(draft, Y.encodeStateAsUpdate(doc));
+  const schema = buildDocumentSchema();
+  const paragraph = schema.nodes.paragraph.create(
+    null,
+    block === 0
+      ? [
+          schema.text(label, [schema.marks.link.create({ href: "final.md", title: "keep" })]),
+          schema.text(prose),
+        ]
+      : schema.text("Drafted paragraph."),
+  );
+  updateYFragment(
+    draft,
+    draft.getXmlFragment("prosemirror").get(block) as Y.XmlFragment,
+    paragraph,
+    { mapping: new Map(), isOMark: new Map() },
+  );
+  rewrite(doc, "final.md", "merged.md", 400);
+  Y.applyUpdate(draft, Y.encodeStateAsUpdate(doc));
+  const draftText = (draft.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(
+    0,
+  ) as Y.XmlText;
+  expect(draftText.toDelta()).toEqual([
+    { insert: label, attributes: { link: { href: "merged.md", title: "keep" } } },
+    { insert: prose },
+  ]);
+  expect(text.toDelta()).toEqual([
+    { insert: "Target", attributes: { link: { href: "merged.md", title: "keep" } } },
+    { insert: " waits." },
+  ]);
+  draft.destroy();
+  doc.destroy();
+});
+
+function rewrite(doc: Y.Doc, from: string, to: string, clientID: number) {
+  const clone = new Y.Doc({ gc: false });
+  clone.clientID = clientID;
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+  links.applyDocumentLinkSubstitutions(
+    clone.getXmlFragment("prosemirror"),
+    new Map([[from, { href: to }]]),
+  );
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(clone, Y.encodeStateVector(doc)));
+  clone.destroy();
+}
+
+it.each([
+  false,
+  true,
+])("preserves concurrent manual retarget arbitration (relabel: %s)", (relabel) => {
+  const { doc } = seed([
+    [
+      ["Target", "Target.md"],
+      [" waits.", null],
+    ],
+  ]);
+  const manual = new Y.Doc({ gc: false });
+  manual.clientID = 3_000_000_000;
+  Y.applyUpdate(manual, Y.encodeStateAsUpdate(doc));
+  const maintenance = new Y.Doc({ gc: false });
+  maintenance.clientID = 2_000_000_000;
+  Y.applyUpdate(maintenance, Y.encodeStateAsUpdate(doc));
+  const schema = buildDocumentSchema();
+  updateYFragment(
+    manual,
+    manual.getXmlFragment("prosemirror").get(0) as Y.XmlFragment,
+    schema.nodes.paragraph.create(null, [
+      schema.text("Target", [schema.marks.link.create({ href: "Hand.md", title: "manual" })]),
+      schema.text(" waits."),
+    ]),
+    { mapping: new Map(), isOMark: new Map() },
+  );
+  links.applyDocumentLinkSubstitutions(
+    maintenance.getXmlFragment("prosemirror"),
+    new Map([
+      [
+        "Target.md",
+        {
+          href: "Moved.md",
+          ...(relabel ? { oldFilename: "Target.md", newFilename: "Moved.md" } : {}),
+        },
+      ],
+    ]),
+  );
+  const manualUpdate = Y.encodeStateAsUpdate(manual);
+  Y.applyUpdate(manual, Y.encodeStateAsUpdate(maintenance));
+  Y.applyUpdate(maintenance, manualUpdate);
+  for (const merged of [manual, maintenance]) {
+    const text = (merged.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    expect(text.toDelta()).toEqual([
+      {
+        insert: relabel ? "Moved" : "Target",
+        attributes: { link: { href: "Hand.md", title: "manual" } },
+      },
+      { insert: " waits." },
+    ]);
+  }
+  manual.destroy();
+  maintenance.destroy();
   doc.destroy();
 });

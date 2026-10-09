@@ -1,5 +1,10 @@
 # DB test isolation
 
+DB suites share a worker module cache and an owned database clone. Never export
+a live module-level connection or register suite hooks at helper import time.
+Each suite creates its own connections and closes them in `afterAll`; shared
+helpers accept those connections explicitly. Do not mock modules or process globals.
+
 Use `drizzle-reset.ts` for database isolation. Single-connection suites use
 `useRollbackTestDatabase`: read `current` inside hooks/tests and build adapters
 from that transaction. Its optional `prepareSuite` establishes the committed

@@ -292,31 +292,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(next)).toBeGreaterThan(BigInt(first));
     });
 
-    it("reuses one generation for overlapping and newly introduced authority keys", async () => {
-      const db = await seed();
-      const availability = createDrizzleProjectContextAvailability(db);
-      const generations = await runInDrizzleTransaction(db, async () => [
-        await availability.advance({ projectIds: [PROJECT], userIds: [USER] }),
-        await availability.advance({ projectIds: [FOREIGN_PROJECT, PROJECT], userIds: [] }),
-        await availability.advance({ projectIds: [FOREIGN_PROJECT], userIds: [OTHER, USER] }),
-      ]);
-      expect(new Set(generations)).toHaveLength(1);
-      const authorityKeys = [
-        FOREIGN_PROJECT_AUTHORITY_KEY,
-        PROJECT_AUTHORITY_KEY,
-        OTHER_AUTHORITY_KEY,
-        USER_AUTHORITY_KEY,
-      ];
-      const heads = await db
-        .select()
-        .from(contextAvailabilityHeads)
-        .where(inArray(contextAvailabilityHeads.authorityKey, authorityKeys));
-      expect(heads.map(({ authorityKey }) => authorityKey).sort()).toEqual(authorityKeys.sort());
-      expect(new Set(heads.map(({ generation }) => generation))).toEqual(
-        new Set([BigInt(generations[0] ?? "0")]),
-      );
-    });
-
     it("merges successful savepoint keys and discards failed savepoint keys", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);

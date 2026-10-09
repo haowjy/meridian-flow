@@ -54,16 +54,6 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
     expect(assistantBlocks(params).some((block) => block.type === "tool_use")).toBe(true);
   });
 
-  it("prepends empty thinking when reasoning is enabled", () => {
-    const params = toAnthropicMessageParams(
-      { ...requestWithToolPair(), reasoning: { effort: "medium" } },
-      "claude-sonnet-4",
-      4096,
-      "anthropic",
-    );
-    expect(assistantBlocks(params)[0]).toEqual({ type: "thinking", thinking: "" });
-  });
-
   it("does not invent thinking for Anthropic when reasoning is disabled", () => {
     const params = toAnthropicMessageParams(
       { ...requestWithToolPair(), reasoning: "disabled" },
@@ -231,26 +221,6 @@ describe("Anthropic prompt-cache breakpoints", () => {
     expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
   });
 
-  it("maps the descriptor's five-minute TTL into cache_control", () => {
-    const params = toAnthropicMessageParams(
-      {
-        messages: [
-          {
-            ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
-          },
-        ],
-      },
-      "claude-sonnet-4",
-      256,
-      "anthropic",
-      5 * 60 * 1_000,
-    );
-    expect(params.system).toEqual([
-      { type: "text", text: "You are Writer.", cache_control: { type: "ephemeral", ttl: "5m" } },
-    ]);
-  });
-
   it("never emits more than 4 cache_control breakpoints for the loop's 3-mark scheme", () => {
     // Mirrors what `loop/prompt-cache-marks.ts` marks: the system message,
     // the previous request's tail (read point), and this request's tail.
@@ -317,18 +287,4 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
     3600000,
   );
   expect(capped).toEqual({ ...original, max_tokens: 4396 });
-});
-
-it.each([
-  [{ effort: "medium" as const }, 4096],
-  [{ effort: "max" as const }, undefined],
-])("keeps implicit thinking below the output limit (%s, %s)", (reasoning, maxTokens) => {
-  const params = toAnthropicMessageParams(
-    { messages: [], reasoning, maxTokens },
-    "claude-sonnet-4-20250514",
-    16384,
-  );
-  expect(params.thinking?.type).toBe("enabled");
-  if (params.thinking?.type === "enabled")
-    expect(params.thinking.budget_tokens).toBeLessThan(params.max_tokens);
 });

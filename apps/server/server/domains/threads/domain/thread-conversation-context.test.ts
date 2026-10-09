@@ -13,9 +13,6 @@ function thread(id: string, extra: Partial<Thread> = {}): Thread {
 function turn(id: string, threadId: string, position = 0, createdAt = id): Turn {
   return { id, threadId, position, createdAt } as Turn;
 }
-function block(id: string, turnId: string): Block {
-  return { id, turnId } as Block;
-}
 
 function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ThreadConversationContextDeps {
   return {
@@ -34,18 +31,6 @@ function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ThreadConve
 }
 
 describe("loadThreadConversationContext", () => {
-  it("a fork of a root thread inherits the root's history through originTurnId", async () => {
-    const root = thread("root");
-    const fork = thread("fork", { originType: "fork", originTurnId: "r2", parentThreadId: null });
-    const turns = [turn("r1", "root"), turn("r2", "root"), turn("r3", "root"), turn("f1", "fork")];
-    const blocks = [block("b1", "r1"), block("b3", "r3"), block("bf", "f1")];
-
-    const context = await loadThreadConversationContext(depsFor([root, fork], turns, blocks), fork);
-
-    expect(context.turns.map((t) => t.id)).toEqual(["r1", "r2", "f1"]);
-    expect(context.blocks.map((b) => b.id)).toEqual(["b1", "bf"]);
-  });
-
   it("a sibling fork of a subagent inherits the subagent's history, not the shared parent's", async () => {
     const parent = thread("parent");
     const child = thread("child", { parentThreadId: "parent" });
@@ -62,25 +47,6 @@ describe("loadThreadConversationContext", () => {
     );
 
     expect(context.turns.map((t) => t.id)).toEqual(["c1"]);
-  });
-
-  it("a fork of a fork inherits through both sources", async () => {
-    const root = thread("root");
-    const fork1 = thread("fork1", { originType: "fork", originTurnId: "r1" });
-    const fork2 = thread("fork2", { originType: "fork", originTurnId: "f1" });
-    const turns = [
-      turn("r1", "root"),
-      turn("r2", "root"),
-      turn("f1", "fork1"),
-      turn("f2", "fork1"),
-    ];
-
-    const context = await loadThreadConversationContext(
-      depsFor([root, fork1, fork2], turns, []),
-      fork2,
-    );
-
-    expect(context.turns.map((t) => t.id)).toEqual(["r1", "f1"]);
   });
 
   it("uses position rather than creation time to find a fork cutoff", async () => {

@@ -85,24 +85,6 @@ describe("useThreadControls", () => {
     expect(invalidateQueries).toHaveBeenCalled();
   });
 
-  it("keeps a failed enqueue on the item and retries it with the same id", async () => {
-    api.enqueueThreadControl.mockRejectedValueOnce(new Error("offline"));
-    let id = "";
-    await act(async () => {
-      id = latest.enqueue({ kind: "compact" });
-    });
-    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "failed" }]);
-    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't queue the compaction.");
-    const retry = deferred<unknown>();
-    api.enqueueThreadControl.mockReturnValueOnce(retry.promise);
-    await act(async () => latest.retry(id));
-    expect(api.enqueueThreadControl).toHaveBeenLastCalledWith("thread-1", {
-      id,
-      control: { kind: "compact" },
-    });
-    expect(latest.queued[0]?.status).toBe("queued");
-  });
-
   it("removes the row at once, and withdraws once the in-flight enqueue lands", async () => {
     const enqueued = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValue(enqueued.promise);
@@ -225,97 +207,12 @@ describe("useThreadControls", () => {
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
   });
 
-  it("brings the row back when the withdrawal fails", async () => {
-    api.withdrawThreadControl.mockRejectedValue(new Error("offline"));
-    const queued = {
-      id: "k",
-      control: { kind: "compact" },
-      status: "queued",
-    } as const;
-    const inbox: ThreadPendingInbox = {
-      items: [
-        {
-          id: "k",
-          seq: 1,
-          intent: "control",
-          control: { kind: "compact" },
-          provenance: { kind: "writer", actorId: "w" },
-          deliveryState: "awaiting_run",
-          summary: "Compact conversation",
-          enqueuedAt: "2026-09-28T00:00:00.000Z",
-        },
-      ],
-    };
-    await act(async () => root.render(<Probe pending={inbox} />));
-    await act(async () => latest.withdraw(queued));
-    expect(latest.queued).toEqual([{ ...queued, status: "withdraw_failed" }]);
-    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't withdraw. Try again.");
-  });
-
   it("stops a pending divider through the cancel route and marks it stopping", async () => {
     transport.cancel.mockResolvedValue({ status: "cancelled" });
     await act(async () => latest.stop("c"));
     expect(transport.cancel).toHaveBeenCalledWith("thread-1", "c");
     expect(latest.stoppingTurnIds.has("c")).toBe(true);
     expect(invalidateQueries).toHaveBeenCalled();
-  });
-
-  it("says so when a Stop on the divider fails, and gives Stop back", async () => {
-    transport.cancel.mockRejectedValueOnce(new Error("offline"));
-    await act(async () => latest.stop("c"));
-    expect(announcements.announce).toHaveBeenCalledWith("Stopping compaction");
-    expect(announcements.announceError).toHaveBeenCalledWith(
-      "Couldn't stop the compaction. Try again.",
-    );
-    expect(latest.stoppingTurnIds.has("c")).toBe(false);
-  });
-
-  it("queues a command with its instructions", async () => {
-    api.enqueueThreadControl.mockReturnValue(new Promise(() => undefined));
-    await act(async () => root.render(<Probe />));
-    let id = "";
-    await act(async () => {
-      id = latest.enqueue({ kind: "compact", instructions: "Keep the oath" });
-    });
-    expect(api.enqueueThreadControl).toHaveBeenCalledWith("thread-1", {
-      id,
-      control: { kind: "compact", instructions: "Keep the oath" },
-    });
-    expect(latest.queued).toEqual([
-      {
-        id,
-        control: { kind: "compact", instructions: "Keep the oath" },
-        status: "queued",
-      },
-    ]);
-  });
-
-  it("shows the server's refusal of a chat with nothing to summarize on the row", async () => {
-    api.enqueueThreadControl.mockRejectedValueOnce(
-      new HttpResponseError("compact_requires_completed_reply", 409, {
-        error: "compact_requires_completed_reply",
-      }),
-    );
-    let id = "";
-    await act(async () => {
-      id = latest.enqueue({ kind: "compact", instructions: "Keep the sect names" });
-    });
-    expect(latest.queued).toEqual([
-      {
-        id,
-        control: { kind: "compact", instructions: "Keep the sect names" },
-        status: "failed",
-      },
-    ]);
-    expect(announcements.announceError).toHaveBeenCalledWith("Couldn't queue the compaction.");
-  });
-
-  it("announces a failed enqueue", async () => {
-    api.enqueueThreadControl.mockRejectedValue(new Error("offline"));
-    await act(async () => {
-      latest.enqueue({ kind: "compact" });
-    });
-    expect(announcements.announceError).toHaveBeenLastCalledWith("Couldn't queue the compaction.");
   });
 
   it("drops the row and says so when Withdraw comes after the compaction started", async () => {

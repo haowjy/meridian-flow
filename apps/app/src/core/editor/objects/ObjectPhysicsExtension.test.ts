@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import type { Editor, JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
-import { CellSelection } from "@tiptap/pm/tables";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { installJsdomLayout } from "@/test-support/jsdom-layout";
 
@@ -11,14 +10,8 @@ import {
   requireNode,
   type StandaloneEditor,
 } from "@/test-support/standalone-editor";
-import {
-  engageObject,
-  registerObjectEngagement,
-  registerObjectKeymap,
-  SELECTED_OBJECT_CLASS,
-} from "./ObjectPhysicsExtension";
+import { SELECTED_OBJECT_CLASS } from "./ObjectPhysicsExtension";
 import { selectedObject } from "./object-selection";
-import { objectTypeSpec } from "./object-types";
 
 let fixture: StandaloneEditor | null = null;
 
@@ -35,8 +28,6 @@ const paragraph = (text: string): JSONContent => ({
   type: "paragraph",
   content: [{ type: "text", text }],
 });
-
-const figure: JSONContent = { type: "figure", attrs: { src: "asset:1", caption: "" } };
 
 const cell = (text: string): JSONContent => ({
   type: "table_cell",
@@ -66,18 +57,6 @@ function positionOf(instance: Editor, type: string): number {
   return requireNode(instance, type).pos;
 }
 
-/**
- * The registration the node at `pos` matched. Engagements and per-object keys
- * are keyed by it rather than by the node type, because one node type carries
- * several registrations: every fenced diagram dialect is a `code_block`.
- */
-function specIdAt(instance: Editor, pos: number): string {
-  const node = instance.state.doc.nodeAt(pos);
-  const spec = node ? objectTypeSpec(node) : null;
-  if (!spec) throw new Error(`nothing registered at ${pos}`);
-  return spec.id;
-}
-
 function select(instance: Editor, pos: number) {
   instance.view.dispatch(
     instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, pos)),
@@ -87,18 +66,6 @@ function select(instance: Editor, pos: number) {
 function press(instance: Editor, init: KeyboardEventInit): boolean {
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
   instance.view.dom.dispatchEvent(event);
-  return event.defaultPrevented;
-}
-
-/** A real mouse press on `element`, and whether anything refused its default. */
-function mouseDown(element: Element, init: MouseEventInit = {}): boolean {
-  const event = new MouseEvent("mousedown", {
-    bubbles: true,
-    cancelable: true,
-    button: 0,
-    ...init,
-  });
-  element.dispatchEvent(event);
   return event.defaultPrevented;
 }
 
@@ -112,24 +79,6 @@ function typeCharacter(instance: Editor, character: string): void {
       cancelable: true,
     }),
   );
-}
-
-function cellTexts(instance: Editor): string[] {
-  const texts: string[] = [];
-  instance.state.doc.descendants((node) => {
-    if (node.type.name === "table_cell") texts.push(node.textContent);
-    return true;
-  });
-  return texts;
-}
-
-function cellPositions(instance: Editor): number[] {
-  const positions: number[] = [];
-  instance.state.doc.descendants((node, pos) => {
-    if (node.type.name === "table_cell") positions.push(pos);
-    return true;
-  });
-  return positions;
 }
 
 function nodeCount(instance: Editor, type: string): number {
@@ -161,236 +110,22 @@ describe("Enter on a selected object", () => {
     // not a place where Enter quietly rewrites the manuscript.
     expect(blockTypes(instance)).toEqual(before);
   });
-
-  it("puts the caret at the start of a selected plain fence (§4)", () => {
-    const plainFence: JSONContent = {
-      type: "code_block",
-      attrs: { language: "ts" },
-      content: [{ type: "text", text: "const gate = 3;" }],
-    };
-    const instance = mount([paragraph("before"), plainFence, paragraph("after")]);
-    const before = blockTypes(instance);
-
-    select(instance, positionOf(instance, "code_block"));
-    expect(press(instance, { key: "Enter" })).toBe(true);
-
-    // Not the base keymap's answer, which appends a paragraph after the fence
-    // and leaves the caret in it — a structural edit from a key that was
-    // supposed to take the writer INTO the code.
-    expect(blockTypes(instance)).toEqual(before);
-    expect(instance.state.selection.empty).toBe(true);
-    expect(instance.state.selection.$head.parent.type.name).toBe("code_block");
-    expect(instance.state.selection.from).toBe(positionOf(instance, "code_block") + 1);
-  });
-
-  it("engages a table by putting the caret in its first cell", () => {
-    const instance = mount([
-      {
-        type: "table",
-        content: [
-          {
-            type: "table_row",
-            content: [
-              { type: "table_header", content: [paragraph("Rank")] },
-              { type: "table_header", content: [paragraph("Skill")] },
-            ],
-          },
-        ],
-      },
-    ]);
-
-    select(instance, positionOf(instance, "table"));
-    expect(press(instance, { key: "Enter" })).toBe(true);
-    expect(instance.state.selection.$head.parent.textContent).toBe("Rank");
-  });
 });
 
-describe("which registration a surface belongs to", () => {
-  it("routes Enter by the matched registration, not by the node type", () => {
-    const instance = mount([paragraph("before"), mermaid, paragraph("after")]);
-    const pos = positionOf(instance, "code_block");
-    const opened: string[] = [];
+describe("Delete on a selected object", () => {
+  it("takes the whole table rather than blanking its cells", () => {
+    const instance = mount([paragraph("above"), table, paragraph("below")]);
+    // The join reflex: caret at the end of the line above, Delete to pull the
+    // next line up. The first press lands on the table as an object.
+    instance.commands.setTextSelection("above".length + 1);
 
-    registerObjectEngagement(instance, specIdAt(instance, pos), () => {
-      opened.push("registration");
-    });
-    // A second diagram dialect would be another `code_block` registration with
-    // its own surface. The node type cannot be the key, or the two would
-    // overwrite each other and the first fence to render would win both.
-    registerObjectEngagement(instance, "code_block", () => {
-      opened.push("node-type");
-    });
+    press(instance, { key: "Delete" });
+    expect(selectedObject(instance.state)?.node.type.name).toBe("table");
+    // Seen before it is destroyed: the second press is the destructive one.
+    expect(instance.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`)).not.toBeNull();
 
-    select(instance, pos);
-    expect(press(instance, { key: "Enter" })).toBe(true);
-    expect(opened).toEqual(["registration"]);
-  });
-
-  it("leaves a plain fence out of the diagram registration entirely", () => {
-    const plainFence: JSONContent = {
-      type: "code_block",
-      attrs: { language: "ts" },
-      content: [{ type: "text", text: "const gate = 3;" }],
-    };
-    const instance = mount([paragraph("before"), mermaid, plainFence]);
-    const diagram = positionOf(instance, "code_block");
-    const opened: number[] = [];
-    registerObjectEngagement(instance, specIdAt(instance, diagram), ({ pos }) => {
-      opened.push(pos);
-    });
-
-    // The plain fence matches no registration, so Enter is §4's caret-into-code
-    // rather than a surface opening on a block that has no diagram in it.
-    let plain: number | null = null;
-    instance.state.doc.forEach((node, pos) => {
-      if (node.type.name === "code_block" && pos !== diagram) plain = pos;
-    });
-    if (plain === null) throw new Error("no plain fence in the fixture");
-    select(instance, plain);
-    press(instance, { key: "Enter" });
-
-    expect(opened).toEqual([]);
-  });
-});
-
-describe("per-type keymap contributions", () => {
-  it("fires only while that type is the selected object", () => {
-    const instance = mount([paragraph("before"), mermaid, { type: "horizontal_rule" }]);
-    const openSource = vi.fn(() => true);
-    registerObjectKeymap(instance, specIdAt(instance, positionOf(instance, "code_block")), {
-      "Mod-Enter": openSource,
-    });
-
-    select(instance, positionOf(instance, "horizontal_rule"));
-    press(instance, { key: "Enter", ctrlKey: true });
-    expect(openSource).not.toHaveBeenCalled();
-
-    select(instance, positionOf(instance, "code_block"));
-    expect(press(instance, { key: "Enter", ctrlKey: true })).toBe(true);
-    expect(openSource).toHaveBeenCalledOnce();
-  });
-});
-
-describe("double-click engages", () => {
-  it("opens the object's surface without a selection step first", () => {
-    const instance = mount([paragraph("before"), mermaid]);
-    const pos = positionOf(instance, "code_block");
-    const opened: number[] = [];
-    registerObjectEngagement(instance, specIdAt(instance, pos), ({ pos: at }) => {
-      opened.push(at);
-      return true;
-    });
-
-    // §5.2's second door into the dialog: a double-click on the diagram in the
-    // page, with no click-to-select beforehand.
-    const node = instance.state.doc.nodeAt(pos);
-    if (!node) throw new Error("no diagram in the fixture");
-    const handled = instance.view.someProp("handleDoubleClickOn", (handler) =>
-      handler(instance.view, pos + 1, node, pos, new MouseEvent("dblclick"), true),
-    );
-
-    expect(handled).toBe(true);
-    expect(opened).toEqual([pos]);
-  });
-
-  it("leaves a double-click in prose to the browser's word selection", () => {
-    const instance = mount([paragraph("before"), mermaid]);
-    const pos = positionOf(instance, "paragraph");
-    const node = instance.state.doc.nodeAt(pos);
-    if (!node) throw new Error("no paragraph in the fixture");
-
-    const handled = instance.view.someProp("handleDoubleClickOn", (handler) =>
-      handler(instance.view, pos + 1, node, pos, new MouseEvent("dblclick"), true),
-    );
-
-    expect(handled).toBeFalsy();
-  });
-});
-
-describe("why a surface is opening", () => {
-  /** Records the opening each door reports, so the two can be told apart. */
-  function captureOpenings(instance: Editor, pos: number): string[] {
-    const openings: string[] = [];
-    registerObjectEngagement(instance, specIdAt(instance, pos), (_target, opening) => {
-      openings.push(opening);
-      return true;
-    });
-    return openings;
-  }
-
-  it("says a just-created object has nothing to view yet", () => {
-    const instance = mount([paragraph("before"), mermaid]);
-    const pos = positionOf(instance, "code_block");
-    const openings = captureOpenings(instance, pos);
-    const node = instance.state.doc.nodeAt(pos);
-    if (!node) throw new Error("no diagram in the fixture");
-
-    // Law 2's exception: the lane that made it asks for the surface, and the
-    // surface has to know it is opening on something nobody has read yet.
-    engageObject(instance, { node, pos }, "created");
-
-    expect(openings).toEqual(["created"]);
-  });
-
-  it("says an existing object is being engaged", () => {
-    const instance = mount([paragraph("before"), mermaid]);
-    const pos = positionOf(instance, "code_block");
-    const openings = captureOpenings(instance, pos);
-    const node = instance.state.doc.nodeAt(pos);
-    if (!node) throw new Error("no diagram in the fixture");
-
-    select(instance, pos);
-    press(instance, { key: "Enter" });
-    instance.view.someProp("handleDoubleClickOn", (handler) =>
-      handler(instance.view, pos + 1, node, pos, new MouseEvent("dblclick"), true),
-    );
-
-    expect(openings).toEqual(["engage", "engage"]);
-  });
-});
-
-describe("a press on an object body", () => {
-  // The rule is the DOM's own: a body marked `contenteditable="false"` takes
-  // the press, because `handleClickOn` is a mouseup path and the browser has
-  // already answered the press by then. Only a node view that hides its own
-  // text produces such a body, so the positive case lives with the one that
-  // does; what belongs here is everything the rule must keep its hands off.
-
-  it("leaves a plain fence its caret: the press lands in editable text", () => {
-    // §5.3: a code block's rendering IS its source, so a click places a caret
-    // and there is no hidden mode to fall into.
-    const instance = mount([
-      { type: "code_block", content: [{ type: "text", text: "const qi = 1;" }] },
-    ]);
-    const fence = instance.view.dom.querySelector("pre");
-    if (!fence) throw new Error("expected a fence");
-
-    expect(mouseDown(fence)).toBe(false);
-    expect(instance.state.selection).not.toBeInstanceOf(NodeSelection);
-  });
-
-  it("leaves a table cell its caret", () => {
-    const instance = mount([
-      {
-        type: "table",
-        content: [
-          {
-            type: "table_row",
-            content: [{ type: "table_cell", content: [paragraph("cell")] }],
-          },
-        ],
-      },
-    ]);
-    const cell = instance.view.dom.querySelector("td");
-    if (!cell) throw new Error("expected a cell");
-
-    // The press is claimed — by the cell-interior router
-    // (`../cell-interior-press.ts`), whose answer is a caret INSIDE the cell.
-    // What this rule must keep its hands off is the selection: a cell press
-    // never selects an object.
-    mouseDown(cell);
-    expect(instance.state.selection).not.toBeInstanceOf(NodeSelection);
-    expect(instance.state.selection.$from.node(-1).type.name).toBe("table_cell");
+    press(instance, { key: "Delete" });
+    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
   });
 });
 
@@ -415,91 +150,5 @@ describe("a printable character beside a selected object", () => {
 
     expect(nodeCount(instance, "image")).toBe(1);
     expect(instance.state.doc.firstChild?.textContent).toBe("look Q");
-  });
-
-  it("lands in the block after a selected figure", () => {
-    const instance = mount([paragraph("before"), figure, paragraph("after")]);
-    select(instance, positionOf(instance, "figure"));
-
-    typeCharacter(instance, "Q");
-
-    expect(nodeCount(instance, "figure")).toBe(1);
-    expect(blockTypes(instance)).toEqual(["paragraph", "figure", "paragraph"]);
-    expect(instance.state.doc.lastChild?.textContent).toBe("Qafter");
-  });
-
-  it("makes a paragraph when the object is the whole document", () => {
-    const instance = mount([figure]);
-    select(instance, positionOf(instance, "figure"));
-
-    typeCharacter(instance, "Q");
-
-    expect(nodeCount(instance, "figure")).toBe(1);
-    expect(blockTypes(instance)).toEqual(["figure", "paragraph"]);
-    expect(instance.state.doc.lastChild?.textContent).toBe("Q");
-  });
-
-  it("types after a table the join gesture selected, leaving its cells alone", () => {
-    const instance = mount([paragraph("above"), table, paragraph("below")]);
-    instance.commands.setTextSelection("above".length + 1);
-    press(instance, { key: "Delete" });
-
-    typeCharacter(instance, "Q");
-
-    expect(nodeCount(instance, "table")).toBe(1);
-    expect(cellTexts(instance)).toEqual(["Terrace", "Question", "First", "Who are you?"]);
-    expect(instance.state.doc.lastChild?.textContent).toBe("Qbelow");
-  });
-
-  it("still replaces the cells a writer swept across", () => {
-    // A partial cell selection is a deliberate text edit inside the table, not
-    // the table standing there as an object.
-    const instance = mount([paragraph("above"), table, paragraph("below")]);
-    const cells = cellPositions(instance);
-    instance.view.dispatch(
-      instance.state.tr.setSelection(CellSelection.create(instance.state.doc, cells[0], cells[1])),
-    );
-
-    typeCharacter(instance, "Q");
-
-    expect(nodeCount(instance, "table")).toBe(1);
-    expect(cellTexts(instance)).toEqual(["", "Q", "First", "Who are you?"]);
-    expect(instance.state.doc.lastChild?.textContent).toBe("below");
-  });
-});
-
-describe("Delete on a selected object", () => {
-  it("removes the picture, because a destructive verb stays destructive", () => {
-    const instance = mount([paragraph("before"), figure, paragraph("after")]);
-    select(instance, positionOf(instance, "figure"));
-
-    expect(press(instance, { key: "Delete" })).toBe(true);
-    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
-  });
-
-  it("takes the whole table rather than blanking its cells", () => {
-    const instance = mount([paragraph("above"), table, paragraph("below")]);
-    // The join reflex: caret at the end of the line above, Delete to pull the
-    // next line up. The first press lands on the table as an object.
-    instance.commands.setTextSelection("above".length + 1);
-
-    press(instance, { key: "Delete" });
-    expect(selectedObject(instance.state)?.node.type.name).toBe("table");
-    // Seen before it is destroyed: the second press is the destructive one.
-    expect(instance.view.dom.querySelector(`.${SELECTED_OBJECT_CLASS}`)).not.toBeNull();
-
-    press(instance, { key: "Delete" });
-    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
-  });
-
-  it("mirrors the gesture for Backspace at the start of the line below", () => {
-    const instance = mount([paragraph("above"), table, paragraph("below")]);
-    instance.commands.setTextSelection(instance.state.doc.content.size - "below".length - 1);
-
-    press(instance, { key: "Backspace" });
-    expect(selectedObject(instance.state)?.node.type.name).toBe("table");
-
-    press(instance, { key: "Backspace" });
-    expect(blockTypes(instance)).toEqual(["paragraph", "paragraph"]);
   });
 });

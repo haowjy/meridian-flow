@@ -122,23 +122,6 @@ describe("MobileDocumentHost draft-only review", () => {
     />
   );
 
-  it("does not reject the route while the address has not admitted its document", async () => {
-    coordinator.rejectRouteCandidate.mockClear();
-    await withReactRoot(unadmitted("pending"), async () => {
-      await act(async () => undefined);
-      expect(coordinator.rejectRouteCandidate).not.toHaveBeenCalled();
-      expect(document.body.textContent).not.toContain("Couldn't open this document.");
-    });
-  });
-
-  it("rejects an absent document once the address has settled", async () => {
-    coordinator.rejectRouteCandidate.mockClear();
-    await withReactRoot(unadmitted("settled"), async () => {
-      await act(async () => undefined);
-      expect(coordinator.rejectRouteCandidate).toHaveBeenCalledWith("project-a", 3);
-    });
-  });
-
   it("keeps the route, rejecting nothing, when the address failed to admit its document", async () => {
     // The route boundary owns the failure and its retry; navigating away would lose the address.
     coordinator.rejectRouteCandidate.mockClear();

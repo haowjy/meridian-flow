@@ -1,6 +1,4 @@
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
-import type { ToolView } from "./group-delivery-segments";
 
 export function block(
   id: string,
@@ -20,41 +18,3 @@ export function block(
     createdAt: "2026-09-23T00:00:00.000Z",
   };
 }
-
-export function toolView({
-  toolCallId,
-  toolName,
-  result,
-  isError = false,
-  sequence = 1,
-  input = null,
-  message = null,
-}: {
-  toolCallId: string;
-  toolName: string;
-  /** The typed result; the app never reads the model's `output` text. */
-  result: JsonValue | null;
-  isError?: boolean;
-  sequence?: number;
-  input?: JsonValue | null;
-  message?: string | null;
-}): ToolView {
-  return {
-    toolCallId,
-    toolName,
-    input,
-    result,
-    status: "complete",
-    isError,
-    message,
-    streamedOutput: null,
-    metadata: null,
-    keyBlock: block(`tool-${toolCallId}`, sequence, "tool_use", { toolCallId, toolName }),
-  };
-}
-
-export const savedArtifact: ArtifactRef = {
-  type: "object",
-  uri: "scratch://saved.md",
-  label: "Saved artifact",
-};

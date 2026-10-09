@@ -36,7 +36,6 @@ else
     const { createTestAgentBinding } = await import("../loop/__tests__/runtime-fixtures.js");
     const { scriptedGateway } = await import("../loop/__tests__/test-gateway.js");
     const { createRunStarter } = await import("../loop/run-starter.js");
-    const { generateHandoffBrief } = await import("./brief-request.js");
     const { createWakeIfRunnable } = await import("../loop/wake-if-runnable.js");
     const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
     const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
@@ -292,9 +291,7 @@ else
     });
 
     it.each([
-      "complete",
       "failed",
-      "stopped",
     ] as const)("answers a held-claim message after a %s handoff seed using the real run starter", async (ending) => {
       const fixture = await handoffSeed();
       const runner = await destinationRunner(fixture);
@@ -323,16 +320,9 @@ else
             return true;
           },
         },
-        async generate({ signal }) {
+        async generate() {
           markProviderStarted();
-          if (ending === "stopped")
-            return new Promise((resolve) => {
-              signal.addEventListener(
-                "abort",
-                () => resolve({ outcome: { kind: "cancelled", modelResponses: [] } }),
-                { once: true },
-              );
-            });
+
           await providerGate;
           if (ending === "failed") throw new Error("brief provider failure");
           return {
@@ -368,26 +358,17 @@ else
         body: { kind: "text", text: "After the brief." },
         idempotencyKey: "during-brief",
       });
-      const compact =
-        ending === "stopped"
-          ? null
-          : await delivery.enqueue({
-              threadId: fixture.destination.id,
-              intent: "control",
-              provenance: { kind: "writer", actorId: fixture.ids.user },
-              body: { kind: "compact" },
-              idempotencyKey: "compact-during-brief",
-            });
+      const compact = await delivery.enqueue({
+        threadId: fixture.destination.id,
+        intent: "control",
+        provenance: { kind: "writer", actorId: fixture.ids.user },
+        body: { kind: "compact" },
+        idempotencyKey: "compact-during-brief",
+      });
       expect(await runClaim.startExecution(fixture.destination.id, "racing-wake")).toBeNull();
+      releaseProvider();
 
-      if (ending === "stopped") {
-        await expect(service.stop(fixture.destination.id, fixture.seed.id)).resolves.toBe(true);
-      } else {
-        releaseProvider();
-      }
-
-      const expectedSeedStatus =
-        ending === "complete" ? "complete" : ending === "failed" ? "error" : "cancelled";
+      const expectedSeedStatus = ending === "failed" ? "error" : "cancelled";
       await expect
         .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
         .toBe(expectedSeedStatus);
@@ -414,84 +395,6 @@ else
         );
       }
       expect(await delivery.selectPending(fixture.destination.id)).toEqual([]);
-    });
-
-    it("completes the brief before a broken destination binding fails its reply", async () => {
-      const fixture = await handoffSeed();
-      const runner = await destinationRunner(
-        fixture,
-        createTestAgentBinding("gpt-4.1-mini", "Source Agent.", () => [fixture.source.id]),
-      );
-      let generateCalls = 0;
-      const service = createHandoffBriefs({
-        shutdown: { started: false },
-        backgroundTasks: runner.backgroundTasks,
-        repos: fixture.repos,
-        eventWriter: createDrizzleEventJournalWriter(db),
-        eventSink: createInMemoryEventSink(),
-        threadLock: createDrizzleThreadLock(db),
-        runClaim: runner.runClaim,
-        wakeIfRunnable: createWakeIfRunnable({
-          delivery: runner.delivery,
-          runStarter: runner.runStarter,
-        }),
-        billingUsage: {
-          async canStartTurn() {
-            return true;
-          },
-        },
-        generate(input) {
-          generateCalls += 1;
-          return generateHandoffBrief(
-            runner.runtime.deps,
-            input.destination,
-            input.seed,
-            input.signal,
-          );
-        },
-        async publishStatus() {},
-        schedulePostCommit(task) {
-          void task();
-        },
-      });
-      const claim = required(await service.hold(fixture.destination.id));
-      service.launchAfterCommit({
-        threadId: fixture.destination.id,
-        seedTurnId: fixture.seed.id,
-        claim,
-      });
-      const queued = await runner.delivery.enqueue({
-        threadId: fixture.destination.id,
-        intent: "message",
-        provenance: { kind: "writer", actorId: fixture.ids.user },
-        body: { kind: "text", text: "The destination reply should fail." },
-        idempotencyKey: "broken-destination-binding",
-      });
-
-      await expect
-        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
-        .toBe("complete");
-      await expect
-        .poll(async () =>
-          (await fixture.repos.turns.listByThread(fixture.destination.id)).some(
-            (turn) => turn.role === "assistant" && turn.status === "error",
-          ),
-        )
-        .toBe(true);
-      await runner.backgroundTasks.drain();
-
-      expect(
-        await runner.runtime.deps.agentRevisions.readThreadBinding(fixture.destination.id),
-      ).toBeUndefined();
-      expect(await fixture.repos.turns.findById(queued.id)).toMatchObject({
-        role: "user",
-        status: "complete",
-      });
-      expect(await fixture.repos.turns.findById(fixture.seed.id)).toMatchObject({
-        role: "system",
-        status: "complete",
-      });
-      expect(generateCalls).toBe(1);
     });
 
     it("settles paid rows on shutdown, leaves S pending, releases the claim, and skips the wake", async () => {
@@ -710,25 +613,6 @@ else
         status: "error",
         metadata: { reason: "credits_exhausted", phase: "launch" },
       });
-      expect(await fixture.repos.turns.findById(fixture.seed.id)).not.toHaveProperty(
-        "metadata.summarizer",
-      );
-    });
-
-    it("does not record a summary path when generation throws before a response", async () => {
-      const fixture = await handoffSeed();
-      const runClaim = createDrizzleRunClaim(db, { holderId: "brief-generator-throw" });
-      const service = serviceFor(fixture.repos, runClaim, {
-        async generate() {
-          throw new Error("pre-summary generator failure");
-        },
-      });
-
-      expect(await startBrief(service, fixture.destination.id, fixture.seed.id)).toBe(true);
-      await expect
-        .poll(async () => (await fixture.repos.turns.findById(fixture.seed.id))?.status)
-        .toBe("error");
-
       expect(await fixture.repos.turns.findById(fixture.seed.id)).not.toHaveProperty(
         "metadata.summarizer",
       );

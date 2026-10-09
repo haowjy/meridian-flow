@@ -40,6 +40,10 @@ const link = (permission: "read" | "edit", workId: string): AgentLink => ({
   threadWorkId: workId,
   scratchOwner: { scope: "work", workId },
 });
+const lineageLink = (rootThreadId: string): AgentLink => ({
+  ...link("read", "no-work"),
+  scratchOwner: { scope: "lineage", projectId: PROJECT, rootThreadId },
+});
 const person: Principal = { accountId: OWNER };
 const agent = (...chain: AgentLink[]): Principal => ({
   accountId: OWNER,
@@ -54,25 +58,22 @@ describe("file policy", () => {
   // [case, principal, facts, level, limitedBy]
   // biome-ignore format: one row per case
   const table: [string, Principal, FileFacts, string, string | null][] = [
-    ["owner edits a project file", person, file("manuscript"), "edit", null],
     ["a stranger gets nothing", { accountId: "stranger" }, file("manuscript"), "none", "not_found"],
     ["a deleted document is gone", person, file("manuscript", null, { deleted: true }), "none", "not_found"],
     ["a deleted project is gone", person, file("kb", null, { projectDeleted: true }), "none", "not_found"],
     ["a deleted Work's scratch is gone", person, file("scratch", work("d", { deleted: true })), "none", "not_found"],
     ["an archived Work's scratch is read-only", person, file("scratch", archived), "read", "work_archived"],
     ["an archived Work's chat still edits manuscript", agent(link("edit", "old")), file("manuscript"), "edit", null],
-    ["an edit agent edits manuscript", agent(link("edit", "a")), file("manuscript"), "edit", null],
-    ["a read agent reads manuscript", agent(link("read", "a")), file("manuscript"), "read", "agent_read_only"],
     ["archive outranks a read agent's limit", agent(link("read", "a")), file("scratch", archived), "read", "work_archived"],
     // Uploads: read-only for every agent, writable for the person.
     ["the person edits uploads", person, file("uploads", A), "edit", null],
     ["an edit agent reads uploads", agent(link("edit", "a")), file("uploads", A), "read", "uploads_read_only"],
-    ["a read agent reads uploads", agent(link("read", "a")), file("uploads", A), "read", "uploads_read_only"],
     // Own scratch follows the thread's current named Work.
     ["a read agent edits its Work's scratch", agent(link("read", "a")), file("scratch", A), "edit", null],
     ["a read agent reads another Work's scratch", agent(link("read", "a")), file("scratch", X), "read", "agent_read_only"],
-    ["after work switch to X, X's scratch is its own", agent(link("read", "x")), file("scratch", X), "edit", null],
-    ["after work switch to X, A's scratch is not", agent(link("read", "x")), file("scratch", A), "read", "agent_read_only"],
+    // A No Work agent's Scratch is its lineage's: shared with its family, read-only elsewhere.
+    ["a read agent edits its lineage's scratch", agent(lineageLink("root")), file("scratch", null, { ownerRootThreadId: "root" }), "edit", null],
+    ["a read agent reads another lineage's scratch", agent(lineageLink("other")), file("scratch", null, { ownerRootThreadId: "root" }), "read", "agent_read_only"],
     // Delegation: the minimum over the chain.
     ["an edit child under a read parent reads manuscript", agent(link("edit", "a"), link("read", "a")), file("manuscript"), "read", "agent_read_only"],
     ["an edit child under a read parent edits their shared Work's scratch", agent(link("edit", "a"), link("read", "a")), file("scratch", A), "edit", null],
@@ -87,28 +88,6 @@ describe("file policy", () => {
       ownerGrants.filter(() => principal.accountId === OWNER),
     );
     expect([result.level, result.limitedBy]).toEqual([level, limitedBy]);
-  });
-
-  it("read delegation edits only the shared lineage Scratch", () => {
-    const lineageLink = (rootThreadId: string): AgentLink => ({
-      ...link("read", "no-work"),
-      scratchOwner: { scope: "lineage", projectId: PROJECT, rootThreadId },
-    });
-    const notes = file("scratch", null, { ownerRootThreadId: "root" });
-    expect(decide(agent(lineageLink("root"), lineageLink("root")), notes, ownerGrants).level).toBe(
-      "edit",
-    );
-    expect(decide(agent(lineageLink("root"), lineageLink("other")), notes, ownerGrants).level).toBe(
-      "read",
-    );
-    expect(decide(agent(link("read", "named")), notes, ownerGrants).level).toBe("read");
-  });
-
-  it("names the archived Work for refusal copy", () => {
-    expect(decide(person, file("scratch", archived), ownerGrants).archivedWork).toEqual({
-      id: "old",
-      slug: "old",
-    });
   });
 
   it("routes drafted sources to the agent's draft and caps them by the draft's Work", () => {

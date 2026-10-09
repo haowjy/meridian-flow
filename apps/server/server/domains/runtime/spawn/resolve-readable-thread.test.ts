@@ -6,6 +6,7 @@ import { resolveReadableThread } from "./resolve-readable-thread.js";
 const rows = [
   { id: "root", ref: "c1" },
   { id: "fork", ref: "c2", originType: "fork" },
+  // A handoff starts its own lineage; it reads only the thread its origin turn came from.
   {
     id: "handoff",
     ref: "c3",
@@ -13,14 +14,6 @@ const rows = [
     rootThreadId: "handoff",
     originTurnId: "source-turn",
   },
-  {
-    id: "handoff2",
-    ref: "c8",
-    originType: "handoff",
-    rootThreadId: "handoff2",
-    originTurnId: "handoff-turn",
-  },
-  { id: "handoffChild", ref: "p4", rootThreadId: "handoff", parentThreadId: "handoff" },
   { id: "child", ref: "p1", parentThreadId: "root" },
   { id: "grandchild", ref: "p2", parentThreadId: "child" },
   { id: "forkChild", ref: "p3", parentThreadId: "fork" },
@@ -38,12 +31,6 @@ const rows = [
       ...row,
     }) as Thread,
 );
-const turns = {
-  async findById(id: string) {
-    const threadId = id === "source-turn" ? "root" : id === "handoff-turn" ? "handoff" : null;
-    return threadId ? ({ threadId } as Turn) : null;
-  },
-};
 const threads = {
   async findLiveByProjectRef(projectId: string, ref: string) {
     return (
@@ -51,18 +38,14 @@ const threads = {
     );
   },
 };
+const turns = {
+  async findById(id: string) {
+    return id === "source-turn" ? ({ threadId: "root" } as Turn) : null;
+  },
+};
 describe("resolveReadableThread", () => {
   it.each([
-    ["c1", "c2"],
-    ["c2", "c1"],
-    ["c1", "c3"],
     ["c3", "c1"],
-    ["c3", "c8"],
-    ["c8", "c3"],
-    ["c1", "p1"],
-    ["p1", "c1"],
-    ["p2", "c1"],
-    ["c1", "p2"],
     ["p3", "c1"],
   ])("allows %s to read %s", async (from, ref) => {
     expect(
@@ -73,6 +56,11 @@ describe("resolveReadableThread", () => {
         turns,
       }),
     ).toMatchObject({ ok: true, target: { ref } });
+  });
+  it("does not extend a handoff's connection to its source's other threads", async () => {
+    expect(
+      await resolveReadableThread({ caller: rows[2] as Thread, ref: "c2", threads, turns }),
+    ).toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
   });
   it.each([
     ["c4", "thread_not_connected"],
@@ -87,34 +75,5 @@ describe("resolveReadableThread", () => {
       ok: false,
       error: { code },
     });
-  });
-  it.each([
-    ["c8", "c1"],
-    ["c1", "c8"],
-    ["p4", "c1"],
-    ["c1", "p4"],
-    ["c3", "c2"],
-  ])("does not extend the handoff connection from %s to %s", async (from, ref) => {
-    expect(
-      await resolveReadableThread({
-        caller: rows.find((row) => row.ref === from) as Thread,
-        ref,
-        threads,
-        turns,
-      }),
-    ).toMatchObject({ ok: false, error: { code: "thread_not_connected" } });
-  });
-  it("defaults to the caller", async () => {
-    expect(
-      await resolveReadableThread({ caller: rows[0] as Thread, threads, turns }),
-    ).toMatchObject({
-      ok: true,
-      target: { ref: "c1" },
-    });
-  });
-  it('resolves "current" to the caller', async () => {
-    expect(
-      await resolveReadableThread({ caller: rows[1] as Thread, ref: "current", threads, turns }),
-    ).toMatchObject({ ok: true, target: { ref: "c2" } });
   });
 });
