@@ -4,7 +4,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import {
   components,
-  createAssetPathResolver,
+  createAssetFixture,
   docFrom,
   paragraph,
   parsedDoc,
@@ -12,15 +12,15 @@ import {
 } from "./codec-test-support.js";
 import { markdownCodec, mdxCodec } from "./index.js";
 
-const assetPathResolver = createAssetPathResolver([
+const assets = createAssetFixture([
   ["asset-1", "assets/map.png"],
   ["asset-entity", 'assets/realm&"map".png'],
   ["asset-literal", "assets/literal&amp;map.png"],
   ["asset-named", "assets/café©.png"],
 ]);
 const dialects = [
-  { name: "markdown", codec: markdownCodec({ schema, assetPathResolver }) },
-  { name: "mdx", codec: mdxCodec({ schema, assetPathResolver, components }) },
+  { name: "markdown", codec: markdownCodec({ schema, assetForPath: assets.assetForPath }) },
+  { name: "mdx", codec: mdxCodec({ schema, assetForPath: assets.assetForPath, components }) },
 ] as const;
 
 const PLAIN = "![World map](assets/map.png)";
@@ -65,7 +65,7 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     const closed = wire.replace('width="240">', 'width="240" />');
     const blocks = codec.parse(wire).blocks;
     expect(docFrom(blocks).toJSON()).toEqual(parsedDoc(codec, closed).toJSON());
-    expect(codec.serialize(blocks)).toBe(`${closed}\n`);
+    expect(codec.serialize(blocks, assets.links)).toBe(`${closed}\n`);
   });
 
   it("de-escalates to byte-identical markdown when the size is taken away", () => {
@@ -74,12 +74,12 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
     const cleared = paragraph(
       sized.firstChild.type.create({ ...sized.firstChild.attrs, width: null }),
     );
-    expect(codec.serialize([cleared])).toBe(`${PLAIN}\n`);
+    expect(codec.serialize([cleared], assets.links)).toBe(`${PLAIN}\n`);
   });
 
   it("decodes a sized HTML picture once and stays stable across saves", () => {
-    const first = codec.serialize(codec.parse(ENTITY_SIZED).blocks);
-    const second = codec.serialize(codec.parse(first).blocks);
+    const first = codec.serialize(codec.parse(ENTITY_SIZED).blocks, assets.links);
+    const second = codec.serialize(codec.parse(first).blocks, assets.links);
 
     expect(first).toBe(`${ENTITY_SIZED}\n`);
     expect(second).toBe(first);
@@ -93,8 +93,8 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
 
   it("decodes a sized picture in a spanned HTML table once across saves", () => {
     const wire = spannedTable(ENTITY_SIZED);
-    const first = codec.serialize(codec.parse(wire).blocks);
-    const second = codec.serialize(codec.parse(first).blocks);
+    const first = codec.serialize(codec.parse(wire).blocks, assets.links);
+    const second = codec.serialize(codec.parse(first).blocks, assets.links);
     const tableImage = codec.parse(wire).blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild;
 
     expect(first).toBe(`${spannedTable(ENTITY_SIZED, true)}\n`);
@@ -116,8 +116,8 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
         blocks[0]?.firstChild?.firstChild?.firstChild?.firstChild,
     },
   ])("does not decode entity-looking data twice $name", ({ wire, canonical, imageAt }) => {
-    const first = codec.serialize(codec.parse(wire).blocks);
-    const second = codec.serialize(codec.parse(first).blocks);
+    const first = codec.serialize(codec.parse(wire).blocks, assets.links);
+    const second = codec.serialize(codec.parse(first).blocks, assets.links);
     const parsedImage = imageAt(codec.parse(wire).blocks);
 
     expect(first).toBe(`${canonical}\n`);
@@ -133,7 +133,7 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
   it("sizes a picture whose slot has no source yet", () => {
     const wire = '<img src="" alt="cover art" width="240" />';
     const pending = paragraph(schema.node("image", { src: "", alt: "cover art", width: 240 }));
-    expect(codec.serialize([pending])).toBe(`${wire}\n`);
+    expect(codec.serialize([pending], assets.links)).toBe(`${wire}\n`);
     expect(parsedDoc(codec, wire).toJSON()).toEqual(docFrom([pending]).toJSON());
   });
 });
@@ -143,7 +143,7 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
 // the document never said. Both dialects hand their attributes to one shared
 // reader, so the refusals run once, through the Markdown raw-HTML parser.
 describe("image attribute refusals", () => {
-  const codec = markdownCodec({ schema, assetPathResolver });
+  const codec = markdownCodec({ schema, assetForPath: assets.assetForPath });
   it.each([
     'width="12.5"',
     'width="0"',

@@ -1,22 +1,16 @@
 import { describe, expect, it } from "vitest";
-import {
-  createAssetPathResolver,
-  docFrom,
-  paragraph,
-  parsedDoc,
-  schema,
-} from "./codec-test-support.js";
+import { createAssetFixture, docFrom, paragraph, parsedDoc, schema } from "./codec-test-support.js";
 import { markdownCodec } from "./index.js";
 
 describe("asset path resolution", () => {
-  const assetPathResolver = createAssetPathResolver([["asset-1", "assets/map.png"]]);
-  const codec = markdownCodec({ schema, assetPathResolver });
+  const assets = createAssetFixture([["asset-1", "assets/map.png"]]);
+  const codec = markdownCodec({ schema, assetForPath: assets.assetForPath });
 
   it("stores stable refs internally and emits project-relative paths", () => {
     const parsed = codec.parse("![World map](assets/map.png)").blocks[0];
     if (!parsed) throw new Error("expected parsed image paragraph");
     expect(parsed?.firstChild?.attrs.src).toBe("asset:asset-1");
-    expect(codec.serialize([parsed])).toBe("![World map](assets/map.png)\n");
+    expect(codec.serialize([parsed], assets.links)).toBe("![World map](assets/map.png)\n");
   });
 
   it("leaves external and unknown paths literal", () => {
@@ -29,7 +23,7 @@ describe("asset path resolution", () => {
   // serialization with it, and a read-then-write must not lose the reference.
   it("spells a ref with no document as the ref, which parses back to itself", () => {
     const orphan = paragraph(schema.node("image", { src: "asset:gone", alt: "Map", title: null }));
-    const serialized = codec.serialize([orphan]);
+    const serialized = codec.serialize([orphan], assets.links);
     expect(serialized).toBe("![Map](asset:gone)\n");
     expect(parsedDoc(codec, serialized).toJSON()).toEqual(docFrom([orphan]).toJSON());
   });
@@ -40,7 +34,7 @@ describe("asset path resolution", () => {
   // exists would reach the wire as a ref nothing can render.
   it("round-trips a source-less image instead of resolving one", () => {
     const pending = paragraph(schema.node("image", { src: "", alt: "cover art", title: null }));
-    const serialized = codec.serialize([pending]);
+    const serialized = codec.serialize([pending], assets.links);
     expect(serialized).toBe("![cover art]()\n");
     expect(parsedDoc(codec, serialized).toJSON()).toEqual(docFrom([pending]).toJSON());
   });
@@ -57,7 +51,7 @@ describe("asset path resolution", () => {
         uploadToken: "image-upload:7f3a91c0:1",
       }),
     );
-    const serialized = codec.serialize([inFlight]);
+    const serialized = codec.serialize([inFlight], assets.links);
     expect(serialized).toBe("![cover art]()\n");
     expect(parsedDoc(codec, serialized).firstChild?.firstChild?.attrs.uploadToken).toBe(null);
   });

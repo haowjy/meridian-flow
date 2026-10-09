@@ -7,7 +7,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
@@ -113,9 +113,8 @@ export function createTestDatabase(): Database {
 const documentSchema = buildDocumentSchema();
 const markupCodec = mdxCodec({
   schema: documentSchema,
-  assetPathResolver: unresolvedAssetPathResolver,
 });
-const agentEditCodec = createAgentEditCodec(markupCodec);
+const agentEditCodec = createAgentEditCodec(markupCodec, UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(documentSchema);
 
 export const USER_ID = "00000000-0000-4000-8000-000000000801";
@@ -342,6 +341,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);
   const durableProjectionSerializer = createMarkdownDocumentEngine({
+    links: UNSCOPED_DOCUMENT_LINKS,
     schema: documentSchema,
     model,
     codec: markupCodec,
@@ -2122,7 +2122,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
 
 function serializeMarkdown(doc: Y.Doc): string {
   const blocks = model.getBlocks(toDocHandle(doc));
-  return blocks.length === 0 ? "" : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)));
+  return blocks.length === 0
+    ? ""
+    : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
 }
 
 function replaceMarkdown(doc: Y.Doc, markdown: string): void {

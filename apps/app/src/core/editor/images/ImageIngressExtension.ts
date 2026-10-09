@@ -208,7 +208,7 @@ export const ImageIngressExtension = Extension.create({
           // Assets travel as stable refs inside the editor and as
           // project-relative paths on the clipboard, so an id never escapes
           // into another surface.
-          clipboardTextParser: markdownClipboardParser(undefined, assetIndex, () =>
+          clipboardTextParser: markdownClipboardParser(undefined, () =>
             wikilinkPasteParsePlugins(editor),
           ),
           clipboardTextSerializer: markdownClipboardSerializer,

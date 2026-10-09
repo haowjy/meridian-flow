@@ -38,10 +38,10 @@ documents from the same node/mark specs.
   or multiple matches resolve to the `0.0.0` sentinel. Echo selection returns
   that sole match, otherwise the first offered token, or nothing when no token
   was offered.
-- **TipTap parity is load-bearing.** The app test
-  `apps/app/src/core/editor/schema-parity.test.ts` mechanically compares the
-  TipTap schema from `createEditorExtensions()` against this package by
-  node/mark names and structural specs.
+- **TipTap parity is load-bearing.** The TipTap mirrors in
+  `apps/app/src/core/editor/extensions/meridian-extensions.ts` must match this
+  package by node/mark names and attrs. No test compares them, so every schema
+  change edits both in the same commit.
 
 ## Current document surface
 
@@ -53,11 +53,11 @@ Nodes:
 | `paragraph`, `heading` | Basic nodes plus the `align` attr. |
 | `table`, `table_row`, `table_header`, `table_cell` | Table structure. `table` carries `align`; cells contain `block+` and carry `alignment`, `colspan`, `rowspan`, and `colwidth` for prosemirror-tables editing. |
 | `code_block` | Adds nullable `language` attr so fenced code survives markdown projection. |
-| `image` | Inline image with `src`, `alt`, `title`, `uploadToken`, and `width` attrs. `image.marks = ""` so marks cannot attach (MDAST has no inline-image marks). `src` defaults to an empty string. `uploadToken` (nullable, 0.3.0) is ephemeral Yjs-only upload identity and is absent from Markdown/MDX; `width` (nullable, 0.4.0) is the writer-chosen display width in CSS pixels and survives the wire. |
+| `image` | Inline image with `src`, `alt`, `title`, `uploadToken`, and `width` attrs. `image.marks = ""` so marks cannot attach (MDAST has no inline-image marks). `src` defaults to an empty string. `uploadToken` (nullable, 0.3.0) is ephemeral Yjs-only upload identity and is absent from Markdown/MDX; `width` (nullable, 0.4.0) is the writer-chosen display width in CSS pixels and survives the wire. `ref` (nullable, 1.0.0) is the stored source target, see `link`. |
 | `bullet_list`, `ordered_list`, `list_item` | List structure with `tight`/`order` attrs for markdown round-tripping. |
 | `horizontal_rule` | Scene break / thematic break node for markdown `---` round-tripping. |
 | `jsx_leaf`, `jsx_container` | MDX component blocks with `name` and `props` attrs; leaf components contain `text*`, containers contain `block+`. |
-| `figure` | Atomic block with `src`, `alt`, `label`, `caption`, and `uploadToken` attrs for figure workflows. `uploadToken` (nullable, 0.3.0) is the ephemeral upload identity shared with `image`. |
+| `figure` | Atomic block with `src`, `alt`, `label`, `caption`, and `uploadToken` attrs for figure workflows. `uploadToken` (nullable, 0.3.0) is the ephemeral upload identity shared with `image`. `ref` (nullable, 1.0.0) is the stored source target, see `link`. |
 
 `align` is `null`, `"center"`, or `"right"` and validates on the way in. There
 is no `"left"`: unaligned is the default, and a second spelling for it would be
@@ -71,7 +71,7 @@ Marks:
 |---|---|
 | `strong`, `em` | Basic ProseMirror marks, structural fields only. |
 | `code` | Excludes all other marks to match TipTap's code mark behavior. |
-| `link` | `href` defaults to an empty string; `title` defaults to `null`; non-inclusive. |
+| `link` | `href` defaults to an empty string; `title` defaults to `null`; non-inclusive. `ref` (nullable, 1.0.0) is the stable target `doc:<id>` or `ahead:<id>` (null for external and contextual links); it is stored state only, never in Markdown, HTML, MDX or the DOM, and `href` is the fallback spelling. |
 | `strike` | Structural strikethrough mark. |
 
 ## Rationale

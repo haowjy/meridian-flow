@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { unresolvedAssetPathResolver } from "./asset-path-resolver.js";
 import {
   blocksOf,
   components,
@@ -13,9 +12,9 @@ import {
   schema,
   t,
 } from "./codec-test-support.js";
-import { CodecParseError, mdxCodec } from "./index.js";
+import { CodecParseError, mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 
-const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver, components });
+const codec = mdxCodec({ schema, components });
 
 describe("mdx prose and component round-trip corpus", () => {
   it("parses prose < and { as literal text without backslash corruption", () => {
@@ -68,10 +67,12 @@ describe("mdx prose and component round-trip corpus", () => {
       ),
     },
   ])("round-trips lowercase tag-looking text in registered JSX $kind props", ({ node }) => {
-    const serialized = codec.serializeBlock(node);
+    const serialized = codec.serializeBlock(node, UNSCOPED_DOCUMENT_LINKS);
 
     expect(firstParsedBlock(codec, serialized).toJSON()).toEqual(node.toJSON());
-    expect(codec.serializeBlock(firstParsedBlock(codec, serialized))).toBe(serialized);
+    expect(codec.serializeBlock(firstParsedBlock(codec, serialized), UNSCOPED_DOCUMENT_LINKS)).toBe(
+      serialized,
+    );
   });
 
   it("degrades unknown components to raw text paragraphs", () => {
@@ -157,7 +158,7 @@ describe("mdx prose and component round-trip corpus", () => {
       paragraph(t("After the break.")),
     ]);
 
-    const serialized = codec.serialize(blocksOf(original));
+    const serialized = codec.serialize(blocksOf(original), UNSCOPED_DOCUMENT_LINKS);
     const back = parsedDoc(codec, serialized);
     expect(back.toJSON()).toEqual(original.toJSON());
   });
@@ -169,8 +170,8 @@ describe("mdx prose and component round-trip corpus", () => {
       value: 7,
       config: { note: "[label](<A B.md>)" },
     });
-    expect(docFrom(codec.parse(codec.serialize(parsed)).blocks).toJSON()).toEqual(
-      docFrom(parsed).toJSON(),
-    );
+    expect(
+      docFrom(codec.parse(codec.serialize(parsed, UNSCOPED_DOCUMENT_LINKS)).blocks).toJSON(),
+    ).toEqual(docFrom(parsed).toJSON());
   });
 });

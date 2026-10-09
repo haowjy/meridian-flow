@@ -59,7 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
-    const { mdxCodec, unresolvedAssetPathResolver } = await import("@meridian/markup");
+    const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
     const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
     const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
@@ -184,7 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       codec: ReturnType<typeof mdxCodec>,
     ) => ({
       async serializeDocument(_documentId: string, doc: Y.Doc) {
-        return codec.serialize(model.projectBlocks(toDocHandle(doc)));
+        return codec.serialize(model.projectBlocks(toDocHandle(doc)), UNSCOPED_DOCUMENT_LINKS);
       },
     });
     const createPushStores = (
@@ -449,7 +449,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await livePersistence.lifecycle.ensureDocument(CREATED_B as never);
       const schema = buildDocumentSchema();
       const model = yProsemirrorModel(schema);
-      const codec = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
+      const codec = mdxCodec({ schema });
       const docFromMarkdown = (markdown: string) => {
         const doc = createCollabYDoc({ gc: false });
         model.insertBlocks(toDocHandle(doc), null, codec.parse(markdown));
@@ -572,9 +572,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(pushed.status).toBe("pushed");
       expect(liveView.members).toContain(CREATED_A);
       expect(liveView.members).not.toContain(CREATED_B);
-      expect(codec.serialize(model.projectBlocks(toDocHandle(liveA)))).toContain(
-        "Created A content.",
-      );
+      expect(
+        codec.serialize(model.projectBlocks(toDocHandle(liveA)), UNSCOPED_DOCUMENT_LINKS),
+      ).toContain("Created A content.");
       expect(lineageRows).toHaveLength(2);
       expect(new Set(lineageRows.map((row) => row.receiptId))).toHaveLength(1);
       const trailDetails = await db.select().from(changeTrailDocumentDetails);

@@ -28,6 +28,7 @@ import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
+import { assetPathLinkScope } from "./ports/document-asset-paths.js";
 import { createWorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
@@ -51,7 +52,10 @@ type BatchPipelineResult =
 export function createBranchPushService(input: BranchPushServiceInput): BranchPushService {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
-  const attributionCodec = createAgentEditCodec(input.codec);
+  const attributionCodec = createAgentEditCodec(
+    input.codec,
+    assetPathLinkScope(input.assetPaths.resolver),
+  );
   const transition = createBranchPushTransition({
     commitStore: input.commitStore,
     settlementStore: input.settlementStore,

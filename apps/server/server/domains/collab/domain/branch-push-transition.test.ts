@@ -6,7 +6,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -28,8 +28,8 @@ const documentId = "document" as DocumentId;
 const threadId = "thread" as ThreadId;
 const turnId = "turn" as TurnId;
 const schema = buildDocumentSchema();
-const markup = mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver });
-const codec = createAgentEditCodec(markup);
+const markup = mdxCodec({ schema });
+const codec = createAgentEditCodec(markup, UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 const docs: Y.Doc[] = [];
 afterEach(() => {
