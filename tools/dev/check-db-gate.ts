@@ -9,9 +9,9 @@
  * this into `pnpm check` closes that gap for anyone with the dev Postgres up.
  *
  * It must NOT hard-fail a plain `pnpm check` where no database exists — a
- * contributor without `pnpm dev:infra` running, or CI's `quality` job (which
- * runs `pnpm check` with no Postgres service; the dedicated `db-tests` job runs
- * the gate with a database). So a missing/unreachable DB skips with a warning
+ * contributor without `pnpm dev:infra` running. CI partitions the non-DB
+ * checks into parallel jobs; its dedicated `db-tests` job forces this gate
+ * with a database. A missing/unreachable local DB skips with a warning
  * rather than failing. `pnpm test:db` remains the way to force the gate.
  *
  *   pnpm check:db
