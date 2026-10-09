@@ -9,7 +9,7 @@ import { expect, it, vi } from "vitest";
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import {
   classifyLinkTarget,
-  createLinkResolution,
+  createLinkAnswerCache,
   type LinkKey,
   type LinkResolutionEntry,
 } from "@/core/editor/links";
@@ -34,7 +34,14 @@ const document = (documentId: string, name: string): LinkableDocument => ({
 });
 const DOCUMENTS = [document(KAEL, "Kael"), document(NINE, "Nine")];
 
-const found = (documentId: string, name: string): DocumentLinkAnswer => ({
+const settled = (
+  answer: Extract<DocumentLinkAnswer, { state: "document" | "gone" }>,
+): DocumentLinkAnswer => ({ ...answer, settled: true });
+
+const found = (
+  documentId: string,
+  name: string,
+): Extract<DocumentLinkAnswer, { state: "document" }> => ({
   state: "document",
   document: {
     id: documentId,
@@ -63,14 +70,19 @@ type Row = {
   heard?: boolean;
   /** What a click right after asking waits for, as `resolve()` answers it. */
   clicked?: string | null;
+  /**
+   * A later catalog, registered after the first answers landed, with the
+   * server unreachable: what the same links read before and after it fails.
+   */
+  offline?: { documents: LinkableDocument[]; before: (string | null)[]; after: (string | null)[] };
 };
 
 const ROWS: Row[] = [
   {
     rule: "a doc ref the complete index holds resolves locally, wherever it lives now",
     links: [{ ref: `doc:${KAEL}`, href: "manuscript://Old Kael.md" }],
-    before: ["resolved:Kael"],
-    after: ["resolved:Kael"],
+    before: ["document:Kael"],
+    after: ["document:Kael"],
     asked: [],
   },
   {
@@ -85,8 +97,8 @@ const ROWS: Row[] = [
   {
     rule: "a no-ref link the index holds at its address resolves locally",
     links: [{ ref: null, href: "Kael.md" }],
-    before: ["resolved:Kael"],
-    after: ["resolved:Kael"],
+    before: ["document:Kael"],
+    after: ["document:Kael"],
     asked: [],
   },
   {
@@ -101,30 +113,52 @@ const ROWS: Row[] = [
     links: [{ ref: AHEAD, href: "manuscript://Ten.md" }],
     server: { [AHEAD]: { state: "missing", uri: "manuscript://Ten.md" } },
     before: ["pending"],
-    after: ["unresolved"],
+    after: ["missing"],
     asked: [AHEAD],
   },
   {
     rule: "an ahead ref at an indexed address resolves at once, and missing keeps it",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: { state: "missing", uri: "manuscript://Nine.md" } },
-    before: ["resolved:Nine"],
-    after: ["resolved:Nine"],
+    before: ["document:Nine"],
+    after: ["document:Nine"],
     asked: [AHEAD],
   },
   {
     rule: "the server naming another document replaces the local answer",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: found(KAEL, "Kael") },
-    before: ["resolved:Nine"],
-    after: ["resolved:Kael"],
+    before: ["document:Nine"],
+    after: ["document:Kael"],
     asked: [AHEAD],
+  },
+  {
+    rule: "a settled ahead ref never answers by its old address again (renumber, then offline)",
+    links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
+    server: { [AHEAD]: settled(found(KAEL, "Kael")) },
+    before: ["document:Nine"],
+    after: ["document:Kael"],
+    asked: [AHEAD],
+    offline: {
+      documents: [document(KAEL, "Ten"), document(NINE, "Nine")],
+      before: ["document:Ten"],
+      after: ["document:Ten"],
+    },
+  },
+  {
+    rule: "an ahead ref settled gone asks like a doc ref, never shows its address",
+    links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
+    server: { [AHEAD]: settled({ state: "gone" }) },
+    before: ["document:Nine"],
+    after: ["gone"],
+    asked: [AHEAD],
+    offline: { documents: DOCUMENTS, before: ["pending"], after: [null] },
   },
   {
     rule: "the server's gone replaces the local answer",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: { state: "gone" } },
-    before: ["resolved:Nine"],
+    before: ["document:Nine"],
     after: ["gone"],
     asked: [AHEAD],
     heard: true,
@@ -134,8 +168,8 @@ const ROWS: Row[] = [
     rule: "a server failure keeps the local answer",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: "fail" },
-    before: ["resolved:Nine"],
-    after: ["resolved:Nine"],
+    before: ["document:Nine"],
+    after: ["document:Nine"],
     asked: [AHEAD],
   },
   {
@@ -145,8 +179,8 @@ const ROWS: Row[] = [
       { ref: AHEAD, href: "manuscript://Ten.md" },
     ],
     server: { [AHEAD]: "fail" },
-    before: ["resolved:Kael", "pending"],
-    after: ["resolved:Kael", null],
+    before: ["document:Kael", "pending"],
+    after: ["document:Kael", null],
     asked: [AHEAD],
   },
   {
@@ -157,6 +191,14 @@ const ROWS: Row[] = [
     after: [null],
     asked: [AHEAD],
     heard: true,
+  },
+  {
+    rule: "unresolvable is no answer: drawn filled, never doesn't exist yet",
+    links: [{ ref: null, href: "Ten.md" }],
+    server: { "Ten.md": { state: "unresolvable" } },
+    before: ["pending"],
+    after: [null],
+    asked: ["Ten.md"],
   },
   {
     rule: "a holder whose address has not arrived asks the server nothing",
@@ -172,7 +214,7 @@ const ROWS: Row[] = [
 ];
 
 function show(entry: LinkResolutionEntry | null): string | null {
-  return entry?.state === "resolved" ? `resolved:${entry.document.title}` : (entry?.state ?? null);
+  return entry?.state === "document" ? `document:${entry.document.title}` : (entry?.state ?? null);
 }
 
 it("routes each link to the local index or the server", async () => {
@@ -190,8 +232,9 @@ it("routes each link to the local index or the server", async () => {
         }),
       };
     });
-    const resolution = createLinkResolution();
-    const scope = { projectId: "p", workId: "w", baseUri: HOLDER, ...row.scope };
+    const resolution = createLinkAnswerCache();
+    // Settlements are project-wide facts; each row is its own project.
+    const scope = { projectId: row.rule, workId: "w", baseUri: HOLDER, ...row.scope };
     resolution.registerResolver(
       createProjectLinkResolver(scope, {
         documents: DOCUMENTS,
@@ -244,6 +287,24 @@ it("routes each link to the local index or the server", async () => {
         signal: new AbortController().signal,
       });
       expect.soft(events, row.rule).toEqual(["clear"]);
+    }
+
+    // The renumber case: the catalog moves, then the server cannot be reached.
+    if (row.offline) {
+      server.mockRejectedValue(new Error("offline"));
+      resolution.registerResolver(
+        createProjectLinkResolver(scope, {
+          documents: row.offline.documents,
+          revision: "r2",
+          complete: true,
+        }),
+        { baseUri: scope.baseUri },
+      );
+      resolution.request(row.links);
+      const read = () => row.links.map((link) => show(resolution.read(link)));
+      expect.soft(read(), `${row.rule} (offline)`).toEqual(row.offline.before);
+      await new Promise((landed) => setTimeout(landed, 0));
+      expect.soft(read(), `${row.rule} (offline)`).toEqual(row.offline.after);
     }
   }
 });

@@ -14,7 +14,7 @@
  * no longer readable. It is not "nothing at this address yet", and it never
  * falls back to the address.
  *
- * Unresolved is a normal, rendered state, not an error: serial writers link
+ * Missing is a normal, rendered state, not an error: serial writers link
  * chapters and characters before they exist. A FAILED request is a different thing
  * entirely and caches nothing, because a link the editor could not ask about
  * must never be drawn as a link that does not exist.
@@ -59,10 +59,25 @@ import {
 /** A stored link as resolution sees it: what it names and how it is spelled. */
 export type LinkKey = { ref: string | null; href: string };
 
+/**
+ * The stored link a link mark's attributes name. The only reading of a mark's
+ * `ref` and `href`, so no two surfaces can disagree about which answer a link
+ * has (an empty ref is no ref).
+ */
+export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }): LinkKey {
+  const { ref, href } = attrs;
+  return { ref: typeof ref === "string" && ref ? ref : null, href: String(href ?? "") };
+}
+
+/** The one string a `LinkKey` is cached and deduplicated under. */
+export function linkCacheKey(key: LinkKey): string {
+  return `${key.ref ?? ""}\u0000${key.href}`;
+}
+
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
-  | { state: "resolved"; document: ResolvedDocumentLink }
-  | { state: "unresolved"; document: null }
+  | { state: "document"; document: ResolvedDocumentLink }
+  | { state: "missing"; document: null }
   /** A ref whose document the reader can no longer reach. Never followable. */
   | { state: "gone"; document: null };
 
@@ -85,9 +100,9 @@ export type LinkQuestion = { ref: string | null; target: LinkTarget };
 export type LocalLinkAnswer =
   | { kind: "answered"; answer: LinkAnswer }
   | { kind: "unasked" }
-  | { kind: "ask"; provisional: ResolvedLinkAnswer | null };
+  | { kind: "ask"; provisional: DocumentAnswer | null };
 
-export type ResolvedLinkAnswer = Extract<LinkAnswer, { state: "resolved" }>;
+export type DocumentAnswer = Extract<LinkAnswer, { state: "document" }>;
 
 /**
  * The port. `local` runs synchronously when a question is asked, so local
@@ -98,11 +113,16 @@ export type ResolvedLinkAnswer = Extract<LinkAnswer, { state: "resolved" }>;
  * Without `local`, every question goes to `remote`.
  */
 export type InternalLinkResolver = {
+  /**
+   * The local document index the port answers from, which is also what a
+   * link written into the holder binds against. Absent for a port with none.
+   */
+  index?: LinkBindingIndex | null;
   local?: (question: LinkQuestion) => LocalLinkAnswer;
   remote: (questions: readonly LinkQuestion[]) => Promise<readonly (LinkAnswer | null)[]>;
 };
 
-export type LinkResolution = {
+export type LinkAnswerCache = {
   subscribe: (listener: () => void) => () => void;
   /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
@@ -141,16 +161,11 @@ export type LinkResolution = {
    * makes this the app's only invalidation: register again and the last
    * generation's answers are unreachable. `baseUri` is part of what the
    * generation is true of, so a base arriving is a new registration; so is
-   * the binding context (project and local index), which a surface that
-   * writes links passes and chat does not.
+   * the binding context (project, and the port's own index).
    */
   registerResolver: (
     resolve: InternalLinkResolver,
-    options?: {
-      baseUri?: string | null;
-      projectId?: string | null;
-      index?: LinkBindingIndex | null;
-    },
+    options?: { baseUri?: string | null; projectId?: string | null },
   ) => () => void;
   destroy: () => void;
 };
@@ -165,12 +180,12 @@ const ASK: LocalLinkAnswer = Object.freeze({ kind: "ask", provisional: null });
  * answer the writer is already looking at.
  */
 function settledOver(
-  provisional: ResolvedLinkAnswer | null,
+  provisional: DocumentAnswer | null,
   entry: LinkResolutionEntry | null,
 ): LinkResolutionEntry | null {
   if (!provisional) return entry;
   if (entry?.state === "gone") return entry;
-  if (entry?.state === "resolved" && entry.document.documentId !== provisional.document.documentId)
+  if (entry?.state === "document" && entry.document.documentId !== provisional.document.documentId)
     return entry;
   return provisional;
 }
@@ -197,7 +212,7 @@ type Request = {
   readonly promise: Promise<LinkResolutionEntry | null>;
   readonly settle: (entry: LinkResolutionEntry | null) => void;
   /** The local answer shown while the server is asked; see `settledOver`. */
-  readonly provisional: ResolvedLinkAnswer | null;
+  readonly provisional: DocumentAnswer | null;
   /** Someone is waiting through `resolve()`, so retirement carries it forward. */
   awaited: boolean;
 };
@@ -221,7 +236,7 @@ type Generation = {
   running: number;
 };
 
-export function createLinkResolution(): LinkResolution {
+export function createLinkAnswerCache(): LinkAnswerCache {
   const listeners = new Set<() => void>();
   /** The only generation anyone can read. Null until a port registers. */
   let current: Generation | null = null;
@@ -235,7 +250,7 @@ export function createLinkResolution(): LinkResolution {
     const target = classifyLinkTarget(link.href);
     if (!target || !isInternalLinkTarget(target)) return null;
     return {
-      key: `${link.ref ?? ""}\u0000${linkTargetHref(target)}`,
+      key: linkCacheKey({ ref: link.ref, href: linkTargetHref(target) }),
       question: { ref: link.ref, target },
     };
   };
@@ -429,7 +444,7 @@ export function createLinkResolution(): LinkResolution {
         binding: {
           holderUri: baseUri,
           projectId: options?.projectId ?? null,
-          index: options?.index ?? null,
+          index: resolve.index ?? null,
         },
         answers: new Map(),
         failed: new Set(),

@@ -71,16 +71,24 @@ export async function handleDocumentLinkResolveRequest(
       ),
     });
     const reader = deps.linkScopes.reader({ uri: request.baseUri, view });
-    const documents: Array<{ index: number; document: CatalogDocument; inDraft: boolean }> = [];
+    const documents: Array<{
+      index: number;
+      document: CatalogDocument;
+      inDraft: boolean;
+      settled: boolean;
+    }> = [];
     for (const { link, index } of refLinks) {
       const resolution = reader.resolve(link);
+      // Rule 3: the client keeps the settlement and never answers this ref by address again.
+      const settled = "settled" in resolution;
       if (resolution.kind === "document") {
-        documents.push({ index, document: resolution.document, inDraft: resolution.inDraft });
+        const { document, inDraft } = resolution;
+        documents.push({ index, document, inDraft, settled });
       } else if (resolution.kind === "ahead") {
         answers[index] = { state: "missing", uri: resolution.uri };
       } else {
         // gone, and a snapshot miss: never a location the reader was not shown.
-        answers[index] = { state: "gone" };
+        answers[index] = settled ? { state: "gone", settled: true } : { state: "gone" };
       }
     }
     const described = await describeDocuments(
@@ -88,9 +96,12 @@ export async function handleDocumentLinkResolveRequest(
       projectId,
       documents.map(({ document }) => document),
     );
-    for (const [position, { index, inDraft }] of documents.entries()) {
+    for (const [position, { index, inDraft, settled }] of documents.entries()) {
       const document = described[position];
-      answers[index] = document ? { state: "document", document, inDraft } : { state: "gone" };
+      const marked = settled ? { settled: true as const } : {};
+      answers[index] = document
+        ? { state: "document", document, inDraft, ...marked }
+        : { state: "gone", ...marked };
     }
   });
 

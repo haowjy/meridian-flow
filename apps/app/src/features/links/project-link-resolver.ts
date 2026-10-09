@@ -5,7 +5,12 @@
  *
  * - A `doc:` ref the complete index holds resolves locally to that document,
  *   wherever it lives now.
- * - An `ahead:` ref always asks the server, because settlement is server
+ * - An `ahead:` ref the server has answered through its settlement (rule 3)
+ *   is, from then on, exactly a `doc:` ref to what it settled on: the project's
+ *   settlement memo keeps that fact across catalog changes, so a renumber that
+ *   puts another document at the old address never answers for it, online or
+ *   off.
+ * - Any other `ahead:` ref asks the server, because settlement is server
  *   state. Until it answers, a document the complete index holds at exactly
  *   the ref's stored address is the answer, shown at once (a Follow-Create,
  *   say, before the server has settled the ref). Only a server `document`
@@ -25,6 +30,7 @@ import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import {
+  type DocumentAnswer,
   type InternalLinkResolver,
   indexedDocumentAt,
   indexedDocumentAtExactly,
@@ -32,7 +38,6 @@ import {
   type LinkTarget,
   type LocalLinkAnswer,
   linkTargetHref,
-  type ResolvedLinkAnswer,
 } from "@/core/editor/links";
 
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
@@ -57,17 +62,37 @@ export type LinkResolutionScope = {
 };
 
 const GONE: LinkAnswer = Object.freeze({ state: "gone", document: null });
-const UNRESOLVED: LinkAnswer = Object.freeze({ state: "unresolved", document: null });
+const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
 const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
 const answered = (answer: LinkAnswer): LocalLinkAnswer => ({ kind: "answered", answer });
+
+/**
+ * What a project's ahead refs are known to have settled on: a document id, or
+ * gone. A settlement never unsets (a hard delete goes to gone, which the
+ * server says anyway), so a fact is written once and outlives every
+ * registration and every surface in the project.
+ */
+type AheadSettlements = Map<string, string | "gone">;
+const settlementsByProject = new Map<string, AheadSettlements>();
+
+function projectSettlements(projectId: string): AheadSettlements {
+  let settlements = settlementsByProject.get(projectId);
+  if (!settlements) {
+    settlements = new Map();
+    settlementsByProject.set(projectId, settlements);
+  }
+  return settlements;
+}
 
 export function createProjectLinkResolver(
   scope: LinkResolutionScope,
   index: LinkableDocumentIndex,
 ): InternalLinkResolver {
   const { projectId, workId, baseUri, holderDocumentId } = scope;
+  const settlements = projectSettlements(projectId);
   return {
+    index,
     local({ ref, target }) {
       // A relative path with no base cannot be asked; the base arriving is a
       // new registration, which asks it again.
@@ -75,21 +100,26 @@ export function createProjectLinkResolver(
       const parsed = parseLinkRef(ref);
       // A malformed ref names nothing; it never falls back to its address.
       if (ref !== null && !parsed) return answered(GONE);
-      if (index.complete && parsed?.kind !== "ahead") {
+      // A settled ahead ref names what it settled on, like a doc ref; settled
+      // gone names nothing the index can hold, so the server says.
+      const settled = parsed?.kind === "ahead" ? settlements.get(parsed.aheadId) : undefined;
+      const documentId = parsed?.kind === "doc" ? parsed.documentId : settled;
+      if (index.complete && (parsed?.kind !== "ahead" || documentId)) {
         const local =
-          parsed?.kind === "doc"
-            ? index.documents.find((document) => document.documentId === parsed.documentId)
+          documentId !== undefined
+            ? index.documents.find((document) => document.documentId === documentId)
             : addressedDocument(index.documents, target, baseUri);
-        if (local) return answered(resolvedAnswer(local));
+        const answer = local ? documentAnswer(local) : null;
+        if (answer) return answered(answer);
       }
-      // Rule 4 on the client, at once: an ahead ref that may still be
-      // unsettled names whatever the complete index holds at exactly its
-      // stored address. The server still decides; see `LocalLinkAnswer`.
+      // Rule 4 on the client, at once: an ahead ref not known to be settled
+      // names whatever the complete index holds at exactly its stored
+      // address. The server still decides; see `LocalLinkAnswer`.
       const atAddress =
-        parsed?.kind === "ahead" && index.complete
+        parsed?.kind === "ahead" && settled === undefined && index.complete
           ? indexedDocumentAtExactly(index.documents, linkTargetHref(target))
           : null;
-      const provisional = atAddress ? resolvedEntry(atAddress) : null;
+      const provisional = atAddress ? documentAnswer(atAddress) : null;
       // A holder whose own address has not arrived asks the server nothing: a
       // question with no holder address is chat's, which may fall back to
       // previous locations.
@@ -105,7 +135,15 @@ export function createProjectLinkResolver(
       });
       if (response.answers.length !== questions.length)
         throw new Error("link resolution answered out of shape");
-      return response.answers.map((answer) => (answer ? serverAnswer(answer) : null));
+      return response.answers.map((answer, at) => {
+        if (!answer) return null;
+        const ahead = parseLinkRef(questions[at]?.ref);
+        const settledOn = settlementOf(answer);
+        // Set once: a settlement never moves, so a later answer cannot change it.
+        if (ahead?.kind === "ahead" && settledOn && !settlements.has(ahead.aheadId))
+          settlements.set(ahead.aheadId, settledOn);
+        return serverAnswer(answer);
+      });
     },
   };
 }
@@ -125,11 +163,16 @@ function addressedDocument(
   return resolved ? indexedDocumentAt(documents, resolved.uri) : null;
 }
 
-function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer {
+/**
+ * The client's answer for the API's. `unresolvable` is no answer at all: the
+ * server could not ask the question, which is not "nothing there", so it never
+ * draws dashed or offers Create.
+ */
+function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   switch (answer.state) {
     case "document": {
       const { document } = answer;
-      return resolvedAnswer({
+      return documentAnswer({
         documentId: document.id,
         title: document.title,
         uri: document.uri,
@@ -139,18 +182,22 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer {
     case "gone":
       return GONE;
     case "missing":
+      return MISSING;
     case "unresolvable":
-      return UNRESOLVED;
+      return null;
   }
 }
 
-function resolvedAnswer(document: LinkableDocument): LinkAnswer {
-  return resolvedEntry(document) ?? UNRESOLVED;
+/** What a rule-3 answer says an ahead ref settled on; null for any other answer. */
+function settlementOf(answer: DocumentLinkAnswer): string | "gone" | null {
+  if (answer.state === "document") return answer.settled ? answer.document.id : null;
+  if (answer.state === "gone") return answer.settled ? "gone" : null;
+  return null;
 }
 
-function resolvedEntry(document: LinkableDocument): ResolvedLinkAnswer | null {
+function documentAnswer(document: LinkableDocument): DocumentAnswer | null {
   const link = resolvedLink(document);
-  return link ? { state: "resolved", document: link } : null;
+  return link ? { state: "document", document: link } : null;
 }
 
 function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {

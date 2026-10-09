@@ -86,6 +86,8 @@ it("resolves and spells stored links by rule", () => {
     holderUri?: string | null;
     kind: string;
     inDraft?: boolean;
+    /** Rule 3: answered through the ahead ref's settlement. */
+    settled?: true;
     spelled: string;
     address: string | null;
   }[] = [
@@ -169,6 +171,7 @@ it("resolves and spells stored links by rule", () => {
       ref: `ahead:${U.settled}`,
       href: "manuscript://book/lin.md",
       kind: "document",
+      settled: true,
       spelled: "kb://cast/Lin Feng.md",
       address: "kb://cast/Lin Feng.md",
     },
@@ -177,6 +180,7 @@ it("resolves and spells stored links by rule", () => {
       ref: `ahead:${U.settledGone}`,
       href: "manuscript://book/old.md",
       kind: "gone",
+      settled: true,
       spelled: "manuscript://book/old.md",
       address: "manuscript://book/old.md",
     },
@@ -270,6 +274,7 @@ it("resolves and spells stored links by rule", () => {
     expect.soft(resolution.kind, row.name).toBe(row.kind);
     if (row.inDraft !== undefined && resolution.kind === "document")
       expect.soft(resolution.inDraft, row.name).toBe(row.inDraft);
+    expect.soft("settled" in resolution && resolution.settled, row.name).toBe(row.settled ?? false);
     expect
       .soft(spellStoredLink(link, at, resolution, row.grammar ?? "holder"), row.name)
       .toEqual({ href: row.spelled, address: row.address });

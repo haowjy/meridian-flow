@@ -52,10 +52,14 @@ export interface LinkCatalog {
 }
 
 export type LinkResolution =
-  /** Rules 1 and 3: a document the reader can name and read. */
-  | { kind: "document"; document: CatalogDocument; inDraft: boolean }
-  /** Rule 2 (and 3 when the settled document is gone). */
-  | { kind: "gone" }
+  /**
+   * Rules 1 and 3: a document the reader can name and read. `settled` marks
+   * rule 3, an ahead ref answered through its settlement, which never again
+   * answers by address.
+   */
+  | { kind: "document"; document: CatalogDocument; inDraft: boolean; settled?: true }
+  /** Rule 2 (and 3, `settled`, when the settled document is gone). */
+  | { kind: "gone"; settled?: true }
   /** Rule 4: an unsettled ahead ref with nothing at its address. */
   | { kind: "ahead"; uri: string; suffix: string }
   /** Rule 5: no ref; the host applies today's address rules. */
@@ -78,7 +82,10 @@ export function resolveStoredLink(
 
   const settled = catalog.settlement(ref.aheadId);
   if (settled === undefined) return { kind: "unknown" };
-  if (settled !== null) return resolveDocument(catalog.document(settled));
+  if (settled !== null) {
+    const resolution = resolveDocument(catalog.document(settled));
+    return resolution.kind === "unknown" ? resolution : { ...resolution, settled: true };
+  }
 
   const stored = resolveDocumentHref(link.href, null);
   if (!stored) return { kind: "gone" };
@@ -90,7 +97,9 @@ export function resolveStoredLink(
   return { kind: "ahead", uri: stored.uri, suffix: stored.suffix };
 }
 
-function resolveDocument(document: CatalogDocument | null | undefined): LinkResolution {
+function resolveDocument(
+  document: CatalogDocument | null | undefined,
+): Extract<LinkResolution, { kind: "document" | "gone" | "unknown" }> {
   if (document === undefined) return { kind: "unknown" };
   return document && nameableLive(document) ? documentResolution(document) : { kind: "gone" };
 }
@@ -99,7 +108,9 @@ function nameableLive(document: CatalogDocument): boolean {
   return document.presence !== "deleted" && document.readable && document.nameable;
 }
 
-function documentResolution(document: CatalogDocument): LinkResolution {
+function documentResolution(
+  document: CatalogDocument,
+): Extract<LinkResolution, { kind: "document" }> {
   return { kind: "document", document, inDraft: document.presence === "draft" };
 }
 

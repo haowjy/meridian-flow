@@ -29,6 +29,7 @@ import {
   type LinkFormRequest,
   type LinkSurface,
   linkInputStepsAsideFromReferences,
+  linkKeyOfMark,
   linkTargetLabel,
   mapLinkDraft,
   normalizeLinkHref,
@@ -110,28 +111,28 @@ function LinkFields({
 }) {
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
-  // The document picked from search, bound by its id at commit.
-  const [picked, setPicked] = useState<DocumentRef | null>(null);
-  const draftLinkRef =
-    typeof draft.identity?.attrs.ref === "string" ? draft.identity.attrs.ref : null;
-  const [query, setQuery] = useState("");
-  const [choosing, setChoosing] = useState(!draft.href);
-  const [selectedDestination, setSelectedDestination] = useState<{
+  // The document picked from search, bound by its id at commit, and how the
+  // form names it.
+  const [selected, setSelected] = useState<{
+    ref: DocumentRef;
     label: string;
     location: string;
   } | null>(null);
+  const draftLinkRef = draft.identity ? linkKeyOfMark(draft.identity.attrs).ref : null;
+  const [query, setQuery] = useState("");
+  const [choosing, setChoosing] = useState(!draft.href);
   const [invalid, setInvalid] = useState(false);
   const [refused, setRefused] = useState(false);
   // The existing link's own answer while its destination is unchanged; a
   // destination the writer typed has no ref until it is committed.
   const resolution = useLinkResolution(
     editor,
-    href ? { ref: picked ?? (href === draft.href ? draftLinkRef : null), href } : null,
+    href ? { ref: selected?.ref ?? (href === draft.href ? draftLinkRef : null), href } : null,
   );
   const target = classifyLinkTarget(href);
   const destinationLabel =
-    selectedDestination?.label ??
-    (resolution?.state === "resolved"
+    selected?.label ??
+    (resolution?.state === "document"
       ? resolution.document.title
       : target
         ? linkTargetLabel(target)
@@ -160,8 +161,11 @@ function LinkFields({
               // Bound the way the Editor's `@` binds it: by the document's id,
               // spelled with its full address.
               setHref(storedHref(row.action.reference.uri, ""));
-              setPicked(documentRef(row.action.reference.documentId));
-              setSelectedDestination({ label: row.label, location: row.location });
+              setSelected({
+                ref: documentRef(row.action.reference.documentId),
+                label: row.label,
+                location: row.location,
+              });
               setText((current) => current || row.label);
               setChoosing(false);
               setInvalid(false);
@@ -230,7 +234,7 @@ function LinkFields({
     const result = commitLinkDraft(editor, readDraft(), {
       text,
       href: normalized,
-      ...(picked && !choosing ? { ref: picked } : {}),
+      ...(selected && !choosing ? { ref: selected.ref } : {}),
     });
     if (result === "invalid") {
       setInvalid(true);
@@ -283,13 +287,13 @@ function LinkFields({
               }}
             >{t`Change`}</Button>
           </div>
-          {selectedDestination || resolution?.state === "resolved" ? (
+          {selected || resolution?.state === "document" ? (
             <span className="text-xs text-muted-foreground">
-              {selectedDestination?.location ??
-                (resolution?.state === "resolved" ? resolution.document.path : "")}
+              {selected?.location ??
+                (resolution?.state === "document" ? resolution.document.path : "")}
             </span>
           ) : null}
-          {resolution?.state === "unresolved" ? (
+          {resolution?.state === "missing" ? (
             <span className="text-xs text-muted-foreground">{t`Doesn't exist yet`}</span>
           ) : null}
           {resolution?.state === "gone" ? (

@@ -12,9 +12,10 @@ address. `classifyLinkTarget` turns an href into `scheme | relative |
 external`, and every consumer reads that one answer: the click, the hover
 hint, the menu, the mark's own rendering, the paste sanitizer. The first two
 are the *internal family* — a Context URI or a path relative to the holder,
-one behavior — and are exactly the server's `DocumentLinkTarget`, so
-`documentLinkTarget()` is a projection, not a translation. `external` is the
-client's alone and never crosses the resolution port. There are no wikilinks:
+one behavior — and are asked about as `{ ref, href }` with the classifier's
+own spelling (`linkTargetHref`). `external` is the client's alone and never
+crosses the resolution port. A link mark's identity is read only through
+`linkKeyOfMark`, and cached only under `linkCacheKey`. There are no wikilinks:
 `[[name]]` is text. Only a paste into an Editor document converts it, to a
 standard link (`WikilinkPasteExtension`, which the Editor alone mounts); paste
 without formatting and a destination in code keep the characters, and an

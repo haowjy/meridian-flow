@@ -35,14 +35,23 @@ import {
   type LinkSelection,
   linkAt,
   linkAtSelection,
-  linkHref,
-  linkRef,
   relocateLink,
 } from "./link-commands";
-import { followLink, linkClickIntent, MIDDLE_BUTTON } from "./link-navigation";
-import { createLinkResolution, type LinkKey } from "./link-resolution";
+import {
+  followLink,
+  type LinkFollowDisposition,
+  type LinkFollowResult,
+  linkClickIntent,
+  MIDDLE_BUTTON,
+} from "./link-navigation";
+import { createLinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import { linkResolutionPlugin } from "./link-resolution-decorations";
-import { getLinkSurface, LINK_SURFACE_NAME, type LinkSurfaceStorage } from "./link-storage";
+import {
+  getLinkAnswerCache,
+  getLinkSurface,
+  LINK_SURFACE_NAME,
+  type LinkSurfaceStorage,
+} from "./link-storage";
 import { createLinkSurface, type LinkMenuTarget, type LinkPoint } from "./link-surface";
 import { classifyLinkTarget } from "./link-target";
 
@@ -62,30 +71,39 @@ export function openLinkForm(editor: Editor | null): boolean {
   return true;
 }
 
-/** Follow the link at the selection (Alt+Enter, and the menu's Open link). */
-function followLinkAtSelection(editor: Editor | null): boolean {
+/**
+ * Follow a link, unless it is already known to be gone. A gone link is not
+ * followable (it draws a text cursor), so its press is the editor's: the caret
+ * lands, and Enter means Enter. A press before the answer arrives still
+ * follows, and the follow then does nothing.
+ */
+function followUnlessGone(
+  editor: Editor,
+  key: LinkKey,
+  disposition: LinkFollowDisposition,
+): LinkFollowResult {
   const surface = getLinkSurface(editor);
-  if (!editor || !surface) return false;
-  const link = linkAtSelection(editor);
-  if (!link) return false;
-  // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
-  // place a plain click would.
-  const followed = followLink(
-    {
-      target: classifyLinkTarget(linkHref(link)),
-      ref: linkRef(link),
-      disposition: "current",
-    },
+  if (!surface || getLinkAnswerCache(editor)?.read(key)?.state === "gone") return "unavailable";
+  return followLink(
+    { target: classifyLinkTarget(key.href), ref: key.ref, disposition },
     surface.navigator,
   );
-  return followed !== "unavailable";
+}
+
+/** Follow the link at the selection (Alt+Enter, and the menu's Open link). */
+function followLinkAtSelection(editor: Editor | null): boolean {
+  const link = editor && linkAtSelection(editor);
+  if (!editor || !link) return false;
+  // Alt+Enter is the keyboard twin of a plain click, so it lands in the same
+  // place a plain click would.
+  return followUnlessGone(editor, linkKeyOfMark(link.attributes), "current") !== "unavailable";
 }
 
 export const LinkSurfaceExtension = Extension.create({
   name: LINK_SURFACE_NAME,
 
   addStorage(): LinkSurfaceStorage {
-    return { surface: createLinkSurface(), resolution: createLinkResolution() };
+    return { surface: createLinkSurface(), resolution: createLinkAnswerCache() };
   },
 
   onDestroy() {
@@ -127,15 +145,11 @@ export const LinkSurfaceExtension = Extension.create({
       });
       if (intent.action === "place-caret") return false;
 
-      const key = linkKeyOf(view, anchor);
-      const followed = followLink(
-        { target: classifyLinkTarget(key.href), ref: key.ref, disposition: intent.disposition },
-        surface.navigator,
-      );
-      // Nothing to follow — an unrecognized href, or an internal link with no
-      // navigator registered yet. A primary click falls through so the caret
-      // still lands; a middle click has no caret to fall through to, and the
-      // cancel above is the whole answer.
+      const followed = followUnlessGone(editor, linkKeyOf(view, anchor), intent.disposition);
+      // Nothing to follow — an unrecognized href, a link known to be gone, or
+      // an internal link with no navigator registered yet. A primary click
+      // falls through so the caret still lands; a middle click has no caret to
+      // fall through to, and the cancel above is the whole answer.
       if (followed === "unavailable") return button === MIDDLE_BUTTON;
 
       // The follow read the link. It did not also move the writer's place: they
@@ -204,12 +218,8 @@ export const LinkSurfaceExtension = Extension.create({
               Enter: () => {
                 const anchor = anchorIn(view, document.activeElement);
                 if (!anchor) return false;
-                const key = linkKeyOf(view, anchor);
                 return (
-                  followLink(
-                    { target: classifyLinkTarget(key.href), ref: key.ref, disposition: "current" },
-                    surface.navigator,
-                  ) !== "unavailable"
+                  followUnlessGone(editor, linkKeyOf(view, anchor), "current") !== "unavailable"
                 );
               },
               ContextMenu: openKeyboardMenu,
@@ -312,11 +322,11 @@ function anchorIn(view: EditorView, node: EventTarget | null): HTMLElement | nul
 
 /** What the menu shows and acts on, derived from the link as it stands now. */
 function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
-  const href = linkHref(link);
+  const { ref, href } = linkKeyOfMark(link.attributes);
   return {
     anchor: anchorLinkRange(state, { from: link.from, to: link.to }),
     href,
-    ref: linkRef(link),
+    ref,
     target: classifyLinkTarget(href),
     identity: link.identity,
   };
@@ -330,7 +340,7 @@ function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
  */
 function linkKeyOf(view: EditorView, anchor: HTMLElement): LinkKey {
   const link = linkAt(view.state, view.posAtDOM(anchor, 0));
-  if (link) return { ref: linkRef(link), href: linkHref(link) };
+  if (link) return linkKeyOfMark(link.attributes);
   return {
     ref: null,
     href: anchor.getAttribute("data-meridian-link") ?? anchor.getAttribute("href") ?? "",

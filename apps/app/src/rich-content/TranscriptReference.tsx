@@ -28,8 +28,8 @@ import {
 
 import {
   classifyLinkTarget,
+  type LinkAnswerCache,
   type LinkRequester,
-  type LinkResolution,
   type LinkResolutionEntry,
   type LinkTarget,
   linkChip,
@@ -48,7 +48,7 @@ export type TranscriptLinkNavigation = {
   follow(target: LinkTarget): void;
   canFollow(target: LinkTarget): boolean;
   /** The cache the surface's follows resolve through; what a syntax link draws. */
-  resolution: LinkResolution | null;
+  resolution: LinkAnswerCache | null;
   /** Ask about an href while it is shown; one batched requester per surface. */
   watch: LinkRequester["watch"];
 };

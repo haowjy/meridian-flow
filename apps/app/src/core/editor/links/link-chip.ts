@@ -49,9 +49,9 @@ export function linkChip(
   baseUri: string | null = null,
 ): LinkChip | null {
   if (target.kind === "external") return null;
-  if (entry?.state === "resolved") return { state: "filled", icon: entry.document.scheme };
+  if (entry?.state === "document") return { state: "filled", icon: entry.document.scheme };
   const icon = targetFamily(target, baseUri) ?? "file";
-  const reachesNothing = entry?.state === "unresolved" || entry?.state === "gone";
+  const reachesNothing = entry?.state === "missing" || entry?.state === "gone";
   return { state: reachesNothing ? "dashed" : "filled", icon };
 }
 

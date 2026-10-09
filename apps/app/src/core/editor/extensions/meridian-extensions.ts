@@ -367,7 +367,7 @@ export const MeridianLink = Link.extend({
         0,
       ]);
       const element = dom as HTMLElement;
-      // Storage, not `getLinkResolution`: a view built while the editor is
+      // Storage, not `getLinkAnswerCache`: a view built while the editor is
       // constructing sees `isDestroyed` as true, and would never subscribe.
       const resolution = editor.storage[LINK_SURFACE_NAME]?.resolution ?? null;
       const unsubscribe = linkStateAttributes(element, mark.attrs, resolution);
