@@ -1,5 +1,5 @@
 // Pure link identity correspondence over host-provided address and observation evidence.
-import { type Candidate, matchOccurrences } from "./link-correspondence-matching.js";
+import { type CandidateRow, matchOccurrences } from "./correspondence-matching.js";
 
 /** One showing of a link to the model in this holder document (host-only evidence). */
 export interface ShownLink {
@@ -37,14 +37,6 @@ export interface CorrespondenceInput {
   isLive(ref: string): boolean;
 }
 export type Binding = { pass: 1; occurrence: number } | { pass: 2; ref: string } | { pass: 3 };
-export interface CorrespondenceResult {
-  bindings: Binding[];
-  /** Whether document-order completion was proven optimal (the first five ranks always are). */
-  exact: boolean;
-  /** Deterministic candidate visits in global document-order completion. */
-  orderSearchSteps: number;
-}
-
 function continuity(a: string, b: string) {
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
@@ -68,23 +60,8 @@ function showingOrder(a: ShownLink, b: ShownLink) {
   return a.holderUri < b.holderUri ? -1 : a.holderUri > b.holderUri ? 1 : 0;
 }
 
-/**
- * Passes 1 and 2 of ref assignment; pass 3 remains the caller's responsibility.
- *
- * The five additive ranks are exact lexicographic assignments, never scalar
- * weights. Order is completed globally, including across compatibility components.
- * After 50,000 candidate visits, completion deterministically returns the best
- * visited matching (including the initial assignment), with all five additive
- * ranks still optimal. Only order agreements and the final document-order tie
- * may differ from exhaustive search. Use correspondLinksWithDiagnostics when
- * the caller needs to record this exceptional fallback.
- */
+/** Passes 1 and 2 of ref assignment; classification and fresh resolution remain the caller's. */
 export function correspondLinks(input: CorrespondenceInput): Binding[] {
-  return correspondLinksWithDiagnostics(input).bindings;
-}
-
-/** The same binding operation with observable bounded-search status. */
-export function correspondLinksWithDiagnostics(input: CorrespondenceInput): CorrespondenceResult {
   const history = new Map<string, ShownLink[]>();
   for (const showing of input.shown) {
     const entries = history.get(showing.ref) ?? [];
@@ -102,7 +79,7 @@ export function correspondLinksWithDiagnostics(input: CorrespondenceInput): Corr
     return result;
   };
   const current = addresses(input.holderUri);
-  const candidates: Candidate[][] = input.written.map(() => []);
+  const candidates: CandidateRow[] = input.written.map(() => ({ occurrences: [], scores: [] }));
   input.old.forEach((old, occurrence) => {
     const showings = history.get(old.ref) ?? [];
     const latest = showings[0];
@@ -118,17 +95,17 @@ export function correspondLinksWithDiagnostics(input: CorrespondenceInput): Corr
           const address = addresses(showing.holderUri)[j];
           return address !== null && address === showing.address;
         });
-      if (compatible)
-        candidates[j].push({
-          occurrence,
-          score: [
-            Number(strong),
-            1,
-            Number(written.label === old.label),
-            continuity(old.label, written.label),
-            Number(old.live),
-          ],
-        });
+      if (compatible) {
+        candidates[j].occurrences.push(occurrence);
+        candidates[j].scores.push(
+          Number(strong),
+          1,
+          Number(written.label === old.label),
+          continuity(old.label, written.label),
+          Number(old.live),
+          -Math.abs(j * (input.old.length - 1) - occurrence * (input.written.length - 1)),
+        );
+      }
     });
   });
   const matching = matchOccurrences(candidates, input.old.length);
@@ -136,7 +113,7 @@ export function correspondLinksWithDiagnostics(input: CorrespondenceInput): Corr
   const live = new Map(latest.map((showing) => [showing.ref, input.isLive(showing.ref)]));
   latest.sort((a, b) => Number(live.get(b.ref)) - Number(live.get(a.ref)) || showingOrder(a, b));
   const bindings = input.written.map((_, j): Binding => {
-    const occurrence = matching.occurrences[j];
+    const occurrence = matching[j];
     if (occurrence >= 0) return { pass: 1, occurrence };
     const showing = latest.find((candidate) => {
       const address = addresses(candidate.holderUri)[j];
@@ -144,5 +121,5 @@ export function correspondLinksWithDiagnostics(input: CorrespondenceInput): Corr
     });
     return showing ? { pass: 2, ref: showing.ref } : { pass: 3 };
   });
-  return { bindings, exact: matching.exact, orderSearchSteps: matching.steps };
+  return bindings;
 }

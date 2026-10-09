@@ -16,7 +16,7 @@ Read the page that owns the seam you are changing:
 - [Write invariants](write-invariants.md) — block identity, destructive-edit
   safety, synchronization, and resolver constraints.
 - [Link correspondence](link-correspondence.md) — standalone pure identity
-  assignment, exact tuple matching and observable bounded order completion.
+  assignment and exact additive tuple matching.
 - [Write tool surface](write-tool-surface.md) — lifecycle behavior, outcomes,
   simplifications, and test coverage.
 

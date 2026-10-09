@@ -1,12 +1,12 @@
 // Link correspondence contracts: reviewer examples, normalization, reorder identity and exhaustive ranking.
 import { expect, it } from "vitest";
+import { reviewerFixtures } from "./correspondence.fixtures.js";
 import {
   type Binding,
   type CorrespondenceInput,
   correspondLinks,
-  correspondLinksWithDiagnostics,
-} from "./link-correspondence.js";
-import { reviewerFixtures } from "./test-support/link-correspondence-fixtures.js";
+  type ShownLink,
+} from "./correspondence.js";
 
 const normalize = (href: string) => (href.startsWith("https:") ? null : href);
 const old = (label: string, ref: string, current: string, live = true) => ({
@@ -32,10 +32,16 @@ const input = (values: Partial<CorrespondenceInput>): CorrespondenceInput => ({
   ...values,
 });
 
-/** Deliberately exhaustive oracle: no components, assignment duals, uncrossing or pruning. */
+/** Independent exhaustive ranking: no components, assignment duals or alternating paths. */
 function exhaustive(values: CorrespondenceInput): Binding[] {
+  const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const showingOrder = (a: ShownLink, b: ShownLink) =>
+    b.at - a.at ||
+    compareText(a.ref, b.ref) ||
+    compareText(a.address, b.address) ||
+    compareText(a.holderUri, b.holderUri);
   const history = (ref: string) =>
-    values.shown.filter((showing) => showing.ref === ref).sort((a, b) => b.at - a.at);
+    values.shown.filter((showing) => showing.ref === ref).sort(showingOrder);
   const strength = (i: number, j: number) => {
     const occurrence = values.old[i];
     const showings = history(occurrence.ref);
@@ -74,7 +80,7 @@ function exhaustive(values: CorrespondenceInput): Binding[] {
       score[2] += Number(a === b);
       score[3] += prefix + suffix;
       score[4] += Number(values.old[i].live);
-      for (let k = 0; k < j; k++) if (pairs[k] >= 0 && pairs[k] < i) score[5]++;
+      score[5] -= Math.abs(j * (values.old.length - 1) - i * (values.written.length - 1));
     });
     return score;
   };
@@ -126,21 +132,17 @@ function exhaustive(values: CorrespondenceInput): Binding[] {
       (showing) => values.normalize(values.written[j].href, showing.holderUri) === showing.address,
     );
     matching.sort(
-      (a, b) =>
-        Number(values.isLive(b.ref)) - Number(values.isLive(a.ref)) ||
-        b.at - a.at ||
-        a.ref.localeCompare(b.ref),
+      (a, b) => Number(values.isLive(b.ref)) - Number(values.isLive(a.ref)) || showingOrder(a, b),
     );
     return matching[0] ? { pass: 2, ref: matching[0].ref } : { pass: 3 };
   });
 }
 
-it("implements all r7 reviewer bindings, normalization and the exhaustive global ranking table", () => {
+it("preserves r7 reviewer bindings, stated ambiguities and historical holder normalization", () => {
   expect(reviewerFixtures).toHaveLength(28);
   for (const fixture of reviewerFixtures) {
     const values = input({ ...fixture, isLive: (ref) => fixture.live.includes(ref) });
     expect.soft(correspondLinks(values), fixture.name).toEqual(fixture.expected);
-    expect.soft(correspondLinksWithDiagnostics(values).exact, fixture.name).toBe(true);
   }
   const cases: Array<{ name: string; values: CorrespondenceInput; expected: Binding[] }> = [
     {
@@ -255,7 +257,7 @@ it("implements all r7 reviewer bindings, normalization and the exhaustive global
       expected: [{ pass: 2, ref: "newer" }],
     },
     {
-      name: "order agreements are global, not independently completed per component",
+      name: "order displacement uses span-wide indices across compatibility components",
       values: input({
         old: [old("X", "a", "a"), old("X", "b", "b"), old("X", "c", "a")],
         written: [written("Y", "b"), written("Y", "a")],
@@ -301,7 +303,7 @@ it("implements all r7 reviewer bindings, normalization and the exhaustive global
       expected: [{ pass: 2, ref: "a" }],
     },
     {
-      name: "interchangeable written rows select live columns with tied boundary alternatives",
+      name: "live targets outrank displacement when a gone occurrence competes with two survivors",
       values: input({
         old: [old("A", "gone", "a.md", false), old("B", "one", "a.md"), old("C", "two", "a.md")],
         written: [written("X", "a.md"), written("Y", "a.md")],
@@ -312,7 +314,7 @@ it("implements all r7 reviewer bindings, normalization and the exhaustive global
       ],
     },
     {
-      name: "interchangeable old columns select exact written rows before document order",
+      name: "exact labels outrank displacement and earliest-written ties",
       values: input({
         old: [old("Target", "D", "a.md")],
         written: [written("Unknown", "a.md"), written("Target", "a.md"), written("Target", "a.md")],
@@ -320,7 +322,7 @@ it("implements all r7 reviewer bindings, normalization and the exhaustive global
       expected: [{ pass: 3 }, { pass: 1, occurrence: 0 }, { pass: 3 }],
     },
     {
-      name: "row continuity ranks survive the interchangeable-column fast path",
+      name: "label continuity outranks displacement after exact labels",
       values: input({
         old: [old("Target", "D", "a.md"), old("Target", "E", "a.md")],
         written: [
@@ -332,6 +334,15 @@ it("implements all r7 reviewer bindings, normalization and the exhaustive global
       expected: [{ pass: 3 }, { pass: 1, occurrence: 0 }, { pass: 1, occurrence: 1 }],
     },
     {
+      name: "an inserted duplicate never sacrifices latest-view strength",
+      values: input({
+        old: [old("", "D", "c.md"), old("A", "D", "c.md", false)],
+        written: [written("A", "a.md"), written("A", "b.md"), written("A", "a.md")],
+        shown: [seen("D", "a.md", 1), seen("D", "b.md", 2)],
+      }),
+      expected: [{ pass: 1, occurrence: 0 }, { pass: 1, occurrence: 1 }, { pass: 3 }],
+    },
+    {
       name: "empty write is an unlink, not a new assignment",
       values: input({ old: [old("A", "D", "a.md")], shown: [seen("D", "a.md", 1)] }),
       expected: [],
@@ -339,38 +350,6 @@ it("implements all r7 reviewer bindings, normalization and the exhaustive global
   ];
   for (const row of cases) {
     expect.soft(correspondLinks(row.values), row.name).toEqual(row.expected);
-    expect.soft(correspondLinksWithDiagnostics(row.values).exact, row.name).toBe(true);
-  }
-
-  // Deterministic generated oracle rows cover overlapping histories, repeated addresses,
-  // cardinality differences, continuity, liveness and interleaved components.
-  let state = 729730;
-  const random = (n: number) => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return Math.floor((state / 0x100000000) * n);
-  };
-  const labels = ["", "X", "XY", "YX", "XYZ", "Target", "Target expanded"];
-  for (let row = 0; row < 1000; row++) {
-    const n = random(6);
-    const m = random(6);
-    const olds = Array.from({ length: n }, (_, i) =>
-      old(labels[random(labels.length)], `ref${i}`, `addr${random(3)}`, random(2) === 1),
-    );
-    const values = input({
-      old: olds,
-      written: Array.from({ length: m }, () =>
-        written(labels[random(labels.length)], `addr${random(4)}`),
-      ),
-      shown: olds.flatMap(({ ref }) =>
-        Array.from({ length: random(3) }, (_, at) => seen(ref, `addr${random(3)}`, at)),
-      ),
-      isLive: (ref) => olds.find((occurrence) => occurrence.ref === ref)?.live ?? false,
-    });
-    const result = correspondLinksWithDiagnostics(values);
-    expect
-      .soft(result.bindings, `exhaustive generated row ${row}: ${JSON.stringify(values)}`)
-      .toEqual(exhaustive(values));
-    expect.soft(result.exact, `exhaustive generated row ${row}`).toBe(true);
   }
 });
 
@@ -404,4 +383,49 @@ it("preserves uniquely identifiable historical-address links in all 153 r7 reord
     }
   }
   expect(count).toBe(153);
+});
+
+it("matches exhaustive six-component ranking with mixed historical holders and relative hrefs", () => {
+  let state = 729730;
+  const random = (n: number) => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return Math.floor((state / 0x100000000) * n);
+  };
+  const pick = <T>(values: readonly T[]) => values[random(values.length)];
+  const labels = ["", "X", "XY", "YX", "XYZ", "Target", "Target expanded"];
+  const refs = ["Z", "a", "ä", "Ω", "😀"];
+  const holders = ["manuscript://p/a/H.md", "manuscript://p/b/H.md", "manuscript://p/H.md"];
+  const addresses = [
+    "manuscript://p/a/T.md",
+    "manuscript://p/b/T.md",
+    "manuscript://p/T.md",
+    "manuscript://p/a/U.md",
+  ];
+  const hrefs = [...addresses, "T.md", "../T.md", "U.md", "a/T.md", "https://example.com"];
+  const normalize = (href: string, holder: string) =>
+    href.startsWith("https:") ? null : new URL(href, holder).href;
+  for (let row = 0; row < 1000; row++) {
+    const n = random(6);
+    const m = random(6);
+    const olds = Array.from({ length: n }, () =>
+      old(pick(labels), pick(refs), pick(addresses), random(2) === 1),
+    );
+    const observed = [...new Set(olds.map(({ ref }) => ref)), "ahead:new"];
+    const live = new Set(observed.filter(() => random(2) === 1));
+    const values = input({
+      old: olds,
+      written: Array.from({ length: m }, () => written(pick(labels), pick(hrefs))),
+      shown: observed.flatMap((ref) =>
+        Array.from({ length: random(4) }, () =>
+          seen(ref, pick(addresses), random(3), pick(holders)),
+        ),
+      ),
+      holderUri: pick(holders),
+      normalize,
+      isLive: (ref) => live.has(ref),
+    });
+    expect
+      .soft(correspondLinks(values), `exhaustive generated row ${row}: ${JSON.stringify(values)}`)
+      .toEqual(exhaustive(values));
+  }
 });
