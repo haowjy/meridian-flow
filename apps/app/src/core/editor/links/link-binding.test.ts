@@ -19,10 +19,14 @@ import { getLinkResolution } from "./link-storage";
 import { linkPastedWikilinks } from "./wikilink-paste";
 
 const HOLDER = "manuscript://volume-1/chapter-2.md";
+const CH1 = "00000000-0000-4000-8000-0000000000c1";
+const CH2 = "00000000-0000-4000-8000-0000000000c2";
+const LIN = "00000000-0000-4000-8000-00000000001f";
+const MOVED = "00000000-0000-4000-8000-0000000000ed";
 const DOCUMENTS = [
-  { documentId: "doc-ch2", uri: HOLDER },
-  { documentId: "doc-ch1", uri: "manuscript://volume-1/chapter-1.md" },
-  { documentId: "doc-lin", uri: "kb://characters/Lin Feng.md" },
+  { documentId: CH2, uri: HOLDER },
+  { documentId: CH1, uri: "manuscript://volume-1/chapter-1.md" },
+  { documentId: LIN, uri: "kb://characters/Lin Feng.md" },
 ];
 
 const live: Editor[] = [];
@@ -33,11 +37,14 @@ afterEach(() => {
 function editor(content = "<p>Kael waits.</p>"): Editor {
   const created = new Editor({ extensions: createStandaloneEditorExtensions(), content });
   live.push(created);
-  getLinkResolution(created)?.registerResolver(async (questions) => questions.map(() => null), {
-    baseUri: HOLDER,
-    projectId: "project-1",
-    index: { documents: DOCUMENTS },
-  });
+  getLinkResolution(created)?.registerResolver(
+    { remote: async (questions) => questions.map(() => null) },
+    {
+      baseUri: HOLDER,
+      projectId: "project-1",
+      index: { documents: DOCUMENTS },
+    },
+  );
   return created;
 }
 
@@ -107,13 +114,13 @@ it("binds what each producer writes", () => {
           { from: 1, to: 5 },
           {
             label: "Lin",
-            documentId: "doc-lin",
+            documentId: LIN,
             uri: "kb://characters/Lin Feng.md",
           },
         );
         return links(target);
       },
-      [{ text: "Lin", ref: "doc:doc-lin", href: "kb://characters/Lin Feng.md" }],
+      [{ text: "Lin", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng.md" }],
     ],
     [
       "@ link-ahead row: ahead ref, extension added",
@@ -134,7 +141,7 @@ it("binds what each producer writes", () => {
     [
       "Ctrl+K new link to an indexed relative path: doc ref, absolute, suffix kept",
       () => ctrlK(editor(), 1, 5, "chapter-1.md#scene"),
-      [{ text: "Kael", ref: "doc:doc-ch1", href: "manuscript://volume-1/chapter-1.md#scene" }],
+      [{ text: "Kael", ref: `doc:${CH1}`, href: "manuscript://volume-1/chapter-1.md#scene" }],
     ],
     [
       "Ctrl+K new link to an external URL: unbound, as written",
@@ -149,11 +156,11 @@ it("binds what each producer writes", () => {
         target.commands.setMark("link", {
           href: "manuscript://volume-1/old-name.md",
           title: null,
-          ref: "doc:doc-moved",
+          ref: `doc:${MOVED}`,
         });
         return ctrlK(target, 2, 2, "manuscript://volume-1/old-name.md");
       },
-      [{ text: "Kael", ref: "doc:doc-moved", href: "manuscript://volume-1/old-name.md" }],
+      [{ text: "Kael", ref: `doc:${MOVED}`, href: "manuscript://volume-1/old-name.md" }],
     ],
     [
       "Ctrl+K retarget to an unwritten address: a fresh ahead ref",
@@ -163,7 +170,7 @@ it("binds what each producer writes", () => {
         target.commands.setMark("link", {
           href: "manuscript://volume-1/old-name.md",
           title: null,
-          ref: "doc:doc-moved",
+          ref: `doc:${MOVED}`,
         });
         return ctrlK(target, 2, 2, "chapter-7");
       },
@@ -172,7 +179,7 @@ it("binds what each producer writes", () => {
     [
       "[[…]] paste hit: doc ref by catalog id",
       () => wikilinks("[[Lin Feng]]"),
-      [{ text: "Lin Feng", ref: "doc:doc-lin", href: "kb://characters/Lin Feng.md" }],
+      [{ text: "Lin Feng", ref: `doc:${LIN}`, href: "kb://characters/Lin Feng.md" }],
     ],
     [
       "[[…]] paste miss: ahead ref at the link-ahead address",
@@ -187,7 +194,7 @@ it("binds what each producer writes", () => {
           "[One](chapter-1.md), [Nine](chapter-9) and [Web](https://example.com).",
         ),
       [
-        { text: "One", ref: "doc:doc-ch1", href: "manuscript://volume-1/chapter-1.md" },
+        { text: "One", ref: `doc:${CH1}`, href: "manuscript://volume-1/chapter-1.md" },
         { text: "Nine", ref: "ahead:*", href: "manuscript://volume-1/chapter-9.md" },
         { text: "Web", ref: null, href: "https://example.com" },
       ],

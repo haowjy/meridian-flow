@@ -16,15 +16,16 @@
  * bound to its document's id (`doc:`), spelled with its full address; one that
  * names no document becomes the same dashed link the `@` menu's link-ahead row
  * writes, with a fresh ahead ref for the address that row's rule gives
- * (`linkAhead`).
+ * (`linkAhead`), one per address per paste.
  */
 
 import {
+  type AheadRef,
   aheadAddress,
   documentRef,
   mintAheadRef,
   parseContextUri,
-  spellDocumentHref,
+  storedHref,
 } from "@meridian/contracts";
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { Fragment, type MarkType, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
@@ -201,6 +202,8 @@ function wikilinkResolver(
   // Ranking ignores case, so its answer is cached under the lowercased path;
   // a link-ahead address keeps the writer's casing, so it is asked each time.
   const matches = new Map<string, Located | null>();
+  // One address pasted twice shares one binding, as in `bindPastedNodes`.
+  const aheadRefs = new Map<string, AheadRef>();
   return (occurrence) => {
     const { target } = occurrence;
     const wanted = wantedPath(target);
@@ -213,13 +216,17 @@ function wikilinkResolver(
     if (match?.documentId)
       return {
         ref: documentRef(match.documentId),
-        href: spellDocumentHref(null, match.uri) + occurrence.suffix,
+        href: storedHref(match.uri, occurrence.suffix),
       };
     const ahead = catalog.linkAhead(target.name, target.folders)?.uri;
     const address = ahead ? aheadAddress(ahead, "link") : null;
-    return address
-      ? { ref: mintAheadRef(), href: spellDocumentHref(null, address) + occurrence.suffix }
-      : null;
+    if (!address) return null;
+    let ref = aheadRefs.get(address);
+    if (!ref) {
+      ref = mintAheadRef();
+      aheadRefs.set(address, ref);
+    }
+    return { ref, href: storedHref(address, occurrence.suffix) };
   };
 }
 

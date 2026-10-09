@@ -122,8 +122,9 @@ export function TranscriptReference({
   // The dashed outline says "nothing reachable" to the eye; this says which to
   // a screen reader, in the words the Editor's hint and the follow use: a
   // reference whose document is gone is no longer available, and a link to
-  // an address nothing is at yet does not exist yet.
-  const gone = documentId ? resolution?.available === false : answer?.state === "gone";
+  // an address nothing is at yet does not exist yet. A syntax link has no
+  // ref, so it is never gone.
+  const gone = Boolean(documentId) && resolution?.available === false;
   const missing =
     chip?.state !== "dashed" ? undefined : gone ? t`No longer available` : t`Doesn't exist yet`;
   return (

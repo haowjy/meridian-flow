@@ -32,6 +32,13 @@
  * against. That is the whole invalidation mechanism: there is no second verb
  * that drops answers, and no caller has to know one.
  *
+ * **Local answers never wait on the network.** The port's `local` half runs
+ * when a question is asked, so what the scope's own index can say is cached
+ * before any request goes out, and a failed request fails only the questions
+ * it carried. A local answer may also be provisional: shown at once while the
+ * server is still asked, and replaced only by a server answer that names a
+ * different document or says the ref is gone.
+ *
  * A click outlives a generation. A question someone is waiting on through
  * `resolve()` is asked again in the generation that replaced its own, because
  * the writer asked to go somewhere and a catalog moving underneath them is not
@@ -66,13 +73,34 @@ export type LinkAnswer = Exclude<LinkResolutionEntry, { state: "pending" }>;
 export type LinkQuestion = { ref: string | null; target: LinkTarget };
 
 /**
- * Asks the project about a batch of internal links (at most `MAX_BATCH`).
- * Answers come back in question order; null for one question says it could
- * not be asked. Throwing fails the whole batch.
+ * What the scope knows about one question without the network.
+ *
+ * - `answered`: the scope's own answer, final for the generation; the server
+ *   is not asked.
+ * - `unasked`: the question cannot be asked here (a relative path with no
+ *   base, say). Cached like a failure: no answer, never drawn as missing.
+ * - `ask`: the server answers. A `provisional` answer is shown at once and
+ *   stands unless the server answers `gone` or a different document.
  */
-export type InternalLinkResolver = (
-  questions: readonly LinkQuestion[],
-) => Promise<readonly (LinkAnswer | null)[]>;
+export type LocalLinkAnswer =
+  | { kind: "answered"; answer: LinkAnswer }
+  | { kind: "unasked" }
+  | { kind: "ask"; provisional: ResolvedLinkAnswer | null };
+
+export type ResolvedLinkAnswer = Extract<LinkAnswer, { state: "resolved" }>;
+
+/**
+ * The port. `local` runs synchronously when a question is asked, so local
+ * answers are cached before any network call and no server failure can touch
+ * them. `remote` gets only the questions `local` sent on, at most `MAX_BATCH`
+ * at a time, and answers in question order; null for one question is a
+ * failure of that question. Throwing fails that batch and nothing else.
+ * Without `local`, every question goes to `remote`.
+ */
+export type InternalLinkResolver = {
+  local?: (question: LinkQuestion) => LocalLinkAnswer;
+  remote: (questions: readonly LinkQuestion[]) => Promise<readonly (LinkAnswer | null)[]>;
+};
 
 export type LinkResolution = {
   subscribe: (listener: () => void) => () => void;
@@ -127,6 +155,24 @@ export type LinkResolution = {
 };
 
 const PENDING: LinkResolutionEntry = Object.freeze({ state: "pending", document: null });
+const ASK: LocalLinkAnswer = Object.freeze({ kind: "ask", provisional: null });
+
+/**
+ * The server's answer, measured against the provisional one shown meanwhile:
+ * the server wins only when it says something different about identity (gone,
+ * or another document). Anything else, a failure included, keeps the local
+ * answer the writer is already looking at.
+ */
+function settledOver(
+  provisional: ResolvedLinkAnswer | null,
+  entry: LinkResolutionEntry | null,
+): LinkResolutionEntry | null {
+  if (!provisional) return entry;
+  if (entry?.state === "gone") return entry;
+  if (entry?.state === "resolved" && entry.document.documentId !== provisional.document.documentId)
+    return entry;
+  return provisional;
+}
 
 /**
  * How many batches are in flight at once, and how many links one batch asks
@@ -135,7 +181,7 @@ const PENDING: LinkResolutionEntry = Object.freeze({ state: "pending", document:
  * per distinct link for as long as the generation lasts.
  */
 const MAX_IN_FLIGHT = 4;
-export const MAX_BATCH = 200;
+const MAX_BATCH = 200;
 
 /**
  * One question, and everything needed to settle it: which generation asked it,
@@ -149,6 +195,8 @@ type Request = {
   readonly generation: Generation;
   readonly promise: Promise<LinkResolutionEntry | null>;
   readonly settle: (entry: LinkResolutionEntry | null) => void;
+  /** The local answer shown while the server is asked; see `settledOver`. */
+  readonly provisional: ResolvedLinkAnswer | null;
   /** Someone is waiting through `resolve()`, so retirement carries it forward. */
   awaited: boolean;
 };
@@ -188,8 +236,9 @@ export function createLinkResolution(): LinkResolution {
     };
   };
 
-  const settle = (request: Request, entry: LinkResolutionEntry | null) => {
+  const settle = (request: Request, answer: LinkResolutionEntry | null) => {
     const { generation, key } = request;
+    const entry = settledOver(request.provisional, answer);
     // This request's own entry and no other: after a re-registration the map
     // under this key can hold the next generation's question about it.
     if (generation.asking.get(key) === request) generation.asking.delete(key);
@@ -203,7 +252,7 @@ export function createLinkResolution(): LinkResolution {
     // answer arriving afterwards is about a project state nobody is looking at.
     if (generation !== current) return;
     request.settle(entry);
-    publish();
+    if (entry !== request.provisional) publish();
   };
 
   const pump = (generation: Generation) => {
@@ -212,8 +261,8 @@ export function createLinkResolution(): LinkResolution {
       if (!batch.length) return;
 
       generation.running += 1;
-      void generation
-        .resolver(batch.map((request) => request.question))
+      void generation.resolver
+        .remote(batch.map((request) => request.question))
         .then((answers) => {
           if (answers.length !== batch.length) throw new Error("resolver answered out of shape");
           batch.forEach((request, at) => {
@@ -241,6 +290,18 @@ export function createLinkResolution(): LinkResolution {
     const already = generation.asking.get(key);
     if (already) return already.promise;
 
+    const local = generation.resolver.local?.(question) ?? ASK;
+    if (local.kind === "answered") {
+      generation.failed.delete(key);
+      generation.answers.set(key, local.answer);
+      return Promise.resolve(local.answer);
+    }
+    if (local.kind === "unasked") {
+      generation.answers.delete(key);
+      generation.failed.add(key);
+      return Promise.resolve(null);
+    }
+
     let settleWaiter: Request["settle"] = () => {};
     const promise = new Promise<LinkResolutionEntry | null>((done) => {
       settleWaiter = done;
@@ -251,10 +312,11 @@ export function createLinkResolution(): LinkResolution {
       generation,
       promise,
       settle: settleWaiter,
+      provisional: local.provisional,
       awaited: false,
     };
     generation.asking.set(key, request);
-    generation.answers.set(key, PENDING);
+    generation.answers.set(key, local.provisional ?? PENDING);
     // Queued, not sent: the caller pumps once it has asked everything it has,
     // so one scan of the document goes out as one batch.
     generation.queue.push(request);
@@ -329,8 +391,8 @@ export function createLinkResolution(): LinkResolution {
         asked = true;
       }
       pump(generation);
-      // Pending is a state a renderer may show, so say it once rather than per
-      // link — and never when nothing actually changed.
+      // Pending and local answers are states a renderer may show, so say them
+      // once rather than per link — and never when nothing actually changed.
       if (asked) publish();
     },
 

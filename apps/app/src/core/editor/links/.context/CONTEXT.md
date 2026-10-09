@@ -120,9 +120,16 @@ getLinkSurface(editor)?.registerNavigator(navigate);      // returns an unregist
 
 type LinkKey = { ref: string | null; href: string };
 type LinkQuestion = { ref: string | null; target: LinkTarget };
-type InternalLinkResolver = (
-  questions: readonly LinkQuestion[],                     // at most MAX_BATCH (200)
-) => Promise<readonly (LinkAnswer | null)[]>;             // request order; null = not asked
+type LocalLinkAnswer =
+  | { kind: "answered"; answer: LinkAnswer }              // final; the server is not asked
+  | { kind: "unasked" }                                   // cannot be asked here; cached as failed
+  | { kind: "ask"; provisional: ResolvedLinkAnswer | null }; // shown at once while asking
+type InternalLinkResolver = {
+  local?: (question: LinkQuestion) => LocalLinkAnswer;    // synchronous, at ask time
+  remote: (
+    questions: readonly LinkQuestion[],                   // only what `local` sent on; at most 200
+  ) => Promise<readonly (LinkAnswer | null)[]>;           // request order; null = failed
+};
 getLinkResolution(editor)?.registerResolver(resolve, { baseUri, projectId, index });
 ```
 
@@ -147,9 +154,14 @@ can no longer reach (deleted, discarded, unreadable); it never falls back to
 the address. Addresses are unique, so there is no "several documents" state: a
 link names one document or none.
 
-Questions go to the port in batches: the decoration scan's `request()` queues
-every unanswered link and pumps once, so one scan is one batch of up to 200;
-a click's `resolve()` pumps at once. Four batches are in flight at most.
+Each question meets the port's `local` half first, synchronously, so what
+the scope can answer without the network is cached before any request goes
+out and no failed request can touch it. The rest go to `remote` in batches:
+the decoration scan's `request()` queues every unanswered link and pumps
+once, so one scan is one batch of up to 200; a click's `resolve()` pumps at
+once. Four batches are in flight at most, and a batch that throws fails only
+its own questions. A provisional local answer stands through the request and
+is replaced only by `gone` or a different document (`settledOver`).
 
 The registration's options are also the editor's binding scope
 (`resolution.binding`): the holder's address, its project, and the local
@@ -261,9 +273,12 @@ surface draws from it: the transcript and the composer on their own element
 | pending, failed, not asked | filled | the target's own family |
 
 Gone draws like chat's unavailable reference. The decoration span carries
-`data-link-state="gone"`, which the stylesheet uses to drop the hover, and an
+`data-link-state="gone"`, which the stylesheet uses to drop the hover. The
+accessible state sits on the focusable `<a>` itself, as on chat's
+reference: the link mark's view (`linkStateAttributes`) sets an
 `aria-description` of "No longer available" (a missing link's is "Doesn't
-exist yet"); the hint, the menu and the form say the same words, and the menu
+exist yet") and, for gone, `aria-disabled`, which also drops the pointer
+cursor. The hint, the menu and the form say the same words, and the menu
 offers no Open link.
 
 A scheme URI knows its family from its prefix and a relative path from the

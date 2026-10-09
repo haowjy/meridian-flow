@@ -11,15 +11,18 @@ cache (the Editor passes the per-editor cache its decorations draw from):
 
 ```ts
 resolution.registerResolver(createProjectLinkResolver(scope, index), { baseUri, projectId, index });
-// per batch of { ref, target } questions (at most 200):
+// local, synchronously, per question:
+//   malformed ref                          -> gone (never the address)
 //   doc:<id> the complete index holds      -> that document, wherever it lives now
 //   no ref, address the complete index has -> that document (matchDocumentPath)
-//   everything else                        -> one POST of { workId, baseUri, links: [{ ref, href }] }
-// server answers, in request order:
-//   document -> resolved;  gone -> gone (never the address)
-//   missing  -> an unsettled ahead ref resolves to the complete index's document
-//               at exactly its stored address (design rule 4), else unresolved
-//   unresolvable -> unresolved
+//   relative with no base, or a holder before its own address -> not asked
+//   ahead ref, complete index holds exactly its stored address
+//                                          -> that document now (design rule 4), and ask
+//   everything else                        -> ask
+// remote, per batch of asked questions (at most 200):
+//   one POST of { workId, baseUri, links: [{ ref, href }] }; answers in request order:
+//   document -> resolved;  gone -> gone;  missing, unresolvable -> unresolved
+//   a provisional local answer stands unless the server says gone or another document
 ```
 
 The address answers apply one rule (`matchDocumentPath` from
@@ -27,9 +30,10 @@ The address answers apply one rule (`matchDocumentPath` from
 `indexedDocumentAt`): the exact path, or the path with its final extension
 omitted when exactly one document fits. Addresses are unique, so there is no
 "several documents" answer. An ahead ref always asks the server, because
-settlement is server state; the local exact-address step only turns a
-`missing` answer solid when a local-first arrival (a follow's Create) has
-not settled yet, and never overrides a `document` or `gone` answer.
+settlement is server state; the local exact-address step turns it solid at
+once when a local-first arrival (a follow's Create) sits there, and a server
+`document` naming another document, or `gone`, replaces it. A failed request
+keeps it.
 
 `baseUri` is the URI of the document holding the link. Only a `relative` target
 needs it, and without one the question is not asked (a null answer, cached as

@@ -24,7 +24,7 @@ import { Table, TableView } from "@tiptap/extension-table";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { cellInteriorPressPlugin } from "../cell-interior-press";
@@ -35,6 +35,8 @@ import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
+import { linkStateAttributes } from "../links/link-resolution-decorations";
+import { getLinkResolution } from "../links/link-storage";
 import {
   classifyLinkTarget,
   internalClipboardTarget,
@@ -306,6 +308,25 @@ const LINK_MARK_REF_ATTRIBUTE = {
 // ─── Customized extensions ──────────────────────────────────────────
 // Extensions that add behavior beyond what TipTap defaults provide.
 
+/**
+ * A link mark's `<a>` attributes. Internal targets are semantic references,
+ * not browser URLs: they keep their exact spelling in clipboard HTML, and only
+ * external targets get a live href.
+ */
+function linkElementAttributes(HTMLAttributes: Record<string, unknown>): Record<string, unknown> {
+  const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
+  return target
+    ? {
+        ...HTMLAttributes,
+        href: isInternalLinkTarget(target) ? undefined : linkTargetHref(target),
+        "data-meridian-link": isInternalLinkTarget(target) ? HTMLAttributes.href : undefined,
+        role: "link",
+        tabindex: "0",
+        "data-link-kind": target.kind,
+      }
+    : { ...HTMLAttributes, href: "" };
+}
+
 // What a link IS. What pressing one DOES belongs to the link surface
 // (`core/editor/links/`), which owns the click, the hover, and the menu.
 export const MeridianLink = Link.extend({
@@ -324,20 +345,36 @@ export const MeridianLink = Link.extend({
    * and it must not become a live link when it does.
    */
   renderHTML({ HTMLAttributes }) {
-    const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
-    // Internal targets are semantic references, not browser URLs. Keep their
-    // exact spelling in clipboard HTML; only external targets get a live href.
-    const attributes = target
-      ? {
-          ...HTMLAttributes,
-          href: isInternalLinkTarget(target) ? undefined : linkTargetHref(target),
-          "data-meridian-link": isInternalLinkTarget(target) ? HTMLAttributes.href : undefined,
-          role: "link",
-          tabindex: "0",
-          "data-link-kind": target.kind,
-        }
-      : { ...HTMLAttributes, href: "" };
-    return ["a", mergeAttributes(this.options.HTMLAttributes, attributes), 0];
+    return [
+      "a",
+      mergeAttributes(this.options.HTMLAttributes, linkElementAttributes(HTMLAttributes)),
+      0,
+    ];
+  },
+
+  /**
+   * The same `<a>` as `renderHTML` (which clipboard HTML still uses), plus
+   * its resolution state in accessible form (`linkStateAttributes`). Those
+   * attributes are set on the live element, so its own attribute mutations
+   * are not a document change.
+   */
+  addMarkView() {
+    const { editor, options } = this;
+    return ({ mark, HTMLAttributes }) => {
+      const { dom, contentDOM } = DOMSerializer.renderSpec(document, [
+        "a",
+        mergeAttributes(options.HTMLAttributes, linkElementAttributes(HTMLAttributes)),
+        0,
+      ]);
+      const element = dom as HTMLElement;
+      const unsubscribe = linkStateAttributes(element, mark.attrs, getLinkResolution(editor));
+      return {
+        dom: element,
+        contentDOM,
+        ignoreMutation: (mutation) => mutation.type === "attributes" && mutation.target === element,
+        destroy: unsubscribe,
+      };
+    };
   },
 
   parseHTML() {

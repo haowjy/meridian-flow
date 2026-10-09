@@ -67,7 +67,8 @@ export {
   type LinkQuestion,
   type LinkResolution,
   type LinkResolutionEntry,
-  MAX_BATCH,
+  type LocalLinkAnswer,
+  type ResolvedLinkAnswer,
 } from "./link-resolution";
 export { getLinkResolution, getLinkSurface } from "./link-storage";
 export {
@@ -81,7 +82,6 @@ export {
 } from "./link-surface";
 export {
   classifyLinkTarget,
-  documentLinkTarget,
   internalClipboardTarget,
   isInternalLinkTarget,
   type LinkTarget,

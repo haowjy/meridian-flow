@@ -7,9 +7,10 @@
  * peer's document. A decoration is also the only shape that can change
  * without a write, and this one changes as soon as an answer lands.
  *
- * Gone and missing both draw dashed, and the span says which in words for a
- * screen reader: a gone link is no longer available, a missing one does not
- * exist yet.
+ * Gone and missing both draw dashed. What tells a screen reader which, and
+ * whether the link can be followed, belongs on the focusable `<a>` itself,
+ * not on a span inside it: the link mark's view keeps `aria-description` and
+ * `aria-disabled` there (`linkStateAttributes`), as chat's reference does.
  *
  * ProseMirror puts an inline decoration's attributes on a span INSIDE the link
  * mark's `<a>`, one span per text node, so a label with bold in it carries
@@ -27,7 +28,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 import { isRemoteDocumentRebuild } from "../anchors";
 import { linkChip, linkChipPartAttributes } from "./link-chip";
-import type { LinkKey, LinkResolution, LinkResolutionEntry } from "./link-resolution";
+import type { LinkKey, LinkResolution } from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
 const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
@@ -184,11 +185,9 @@ function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginStat
     // Every internal link is drawn, answered or not: a failed or unasked one
     // is a filled chip in its own family, never a missing one.
     const chip = linkChip(target, entry, resolution.baseUri);
-    const description = linkStateDescription(entry);
     decorations.push(
       Decoration.inline(pos, pos + node.nodeSize, {
         ...(entry ? { "data-link-state": entry.state } : {}),
-        ...(description ? { "aria-description": description } : {}),
         ...(chip ? linkChipPartAttributes(chip) : {}),
       }),
     );
@@ -198,9 +197,36 @@ function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginStat
   return { decorations: DecorationSet.create(doc, decorations), links: [...links.values()] };
 }
 
-/** What a dashed link says to a screen reader, in the hint's own words. */
-export function linkStateDescription(entry: LinkResolutionEntry | null): string | null {
-  if (entry?.state === "gone") return t`No longer available`;
-  if (entry?.state === "unresolved") return t`Doesn't exist yet`;
-  return null;
+/**
+ * Keeps a rendered link element's accessible state in step with its answer:
+ * gone and missing say so in `aria-description`, and a gone link, which
+ * nothing follows, is `aria-disabled` (so it also loses the pointer cursor).
+ * Returns the unsubscribe.
+ */
+export function linkStateAttributes(
+  element: HTMLElement,
+  link: { readonly [attribute: string]: unknown },
+  resolution: LinkResolution | null,
+): () => void {
+  const target = classifyLinkTarget(String(link.href ?? ""));
+  if (!resolution || !target || !isInternalLinkTarget(target)) return () => {};
+  const key: LinkKey = {
+    ref: typeof link.ref === "string" && link.ref ? link.ref : null,
+    href: linkTargetHref(target),
+  };
+  const sync = () => {
+    const entry = resolution.read(key);
+    const description =
+      entry?.state === "gone"
+        ? t`No longer available`
+        : entry?.state === "unresolved"
+          ? t`Doesn't exist yet`
+          : null;
+    if (description) element.setAttribute("aria-description", description);
+    else element.removeAttribute("aria-description");
+    if (entry?.state === "gone") element.setAttribute("aria-disabled", "true");
+    else element.removeAttribute("aria-disabled");
+  };
+  sync();
+  return resolution.subscribe(sync);
 }
