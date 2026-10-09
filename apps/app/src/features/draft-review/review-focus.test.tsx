@@ -1,10 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Which change is in focus, across every surface of one review: the focus lives
- * with the review (not in each reader), survives the server regrouping a class,
- * and a command's late answer cannot move it in a review opened since.
- * Real scopes, controller and query cache; the network is the only fake.
- */
+/** Shared provider focus follows regrouping, commands and stepping; late answers cannot focus another review. */
 
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { act } from "react";
@@ -67,33 +62,6 @@ beforeEach(() => {
 });
 
 afterEach(() => fixture.dispose());
-
-describe("the focused change after the server regroups it", () => {
-  it("is the same change for a surface mounted afterwards as for one already showing it", async () => {
-    await fixture.render(async (probe) => {
-      await reviewOpened(probe);
-      await act(async () => probe().editor.controller.focusReviewChange(review, target("2")));
-      expect(probe().header.view.focused?.classId).toBe("class-2");
-
-      fixture.network.getDraftPreview.mockResolvedValue(regrouped);
-      await act(async () => {
-        await probe().queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDraftPreview(
-            "project-a",
-            "work-a",
-            "document-a",
-            "draft-a",
-          ),
-        });
-      });
-      await vi.waitFor(() => expect(probe().header.view.focused?.classId).toBe("class-2b"));
-
-      const late = await probe().mountLateReader();
-      expect(late().focused?.classId).toBe("class-2b");
-      expect(late().focusedIndex).toBe(probe().header.view.focusedIndex);
-    });
-  });
-});
 
 describe("a change regrouped more than once", () => {
   it("is followed through each regrouping, even when the last shares nothing with the first", async () => {

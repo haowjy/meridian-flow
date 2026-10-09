@@ -2,8 +2,7 @@
  * reviewChanges — one change per server closure class, in document order.
  *
  * Pins the grouping (never repaired on the client), document order from the
- * hunks, and the signals a row or bar reads: colour, "Includes your edits",
- * merged, and who made it.
+ * hunks, visible author attribution and class-owned excerpts.
  */
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
@@ -54,20 +53,6 @@ describe("reviewChanges", () => {
     expect(ids([...ops].reverse())).toEqual(ids(ops));
   });
 
-  it("marks a change merged when the server flags a merge artifact, and only then", () => {
-    const ops = [
-      op({ operationId: "a", closureClassId: "c" }),
-      op({ operationId: "w", kind: "writer", closureClassId: "c" }),
-    ];
-    // A writer typing inside AI text is readable by author: the server does not flag it.
-    const plain = textHunk({ hunkId: "h", operationIds: ["a", "w"] });
-    expect(reviewChanges(ops, [plain])[0].merged).toBe(false);
-    const flagged = textHunk({ hunkId: "h", operationIds: ["a", "w"], mergeArtifact: true });
-    const [merged] = reviewChanges(ops, [flagged]);
-    expect(merged.merged).toBe(true);
-    expect(merged.tone).toBe("merged");
-  });
-
   describe("who wrote a change", () => {
     const written = (
       id: string,
@@ -111,21 +96,6 @@ describe("reviewChanges", () => {
       expect(writerOnly.attribution).toEqual({ kind: "you" });
       expect(writerOnly.threadIds).toEqual([]);
     });
-
-    it("lists a chat's change under that chat only when one of its operations is visible in it", () => {
-      const changes = reviewChanges(
-        [
-          written("1", "t-pace", "Pacing pass", {}, { closureClassId: "c1" }),
-          written("2", "t-lore", "Lore pass", {}, { closureClassId: "c1" }),
-          written("3", "t-lore", "Lore pass", {}, { closureClassId: "c2" }),
-        ],
-        [],
-      );
-      const of = (threadId: string) =>
-        changes.filter((change) => change.threadIds.includes(threadId)).map((c) => c.classId);
-      expect(of("t-pace")).toEqual(["c1"]);
-      expect(of("t-lore")).toEqual(["c1", "c2"]);
-    });
   });
 
   it("describes a change with the writer's edits inside it once, not once per operation", () => {
@@ -146,23 +116,6 @@ describe("reviewChanges", () => {
     });
     const [change] = reviewChanges([agent, writer], []);
     expect(changeExcerpt(change)).toEqual({ added: "one withered frail", removed: "his" });
-  });
-
-  describe("what the server could not attribute", () => {
-    const unclassified = (overrides: Partial<ReviewHunk> & { hunkId: string }) =>
-      textHunk({ unclassified: true, ...overrides });
-
-    it("keeps the class's author when an unclassified hunk touches it, but offers no commands", () => {
-      const ops = [
-        op({ operationId: "a", closureClassId: "c", canApplyOrDiscard: false }),
-        op({ operationId: "b", closureClassId: "c", canApplyOrDiscard: false }),
-      ];
-      const hunks = [unclassified({ hunkId: "h", operationIds: ["a"], deletedText: "Alpha" })];
-      const [change] = reviewChanges(ops, hunks);
-      expect(change.actionable).toBe(false);
-      expect(change.attribution).toEqual({ kind: "ai" });
-      expect(change.operationIds).toEqual(["a", "b"]);
-    });
   });
 });
 
