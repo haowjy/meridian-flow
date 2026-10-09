@@ -29,12 +29,12 @@ export interface CorrespondenceInput {
   old: readonly OldOccurrence[];
   written: readonly WrittenLink[];
   shown: readonly ShownLink[];
-  /** The holder's current URI, for compatibility with current spellings. */
-  holderUri: string;
+  /** The holder's current URI (null: none), for compatibility with current spellings. */
+  holderUri: string | null;
   /** Written href → canonical absolute address in the same key space, or null if not internal. */
-  normalize(href: string, holderUri: string): string | null;
-  /** Current liveness of a ref, for pass 2 ties. */
-  isLive(ref: string): boolean;
+  normalize(href: string, holderUri: string | null): string | null;
+  /** Current liveness of a shown ref at the address it was shown, for pass 2 ties. */
+  isLive(ref: string, address: string): boolean;
 }
 export type Binding = { pass: 1; occurrence: number } | { pass: 2; ref: string } | { pass: 3 };
 function continuity(a: string, b: string) {
@@ -69,8 +69,8 @@ export function correspondLinks(input: CorrespondenceInput): Binding[] {
     history.set(showing.ref, entries);
   }
   for (const entries of history.values()) entries.sort(showingOrder);
-  const normalized = new Map<string, Array<string | null>>();
-  const addresses = (holderUri: string) => {
+  const normalized = new Map<string | null, Array<string | null>>();
+  const addresses = (holderUri: string | null) => {
     let result = normalized.get(holderUri);
     if (!result) {
       result = input.written.map(({ href }) => input.normalize(href, holderUri));
@@ -110,7 +110,9 @@ export function correspondLinks(input: CorrespondenceInput): Binding[] {
   });
   const matching = matchOccurrences(candidates, input.old.length);
   const latest = [...history.values()].map((entries) => entries[0]);
-  const live = new Map(latest.map((showing) => [showing.ref, input.isLive(showing.ref)]));
+  const live = new Map(
+    latest.map((showing) => [showing.ref, input.isLive(showing.ref, showing.address)]),
+  );
   latest.sort((a, b) => Number(live.get(b.ref)) - Number(live.get(a.ref)) || showingOrder(a, b));
   const bindings = input.written.map((_, j): Binding => {
     const occurrence = matching[j];

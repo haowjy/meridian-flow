@@ -34,7 +34,8 @@ export interface HolderLinkScope extends DocumentLinkScope {
   documentFor(uri: string): CatalogDocument | null;
   /** Shipped image rule: an asset document id for a known manuscript image path, else null. */
   assetFor(manuscriptPath: string): string | null;
-  isLive(ref: string): boolean;
+  /** Whether a stored link resolves to a live document now (an unsettled ahead ref by its href). */
+  isLive(link: { ref: string; href: string }): boolean;
 }
 
 export interface LinkPrepareRequest {
@@ -140,7 +141,7 @@ export function createHolderLinkScope(
       if (id === undefined) onMiss(uri);
       return id ?? null;
     },
-    isLive: (ref) => resolve({ ref, href: "" }).kind === "document",
+    isLive: (link) => resolve(link).kind === "document",
   };
 }
 
