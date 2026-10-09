@@ -10,6 +10,7 @@ import type {
   DocumentDerivationService,
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
+import { LIVE_VIEW } from "./ports/document-link-scope.js";
 import type { DurableProjectionSerializer } from "./ports/durable-projection.js";
 import { extractStoredLinks } from "./stored-link-extraction.js";
 
@@ -141,7 +142,7 @@ export async function deriveDocumentOutputs(
   serializer: DurableProjectionSerializer,
 ) {
   return {
-    markdown: await serializer.serializeDocument(cut.documentId, doc),
+    markdown: await serializer.serializeDocument(cut.documentId, doc, LIVE_VIEW),
     links:
       cut.kind === "manifest" || !cut.holderUri
         ? []

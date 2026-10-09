@@ -214,7 +214,11 @@ type ResponseRecord = {
  */
 export function createThreadPeerCorePool(input: {
   liveUtilityCore: LiveAgentEditCore;
-  /** `viewFor` is the view the pool routes this thread's documents to: its pinned or last draft. */
+  /**
+   * `viewFor` is the view a command on this thread's core spells in: the one
+   * the pool routed it to (`WriteContext.linkView`), or at a reply's save its
+   * document's pinned destination.
+   */
   createThreadCore(
     threadId: ThreadId,
     viewFor: (documentId: string, context: WriteContext | undefined) => LinkView,
@@ -250,25 +254,25 @@ export function createThreadPeerCorePool(input: {
   // D41: the version of each document the model last read or wrote, per thread.
   // Process-local like the runtime docs it guards; a restart forgets it.
   const lastSeen = new Map<string, FileDestination>();
-  // The Work draft each thread core last wrote or read in: the view its links spell in.
-  const draftWorks = new Map<string, string>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
+  /**
+   * Every call the pool routes carries its view; a reply's save names only
+   * the reply, so its documents spell in the destination each was pinned to.
+   */
   function threadViewFor(threadId: ThreadId) {
     return (documentId: string, context: WriteContext | undefined): LinkView => {
+      if (context?.linkView) return context.linkView;
       const responseId = context?.responseId;
-      const pinned = responseId
-        ? responses.get(responseId)?.documents.get(documentId as DocumentId)
-        : undefined;
-      const destination = pinned?.grant.destination;
-      const workId = destination?.kind === "draft" ? destination.workId : draftWorks.get(threadId);
-      const reply = responseId ? { responseId } : {};
-      return workId ? { kind: "draft", workId, ...reply } : { kind: "live", ...reply };
+      const record = responseId ? responses.get(responseId) : undefined;
+      const pinned =
+        record?.documents.get(documentId as DocumentId) ??
+        record?.reversals.get(documentId as DocumentId);
+      if (pinned) return linkViewAt(pinned.grant.destination, responseId);
+      throw new Error(
+        `Thread ${threadId} spelled ${documentId} without a routed link view; route the call through the pool.`,
+      );
     };
-  }
-
-  function noteDestination(destination: FileDestination, threadId: string | undefined) {
-    if (destination.kind === "draft" && threadId) draftWorks.set(threadId, destination.workId);
   }
 
   async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
@@ -339,7 +343,6 @@ export function createThreadPeerCorePool(input: {
   }
 
   function coreForDestination(destination: FileDestination, threadId: string | undefined) {
-    noteDestination(destination, threadId);
     return destination.kind === "live" ? input.liveUtilityCore : coreFor(threadId);
   }
 
@@ -403,7 +406,10 @@ export function createThreadPeerCorePool(input: {
       ? ({ kind: "live" } as const)
       : (pinned?.grant.destination ?? requested);
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
-    const outcome = await core.read(command, await threadPeerContext(core, documentId, context));
+    const outcome = await core.read(
+      command,
+      await threadPeerContext(core, documentId, routedTo(context, destination)),
+    );
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
       lastSeen.set(seenKey(context.threadId, documentId), destination);
@@ -443,7 +449,10 @@ export function createThreadPeerCorePool(input: {
       if (documentId && !pinned) record.documents.set(documentId, { core, grant });
     }
     const call = async () =>
-      core.write(command, await threadPeerContext(core, documentId, context));
+      core.write(
+        command,
+        await threadPeerContext(core, documentId, routedTo(context, destination)),
+      );
     const outcome = record
       ? await call()
       : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
@@ -461,7 +470,6 @@ export function createThreadPeerCorePool(input: {
     context: WriteContext,
     grant: FileGrant<"edit">,
   ): Promise<WriteOutcome> {
-    noteDestination(grant.destination, context.threadId);
     // Live reversals commit immediately and never join the reply's save.
     const record =
       core !== input.liveUtilityCore && context.responseId
@@ -780,4 +788,16 @@ function versionPhrase(destination: FileDestination, preposition: "in" | "to"): 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {
   const address = parseDocumentAddress(command.file, command.documentId);
   return address.ok ? (address.documentId as DocumentId) : null;
+}
+
+/** The link view of a destination, for a call (or reply) the pool routed there. */
+function linkViewAt(destination: FileDestination, responseId: string | undefined): LinkView {
+  const reply = responseId ? { responseId } : {};
+  return destination.kind === "draft"
+    ? { kind: "draft", workId: destination.workId, ...reply }
+    : { kind: "live", ...reply };
+}
+
+function routedTo(context: WriteContext, destination: FileDestination): WriteContext {
+  return { ...context, linkView: linkViewAt(destination, context.responseId) };
 }

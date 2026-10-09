@@ -25,6 +25,7 @@ import {
   createCollabDomain,
   createInMemoryCollabDomain,
   createLinkScopeObserver,
+  type DocumentLinkScopes,
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
@@ -348,6 +349,8 @@ export type ProductionAppPorts = {
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
+  /** The document-link scopes every serializing door spells through. */
+  linkScopes: DocumentLinkScopes;
   documentLinks: DocumentLinkResolver;
   linkUpdates: LinkUpdateWorker;
   linkAheadRegistry: LinkAheadRegistry;
@@ -658,6 +661,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
+    linkScopes: documentLinks,
     linkUpdates,
     linkAheadRegistry,
     contextPorts,
@@ -994,6 +998,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     documentRevisions: createDocumentRevisions({
+      links: ports.linkScopes,
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,

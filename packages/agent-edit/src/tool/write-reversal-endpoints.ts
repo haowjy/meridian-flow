@@ -1,4 +1,5 @@
 // Hosted undo/redo/reverse endpoints and thread invalidation for the write tool.
+import type { LinkView } from "@meridian/contracts";
 import * as Y from "yjs";
 
 import type { ActorSession } from "../ports/actor-session-store.js";
@@ -32,6 +33,8 @@ export interface ReverseInput {
   actor: ReversalActor;
   requireEffect?: boolean;
   interactionContext?: InteractionContext;
+  /** The view of the destination whose history this reverses (`WriteContext.linkView`). */
+  linkView?: LinkView;
 }
 
 export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
@@ -67,16 +70,19 @@ export function createWriteReversalEndpoints(deps: {
     docId: string,
     threadId: string,
     direction: "undo",
+    linkView?: LinkView,
   ): Promise<TurnUndoResult>;
   function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "redo",
+    linkView?: LinkView,
   ): Promise<TurnRedoResult>;
   function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "undo" | "redo",
+    linkView?: LinkView,
   ): Promise<TurnUndoResult | TurnRedoResult> {
     return runHostedReversal({
       docId,
@@ -84,6 +90,7 @@ export function createWriteReversalEndpoints(deps: {
       direction,
       selection: { kind: "latest" },
       actor: { type: "agent" },
+      ...(linkView ? { linkView } : {}),
     }) as Promise<TurnUndoResult | TurnRedoResult>;
   }
 
@@ -130,6 +137,7 @@ export function createWriteReversalEndpoints(deps: {
                 : {}),
             },
       interactionContext: context.interactionContext,
+      linkView: context.linkView,
     });
     return result;
   }
@@ -150,6 +158,7 @@ export function createWriteReversalEndpoints(deps: {
               selection: input.selection,
               actor: input.actor,
               interactionContext: input.interactionContext,
+              linkView: input.linkView,
             })
             .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
@@ -160,6 +169,7 @@ export function createWriteReversalEndpoints(deps: {
               selection: input.selection,
               actor: input.actor,
               interactionContext: input.interactionContext,
+              linkView: input.linkView,
             })
             .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")

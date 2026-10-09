@@ -1,4 +1,5 @@
 // Runs write-level undo/redo from durable journal reconstruction.
+import type { LinkView } from "@meridian/contracts";
 import * as Y from "yjs";
 import { type BlockSnapshot, diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
@@ -38,6 +39,7 @@ import type {
   InteractionContext,
   MutationActor,
   UndoRedoOutcome,
+  WriteContext,
   WriteRedoResult,
   WriteUndoResult,
 } from "./types.js";
@@ -80,6 +82,14 @@ export interface WriteReversal {
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
 }
 
+/** The context a reversal's links bind in: its thread, and the view its history lives in. */
+function linkContext(input: { session: ActorSession; linkView?: LinkView }): WriteContext {
+  return {
+    threadId: input.session.threadId,
+    ...(input.linkView ? { linkView: input.linkView } : {}),
+  };
+}
+
 function emptyAfterUndoMessage(path: string): string {
   return `The document at ${path} is empty but still exists until document delete ships.`;
 }
@@ -92,6 +102,8 @@ export interface WriteReversalRunInput {
   selection: ReversalSelection;
   actor?: ReversalActor;
   interactionContext?: InteractionContext;
+  /** The link view of the destination whose history this reverses (`WriteContext.linkView`). */
+  linkView?: LinkView;
   /** The document as the model named it, for the note an undo that empties it carries. */
   filePath?: string;
 }
@@ -103,6 +115,7 @@ export interface WriteReversalEndpointInput {
   selection?: ReversalSelection;
   actor?: ReversalActor;
   interactionContext?: InteractionContext;
+  linkView?: LinkView;
 }
 
 type ReversalResult =
@@ -235,6 +248,7 @@ export function createWriteReversal(deps: {
           selection: input.selection ?? { kind: "latest" },
           actor,
           interactionContext: interaction.context,
+          linkView: input.linkView,
         });
     if (result.status !== "document_not_found") {
       await runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
@@ -275,12 +289,13 @@ export function createWriteReversal(deps: {
     selection: ReversalSelection;
     actor: ReversalActor;
     interactionContext: InteractionContext;
+    linkView?: LinkView;
     filePath?: string;
   }): Promise<InternalWriteResult> {
     const links = await bindLinks(deps, {
       documentId: input.docId,
       docs: [input.runtime.doc],
-      context: { threadId: input.session.threadId },
+      context: linkContext(input),
     });
     const prepared = await prepareReversals({ ...input, links });
     if (!prepared.ok) return prepared.response;
@@ -327,6 +342,7 @@ export function createWriteReversal(deps: {
     session: ActorSession;
     runtime: RuntimeDocumentState;
     links: BoundLinks;
+    linkView?: LinkView;
     direction: "undo" | "redo";
     selection: ReversalSelection;
     actor: ReversalActor;
@@ -369,6 +385,7 @@ export function createWriteReversal(deps: {
     session: ActorSession;
     runtime: RuntimeDocumentState;
     links: BoundLinks;
+    linkView?: LinkView;
     direction: "undo" | "redo";
     selection: ReversalSelection;
     actor: ReversalActor;
@@ -460,7 +477,7 @@ export function createWriteReversal(deps: {
       await deps.links.prepare({
         documentId: input.docId,
         docs: [preview],
-        context: { threadId: input.session.threadId },
+        context: linkContext(input),
       });
       const after = snapshotBlocks(toDocHandle(preview), model, input.links.codec);
       return {
