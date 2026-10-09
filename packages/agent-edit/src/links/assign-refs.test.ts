@@ -472,6 +472,53 @@ const doors: DoorCase[] = [
     },
   },
   {
+    name: "a picture keeps its settled identity when another picture takes its shown path",
+    async run() {
+      const A = `ahead:${uuid(44)}`;
+      const B = uuid(45);
+      const map = "manuscript://map.png";
+      const pictures = {
+        image: {
+          old: (attrs: Record<string, unknown>) =>
+            schema.node("paragraph", null, [
+              schema.text("See "),
+              schema.node("image", { alt: "Map", ...attrs }),
+            ]),
+          content: "See ![New label](map.png)",
+        },
+        figure: {
+          old: (attrs: Record<string, unknown>) =>
+            schema.node("figure", { alt: "Map", caption: "", ...attrs }),
+          content: "![New label](map.png)",
+        },
+      };
+      for (const [kind, picture] of Object.entries(pictures))
+        for (const occupied of [false, true]) {
+          const label = `${this.name}: ${kind}${occupied ? ", path reoccupied" : ""}`;
+          const ctx = linkHarness({
+            holder: { id: H, uri: "manuscript://holder.md" },
+            documents: [
+              catalogDocument(D, "manuscript://moved.png", { image: true }),
+              ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
+            ],
+            blocks: [picture.old({ src: storedHref(map, ""), ref: A })],
+            settlements: new Map([[A.slice("ahead:".length), D]]),
+          });
+          const outcome = await ctx.write(
+            { command: "replace", in: [1, 1], content: picture.content },
+            [{ ref: A, address: map, holderUri: "manuscript://holder.md", at: 1 }],
+          );
+          expect.soft(outcome.status, label).toBe("success");
+          expect.soft(storedLinks(ctx.live()), label).toEqual([
+            // Pass 1 keeps the stored attrs verbatim; the ref spells the moved path.
+            { label: "New label", ref: A, href: storedHref(map, ""), title: null },
+          ]);
+          expect.soft(ctx.links.minted, label).toEqual([]);
+          expect.soft(await ctx.markdown(), label).toBe(picture.content.replace("map", "moved"));
+        }
+    },
+  },
+  {
     name: "a partial find assigns the destination it reconstructs, loaded before assignment",
     async run() {
       const M = uuid(41);
