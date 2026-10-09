@@ -3,9 +3,10 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import { act, useEffect } from "react";
+import { act, useEffect, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
   DraftReviewBoundary,
   useDraftReview,
@@ -89,11 +90,20 @@ function Host() {
   );
 }
 
+let unmountReview!: () => void;
+function WorkList() {
+  const { drafts } = useWorkDrafts("project-a", "work-a");
+  return <output data-work-list>{drafts?.map((draft) => draft.draftId).join(",")}</output>;
+}
+
 function Scope() {
+  const [mounted, setMounted] = useState(true);
+  unmountReview = () => setMounted(false);
   const value = useDraftReviewScopeValue({ projectId: "project-a", work });
   return (
     <DraftReviewBoundary value={value}>
-      <Host />
+      <WorkList />
+      {mounted && <Host />}
     </DraftReviewBoundary>
   );
 }
@@ -188,6 +198,22 @@ it.each([
           await testQueryClient.invalidateQueries({
             queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
           });
+          if (reason === "list") {
+            review?.controller.exitInlineReview();
+            unmountReview();
+            mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
+            mocks.getDraftPreview.mockResolvedValue({
+              ...previewOf(),
+              draftGeneration: 2,
+              reviewRoomName: newRoom,
+            });
+            await testQueryClient.invalidateQueries({
+              queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+            });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+            expect(surfaces()).toEqual([]);
+          }
           await vi.advanceTimersByTimeAsync(10);
           expect(runtime.pool.peek(oldRoom)).toBe(old);
         }
@@ -218,14 +244,25 @@ it.each([
         runtime.wire(newRoom).sync();
         await vi.advanceTimersByTimeAsync(20);
       });
-      expect(surfaces()).toEqual(["review"]);
+      expect(surfaces()).toEqual(reason === "list" ? [] : ["review"]);
       expect(old.document.isDestroyed).toBe(true);
-      expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+      if (reason !== "list")
+        expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
       if (reason === "successor typing")
         expect(branchEditor().getText()).toContain("SUCCESSOR WORDS");
       await act(async () => {
+        if (reason === "list") {
+          expect(runtime.wire(newRoom).sent.length).toBeGreaterThan(0);
+          expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+          mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+        }
         runtime.wire(newRoom).ack();
+        await vi.advanceTimersByTimeAsync(10);
       });
+      if (reason === "list") {
+        expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
+        expect(runtime.pool.peek(newRoom)).toBeUndefined();
+      }
     });
   } finally {
     await runtime.dispose();
