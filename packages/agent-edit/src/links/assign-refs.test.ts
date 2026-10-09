@@ -367,6 +367,94 @@ const doors: DoorCase[] = [
     },
   },
   {
+    name: "an extensionless stale write continues the ref shown at its default-extension address",
+    async run() {
+      const A = `ahead:${uuid(40)}`;
+      const shownAt = (ref: string, address: string, holderUri = HOLDER): ShownLink => ({
+        ref,
+        address,
+        at: 1,
+        holderUri,
+      });
+      const rows: Array<{
+        name: string;
+        holderUri?: string;
+        old: Segment[];
+        shown: ShownLink;
+        command: Record<string, unknown> & { command: string };
+        settlements?: ReadonlyMap<string, string>;
+        /** The written link's ref, and the holder as it spells now. */
+        expected: { ref: string; markdown: string };
+      }> = [
+        {
+          name: "replace: a document ref after a move",
+          old: [docLink("Target", D, ch("ch12.md")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md) waits." },
+        },
+        {
+          name: "create-overwrite: a document ref after a move",
+          old: [docLink("Target", D, ch("ch12.md")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "create", overwrite: true, content: "[Renamed](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md) waits." },
+        },
+        {
+          name: "insert: pass 2 binds the shown document after a move",
+          old: ["Intro."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "insert", content: "[Again](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "Intro.\n\n[Again](ch13.md) waits." },
+        },
+        {
+          name: "a settled ahead ref after its document moved",
+          old: [{ text: "Target", ref: A, href: storedHref(ch("ch12.md"), "") }, " waits."],
+          shown: shownAt(A, ch("ch12.md")),
+          settlements: new Map([[A.slice("ahead:".length), D]]),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
+          expected: { ref: A, markdown: "[Renamed](ch13.md) waits." },
+        },
+        {
+          name: "an unsettled ahead ref keeps its own address",
+          old: [{ text: "Later", ref: A, href: storedHref(ch("later.md"), "") }, " waits."],
+          shown: shownAt(A, ch("later.md")),
+          command: { command: "replace", in: [1, 1], content: "[Soon](later) waits." },
+          expected: { ref: A, markdown: "[Soon](later.md) waits." },
+        },
+        {
+          name: "holder move: the relative stale href normalizes against the shown holder",
+          holderUri: "manuscript://two/holder.md",
+          old: [docLink("Target", D, "manuscript://one/ch12.md"), " waits."],
+          shown: shownAt(documentRef(D), "manuscript://one/ch12.md", "manuscript://one/holder.md"),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](../chapters/ch13.md) waits." },
+        },
+        {
+          name: "a written suffix rides along",
+          old: [docLink("Target", D, ch("ch12.md")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12#scene) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md#scene) waits." },
+        },
+      ];
+      for (const row of rows) {
+        const label = `${this.name}: ${row.name}`;
+        const ctx = linkHarness({
+          holder: { id: H, uri: row.holderUri ?? HOLDER },
+          documents: [catalogDocument(D, ch("ch13.md"))],
+          blocks: [paragraph(...row.old)],
+          ...(row.settlements ? { settlements: row.settlements } : {}),
+        });
+        const outcome = await ctx.write(row.command, [row.shown]);
+        expect.soft(outcome.status, label).toBe("success");
+        expect.soft(storedLinks(ctx.live()).at(-1)?.ref, label).toBe(row.expected.ref);
+        expect.soft(ctx.markdown(), label).toBe(row.expected.markdown);
+        expect.soft(ctx.links.minted, label).toEqual([]);
+      }
+    },
+  },
+  {
     name: "a write with no showings binds paths to what they mean now",
     async run() {
       const ctx = linkHarness({
