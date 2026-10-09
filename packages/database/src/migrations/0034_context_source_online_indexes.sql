@@ -10,10 +10,4 @@ ALTER TABLE context_sources VALIDATE CONSTRAINT context_sources_scope_valid;
 --> statement-breakpoint
 ALTER TABLE context_sources VALIDATE CONSTRAINT context_sources_scope_work_fk;
 --> statement-breakpoint
-SET lock_timeout = '2s';
---> statement-breakpoint
-ALTER TABLE context_sources DROP CONSTRAINT IF EXISTS context_sources_lineage_rollout_fence;
---> statement-breakpoint
-RESET lock_timeout;
---> statement-breakpoint
 DROP INDEX CONCURRENTLY IF EXISTS context_sources_project_slug;

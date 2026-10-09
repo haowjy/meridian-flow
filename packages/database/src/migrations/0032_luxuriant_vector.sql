@@ -13,6 +13,3 @@ ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_exactly_one_scope"
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_scope_valid" CHECK ("context_sources"."scope" IN ('project', 'work', 'lineage')) NOT VALID;
 --> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_scope_work_fk" CHECK ("context_sources"."scope" <> 'work' OR "context_sources"."work_id" IS NOT NULL) NOT VALID;
---> statement-breakpoint
--- Fence new lineage writers until the concurrent indexes are ready.
-ALTER TABLE context_sources ADD CONSTRAINT context_sources_lineage_rollout_fence CHECK (root_thread_id IS NULL) NOT VALID;
