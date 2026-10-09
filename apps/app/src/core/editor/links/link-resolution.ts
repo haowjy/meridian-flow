@@ -77,15 +77,16 @@ export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }):
  * link: its source is the href, read under the manuscript-root grammar, so a
  * bare source names the same address a producer stores in full. A picture
  * with no ref resolves by its address, as a ref-less link does; a contextual
- * source (`uploads://seal.png`) is keyed as written with no ref, exactly as a
- * contextual link mark is.
+ * source (`uploads://seal.png`) is keyed as written with its stored ref,
+ * exactly as a contextual link mark is.
  */
 export function pictureKeyOfNode(attrs: { readonly [attribute: string]: unknown }): LinkKey | null {
   const src = String(attrs.src ?? "");
   const written = classifyWrittenSource(src);
   if (written.kind === "external") return null;
-  if (written.kind === "contextual") return { ref: null, href: src };
-  return { ref: storedLinkRef(attrs.ref), href: storedHref(written.uri, written.suffix) };
+  const ref = storedLinkRef(attrs.ref);
+  if (written.kind === "contextual") return { ref, href: src };
+  return { ref, href: storedHref(written.uri, written.suffix) };
 }
 
 /** The one string a `LinkKey` is cached and deduplicated under. */
