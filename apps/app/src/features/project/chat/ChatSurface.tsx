@@ -29,9 +29,6 @@ import { ChatScreen } from "./ChatScreen";
 /** `center` = the wide main column (Chat screen); `dock` = right rail (Work, Editor). */
 export type ChatPlacement = "center" | "dock";
 
-/** Width of the docked chat — kept in sync with the content reflow padding. */
-export const CHAT_DOCK_WIDTH = "clamp(20rem,28vw,26rem)";
-
 export type ChatSurfaceProps = {
   projectId: string;
   threadId: string | null;

@@ -250,20 +250,6 @@ export function paintDecorations(
   return DecorationSet.create(doc, decorations);
 }
 
-/**
- * Build a `DecorationSet` straight from the model: resolve, then paint. The
- * plugin keeps the geometry between paints; this is for callers that paint once.
- */
-export function buildDecorations(
-  model: InlineReviewModel | null,
-  paint: ReviewPaintState,
-  resolver: DecorationResolver,
-  handlersFor: (view: EditorView) => RemovalHandlers,
-): DecorationSet {
-  if (!model || model.hunks.length === 0) return DecorationSet.empty;
-  return paintDecorations(resolveGeometry(model, resolver), paint, handlersFor);
-}
-
 /** After the paragraph a position is in, or the position itself when it is already between blocks. */
 function slotPosition(doc: PMNode, position: number): number {
   const $position = doc.resolve(position);

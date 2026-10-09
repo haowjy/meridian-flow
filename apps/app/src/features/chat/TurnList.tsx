@@ -439,15 +439,6 @@ export function TurnList({
   );
 }
 
-/** Latest transcript location for a child: its finished line, else its launch card. */
-export function resolveSubagentRevealTurnId(
-  turns: Turn[],
-  childThreadId: string,
-  originTurnId: string,
-): string {
-  return buildTranscriptModel(turns, false).resolveRevealTurnId(childThreadId, originTurnId);
-}
-
 function JumpToLatestButton({
   hidden,
   bottomInset,

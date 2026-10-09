@@ -8,10 +8,10 @@
  * Kept free of ProseMirror imports so it can be unit-tested without a DOM.
  */
 import type {
-  ReviewBlockDisplay,
-  ReviewDeletedSpan,
+  ReviewBlockHunk,
   ReviewHunk,
   ReviewOperation,
+  ReviewTextHunk,
 } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 
@@ -46,58 +46,23 @@ export interface ResolvedReviewSpan {
   to: Y.RelativePosition;
 }
 
-/** Anchor pair shared by both hunk kinds, decoded to runtime `Y.RelativePosition`. */
-interface ResolvedReviewHunkBase {
-  hunkId: string;
-  /** The owning operations; an unclassified hunk with none carries its `unattributedHunkKey`. */
-  operationIds: string[];
-  /**
-   * The server could not say who made this hunk. Painted neutral, with its full
-   * removed text struck in no author's colour, and no author is invented.
-   */
-  unclassified?: boolean;
-  /** Resolves to the start of the insertion / caret for a pure deletion. */
+/** Runtime anchors replace the wire-encoded anchor pair. */
+interface DecodedReviewAnchors {
   relStart: Y.RelativePosition;
-  /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
   relEnd: Y.RelativePosition;
-  /**
-   * the hunk is a CRDT merge artifact (spec §6.2) — concurrent writer
-   * + AI edits the CRDT combined in one text node. Painted with the neutral
-   * dashed merged decoration, overriding the hued authorship spans, so it reads
-   * as a "combined here, review" seam rather than an author's addition.
-   */
-  mergeArtifact?: boolean;
 }
 
-/** Word-diff hunk inside a paragraph/heading — inline spans + deletion widget. */
-export interface ResolvedTextReviewHunk extends ResolvedReviewHunkBase {
-  kind: "text";
-  /**
-   * Per-operation ordered, non-overlapping slices of this hunk's insertion
-   * range. Empty for pure deletions. The plugin renders one decoration per
-   * span (colored by its owning operation's kind) instead of a single
-   * whole-hunk decoration — this is what lets writer edits colored gold
-   * appear inside a green AI insertion.
-   */
+/** Text presentation is unchanged; only anchors and insertion spans are decoded. */
+export interface ResolvedTextReviewHunk
+  extends Omit<ReviewTextHunk, "anchor" | "spans" | "insertedText">,
+    DecodedReviewAnchors {
   spans: ResolvedReviewSpan[];
-  /** Present when the hunk shows text removed from live but absent in draft. */
-  deletedText?: string;
-  /** Who removed each stretch of `deletedText`; the server covers the whole string. */
-  deletedSpans?: ReviewDeletedSpan[];
 }
 
-/**
- * Whole-block replace hunk for non-paragraph/heading blocks (lists, rules,
- * quotes, images). The anchor spans the inserted draft block, or collapses to
- * a zero-width caret at the delete site. Display payloads carry the server's
- * one-line rendering of each side so atom blocks (a horizontal rule, an
- * image) stay representable even though they have no text.
- */
-export interface ResolvedBlockReviewHunk extends ResolvedReviewHunkBase {
-  kind: "block";
-  insertedBlock?: ReviewBlockDisplay;
-  deletedBlock?: ReviewBlockDisplay;
-}
+/** Block presentation is unchanged; only its anchor pair is decoded. */
+export interface ResolvedBlockReviewHunk
+  extends Omit<ReviewBlockHunk, "anchor">,
+    DecodedReviewAnchors {}
 
 /** A hunk with anchors already decoded to runtime `Y.RelativePosition`. */
 export type ResolvedReviewHunk = ResolvedTextReviewHunk | ResolvedBlockReviewHunk;
