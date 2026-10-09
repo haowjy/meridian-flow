@@ -3,8 +3,9 @@
  * store adapters. Dedup keeps the latest showing per key; rows survive a real
  * compaction; a fork reads its source's showings only up to its cutoff turn,
  * and a source's later repeat never takes one away; a handoff and a spawned
- * child inherit nothing; a writer delayed after drawing its sequence never
- * rewinds a key's order.
+ * child inherit nothing; a showing recorded in a failed persistence rolls
+ * back with it; a writer delayed after drawing its sequence never rewinds a
+ * key's order.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";

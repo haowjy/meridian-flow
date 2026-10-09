@@ -2,14 +2,9 @@
 import type { DocumentId } from "@meridian/contracts";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
-import { and, eq, lte, or, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../../shared/drizzle-transaction.js";
-import {
-  latestShowings,
-  linkViewKey,
-  type ShownLinkStore,
-  shownLinkLineage,
-} from "../../ports/shown-links.js";
+import { linkViewKey, type ShownLinkStore, shownLinkLineage } from "../../ports/shown-links.js";
 
 export function createDrizzleShownLinkStore(db: DrizzleDatabase): ShownLinkStore {
   const db_ = () => currentDrizzleDb(db);
@@ -70,32 +65,38 @@ export function createDrizzleShownLinkStore(db: DrizzleDatabase): ShownLinkStore
     },
     async forDocument(threadId, documentId) {
       const lineage = await shownLinkLineage(threadId as ThreadId, lookup);
-      const rows = await db_()
-        .select({
-          ref: table.ref,
-          address: table.address,
-          holderUri: table.holderUri,
-          view: table.view,
-          at: table.seq,
-        })
-        .from(table)
-        .leftJoin(schema.turns, eq(schema.turns.id, table.turnId))
-        .where(
-          and(
-            eq(table.documentId, documentId as DocumentId),
-            or(
-              ...lineage.map((segment) =>
-                segment.maxPosition === null
-                  ? eq(table.threadId, segment.threadId)
-                  : and(
-                      eq(table.threadId, segment.threadId),
-                      lte(schema.turns.position, segment.maxPosition),
-                    ),
-              ),
-            ),
-          ),
-        );
-      return latestShowings(rows);
+      // Each segment selects its eligible rows on its own index prefix; the
+      // cutoff applies there, before the latest showing per key is chosen.
+      const segments = lineage.map((segment) =>
+        segment.maxPosition === null
+          ? sql`SELECT l.ref, l.address, l.holder_uri, l.view, l.seq
+              FROM ${table} l
+              WHERE l.thread_id = ${segment.threadId} AND l.document_id = ${documentId}`
+          : sql`SELECT l.ref, l.address, l.holder_uri, l.view, l.seq
+              FROM ${table} l JOIN ${schema.turns} t ON t.id = l.turn_id
+              WHERE l.thread_id = ${segment.threadId} AND l.document_id = ${documentId}
+                AND t.position <= ${segment.maxPosition}`,
+      );
+      const rows = (await db_().execute(sql`
+        SELECT ref, address, holder_uri, view, seq FROM (
+          SELECT DISTINCT ON (ref, address, holder_uri, view) ref, address, holder_uri, view, seq
+          FROM (${sql.join(segments, sql` UNION ALL `)}) eligible
+          ORDER BY ref, address, holder_uri, view, seq DESC
+        ) latest
+        ORDER BY seq`)) as unknown as Array<{
+        ref: string;
+        address: string;
+        holder_uri: string;
+        view: string;
+        seq: string | number;
+      }>;
+      return rows.map((row) => ({
+        ref: row.ref,
+        address: row.address,
+        holderUri: row.holder_uri,
+        view: row.view,
+        at: Number(row.seq),
+      }));
     },
   };
 }

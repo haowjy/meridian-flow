@@ -65,12 +65,21 @@ the transaction that persists the tool result. Handlers get only
 | write echoes, staged or immediate, undo/redo, a partial failure's echo | `writeUnderGrant` | with the tool result |
 | settled receipts | the response save | the response scope's commit (`loop/orchestrator.ts`), inside the save transaction |
 | concurrent runs that fit the render budget | the response save | the response scope's backfill |
-| `@` reference reads | `lib/model-tools/reference-reader.ts` | at read time, unless the run was cancelled |
+| `@` reference reads | `lib/model-tools/reference-reader.ts` | with the reference blocks: the run-start persist (`loop/orchestrator.ts`) or the adoption commit (`adapters/runtime-delivery.ts`) |
 
 `@` reference blocks persist through run preparation and inbox adoption, not
-tool dispatch, so a reference read still records when it returns; it skips
-recording once its run is cancelled, but a cancellation landing during the
-record is not excluded.
+tool dispatch. The reader returns its candidates as host-only `shown` beside
+the read; `loadReferenceReads` carries them beside the updated blocks (never
+in their content), through `PreparedRequest.shown` at run start and
+`InboxDrain.shown` at adoption. The commit that persists those blocks records
+them: at run start under the reserved turn, at adoption under the successor
+turn whose request shows them (via `DeliveryBoundary.recordShown`). A
+preparation that fails, is cancelled or is retried after its selection
+changed is discarded whole, candidates included.
+
+The in-memory store keeps its rows in the repositories'
+`InMemoryTransactionOwner`, so on both adapters evidence recorded with a
+result that fails to persist rolls back with it.
 
 Nothing else records evidence. Capture lives in the handlers, never in
 `readDocument`, so a copy's private source read records nothing. Matches past
@@ -93,7 +102,9 @@ arbitration and a writer delayed after drawing can arrive second.
 
 Readers select first and deduplicate second: a fork reads its own rows plus
 its source's rows at turns up to its cutoff position, recursively, and only
-then keeps the latest eligible showing per key (its `at`). Nothing is copied at
+then keeps the latest eligible showing per key (its `at`). PostgreSQL does both
+in one query: one `UNION ALL` branch per lineage segment applies its cutoff,
+then `DISTINCT ON` keeps the greatest `seq` per key. Nothing is copied at
 fork time. Handoffs and spawned children inherit nothing, because they start
 from a brief.
 
