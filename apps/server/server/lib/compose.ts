@@ -1258,11 +1258,13 @@ export function createInMemoryAppServices(): AppServices {
     },
   };
 
+  // Nothing in the in-memory composition registers or settles ahead refs; fail loudly, never pretend.
+  const unsupported = (): never => {
+    throw new Error("Ahead-ref registry is unsupported in the in-memory composition");
+  };
   const linkAheadRegistry: LinkAheadRegistry = {
-    async register() {},
-    async settleArrivals() {
-      return 0;
-    },
+    register: async () => unsupported(),
+    settleArrivals: async () => unsupported(),
   };
 
   return {

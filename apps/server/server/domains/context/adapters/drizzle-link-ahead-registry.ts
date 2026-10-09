@@ -8,7 +8,7 @@ import {
   isProjectScopedScheme,
   parseContextUri,
 } from "@meridian/contracts/context-uri";
-import { isUuid } from "@meridian/contracts/request-id";
+import { parseRequestId } from "@meridian/contracts/request-id";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -42,11 +42,14 @@ type Address = {
   projectId: ProjectId;
   userId: string;
   scheme: ContextUriScheme;
+  /** Address coordinate: null for project-scoped schemes and for No Work. */
   workId: string | null;
+  /** Lock coordinate: real arrivals lock a Work-scoped source by its persisted Work row, No Work included. */
+  lockWorkId: string | null;
   path: string;
 };
 
-const sameAddress = (a: Address, b: Omit<Address, "userId">) =>
+const sameAddress = (a: Address, b: Pick<Address, "projectId" | "scheme" | "workId" | "path">) =>
   a.projectId === b.projectId &&
   a.scheme === b.scheme &&
   a.workId === b.workId &&
@@ -55,7 +58,7 @@ const sameAddress = (a: Address, b: Omit<Address, "userId">) =>
 export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   constructor(
     private readonly db: Database,
-    private readonly resolveManifestMembership?: MembershipResolver,
+    private readonly resolveManifestMembership: MembershipResolver,
   ) {}
 
   async register(registrations: readonly AheadRegistration[]): Promise<void> {
@@ -66,16 +69,15 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
         const tx = currentDrizzleDb(this.db);
         const resolved = [];
         for (const registration of registrations) {
-          resolved.push({
-            aheadId: registration.aheadId,
-            address: await this.resolveAddress(registration),
-          });
+          const aheadId = parseRequestId(registration.aheadId);
+          if (!aheadId) throw new RangeError(`Invalid ahead id: ${registration.aheadId}`);
+          resolved.push({ aheadId, address: await this.resolveAddress(registration) });
         }
         // Namespace keys only: registration is not an authored write (archived Work
         // scratch is a valid target) and holds nothing else, so it cannot close a cycle.
         await lockNamespaceKeys(
           this.db,
-          resolved.map(({ address }) => address),
+          resolved.map(({ address }) => ({ ...address, workId: address.lockWorkId })),
         );
 
         const ids = resolved.map(({ aheadId }) => aheadId);
@@ -125,16 +127,18 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 
   /** Decoded canonical address → (project, scheme, Work, path), as `document-link-rows.ts` does. */
   private async resolveAddress(registration: AheadRegistration): Promise<Address> {
-    if (!isUuid(registration.aheadId)) {
-      throw new RangeError(`Invalid ahead id: ${registration.aheadId}`);
-    }
     const parsed = parseContextUri(registration.address);
     if (!parsed.ok || parsed.value.normalized !== registration.address) {
       throw new RangeError(`Ahead-ref address is not canonical: ${registration.address}`);
     }
     const { scheme, authority, path } = parsed.value;
-    if (!path.split("/").at(-1)?.includes(".")) {
+    // `.hidden` and `trailing.` have no real extension; tree lookup would parse them differently.
+    if (!/^[^/]*[^/.][^/]*\.[^/.]+$/.test(path.split("/").at(-1) ?? "")) {
       throw new RangeError(`Ahead-ref address needs a file extension: ${registration.address}`);
+    }
+    // An ahead ref always carries a qualified absolute address.
+    if (authority.kind === "contextual" && !isProjectScopedScheme(scheme)) {
+      throw new RangeError(`Ahead-ref address needs a Work authority: ${registration.address}`);
     }
     const tx = currentDrizzleDb(this.db);
     const [holder] = await tx
@@ -160,7 +164,22 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     }
 
     let workId: string | null = null;
-    if (authority.kind === "work") {
+    let lockWorkId: string | null = null;
+    if (authority.kind === "none") {
+      const [noWork] = await tx
+        .select({ id: works.id })
+        .from(works)
+        .where(
+          and(
+            eq(works.projectId, registration.holderProjectId),
+            eq(works.isNoWork, true),
+            isNull(works.deletedAt),
+          ),
+        );
+      if (!noWork)
+        throw new Error(`No Work row for ${registration.holderProjectId} does not exist`);
+      lockWorkId = noWork.id;
+    } else if (authority.kind === "work") {
       const [work] = await tx
         .select({ id: works.id })
         .from(works)
@@ -172,9 +191,9 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           ),
         );
       if (!work) throw new Error(`Work ${authority.workSlug} does not exist`);
-      workId = work.id;
+      workId = lockWorkId = work.id;
     }
-    return { projectId, userId: holder.userId, scheme, workId, path };
+    return { projectId, userId: holder.userId, scheme, workId, lockWorkId, path };
   }
 
   /** The exact address a content document holds now, or null when deleted or unreachable. */
@@ -229,19 +248,14 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       userId,
       scheme: row.scheme as ContextUriScheme,
       workId: row.sourceWorkId && !row.isNoWork ? row.sourceWorkId : null,
+      lockWorkId: row.sourceWorkId,
       path,
     };
   }
 
   /** A SQL row is not a live arrival while only a Work draft's manifest holds it (e4 §1). */
   private async isLive(address: Address, documentId: string): Promise<boolean> {
-    if (
-      !this.resolveManifestMembership ||
-      !isDrafted(address.scheme) ||
-      address.scheme === "user"
-    ) {
-      return true;
-    }
+    if (!isDrafted(address.scheme) || address.scheme === "user") return true;
     const { members } = await this.resolveManifestMembership({ projectId: address.projectId });
     return members.includes(documentId);
   }
@@ -273,6 +287,9 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     );
     if (node?.kind !== "file") return null;
     const documentId = node.nodeId as DocumentId;
+    // Tree lookup parses filenames loosely; settle only when the occupant renders this exact key.
+    const occupant = await this.currentAddress(documentId);
+    if (!occupant || !sameAddress(occupant, address)) return null;
     return (await this.isLive(address, documentId)) ? documentId : null;
   }
 
@@ -300,7 +317,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 
 export function createDrizzleLinkAheadRegistry(
   db: Database,
-  resolveManifestMembership?: MembershipResolver,
+  resolveManifestMembership: MembershipResolver,
 ): LinkAheadRegistry {
   return new DrizzleLinkAheadRegistry(db, resolveManifestMembership);
 }
