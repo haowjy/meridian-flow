@@ -65,7 +65,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   retiring it.
 - **Optimistic by record.** A change with an Apply or Discard queued in a
   batch, in flight, or confirmed, is already gone from the preview these read
-  (`client/query/change-command-record`). A failure brings it back with its
+  (`client/query/draft-command-record`). A failure brings it back with its
   reason, shown on its bar and row. A read that started before a confirmation
   cannot bring a change back. No surface keeps an optimistic hide of its own (a
   strip-local one held a refused file hidden until its whole batch ended).

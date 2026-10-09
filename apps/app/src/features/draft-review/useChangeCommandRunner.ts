@@ -22,8 +22,8 @@
  */
 
 import { useCallback, useRef } from "react";
-import { queueChangeSelection } from "@/client/query/change-command-record";
 import type { ChangeSelection } from "@/client/query/draft-command-record";
+import { queueChangeSelection } from "@/client/query/draft-command-record";
 import { useEditorDraftReview } from "./DraftReviewProvider";
 import type { DraftCommandOutcome, DraftReviewSelection } from "./draft-review-session";
 import type { DraftReviewController } from "./useDraftReviewController";

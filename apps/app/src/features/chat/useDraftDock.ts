@@ -15,9 +15,10 @@ import { useCallback, useMemo } from "react";
 import {
   type ChangeCommandState,
   changeCommandState,
+  type DraftCommandFailure,
+  draftCommandFailure,
   useChangeCommandRecords,
-} from "@/client/query/change-command-record";
-import { type DraftCommandFailure, draftCommandFailure } from "@/client/query/draft-command-record";
+} from "@/client/query/draft-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { selectionOf } from "@/features/draft-review/change-selection";
 import { useDraftReview, useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
