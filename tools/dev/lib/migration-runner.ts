@@ -11,6 +11,13 @@ import {
   readMigrationHistory,
 } from "./migration-history";
 
+import {
+  CONCURRENT_INDEX_CREATE,
+  executableSql,
+  isNoTransactionMigration,
+  normalizeMigrationSql,
+} from "./migration-sql";
+
 export const MIGRATION_ADVISORY_LOCK_ID = 4_884_217_039_117;
 
 interface ErrorDetails {
@@ -155,13 +162,25 @@ export async function runMigrations(input: {
           );
         }
         const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
-        const noTransaction =
-          readFileSync(migrationPath, "utf8").split("\n")[0] === "-- migration: no-transaction";
+        const content = normalizeMigrationSql(readFileSync(migrationPath, "utf8"));
+        const noTransaction = isNoTransactionMigration(content);
         // Reserved postgres.js sessions do not expose begin(); keep transaction
         // control on the same connection that owns the session advisory lock.
         if (!noTransaction) await session`BEGIN`;
         try {
-          for (const statement of migration.sql) {
+          if (noTransaction) {
+            for (const match of executableSql(content).matchAll(CONCURRENT_INDEX_CREATE)) {
+              const [index] = await session`SELECT i.indisvalid,
+                quote_ident(n.nspname) || '.' || quote_ident(c.relname) AS name
+                FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.oid = to_regclass(${match[1]})`;
+              if (index && !index.indisvalid) {
+                await session.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS ${index.name}`);
+              }
+            }
+          }
+          for (const statement of content.split("--> statement-breakpoint")) {
             await session.unsafe(statement);
           }
           await session.unsafe(
