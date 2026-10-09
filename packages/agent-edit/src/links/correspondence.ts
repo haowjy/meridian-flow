@@ -18,7 +18,11 @@ export interface ShownLink {
 export interface OldOccurrence {
   /** Plain text of the linked run, in the replaced span, in document order. */
   label: string;
-  ref: string;
+  /**
+   * Null for an identity-free occupant (a literal empty picture): it matches only
+   * the written spelling it has now, so it keeps its place among empty sources.
+   */
+  ref: string | null;
   /** Canonical absolute address it spells now (no suffix). */
   current: string;
   /** Its target resolves live now (resolution rules 1 and 3). */
@@ -85,7 +89,7 @@ export function correspondLinks(input: CorrespondenceInput): LinkMatch[] {
   const current = addresses(input.holderUri);
   const candidates: CandidateRow[] = input.written.map(() => ({ occurrences: [], scores: [] }));
   input.old.forEach((old, occurrence) => {
-    const showings = history.get(old.ref) ?? [];
+    const showings = (old.ref !== null && history.get(old.ref)) || [];
     const latest = showings[0];
     const view = latest ? addresses(latest.holderUri) : current;
     input.written.forEach((written, j) => {

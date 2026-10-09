@@ -40,7 +40,7 @@ function exhaustive(values: CorrespondenceInput): LinkMatch[] {
     compareText(a.ref, b.ref) ||
     compareText(a.address, b.address) ||
     compareText(a.holderUri, b.holderUri);
-  const history = (ref: string) =>
+  const history = (ref: string | null) =>
     values.shown.filter((showing) => showing.ref === ref).sort(showingOrder);
   const strength = (i: number, j: number) => {
     const occurrence = values.old[i];
