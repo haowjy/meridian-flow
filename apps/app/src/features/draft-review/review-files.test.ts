@@ -22,8 +22,6 @@ const group = (
       lastActorTurnId: null,
       actorThreads: [],
       updatedAt,
-      wordsAdded: 3,
-      wordsRemoved: 0,
     },
   }) as unknown as ThreadDraftGroup;
 

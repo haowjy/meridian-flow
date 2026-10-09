@@ -33,7 +33,7 @@ export type ThreadDraftGroup = {
 export function pendingReviewDraft(
   group: ThreadDraftGroup | null | undefined,
 ): ThreadDraftListItem | null {
-  if (group?.draft.status !== "active" || !draftHasReviewContent(group.draft)) return null;
+  if (group?.draft.status !== "active") return null;
   return group.draft;
 }
 
@@ -43,18 +43,6 @@ export function activeWorkDraftGroups(
 ): ThreadDraftGroup[] {
   if (!groups?.length) return [];
   return groups.filter((group) => pendingReviewDraft(group) !== null);
-}
-
-function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
-  const hasKnownOperationCount = typeof draft.proposedOperationCount === "number";
-  const hasKnownWordDelta =
-    typeof draft.wordsAdded === "number" || typeof draft.wordsRemoved === "number";
-  if (!hasKnownOperationCount && !hasKnownWordDelta) return true;
-  return (
-    (draft.proposedOperationCount ?? 0) > 0 ||
-    (draft.wordsAdded ?? 0) > 0 ||
-    (draft.wordsRemoved ?? 0) > 0
-  );
 }
 
 export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {

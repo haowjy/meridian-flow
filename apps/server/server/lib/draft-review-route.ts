@@ -101,7 +101,7 @@ export async function handleWorkDraftListRequest(
     userId: input.userId,
   });
   return {
-    drafts: visibleDrafts.map((draft) => serializeThreadDraft(draft, undefined)),
+    drafts: visibleDrafts.map((draft) => serializeThreadDraft(draft)),
   };
 }
 
@@ -238,25 +238,18 @@ async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
   return input.drafts.filter((draft) => access.has(draft.documentId));
 }
 
-function serializeThreadDraft(
-  draft: {
-    draftId: string;
-    documentId: string;
-    documentName: string | null;
-    contextPath: string | null;
-    status: "active";
-    draftGeneration: number;
-    lastActorTurnId: string | null;
-    actorThreads: ThreadDraftListItem["actorThreads"];
-    updatedAt: Date;
-    wordsAdded?: number | null;
-    wordsRemoved?: number | null;
-    createdDocument?: boolean;
-  },
-  lifecycle?: {
-    proposedOperationCount: number | null;
-  },
-): ThreadDraftListItem {
+function serializeThreadDraft(draft: {
+  draftId: string;
+  documentId: string;
+  documentName: string | null;
+  contextPath: string | null;
+  status: "active";
+  draftGeneration: number;
+  lastActorTurnId: string | null;
+  actorThreads: ThreadDraftListItem["actorThreads"];
+  updatedAt: Date;
+  createdDocument?: boolean;
+}): ThreadDraftListItem {
   return {
     draftId: draft.draftId,
     documentId: draft.documentId,
@@ -267,9 +260,6 @@ function serializeThreadDraft(
     lastActorTurnId: draft.lastActorTurnId,
     actorThreads: draft.actorThreads,
     updatedAt: draft.updatedAt.toISOString(),
-    proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
-    wordsAdded: draft.wordsAdded ?? null,
-    wordsRemoved: draft.wordsRemoved ?? null,
     ...(draft.createdDocument ? { isNewDocument: true } : {}),
   };
 }
