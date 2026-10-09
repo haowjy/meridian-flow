@@ -16,6 +16,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { createScopedDocumentLinks, liveViewFor } from "../../collab/domain/document-links-port.js";
 import { createLinkScopeObserver } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import {
@@ -222,6 +223,31 @@ if (!RUN) {
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();
       });
+      // A key that names no project (a non-UUID grant) still registers under the
+      // holder row's own project, and a holder with no row is refused before the registry.
+      const registered: string[] = [];
+      const port = createScopedDocumentLinks({
+        scopes,
+        registrar: {
+          async register(rows) {
+            registered.push(...rows.map((row) => row.holderProjectId));
+          },
+        },
+        viewFor: liveViewFor,
+      });
+      const mint = (holderDocumentId: string) => ({
+        ref: `ahead:${id(90)}` as const,
+        address: "manuscript://part1/new.md",
+        holderDocumentId,
+      });
+      await scopes.within({ projectId: "test-project" }, async () => {
+        await port.prepare({ documentId: HOLDER, docs: [] });
+        await port.registerAhead([mint(HOLDER)]);
+        await expect
+          .soft(port.registerAhead([mint(id(91))]), "no holder row")
+          .rejects.toThrow("no holder project");
+      });
+      expect.soft(registered).toEqual([PROJECT]);
     });
 
     it("sees a Work draft's created and same-response staged documents in the draft view only", async () => {

@@ -1,11 +1,17 @@
 // Shown-link facts claim only links the model actually saw: truncation and narrowing never over-claim.
 import { documentRef } from "@meridian/contracts";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
+import { updateYFragment } from "y-prosemirror";
+import * as Y from "yjs";
+import { toDocHandle } from "../handles.js";
+import { fullHashForItemId } from "../model/block-hash.js";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
-import { codecFactory, schema } from "../tool/test-support/write-tool-harness.js";
-import { shownLinkFacts } from "./shown.js";
+import { type AgentEditBlockItem, modelBlockItem } from "../tool/model-result.js";
+import { codecFactory, model, schema } from "../tool/test-support/write-tool-harness.js";
 import {
   catalogDocument,
+  docFromBlocks,
   docLink,
   linkHarness,
   PROJECT,
@@ -88,19 +94,77 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
   ];
   for (const row of rows) expect.soft(await row.facts(), row.name).toEqual(row.expected);
 
+  // Unit level: facts come from what one bound codec rendered, never the current state.
   const links = createStaticDocumentLinks({
     projectId: PROJECT,
-    documents: [catalogDocument(H, HOLDER), catalogDocument(A, ch("a.md"))],
+    documents: [
+      catalogDocument(H, HOLDER),
+      catalogDocument(A, ch("a.md")),
+      catalogDocument(B, "kb://same.md", { presence: "deleted" }),
+      catalogDocument(C, "kb://same.md"),
+    ],
   });
-  const block = paragraph("See ", docLink("Alpha", A, ch("a.md")), " soon.");
+  await links.prepare({
+    documentId: H,
+    docs: [],
+    shown: [A, B, C].map((id, at) => ({
+      ref: documentRef(id),
+      address: "",
+      holderUri: HOLDER,
+      at,
+    })),
+  });
   const scope = links.scopeFor(H, undefined);
-  const body = codecFactory.bind(scope).serializeBlockBodies([block])[0] ?? "";
-  const unit = (shownLength: number, text = body) =>
-    shownLinkFacts({ block, body: text, shownLength, scope, codec: codecFactory });
-  expect.soft(unit(body.length), "whole block").toEqual([fact(A, "a.md")]);
+  const render = (doc: Y.Doc, codec = codecFactory.bind(scope)) => ({
+    codec,
+    items: model.serializeBlockLines(toDocHandle(doc), codec).map(modelBlockItem),
+  });
+  const alpha = docFromBlocks([paragraph("See ", docLink("Alpha", A, ch("a.md")), " soon.")], 7000);
+  const { codec, items } = render(alpha);
+  const [item] = items as [AgentEditBlockItem];
+  const prefix = (length: number) => [{ hash: item.hash, body: item.body.slice(0, length) }];
+  expect.soft(codec.shownLinks(items), "whole block").toEqual([fact(A, "a.md")]);
   expect
-    .soft(unit(body.indexOf(")") + 1), "prefix ending at the link's end")
+    .soft(codec.shownLinks(prefix(item.body.indexOf(")") + 1)), "prefix ending at the link's end")
     .toEqual([fact(A, "a.md")]);
-  expect.soft(unit(body.indexOf(")")), "prefix one character short").toEqual([]);
-  expect.soft(unit(0, "different text"), "reparse disagrees with the block").toEqual([]);
+  expect.soft(codec.shownLinks(prefix(item.body.indexOf(")"))), "one character short").toEqual([]);
+  expect
+    .soft(codec.shownLinks([{ hash: item.hash, body: "different text" }]), "never rendered")
+    .toEqual([]);
+  expect.soft(codecFactory.bind(scope).shownLinks(items), "rendered by another codec").toEqual([]);
+
+  // A later block whose id collides with the rendered hash widens every hash; the
+  // item still names the block it was rendered from.
+  let collidingId = 1;
+  while (
+    collidingId === 7000 ||
+    !fullHashForItemId({ clientID: collidingId, clock: 0 }).startsWith(item.hash)
+  )
+    collidingId += 1;
+  Y.applyUpdate(
+    alpha,
+    Y.encodeStateAsUpdate(docFromBlocks([paragraph("Concurrent.")], collidingId)),
+  );
+  expect
+    .soft(
+      model.getBlocks(toDocHandle(alpha)).map((block) => model.getBlockId(block)),
+      "widened",
+    )
+    .not.toContain(item.hash);
+  expect.soft(codec.shownLinks(items), "hash widened after the render").toEqual([fact(A, "a.md")]);
+
+  // Gone B and live C spell the same Markdown at kb://same.md: equal text is not equal identity.
+  const same = docFromBlocks([paragraph(docLink("Target", B, "kb://same.md"))], 7100);
+  const gone = render(same);
+  const block = same.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
+  updateYFragment(same, block, paragraph(docLink("Target", C, "kb://same.md")), {
+    mapping: new Map(),
+    isOMark: new Map(),
+  } as never);
+  const live = render(same, gone.codec);
+  expect.soft(live.items, "same hash and Markdown").toEqual(gone.items);
+  expect.soft(gone.codec.shownLinks(gone.items), "never claims the live ref").toEqual([]);
+  expect
+    .soft(render(same).codec.shownLinks(live.items), "a render of the live state alone")
+    .toEqual([{ ref: documentRef(C), address: "kb://same.md" }]);
 });

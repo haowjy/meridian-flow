@@ -1,5 +1,6 @@
 /** Map a holder's stored link occurrences to link-index rows, one per link key (contract §11). */
 
+import type { StoredLinkOccurrence } from "@meridian/agent-edit/integration";
 import {
   classifyWrittenLink,
   classifyWrittenSource,
@@ -7,7 +8,6 @@ import {
   type WrittenLinkClass,
 } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { StoredLinkOccurrence } from "./stored-link-extraction.js";
 
 export type DocumentLinkRow = {
   /** `doc:<id>`, `ahead:<uuid>`, `asset:<id>`, or the contextual href itself. */

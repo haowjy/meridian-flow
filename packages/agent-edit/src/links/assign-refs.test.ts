@@ -6,6 +6,7 @@ import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import { codecFactory, harness, schema } from "../tool/test-support/write-tool-harness.js";
 import type { LinkSpliceFallbackDetail } from "../tool/write-deps.js";
 import { assignLinkRefs } from "./assign-refs.js";
+import { type Fixture, reviewerFixtures } from "./correspondence.fixtures.js";
 import type { ShownLink } from "./correspondence.js";
 import {
   catalogDocument,
@@ -27,13 +28,8 @@ const F = uuid(4);
 const G = uuid(5);
 const ch = (path: string) => `manuscript://chapters/${path}`;
 const HOLDER = ch("holder.md");
-const seen = (ref: string, address: string, at: number, holderUri = HOLDER): ShownLink => ({
-  ref: documentRef(ref),
-  address,
-  at,
-  holderUri,
-});
 
+/** A1-4 row: a holder, its catalog and old block, the showings, and what the model writes. */
 interface ReviewerCase {
   name: string;
   holderUri?: string;
@@ -41,98 +37,103 @@ interface ReviewerCase {
   old: Segment[];
   shown: ShownLink[];
   written: string;
-  expected: Array<[label: string, id: string]>;
+  /** Per written link: its label and stored ref; `"ahead"` is a fresh mint, `null` no ref. */
+  expected: Array<[label: string, ref: string | null]>;
 }
 
-const reviewerCases: ReviewerCase[] = [
-  {
-    name: "two-occurrence swap: a stale write over both keeps D, the one it continues",
-    documents: [
-      [D, ch("c.md")],
-      [E, ch("a.md")],
-    ],
-    old: [docLink("D label", D, ch("c.md")), " and ", docLink("E label", E, ch("a.md")), "."],
-    shown: [seen(D, ch("a.md"), 1), seen(E, ch("b.md"), 1)],
-    written: "[D renamed](a.md) and gone.",
-    expected: [["D renamed", D]],
-  },
-  {
-    name: "intermediate path: the address the model last saw D at still means D",
-    documents: [[D, ch("c.md")]],
-    old: [docLink("D label", D, ch("c.md")), " waits."],
-    shown: [seen(D, ch("a.md"), 1), seen(D, ch("b.md"), 2)],
-    written: "[D renamed](b.md) waits.",
-    expected: [["D renamed", D]],
-  },
-  {
-    name: "holder move: a relative link normalizes against the holder it was shown in",
+/**
+ * Per-fixture context the abstract r7 key space leaves out: a document that
+ * took a path, and the real holder moves (`one/` to `two/`, and `user://`).
+ */
+const fixtureContext: Record<
+  string,
+  { holderUri?: string; documents?: ReviewerCase["documents"] }
+> = {
+  "r1 stale label edit, E took a.md": { documents: [[F, "manuscript://a.md"]] },
+  "r1 deliberate new link to vacated path": { documents: [[F, "manuscript://a.md"]] },
+  "r4 tie on whole replacement prefers live": { documents: [[F, "manuscript://a.md"]] },
+  "r2 holder moved (written normalized against read-time holder)": {
     holderUri: "manuscript://two/holder.md",
-    documents: [[D, "manuscript://one/T.md"]],
-    old: [docLink("T label", D, "manuscript://one/T.md"), " waits."],
-    shown: [seen(D, "manuscript://one/T.md", 1, "manuscript://one/holder.md")],
-    written: "[T renamed](T.md) waits.",
-    expected: [["T renamed", D]],
   },
-  {
-    name: "holder in user:// keeps identity in its contextual spelling",
-    holderUri: "user://notes/holder.md",
-    documents: [[D, "manuscript://b.md"]],
-    old: [docLink("D label", D, "manuscript://b.md"), " waits."],
-    shown: [],
-    written: "[D renamed](manuscript://b.md) waits.",
-    expected: [["D renamed", D]],
-  },
-  {
-    name: "whole replacement at an address two refs were shown at prefers the live one",
-    documents: [
-      [D, ch("a.md"), "deleted"],
-      [E, ch("e2.md")],
-      [F, ch("a.md")],
-    ],
-    old: ["Plain prose."],
-    shown: [seen(D, ch("a.md"), 1), seen(E, ch("a.md"), 1)],
-    written: "[Anything](a.md).",
-    expected: [["Anything", E]],
-  },
-  {
-    name: "a new link to a path D vacated stays new",
-    documents: [
-      [D, ch("b.md")],
-      [F, ch("a.md")],
-    ],
-    old: ["Plain prose."],
-    shown: [seen(D, ch("a.md"), 1), seen(D, ch("b.md"), 2)],
-    written: "[New](a.md).",
-    expected: [["New", F]],
-  },
-  {
-    name: "a deliberate retarget keeps the label and takes the new target",
-    documents: [
-      [D, ch("b.md")],
-      [F, ch("z.md")],
-    ],
-    old: [docLink("Target", D, ch("b.md")), " waits."],
-    shown: [seen(D, ch("b.md"), 1)],
-    written: "[Target](z.md) waits.",
-    expected: [["Target", F]],
-  },
-  {
-    name: "a gone and a live link spelled alike: the live survivor keeps its ref",
-    documents: [
-      [D, ch("a.md"), "deleted"],
-      [E, ch("a.md")],
-    ],
-    old: [docLink("Deleted D", D, ch("a.md")), " then ", docLink("Live E", E, ch("a.md")), "."],
-    shown: [seen(D, ch("a.md"), 1), seen(E, ch("a.md"), 1)],
-    written: "[Live E](a.md).",
-    expected: [["Live E", E]],
-  },
-];
+  "r2 holder in user:// keeps identity (contextual form)": { holderUri: "user://notes/holder.md" },
+};
+
+/**
+ * One r7 fixture on the real write path: refs become document ids, key-space
+ * paths canonical addresses relative to the holder the model was shown, and
+ * each ref's document sits at its current address (or latest showing), gone
+ * when the fixture says it is not live. Pass 3 expects what the catalog has
+ * at the written address now, else a mint (a contextual link keeps no ref).
+ */
+function fromFixture(fixture: Fixture, index: number): ReviewerCase {
+  const context = fixtureContext[fixture.name] ?? {};
+  const shownHolder = "manuscript://holder.md";
+  const uri = (path: string) => (path.includes("://") ? path : `manuscript://${path}`);
+  const ids = new Map<string, string>();
+  const idOf = (ref: string) => {
+    if (!ids.has(ref)) ids.set(ref, uuid(100 + index * 10 + ids.size));
+    return ids.get(ref) as string;
+  };
+  const documents = new Map<string, [string, string, "deleted"?]>();
+  for (const old of fixture.old) {
+    const at: [string, string] = [idOf(old.ref), uri(old.current)];
+    documents.set(old.ref, old.live ? at : [...at, "deleted"]);
+  }
+  for (const ref of fixture.live) {
+    const latest = fixture.shown
+      .filter((entry) => entry.ref === ref)
+      .sort((a, b) => b.at - a.at)[0];
+    if (!documents.has(ref) && latest) documents.set(ref, [idOf(ref), uri(latest.address)]);
+  }
+  const catalog = [...documents.values(), ...(context.documents ?? [])];
+  const fresh = (href: string): string | null => {
+    const address = uri(href);
+    if (address.startsWith("scratch://")) return null;
+    const there = catalog.find(([, at, presence]) => at === address && presence !== "deleted");
+    return there ? documentRef(there[0]) : "ahead";
+  };
+  return {
+    name: `r7 fixture: ${fixture.name}`,
+    ...(context.holderUri ? { holderUri: context.holderUri } : {}),
+    documents: catalog,
+    old:
+      fixture.old.length > 0
+        ? fixture.old.flatMap((old, position) => [
+            ...(position > 0 ? [" and "] : []),
+            {
+              text: old.label,
+              ref: documentRef(idOf(old.ref)),
+              href: storedHref(uri(old.current), ""),
+            },
+          ])
+        : ["Plain prose."],
+    shown: fixture.shown.map((entry) => ({
+      ref: documentRef(idOf(entry.ref)),
+      address: uri(entry.address),
+      at: entry.at,
+      holderUri: shownHolder,
+    })),
+    written: fixture.written.map((link) => `[${link.label}](${link.href})`).join(" and "),
+    expected: fixture.written.map((link, position) => {
+      const binding = fixture.expected[position] ?? { pass: 3 };
+      const ref =
+        binding.pass === 1
+          ? documentRef(idOf((fixture.old[binding.occurrence] as Fixture["old"][number]).ref))
+          : binding.pass === 2
+            ? documentRef(idOf(binding.ref))
+            : fresh(link.href);
+      return [link.label, ref];
+    }),
+  };
+}
+
+const reviewerCases: ReviewerCase[] = reviewerFixtures.map(fromFixture);
 
 it("A1-4: reviewer counterexamples bind on the real write path as the model binds", async () => {
+  expect(reviewerCases).toHaveLength(28);
   for (const testCase of reviewerCases) {
     const ctx = linkHarness({
-      holder: { id: H, uri: testCase.holderUri ?? HOLDER },
+      holder: { id: H, uri: testCase.holderUri ?? "manuscript://holder.md" },
       documents: testCase.documents.map(([id, uri, presence]) =>
         catalogDocument(id, uri, presence ? { presence } : {}),
       ),
@@ -143,12 +144,18 @@ it("A1-4: reviewer counterexamples bind on the real write path as the model bind
       testCase.shown,
     );
     expect.soft(outcome.status, testCase.name).toBe("success");
+    const links = storedLinks(ctx.live());
     expect
       .soft(
-        storedLinks(ctx.live()).map((link) => [link.label, link.ref]),
+        links.map((link) => [
+          link.label,
+          link.ref?.startsWith("ahead:") && ctx.links.minted.includes(link.ref)
+            ? "ahead"
+            : link.ref,
+        ]),
         testCase.name,
       )
-      .toEqual(testCase.expected.map(([label, id]) => [label, documentRef(id)]));
+      .toEqual(testCase.expected);
   }
 });
 
@@ -268,9 +275,11 @@ const doors: DoorCase[] = [
         projectId: PROJECT,
         documents: [catalogDocument(H, HOLDER), catalogDocument(D, target)],
       });
+      const written = codecFactory.parse("| a | b |\n| - | - |\n| [A](target.md) | x |").blocks;
+      await links.prepare({ documentId: H, docs: [], written });
       const table = assignLinkRefs({
         old: [],
-        written: codecFactory.parse("| a | b |\n| - | - |\n| [A](target.md) | x |").blocks,
+        written,
         scope: links.scopeFor(H, undefined),
         holderDocumentId: H,
         shown: [],
@@ -282,7 +291,7 @@ const doors: DoorCase[] = [
       });
       const before = storedLinks(ctx.live());
       const formats = formatItemCount(ctx.live());
-      const content = ctx.markdown().replace("<p>x</p>", "<p>y</p>");
+      const content = (await ctx.markdown()).replace("<p>x</p>", "<p>y</p>");
       await ctx.write({ command: "replace", in: [1, 1], content });
       expect
         .soft(
@@ -291,7 +300,7 @@ const doors: DoorCase[] = [
         )
         .toEqual([documentRef(D)]);
       expect.soft(storedLinks(ctx.live()), this.name).toEqual(before);
-      expect.soft(ctx.markdown(), this.name).toContain("<p>y</p>");
+      expect.soft(await ctx.markdown(), this.name).toContain("<p>y</p>");
       expect.soft(formatItemCount(ctx.live()) - formats, this.name).toBe(0);
     },
   },
@@ -310,6 +319,8 @@ const doors: DoorCase[] = [
       expect.soft(next?.ref, this.name).toMatch(/^ahead:/);
       expect.soft(next?.href, this.name).toBe(storedHref(ch("ch9.md"), ""));
       expect.soft([...ctx.links.minted].sort(), this.name).toEqual([image?.ref, next?.ref].sort());
+      // Registration may settle a ref at once; the echo spells both from a loaded scope.
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
   },
   {
@@ -322,12 +333,16 @@ const doors: DoorCase[] = [
       });
       const before = storedLinks(ctx.live());
       const formats = formatItemCount(ctx.live());
-      const same = await ctx.write({ command: "create", overwrite: true, content: ctx.markdown() });
+      const same = await ctx.write({
+        command: "create",
+        overwrite: true,
+        content: await ctx.markdown(),
+      });
       expect.soft(same.result.unchanged, this.name).toBe(true);
       await ctx.write({
         command: "create",
         overwrite: true,
-        content: ctx.markdown().replace("Second.", "Second, revised."),
+        content: (await ctx.markdown()).replace("Second.", "Second, revised."),
       });
       expect.soft(storedLinks(ctx.live()), this.name).toEqual(before);
       expect.soft(formatItemCount(ctx.live()) - formats, this.name).toBe(0);
@@ -367,6 +382,176 @@ const doors: DoorCase[] = [
     },
   },
   {
+    name: "an extensionless stale write continues the ref shown at its default-extension address",
+    async run() {
+      const A = `ahead:${uuid(40)}`;
+      const shownAt = (ref: string, address: string, holderUri = HOLDER): ShownLink => ({
+        ref,
+        address,
+        at: 1,
+        holderUri,
+      });
+      const rows: Array<{
+        name: string;
+        holderUri?: string;
+        old: Segment[];
+        shown: ShownLink;
+        command: Record<string, unknown> & { command: string };
+        settlements?: ReadonlyMap<string, string>;
+        /** The written link's ref, and the holder as it spells now. */
+        expected: { ref: string; markdown: string };
+      }> = [
+        {
+          name: "replace: a document ref after a move",
+          old: [docLink("Target", D, ch("ch12.md")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md) waits." },
+        },
+        {
+          name: "create-overwrite: a document ref after a move",
+          old: [docLink("Target", D, ch("ch12.md")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "create", overwrite: true, content: "[Renamed](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md) waits." },
+        },
+        {
+          name: "insert: pass 2 binds the shown document after a move",
+          old: ["Intro."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "insert", content: "[Again](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "Intro.\n\n[Again](ch13.md) waits." },
+        },
+        {
+          name: "a settled ahead ref after its document moved",
+          old: [{ text: "Target", ref: A, href: storedHref(ch("ch12.md"), "") }, " waits."],
+          shown: shownAt(A, ch("ch12.md")),
+          settlements: new Map([[A.slice("ahead:".length), D]]),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
+          expected: { ref: A, markdown: "[Renamed](ch13.md) waits." },
+        },
+        {
+          name: "an unsettled ahead ref keeps its own address",
+          old: [{ text: "Later", ref: A, href: storedHref(ch("later.md"), "") }, " waits."],
+          shown: shownAt(A, ch("later.md")),
+          command: { command: "replace", in: [1, 1], content: "[Soon](later) waits." },
+          expected: { ref: A, markdown: "[Soon](later.md) waits." },
+        },
+        {
+          name: "holder move: the relative stale href normalizes against the shown holder",
+          holderUri: "manuscript://two/holder.md",
+          old: [docLink("Target", D, "manuscript://one/ch12.md"), " waits."],
+          shown: shownAt(documentRef(D), "manuscript://one/ch12.md", "manuscript://one/holder.md"),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](../chapters/ch13.md) waits." },
+        },
+        {
+          name: "a written suffix rides along",
+          old: [docLink("Target", D, ch("ch12.md")), " waits."],
+          shown: shownAt(documentRef(D), ch("ch12.md")),
+          command: { command: "replace", in: [1, 1], content: "[Renamed](ch12#scene) waits." },
+          expected: { ref: documentRef(D), markdown: "[Renamed](ch13.md#scene) waits." },
+        },
+      ];
+      for (const row of rows) {
+        const label = `${this.name}: ${row.name}`;
+        const ctx = linkHarness({
+          holder: { id: H, uri: row.holderUri ?? HOLDER },
+          documents: [catalogDocument(D, ch("ch13.md"))],
+          blocks: [paragraph(...row.old)],
+          ...(row.settlements ? { settlements: row.settlements } : {}),
+        });
+        const outcome = await ctx.write(row.command, [row.shown]);
+        expect.soft(outcome.status, label).toBe("success");
+        expect.soft(storedLinks(ctx.live()).at(-1)?.ref, label).toBe(row.expected.ref);
+        expect.soft(await ctx.markdown(), label).toBe(row.expected.markdown);
+        expect.soft(ctx.links.minted, label).toEqual([]);
+      }
+    },
+  },
+  {
+    name: "a partial find binds the destination it reconstructs, loaded before binding",
+    async run() {
+      const M = uuid(41);
+      const N = uuid(42);
+      const ctx = linkHarness({
+        holder: { id: H, uri: HOLDER },
+        documents: [
+          catalogDocument(D, ch("old.md")),
+          catalogDocument(E, ch("other.txt")),
+          catalogDocument(M, "manuscript://maps/old.png", { image: true }),
+          catalogDocument(N, "manuscript://maps/new.png", { image: true }),
+        ],
+        blocks: [
+          paragraph(docLink("Target", D, ch("old.md")), " waits."),
+          schema.node("paragraph", null, [schema.node("image", { src: `asset:${M}`, alt: "Map" })]),
+        ],
+      });
+      // `other` reconstructs `[Target](other)`: only E (other.txt) is there, uniquely.
+      const retarget = await ctx.write({ command: "replace", find: "old.md", content: "other" });
+      expect.soft(retarget.status, this.name).toBe("success");
+      const image = await ctx.write({ command: "replace", find: "old.png", content: "new.png" });
+      expect.soft(image.status, this.name).toBe("success");
+      const blocks = prosemirrorBlocksForDoc(ctx.live(), schema);
+      expect.soft(storedLinks(ctx.live())[0]?.ref, this.name).toBe(documentRef(E));
+      expect.soft(blocks[1]?.firstChild?.attrs.src, this.name).toBe(`asset:${N}`);
+      expect.soft(ctx.links.minted, this.name).toEqual([]);
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
+      expect
+        .soft(await ctx.markdown(), this.name)
+        .toBe("[Target](other.txt) waits.\n\n![Map](maps/new.png)");
+    },
+  },
+  {
+    name: "a copy prepares the refs it carries: no snapshot misses",
+    async run() {
+      const ctx = linkHarness({
+        holder: { id: H, uri: HOLDER },
+        documents: [catalogDocument(D, ch("old.md")), catalogDocument(E, ch("other.md"))],
+        blocks: [paragraph(docLink("Target", D, ch("old.md")))],
+      });
+      const copied = [paragraph(docLink("Other", E, ch("other.md")), " too.")];
+      const outcome = await ctx.core.write(
+        {
+          command: "replace",
+          file: "holder.md",
+          documentId: H,
+          in: [1, 1],
+          from: { path: "src.md" },
+        } as never,
+        { sessionId: "session-a", threadId: "thread-a", copiedNodes: copied },
+      );
+      expect.soft(outcome.status, this.name).toBe("success");
+      expect.soft(storedLinks(ctx.live())[0]?.ref, this.name).toBe(documentRef(E));
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
+    },
+  },
+  {
+    name: "a failed ahead registration fails the write before anything applies",
+    async run() {
+      for (const command of [
+        { command: "replace", in: [1, 1], content: "[Ahead](new.md)" },
+        { command: "insert", content: "[Ahead](new.md)" },
+        { command: "create", overwrite: true, content: "[Ahead](new.md)" },
+      ]) {
+        const label = `${this.name}: ${command.command}`;
+        const ctx = linkHarness({
+          holder: { id: H, uri: HOLDER },
+          documents: [],
+          blocks: [paragraph("Original.")],
+        });
+        ctx.links.registerAhead = async () => {
+          throw new Error("injected registration failure");
+        };
+        const before = (await ctx.journal.read(H)).updates.length;
+        const outcome = await ctx.write(command);
+        expect.soft(outcome.status, label).toBe("internal_error");
+        expect.soft(await ctx.markdown(), label).toBe("Original.");
+        expect.soft((await ctx.journal.read(H)).updates.length, label).toBe(before);
+      }
+    },
+  },
+  {
     name: "a write with no showings binds paths to what they mean now",
     async run() {
       const ctx = linkHarness({
@@ -383,6 +568,7 @@ const doors: DoorCase[] = [
       expect.soft(found?.ref, this.name).toBe(documentRef(D));
       expect.soft(later?.ref, this.name).toMatch(/^ahead:/);
       expect.soft(later?.href, this.name).toBe(storedHref(ch("later.md"), ""));
+      expect.soft(ctx.links.misses, this.name).toEqual([]);
     },
   },
 ];

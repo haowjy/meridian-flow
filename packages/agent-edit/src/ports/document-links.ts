@@ -44,10 +44,14 @@ export interface LinkPrepareRequest {
   /** Freshly parsed nodes whose written addresses binding may resolve. */
   written?: readonly PMNode[];
   /**
-   * Nodes the host already bound (`WriteContext.boundBlocks`): their stored
-   * refs and sources load like a doc's, since the command spells them next.
+   * Nodes that already carry stored attrs and will be spelled as stored:
+   * copies, and content the host already bound (`WriteContext.boundBlocks`).
    */
-  bound?: readonly PMNode[];
+  stored?: readonly PMNode[];
+  /** Refs no doc carries yet that will be spelled (ahead refs this write registered). */
+  refs?: readonly string[];
+  /** Decoded addresses to load (a registered ahead ref's own address). */
+  addresses?: readonly string[];
   shown?: readonly ShownLink[];
   context?: WriteContext;
 }

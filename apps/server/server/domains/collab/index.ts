@@ -27,5 +27,4 @@ export {
   isDocumentSchemaMajorMismatchError,
   isStaleSchema,
 } from "./domain/stale-schema.js";
-export { extractStoredLinks, type StoredLinkOccurrence } from "./domain/stored-link-extraction.js";
 export { countWords } from "./domain/word-count.js";
