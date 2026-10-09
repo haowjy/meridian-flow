@@ -11,7 +11,8 @@
  * by its address, as a ref-less link is. A document answer draws exactly as
  * an `asset:` picture does. A source that is neither draws only if
  * `browserPictureSource` allows it (http, https, protocol-relative, image
- * `data:`); anything else is an error, never handed to the browser as a URL.
+ * `data:`); anything else is unavailable with no Retry (retrying cannot change
+ * a stored source), never handed to the browser as a URL.
  *
  * Whether a document is gone is the server's answer, never a guess: the link
  * resolver's for a ref, the signed-URL route's 404 for a document (which also
@@ -52,8 +53,8 @@ export type AssetImageRenderState =
   | { kind: "error"; url: string | null; message: string }
   /**
    * Nothing to draw, and nothing to retry: an address nothing has been
-   * uploaded to yet (it draws itself when a file arrives there), or a
-   * document that is gone.
+   * uploaded to yet (it draws itself when a file arrives there), a
+   * document that is gone, or a stored source no URL can be made of.
    */
   | { kind: "unavailable"; url: null; message: string };
 
@@ -66,8 +67,6 @@ type PictureTarget =
   | { kind: "resolving" }
   /** The question failed. Retry asks again. */
   | { kind: "unanswered" }
-  /** Neither a document nor a URL the browser may fetch. */
-  | { kind: "unusable" }
   | { kind: "unavailable"; message: string };
 
 /**
@@ -94,9 +93,12 @@ function usePictureTarget(
   if (assetDocumentId) return { kind: "document", documentId: assetDocumentId };
   if (!key) {
     // Not a document, so only a supported web URL draws as written. Anything
-    // else is a source nothing can draw, not a gone document.
+    // else is a stored source no retry can change: nothing to draw, nothing
+    // to retry, and not a gone document.
     const url = browserPictureSource(src);
-    return url ? { kind: "literal", url } : { kind: "unusable" };
+    return url
+      ? { kind: "literal", url }
+      : { kind: "unavailable", message: t`Image could not be displayed.` };
   }
   // A document address is not a URL: an editor with no link lane has no way
   // to ask about it, which is a question that could not be asked.
@@ -390,7 +392,6 @@ function initialState(target: PictureTarget): AssetImageRenderState {
     case "resolving":
       return { kind: "loading", url: null };
     case "unanswered":
-    case "unusable":
       return { kind: "error", url: null, message: t`Image could not be displayed.` };
     case "unavailable":
       return { kind: "unavailable", url: null, message: target.message };
