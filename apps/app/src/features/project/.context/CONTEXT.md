@@ -190,7 +190,9 @@ height is remembered with the expanded flag. Collapsed has no handle, and the ph
 It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
 chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
 section (it hides, with its divider) when no chat is on screen, such as the chat index. A collapsed
-rail hides with its section. Its owner is `chatScratchOwner` (`features/chat`): the
+rail hides with its section. The chat's thread comes from `useDisplayedThread`
+(`client/query`: the primary list, then the thread's snapshot), never the primary
+list alone, which holds no subagents. Its owner is `chatScratchOwner` (`features/chat`): the
 chat's lineage (the first chat's id, shared by its forks and subagents) while the chat
 is on No Work, else its Work. A chat rebound onto a Work lists the Work's notes with
 its lineage's under an "Earlier notes" folder, so a rebind never hides them, and the

@@ -51,7 +51,7 @@ the chat returns to the chat. Closing returns to the writer's last explicit view
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
 when the project or the screen changes, and a Work's note when the Work changes; a
 Chat-screen occupant stays on the Chat screen (the sync also records the Work on the Work
-screen, which the title menu browses). Every intent bumps `revision`: an async attempt calls
+screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
 `claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
 handling the slot has. Nothing is persisted across reloads.
