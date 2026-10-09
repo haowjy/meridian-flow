@@ -113,12 +113,50 @@ if (!RUN) {
           AND ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended(${key}, 0::bigint)`);
       return rows[0]?.waiting ?? 0;
     }
+    // Every schedule wait is bounded well under the test timeout so cleanup always runs.
+    const WAIT_MS = 3_000;
     async function waitForWaiters(key: string, count: number) {
-      for (let attempt = 0; attempt < 150; attempt++) {
+      for (let attempt = 0; attempt < WAIT_MS / 20; attempt++) {
         if ((await waitersOn(key)) >= count) return;
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       throw new Error(`expected ${count} session(s) queued behind ${key}`);
+    }
+
+    /**
+     * A one-shot signal from inside a producer's transaction. It fails as soon as its producer
+     * settles without signalling, or after WAIT_MS, so a failed producer rejects its owner.
+     */
+    function notification(label: string) {
+      let notify!: () => void;
+      let fail!: (error: unknown) => void;
+      const fired = new Promise<void>((resolve, reject) => {
+        notify = resolve;
+        fail = reject;
+      });
+      fired.catch(() => undefined); // an owner that already failed never waits
+      return {
+        notify: () => notify(),
+        /** Attach the producer at once so its failure is owned here, never left unhandled. */
+        from<T>(producer: Promise<T>) {
+          producer.then(() => fail(new Error(`${label}: producer finished without it`)), fail);
+          return producer;
+        },
+        async wait() {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const deadline = new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`${label}: not seen in ${WAIT_MS}ms`)),
+              WAIT_MS,
+            );
+          });
+          try {
+            await Promise.race([fired, deadline]);
+          } finally {
+            clearTimeout(timer);
+          }
+        },
+      };
     }
 
     /** Real arrival: source lock, insert, settle, in the arrival connection's transaction. */
@@ -144,16 +182,15 @@ if (!RUN) {
       const held = new Promise<void>((resolve) => {
         release = resolve;
       });
-      let locked!: () => void;
-      const lockTaken = new Promise<void>((resolve) => {
-        locked = resolve;
-      });
-      const arrival = arrive(scheme, DOCUMENT, async () => {
-        locked();
-        await held;
-      });
+      const lockTaken = notification("arrival lock");
+      const arrival = lockTaken.from(
+        arrive(scheme, DOCUMENT, async () => {
+          lockTaken.notify();
+          await held;
+        }),
+      );
       try {
-        await lockTaken;
+        await lockTaken.wait();
         const registering = newRegistry(database).register([registrationFor(scheme)]);
         await waitForWaiters(arrivalKey(scheme), 1);
         release();
@@ -173,46 +210,44 @@ if (!RUN) {
       const held = new Promise<void>((resolve) => {
         release = resolve;
       });
-      let locked!: () => void;
-      const gateTaken = new Promise<void>((resolve) => {
-        locked = resolve;
-      });
-      const gate = runInDrizzleTransaction(gateConnection, async () => {
-        // Namespace key only: a Work-row lock would queue the arrival on the row, not the key.
-        await lockNamespaceKeys(gateConnection, [
-          {
-            projectId: PROJECT,
-            userId: USER,
-            scheme,
-            workId: scheme === "manuscript" ? null : NO_WORK,
-          },
-        ]);
-        locked();
-        await held;
-      });
+      const gateTaken = notification("gate lock");
+      const gate = gateTaken.from(
+        runInDrizzleTransaction(gateConnection, async () => {
+          // Namespace key only: a Work-row lock would queue the arrival on the row, not the key.
+          await lockNamespaceKeys(gateConnection, [
+            {
+              projectId: PROJECT,
+              userId: USER,
+              scheme,
+              workId: scheme === "manuscript" ? null : NO_WORK,
+            },
+          ]);
+          gateTaken.notify();
+          await held;
+        }),
+      );
       // The arrival stops after its insert, before settling, so the unsettled row is observable.
       let settle!: () => void;
       const settling = new Promise<void>((resolve) => {
         settle = resolve;
       });
-      let inserted!: () => void;
-      const arrivalInserted = new Promise<void>((resolve) => {
-        inserted = resolve;
-      });
+      const inserted = notification("arrival insert");
       let registering: Promise<void> | undefined;
       let arrival: Promise<number> | undefined;
       try {
-        await gateTaken;
+        await gateTaken.wait();
         registering = newRegistry(database).register([registrationFor(scheme)]);
         await waitForWaiters(arrivalKey(scheme), 1);
-        arrival = arrive(scheme, DOCUMENT, async () => {
-          inserted();
-          await settling;
-        });
+        arrival = inserted.from(
+          arrive(scheme, DOCUMENT, async () => {
+            inserted.notify();
+            await settling;
+          }),
+        );
         await waitForWaiters(arrivalKey(scheme), 2);
         release();
         await registering;
-        await arrivalInserted;
+        await inserted.wait();
         expect(await settledIds()).toEqual([null]); // committed before the document existed
         settle();
         expect(await arrival).toBe(1);
