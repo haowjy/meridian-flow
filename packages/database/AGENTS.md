@@ -41,8 +41,9 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   generated SQL whenever merging the base requires branch regeneration.
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
   (destroys local data); the new baseline is not an incremental upgrade. Reset
-  only the current checkout's own dev database, never another developer's,
-  shared, or deployed database. Legacy imports are a separate ETL.
+  only the current checkout's own dev database. Shared or deployed resets need
+  explicit owner authorization; until launch, a broken deploy may be reset.
+  Never reset another developer's database. Legacy imports are a separate ETL.
 - `document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK, not custom
   SQL. Yjs checkpoints are append-only and disappear only with their parent
   document cascade.
