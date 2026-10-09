@@ -62,6 +62,8 @@ runtime shapes, and observability records.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.
+  `formatParsedContextUri` spells parsed address syntax for transport (including
+  clipboard qualification); it never resolves or grants Work authority.
 - `PENDING_PLACEHOLDER_ROLES` in `threads/` defines pending transcript
   placeholders (`compaction` and handoff seed `system`); the database partial
   index and orphan-repair queries derive from it.

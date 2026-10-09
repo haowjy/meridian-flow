@@ -37,6 +37,7 @@
  */
 
 import {
+  formatParsedContextUri,
   type LinkHolder,
   type LinkResolution,
   parseContextUri,
@@ -77,9 +78,8 @@ const linkClipboardPluginKey = new PluginKey<LinkAnswerCache>("meridianLinkClipb
  * The full address an internal href names from its holder, spelled as an href
  * (`%`, `#` and `?` in a filename encoded) with its fragment or query, or null
  * for an external link or one that cannot be resolved (a relative path with no
- * holder). A contextual `scratch://` or `uploads://` link in a Work's own
- * Scratch means that Work, so it is recorded with the holder's authority and
- * keeps meaning that Work wherever it is pasted.
+ * holder). Contextual owned links carry the holder's authority when copied;
+ * lineage Scratch keeps its chat handle while Uploads keep No Work ownership.
  */
 function linkHrefAddress(href: string, holderUri: string | null): string | null {
   const target = classifyLinkTarget(href);
@@ -100,8 +100,12 @@ function qualifiedByHolder(uri: string, holderUri: string | null): string {
   if (!isWorkScopedProjectContextScheme(holder.value.scheme) || authority.kind === "contextual")
     return uri;
   if (!isWorkScopedProjectContextScheme(parsed.value.scheme)) return uri;
-  const qualifier = authority.kind === "work" ? `@${authority.workSlug}` : "@";
-  return `${parsed.value.scheme}://${qualifier}/${parsed.value.path}`;
+  // A lineage owns Scratch, not Uploads: those still belong to No Work.
+  const owner =
+    authority.kind === "lineage" && parsed.value.scheme === "uploads"
+      ? { kind: "none" as const }
+      : authority;
+  return formatParsedContextUri(parsed.value.scheme, parsed.value.path, owner);
 }
 
 /**

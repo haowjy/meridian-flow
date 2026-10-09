@@ -264,7 +264,8 @@ export function isProjectScopedScheme(
   return (PROJECT_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
 }
 
-function formatParsedContextUri(
+/** Spell parsed address syntax; this does not resolve or grant Work authority. */
+export function formatParsedContextUri(
   scheme: ContextUriScheme,
   path: string,
   authority: ParsedContextAuthority,

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Copying links from a chat’s Scratch keeps its chat handle without changing Uploads ownership.
+
 - Writer file creation cannot bypass the AI-only policy of a chat’s Scratch.
 
 - Restoring a chat or Work reconnects waiting links to its returning Scratch notes.
