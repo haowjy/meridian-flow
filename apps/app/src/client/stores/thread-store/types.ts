@@ -31,7 +31,6 @@ export type PendingStreamStart = {
     workingTurnId?: string;
     submissionId?: string;
     activatedSkillSlugs?: readonly string[];
-    createProject?: boolean;
   };
 };
 

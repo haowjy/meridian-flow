@@ -8,8 +8,7 @@
 import type { Thread, ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createProject, createProjectThread, getProject } from "@/client/api/projects-api";
-import { createThread } from "@/client/api/threads-api";
+import { createProjectThread } from "@/client/api/projects-api";
 import { getChatSubmissionEpoch, readFirstSendSubmission } from "@/client/chat-submissions";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import {
@@ -190,26 +189,6 @@ export function useThreadHandoff(
       }
       void runExclusiveThreadCreation(accountEpoch, threadId, async (): Promise<Thread> => {
         if (accountEpoch.aborted) throw accountEpoch.reason;
-        if (creation.createProject) {
-          try {
-            await createProject({ id: creation.projectId, title: creation.title });
-          } catch (error) {
-            if (accountEpoch.aborted) throw accountEpoch.reason;
-            const existing = await getProject(creation.projectId).catch(() => {
-              throw error;
-            });
-            if (existing.id !== creation.projectId || existing.userId !== accountId) throw error;
-          }
-          if (accountEpoch.aborted) throw accountEpoch.reason;
-          return createThread({
-            data: {
-              id: threadId,
-              projectId: creation.projectId,
-              title: creation.title,
-              agentSelection: creation.agentSelection,
-            },
-          });
-        }
         return createProjectThread(creation.projectId, {
           id: threadId,
           title: creation.title,

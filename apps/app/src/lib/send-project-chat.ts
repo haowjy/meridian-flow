@@ -165,7 +165,6 @@ export function sendProjectChat({
       workingTurnId,
       submissionId,
       ...(activatedSkillSlugs?.length ? { activatedSkillSlugs: [...activatedSkillSlugs] } : {}),
-      createProject: false,
     },
   });
   firstSendSessionIds.set(`${accountId}:${submissionId}`, {
@@ -241,6 +240,5 @@ export function rehydrateFirstSendSubmission(
     workingTurnId,
     submissionId: entry.submissionId,
     activatedSkillSlugs: entry.activatedSkillSlugs,
-    createProject: false,
   };
 }
