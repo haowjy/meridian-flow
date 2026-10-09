@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Offline Work batches refuse every file immediately, even before network notifications catch up; they do not wait for refreshes or send later files on reconnect.
+
 - Stepping through draft changes works with marks hidden on desktop and phone, without showing the marks again.
 
 - Development: consolidate Work draft files into one catalog-labelled, stable-order projection and document lookup; remove draft grouping and recency competition.

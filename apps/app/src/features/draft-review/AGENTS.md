@@ -240,8 +240,9 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   (live has no change in it before).
 - **Offline is a refusal of the click, never a queue.** The Apply and Discard
   mutations (`useDraftReviewMutations`) run with `networkMode: "always"` and
-  refuse with `DraftCommandNotSentError` when `onlineManager` says the browser
-  is offline: the change comes back as `offline` ("Couldn't apply/discard. Check
+  refuse with `DraftCommandNotSentError` when the browser or `onlineManager`
+  reports offline. A command not sent needs no server refresh, so its refusal
+  settles immediately and every batch file refuses in the same offline pass: the change comes back as `offline` ("Couldn't apply/discard. Check
   your connection and try again.") and a whole-draft command is held on its
   draft (`apply-offline`, `discard-offline`). Apply draft and Discard draft
   move to the next draft only when the command is sent: an offline click
