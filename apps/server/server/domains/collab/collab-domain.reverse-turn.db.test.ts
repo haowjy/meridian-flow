@@ -1,4 +1,4 @@
-import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
@@ -70,7 +70,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheReason: "facts_unavailable",
       });
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),

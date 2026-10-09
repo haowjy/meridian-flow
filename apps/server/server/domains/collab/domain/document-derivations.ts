@@ -2,7 +2,6 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { extractDocumentLinkOccurrences } from "./document-link-occurrences.js";
 import { deriveDocumentLinkRows } from "./document-link-rows.js";
 import type {
   DerivationScope,
@@ -12,6 +11,7 @@ import type {
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
 import type { DurableProjectionSerializer } from "./ports/durable-projection.js";
+import { extractStoredLinks } from "./stored-link-extraction.js";
 
 export function createDocumentDerivationService(input: {
   store: DocumentDerivationStore;
@@ -146,9 +146,7 @@ export async function deriveDocumentOutputs(
       cut.kind === "manifest" || !cut.holderUri
         ? []
         : deriveDocumentLinkRows({
-            occurrences: extractDocumentLinkOccurrences(
-              doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-            ),
+            occurrences: extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
             holderUri: cut.holderUri,
             holderProjectId: cut.holderProjectId,
             personalProjectId: cut.personalProjectId,

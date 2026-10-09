@@ -46,7 +46,7 @@ describe("ContextFS drafted-source effective view", () => {
     });
 
     const fs = new ContextFS({
-      assetPaths: { within: (_project, operation) => operation() },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme,
@@ -69,6 +69,7 @@ describe("ContextFS drafted-source effective view", () => {
               documentId === CREATED_DOC_ID ? "createdhash|new branch bytes" : "unexpected",
             ],
             revision: "test-revision",
+            links: [[]],
           }),
         resolveManifestMembership: async () => ({
           documentId: "manifest-doc",
@@ -124,7 +125,7 @@ describe("ContextFS drafted-source effective view", () => {
       [CREATED_DOC_ID, "createdhash|draft created needle bytes"],
     ]);
     const fs = new ContextFS({
-      assetPaths: { within: (_project, operation) => operation() },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",
@@ -139,7 +140,11 @@ describe("ContextFS drafted-source effective view", () => {
         readEffectiveMarkdown: async ({ documentId }: { documentId: string }) =>
           Ok({ content: effective.get(documentId) ?? "", revision: "test-revision" }),
         readEffectiveHashlines: async ({ documentId }: { documentId: string }) =>
-          Ok({ content: [effective.get(documentId) ?? ""], revision: "test-revision" }),
+          Ok({
+            content: [effective.get(documentId) ?? ""],
+            revision: "test-revision",
+            links: [[]],
+          }),
         resolveManifestMembership: async () => ({
           documentId: "manifest-doc",
           members: [BRANCH_DOC_ID, CREATED_DOC_ID],
@@ -192,7 +197,7 @@ describe("ContextFS drafted-source effective view", () => {
     });
 
     const fs = new ContextFS({
-      assetPaths: { within: (_project, operation) => operation() },
+      links: { within: (_key, operation) => operation() },
       store,
       mutationStore: new InMemoryContextTreeMutationStore(backing),
       scheme: "manuscript",

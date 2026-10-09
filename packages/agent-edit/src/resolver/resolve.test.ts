@@ -7,14 +7,14 @@ import {
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
-import { createAgentEditCodec } from "../codec-adapter.js";
+import { createAgentEditCodecFactory } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
 import { resolveScope } from "./scope.js";
 import { collisionMarkdown, prefixCollisionFixture } from "./test-support/hash-collision.js";
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
+const codec = createAgentEditCodecFactory(mdxCodec({ schema })).bind(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 describe("resolveWrite", () => {

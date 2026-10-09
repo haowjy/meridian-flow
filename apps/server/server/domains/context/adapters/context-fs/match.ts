@@ -45,6 +45,8 @@ export interface DocumentMatch {
   matches: MatchedPassage[];
   /** Occurrences of the query across the whole document. At least 1. */
   matchCount: number;
+  /** Host-only: the entry index each returned passage came from, aligned with `matches`. */
+  entries: number[];
 }
 
 /**
@@ -63,8 +65,9 @@ export function matchDocument(
   if (needle.length === 0) return null;
 
   const matches: MatchedPassage[] = [];
+  const returned: number[] = [];
   let matchCount = 0;
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     const parsed = options.hashlines ? splitHashline(entry) : null;
     const body = parsed?.body ?? entry;
     const occurrences = countOccurrences(body, needle);
@@ -74,9 +77,10 @@ export function matchDocument(
     // list is about what there is room to show.
     if (matches.length < PASSAGE_CAP) {
       matches.push({ excerpt: body, ...(parsed?.hash ? { blockHash: parsed.hash } : {}) });
+      returned.push(index);
     }
   }
-  return matches.length > 0 ? { matches, matchCount } : null;
+  return matches.length > 0 ? { matches, matchCount, entries: returned } : null;
 }
 
 /** Non-overlapping occurrences of an already-lowercased needle. */

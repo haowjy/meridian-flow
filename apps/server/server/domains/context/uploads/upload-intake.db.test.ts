@@ -8,10 +8,10 @@ import { describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../../../test-support/file-grants.js";
 import { createInMemoryCollabDomain } from "../../collab/index.js";
+import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { FileEditRefusedError, runWithEditGrants } from "../../file-policy/index.js";
 import { createNoopEventSink } from "../../observability/index.js";
 import { createInMemoryObjectStore } from "../../storage/index.js";
-import { createDrizzleDocumentAssetPaths } from "../adapters/asset-path-resolver.js";
 import { createDrizzleContextCatalog } from "../adapters/context-catalog.js";
 import { createProductionUnifiedContextPortFactory } from "../unified-context-port-factory.js";
 import { createContextUploadContentPort } from "./context-upload-content.js";
@@ -87,7 +87,7 @@ if (!RUN) {
         const service = (db: Database) => {
           const catalog = createDrizzleContextCatalog(db);
           const contextPorts = createProductionUnifiedContextPortFactory({
-            assetPaths: createDrizzleDocumentAssetPaths(db),
+            links: createTestDocumentLinkScopes(db),
             db,
             documentSync: collab,
             manifestMembership: collab,
@@ -262,7 +262,7 @@ if (!RUN) {
       const collab = createInMemoryCollabDomain();
       const catalog = createDrizzleContextCatalog(database.current);
       const contextPorts = createProductionUnifiedContextPortFactory({
-        assetPaths: createDrizzleDocumentAssetPaths(database.current),
+        links: createTestDocumentLinkScopes(database.current),
         db: database.current,
         documentSync: collab,
         manifestMembership: collab,

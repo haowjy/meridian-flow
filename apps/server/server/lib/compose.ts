@@ -24,6 +24,7 @@ import {
   type CollabDomain,
   createCollabDomain,
   createInMemoryCollabDomain,
+  createLinkScopeObserver,
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
@@ -36,8 +37,8 @@ import {
   createDocumentRevisions,
   createDrizzleContextCatalog,
   createDrizzleDocumentAddressStore,
-  createDrizzleDocumentAssetPaths,
   createDrizzleDocumentLinkHistory,
+  createDrizzleDocumentLinkScopes,
   createDrizzleFigureDocumentRepository,
   createDrizzleLinkAheadRegistry,
   createDrizzleProjectContextAvailability,
@@ -56,6 +57,7 @@ import {
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
+  type LinkScopeMembership,
   type LinkUpdateWorker,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
@@ -495,7 +497,6 @@ export async function createProductionAppPorts(input: {
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
-  const assetPaths = createDrizzleDocumentAssetPaths(db, eventSink);
   const agentRevisions = createDrizzleAgentRevisionStore(db);
   const chainDeps = {
     threads: threadRepos.threads,
@@ -508,10 +509,29 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
+  // Bound once the collab domain exists; neither runs before composition finishes.
+  const manifestMembership: LinkScopeMembership = (input) => {
+    if (!boundManifestMembership) {
+      throw new Error("Manifest membership resolver used before the collab domain was bound");
+    }
+    return boundManifestMembership.resolveManifestMembership(
+      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
+    );
+  };
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, async (input) => ({
+    members: [...(await manifestMembership(input)).members],
+  }));
+  const documentLinks = createDrizzleDocumentLinkScopes({
+    db,
+    fileAccess,
+    membership: manifestMembership,
+    observer: createLinkScopeObserver(eventSink),
+  });
   const documentSync = createCollabDomain({
     db,
     fileAccess,
-    assetPaths,
+    links: documentLinks,
+    aheadRefs: linkAheadRegistry,
     eventSink,
     notices,
     workAuthorityResolver,
@@ -540,10 +560,6 @@ export async function createProductionAppPorts(input: {
     },
   });
   boundManifestMembership = documentSync;
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
-    db,
-    documentSync.resolveManifestMembership,
-  );
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     objectStore,
@@ -557,7 +573,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
   });
   contextPorts = createProductionUnifiedContextPortFactory({
-    assetPaths,
+    links: documentLinks,
     db,
     documentSync,
     manifestMembership: documentSync,

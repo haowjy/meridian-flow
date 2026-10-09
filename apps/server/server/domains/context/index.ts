@@ -1,4 +1,3 @@
-export { createDrizzleDocumentAssetPaths } from "./adapters/asset-path-resolver.js";
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
@@ -6,6 +5,10 @@ export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-t
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
+export {
+  createDrizzleDocumentLinkScopes,
+  type LinkScopeMembership,
+} from "./adapters/document-link-scope.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";

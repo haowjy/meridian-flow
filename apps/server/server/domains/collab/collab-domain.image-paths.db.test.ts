@@ -1,13 +1,15 @@
-/** Image-path scopes across draft review, Apply, and live reversal. */
+/** Document-link scopes for images across search, draft review, Apply, and live reversal. */
 import { createDb } from "@meridian/database";
 import { changeTrailDocumentDetails, documents, folders } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testFileGrant } from "../../test-support/file-grants.js";
-import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
+
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
+import type { LinkScopeKey } from "./domain/ports/document-link-scope.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
   createWorkDraftFixture,
   DOC_ID,
@@ -87,8 +89,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       false,
       true,
     ])("shares search paths across chapters (thread view: %s)", async (threadView) => {
-      const paths = createDrizzleDocumentAssetPaths(db);
-      const collab = createTestCollab(paths);
+      const links = createTestDocumentLinkScopes(db);
+      const collab = createTestCollab(links);
       collab.bindHocuspocus(hocuspocus as never);
       await seedChapterWithMap(collab);
       const secondDocumentId = "00000000-0000-4000-8000-000000000713";
@@ -112,7 +114,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       const context = new ContextFS({
         scheme: "manuscript",
-        assetPaths: paths,
+        links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),
         ...(threadView
@@ -139,11 +141,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       queries.length = 0;
       const hits = await context.search("map.png");
+      // One snapshot for the whole search: its project resolved once, every
+      // chapter's read joining it.
       expect(
-        queries.filter((query) => query.includes("WITH RECURSIVE manuscript AS")),
-      ).toHaveLength(1);
-      expect(
-        queries.filter((query) => query.includes("COALESCE(cs.project_id, w.project_id)")),
+        queries.filter((query) => query.includes("AS project_id, p.user_id::text AS owner")),
       ).toHaveLength(1);
       expect(hits.ok).toBe(true);
       if (!hits.ok) throw new Error(JSON.stringify(hits.error));
@@ -159,13 +160,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const hit of next.value) expect(JSON.stringify(hit.matches)).toContain("art/map.png");
     });
 
-    it("keeps one path snapshot when an image moves between preview serializations", async () => {
-      const paths = createDrizzleDocumentAssetPaths(db);
+    it("keeps one link snapshot when an image moves between preview serializations", async () => {
+      const links = createTestDocumentLinkScopes(db);
       let moveAfterSerialization = false;
       const collab = createTestCollab({
-        resolver: paths.resolver,
-        within: (project, operation) =>
-          paths.within(project, async () => {
+        ...links,
+        within: <T>(key: LinkScopeKey, operation: () => Promise<T>) =>
+          links.within(key, async () => {
             const result = await operation();
             // The engine's live serialization completes before preview reads the draft.
             if (moveAfterSerialization) {

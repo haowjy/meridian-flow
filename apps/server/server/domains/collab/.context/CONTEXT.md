@@ -14,8 +14,11 @@ draft keyed `(documentId, workId)`.
 ## Document revision identity
 
 `domain/document-revision.ts` hashes the encoded Yjs snapshot (state vector
-and delete set) as `y1:<base64url SHA-256>`. A state-vector-only token misses
-pure deletion. This host callback is injected into both agent-edit cores.
+and delete set), the holder's URI and the sorted `[storedRef, storedHref,
+spelledHref]` triples of every ref-bearing link and `asset:` source, as
+`y2:<base64url SHA-256>`. A state-vector-only token misses pure deletion; a
+snapshot-only token misses a tree-only move. It reaches both agent-edit cores
+as `DocumentLinksPort.revision(doc, scope)`, with the command's prepared scope.
 Reads hash the private rendered runtime doc synchronously. Applies hash the
 authority/peer doc immediately after `Y.applyUpdate`, before any await.
 Response receipts retain that token through result rewriting; an unverified
