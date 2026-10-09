@@ -36,6 +36,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/change-trail-persistence-atomicity.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.image-paths.db.test.ts",
+  "apps/server/server/domains/collab/branch-maintenance-attribution.db.test.ts",
   "apps/server/server/domains/collab/response-save-destinations.db.test.ts",
   "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts",
   "apps/server/server/domains/collab/document-revisions.db.test.ts",
