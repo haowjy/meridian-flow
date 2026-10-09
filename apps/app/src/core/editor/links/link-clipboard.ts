@@ -23,10 +23,12 @@
  * picture's `<img>`: the sanitizer lets a recorded address through as the
  * source, a same-project paste keeps the ref, and anything else arrives with
  * no ref and is assigned its address fresh. An `asset:<id>` upload is the
- * same thing stored differently: it records `asset:<id>` as its ref at the
- * address the project catalog holds that id at now, and a same-project paste
- * restores the `asset:` source. An upload the catalog does not hold yet
- * records nothing.
+ * same thing stored differently: it records `asset:<id>` as its ref, and the
+ * address the project catalog holds that id at now when it holds it. A
+ * same-project paste restores the `asset:` source from that recorded identity
+ * alone, so a just-uploaded picture copies before the catalog knows it;
+ * another project binds the recorded address, and has nothing to bind when
+ * none was recorded.
  *
  * The text/plain flavour spells every internal link as its full address, so
  * it means the same thing in another app or through the Markdown paste door;
@@ -131,12 +133,17 @@ export function clipboardLinkRef(value: string | null): string | null {
 const UPLOAD_PREFIX = "asset:";
 
 /**
- * A recorded picture ref read back from untrusted clipboard HTML, or null: a
- * link ref, or an upload's `asset:<id>` with an id a `doc:` ref could name.
+ * A recorded upload ref read back from untrusted clipboard HTML, or null: an
+ * `asset:<id>` with an id a `doc:` ref could name.
  */
-export function clipboardPictureRef(value: string | null): string | null {
-  if (!value?.startsWith(UPLOAD_PREFIX)) return clipboardLinkRef(value);
+export function clipboardUploadRef(value: string | null): string | null {
+  if (!value?.startsWith(UPLOAD_PREFIX)) return null;
   return parseLinkRef(`doc:${value.slice(UPLOAD_PREFIX.length)}`)?.kind === "doc" ? value : null;
+}
+
+/** A recorded picture ref read back from untrusted clipboard HTML, or null. */
+export function clipboardPictureRef(value: string | null): string | null {
+  return value?.startsWith(UPLOAD_PREFIX) ? clipboardUploadRef(value) : clipboardLinkRef(value);
 }
 
 /** The catalog's document an `asset:<id>` upload source names, or null. */
@@ -175,11 +182,18 @@ function linkMetadata(stored: LinkKey, resolution: LinkAnswerCache) {
   return { ref, address: currentLinkAddress({ ref, href: stored.href }, resolution) };
 }
 
-/** What a picture records, or null for one that names nothing the project holds. */
+/**
+ * What a picture records, or null for one that names nothing the project
+ * holds. An upload always records its identity; its address only once the
+ * catalog holds it.
+ */
 function pictureMetadata(attrs: PMNode["attrs"], resolution: LinkAnswerCache) {
   const src = String(attrs.src ?? "");
-  const upload = uploadDocument(src, resolution);
-  if (upload) return { ref: src, address: storedHref(upload.uri, "") };
+  const uploadRef = clipboardUploadRef(src);
+  if (uploadRef) {
+    const upload = uploadDocument(uploadRef, resolution);
+    return { ref: uploadRef, address: upload ? storedHref(upload.uri, "") : null };
+  }
   const picture = pictureKeyOfNode(attrs);
   return picture ? linkMetadata(picture, resolution) : null;
 }
@@ -194,7 +208,7 @@ function keepPastedRefs(html: string, projectId: string | null): string {
   const container = document.createElement("template");
   container.innerHTML = html;
   for (const element of container.content.querySelectorAll(
-    `[data-meridian-link], img[${LINK_ADDRESS_ATTRIBUTE}]`,
+    `[data-meridian-link], img[${LINK_ADDRESS_ATTRIBUTE}], img[${LINK_REF_ATTRIBUTE}]`,
   )) {
     const picture = element.localName === "img";
     const address = clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE));
@@ -208,12 +222,20 @@ function keepPastedRefs(html: string, projectId: string | null): string {
       LINK_KEPT_REF_ATTRIBUTE,
     ])
       element.removeAttribute(attribute);
-    if (!address) continue;
+    const kept = ref && projectId && project === projectId ? ref : null;
+    if (picture && kept?.startsWith(UPLOAD_PREFIX)) {
+      element.setAttribute("src", kept);
+      continue;
+    }
+    if (!address) {
+      // An upload copied before its catalog entry carries no address: outside
+      // its project there is nothing to bind, so the picture is not pasted.
+      if (picture) element.remove();
+      continue;
+    }
     if (picture) element.setAttribute("src", address);
     else element.setAttribute("data-meridian-link", address);
-    if (!ref || !projectId || project !== projectId) continue;
-    if (ref.startsWith(UPLOAD_PREFIX)) element.setAttribute("src", ref);
-    else element.setAttribute(LINK_KEPT_REF_ATTRIBUTE, ref);
+    if (kept) element.setAttribute(LINK_KEPT_REF_ATTRIBUTE, kept);
   }
   return container.innerHTML;
 }

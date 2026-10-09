@@ -402,11 +402,13 @@ sanitizer admits a recorded address as the source (and a metadata-free
 document address, which binds fresh like its bare spelling), the kept ref is
 `data-meridian-kept-ref` on that `<img>`, and anything unkept is assigned by
 `transformPasted` with the links. An `asset:<id>` upload is the same identity
-stored differently: copy records `asset:<id>` as its ref at the address the
-assignment index (the project catalog links are assigned from) holds that id
-at now; a same-project paste restores the `asset:` source and any other paste
-binds the address fresh. An upload the index does not hold records nothing, and
-there is no second path-to-asset map. The text flavour spells a picture whose
+stored differently: copy always records `asset:<id>` as its ref, plus the
+address the assignment index (the project catalog links are assigned from)
+holds that id at now when it holds it. A same-project paste restores the
+`asset:` source from that recorded identity alone, so a just-uploaded picture
+copies before the catalog knows it (decision L42); any other paste binds the
+recorded address fresh, and drops a picture that recorded none. The sanitizer
+still admits no raw `asset:` source, and there is no second path-to-asset map. The text flavour spells a picture whose
 ref answers a document, or an upload the index holds, at that document's
 current address under the manuscript-root grammar (stored spelling otherwise),
 from the same answer rich copy records.

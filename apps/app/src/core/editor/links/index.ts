@@ -37,6 +37,7 @@ export {
   clipboardLinkRef,
   clipboardLinkScope,
   clipboardPictureRef,
+  clipboardUploadRef,
   LINK_ADDRESS_ATTRIBUTE,
   LINK_PROJECT_ATTRIBUTE,
   LINK_REF_ATTRIBUTE,
