@@ -2,7 +2,7 @@
  * The chat's Scratch, reached from the foot of the left rail.
  *
  * `RailScratchControl` is one full-width row above the account: the Scratch
- * icon, the label, the on-screen chat's title beneath it, and an up chevron.
+ * icon, the label and an up chevron. The menu's heading names whose Scratch it is.
  * On desktop it opens `DrillInMenu` upwards; on a phone it asks the project to
  * open `ChatScratchSheet` (the drawer closes first, so the sheet lives outside
  * it). Both list the chat's Scratch: the lineage's notes for a No Work chat,
@@ -22,7 +22,6 @@ import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { DrillInSheet } from "@/components/app/DrillInSheet";
 import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
-import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
@@ -59,7 +58,6 @@ function useChatScratch(projectId: string, threadId: string | null) {
   if (!owner || !thread) return null;
   return {
     source,
-    chatTitle: displayThreadTitle(thread.title),
     pick: (node: DrillNode) => {
       const tab = source.tabFor(node.id);
       if (!tab) return false;
@@ -80,7 +78,7 @@ type RailScratchControlProps = {
 export function RailScratchControl({ projectId, threadId, onOpenSheet }: RailScratchControlProps) {
   const scratch = useChatScratch(projectId, threadId);
   if (!scratch) return null;
-  if (onOpenSheet) return <ScratchRow chatTitle={scratch.chatTitle} phone onClick={onOpenSheet} />;
+  if (onOpenSheet) return <ScratchRow phone onClick={onOpenSheet} />;
   return (
     <DrillInMenu
       tree={scratch.source.tree}
@@ -90,17 +88,12 @@ export function RailScratchControl({ projectId, threadId, onOpenSheet }: RailScr
       side="top"
       onPick={(node) => void scratch.pick(node)}
     >
-      <ScratchRow chatTitle={scratch.chatTitle} phone={false} />
+      <ScratchRow phone={false} />
     </DrillInMenu>
   );
 }
 
-function ScratchRow({
-  chatTitle,
-  phone,
-  className,
-  ...props
-}: ComponentProps<"button"> & { chatTitle: string; phone: boolean }) {
+function ScratchRow({ phone, className, ...props }: ComponentProps<"button"> & { phone: boolean }) {
   const Icon = schemeIcon("scratch");
   return (
     <button
@@ -108,16 +101,15 @@ function ScratchRow({
       {...props}
       className={cn(
         "focus-ring flex w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-ink-muted transition-colors hover:bg-sidebar-accent/50 hover:text-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground",
-        phone ? "min-h-12 active:scale-[0.98]" : "min-h-10",
+        phone ? "min-h-12 active:scale-[0.98]" : "min-h-9",
         className,
       )}
     >
       <span className="grid size-5 place-items-center text-muted-foreground">
         <Icon className="size-4" aria-hidden />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="font-medium text-foreground">{schemeLabel("scratch")}</span>
-        <span className="truncate text-xs text-muted-foreground">{chatTitle}</span>
+      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+        {schemeLabel("scratch")}
       </span>
       <ChevronUp className="size-4 shrink-0 text-muted-foreground" aria-hidden />
     </button>
