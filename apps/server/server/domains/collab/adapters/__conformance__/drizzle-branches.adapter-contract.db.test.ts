@@ -2,8 +2,8 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { NO_DOCUMENT_ASSET_PATHS } from "../../domain/ports/document-asset-paths.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
+import { createStaticDocumentLinkScopes } from "../in-memory/static-document-link-scopes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -60,7 +60,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { createWorkDraftPending } = await import("../../domain/work-draft-pending.js");
     const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
-    const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
+    const { createAgentEditCodecFactory, toDocHandle, yProsemirrorModel } = await import(
+      "@meridian/agent-edit/integration"
+    );
     const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
     const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
     const { createDrizzleProjectWorkAuthorityResolver } = await import(
@@ -518,7 +520,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           realChangeTrails.reopenOwners(owners),
       };
       const branchPush = createBranchPushService({
-        assetPaths: NO_DOCUMENT_ASSET_PATHS,
+        links: createStaticDocumentLinkScopes(),
         changeEventDelivery: { deliver() {} },
         branchStore: store,
         ...createPushStores(markdownProjectionSerializer(model, codec), failingChangeTrails),
@@ -526,7 +528,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journal: livePersistence.journal,
         liveCoordinator,
         model,
-        codec,
+        codec: createAgentEditCodecFactory(codec),
       });
 
       const [contentARow] = await db

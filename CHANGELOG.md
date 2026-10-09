@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: document revision tokens move from `y1:` to `y2:` and now cover where each linked document and image sits, so moving a linked chapter changes the revision of the chapters that link to it.
+
 - Development: add pure link-ref correspondence with lexicographic matching, historical holder normalization and diagnostic bounded order completion. Reviewer fixtures and exhaustive oracle rows reuse the existing test-count budget.
 - Development: model writes and checkpoint restore apply ProseMirror nodes directly, with no Markdown round trip between resolving and applying. Markdown-generated writes are unchanged; a restored native snapshot keeps structure the old round trip normalized away. A restore that fails leaves the journal and live document untouched.
 - Development: preserve link identity across rewritten and reordered spans with exact lexicographic correspondence and historical holder normalization.

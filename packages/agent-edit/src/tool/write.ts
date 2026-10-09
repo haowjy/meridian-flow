@@ -81,11 +81,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
   const reversalStore = options.journal;
   const mutationCommit = createMutationCommit({
-    documentRevision: options.documentRevision,
+    links: options.links,
     journal: options.journal,
     coordinator: options.coordinator,
     model: options.model,
-    codec: options.codec,
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
@@ -98,6 +97,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
+    links: options.links,
     ensureDocument: lifecyclePort ? (docId) => lifecyclePort.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
@@ -112,6 +112,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     model: options.model,
     codec: options.codec,
+    links: options.links,
     undoClientId,
     reversalNoticePort: options.reversalNoticePort,
     deferUntilCommit: options.deferUntilCommit,
@@ -126,7 +127,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       coordinator: options.coordinator,
       lifecycle: options.lifecycle,
       createRuntimeDoc: options.createRuntimeDoc,
-      documentRevision: options.documentRevision,
+      links: options.links,
       semanticProvenance: options.semanticProvenance,
     },
     threadOrigins,

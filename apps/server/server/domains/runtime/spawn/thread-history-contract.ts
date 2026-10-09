@@ -428,12 +428,12 @@ export function defineThreadHistoryContract(
         documentId: "11111111-1111-4111-8111-111111111111",
         uri: "manuscript://chapter.md",
         text: "@chapter",
-        read: { result: "COPY SENTINEL", revision: "y1:reference-revision" },
+        read: { result: "COPY SENTINEL", revision: "y2:reference-revision" },
       } as JsonObject);
       const result = await f.read(input);
       const text = output(result);
       expect(text).not.toContain("COPY SENTINEL");
-      expect(text).not.toContain("y1:");
+      expect(text).not.toContain("y2:");
       expect(text).not.toContain('"revision"');
       // The call line quotes the edit's inputs, so the page carries their evidence (D48).
       expect(text).toContain(

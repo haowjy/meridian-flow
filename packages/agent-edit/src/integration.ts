@@ -20,8 +20,8 @@ export type {
   ConcurrentEditRun,
   ConcurrentUpdateOrigin,
 } from "./apply/types.js";
-export type { AgentEditCodec } from "./codec-adapter.js";
-export { createAgentEditCodec } from "./codec-adapter.js";
+export type { AgentEditCodec, AgentEditCodecFactory } from "./codec-adapter.js";
+export { createAgentEditCodecFactory } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
 export {
   applyConcurrentRenderBudget,
@@ -41,6 +41,8 @@ export {
   normalizeLineageRanges,
   subtractLineageRanges,
 } from "./lineage/range-set.js";
+export { bindSources } from "./links/assign-refs.js";
+export type { ShownLink } from "./links/correspondence.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
@@ -56,12 +58,29 @@ export {
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
+  AheadMint,
+  DocumentLinksPort,
+  HolderCatalog,
+  HolderLinkScope,
+  LinkPrepareRequest,
+} from "./ports/document-links.js";
+export {
+  createHolderLinkScope,
+  writtenAddresses,
+  writtenSourceUri,
+} from "./ports/document-links.js";
+export type {
   AgentEditModel,
   BlockLookup,
   CanonicalBlockIdentity,
   DocumentModel,
 } from "./ports/model.js";
 export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
+export type {
+  StaticCatalogDocument,
+  StaticDocumentCatalog,
+} from "./ports/static-document-links.js";
+export { createStaticDocumentLinks } from "./ports/static-document-links.js";
 export type {
   CompactionResult,
   JournalSnapshot,

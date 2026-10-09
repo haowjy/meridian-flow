@@ -27,8 +27,8 @@ outside it.
   tree passes `UNSCOPED_DOCUMENT_LINKS`, which spells stored hrefs and keeps
   `asset:` refs as refs; never supply a permissive stand-in. A stored link `ref`
   is never read from or written to Markdown, HTML or MDX.
-- The transitional `assetForPath` parse option (removed by #729/#730 lane F2)
-  must decline anything it cannot resolve to exactly one asset, because a wrong
-  guess writes a reference into the document that can never render.
+- Parse never resolves anything. A host binding pass that claims a source as
+  `asset:<id>` must decline anything it cannot resolve to exactly one asset,
+  because a wrong guess writes a reference that can never render.
 
 See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the public API contract.

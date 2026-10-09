@@ -1,4 +1,4 @@
-import { CodecParseError, type ParsedContent } from "@meridian/markup";
+import { CodecParseError, type ParsedContent, type PMNode } from "@meridian/markup";
 import { Fragment } from "prosemirror-model";
 import {
   type EditResolutionErrorCode,
@@ -49,6 +49,12 @@ export interface ResolveWriteContext {
   doc: DocHandle | null | undefined;
   model: AgentEditModel;
   codec: AgentEditCodec;
+  /**
+   * Binds freshly parsed nodes against the command's prepared link scope
+   * (`bindSources` today); parse itself is pure syntax. Copies never pass
+   * through it: their nodes already carry what they name.
+   */
+  bindWritten?: (blocks: readonly PMNode[]) => PMNode[];
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
 }
@@ -245,6 +251,13 @@ function normalizeParams(
   return { ...params, content };
 }
 
+function bound(
+  ctx: Pick<ResolveWriteContext, "bindWritten">,
+  parsed: ParsedContent,
+): ParsedContent {
+  return ctx.bindWritten ? { ...parsed, blocks: ctx.bindWritten(parsed.blocks) } : parsed;
+}
+
 function validateContent(
   ctx: ConcreteResolveContext,
   params: NormalizedParams,
@@ -254,9 +267,9 @@ function validateContent(
     return { ok: true, parsed: { blocks: [] } };
   }
   if (params.command === "remove") return { ok: true, parsed: { blocks: [] } };
-  if (params.parsedContent) return { ok: true, parsed: params.parsedContent };
+  if (params.parsedContent) return { ok: true, parsed: bound(ctx, params.parsedContent) };
   try {
-    return { ok: true, parsed: ctx.codec.parse(params.content) };
+    return { ok: true, parsed: bound(ctx, ctx.codec.parse(params.content)) };
   } catch (cause) {
     if (cause instanceof CodecParseError) {
       return error("invalid_write", cause.message, { line: cause.line, column: cause.column });
@@ -499,7 +512,7 @@ function parseReplacementRange(
 ): ResolveWriteFailure | { ok: true; parsed: ParsedContent } {
   if (source.length === 0) return { ok: true, parsed: { blocks: [] } };
   try {
-    return { ok: true, parsed: ctx.codec.parse(source) };
+    return { ok: true, parsed: bound(ctx, ctx.codec.parse(source)) };
   } catch (cause) {
     if (cause instanceof CodecParseError) {
       return error("invalid_write", cause.message, { line: cause.line, column: cause.column });

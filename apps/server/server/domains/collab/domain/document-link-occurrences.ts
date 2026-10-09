@@ -1,4 +1,9 @@
-/** Extract and rewrite stored href occurrences on a private Yjs document snapshot. */
+/**
+ * Rewrite stored hrefs on a private Yjs document snapshot (the link-update
+ * worker's substitution, deleted with it by #729/#730 lane L). Extraction for
+ * everyone else lives in `stored-link-extraction.ts`; the walk here stays only
+ * because substitution needs each run's position.
+ */
 import * as Y from "yjs";
 
 type LinkAttributes = Record<string, unknown> & { href: string };
@@ -24,7 +29,7 @@ export type DocumentLinkSubstitution = {
   newFilename?: string;
 };
 
-/** Runs with one contiguous href form an occurrence, even across other marks. */
+/** Runs with one contiguous href form an occurrence, even across other marks (substitution only). */
 export function extractDocumentLinkOccurrences(fragment: Y.XmlFragment): DocumentLinkOccurrence[] {
   const occurrences: DocumentLinkOccurrence[] = [];
   const walk = (node: Y.XmlFragment | Y.XmlElement | Y.XmlText) => {

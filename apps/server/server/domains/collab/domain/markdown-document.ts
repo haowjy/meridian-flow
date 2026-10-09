@@ -7,6 +7,7 @@
  */
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
+  bindSources,
   type DocumentCoordinator,
   type DocumentLifecycle,
   fragmentOf,
@@ -19,6 +20,7 @@ import {
   type WriteOutcome,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
@@ -37,6 +39,11 @@ import type {
 import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
+import {
+  type DocumentLinkScopes,
+  type HolderLinkScope,
+  LIVE_VIEW,
+} from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 
 export type RuntimeOrigin = UpdateOrigin | DocumentWriteOrigin;
@@ -68,8 +75,12 @@ export type MarkdownSerializationAnomalyObserver = (anomaly: MarkdownSerializati
 
 type MarkdownDocumentEngineDeps = {
   codec: MarkupCodec;
-  /** Spells every serialized link and image destination (lane F2 makes it per holder). */
-  links: DocumentLinkScope;
+  /**
+   * The operation's document-link scope: each method prepares it with the
+   * document it is about to spell, then serializes through the holder. The
+   * scope doors (`document-link-scope-doors.ts`) open it.
+   */
+  links: DocumentLinkScopes;
   schema: Schema;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
@@ -89,10 +100,13 @@ type MarkdownDocumentEngineDeps = {
 };
 
 export type MarkdownDocumentEngine = {
-  serializeDocument(documentId: DocumentId, doc: Y.Doc): Promise<string>;
+  /** `view` is the version `doc` is (a Work draft's links spell in that draft); default live. */
+  serializeDocument(documentId: DocumentId, doc: Y.Doc, view?: LinkView): Promise<string>;
+  /** `view` is the version `doc` is (a Work draft's links spell in that draft); default live. */
   serializeVersionedDocument(
     documentId: DocumentId,
     doc: Y.Doc,
+    view?: LinkView,
   ): Promise<{ content: string; revision: string }>;
   readVersionedMarkdown(
     documentId: string,
@@ -156,12 +170,39 @@ export function createMarkdownDocumentEngine(
     documentId: DocumentId,
     doc: Y.Doc,
     schemaType: YjsTrackedSchemaType,
+    links: DocumentLinkScope,
   ): string {
     return projectBlocks(documentId, doc, (blocks) => {
       if (blocks.length === 0) return "";
       if (schemaType === "code") return blocks[0]?.textContent ?? "";
-      return deps.codec.serialize(blocks, deps.links);
+      return deps.codec.serialize(blocks, links);
     });
+  }
+
+  /** Load what `docs` and `written` name, then spell as this document in the live tree. */
+  async function spelling(
+    documentId: DocumentId,
+    docs: readonly Y.Doc[],
+    written?: ParsedContent["blocks"],
+    view: LinkView = LIVE_VIEW,
+  ): Promise<HolderLinkScope> {
+    await deps.links.prepare({
+      holders: [{ documentId, view }],
+      docs,
+      ...(written ? { written } : {}),
+    });
+    return deps.links.holder({ documentId, view });
+  }
+
+  /** Parse is pure syntax; the shipped image rule binds known pictures afterwards. */
+  async function bindWritten(
+    documentId: DocumentId,
+    parsed: ParsedContent,
+    schemaType: YjsTrackedSchemaType,
+  ): Promise<ParsedContent> {
+    if (schemaType === "code") return parsed;
+    const links = await spelling(documentId, [], parsed.blocks);
+    return { ...parsed, blocks: bindSources(parsed.blocks, links) };
   }
 
   /**
@@ -241,9 +282,10 @@ export function createMarkdownDocumentEngine(
       deps.model.insertBlocks(toDocHandle(draft), null, parsed);
     }, yjsOrigin);
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
+    const links = await spelling(documentId, [draft]);
     // Serialize before admission: content the codec can't spell must fail
     // while the journal and live document are still untouched.
-    const markdown = serializeForSchema(documentId, draft, schemaType);
+    const markdown = serializeForSchema(documentId, draft, schemaType, links);
     const meta = deps.metaForOrigin(origin);
     let seq = 0;
     await admitFreshAuthorship(
@@ -286,7 +328,8 @@ export function createMarkdownDocumentEngine(
     const format = resolvedFormat.value;
     const parsed = parseMarkdown(input.documentId, input.markdown, format);
     if (!parsed.ok) return parsed;
-    return replaceDocument(input, parsed.value, format);
+    const bound = await bindWritten(input.documentId, parsed.value, format.schemaType);
+    return replaceDocument(input, bound, format);
   }
 
   async function replaceDocument(
@@ -335,14 +378,21 @@ export function createMarkdownDocumentEngine(
 
     try {
       const result = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => {
-        const beforeMarkdown = serializeForSchema(input.documentId, liveDoc, format.schemaType);
+        const links = await spelling(input.documentId, [liveDoc]);
+        const beforeMarkdown = serializeForSchema(
+          input.documentId,
+          liveDoc,
+          format.schemaType,
+          links,
+        );
         const parsed = parseMarkdown(input.documentId, input.transform(beforeMarkdown), format);
         if (!parsed.ok) return parsed;
+        const bound = await bindWritten(input.documentId, parsed.value, format.schemaType);
 
         const result = await replaceLiveDocumentMarkdown(
           input.documentId,
           liveDoc,
-          parsed.value,
+          bound,
           input.origin,
           format.schemaType,
         );
@@ -365,16 +415,20 @@ export function createMarkdownDocumentEngine(
   }
 
   const engine: MarkdownDocumentEngine = {
-    async serializeDocument(documentId, doc) {
+    async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
-      return serializeForSchema(documentId, doc, format.value.schemaType);
+      const links = await spelling(documentId, [doc], undefined, view);
+      return serializeForSchema(documentId, doc, format.value.schemaType, links);
     },
 
-    async serializeVersionedDocument(documentId, doc) {
+    async serializeVersionedDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
-      return versioned(doc, (doc) => serializeForSchema(documentId, doc, format.value.schemaType));
+      const links = await spelling(documentId, [doc], undefined, view);
+      return versioned(doc, links, (doc) =>
+        serializeForSchema(documentId, doc, format.value.schemaType, links),
+      );
     },
 
     async restoreFromYDoc(documentId, snapshot, origin) {
@@ -400,11 +454,12 @@ export function createMarkdownDocumentEngine(
       try {
         const format = await documentFormat(documentId as DocumentId);
         if (!format.ok) return format;
-        const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
-          versioned(doc, (doc) =>
-            serializeForSchema(documentId as DocumentId, doc, format.value.schemaType),
-          ),
-        );
+        const markdown = await deps.coordinator.withDocument(documentId, async (doc) => {
+          const links = await spelling(documentId as DocumentId, [doc]);
+          return versioned(doc, links, (doc) =>
+            serializeForSchema(documentId as DocumentId, doc, format.value.schemaType, links),
+          );
+        });
         return Ok(markdown);
       } catch (cause) {
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
@@ -422,14 +477,16 @@ export function createMarkdownDocumentEngine(
       if (!format.ok) return format;
       const parsed = parseMarkdown(typedDocumentId, markdown, format.value);
       if (!parsed.ok) return parsed;
+      const bound = await bindWritten(typedDocumentId, parsed.value, format.value.schemaType);
       const seededDoc = createCollabYDoc({ gc: false });
       seededDoc.transact(() => {
-        deps.model.insertBlocks(toDocHandle(seededDoc), null, parsed.value);
+        deps.model.insertBlocks(toDocHandle(seededDoc), null, bound);
       }, yjsTransactionOrigin(origin));
       const canonicalMarkdown = serializeForSchema(
         typedDocumentId,
         seededDoc,
         format.value.schemaType,
+        await spelling(typedDocumentId, [seededDoc]),
       );
       const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
         typedDocumentId,
@@ -455,7 +512,12 @@ export function createMarkdownDocumentEngine(
       const format = await documentFormat(input.documentId);
       if (!format.ok) throwSyncError(format.error);
       const beforeMarkdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-        serializeForSchema(input.documentId, doc, format.value.schemaType),
+        serializeForSchema(
+          input.documentId,
+          doc,
+          format.value.schemaType,
+          await spelling(input.documentId, [doc]),
+        ),
       );
       const result = await identityPreservingSet({
         ...input,
@@ -487,7 +549,12 @@ export function createMarkdownDocumentEngine(
     });
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-      serializeForSchema(input.documentId, doc, format.value.schemaType),
+      serializeForSchema(
+        input.documentId,
+        doc,
+        format.value.schemaType,
+        await spelling(input.documentId, [doc]),
+      ),
     );
     const snapshot = await deps.journal.read(input.documentId);
     const latest = snapshot.updates.at(-1);

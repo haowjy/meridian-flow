@@ -73,13 +73,6 @@ import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
-import {
-  scopeAgentEditAssetPaths,
-  scopeBranchPeerAssetPaths,
-  scopeLiveReversalAssetPaths,
-  scopeOfflineReconciliationAssetPaths,
-  scopeResponseFinalizerAssetPaths,
-} from "./domain/asset-path-scope.js";
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
@@ -90,11 +83,18 @@ import { createDocumentAttribution } from "./domain/document-attribution.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
 import { createDocumentDerivationService } from "./domain/document-derivations.js";
 import {
+  scopeAgentEdit,
+  scopeBranchPeer,
+  scopeLiveReversal,
+  scopeOfflineReconciliation,
+  scopeResponseFinalizer,
+} from "./domain/document-link-scope-doors.js";
+import {
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
-import type { DocumentAssetPaths } from "./domain/ports/document-asset-paths.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
@@ -123,8 +123,10 @@ export type { DocumentWriteHook } from "./contracts.js";
 
 type CollabDomainDeps = {
   db: Database;
-  /** Image paths for the markup codec, loaded per document operation. */
-  assetPaths: DocumentAssetPaths;
+  /** How links and image sources spell, loaded per document operation (contract §4.4). */
+  links: DocumentLinkScopes;
+  /** Durable registration of ahead refs the model's writes mint. */
+  aheadRefs: AheadRefRegistrar;
   threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
@@ -257,7 +259,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     runDocumentWriteHook,
     resolveDocumentFiletype: lookups.resolveDocumentFiletype,
     observability,
-    assetPaths: deps.assetPaths,
+    links: deps.links,
+    aheadRefs: deps.aheadRefs,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
   });
   const projectionRefresher = { refresh: runDocumentWriteHook };
@@ -295,8 +298,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal: persistence.journal,
     liveCoordinator,
     model: runtime.model,
-    codec: runtime.markupCodec,
-    assetPaths: deps.assetPaths,
+    codec: runtime.codec,
+    links: deps.links,
     changeEventDelivery: createHocuspocusChangeEventDelivery({
       hocuspocus: hocuspocusBinding.require,
       eventSink: deps.eventSink,
@@ -315,7 +318,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     deferUntilCommit: deferUntilDrizzleCommit,
   });
 
-  const agentEdit = scopeAgentEditAssetPaths(
+  const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
@@ -339,6 +342,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       enlistResponseParticipant,
       model: runtime.model,
       codec: runtime.codec,
+      links: deps.links,
+      aheadRefs: deps.aheadRefs,
       semanticProvenance: runtime.semanticProvenance,
       observability,
       commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
@@ -352,19 +357,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           runResponseTransaction(atomic, operation, settlement, responseTransactionDiagnostics),
       },
     }),
-    deps.assetPaths,
+    deps.links,
   );
 
-  const offlineReconciliation = scopeOfflineReconciliationAssetPaths(
+  const offlineReconciliation = scopeOfflineReconciliation(
     createDrizzleOfflineReconciliation({
       journal: persistence.journal,
       changeTrails,
       model: runtime.model,
       codec: runtime.codec,
+      links: deps.links,
       resolveTurnThreadId: lookups.resolveTurnThreadId,
       resolveDocumentUri: documentUriResolver,
     }),
-    deps.assetPaths,
+    deps.links,
   );
   const authorityGeneration = createDrizzleAuthorityGenerationReader(deps.db);
   const hocuspocusPersistence = createHocuspocusPersistenceService({
@@ -396,7 +402,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       })
     : SILENT_POST_DURABILITY_NOTICES;
   const liveDependencies = createDrizzleLiveTurnDependencyStore(deps.db);
-  const responseFinalizer = scopeResponseFinalizerAssetPaths(
+  const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({
       agentEdit,
       liveAgentEdit: runtime.liveUtilityCore,
@@ -413,10 +419,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       notices: postDurabilityNotices,
       deferUntilCommit: deferUntilDrizzleCommit,
     }),
-    deps.assetPaths,
+    deps.links,
   );
   const drafts = createWorkDraftReviewService({
-    assetPaths: deps.assetPaths,
+    links: deps.links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
       branches,
@@ -437,7 +443,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
   });
-  const branchPeers = scopeBranchPeerAssetPaths(
+  const branchPeers = scopeBranchPeer(
     createEffectiveDocumentReader({
       branches,
       branchCoordinator,
@@ -447,8 +453,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       documents: runtime.markdownDocuments,
       model: runtime.model,
       codec: runtime.codec,
+      links: deps.links,
     }),
-    deps.assetPaths,
+    deps.links,
   );
 
   const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
@@ -474,7 +481,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     live: {
       reversalStore: persistence.journal,
-      agentEdit: scopeLiveReversalAssetPaths(runtime.liveUtilityCore, deps.assetPaths),
+      agentEdit: scopeLiveReversal(runtime.liveUtilityCore, deps.links),
       resolveDocumentUri: documentUriResolver,
       checkDependentLaterLiveRows: liveDependencies.checkDependentLaterLiveRows,
       refreshDocumentProjection: projectionRefresher.refresh,

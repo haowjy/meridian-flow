@@ -4,9 +4,7 @@
 
 `@meridian/markup` exports:
 
-- Presets: `markdownCodec({ schema, assetForPath? })` and
-  `mdxCodec({ schema, components, assetForPath? })`. `assetForPath` is the
-  transitional image rule (see Link scope); lane F2 of #729/#730 removes it.
+- Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
 - `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS`, the one exported scope
   (no tree: every stored href and src spells as written, `asset:` refs stay
   refs). Holder-bound scopes live with their consumers; the fixed-table
@@ -89,7 +87,7 @@ codec like any other block (see Hard breaks and emphasis).
 
 ## MDX components
 
-`ParseContext` carries the schema and the transitional `assetForPath`;
+`ParseContext` carries only the schema;
 `SerializeContext` carries the schema and the call's `DocumentLinkScope`. The
 MDX plugin
 creates fresh `createJsxLeafCodec(components)` and
@@ -108,11 +106,11 @@ resolvable ref as its target's current path, anything else as stored
 (`spellStoredLink` in contracts), and an `asset:` source as the path the
 project knows it by, else the ref itself: a picture never fails its document.
 
-Parse is pure syntax for links: every parsed link has `ref: null` and its
-destination as written. Until lane F2 of #729/#730 moves it into the binding
-pass, images and figures keep the shipped rule at parse:
-`ParseContext.assetForPath` turns a known manuscript path into `asset:<id>`;
-unknown and external paths stay literal.
+Parse is pure syntax: every parsed link has `ref: null` and its destination
+as written, and every image and figure `src` is the source as written. The
+shipped image rule (a known manuscript path becomes `asset:<id>`) runs after
+parse, in the host's binding pass over a prepared scope (agent-edit
+`bindSources`), which is what lets a host load only what the text names.
 
 ## Link occurrences
 

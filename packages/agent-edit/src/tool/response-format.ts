@@ -125,11 +125,12 @@ export function formatReversalSuccess(input: ReversalSuccessResponseInput): Inte
 }
 
 export function truncateCreateEcho(
-  renderer: { renderBlockLines: (doc: DocHandle) => string[] },
+  renderer: { renderBlockLines: (doc: DocHandle, codec: AgentEditCodec) => string[] },
+  codec: AgentEditCodec,
   doc: Y.Doc,
   toDocHandle: (doc: Y.Doc) => DocHandle,
 ): string[] {
-  return renderer.renderBlockLines(toDocHandle(doc)).map(truncateSerializedBlock);
+  return renderer.renderBlockLines(toDocHandle(doc), codec).map(truncateSerializedBlock);
 }
 
 export function status(
