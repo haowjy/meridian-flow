@@ -230,7 +230,11 @@ function DockFileLine({ dock, file }: { dock: DraftDockModel; file: DockFile }) 
   );
 }
 
-/** A preview that did not load, or a command that did not land, in the strip's error voice. */
+/**
+ * What went wrong on a file, in the strip's error voice: a command or launch
+ * that did not land, and a preview that did not load. They are independent, so
+ * both show when both are held, and Retry stays with the unreadable preview.
+ */
 function FileTrouble({
   dock,
   file,
@@ -241,7 +245,49 @@ function FileTrouble({
   row?: boolean;
 }) {
   const failure = dock.fileFailure(file);
-  if (!failure && file.status !== "error") return null;
+  const unreadable = file.status === "error";
+  if (!failure && !unreadable) return null;
+  return (
+    <>
+      {failure ? (
+        <TroubleLine row={row} code={failure.failure.code}>
+          <DockFailureText failure={failure} fileName={file.name} />
+        </TroubleLine>
+      ) : null}
+      {unreadable ? (
+        <TroubleLine
+          row={row}
+          code="unreadable"
+          action={
+            file.retry ? (
+              <button
+                type="button"
+                onClick={file.retry}
+                className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+              >
+                <Trans>Retry</Trans>
+              </button>
+            ) : null
+          }
+        >
+          <Trans>Changes couldn't load.</Trans>
+        </TroubleLine>
+      ) : null}
+    </>
+  );
+}
+
+function TroubleLine({
+  row,
+  code,
+  action,
+  children,
+}: {
+  row: boolean;
+  code: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <p
       className={cn(
@@ -251,27 +297,10 @@ function FileTrouble({
           : "px-[var(--chat-card-pad-x)]",
       )}
       role="alert"
-      {...{
-        [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]:
-          failure?.failure.code ?? "unreadable",
-      }}
+      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: code }}
     >
-      <span className="min-w-0 flex-1">
-        {failure ? (
-          <DockFailureText failure={failure} fileName={file.name} />
-        ) : (
-          <Trans>Changes couldn't load.</Trans>
-        )}
-      </span>
-      {!failure && file.retry ? (
-        <button
-          type="button"
-          onClick={file.retry}
-          className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-        >
-          <Trans>Retry</Trans>
-        </button>
-      ) : null}
+      <span className="min-w-0 flex-1">{children}</span>
+      {action}
     </p>
   );
 }
