@@ -9,7 +9,6 @@
  * never gates the route change, so a search row whose passage has moved still
  * opens its document.
  */
-import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { contextOwner } from "@meridian/contracts/protocol";
 import { type ReactNode, useCallback, useContext, useMemo } from "react";
 import { lookupContextCatalogFile } from "@/client/query/useContextCatalog";
@@ -26,8 +25,9 @@ import {
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
-import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
+import { BesideChatContext, claimDock, useOpenChatDocument } from "../context/open-chat-document";
 import type { ContextRouteRequest } from "../routing/project-route";
+import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
 
 type OpenContextTarget = (target: ContextRouteRequest) => void;
@@ -74,36 +74,55 @@ export function ProjectChatContextNavigationProvider({
       if (!onOpenContextTarget || !activeWork || !noWorkId) return;
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return;
-      // The catalog knows a chat's Scratch only by its canonical spelling; a bare `scratch://x`
-      // means the chat on screen's own lineage, so name that chat's handle.
-      const ref = target.rootThreadId
+      // The catalog knows a document only by its canonical spelling, whoever owns it: a bare
+      // `scratch://x` is the chat's lineage or the active Work, so name that owner's handle.
+      const ownerRef = target.rootThreadId
         ? target.rootThreadId === rootThreadId
           ? ownHandle
           : threads?.find((thread) => thread.id === target.rootThreadId)?.ref
         : null;
-      const catalogUri =
-        ref && target.scheme === "scratch" && !uri.startsWith("scratch://@")
-          ? canonicalContextUri("scratch", target.path, { kind: "lineage", rootThreadRef: ref })
-          : uri;
+      const workSlug =
+        target.workId === noWorkId
+          ? null
+          : (availableWorks.find(({ id }) => id === target.workId)?.slug ?? undefined);
+      const catalogUri = canonicalDoorUri(target, { ownerRef, workSlug }) ?? uri;
       const route = () => onOpenContextTarget({ ...target, workId: target.workId ?? undefined });
-      if (besideChat) {
-        // The chat is in the middle: the document opens beside it, and the route stays on the chat.
-        // A document the catalog cannot find keeps the route, which says so in place.
-        void lookupContextCatalogFile(
-          projectId,
-          target.scheme,
-          contextOwner(target.workId, target.rootThreadId),
-          { uri: catalogUri },
-        ).then((file) => {
-          if (file)
+      if (!besideChat) {
+        route();
+        doorOpened({ ...target, uri: catalogUri }, passage);
+        return;
+      }
+      // The chat is in the middle: the document opens beside it and the route stays on the
+      // chat. The door claims the dock now, so the lookup is inside the claim.
+      const claim = claimDock();
+      void lookupContextCatalogFile(
+        projectId,
+        target.scheme,
+        contextOwner(target.workId, target.rootThreadId),
+        { uri: catalogUri },
+      ).then(
+        (file) => {
+          if (!claim()) return;
+          if (!file) {
+            // Nothing is there: the route says so in place, as it always has.
+            route();
+            doorOpened({ ...target, uri: catalogUri }, passage);
+          } else if (passage && file.editable) {
+            // The passage door opens the document itself, once, and lands on the passage.
+            doorOpened({ ...target, uri: catalogUri }, passage, claim);
+          } else {
             void openChatDocument({
               documentId: file.documentId,
               workId: target.workId ?? undefined,
+              claim,
             });
-          else route();
-        }, route);
-      } else route();
-      doorOpened({ ...target, uri: catalogUri }, passage);
+            doorOpened({ ...target, uri: catalogUri });
+          }
+        },
+        () => {
+          if (claim()) route();
+        },
+      );
     },
     [
       activeWork,

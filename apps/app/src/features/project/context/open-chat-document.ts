@@ -12,18 +12,45 @@
  */
 import { createContext, useCallback, useContext } from "react";
 import type { ServerContextTab } from "@/client/stores";
-import { type OpenProjectDocument, useOpenProjectDocument } from "./open-project-document";
+import { useDockViewStore } from "../dock/dock-view-store";
+import {
+  type OpenProjectDocument,
+  type OpenProjectDocumentRequest,
+  useOpenProjectDocument,
+} from "./open-project-document";
 
 export type OpenBesideChat = (tab: ServerContextTab) => boolean;
 
 export const BesideChatContext = createContext<OpenBesideChat | null>(null);
 
-export function useOpenChatDocument(projectId: string | undefined): OpenProjectDocument {
+/**
+ * A claim on the dock as it is now: still true until anything else changes what
+ * the dock shows (a pick, a Close, a view, a scope change). A slow door that
+ * finds its claim gone stands down instead of reversing the writer's newer choice.
+ */
+export type DockClaim = () => boolean;
+
+export function claimDock(): DockClaim {
+  const { revision } = useDockViewStore.getState();
+  return () => useDockViewStore.getState().revision === revision;
+}
+
+export type ChatDocumentRequest = OpenProjectDocumentRequest & {
+  /** Claimed when the door began, so a lookup before this open is inside the claim. */
+  claim?: DockClaim;
+};
+
+export function useOpenChatDocument(
+  projectId: string | undefined,
+): (request: ChatDocumentRequest) => ReturnType<OpenProjectDocument> {
   const open = useOpenProjectDocument(projectId);
   const beside = useContext(BesideChatContext);
   return useCallback(
-    (request) =>
-      open(request.disposition === "background" || !beside ? request : { ...request, beside }),
+    ({ claim, ...request }) => {
+      if (request.disposition === "background" || !beside) return open(request);
+      const stillLatest = claim ?? claimDock();
+      return open({ ...request, beside: (tab) => (stillLatest() ? beside(tab) : true) });
+    },
     [beside, open],
   );
 }
