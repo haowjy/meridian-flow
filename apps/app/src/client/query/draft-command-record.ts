@@ -77,10 +77,14 @@ export type ClosedDraft = { documentName: string | null };
  * one place its identity, mode and coverage are readable from, by whichever
  * review has the draft open (`completesDraft`: the selection handles every
  * change the draft shows, so the draft may close), and where the server's
- * answer lands (`draftClosed`) before any list read follows it.
+ * answer lands (`draftClosed`) before any list read follows it. The claim
+ * remembers the draft generation it was sent against (`draftRevisionToken`):
+ * its completion belongs to that generation, not to a proposal that reuses
+ * the draft's id before the claim ends.
  */
 export type PendingChangeCommand = ChangeSelection & {
   mode: ChangeCommandMode;
+  draftRevisionToken: string;
   completesDraft?: true;
   draftClosed?: ClosedDraft;
 };
@@ -263,11 +267,6 @@ export function pendingChangeCommand(
 ): PendingChangeCommand | null {
   const record = records[draftCommandKey(draft)];
   return record?.phase === "pending" ? (record.change ?? null) : null;
-}
-
-/** The server's answer to the selection command still in flight closed this draft. */
-export function closedByCommand(records: DraftCommandRecords, draft: DraftRef): ClosedDraft | null {
-  return pendingChangeCommand(records, draft)?.draftClosed ?? null;
 }
 
 /** The drafts of this project's Work whose record differs between two snapshots. */

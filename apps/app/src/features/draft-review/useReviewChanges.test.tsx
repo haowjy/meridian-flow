@@ -158,7 +158,7 @@ describe("useReviewChanges", () => {
     await mount(fakeController(), async () => {
       const second = latest.items[1].change;
       await act(async () => {
-        beginChangeCommand(draft, selectionOf([second]), "apply");
+        beginChangeCommand(draft, selectionOf([second]), "apply", "draft-1");
       });
       expect(classIds()).toEqual(["c1", "c3"]);
       await act(async () => {
@@ -183,7 +183,7 @@ describe("useReviewChanges", () => {
       });
       // ...the writer applies a change and the server confirms...
       await act(async () => {
-        beginChangeCommand(draft, selectionOf([target]), "apply");
+        beginChangeCommand(draft, selectionOf([target]), "apply", "draft-1");
         settleConfirmedChange(client, draft, selectionOf([target]), "apply");
       });
       expect(classIds()).toEqual(["c2", "c3"]);
@@ -327,7 +327,7 @@ describe("useReviewChanges", () => {
         inline({ phase: "pending", mode: "apply", documentName: "Chapter 12" }),
         async () => {
           await act(async () => {
-            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "apply");
+            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "apply", "draft-1");
           });
           expect(classIds()).toEqual([]);
           expect(latest.completing).toBe("apply");
@@ -342,7 +342,7 @@ describe("useReviewChanges", () => {
         inline(),
         async () => {
           await act(async () => {
-            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard");
+            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard", "draft-1");
           });
           expect(classIds()).toEqual([]);
           expect(latest.completing).toBeNull();
@@ -380,7 +380,7 @@ describe("useReviewChanges", () => {
         inline(),
         async () => {
           await act(async () => {
-            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard");
+            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard", "draft-1");
           });
           expect(latest.unlisted).toBe(false);
         },

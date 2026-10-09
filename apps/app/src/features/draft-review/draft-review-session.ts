@@ -243,7 +243,8 @@ export class DraftReviewSession {
       { kind: `${mode}-change`, ...selection, classIds: change.classIds },
       async (_reservation, ports) => {
         const draft = { ...ports.scope, ...selection };
-        if (!beginChangeCommand(draft, change, mode, completesDraft)) return { kind: "blocked" };
+        if (!beginChangeCommand(draft, change, mode, tokens.draftRevisionToken, completesDraft))
+          return { kind: "blocked" };
         try {
           let response: { status: string } | "unknown";
           try {

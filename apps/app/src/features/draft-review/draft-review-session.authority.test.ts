@@ -107,7 +107,10 @@ describe("one command per draft, whichever session sends it", () => {
     const held = currentChangeCommandRecords();
     expect(changeCommandState(held, draft, change)).toEqual({ phase: "pending", mode: "apply" });
     expect(Object.values(held.drafts)).toEqual([
-      { phase: "pending", change: { ...change, mode: "apply" } },
+      {
+        phase: "pending",
+        change: { ...change, mode: "apply", draftRevisionToken: tokens.draftRevisionToken },
+      },
     ]);
     answerChange();
     await pending;

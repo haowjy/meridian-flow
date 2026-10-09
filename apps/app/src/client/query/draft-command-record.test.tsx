@@ -7,11 +7,11 @@ import {
   answerDraftCommandClosed,
   beginDraftCommand,
   bindDraftCommandAccount,
-  closedByCommand,
   confirmDraftCommand,
   draftCommandFailure,
   draftCommandPendingIn,
   failDraftCommand,
+  pendingChangeCommand,
   readDraftsAfterCommands,
   releaseDraftCommand,
   resetDraftCommandRecords,
@@ -75,14 +75,20 @@ describe("draft command records", () => {
       const earlier = deferred<typeof listed>();
       const read = readDraftsAfterCommands(scope, () => earlier.promise);
       await act(async () => {
-        beginDraftCommand(draft, { ...closing, completesDraft: true });
+        beginDraftCommand(draft, {
+          ...closing,
+          draftRevisionToken: "draft-1",
+          completesDraft: true,
+        });
         answerDraftCommandClosed(draft, { documentName: "Chapter 13" });
       });
-      expect(closedByCommand(held, draft)).toEqual({ documentName: "Chapter 13" });
+      expect(pendingChangeCommand(held, draft)?.draftClosed).toEqual({
+        documentName: "Chapter 13",
+      });
       expect(draftCommandPendingIn(held, scope)).toBe(true);
       await act(async () => releaseDraftCommand(draft));
       // The server reuses the id for the next proposal: the answer is gone with the claim.
-      expect(closedByCommand(held, draft)).toBeNull();
+      expect(pendingChangeCommand(held, draft)).toBeNull();
       expect(held).toEqual({});
       earlier.resolve(listed);
       await read;
