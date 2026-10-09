@@ -1,11 +1,9 @@
 /** Shared helpers for uploaded editor images and asset-backed rendering. */
-import { storedLinkRef } from "@meridian/contracts";
 import type { UploadFigureAssetResponse } from "@meridian/contracts/protocol";
 import { Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 
 import type { AnchorRange } from "../anchors";
-import type { AssignedLink } from "../links/link-assignment";
 import { pictureKeyOfNode } from "../links/link-resolution";
 
 export function isImageFile(file: Pick<File, "type" | "name">): boolean {
@@ -85,121 +83,6 @@ export function imageAttrsFromUpload(response: UploadFigureAssetResponse) {
   };
 }
 
-/** The editor's known asset ids ↔ project-relative paths, for clipboard round trips. */
-export type AssetClipboardIndex = {
-  pathForAsset(assetDocumentId: string): string | null;
-  assetForPath(path: string): string | null;
-};
-
-export type MutableAssetClipboardIndex = AssetClipboardIndex & {
-  remember(assetDocumentId: string, path: string): void;
-};
-
-export function createAssetClipboardIndex(): MutableAssetClipboardIndex {
-  const pathById = new Map<string, string>();
-  const idByPath = new Map<string, string>();
-  return {
-    remember(assetDocumentId, path) {
-      pathById.set(assetDocumentId, path);
-      idByPath.set(path, assetDocumentId);
-    },
-    pathForAsset(assetDocumentId) {
-      return pathById.get(assetDocumentId) ?? null;
-    },
-    assetForPath(path) {
-      return idByPath.get(path) ?? null;
-    },
-  };
-}
-
-export function resolveAssetRefsForClipboard(slice: Slice, index: AssetClipboardIndex): Slice {
-  const mapNode = (node: PMNode): PMNode => {
-    if (node.type.name === "image") {
-      const src = String(node.attrs.src ?? "");
-      const path = src.startsWith("asset:") ? index.pathForAsset(src.slice("asset:".length)) : null;
-      if (!path) return node;
-      return node.type.create({ ...node.attrs, src: path }, null, node.marks);
-    }
-    return node.copy(Fragment.fromArray(node.content.content.map(mapNode)));
-  };
-  return new Slice(
-    Fragment.fromArray(slice.content.content.map(mapNode)),
-    slice.openStart,
-    slice.openEnd,
-  );
-}
-
-function resolveAssetPathsFromClipboard(slice: Slice, index: AssetClipboardIndex): Slice {
-  const mapNode = (node: PMNode): PMNode => {
-    if (node.type.name === "image") {
-      const src = String(node.attrs.src ?? "");
-      if (storedLinkRef(node.attrs.ref)) return node;
-      const assetDocumentId = index.assetForPath(src);
-      if (!assetDocumentId) return node;
-      return node.type.create({ ...node.attrs, src: `asset:${assetDocumentId}` }, null, node.marks);
-    }
-    return node.copy(Fragment.fromArray(node.content.content.map(mapNode)));
-  };
-  return new Slice(
-    Fragment.fromArray(slice.content.content.map(mapNode)),
-    slice.openStart,
-    slice.openEnd,
-  );
-}
-
-/**
- * What a paste may do with the images it carries — the one seam, so there is
- * one answer to "which pictures can land here".
- *
- * Three kinds arrive. A picture that already names a document (a same-project
- * rich paste kept its ref, or a drag moved it) lands as it is. An uploaded
- * picture travels as a project-relative path and comes home as the stable
- * `asset:` ref it left as. A source that is a manuscript address is assigned
- * the document there (or an ahead ref) by `assign`, the shared fresh
- * assignment under the manuscript-root grammar. Anything else is an address
- * the project does not own, and it lands as a link until it has been imported.
- */
-export function resolveImagesFromClipboard(
-  slice: Slice,
-  schema: Schema,
-  index: AssetClipboardIndex,
-  assign: (src: string) => AssignedLink,
-): { slice: Slice; imports: PastedImageImport[] } {
-  return linkExternalPastedImages(
-    assignPastedSources(resolveAssetPathsFromClipboard(slice, index), assign),
-    schema,
-  );
-}
-
-/** Every picture whose source is a document address, given the ref it names. */
-function assignPastedSources(slice: Slice, assign: (src: string) => AssignedLink): Slice {
-  const assignments = new Map<string, AssignedLink>();
-  const mapNode = (node: PMNode): PMNode => {
-    if (node.type.name === "image" || node.type.name === "figure") {
-      const src = String(node.attrs.src ?? "");
-      if (!src || src.startsWith("asset:") || storedLinkRef(node.attrs.ref)) return node;
-      let assigned = assignments.get(src);
-      if (!assigned) {
-        assigned = assign(src);
-        assignments.set(src, assigned);
-      }
-      if (!assigned.ref) return node;
-      return node.type.create(
-        { ...node.attrs, src: assigned.href, ref: assigned.ref },
-        null,
-        node.marks,
-      );
-    }
-    if (node.content.size === 0) return node;
-    return node.copy(Fragment.fromArray(node.content.content.map(mapNode)));
-  };
-  return new Slice(
-    Fragment.fromArray(slice.content.content.map(mapNode)),
-    slice.openStart,
-    slice.openEnd,
-  );
-}
-
 /**
  * An image the clipboard only pointed at, waiting to become an asset.
  *
@@ -214,12 +97,12 @@ export type PastedImageImport = {
 
 /**
  * Every image in a pasted slice that the manuscript cannot hold, turned into a
- * link to itself.
+ * link to itself, with the imports that will replace those links.
  *
  * An image's `src` is a stable `asset:<documentId>`, or a document address
  * (beside the `ref` that names its document, or resolved by itself when it has
- * none), and nothing else. Web HTML
- * carries `<img src="https://…">`, and admitting one writes an address the
+ * none), and nothing else; the paste door assigns those sources with the links
+ * (`links/link-assignment.ts` `assignPastedSlice`). Web HTML carries `<img src="https://…">`, and admitting one writes an address the
  * project does not own into the shared document: it expires, it leaks where
  * the writer was reading, and it renders as a broken figure the moment the
  * host says no. So the paste never lands a picture it has not imported — it
@@ -231,7 +114,7 @@ export type PastedImageImport = {
  * rare door (the clipboard's own file item wins for a copied picture), the
  * import nearly always succeeds, and the alternative is base64 on the wire.
  */
-function linkExternalPastedImages(
+export function linkExternalPastedImages(
   slice: Slice,
   schema: Schema,
 ): { slice: Slice; imports: PastedImageImport[] } {

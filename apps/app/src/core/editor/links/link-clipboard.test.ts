@@ -229,7 +229,8 @@ it("carries what a copied link names across the clipboard", () => {
   expect.soft(text, "no ref or id in plain text").not.toMatch(/doc:|ahead:|0000-4000/);
 
   // Pictures, through a real editor's whole copy and paste: the serializer,
-  // the sanitizer, the ref transform, the TipTap mirrors and the image door.
+  // the sanitizer, the ref transform, the TipTap mirrors and the one paste
+  // assignment.
   const MAP = "00000000-0000-4000-8000-0000000000b1";
   const OTHER_MAP = "00000000-0000-4000-8000-0000000000b2";
   const SETTLED = "ahead:00000000-0000-4000-8000-0000000000b3";
@@ -290,6 +291,16 @@ it("carries what a copied link names across the clipboard", () => {
   ]);
   const serialized = source.view.serializeForClipboard(source.state.doc.slice(0));
   const copied = { html: serialized.dom.innerHTML };
+  // An upload is stored as `asset:<id>`; the clipboard carries it as the
+  // catalog's current address for that id, like any ref-bearing picture.
+  const UPLOAD = "00000000-0000-4000-8000-0000000000b5";
+  const uploadSource = pictureEditor(
+    "project-a",
+    [{ documentId: UPLOAD, uri: "manuscript://art/new.png" }],
+    [{ type: "paragraph", content: [{ type: "image", attrs: { src: `asset:${UPLOAD}` } }] }],
+  );
+  const uploadSerialized = uploadSource.view.serializeForClipboard(uploadSource.state.doc.slice(0));
+  uploadSource.destroy();
   const pictureRows = [
     {
       row: "a same-project paste keeps each picture's ref at its current address",
@@ -344,6 +355,36 @@ it("carries what a copied link names across the clipboard", () => {
         { type: "image", src: "manuscript://uploads/map.png", ref: `doc:${OTHER_MAP}` },
         // Contextual: no ref to bind, so it stays a picture resolved by address.
         { type: "image", src: "uploads://seal.png", ref: null },
+      ],
+    },
+    {
+      row: "a same-project paste restores an upload's asset: ref",
+      copied: { html: uploadSerialized.dom.innerHTML },
+      into: pictureEditor("project-a", []),
+      pasted: [{ type: "image", src: `asset:${UPLOAD}`, ref: null }],
+    },
+    {
+      row: "another project binds an upload fresh at its current address",
+      copied: { html: uploadSerialized.dom.innerHTML },
+      into: pictureEditor("project-b", [
+        { documentId: OTHER_MAP, uri: "manuscript://art/new.png" },
+      ]),
+      pasted: [{ type: "image", src: "manuscript://art/new.png", ref: `doc:${OTHER_MAP}` }],
+    },
+    {
+      row: "a Markdown-only paste binds an upload at its current address",
+      copied: { text: uploadSerialized.text },
+      into: pictureEditor("project-a", [{ documentId: UPLOAD, uri: "manuscript://art/new.png" }]),
+      pasted: [{ type: "image", src: "manuscript://art/new.png", ref: `doc:${UPLOAD}` }],
+    },
+    {
+      // The upload has moved on from `old.png`: the address is empty now, so
+      // it is assigned fresh rather than naming the upload that used to be there.
+      row: "a source the catalog holds no upload at is assigned fresh",
+      copied: { text: "![](art/old.png)" },
+      into: pictureEditor("project-a", [{ documentId: UPLOAD, uri: "manuscript://art/new.png" }]),
+      pasted: [
+        { type: "image", src: "manuscript://art/old.png", ref: expect.stringMatching(/^ahead:/) },
       ],
     },
   ];

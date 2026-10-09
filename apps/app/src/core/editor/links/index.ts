@@ -18,10 +18,8 @@ export {
 } from "./link-address";
 export {
   type AssignedLink,
-  assignPastedNodes,
   assignWrittenHref,
   indexedDocumentAt,
-  indexedDocumentAtExactly,
   type LinkAssignmentDocument,
   type LinkAssignmentIndex,
   type LinkAssignmentScope,
@@ -38,6 +36,7 @@ export {
   clipboardLinkProject,
   clipboardLinkRef,
   clipboardLinkScope,
+  clipboardPictureRef,
   LINK_ADDRESS_ATTRIBUTE,
   LINK_PROJECT_ATTRIBUTE,
   LINK_REF_ATTRIBUTE,
