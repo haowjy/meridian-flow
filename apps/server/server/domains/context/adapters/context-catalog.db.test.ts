@@ -17,6 +17,8 @@ import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import type { BindMarkdownInput } from "../../collab/index.js";
+import { fakePreparedWrite } from "../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -495,7 +497,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: {
           ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
-          bindMarkdown: async ({ markdown }: { markdown: string }) => ({ markdown }),
+          bindMarkdown: async (input: BindMarkdownInput) => fakePreparedWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
         } as never,
       });
@@ -540,7 +542,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentSync: {
           ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
-          bindMarkdown: async ({ markdown }: { markdown: string }) => ({ markdown }),
+          bindMarkdown: async (input: BindMarkdownInput) => fakePreparedWrite(input),
           seedFromMarkdown: async () => Ok({ updateSeq: 1 }),
         } as never,
       });
