@@ -122,7 +122,7 @@ left" with Next draft are therefore the desktop's behaviour, not a copy of it.
   Work's Files tab; absent in No Work). It lists no other file and has no Apply
   all or Discard all: those are the Work page's. It opens and stays open at zero
   changes. A row tap closes the sheet and focuses the change; Apply and Discard
-  act and leave it open. The toast rides the sheet's top edge, since the scrim
+  act and leave it open. The toast sits in the sheet's flow below its title, since the scrim
   covers the manuscript's own.
 - Every control is a 44px target (`touch` on `ReviewChangeRow`, `ReviewChangeBar`,
   `ReviewStepper` and `DraftSwitcher`).

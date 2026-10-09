@@ -67,6 +67,11 @@ export function MobileChangeSheet({
         <SheetDescription className="sr-only">
           <Trans>Tap a change to go to it in the manuscript.</Trans>
         </SheetDescription>
+        <ReviewToast
+          toast={controller.toast}
+          onDismiss={controller.dismissToast}
+          className="static mx-auto mb-2 shrink-0 translate-x-0"
+        />
         <div className="min-h-0 overflow-y-auto overscroll-contain px-2 pb-2">
           <DocumentChanges
             touch
@@ -87,12 +92,6 @@ export function MobileChangeSheet({
             className="mt-1 rounded-none border-t border-border-subtle"
           />
         </div>
-        {/* The scrim sits over the manuscript's own toast: this one rides the sheet's top edge, undimmed. */}
-        <ReviewToast
-          toast={controller.toast}
-          onDismiss={controller.dismissToast}
-          className="bottom-full mb-3"
-        />
       </SheetContent>
     </Sheet>
   );

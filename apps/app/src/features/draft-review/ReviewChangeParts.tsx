@@ -56,9 +56,11 @@ export function ChangeDot({ change, className }: { change: ReviewChange; classNa
 export function ChangeAuthor({
   attribution,
   className,
+  touch = false,
 }: {
   attribution: ChangeAttribution;
   className?: string;
+  touch?: boolean;
 }) {
   const openThread = useOpenChatThread();
   if (attribution.kind === "you") {
@@ -111,7 +113,13 @@ export function ChangeAuthor({
         }
         const chat = attribution.chats[next++];
         return (
-          <ChatLink key={chat.threadId} chat={chat} name={part.value} onOpenThread={openThread} />
+          <ChatLink
+            key={chat.threadId}
+            chat={chat}
+            name={part.value}
+            onOpenThread={openThread}
+            touch={touch}
+          />
         );
       })}
     </span>
@@ -122,10 +130,12 @@ function ChatLink({
   chat,
   name,
   onOpenThread,
+  touch,
 }: {
   chat: ChangeChat;
   name: string;
   onOpenThread: (threadId: string) => void;
+  touch: boolean;
 }) {
   return (
     <button
@@ -146,7 +156,10 @@ function ChatLink({
           onOpenThread(chat.threadId);
         }
       }}
-      className="focus-ring inline-flex min-w-0 max-w-32 items-center gap-0.5 self-stretch rounded-sm text-primary hover:underline"
+      className={cn(
+        "focus-ring inline-flex min-w-0 max-w-32 items-center gap-0.5 self-stretch rounded-sm text-primary hover:underline",
+        touch && "min-h-11 min-w-11",
+      )}
     >
       <span className="truncate">{name}</span>
       <ArrowUpRight aria-hidden className="size-3 shrink-0" />

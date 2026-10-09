@@ -10,6 +10,7 @@ import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import {
@@ -17,6 +18,7 @@ import {
   deferredReviewAnswer,
   discarded,
   listed,
+  operation,
   preview,
 } from "@/test-support/draft-review-scope";
 import { createStandaloneEditor } from "@/test-support/standalone-editor";
@@ -180,6 +182,56 @@ it("focuses and discards through this document's sheet, keeping its editor throu
           <TooltipProvider>
             <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
               {children}
+            </ProjectNavigationProvider>
+          </TooltipProvider>
+        </I18nProvider>
+      ),
+    },
+  );
+});
+
+it("keeps last-change feedback in the sheet flow and gives chat links phone targets", async () => {
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    operations: [{ ...operation("1"), actorThreadId: "thread-a", actorThreadTitle: "Lore" }],
+  });
+  fixture.network.discardDraft.mockResolvedValue(discarded(true));
+  await fixture.render(
+    async (probe) => {
+      await settled(() => expect(probe().editor.files).toHaveLength(1));
+      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+      await settled(() => expect(probe().header.view.items).toHaveLength(1));
+      await act(async () =>
+        probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true),
+      );
+      await click("Show the 1 change");
+      const chatLink = sheet()?.querySelector<HTMLButtonElement>(
+        '[title="Open the chat that wrote this change"]',
+      );
+      expect(chatLink).not.toBeNull();
+      expect.soft(chatLink?.classList.contains("min-h-11")).toBe(true);
+      await click("Discard", sheet() as ParentNode);
+      await settled(() => expect(probe().header.finished).toBe(true));
+      const toast = sheet()?.querySelector<HTMLElement>("[data-review-toast]");
+      expect(toast?.textContent).toBe("Discarded");
+      expect(toast?.classList.contains("static")).toBe(true);
+      expect(toast?.classList.contains("bottom-full")).toBe(false);
+      expect(sheet()?.textContent).toContain("No changes left");
+    },
+    {
+      surface: (
+        <MobileDocumentReview documentId="document-a">
+          <div />
+        </MobileDocumentReview>
+      ),
+      host: (children) => (
+        <I18nProvider i18n={i18n}>
+          <TooltipProvider>
+            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+              <ChatThreadNavigationProvider onOpenThread={navigate}>
+                {children}
+              </ChatThreadNavigationProvider>
             </ProjectNavigationProvider>
           </TooltipProvider>
         </I18nProvider>
