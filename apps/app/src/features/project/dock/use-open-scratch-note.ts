@@ -27,7 +27,7 @@ export function useOpenScratchNote() {
   return useCallback(
     (tab: ServerContextTab) => {
       if (screen === "chat" && !phone && projectId) {
-        open({ kind: "document", projectId, screen, tab });
+        open({ projectId, screen, tab });
         revealDock("document");
         return;
       }

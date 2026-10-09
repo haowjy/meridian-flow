@@ -865,7 +865,6 @@ msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
-#: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -1246,7 +1245,7 @@ msgstr "Couldn't load the conversation this fork continues."
 msgid "Couldn't load this file."
 msgstr "Couldn't load this file."
 
-#: src/features/project/shell/ResultViewerOverlay.tsx
+#: src/features/project/mobile/ResultViewerContent.tsx
 msgid "Couldn't load this result."
 msgstr "Couldn't load this result."
 
@@ -2295,11 +2294,11 @@ msgstr "Loading references…"
 msgid "Loading report…"
 msgstr "Loading report…"
 
-#: src/features/project/shell/ResultViewerOverlay.tsx
+#: src/features/project/mobile/ResultViewerContent.tsx
 msgid "Loading result…"
 msgstr "Loading result…"
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Loading results…"
 msgstr "Loading results…"
 
@@ -2611,7 +2610,7 @@ msgstr "No projects yet"
 msgid "No report text was returned."
 msgstr "No report text was returned."
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "No results yet."
 msgstr "No results yet."
 
@@ -2731,7 +2730,7 @@ msgstr "Open a chat to see what the AI referenced."
 msgid "Open a document from the project tree, or start a new one."
 msgstr "Open a document from the project tree, or start a new one."
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open a project to see its results."
 msgstr "Open a project to see its results."
 
@@ -2777,15 +2776,15 @@ msgstr "Open navigation"
 msgid "Open original"
 msgstr "Open original"
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open producing turn"
 msgstr "Open producing turn"
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open producing turn in {agentName}"
 msgstr "Open producing turn in {agentName}"
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open result {name}"
 msgstr "Open result {name}"
 
@@ -3161,7 +3160,6 @@ msgid "Restoring"
 msgstr "Restoring"
 
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/shell/ContextSidebar.tsx
 msgid "Results"
 msgstr "Results"
 

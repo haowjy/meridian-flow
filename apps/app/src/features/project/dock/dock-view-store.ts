@@ -1,6 +1,5 @@
 /** Session-only view choices and the transient document slot for the project dock. */
 import { create } from "zustand";
-import type { ProjectResultItem } from "@/client/api/project-results-api";
 import type { ServerContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 
@@ -8,18 +7,16 @@ import type { ScreenKey } from "../shell/screens";
 export type DockView = "chat" | "context" | "changes";
 
 /**
- * The one thing the dock shows in place of its views, until it is closed or the
- * writer leaves what opened it: a document in the standard editor, or a Results
- * row in a viewer (a result is a promoted artifact read by id, with no tab or
- * editor). It carries its project, so another project's occupant is never shown.
- * The Editor screen never holds one: there, documents open as tabs.
+ * The one document the dock shows in place of its views, until it is closed or
+ * the writer leaves what opened it. It carries its project, so another
+ * project's document is never shown. The Editor screen never holds one: there,
+ * documents open as tabs.
  */
-export type DockOccupant =
-  | { kind: "document"; projectId: string; screen: DockOccupantScreen; tab: ServerContextTab }
-  | { kind: "result"; projectId: string; screen: "chat"; result: ProjectResultItem };
-export type DockDocument = Extract<DockOccupant, { kind: "document" }>;
-export type DockResult = Extract<DockOccupant, { kind: "result" }>;
-type DockOccupantScreen = Exclude<ScreenKey, "context">;
+export type DockDocument = {
+  projectId: string;
+  screen: Exclude<ScreenKey, "context">;
+  tab: ServerContextTab;
+};
 
 type DockViewSet = {
   /** Ordered segments for the switch. */
@@ -42,7 +39,7 @@ const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
 
 type DockViewState = {
   byScreen: Partial<Record<ScreenKey, DockView>>;
-  occupant: DockOccupant | null;
+  occupant: DockDocument | null;
   /**
    * Bumps on every occupant change (open, replace, close, scope clear). A slow
    * open reads it before it starts and commits only if it is unchanged.
@@ -50,14 +47,14 @@ type DockViewState = {
   revision: number;
   /** The writer picks a view: it replaces an occupant the dock was showing on that screen. */
   setDockView: (screen: ScreenKey, view: DockView) => void;
-  open: (occupant: DockOccupant) => void;
+  open: (document: DockDocument) => void;
   closeDocument: () => void;
   /** Drop an occupant that does not belong to where the writer now is. */
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
 export const useDockViewStore = create<DockViewState>((set) => {
-  const setOccupant = (occupant: DockOccupant | null) =>
+  const setOccupant = (occupant: DockDocument | null) =>
     set((state) => ({ occupant, revision: state.revision + 1 }));
   return {
     byScreen: {},
@@ -81,7 +78,7 @@ export const useDockViewStore = create<DockViewState>((set) => {
         const stays =
           occupant.projectId === projectId &&
           occupant.screen === screen &&
-          (screen !== "work" || (occupant.kind === "document" && occupant.tab.workId === workId));
+          (screen !== "work" || occupant.tab.workId === workId);
         return stays ? state : { occupant: null, revision: state.revision + 1 };
       }),
   };
@@ -121,8 +118,6 @@ export function useDockView(
   setView: (view: DockView) => void;
   /** The document replacing the views on this screen, if any. */
   document: DockDocument | null;
-  /** The result replacing them, if any (the Chat screen only). */
-  result: DockResult | null;
   closeDocument: () => void;
 } {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
@@ -136,8 +131,7 @@ export function useDockView(
   return {
     ...resolveDockView(screen, stored),
     setView: (next) => setDockView(screen, next),
-    document: occupant?.kind === "document" ? occupant : null,
-    result: occupant?.kind === "result" ? occupant : null,
+    document: occupant,
     closeDocument,
   };
 }

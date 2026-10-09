@@ -3,8 +3,8 @@
  *
  * Gives the dock its one header row (view switch + close, via a caller-supplied
  * header slot) and swaps the body between the occupant's native content
- * (`children`), the work-scoped Changes view, and the one document (or Results
- * row) the dock can hold, which covers both views until it is closed.
+ * (`children`), the work-scoped Changes view, and the one document the dock
+ * can hold (`DockDocumentView`), which covers both views until it is closed.
  * The header only appears in
  * `dock` placement; in `center` the shell is a passthrough so the chat surface
  * can move center↔dock without its live subtree ever reconciling to a
@@ -32,7 +32,6 @@ import type { ScreenKey } from "../shell/screens";
 import { DockChangesView } from "./DockChangesView";
 import { DockDocumentView } from "./DockDocumentView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
-import { DockResultView } from "./DockResultView";
 import { useDockView, withoutEmptyChanges } from "./dock-view-store";
 
 export type DockShellProps = {
@@ -58,24 +57,22 @@ export function DockShell({
   const { groups } = useDraftReview();
   const hasChanges = hasDockChanges(groups);
   const { view, views, primaryView } = withoutEmptyChanges(dockView, hasChanges);
-  const { setView, document: dockDocument, result: dockResult } = dockView;
+  const { setView, document: dockDocument } = dockView;
   const inDock = placement === "dock";
   const overlay = !inDock
     ? null
     : dockDocument
       ? "document"
-      : dockResult
-        ? "result"
-        : view === "changes"
-          ? "changes"
-          : null;
+      : view === "changes"
+        ? "changes"
+        : null;
   const showPrimary = overlay === null;
 
   useEffect(() => {
-    if (!hasChanges && !dockDocument && !dockResult && dockView.view === "changes") {
+    if (!hasChanges && !dockDocument && dockView.view === "changes") {
       setView(primaryView);
     }
-  }, [dockView.view, dockDocument, dockResult, hasChanges, primaryView, setView]);
+  }, [dockView.view, dockDocument, hasChanges, primaryView, setView]);
 
   return (
     <>
@@ -86,7 +83,6 @@ export function DockShell({
             views,
             onSelectView: setView,
             document: dockDocument,
-            result: dockResult,
           })
         : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -101,11 +97,6 @@ export function DockShell({
           {typeof children === "function" ? children(showPrimary) : children}
         </div>
         {overlay === "changes" ? <DockChangesView className="absolute inset-0" /> : null}
-        {overlay === "result" && dockResult ? (
-          <div className="absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden">
-            <DockResultView projectId={projectId} result={dockResult.result} />
-          </div>
-        ) : null}
         {overlay === "document" && dockDocument ? (
           <div className="absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden">
             <DockDocumentView projectId={projectId} document={dockDocument} visible={visible} />

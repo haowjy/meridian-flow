@@ -865,7 +865,6 @@ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
-#: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
 msgstr ""
 
@@ -1246,7 +1245,7 @@ msgstr ""
 msgid "Couldn't load this file."
 msgstr ""
 
-#: src/features/project/shell/ResultViewerOverlay.tsx
+#: src/features/project/mobile/ResultViewerContent.tsx
 msgid "Couldn't load this result."
 msgstr ""
 
@@ -2295,11 +2294,11 @@ msgstr ""
 msgid "Loading report…"
 msgstr ""
 
-#: src/features/project/shell/ResultViewerOverlay.tsx
+#: src/features/project/mobile/ResultViewerContent.tsx
 msgid "Loading result…"
 msgstr ""
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Loading results…"
 msgstr ""
 
@@ -2611,7 +2610,7 @@ msgstr ""
 msgid "No report text was returned."
 msgstr ""
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "No results yet."
 msgstr ""
 
@@ -2731,7 +2730,7 @@ msgstr ""
 msgid "Open a document from the project tree, or start a new one."
 msgstr ""
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open a project to see its results."
 msgstr ""
 
@@ -2777,15 +2776,15 @@ msgstr ""
 msgid "Open original"
 msgstr ""
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open producing turn"
 msgstr ""
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open producing turn in {agentName}"
 msgstr ""
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/mobile/ResultsList.tsx
 msgid "Open result {name}"
 msgstr ""
 
@@ -3161,7 +3160,6 @@ msgid "Restoring"
 msgstr ""
 
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/shell/ContextSidebar.tsx
 msgid "Results"
 msgstr ""
 

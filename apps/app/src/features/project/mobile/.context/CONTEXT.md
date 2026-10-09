@@ -103,7 +103,7 @@ MobileProject
   │   ├─ ChatIndex or WorkScreen → one screen scroll owner
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
   │   ├─ MobileContextBrowser or MobileDocumentHost
-  │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay
+  │   └─ MobileResultsView → ResultsList + MobileResultViewerOverlay
   ├─ local chat Sheet → ChatSurface above the retained Work/Editor view
   └─ NavigationDrawer → Sheet + WorkspaceNavBody + ContextTreePanel + account menu
 ```
@@ -204,7 +204,7 @@ abandons an uncommitted row.
 ### Results auxiliary surface
 
 `MobileResultsView` is a project-scoped full-screen auxiliary surface. It
-reuses `ResultsRailBody` as the single source of result-listing logic and opens
+lists rows with `ResultsList` and opens
 result rows in `MobileResultViewerOverlay`, whose full-screen close chrome lives
 under `mobile/`.
 
@@ -227,7 +227,7 @@ chrome:
 - Non-tracked mobile documents use `ContextViewerBareHost`, which composes the
   read-only viewer frame without a name/path header because the breadcrumb
   already names the file.
-- `MobileResultsView` renders `ResultsRailBody` bare because the top bar already
+- `MobileResultsView` renders `ResultsList` bare because the top bar already
   says Results.
 - `MobileResultViewerOverlay` owns full-screen result chrome; the shared result
   content owns signed-URL resolution and read-only viewer composition.

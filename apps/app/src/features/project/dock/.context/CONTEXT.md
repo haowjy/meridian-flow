@@ -40,12 +40,11 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 
 ### Dock document slot
 
-`occupant` in the same session-only store is the one thing the dock shows on Work or Chat:
-`{ kind: "document", projectId, screen, tab }` or, on the Chat screen only,
-`{ kind: "result", projectId, screen, result }`. `useDockView(screen, projectId)` returns
+`occupant` in the same session-only store is the one document the dock shows on Work or
+Chat: `{ projectId, screen, tab }`. `useDockView(screen, projectId)` returns
 it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
-`DockDocumentView` (or `DockResultView`) and `DockHeader` swaps the view switch for the
+`DockDocumentView` and `DockHeader` swaps the view switch for the
 title chip, a Close document button, and the collapse toggle. Opening a second one
 replaces the first. `setDockView` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the writer's last explicit view.
@@ -67,13 +66,9 @@ screen's context rail. A row carries only a document id, so
 area) and file from the resource replica, then the server
 (`ProjectDocumentNavigationAdapter.locate`; nothing navigates and no live session is
 admitted), and `useOpenDocumentInDock` opens the resulting tab. Images, PDFs and
-binaries open as viewer tabs through the viewer host. A latest-click-wins guard keeps a
+binaries open as viewer tabs through the viewer host. A store revision (see above) keeps a
 slow lookup from replacing a newer pick; an unresolvable document announces an error.
-The slot's `result` sibling holds a Results row (`DockResultView`): the rail's Results
-open there instead of a dialog, with the viewers and no editor, tab or title menu. It
-shares the slot's rules (covers the views, closed by the same button, Chat screen only).
-The phone has no context rail, so a phone never opens either here; its Results view keeps
-its full-screen viewer.
+The phone has no context rail, so a phone never opens a Recent row here.
 
 `useOpenScratchNote()` is the way in for a note picked from a chat's Scratch menu
 (`../chat/ChatScratch.tsx`): the dock document on the Chat screen only, where
