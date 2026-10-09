@@ -1,10 +1,9 @@
 // Preflight and mutation of resolved inline, whole-block, and structural edits.
 
 import type { ParsedContent } from "@meridian/markup";
-import type { AgentEditCodec } from "../codec-adapter.js";
-import type { Span } from "../codec-types.js";
+import type { Fragment } from "prosemirror-model";
 import type { BlockRef, DocHandle } from "../handles.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, InlineTextReplacement } from "../ports/model.js";
 import type { ApplyErrorCode, ApplyResult, ApplyTransactionOrigin, ResolvedEdit } from "./types.js";
 
 type Ref = BlockRef;
@@ -13,7 +12,7 @@ type PlannedEdit =
   | {
       kind: "textRanges";
       edit: Extract<ResolvedEdit, { kind: "textRanges" }>;
-      replacements: Array<{ span: Span; newText: string }>;
+      replacements: InlineTextReplacement[];
       blockId: string;
     }
   | {
@@ -45,7 +44,6 @@ type ApplyFailure = Extract<ApplyResult, { ok: false }>;
 export function applyEdits(
   doc: DocHandle,
   model: AgentEditModel,
-  codec: AgentEditCodec,
   edits: ResolvedEdit | readonly ResolvedEdit[],
   origin: ApplyTransactionOrigin,
 ): ApplyResult {
@@ -65,7 +63,7 @@ export function applyEdits(
 
   let committedEdits = 0;
   for (let index = 0; index < editList.length; index += 1) {
-    const planned = preflightEdit(doc, model, codec, editList[index]);
+    const planned = preflightEdit(doc, model, editList[index]);
     if (!planned.ok) {
       return applyError(planned.code, planned.message, planned.details, { committedEdits });
     }
@@ -75,7 +73,7 @@ export function applyEdits(
       model.transact(
         doc,
         () => {
-          executionFailure = executePlan(doc, model, codec, planned.plan, accumulator);
+          executionFailure = executePlan(doc, model, planned.plan, accumulator);
         },
         origin,
       );
@@ -104,16 +102,15 @@ export function applyEdits(
 function preflightEdit(
   doc: DocHandle,
   model: AgentEditModel,
-  codec: AgentEditCodec,
   edit: ResolvedEdit,
 ):
   | { ok: true; plan: PlannedEdit }
   | { ok: false; code: ApplyErrorCode; message: string; details?: Record<string, unknown> } {
   switch (edit.kind) {
     case "textRanges":
-      return preflightTextRangesEdit(doc, model, codec, edit);
+      return preflightTextRangesEdit(doc, model, edit);
     case "insert":
-      return preflightInsert(doc, model, codec, edit);
+      return preflightInsert(doc, model, edit);
     case "delete":
       return preflightDelete(doc, model, edit);
     case "block":
@@ -124,7 +121,6 @@ function preflightEdit(
 function preflightTextRangesEdit(
   doc: DocHandle,
   model: AgentEditModel,
-  codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "textRanges" }>,
 ): ReturnType<typeof preflightEdit> {
   const live = validateLiveBlock(doc, model, edit.block, "target");
@@ -138,7 +134,7 @@ function preflightTextRangesEdit(
   }
 
   const text = model.getText(edit.block);
-  const replacements: Array<{ span: Span; newText: string }> = [];
+  const replacements: InlineTextReplacement[] = [];
   let previousEnd = -1;
   for (const replacement of edit.replacements) {
     const span = { from: replacement.span.start, to: replacement.span.end };
@@ -149,9 +145,15 @@ function preflightTextRangesEdit(
         message: `Invalid or overlapping text span ${span.from}..${span.to} for block length ${text.length}`,
       };
     }
-    const parsed = parseContent(codec, replacement.newText, "text");
-    if (!parsed.ok) return parsed;
-    replacements.push({ span, newText: replacement.newText });
+    const nonInline = findNonInline(replacement.content);
+    if (nonInline) {
+      return {
+        ok: false,
+        code: "invalid_write",
+        message: `Text edit content must be inline, got ${nonInline}`,
+      };
+    }
+    replacements.push({ span, content: replacement.content });
     previousEnd = span.to;
   }
 
@@ -191,31 +193,23 @@ function preflightBlockReplacement(
 function preflightInsert(
   doc: DocHandle,
   model: AgentEditModel,
-  codec: AgentEditCodec,
   edit: Extract<ResolvedEdit, { kind: "insert" }>,
 ): ReturnType<typeof preflightEdit> {
   if (edit.after) {
     const live = validateLiveBlock(doc, model, edit.after, "after");
     if (!live.ok) return live;
   }
-  if (edit.blocks) {
-    if (edit.blocks.length === 0) {
-      return { ok: false, code: "invalid_write", message: "insert produced no blocks" };
-    }
+  if (edit.blocks.length === 0) {
     return {
-      ok: true,
-      plan: { kind: "insert", edit, parsed: { blocks: [...edit.blocks] } },
+      ok: false,
+      code: "invalid_write",
+      message:
+        edit.newText.length === 0
+          ? "insert requires non-empty content"
+          : "insert produced no blocks",
     };
   }
-  if (edit.newText.length === 0) {
-    return { ok: false, code: "invalid_write", message: "insert requires non-empty content" };
-  }
-  const parsed = parseContent(codec, edit.newText, "insert");
-  if (!parsed.ok) return parsed;
-  if (parsed.parsed.blocks.length === 0) {
-    return { ok: false, code: "invalid_write", message: "insert produced no blocks" };
-  }
-  return { ok: true, plan: { kind: "insert", edit, parsed: parsed.parsed } };
+  return { ok: true, plan: { kind: "insert", edit, parsed: { blocks: [...edit.blocks] } } };
 }
 
 function preflightDelete(
@@ -241,13 +235,12 @@ function preflightDelete(
 function executePlan(
   doc: DocHandle,
   model: AgentEditModel,
-  codec: AgentEditCodec,
   plan: PlannedEdit,
   accumulator: ApplyAccumulator,
 ): ApplyFailure | undefined {
   switch (plan.kind) {
     case "textRanges": {
-      const applied = model.applyInlineReplacements(doc, plan.edit.block, plan.replacements, codec);
+      const applied = model.applyInlineReplacements(doc, plan.edit.block, plan.replacements);
       if (!applied.ok) return applyError(applied.code, applied.message, applied.details);
       accumulator.touchedHashes.add(plan.blockId);
       break;
@@ -327,30 +320,13 @@ function validateLiveBlock(
   return { ok: true };
 }
 
-function parseContent(
-  codec: AgentEditCodec,
-  content: string,
-  operation: "text" | "insert",
-):
-  | { ok: true; parsed: ParsedContent }
-  | { ok: false; code: ApplyErrorCode; message: string; details?: Record<string, unknown> } {
-  if (operation === "text" && content.length === 0) return { ok: true, parsed: { blocks: [] } };
-  try {
-    return { ok: true, parsed: codec.parse(content) };
-  } catch (cause) {
-    const record = cause instanceof Error ? cause : undefined;
-    const details: Record<string, unknown> = {};
-    const line = (cause as { line?: unknown } | null)?.line;
-    const column = (cause as { column?: unknown } | null)?.column;
-    if (typeof line === "number") details.line = line;
-    if (typeof column === "number") details.column = column;
-    return {
-      ok: false,
-      code: "invalid_write",
-      message: record?.message ?? String(cause),
-      ...(Object.keys(details).length > 0 ? { details } : {}),
-    };
-  }
+/** Name of the first top-level node a text edit can't splice into a textblock. */
+function findNonInline(content: Fragment): string | undefined {
+  let found: string | undefined;
+  content.forEach((node) => {
+    if (found === undefined && !node.isInline) found = node.type.name;
+  });
+  return found;
 }
 
 function applyError(

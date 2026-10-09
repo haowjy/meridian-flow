@@ -1,6 +1,7 @@
 // Structural document-model port for the agent editing core.
 
 import type { ParsedContent } from "@meridian/markup";
+import type { Fragment } from "prosemirror-model";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
@@ -30,9 +31,10 @@ export type InlineReplacementResult =
       details?: Record<string, unknown>;
     };
 
+/** Inline nodes, applied as given, that replace one plain-text span. */
 export interface InlineTextReplacement {
   span: Span;
-  newText: string;
+  content: Fragment;
 }
 
 /**
@@ -115,7 +117,6 @@ export interface AgentEditModel extends DocumentModel {
     doc: DocHandle,
     block: BlockRef,
     replacements: readonly InlineTextReplacement[],
-    codec: AgentEditCodec,
   ): InlineReplacementResult;
 
   /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
