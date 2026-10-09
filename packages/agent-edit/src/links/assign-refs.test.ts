@@ -281,7 +281,6 @@ const doors: DoorCase[] = [
         old: [],
         written,
         scope: links.scopeFor(H, undefined),
-        holderDocumentId: H,
         shown: [],
       }).nodes;
       const ctx = linkHarness({

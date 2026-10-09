@@ -884,7 +884,6 @@ export function createWriteCommands(deps: {
   ): WriteLinkAssigner {
     return createWriteLinkAssigner({
       scope,
-      holderDocumentId: documentId,
       shown,
       ...(options.onLinkSpliceFallback
         ? {

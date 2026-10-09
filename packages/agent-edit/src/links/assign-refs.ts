@@ -36,8 +36,6 @@ export interface AssignInput {
   /** Parsed nodes of the replaced span. */
   written: readonly PMNode[];
   scope: HolderLinkScope;
-  /** The holder document, recorded on every ahead ref minted for it. */
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   /** Default `mintAheadRef`; injected only by tests. */
   mint?: () => AheadRef;
@@ -61,7 +59,6 @@ export interface BindOccurrencesInput {
   /** Written occurrences, already past the `asset:` rule. */
   written: readonly LinkOccurrence[];
   scope: HolderLinkScope;
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
 }
@@ -92,7 +89,6 @@ export function bindOccurrences(input: BindOccurrencesInput): {
       old,
       written: writtenIndexes.map(({ occurrence }) => occurrence),
       scope: input.scope,
-      holderDocumentId: input.holderDocumentId,
       shown: input.shown,
       mint,
       minted,
@@ -148,7 +144,6 @@ function bindKind(input: {
   old: readonly LinkOccurrence[];
   written: readonly LinkOccurrence[];
   scope: HolderLinkScope;
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   mint: () => AheadRef;
   minted: AheadMint[];
@@ -242,7 +237,6 @@ function fresh(
   input: {
     grammar: Grammar;
     scope: HolderLinkScope;
-    holderDocumentId: string;
     mint: () => AheadRef;
     minted: AheadMint[];
   },
@@ -267,7 +261,7 @@ function fresh(
   const address = aheadAddress(classified.uri, grammar.aheadKind);
   if (!address) return literal;
   const ref = input.mint();
-  input.minted.push({ ref, address, holderDocumentId: input.holderDocumentId });
+  input.minted.push({ ref, address, holderProjectId: scope.holder.projectId });
   return { ref, title: written.title, href: storedHref(address, classified.suffix) };
 }
 
@@ -352,7 +346,6 @@ export interface WriteLinkAssigner {
 
 export function createWriteLinkAssigner(input: {
   scope: HolderLinkScope;
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
   /** Hears each splice that fell back to whole-group binding (possible format churn there). */
@@ -361,7 +354,6 @@ export function createWriteLinkAssigner(input: {
   const minted: AheadMint[] = [];
   const common = {
     scope: input.scope,
-    holderDocumentId: input.holderDocumentId,
     shown: input.shown,
     ...(input.mint ? { mint: input.mint } : {}),
   };
