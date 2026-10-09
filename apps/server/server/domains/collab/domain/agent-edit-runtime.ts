@@ -111,7 +111,11 @@ export function createAgentEditRuntime(input: {
             overwrite: true,
           },
           {
-            prepared: { blocks: content.blocks, update: content.update },
+            prepared: {
+              blocks: content.blocks,
+              update: content.update,
+              ...(content.certified ? { certified: content.certified } : {}),
+            },
             actor,
             sessionId:
               actor.kind === "human"
@@ -133,6 +137,7 @@ export function createAgentEditRuntime(input: {
     codec: markupCodec,
     schema,
     model,
+    semanticProvenance,
     coordinator: input.coordinator,
     links: input.links,
     registrar: input.aheadRefs,

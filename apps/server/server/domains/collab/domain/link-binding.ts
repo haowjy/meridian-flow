@@ -15,13 +15,21 @@
  * mutation against the base it was bound to, never a desired state: anything
  * admitted in between merges with it instead of being undone. It also names
  * the one holder it was prepared for, so it is never applied to another.
+ *
+ * Against a base, the mutation is agent-edit's whole-document overwrite of it
+ * (`lowerOverwrite`), so the write also carries that overwrite's semantic IR
+ * and the certified provenance facts it implies, written against the base.
  */
 import {
+  type AgentEditCodec,
   type AheadMint,
-  applyDocumentDiff,
   assignLinkRefs,
+  createAgentEditCodecFactory,
   type DocumentCoordinator,
   isDocumentNotFoundError,
+  lowerOverwrite,
+  type SemanticEditIRV1,
+  type SemanticProvenanceWriter,
   toDocHandle,
   writtenAddresses,
   type YProsemirrorDocumentModel,
@@ -62,6 +70,13 @@ export interface PreparedWrite {
   readonly base: PreparedBase | null;
   /** The Yjs update that turns `base` into the bound result. */
   readonly update: Uint8Array;
+  /**
+   * The overwrite's certified intent, when it changed a base: its IR, and
+   * the provenance facts it implies as an update on top of `update`. Only
+   * certified (thread and agent) writes admit them; a writer's fresh save
+   * applies `update` alone.
+   */
+  readonly certified: { readonly ir: SemanticEditIRV1; readonly provenance: Uint8Array } | null;
   /** The bound result's blocks, so a writer can load what they name; never reparsed. */
   readonly blocks: readonly PMNode[];
   /** Source Markdown, for provenance and diagnostics only; never reparsed. */
@@ -131,6 +146,7 @@ export interface LinkBinderDeps {
   codec: MarkupCodec;
   schema: Schema;
   model: YProsemirrorDocumentModel;
+  semanticProvenance: SemanticProvenanceWriter;
   coordinator: Pick<DocumentCoordinator, "withDocument">;
   links: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
@@ -139,6 +155,8 @@ export interface LinkBinderDeps {
 }
 
 export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
+  const codecs = createAgentEditCodecFactory(deps.codec);
+
   function schemaTypeOf(filetype: string | null): YjsTrackedSchemaType {
     const classification = classifyFiletype(filetype);
     if (classification.kind === "tracked") return classification.schemaType;
@@ -154,30 +172,53 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   }
 
   /**
-   * Encode `blocks` as a mutation of `base`: diffed against it, so blocks
-   * left as they were keep their items; fresh, a plain insertion.
+   * Encode `blocks` as a mutation of `base`: its whole-document overwrite, so
+   * blocks left as they were keep their items, with the overwrite's certified
+   * provenance written against the base; fresh, a plain insertion.
    */
   function prepared(input: {
     holder: PreparedHolder;
-    base: Y.Doc | null;
+    base: { doc: Y.Doc; documentId: DocumentId; codec: AgentEditCodec } | null;
     blocks: readonly PMNode[];
     markdown: string;
     schemaType: YjsTrackedSchemaType;
   }): PreparedWrite {
     const draft = createCollabYDoc({ gc: false });
     try {
-      if (input.base) Y.applyUpdate(draft, Y.encodeStateAsUpdate(input.base));
+      if (input.base) Y.applyUpdate(draft, Y.encodeStateAsUpdate(input.base.doc));
       const baseVector = Y.encodeStateVector(draft);
-      draft.transact(() => {
-        if (input.base) applyDocumentDiff(draft, deps.schema, input.blocks);
-        else if (input.blocks.length > 0) {
-          deps.model.insertBlocks(toDocHandle(draft), null, { blocks: [...input.blocks] });
+      let ir: SemanticEditIRV1 | null = null;
+      if (input.base) {
+        const lowered = lowerOverwrite({
+          doc: draft,
+          model: deps.model,
+          codec: input.base.codec,
+          documentId: input.base.documentId,
+          content: input.markdown,
+          blocks: input.blocks,
+        });
+        if (!lowered.ok) {
+          throw new Error(`Could not prepare the write: ${lowered.code}: ${lowered.message}`);
         }
-      });
+        ir = lowered.ir;
+      } else if (input.blocks.length > 0) {
+        draft.transact(() => {
+          deps.model.insertBlocks(toDocHandle(draft), null, { blocks: [...input.blocks] });
+        });
+      }
+      const update = Y.encodeStateAsUpdate(draft, baseVector);
+      // Facts are written after `update` is taken: a writer's fresh save must not carry them.
+      let certified: PreparedWrite["certified"] = null;
+      if (ir) {
+        const loweredVector = Y.encodeStateVector(draft);
+        deps.semanticProvenance.writeCertifiedFacts(toDocHandle(draft), ir, baseVector);
+        certified = { ir, provenance: Y.encodeStateAsUpdate(draft, loweredVector) };
+      }
       return {
         holder: input.holder,
         base: input.base ? { stateVector: baseVector } : null,
-        update: Y.encodeStateAsUpdate(draft, baseVector),
+        update,
+        certified,
         blocks: input.blocks,
         markdown: input.markdown,
         schemaType: input.schemaType,
@@ -218,16 +259,6 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       input.against === "current" && documentId ? await currentDocument(documentId) : null;
     try {
       const previous = base ? [...deps.model.projectBlocks(toDocHandle(base))] : [];
-      const finish = (blocks: readonly PMNode[], markdown: string) =>
-        prepared({ holder: preparedHolder, base, blocks, markdown, schemaType });
-
-      if (schemaType === "code") {
-        const current = previous[0]?.textContent ?? "";
-        const markdown =
-          typeof input.markdown === "string" ? input.markdown : input.markdown(current);
-        return finish([codeBlock(markdown, filetype)], markdown);
-      }
-
       const prepare = async (written: readonly PMNode[]) => {
         await deps.links.prepare({
           holders: documentId ? [{ documentId, view }] : [],
@@ -240,6 +271,24 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
         documentId
           ? deps.links.holder({ documentId, view })
           : deps.links.reader({ uri: holderUri, view });
+      /** Called once the scope is prepared: the overwrite of a base spells through it. */
+      const finish = (blocks: readonly PMNode[], markdown: string) =>
+        prepared({
+          holder: preparedHolder,
+          base:
+            base && documentId ? { doc: base, documentId, codec: codecs.bind(scopeFor()) } : null,
+          blocks,
+          markdown,
+          schemaType,
+        });
+
+      if (schemaType === "code") {
+        if (base) await prepare([]);
+        const current = previous[0]?.textContent ?? "";
+        const markdown =
+          typeof input.markdown === "string" ? input.markdown : input.markdown(current);
+        return finish([codeBlock(markdown, filetype)], markdown);
+      }
 
       let markdown: string;
       let current: readonly PMNode[] = [];

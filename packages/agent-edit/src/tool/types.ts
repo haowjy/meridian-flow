@@ -6,6 +6,7 @@ import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
 import type {
   AgentEditResultCommand,
@@ -211,9 +212,15 @@ export interface WriteContext {
    * (server `LinkBinder`, contract §6.2): the bound result's nodes, and the
    * Yjs update that turns the state it was prepared against into them. The
    * update merges into the document, so edits admitted since then stay;
-   * nothing is parsed, assigned or aligned again.
+   * nothing is parsed, assigned or aligned again. A prepared overwrite also
+   * carries its certified intent: the IR and the provenance facts the host
+   * wrote for it against the base, admitted with the update.
    */
-  prepared?: { blocks: readonly Block[]; update: Uint8Array };
+  prepared?: {
+    blocks: readonly Block[];
+    update: Uint8Array;
+    certified?: { ir: SemanticEditIRV1; provenance: Uint8Array };
+  };
   /**
    * Host-only showing evidence for this thread: every link the model was
    * shown in a document, with the address shown. Ref assignment reads it;
