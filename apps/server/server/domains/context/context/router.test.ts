@@ -68,7 +68,7 @@ describe("context router deletion receipts", () => {
       Err({ code: "stale_source" }),
     );
     const port = createContextPortRouter({
-      adapters: new Map([["manuscript", adapter]]),
+      sources: new Map([["manuscript", { adapter, authority: { kind: "contextual" } }]]),
       workAuthorities: new Map(),
     });
 
@@ -112,7 +112,15 @@ describe("context router Work slug resolution", () => {
     const primary = workAdapter(PRIMARY_ID);
     const sibling = workAdapter(SIBLING_ID);
     return createContextPortRouter({
-      adapters: new Map([["scratch", primary]]),
+      sources: new Map([
+        [
+          "scratch",
+          async () => ({
+            adapter: primary,
+            authority: { kind: "lineage" as const, rootThreadRef: "c12" },
+          }),
+        ],
+      ]),
       primaryWorkAuthority: authority(PRIMARY_ID, "drafting"),
       workAuthorities: new Map([
         [testWorkSlug("drafting"), authority(PRIMARY_ID, "drafting")],
@@ -125,6 +133,10 @@ describe("context router Work slug resolution", () => {
 
   it("resolves a same-project sibling slug for both reads and writes", async () => {
     const context = port();
+    await expect(context.list()).resolves.toMatchObject({
+      ok: true,
+      value: { entries: [{ kind: "directory", uri: "scratch://", readonly: false }] },
+    });
     await expect(context.read("scratch://@revision-pass/notes.md")).resolves.toEqual({
       ok: true,
       value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes.md" },
@@ -171,7 +183,9 @@ describe("context router untitled identity recovery", () => {
         }),
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
-      adapters: new Map([["manuscript", manuscript]]),
+      sources: new Map([
+        ["manuscript", { adapter: manuscript, authority: { kind: "contextual" } }],
+      ]),
       workAuthorities: new Map([[testWorkSlug("secondary"), authority("work-2", "secondary")]]),
       resolveWorkAdapters: () => new Map([["scratch", scratch]]),
     });
@@ -206,9 +220,9 @@ describe("context router scheme creation capabilities", () => {
       scratch,
       uploads,
       port: createContextPortRouter({
-        adapters: new Map([
-          ["scratch", scratch],
-          ["uploads", uploads],
+        sources: new Map([
+          ["scratch", { adapter: scratch, authority: authority(workId, "current") }],
+          ["uploads", { adapter: uploads, authority: authority(workId, "current") }],
         ]),
         workAuthorities: new Map([[testWorkSlug("current"), authority(workId, "current")]]),
         primaryWorkAuthority: authority(workId, "current"),
