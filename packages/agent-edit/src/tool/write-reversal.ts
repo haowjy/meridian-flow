@@ -5,7 +5,7 @@ import { type BlockSnapshot, diffSnapshots, snapshotBlocks } from "../apply/echo
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
-import { renderedItems } from "../links/shown.js";
+import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
@@ -314,8 +314,7 @@ export function createWriteReversal(deps: {
     });
     // Undoing a create or copy leaves the document in place; say so, so the
     // model doesn't report it gone. Removed with this note when delete ships.
-    const shown = links.codec.shownLinks(renderedItems(result.model));
-    const withShown = shown.length > 0 ? { ...result, shownLinks: shown } : result;
+    const withShown = { ...result, ...shownEvidence(renderedItems(result.model), links) };
     if (input.direction === "undo" && input.filePath && isEmptyDocument(input.runtime.doc)) {
       return {
         ...withShown,

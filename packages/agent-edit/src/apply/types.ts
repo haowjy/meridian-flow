@@ -1,3 +1,4 @@
+import type { LinkView } from "@meridian/contracts";
 import type { SpelledLinkFact } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
@@ -113,6 +114,8 @@ export interface ConcurrentEditRun {
   tombstones: Array<{ hash: string; capturedBody: string }>;
   /** Host-only: the links this run's rendered blocks showed the model (never in model text). */
   shownLinks?: readonly SpelledLinkFact[];
+  /** Host-only: the view `shownLinks` were spelled in; set whenever they are. */
+  shownView?: LinkView;
 }
 
 export type ApplyResult =

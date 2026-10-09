@@ -158,7 +158,7 @@ export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversatio
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
-export type { ShownLink, ShownLinkStore } from "./ports/shown-links.js";
+export type { ShownLink, ShownLinkShowing, ShownLinkStore } from "./ports/shown-links.js";
 export {
   appendSubagentActivity,
   appendSubagentActivityBestEffort,

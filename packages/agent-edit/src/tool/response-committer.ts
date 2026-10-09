@@ -4,7 +4,7 @@ import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
-import { renderedItems, withRunShownLinks } from "../links/shown.js";
+import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -247,15 +247,10 @@ export function createResponseCommitter(deps: {
     if (!bound) throw new Error(`Response document ${docBuffer.docId} was not bound for commit.`);
     return bound;
   };
-  /** Receipts and concurrent runs: what the commit binding's codec rendered them as. */
-  const shownSource = (docBuffer: ResponseDocumentBuffer) => linksOf(docBuffer).codec;
-  const shownLinksOf = (
-    items: readonly AgentEditBlockItem[],
-    docBuffer: ResponseDocumentBuffer,
-  ) => {
-    const shownLinks = shownSource(docBuffer).shownLinks(items);
-    return shownLinks.length > 0 ? { shownLinks } : {};
-  };
+  /** Receipts and concurrent runs: what the commit binding's codec rendered them as, in its view. */
+  const shownSource = (docBuffer: ResponseDocumentBuffer) => linksOf(docBuffer);
+  const shownLinksOf = (items: readonly AgentEditBlockItem[], docBuffer: ResponseDocumentBuffer) =>
+    shownEvidence(items, shownSource(docBuffer));
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
   const closedResponseOrder: string[] = [];
 

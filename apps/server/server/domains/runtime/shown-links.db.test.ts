@@ -2,12 +2,15 @@
  * E-1: shown-link evidence on PostgreSQL threads (contract §7.3), for both
  * store adapters. Dedup keeps the latest showing per key; rows survive a real
  * compaction; a fork reads its source's showings only up to its cutoff turn,
- * while a handoff and a spawned child inherit nothing.
+ * and a source's later repeat never takes one away; a handoff and a spawned
+ * child inherit nothing; a writer delayed after drawing its sequence never
+ * rewinds a key's order.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Thread, Turn } from "@meridian/contracts/threads";
 import type { SpelledLinkFact } from "@meridian/markup";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
+import { afterAll, describe, expect, it } from "vitest";
 import type { ShownLinkStore } from "./ports/shown-links.js";
 
 const url = process.env.DATABASE_URL;
@@ -33,7 +36,6 @@ if (!RUN_DB_TESTS || !url) {
     const { createInMemoryShownLinkStore } = await import("./adapters/in-memory/shown-links.js");
     assertThrowawayDatabaseForRunDbTests(url);
     const db = createDb(url, { max: 8 });
-    beforeEach(() => deleteDrizzleRows(db, [schema.users]));
     afterAll(() => db.close());
     const fixture = createCompactionFixture(db);
 
@@ -98,26 +100,100 @@ if (!RUN_DB_TESTS || !url) {
       return { rig, store, answer, source, show, seen, derive, next, documentId };
     }
     type Rig = Awaited<ReturnType<typeof rig>>;
+    type Adapter = "drizzle" | "in-memory";
+    type Check = (actual: unknown, what: string) => ReturnType<typeof expect.soft>;
 
-    const cases: Array<{ name: string; run: (r: Rig) => Promise<void> }> = [
+    /** Refs in showing order, latest last: the order correspondence ranks them. */
+    const ordered = async ({ store, documentId }: Rig, threadId: string) =>
+      (await store.forDocument(threadId, documentId)).map((row) => row.ref);
+
+    /**
+     * Holds `turnId`'s next insert of `address` after it drew its sequence
+     * value and before conflict arbitration, as a suspended backend would,
+     * while `meanwhile` records the same key with a larger value.
+     */
+    async function invertSequence(
+      r: Rig,
+      input: { turnId: string; fact: SpelledLinkFact; meanwhile: () => Promise<void> },
+    ) {
+      const lockKey = 7_291_730;
+      const fn = `e1_delay_${crypto.randomUUID().replaceAll("-", "")}`;
+      // Only the next value drawn waits, so the competing writer passes.
+      const [{ last }] = (await db.execute(
+        sql.raw(`SELECT last_value AS last FROM thread_shown_links_seq_seq`),
+      )) as unknown as Array<{ last: string }>;
+      await db.execute(
+        sql.raw(`CREATE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+          IF NEW.address = '${input.fact.address}' AND NEW.seq = ${Number(last) + 1}
+          THEN PERFORM pg_advisory_xact_lock(${lockKey}); END IF; RETURN NEW; END $$`),
+      );
+      await db.execute(
+        sql.raw(
+          `CREATE TRIGGER ${fn} BEFORE INSERT ON thread_shown_links FOR EACH ROW EXECUTE FUNCTION ${fn}()`,
+        ),
+      );
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let held!: () => void;
+      const holding = new Promise<void>((resolve) => {
+        held = resolve;
+      });
+      const holder = db.transaction(async (tx) => {
+        await tx.execute(sql.raw(`SELECT pg_advisory_xact_lock(${lockKey})`));
+        held();
+        await released;
+      });
+      try {
+        await holding;
+        const delayed = r.show(r.source.id, { id: input.turnId } as Turn, [input.fact]);
+        for (;;) {
+          const waiting = await db.execute(
+            sql.raw(
+              `SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event = 'advisory'`,
+            ),
+          );
+          if (waiting.length > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        await input.meanwhile();
+        release();
+        await holder;
+        await delayed;
+      } finally {
+        release();
+        await holder.catch(() => {});
+        await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fn} ON thread_shown_links`));
+        await db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fn}()`));
+      }
+    }
+
+    const rows: Array<{
+      name: string;
+      adapters?: readonly Adapter[];
+      run(r: Rig, check: Check): Promise<void>;
+    }> = [
       {
         name: "dedup keeps the latest showing per key",
-        async run({ store, answer, source, show, next, documentId }) {
+        async run({ store, answer, source, show, next, documentId }, check) {
           await show(source.id, answer, [link(1), link(1)]);
           await show(source.id, answer, [link(1, "kb://moved.md")]);
           const later = await next(source, answer);
           await show(source.id, later, [link(1)]);
           const rows = await store.forDocument(source.id, documentId);
-          expect(rows).toHaveLength(2);
-          const original = rows.find((row) => row.address === "kb://target-1.md");
-          const moved = rows.find((row) => row.address === "kb://moved.md");
-          expect(original?.at).toBeGreaterThan(moved?.at ?? Number.POSITIVE_INFINITY);
-          expect(rows.at(-1)).toMatchObject({ address: "kb://target-1.md", view: "live" });
+          check(
+            rows.map((row) => [row.address, row.view]),
+            "one row per key, latest last",
+          ).toEqual([
+            ["kb://moved.md", "live"],
+            ["kb://target-1.md", "live"],
+          ]);
         },
       },
       {
         name: "rows survive a real compaction",
-        async run({ rig, answer, source, show, seen }) {
+        async run({ rig, answer, source, show, seen }, check) {
           await show(source.id, answer, [link(1), link(2)]);
           const run = await rig.orchestrator.prepare({
             threadId: rig.threadId,
@@ -126,8 +202,8 @@ if (!RUN_DB_TESTS || !url) {
           });
           await run.execute();
           const compaction = await rig.repos.turns.findById(run.executionTurnId);
-          expect(compaction?.role).toBe("compaction");
-          expect(await seen(source.id)).toEqual([
+          check(compaction?.role, "the run compacted").toBe("compaction");
+          check(await seen(source.id), "rows after compaction").toEqual([
             "00000001@kb://target-1.md",
             "00000002@kb://target-2.md",
           ]);
@@ -135,7 +211,7 @@ if (!RUN_DB_TESTS || !url) {
       },
       {
         name: "a fork sees source showings up to its cutoff; handoffs and children inherit none",
-        async run({ rig, answer, source, show, seen, derive, next }) {
+        async run({ rig, answer, source, show, seen, derive, next }, check) {
           await show(source.id, answer, [link(1)]);
           const later = await next(source, answer);
           await show(source.id, later, [link(2)]);
@@ -144,31 +220,79 @@ if (!RUN_DB_TESTS || !url) {
           await show(fork.id, forkTurn, [link(3)]);
           const nested = await derive("fork", forkTurn, fork);
           const handoff = await derive("handoff", later);
-          const child = rig.ids.child;
-          expect(await seen(source.id)).toEqual([
+          check(await seen(source.id), "source").toEqual([
             "00000001@kb://target-1.md",
             "00000002@kb://target-2.md",
           ]);
-          expect(await seen(fork.id)).toEqual([
+          check(await seen(fork.id), "fork").toEqual([
             "00000001@kb://target-1.md",
             "00000003@kb://target-3.md",
           ]);
-          expect(await seen(nested.id)).toEqual([
+          check(await seen(nested.id), "nested fork").toEqual([
             "00000001@kb://target-1.md",
             "00000003@kb://target-3.md",
           ]);
-          expect(await seen(handoff.id)).toEqual([]);
-          expect(await seen(child)).toEqual([]);
+          check(await seen(handoff.id), "handoff").toEqual([]);
+          check(await seen(rig.ids.child), "spawned child").toEqual([]);
+        },
+      },
+      {
+        name: "a source's repeat after the cutoff keeps the fork's showing against a competing ref",
+        async run(r, check) {
+          const { answer, source, show, derive, next } = r;
+          // Two refs at one address: correspondence binds to whichever was shown last.
+          const competing = link(4, "kb://same.md");
+          const shownLast = link(5, "kb://same.md");
+          await show(source.id, answer, [competing, shownLast]);
+          const fork = await derive("fork", answer);
+          const nested = await derive("fork", await next(fork, answer), fork);
+          await show(source.id, await next(source, answer), [shownLast]);
+          for (const [threadId, what] of [
+            [source.id, "source"],
+            [fork.id, "fork"],
+            [nested.id, "nested fork"],
+          ] as const) {
+            check(await ordered(r, threadId), what).toEqual([competing.ref, shownLast.ref]);
+          }
+        },
+      },
+      {
+        name: "a delayed lower sequence never overwrites a greater one",
+        adapters: ["drizzle"],
+        async run(r, check) {
+          const fact = link(6, "kb://race.md");
+          await r.show(r.source.id, r.answer, [fact]);
+          let winner = -1;
+          await invertSequence(r, {
+            turnId: r.answer.id,
+            fact,
+            async meanwhile() {
+              await r.show(r.source.id, r.answer, [fact]);
+              winner = (await r.store.forDocument(r.source.id, r.documentId))[0]?.at ?? -1;
+            },
+          });
+          const rows = await r.store.forDocument(r.source.id, r.documentId);
+          check(
+            rows.map((row) => row.at),
+            "the greater sequence stays",
+          ).toEqual([winner]);
         },
       },
     ];
 
-    it.each(
-      cases.flatMap((entry) =>
-        (["drizzle", "in-memory"] as const).map((adapter) => ({ ...entry, adapter })),
-      ),
-    )("$name ($adapter)", async ({ run, adapter }) => {
-      await run(await rig(adapter));
-    });
+    it("E-1: evidence keeps its showings across dedup, compaction, lineage and races", async () => {
+      for (const row of rows) {
+        for (const adapter of row.adapters ?? (["drizzle", "in-memory"] as const)) {
+          const check: Check = (actual, what) =>
+            expect.soft(actual, `${row.name} (${adapter}): ${what}`);
+          try {
+            await deleteDrizzleRows(db, [schema.users]);
+            await row.run(await rig(adapter), check);
+          } catch (error) {
+            check(error, "row threw").toBeUndefined();
+          }
+        }
+      }
+    }, 120_000);
   });
 }

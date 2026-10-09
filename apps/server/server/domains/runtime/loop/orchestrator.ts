@@ -259,7 +259,7 @@ export interface OrchestratorDeps {
   imageAssets: ImageAssetPort;
   /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
   concurrentRenderBudgetBytes?(request: GenerateRequest): number;
-  /** Shown-link evidence: settled receipts and backfilled concurrent runs record here. */
+  /** Shown-link evidence: tool results, settled receipts and backfilled concurrent runs record here. */
   shownLinks: Pick<ShownLinkStore, "record">;
   responseWrites: {
     commitResponse(
@@ -1401,22 +1401,23 @@ function createResponseScope(input: {
       writeId: string;
       settlementId: string;
       uri: string | null;
-      view: LinkView;
     }>
   >();
-  /** Records what a settled receipt or a backfilled concurrent run showed the model. */
+  /** Records what a settled receipt or a backfilled concurrent run showed the model, in the view it was spelled in. */
   const recordShown = async (
     documentId: string,
-    write: { uri: string | null; view: LinkView },
-    links: readonly SpelledLinkFact[] | undefined,
+    write: { uri: string | null },
+    shown: { shownLinks?: readonly SpelledLinkFact[]; shownView?: LinkView },
   ) => {
+    const links = shown.shownLinks;
     if (!write.uri || !links || links.length === 0) return;
+    if (!shown.shownView) throw new Error(`Shown links for ${documentId} carry no view.`);
     await deps.shownLinks.record({
       threadId,
       turnId,
       documentId,
       holderUri: write.uri,
-      view: write.view,
+      view: shown.shownView,
       links,
     });
   };
@@ -1447,7 +1448,6 @@ function createResponseScope(input: {
       const blocks = writes.get(metadata.documentId) ?? [];
       blocks.push({
         uri,
-        view: (metadata.linkView as LinkView | undefined) ?? { kind: "live" },
         block: dispatched.block,
         writeId: metadata.writeId,
         settlementId: metadata.settlementId,
@@ -1457,11 +1457,11 @@ function createResponseScope(input: {
     async commit() {
       const persistSettledReceipt = async (
         documentId: string,
-        write: { block: Block; uri: string | null; view: LinkView },
+        write: { block: Block; uri: string | null },
         receipt: ResponseCommitWriteReceipt,
       ) => {
         // The settled receipt replaces the staged echo; both were shown.
-        await recordShown(documentId, write, receipt.shownLinks);
+        await recordShown(documentId, write, receipt);
         return persistCommittedWriteResult({
           deps,
           threadId,
@@ -1554,11 +1554,7 @@ function createResponseScope(input: {
         const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
         if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
         // Only runs that fit the render budget were shown.
-        await recordShown(
-          documentId,
-          last,
-          boundedEdits.runs.flatMap((run) => run.shownLinks ?? []),
-        );
+        for (const run of boundedEdits.runs) await recordShown(documentId, last, run);
       }
     },
     async rollback() {
@@ -2312,6 +2308,7 @@ async function executeLoop({
                 executionReports: deps.repos.executionReports,
                 readSnapshot: deps.repos.readSnapshot,
                 runClaim: deps.runClaim,
+                shownLinks: deps.shownLinks,
               },
               call,
               {

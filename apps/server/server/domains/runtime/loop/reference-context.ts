@@ -11,6 +11,7 @@ export interface ReferenceReader {
     context: {
       threadId: string;
       turnId: string;
+      signal?: AbortSignal;
     },
   ): Promise<{ result: JsonValue; revision: string | null }>;
 }
@@ -49,6 +50,7 @@ export async function loadReferenceReads(input: {
       result = await input.reader.read(reference, {
         threadId: input.threadId,
         turnId: input.assistantTurnId,
+        ...(input.signal ? { signal: input.signal } : {}),
       });
       reads.set(key, result);
     }

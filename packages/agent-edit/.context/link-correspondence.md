@@ -87,7 +87,8 @@ different states counts only what every such render showed; an item this
 codec never rendered, or a reparse that disagrees, counts nothing. They ride on `WriteOutcome.shownLinks` (reads, echoes, undo
 and redo), `ResponseCommitWriteReceipt.shownLinks`, and each
 `ConcurrentEditRun.shownLinks` (per run, because the request budget may drop
-runs). None of them reaches `result`. `WriteContext.shownLinks(documentId)`
+runs), each with `shownView`, the view the binding spelled them in
+(`shownEvidence` in `links/shown.ts`). None of them reaches `result`. `WriteContext.shownLinks(documentId)`
 delivers the thread's stored showings back to assignment; agent-edit never
 reads thread history.
 

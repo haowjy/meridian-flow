@@ -6,7 +6,7 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { renderedItems } from "../links/shown.js";
+import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { planWrite, resolveWrite } from "../resolver/resolve.js";
@@ -784,8 +784,7 @@ export function createWriteCommands(deps: {
 
   /** Attach the links the result's rendered blocks showed, spelled with the command's binding. */
   function withShown(links: BoundLinks, result: InternalWriteResult) {
-    const shownLinks = links.codec.shownLinks(renderedItems(result.model));
-    return shownLinks.length > 0 ? { ...result, shownLinks } : result;
+    return { ...result, ...shownEvidence(renderedItems(result.model), links) };
   }
 
   /** Host-only showing evidence for this document; none for utility, seed and import writes. */
