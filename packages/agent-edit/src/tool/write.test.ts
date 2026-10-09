@@ -206,25 +206,33 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
 
     // A host's fresh bound write: empty when checked and restored, then a writer's paragraph is
-    // admitted before the write's own admission (its third acquisition of the document).
-    const raced = harness({});
-    const acquire = raced.coordinator.withDocument.bind(raced.coordinator);
-    let acquisitions = 0;
-    raced.coordinator.withDocument = async (docId, fn, ...rest) => {
-      if (++acquisitions === 3) {
-        const live = raced.liveDoc(docId);
-        const vector = Y.encodeStateVector(live);
-        live.transact(
-          () => model.insertBlocks(live, null, codec.parse("Writer content.")),
-          "writer",
-        );
-        await raced.journal.append(docId, Y.encodeStateAsUpdate(live, vector), {
-          origin: "human:writer",
-          seq: 0,
-        });
-      }
-      return acquire(docId, fn, ...rest);
-    };
+    // admitted once the write's content exists in its runtime copy, before the write's own admission.
+    // (A writer admitted after that admission copy is the accepted L35 window, not asserted here.)
+    let writerLanded: Promise<void> | undefined;
+    const raced = harness(
+      {},
+      {
+        createRuntimeDoc() {
+          const runtime = new Y.Doc({ gc: false });
+          runtime.on("afterTransaction", () => {
+            if (writerLanded || model.getBlocks(runtime).length === 0) return;
+            const live = raced.liveDoc("chapter.md");
+            const vector = Y.encodeStateVector(live);
+            live.transact(
+              () => model.insertBlocks(live, null, codec.parse("Writer content.")),
+              "writer",
+            );
+            writerLanded = raced.journal
+              .append("chapter.md", Y.encodeStateAsUpdate(live, vector), {
+                origin: "human:writer",
+                seq: 0,
+              })
+              .then(() => undefined);
+          });
+          return runtime;
+        },
+      },
+    );
     const fresh = await raced.core.write(
       { command: "create", file: "chapter.md", content: "Fresh bound." },
       {
@@ -233,7 +241,8 @@ describe("write tool dispatch", () => {
         boundNodes: codec.parse("Fresh bound.").blocks,
       },
     );
-    expect(acquisitions).toBeGreaterThanOrEqual(3);
+    expect(writerLanded).toBeDefined();
+    await writerLanded;
     expectOutcome(fresh, "invalid_write", true);
     expect(outcomeText(fresh)).toContain("File already exists: chapter.md");
     expect(blockTexts(raced.liveDoc("chapter.md"))).toEqual(["Writer content."]);
