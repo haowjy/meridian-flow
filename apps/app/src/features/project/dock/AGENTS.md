@@ -83,17 +83,13 @@ rail's) and shows no switch.
 - [`../../editor/DraftReviewBand.tsx`](../../editor/DraftReviewBand.tsx) — the review controls inside the identity row
 - [KB: Draft Review Commands Keep Authority on the Server](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-command-authority.md)
 
-## Review handover
+## Review launch
 
-`review-handover.tsx` holds the review being left on screen while another
-draft's opens. `EditorReviewHandoffProvider` owns the hold (`openEditorReview`
-begins it, a failed or cancelled launch releases it, an expiry set at capture
-ends it), `ReviewHandoverFrame` goes around each page a review is painted in
-(the desktop page sheet, the phone document column) and makes that page inert
-while the hold lasts, and `useReviewHandoverRelease` (called by
-`EditorReviewAddressOwner`, which stays mounted) ends it when the target paints
-or fails or the route goes elsewhere. Keep navigation (tabs, sidebar) outside
-the frame. See `features/draft-review/AGENTS.md`.
+The selected review, or an admissible launch intent, is the requested review on
+both shells: same Work, manuscript scheme, same document. Admission does not
+wait for the draft list; the review's fresh entry read owns absence. The launch
+and address owners own no paint state. Pane continuity belongs to
+[`PaintHold`](../../../components/app/PaintHold.md); navigation stays outside it.
 
 A launch may name `focusOperationIds`. The claimant that enters the review
 mounts `FocusOpenedReview`, which focuses and scrolls to the change holding

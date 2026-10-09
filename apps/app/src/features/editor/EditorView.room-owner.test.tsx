@@ -310,6 +310,7 @@ it("draft-only has no live fallback, including closed completion and terminal fa
     });
     expect(document.querySelector('[data-editor-surface="live"]')).toBeNull();
     expect(review?.controller.inlineReview?.completion?.phase).toBe("closed");
+    expect(document.querySelector("[data-review-state]")?.textContent).toBe("Finished");
     await act(async () => transportStatus.get(room)?.({ kind: "unauthorized", reason: "missing" }));
     expect(document.querySelector('[data-editor-surface="live"]')).toBeNull();
     expect(review?.controller.inlineReview?.draftId).toBe(draftA.draftId);
@@ -477,6 +478,17 @@ it("an incoming proposal holds the painted chrome across the room observation pr
     );
     await act(async () => sync.resolve());
     await settled(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
+    await act(async () =>
+      client.setQueryData(
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.draftId),
+        { ...previewOf(), draftGeneration: 3, reviewRoomName: room },
+      ),
+    );
+    expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
+    expect(document.querySelector("[data-paint-hold]")).toBeNull();
+    await settled(() =>
+      expect(document.querySelector("[data-review-state]")?.textContent).toBe("No listed changes"),
+    );
   });
 });
 

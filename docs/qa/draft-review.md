@@ -391,3 +391,19 @@ clear another run's mock queue. These recipes are not a claim of execution.
   cache, the mode-switch phantom count, and the manifest resurrection;
   re-probes verified all fixed. Probe A step 4–5 and Probe D added from
   those runs.
+
+
+## Pane paint continuity (#713)
+
+Observe `[data-paint-hold]`, `[data-paint-page][inert]`, the destination URL,
+visible prose and review marks with a MutationObserver and animation-frame samples.
+Use exact request interception for controlled pending/error windows, never sleeps.
+Exercise cold and warm Next draft, another document's strip Review, Apply draft and
+Discard draft moving on, room-read failure on desktop and phone, leaving to Chat
+mid-hold, and ordinary document switches on both shells. Navigation must change
+outside the hold immediately; no sampled frame may show uncovered blank prose or
+live prose under review chrome. Failure releases to the destination's card. Verify
+the status line announces the destination, focus returns to the pane, copied ids are
+absent and the 10-second bound does not restart on another move. Scope the pane by
+screen visibility: route/session acquisition temporarily deactivates input but
+must not withdraw the painted frame from capture.

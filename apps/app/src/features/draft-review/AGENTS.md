@@ -157,29 +157,16 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   seam for an insertion, the full `deletedText` struck in no author's colour for
   a removal). `markKeys` are the keys the manuscript paints a change by.
   `previewWithoutOperations` never hides a hunk no operation owns.
-- **A move from one draft's review to another's is held** (`features/project/dock/review-handover`).
-  Apply draft, Discard draft, Next draft and Open on a refused draft all go through
-  `openEditorReview`, which hands the page's painted review (header, identity bar, body) to
-  `ReviewHandoverFrame` as inert markup, the way `FrozenReview` holds a review across a room
-  rebuild. The route, tab and URL change at the click. One hold has one owner (the handoff
-  provider's `useReviewHandoverOwner`) and is keyed to the review it waits for (`target`); the
-  markup is only what stands in for it:
-  - **Input.** The real page under the copy is inert for the whole hold (an `inert` wrapper
-    inside the frame, with an "Opening ..." status line outside it; focus that was in the page
-    moves to the status line and returns to the frame when the hold ends). The copy being
-    inert is not enough. Tabs, sidebar and the rest of the shell are outside the frame and stay
-    usable.
-  - **End.** The target paints (`inlineReview.shown`, released in that commit so the swap is
-    one frame), its review room fails (`reviewRoomError`), its review was entered and left, the
-    route goes anywhere but where the move started or the target (`useReviewHandoverRelease`,
-    mounted in the address owner, which is mounted whatever page is), the launch fails or is
-    cancelled, or the absolute expiry passes (10 s from the first capture, set in the owner; a
-    second move keeps it, and no page's mount or unmount can extend it).
-  It captures only a painted review (`shown`), and a move that follows a move keeps the first
-  copy. Wrap any new page that hosts a review in `ReviewHandoverFrame`. The next draft's
-  preview is prefetched (`useReviewHeader`) while the writer is still in this one; the review
-  room is still discovered with a fresh read, because a draft's room can change when it is
-  disposed.
+- **Pane continuity is generic**, owned by
+  [`PaintHold`](../../components/app/PaintHold.md), not the review or launch.
+  `EditorView` declares its chosen surface and keeps warm live and constructing
+  review editors in inactive scopes. The room owner's paint receipt remains
+  the input contract even without a hold. Schema-reset sessions remain bound
+  for their terminal notice and are never input-eligible.
+- **Entry absence belongs to the fresh preview read.** List omission is withheld
+  until that read answers. `active` observes the generation; `gone` or 404 exits
+  to live, or fails a draft-only review. Other read failures are terminal.
+  Post-entry list observations and completion protection remain unchanged.
 - **Writer typing has draft-only client boundaries** (`core/editor/extensions/inline-review/writer-client`).
   The next content edit rotates the Yjs client when it touches a different
   server closure class or a disjoint untouched site. Edits in one class and
