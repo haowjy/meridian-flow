@@ -64,11 +64,11 @@ export function ReviewChangeBar({
             className={
               touch
                 ? cn(
-                    "inline-flex min-h-11 items-center",
+                    "inline-flex min-h-11 max-w-[60%] items-center",
                     // The note sits in the link's padding, so the pair stays two lines tall.
                     (change.includesWriterEdits || change.merged) && "-mb-3",
                   )
-                : undefined
+                : "max-w-[60%]"
             }
           />
           {change.includesWriterEdits ? (

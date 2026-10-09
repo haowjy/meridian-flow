@@ -123,6 +123,9 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   `ReviewChangeBar`, `ReviewStepper`, `DraftSwitcher` and `ReviewToast` are handed
   props and callbacks, so the phone's change sheet and bar reuse them. `touch` is their phone form (44px targets); `DraftSwitcher`
   takes `draftCommands` and `marks` to carry what the phone header has no room for.
+  The row's excerpt keeps a floor width (`flex-[1_1_8rem]` in a wrapping line), so
+  `ChangeAuthor` drops under it when several chats' names do not fit beside it;
+  `ChangeAuthor` sets no width cap, each caller bounds it.
 
 ## Key rules
 
