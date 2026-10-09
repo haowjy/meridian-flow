@@ -25,6 +25,20 @@ const chapterState = Buffer.from(
 );
 const chapterVector = Buffer.from("01904e1f", "hex");
 
+function initialAttribution(length: number) {
+  return {
+    version: 1,
+    floor: null,
+    attributions: [
+      {
+        range: { clientID: 10000, clock: 0, length },
+        birthClass: "writer_protected",
+        origin: { admissionSequence: "0", batchOrdinal: 0, journalRowId: "0" },
+      },
+    ],
+  };
+}
+
 export async function seedScratchArchive(sql: postgres.Sql, userId = archiveId(1)) {
   await sql`INSERT INTO users (id, external_id, email) VALUES (${userId}, 'scratch-archive-fixture', 'archive@example.test') ON CONFLICT (id) DO NOTHING`;
   await sql`INSERT INTO projects (id, user_id, name, slug) VALUES
@@ -54,7 +68,7 @@ export async function seedScratchArchive(sql: postgres.Sql, userId = archiveId(1
   await sql`INSERT INTO document_yjs_heads (document_id, authority_id, latest_state_vector) VALUES (${archiveId(14)}, ${archiveId(20)}, ${vector})`;
   const [checkpoint] =
     await sql`INSERT INTO document_yjs_checkpoints (document_id, authority_id, authority_generation, attribution_manifest, state, state_vector, up_to_seq)
-    VALUES (${archiveId(14)}, ${archiveId(20)}, 1, '{}', ${archiveNoteState}, ${vector}, 0) RETURNING id`;
+    VALUES (${archiveId(14)}, ${archiveId(20)}, 1, ${sql.json(initialAttribution(25))}, ${archiveNoteState}, ${vector}, 0) RETURNING id`;
   await sql`UPDATE document_yjs_heads SET latest_checkpoint_id = ${checkpoint?.id} WHERE document_id = ${archiveId(14)}`;
   const [update] =
     await sql`INSERT INTO document_yjs_updates (document_id, authority_id, authority_generation, admission_sequence, update_data, origin_type, actor_user_id)
@@ -63,15 +77,15 @@ export async function seedScratchArchive(sql: postgres.Sql, userId = archiveId(1
   await sql`INSERT INTO documents (id, context_source_id, kind, name, extension, file_type) VALUES
     (${archiveId(27)}, ${archiveId(9)}, 'manifest', '.manifest', 'json', 'json'),
     (${archiveId(29)}, ${archiveId(30)}, 'manifest', '.manifest', 'json', 'json')`;
-  for (const [documentId, state, stateVector] of [
-    [archiveId(27), manifestOneState, manifestOneVector],
-    [archiveId(29), manifestTwoState, manifestTwoVector],
-    [archiveId(18), chapterState, chapterVector],
+  for (const [documentId, state, stateVector, length] of [
+    [archiveId(27), manifestOneState, manifestOneVector, 3],
+    [archiveId(29), manifestTwoState, manifestTwoVector, 1],
+    [archiveId(18), chapterState, chapterVector, 31],
   ] as const) {
     await sql`INSERT INTO document_yjs_heads (document_id, latest_state_vector) VALUES (${documentId}, ${stateVector})`;
     const [checkpoint] =
       await sql`INSERT INTO document_yjs_checkpoints (document_id, authority_id, authority_generation, attribution_manifest, state, state_vector, up_to_seq)
-      SELECT document_id, authority_id, authority_generation, '{}', ${state}, ${stateVector}, 0 FROM document_yjs_heads WHERE document_id = ${documentId} RETURNING id`;
+      SELECT document_id, authority_id, authority_generation, ${sql.json(initialAttribution(length))}, ${state}, ${stateVector}, 0 FROM document_yjs_heads WHERE document_id = ${documentId} RETURNING id`;
     await sql`UPDATE document_yjs_heads SET latest_checkpoint_id = ${checkpoint?.id} WHERE document_id = ${documentId}`;
   }
   await sql`INSERT INTO user_recent_documents (user_id, document_id) VALUES (${userId}, ${archiveId(14)})`;
