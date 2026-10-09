@@ -5,7 +5,10 @@ import { I18nProvider } from "@lingui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import {
+  failDraftReviewLaunch,
+  resetDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -102,6 +105,36 @@ describe("DraftDock failed Review", () => {
       );
       await clickReview();
       expect(document.querySelector("[role=alert]")).toBeNull();
+    });
+  });
+
+  it("keeps the preview's error and Retry beside a failed Review launch on the same draft", async () => {
+    mocks.getDraftPreview.mockRejectedValueOnce(new Error("unreachable"));
+    failDraftReviewLaunch({
+      projectId: "project-a",
+      workId: "work-a",
+      documentId: "document-a",
+      draftId: "draft-a",
+    });
+    const retry = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Retry",
+      );
+    await render(vi.fn<OpenContextRoute>().mockResolvedValue({ kind: "applied" }), async () => {
+      await vi.waitFor(() => expect(retry()).toBeDefined());
+      const alerts = [...document.querySelectorAll("[role=alert]")].map((el) => el.textContent);
+      expect(alerts).toEqual([
+        "Couldn't open this draft. Try again.",
+        "Changes couldn't load.Retry",
+      ]);
+      mocks.getDraftPreview.mockClear();
+      await act(async () => retry()?.click());
+      await vi.waitFor(() => expect(mocks.getDraftPreview).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(retry()).toBeUndefined());
+      // The launch failure is its own notice; reading the preview does not clear it.
+      expect(document.querySelector("[role=alert]")?.textContent).toBe(
+        "Couldn't open this draft. Try again.",
+      );
     });
   });
 });
