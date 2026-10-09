@@ -33,6 +33,15 @@ export function parseLinkRef(value: unknown): ParsedLinkRef | null {
   return match[1] === "doc" ? { kind: "doc", documentId: id } : { kind: "ahead", aheadId: id };
 }
 
+/**
+ * A stored `ref` attr as every reader takes it (codec, occurrence walks, Yjs
+ * extraction, the editor): the ref as stored when it parses, else null, so an
+ * empty or malformed attr is a link with no ref everywhere alike.
+ */
+export function storedLinkRef(value: unknown): string | null {
+  return parseLinkRef(value) ? (value as string) : null;
+}
+
 export function documentRef(documentId: string): DocumentRef {
   const parsed = parseLinkRef(`doc:${documentId}`);
   if (parsed?.kind !== "doc") throw new RangeError(`Invalid document id for a ref: ${documentId}`);

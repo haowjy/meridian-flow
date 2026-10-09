@@ -8,7 +8,7 @@ import {
 import { expect, it } from "vitest";
 
 import { components, m, paragraph, schema, t } from "./codec-test-support.js";
-import { type DocumentLinkScope, mdxCodec, walkLinkOccurrences } from "./index.js";
+import { type DocumentLinkScope, mdxCodec, spelledLinks, walkLinkOccurrences } from "./index.js";
 
 const holder: LinkHolder = {
   uri: "manuscript://book/ch1.md",
@@ -131,4 +131,16 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     const span = parsed.spans[index];
     expect.soft(span && text.slice(span.start, span.end), name).toBe(expected);
   });
+
+  // An empty stored ref is no ref: to the walk and the shown facts, as to the codec.
+  const emptyRef = [
+    paragraph(t("two", [link("manuscript://book/ch2.md", "")]), image("assets/map.png", "")),
+  ];
+  expect
+    .soft(
+      walkLinkOccurrences(emptyRef).map((occurrence) => occurrence.attrs.ref),
+      "empty ref walks as no ref",
+    )
+    .toEqual([null, null]);
+  expect.soft(spelledLinks(emptyRef, scope), "empty ref shows no fact").toEqual([]);
 });

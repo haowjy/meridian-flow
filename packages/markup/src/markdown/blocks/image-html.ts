@@ -15,10 +15,10 @@
  * shapes arrive here and leave as the same handful of facts.
  */
 
+import { storedLinkRef } from "@meridian/contracts";
 import type { MdastJsxFlow, MdastJsxText, MdxJsxAttribute } from "../../ast.js";
 import type { PMNode, SerializeContext } from "../../types.js";
 import { decodeHtmlAttribute, escapeHtmlAttribute, parseHtml } from "../html-tag.js";
-import { storedRef } from "../marks/link.js";
 
 /** The picture's wire facts, whichever dialect spelled them. */
 export type ImageHtmlAttributes = {
@@ -52,7 +52,7 @@ export function imageWireAttributes(node: PMNode, ctx: SerializeContext): ImageH
 export function spelledSource(node: PMNode, ctx: SerializeContext): string {
   return ctx.links.spellSource({
     src: String(node.attrs.src ?? ""),
-    ref: storedRef(node.attrs.ref),
+    ref: storedLinkRef(node.attrs.ref),
   }).href;
 }
 
