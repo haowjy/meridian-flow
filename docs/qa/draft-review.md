@@ -276,9 +276,16 @@ from CLI success. Record screenshots and the fresh API reads per action.
    AI-arrival pulse. Reopen the list during loading, pending, finished and
    formatting-only states: button remains reachable.
 7. **Refusal language and toast.** Cause a typed known refusal on a row/bar; it is a
-   refusal, not connection loss. Switch language without another request: known
-   refusal words change. For a run-scoped intercepted unknown refusal, preserve its
-   server reason verbatim. Dismiss the failure/toast and check it leaves; transient
+   refusal, not connection loss. Keep that stored refusal and switch language
+   without another command request. PASS: its code is rendered in the current
+   locale, using the catalog translation where present and English fallback for
+   empty entries (most of the 中文 catalog is untranslated). To verify an empty
+   entry, break in `RefusalReason` in `ReviewMessageText.tsx`: switching locale
+   must re-render the same stored code and call `i18n._(known)` with the new
+   `i18n.locale`, not reuse previously translated text. If the selected catalog
+   entry is translated, compare its displayed words instead. For a run-scoped
+   intercepted unknown refusal, preserve its server reason verbatim. Dismiss the
+   failure/toast and check it leaves; transient
    success toast has no Undo and expires. API category correctness remains automated.
 8. **Versions and held failure navigation.** On desktop and phone, open Live/Draft
    menus with another file and Work present: only this document's offered versions
@@ -341,8 +348,8 @@ Continue with Probe G's fixture (recreate affected proposals between actions).
    switch Work then archive its original Work; later requests remain bound to the
    original Work, controls lock and late answers do not navigate back.
 7. **Work failures and offline batch.** Fail an expanded preview, Retry successfully,
-   then repeat with a response lacking selective preview authority: no selective
-   command is sent. From a Work with multiple files go offline and attempt whole
+   then verify dispositions become available with the successful preview. From
+   a Work with multiple files go offline and attempt whole
    Apply/Discard; each affected file reports its own failure, no successful completion
    or navigation. Reconnect and verify no queued command fires. For a held online
    batch, refuse one file: later files run, failed-file reason remains until explicit
