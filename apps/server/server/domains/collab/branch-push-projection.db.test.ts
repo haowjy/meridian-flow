@@ -160,7 +160,7 @@ describe("branch-push durable projection", () => {
     const serializer = {
       async serializeDocument(resolvedDocumentId: string, doc: Y.Doc) {
         if (failProjection) throw new Error("injected generic projection failure");
-        return engine.serializeDocument(resolvedDocumentId as never, doc);
+        return engine.serializeDocument(resolvedDocumentId as never, doc, { kind: "live" });
       },
     };
     const changeTrails = createDrizzleChangeTrailAggregateWriter(db);

@@ -54,22 +54,29 @@ known manuscript image path into `asset:<id>`, so an image's identity survives
 a move while Markdown keeps a readable path.
 
 The codec asks synchronously, so the tree is read per operation, never cached.
-`within(key, op)` opens a snapshot keyed by project and reader (the project
-owner unless the door names the account it acts for) and binds it with
-`AsyncLocalStorage`; nothing loads yet. Each operation then calls
+`within(key, op)` opens a snapshot keyed by project and reader (the account a
+door names, else its thread's account, else the project owner; and the thread
+it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each operation then calls
 `prepare({ holders, docs, refs, addresses, written })` with what its next
 synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
 (`domain/stored-link-extraction.ts`), and one batch loads settlements, rows by
 id and rows at exact or extension-omitted addresses, readability through the
 file policy's list path, and manifest membership only when a row needs it.
-`holder({ documentId, view })` returns the synchronous scope; it keeps its
-snapshot, so work deferred past the operation spells from it.
+Membership is the same authority ContextFS lists through and is required (DB
+suites pass `everyRowMembership` or the real manifest); its failure propagates.
+A view's own manifest decides presence: a draft that removed a live document
+lacks it, and the live set only tells live from draft-only. A view whose
+membership was never loaded is a miss, not an absence.
+`holder({ documentId, view })` returns the synchronous scope only from an open
+snapshot; it keeps that snapshot, so work deferred past the operation spells
+from it.
 
 `domain/document-link-scope-doors.ts` wraps every door that serializes: the
 markdown engine (each method prepares after loading its doc), the edit core
-(`read`/`write` by grant project and principal, reversal by document; agent-edit
-binds its codec per command through `DocumentLinksPort`), the branch peer
-(effective Markdown, hashlines and revision), the reply's save (by thread),
+(`read`/`write` by grant project and principal, reversal by document in its
+thread; agent-edit binds its codec per command through `DocumentLinksPort`),
+the branch peer (effective Markdown, hashlines and revision, in the reader's
+thread), the reply's save (by thread),
 live turn reversal and offline reconciliation. Draft preview owns one
 enclosing scope for both sides, the draft spelled in its Work's view. ContextFS
 search owns one for all matching documents in its source. Branch push opens
@@ -77,11 +84,22 @@ its scope before branch locks and prepares its trail docs under them; its
 settlement keeps its own scope. Wrappers name every method, so a new method
 does not compile until its scope is decided. A nested `within` for the same
 project and reader reuses the enclosing snapshot only while that operation is
-still running; a timer that inherited a settled snapshot opens a fresh one. A
-move that lands after a prepare shows only in the next snapshot.
+still running, and never one read as another account or in another (or no)
+thread; a timer that inherited a settled snapshot opens a fresh one. A move
+that lands after a prepare shows only in the next snapshot.
 
-A picture never fails its document. An id with no document spells as its
-`asset:` ref. A deleted image keeps its last path only while that path reads
+The view is explicit everywhere. The engine's `serializeDocument` and
+`serializeVersionedDocument` take it, and an effective read names its version
+(`EffectiveReadVersion`: live, or draft with its Work). The thread pool routes
+each model call's view on `WriteContext.linkView`: the destination it chose
+for a read or write, and for an undo or redo the side whose history it
+reverses (a draft side in the Work whose draft holds that history). At a
+reply's save each document spells in the destination it was pinned to. A
+thread core asked to spell without a routed view throws.
+
+A picture never fails its document. The `asset:` rule reads the snapshot's
+rows but, as the shipped image rule always has, not readability or
+membership. An id with no document spells as its `asset:` ref. A deleted image keeps its last path only while that path reads
 back to it alone (no live image and no other deleted image there); otherwise it
 spells as its ref, so a chapter saved while the image is gone reconnects on
 restore. Spelling outside every scope uses stored bytes and is reported

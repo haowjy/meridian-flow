@@ -12,7 +12,12 @@ import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contract
 import { spelledLinks } from "@meridian/markup";
 import type * as Y from "yjs";
 import { Ok, type Result } from "../../../shared/result.js";
-import type { BranchPeerShadowAccess, HashlineRead, SyncError } from "../contracts.js";
+import type {
+  BranchPeerShadowAccess,
+  EffectiveReadVersion,
+  HashlineRead,
+  SyncError,
+} from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
@@ -26,9 +31,7 @@ type EffectiveReadInput = {
   documentId: DocumentId;
   threadId?: ThreadId | null;
   responseId?: string | null;
-  destination: "live" | "draft";
-  workId?: WorkId | null;
-};
+} & EffectiveReadVersion;
 
 export function createEffectiveDocumentReader(input: {
   branches: ApplicationBranchStore;
@@ -41,13 +44,13 @@ export function createEffectiveDocumentReader(input: {
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
 }): BranchPeerShadowAccess {
-  /** The version a read spells in: the draft's own view when it names its Work. */
+  /** The view a read spells in: the version it reads. */
   function viewOf(command: EffectiveReadInput): LinkView {
     const responseId = command.responseId ?? undefined;
-    if (command.destination === "draft" && command.workId) {
-      return { kind: "draft", workId: command.workId, ...(responseId ? { responseId } : {}) };
-    }
-    return { kind: "live", ...(responseId ? { responseId } : {}) };
+    const reply = responseId ? { responseId } : {};
+    return command.destination === "draft"
+      ? { kind: "draft", workId: command.workId, ...reply }
+      : { kind: "live", ...reply };
   }
 
   async function spelling(command: EffectiveReadInput, doc: Y.Doc) {

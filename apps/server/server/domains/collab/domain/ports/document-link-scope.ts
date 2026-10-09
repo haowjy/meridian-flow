@@ -27,11 +27,13 @@ export type LinkScopeKey = (
   | { threadId: string }
 ) & {
   /**
-   * File-policy principal whose readability the snapshot answers (default: the
-   * project owner), and the thread it acts in, whose reply's staged creates a
-   * draft view counts.
+   * Who reads. `accountId` is the file-policy principal whose readability the
+   * snapshot answers (default: the thread's account, else the project owner);
+   * `threadId` the thread it reads in, whose manifest peer and reply's staged
+   * creates a draft view counts. A door never joins a snapshot read for
+   * another account or thread.
    */
-  viewer?: { accountId: string; threadId?: string };
+  viewer?: { accountId?: string; threadId?: string };
   /** Documents the caller already knows share this project (e.g. one source's search). */
   documentIds?: readonly string[];
 };

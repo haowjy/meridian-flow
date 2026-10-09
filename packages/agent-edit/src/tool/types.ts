@@ -1,5 +1,6 @@
 // Engine-facing read and write contract types for the agent editing core.
 
+import type { LinkView } from "@meridian/contracts";
 import type { SpelledLinkFact } from "@meridian/markup";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
@@ -210,6 +211,12 @@ export interface WriteContext {
    * and import writes (fresh binding by design).
    */
   shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
+  /**
+   * The link view the host routed this command to: the Work draft or live
+   * version its destination names. A host that routes between versions sets
+   * it on every command; links, sources and the revision spell in it.
+   */
+  linkView?: LinkView;
 }
 
 export type MutationActor =

@@ -43,13 +43,22 @@ import {
 } from "./test-support/change-trail-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 
+/** The grant names this project and its owner, as the file policy would: the read's scope key. */
+function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
+  return {
+    ...grant,
+    principal: { ...grant.principal, accountId: USER_ID },
+    facts: { ...grant.facts, projectId: PROJECT_ID },
+  };
+}
+
 async function fixture(
   db: Database,
   harnesses: Array<ReturnType<typeof createHarness>>,
   mode: "direct" | "draft",
   options: { links?: DocumentLinkScopes } = {},
 ) {
-  const harness = createHarness(db);
+  const harness = createHarness(db, options.links ? { links: options.links } : {});
   harnesses.push(harness);
   const f = harness.crossWorkProbeFixture();
   await db.update(schema.works).set({ aiWriteMode: mode }).where(eq(schema.works.id, WORK_ID));
@@ -68,7 +77,7 @@ async function fixture(
   });
   await f.branchStore.reconcileProjectManifest(PROJECT_ID);
   // The reads spell from the harness's scope, so their revisions compare with these.
-  const links = options.links ?? f.links;
+  const links = f.links;
   const effective = scopeBranchPeer(
     createEffectiveDocumentReader({
       branches: f.branchStore,
@@ -84,6 +93,7 @@ async function fixture(
     links,
   );
   const revisions = createDocumentRevisions({
+    links,
     threads: createDrizzleThreadRepository(db),
     availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
@@ -99,10 +109,12 @@ async function fixture(
     threadId: THREAD_ID,
     sessionId: THREAD_ID,
     turnId: TURN_ID,
-    grant: testFileGrant(
-      mode === "direct"
-        ? { kind: "live" }
-        : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+    grant: inProject(
+      testFileGrant(
+        mode === "direct"
+          ? { kind: "live" }
+          : { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" },
+      ),
     ),
   };
   const read = (responseId?: string) =>
@@ -197,13 +209,18 @@ describe("document revisions (postgres and collab)", () => {
     const shown = await f.current();
     expect(shown).toMatch(/^y2:/);
     expect(await f.current()).toBe(shown);
+    // The model's read and the revision-only path agree under real scopes, or
+    // compaction would never elide a copy.
+    expect((await f.read()).revision).toBe(shown);
 
     // Nothing in alpha changes; only where its link's target sits.
     await db
       .update(schema.documents)
       .set({ name: "gamma" })
       .where(eq(schema.documents.id, BETA_ID));
-    expect(await f.current()).not.toBe(shown);
+    const moved = await f.current();
+    expect(moved).not.toBe(shown);
+    expect((await f.read()).revision).toBe(moved);
   });
 
   it("captures the apply token before a writer edit and receipt rewrite", async () => {

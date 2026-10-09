@@ -394,14 +394,25 @@ export function createResponseCommitter(deps: {
 
     try {
       for (const docBuffer of docBuffers) {
-        commitBindings.set(
-          docBuffer,
-          await bindLinks(deps, {
-            documentId: docBuffer.docId,
-            docs: [docBuffer.runtime.doc],
-            context: { responseId, threadId: docBuffer.session.threadId },
-          }),
-        );
+        // Receipts and deleted bodies also spell each write's before side,
+        // which can still hold links the reply removed.
+        const before = docBuffer.updates.map(({ preOwnSnapshot }) => {
+          const doc = new Y.Doc({ gc: false });
+          Y.applyUpdate(doc, preOwnSnapshot);
+          return doc;
+        });
+        try {
+          commitBindings.set(
+            docBuffer,
+            await bindLinks(deps, {
+              documentId: docBuffer.docId,
+              docs: [docBuffer.runtime.doc, ...before],
+              context: { responseId, threadId: docBuffer.session.threadId },
+            }),
+          );
+        } finally {
+          for (const doc of before) doc.destroy();
+        }
       }
       const preflights = new Map<
         string,

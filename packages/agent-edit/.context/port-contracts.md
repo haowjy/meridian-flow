@@ -103,7 +103,12 @@ no default Meridian schema and no project tree of its own.
 ### DocumentLinksPort (`src/ports/document-links.ts`)
 The host's link scope: `prepare` (one batched load per synchronous block),
 `scopeFor(documentId, context)` (holder and view from the arguments),
-`registerAhead` (durable, outside any transaction) and `revision`.
+`registerAhead` (durable, outside any transaction) and `revision`. A host that
+routes between versions names the view on every command it routes
+(`WriteContext.linkView`, and the `linkView` argument of `undo`/`redo` and
+`ReverseInput`): reversals bind in the view of the history they reverse. A
+reply's save binds each document's before sides (`preOwnSnapshot`) with its
+runtime, since receipts spell links the reply removed.
 `createHolderLinkScope(holder, catalog)` applies the contracts' resolution and
 spelling rules over any `HolderCatalog`, so hosts cannot disagree;
 `createStaticDocumentLinks(catalog)` is the in-memory adapter over a fixed
