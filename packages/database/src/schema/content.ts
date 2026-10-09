@@ -441,6 +441,7 @@ export const linkAheadRefs = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
+    rootThreadId: uuid("root_thread_id"),
     path: text("path").notNull(),
     settledDocumentId: uuid("settled_document_id")
       .$type<DocumentId>()
@@ -451,8 +452,8 @@ export const linkAheadRefs = pgTable(
   (table) => [
     // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
     // exact path (Postgres B-tree tuples cap near 2.7 kB).
-    index("link_ahead_refs_unsettled")
-      .on(table.projectId, table.scheme, table.workId, sql`md5(${table.path})`)
+    index("link_ahead_refs_owner_unsettled")
+      .on(table.projectId, table.scheme, table.workId, table.rootThreadId, sql`md5(${table.path})`)
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],

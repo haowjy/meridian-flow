@@ -1,4 +1,4 @@
-/** Real-shaped pre-0032 Scratch rows shared by the upgrade contract and live probe. */
+/** Real-shaped pre-0033 Scratch rows shared by the upgrade contract and live probe. */
 import type postgres from "postgres";
 
 export const archiveId = (n: number) => `72400000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -20,7 +20,7 @@ const manifestTwoState = Buffer.from(
 );
 const manifestTwoVector = Buffer.from("01904e01", "hex");
 const chapterState = Buffer.from(
-  "010a904e0007010b70726f73656d6972726f7203097061726167726170680700904e00060600904e01046c696e6b3b7b2268726566223a22736372617463683a2f2f402f6e65737465642f646565702f6a6164652d6d61702e6d64222c227469746c65223a6e756c6c7d84904e020b4f6c64205363726174636886904e0d046c696e6b046e756c6c87904e0003097061726167726170680700904e0f060600904e10046c696e6b457b2268726566223a22756e66696c65643a2f2f53637261746368202832292f6e65737465642f646565702f6a6164652d6d61702e6d64222c227469746c65223a6e756c6c7d84904e110c556e66696c6564206e6f746586904e1d046c696e6b046e756c6c00",
+  "010a904e0007010b70726f73656d6972726f7203097061726167726170680700904e00060600904e01046c696e6b6c7b2268726566223a22736372617463683a2f2f402f6e65737465642f646565702f6a6164652d6d61702e6d64222c227469746c65223a6e756c6c2c22726566223a22646f633a37323430303030302d303030302d343030302d383030302d303030303030303030303134227d84904e020b4f6c64205363726174636886904e0d046c696e6b046e756c6c87904e0003097061726167726170680700904e0f060600904e10046c696e6b787b2268726566223a22756e66696c65643a2f2f53637261746368202832292f6e65737465642f646565702f6a6164652d6d61702e6d64222c227469746c65223a6e756c6c2c22726566223a2261686561643a37323430303030302d303030302d343030302d383030302d303030303030303030303333227d84904e110c556e66696c6564206e6f746586904e1d046c696e6b046e756c6c00",
   "hex",
 );
 const chapterVector = Buffer.from("01904e1f", "hex");
@@ -90,6 +90,11 @@ export async function seedScratchArchive(sql: postgres.Sql, userId = archiveId(1
       SELECT document_id, authority_id, authority_generation, ${sql.json(initialAttribution(length))}, ${state}, ${stateVector}, 0 FROM document_yjs_heads WHERE document_id = ${documentId} RETURNING id`;
     await sql`UPDATE document_yjs_heads SET latest_checkpoint_id = ${checkpoint?.id} WHERE document_id = ${documentId}`;
   }
+  await sql`INSERT INTO link_ahead_refs (ahead_id, project_id, scheme, path) VALUES
+    (${archiveId(33)}, ${archiveId(2)}, 'unfiled', 'Scratch (2)/nested/deep/jade-map.md'),
+    (${archiveId(34)}, ${archiveId(2)}, 'unfiled', 'Scratch (2)/trashed-folder/hidden-note.md')`;
+  await sql`INSERT INTO link_ahead_refs (ahead_id, project_id, scheme, path, settled_document_id, settled_at) VALUES
+    (${archiveId(35)}, ${archiveId(2)}, 'unfiled', 'Scratch (2)/nested/deep/jade-map.md', ${archiveId(18)}, now())`;
   await sql`INSERT INTO user_recent_documents (user_id, document_id) VALUES (${userId}, ${archiveId(14)})`;
   await sql`INSERT INTO document_previous_locations (context_source_id, path, document_id) VALUES (${archiveId(6)}, 'earlier-name.md', ${archiveId(14)})`;
   await sql`INSERT INTO document_previous_locations (context_source_id, path, document_id) VALUES

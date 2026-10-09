@@ -442,6 +442,7 @@ export function createLineageContextDocumentStore(
   rootThreadId: string,
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
+  arrivals?: DocumentArrivals,
 ): ContextDocumentStore {
   const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations);
   const find = async () => {
@@ -467,5 +468,6 @@ export function createLineageContextDocumentStore(
     undefined,
     catalogMutations,
     () => lifecycle.requireLive(projectId, rootThreadId),
+    arrivals,
   );
 }

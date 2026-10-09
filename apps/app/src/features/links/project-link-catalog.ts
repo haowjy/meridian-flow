@@ -31,6 +31,7 @@ export function createProjectLinkCatalog(
   const byId = new Map(index.documents.map((document) => [document.documentId, document]));
   const catalogDocument = (document: LinkableDocument): CatalogDocument => ({
     documentId: document.documentId,
+    ...(document.rootThreadId ? { rootThreadId: document.rootThreadId } : {}),
     projectId,
     uri: document.uri,
     presence: "live",

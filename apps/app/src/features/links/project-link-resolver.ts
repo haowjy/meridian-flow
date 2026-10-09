@@ -75,7 +75,7 @@ export function createProjectLinkResolver(
   index: LinkableDocumentIndex,
   settlements: LinkSettlements,
 ): InternalLinkResolver {
-  const { projectId, workId, baseUri, holderDocumentId } = scope;
+  const { projectId, workId, rootThreadId, baseUri, holderDocumentId } = scope;
   const memo = settlements.forProject(projectId);
   const catalog = createProjectLinkCatalog(projectId, index, memo);
   const indexedAnswer = (documentId: string) => {
@@ -114,7 +114,7 @@ export function createProjectLinkResolver(
 
     async remote(questions) {
       const response = await resolveDocumentLinks(projectId, {
-        workId,
+        ...(rootThreadId ? { rootThreadId } : { workId }),
         baseUri,
         links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
       });
@@ -146,6 +146,7 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
         title: document.title,
         uri: document.uri,
         workId: document.workId,
+        rootThreadId: document.rootThreadId ?? undefined,
       });
     }
     case "gone":

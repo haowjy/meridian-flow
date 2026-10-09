@@ -95,6 +95,29 @@ WITH RECURSIVE paths AS (
 DELETE FROM document_previous_locations l USING occupied o
 WHERE l.context_source_id = o.context_source_id AND l.path = o.path;
 --> statement-breakpoint
+-- Settle only still-unsettled refs at the exact newly occupied live addresses.
+-- Old Work Scratch is non-drafted. Every live content row is an arrival;
+-- trashed content and live rows beneath trashed ancestors never settle refs.
+WITH RECURSIVE paths AS (
+  SELECT f.id, f.context_source_id, m.project_id, f.name AS path
+  FROM folders f JOIN scratch_archive_moves m ON m.folder_id = f.id
+  WHERE f.deleted_at IS NULL
+  UNION ALL
+  SELECT f.id, f.context_source_id, p.project_id, p.path || '/' || f.name
+  FROM folders f JOIN paths p ON f.parent_id = p.id AND f.context_source_id = p.context_source_id
+  WHERE f.deleted_at IS NULL
+), arrivals AS (
+  SELECT d.id, p.project_id, p.path || '/' || d.name ||
+    CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS path
+  FROM documents d JOIN paths p ON d.folder_id = p.id AND d.context_source_id = p.context_source_id
+  WHERE d.deleted_at IS NULL AND d.kind = 'content'
+)
+UPDATE link_ahead_refs r SET settled_document_id = a.id, settled_at = now()
+FROM arrivals a
+WHERE r.project_id = a.project_id AND r.scheme = 'unfiled'
+  AND r.work_id IS NULL AND r.root_thread_id IS NULL AND r.path = a.path
+  AND md5(r.path) = md5(a.path) AND r.settled_document_id IS NULL;
+--> statement-breakpoint
 -- Object keys are project/document-ID-based, not source/path-based. Keep them,
 -- fingerprints, bytes, intake identities and Work lifecycle ownership; invalidate
 -- stale location tokens. Unfiled is the destination, not a new intake owner.
@@ -110,8 +133,7 @@ DELETE FROM context_catalog_scope_heads h USING scratch_archive_moves m
 WHERE h.scope_key IN ('project:' || m.project_id, 'work:' || m.project_id || ':' || m.work_id);
 --> statement-breakpoint
 -- Old scratch://@/... previous-location rows intentionally disappear with their
--- source. This round does NOT repair stored links or write identity redirects:
--- legacy href continuity is parked pending the owner decision / PR #737.
+-- source. Stored doc refs follow unchanged IDs; no collaborative writes or redirects.
 -- The guard makes content/intake cascades impossible even if a writer raced us.
 DELETE FROM context_sources s USING scratch_archive_moves m
 WHERE s.id = m.old_id
