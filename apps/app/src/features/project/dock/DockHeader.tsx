@@ -33,7 +33,7 @@ import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
-import { DockDocumentTitle } from "./DockDocumentTitle";
+import { DockDocumentTitle, DockTitleMenu } from "./DockDocumentTitle";
 import type { DockDocument, DockView } from "./dock-view-store";
 
 export type DockViewSwitchProps = {
@@ -81,6 +81,8 @@ export function DockHeader({
           </>
         ) : (
           <>
+            {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
+            {view === "context" ? <DockTitleMenu projectId={projectId} tab={null} /> : null}
             {view === "chat" ? threadSelect : null}
             {view === "chat" && threadId ? (
               <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
