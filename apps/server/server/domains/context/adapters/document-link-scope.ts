@@ -27,6 +27,7 @@ import {
 } from "@meridian/contracts";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { walkLinkOccurrences } from "@meridian/markup";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -144,17 +145,25 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const refs = new Set(request.refs ?? []);
     const ids = new Set(request.holders.map((holder) => holder.documentId));
     const addresses = new Set(request.addresses ?? []);
-    for (const doc of request.docs ?? []) {
-      for (const occurrence of extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))) {
-        if (occurrence.ref) {
-          refs.add(occurrence.ref);
-          if (occurrence.ref.startsWith("ahead:")) {
-            const stored = resolveDocumentHref(occurrence.href, null);
-            if (stored) addresses.add(stored.uri);
-          }
-        } else if (occurrence.kind !== "link" && occurrence.href.startsWith("asset:")) {
-          ids.add(occurrence.href.slice("asset:".length));
+    const stored = [
+      ...(request.docs ?? []).flatMap((doc) =>
+        extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+      ),
+      ...walkLinkOccurrences(request.nodes ?? []).map((occurrence) => ({
+        kind: occurrence.kind,
+        ref: occurrence.attrs.ref,
+        href: occurrence.attrs.href,
+      })),
+    ];
+    for (const occurrence of stored) {
+      if (occurrence.ref) {
+        refs.add(occurrence.ref);
+        if (occurrence.ref.startsWith("ahead:")) {
+          const address = resolveDocumentHref(occurrence.href, null);
+          if (address) addresses.add(address.uri);
         }
+      } else if (occurrence.kind !== "link" && occurrence.href.startsWith("asset:")) {
+        ids.add(occurrence.href.slice("asset:".length));
       }
     }
     const aheadIds = new Set<string>();
