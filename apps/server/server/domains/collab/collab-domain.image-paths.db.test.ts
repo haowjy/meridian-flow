@@ -166,6 +166,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const hit of hits.value) {
         expect(JSON.stringify(hit.matches)).toContain("assets/map.png");
         expect(JSON.stringify(hit.matches)).not.toContain("art/map.png");
+        expect(JSON.stringify(hit.matches)).not.toMatch(/asset:|doc:/);
+        // The capture records the upload's identity where the read showed it.
+        expect(hit.shown?.passages.flat()).toContainEqual({
+          ref: "asset:00000000-0000-4000-8000-000000000712",
+          address: "manuscript://assets/map.png",
+        });
       }
       const next = await context.search("map.png");
       expect(next.ok).toBe(true);

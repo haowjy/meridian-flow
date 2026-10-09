@@ -51,7 +51,8 @@ editor UI or transport-shell policy.
   that scope and prepares. Spelling outside every scope, or from a scope no
   door prepared, throws under test and logs `serialize.link_unscoped` /
   `serialize.link_snapshot_miss` in production. Parse is pure syntax: writes
-  assign written image paths' `asset:` refs with `assignSources` after it.
+  assign written image paths' `asset:` srcs in agent-edit's ref assignment
+  (`assignLinkRefs`) after it.
 
 Deep contracts and verification guidance live in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 For an end-to-end visual tour of the domain, read [`.context/collab-domain.html`](.context/collab-domain.html).

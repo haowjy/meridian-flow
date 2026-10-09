@@ -474,7 +474,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
       const committed = await collab.finalizeResponseCommit(RESPONSE_ID, ctx);
 
-      const receipts = JSON.stringify(committed.documents.map((document) => document.receipts));
+      // What the model reads of a receipt is its result; its showing is host-only.
+      const receipts = JSON.stringify(
+        committed.documents.map((document) => document.receipts.map(({ result }) => result)),
+      );
       expect(receipts).toContain("![Map](art/map.png) The pass.");
       expect(receipts).not.toContain("asset:");
 

@@ -120,7 +120,8 @@ and answers an unprepared id, settlement or address as a snapshot miss
 server's in-memory composition passes `{ preloaded: true }`.
 Markup's `storedLinkKeys` (beside the Yjs walk `extractStoredLinks`) is what
 both adapters
-load for stored occurrences (docs and `stored` nodes such as copies).
+load for stored occurrences (docs and `stored` nodes such as copies) and for
+shown identities (an `asset:<id>` one loads its upload by id).
 After parse, `links/assign-refs.ts` applies the shipped image rule (a known
 manuscript path becomes `asset:<id>`) in pass 3 of ref assignment, to written
 sources nothing old or shown continued; copies are never assigned.

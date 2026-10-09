@@ -453,6 +453,49 @@ const doors: DoorCase[] = [
           expect.soft(ctx.links.minted, label).toEqual([]);
           expect.soft(await ctx.markdown(), label).toBe(picture.content.replace("map", "moved"));
         }
+
+      // An upload (`asset:<id>`) through a real read: the read shows it at map.png,
+      // then it moves and maybe B takes map.png before the label edit.
+      for (const [kind, picture] of Object.entries(pictures))
+        for (const [moved, occupied] of [
+          [false, false],
+          [true, false],
+          [true, true],
+        ] as const) {
+          const label = `${this.name}: uploaded ${kind}${moved ? ", moved" : ""}${occupied ? ", path reoccupied" : ""}`;
+          const ctx = linkHarness({
+            holder: { id: H, uri: "manuscript://holder.md" },
+            documents: [catalogDocument(D, map, { image: true })],
+            blocks: [picture.old({ src: `asset:${D}`, ref: null })],
+          });
+          const read = await ctx.read();
+          ctx.catalog.documents = [
+            catalogDocument(H, "manuscript://holder.md"),
+            catalogDocument(D, moved ? "manuscript://moved.png" : map, { image: true }),
+            ...(occupied ? [catalogDocument(B, map, { image: true })] : []),
+          ];
+          const shown = (read.showing?.links ?? []).map((fact, at) => ({
+            ...fact,
+            holderUri: "manuscript://holder.md",
+            at,
+          }));
+          const outcome = await ctx.write(
+            { command: "replace", in: [1, 1], content: picture.content },
+            shown,
+          );
+          expect.soft(outcome.status, label).toBe("success");
+          expect
+            .soft(storedLinks(ctx.live()), label)
+            .toEqual([{ label: "New label", ref: null, href: `asset:${D}`, title: null }]);
+          expect
+            .soft(await ctx.markdown(), label)
+            .toBe(moved ? picture.content.replace("map", "moved") : picture.content);
+          if (occupied) {
+            // Control: a fresh write of the path no one showed takes the image rule.
+            await ctx.write({ command: "insert", content: "![Fresh](map.png)" });
+            expect.soft(storedLinks(ctx.live()).at(-1)?.href, label).toBe(`asset:${B}`);
+          }
+        }
     },
   },
   {

@@ -14,7 +14,13 @@ import { expect, it } from "vitest";
 
 import { components, m, paragraph, schema, t } from "./codec-test-support.js";
 import { type DocumentLinkScope, mdxCodec } from "./index.js";
-import { assignFreshLink, spelledLinks, walkLinkOccurrences, writtenAddresses } from "./links.js";
+import {
+  assignFreshLink,
+  createHolderLinkScope,
+  spelledLinks,
+  walkLinkOccurrences,
+  writtenAddresses,
+} from "./links.js";
 
 const holder: LinkHolder = {
   uri: "manuscript://book/ch1.md",
@@ -172,6 +178,27 @@ it("aligns parse spans with walk order for links, images, figures and table anch
       { ref: "doc:malformed", address: "manuscript://book/ch2.md" },
       { ref: "doc:malformed", address: "manuscript://assets/map.png" },
     ]);
+
+  // An uploaded picture carries its identity in `src`: the reader is shown its
+  // path, and the fact records `asset:<id>` there; an unspellable one shows nothing.
+  const assets = createHolderLinkScope(holder, {
+    ...catalog,
+    documentFor: () => null,
+    assetPath: (asset) => (asset === id.map ? "assets/map.png" : null),
+    assetFor: () => null,
+  });
+  const uploads = [paragraph(image(`asset:${id.map}`, null), image(`asset:${id.fig}`, null))];
+  expect
+    .soft(
+      mdxCodec({ schema, components })
+        .serializeBlock(paragraph(image(`asset:${id.map}`, null)), assets)
+        .trim(),
+      "the model sees the path, never the id",
+    )
+    .toBe("![Map](assets/map.png)");
+  expect
+    .soft(spelledLinks(uploads, assets), "an upload shows its identity at its path")
+    .toEqual([{ ref: `asset:${id.map}`, address: "manuscript://assets/map.png" }]);
 
   // Fresh assignment and address preloading read the one source classifier
   // and register only at an address with a real extension.

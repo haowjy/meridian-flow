@@ -16,7 +16,9 @@ export {
 export {
   type LinkOccurrence,
   type OccurrencePath,
+  occurrenceIdentity,
   type SpelledLinkFact,
+  spelledFact,
   spelledLinks,
   walkLinkOccurrences,
 } from "./link-occurrences.js";
