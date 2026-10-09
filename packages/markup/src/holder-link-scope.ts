@@ -38,7 +38,10 @@ export interface HolderLinkScope extends DocumentLinkScope {
   documentFor(uri: string): CatalogDocument | null;
   /** Shipped image rule: an asset document id for a known manuscript image path, else null. */
   assetFor(manuscriptPath: string): string | null;
-  /** Whether a stored link resolves to a live document now (an unsettled ahead ref by its href). */
+  /**
+   * Whether an identity leads to a live document now: a stored ref (an
+   * unsettled ahead ref by its href) or an upload's `asset:<id>`.
+   */
   isLive(link: { ref: string; href: string }): boolean;
 }
 
@@ -84,7 +87,10 @@ export function createHolderLinkScope(
         const id = attrs.src.slice(ASSET_PREFIX.length);
         const path = catalog.assetPath(id);
         if (path === undefined) onMiss(attrs.src);
-        return path ? { href: path, address: null } : { href: attrs.src, address: null };
+        // The upload's identity is its src; the reader is shown where it is now.
+        return path
+          ? { href: path, address: `manuscript://${path}` }
+          : { href: attrs.src, address: null };
       }
       const link = { ref: attrs.ref, href: attrs.src };
       return spellStoredLink(link, holder, resolve(link), "manuscript-root");
@@ -107,7 +113,12 @@ export function createHolderLinkScope(
       if (id === undefined) onMiss(uri);
       return id ?? null;
     },
-    isLive: (link) => resolve(link).kind === "document",
+    isLive: (link) =>
+      resolve(
+        link.ref.startsWith(ASSET_PREFIX)
+          ? { ref: `doc:${link.ref.slice(ASSET_PREFIX.length)}`, href: link.href }
+          : link,
+      ).kind === "document",
   };
 }
 

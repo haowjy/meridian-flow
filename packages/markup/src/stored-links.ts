@@ -84,13 +84,18 @@ export function storedLinkKeys(input: {
   docs?: readonly Y.Doc[];
   /** Nodes that already carry stored attrs, such as copies. */
   nodes?: readonly PMNode[];
+  /** Identities to load besides the stored ones, such as shown facts' (an `asset:` one loads its id). */
   refs?: readonly string[];
 }): StoredLinkKeys {
   const keys: StoredLinkKeys = {
-    refs: new Set(input.refs ?? []),
+    refs: new Set(),
     aheadAddresses: new Set(),
     assetIds: new Set(),
   };
+  for (const ref of input.refs ?? []) {
+    if (ref.startsWith("asset:")) keys.assetIds.add(ref.slice("asset:".length));
+    else keys.refs.add(ref);
+  }
   const add = ({ kind, ref, href }: StoredLinkOccurrence) => {
     if (ref) {
       keys.refs.add(ref);

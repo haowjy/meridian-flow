@@ -6,9 +6,10 @@
  * over a prepared holder scope. Each written occurrence takes, in order: the
  * ref of the old occurrence it continues (pass 1), the ref the model was
  * last shown at its address (pass 2), or a fresh classify, resolve or mint
- * (pass 3). Pictures follow the same passes; the shipped image rule (`asset:`)
- * is part of pass 3, so a new occupant of a shown path never captures a
- * picture that continues its identity (L39).
+ * (pass 3). Pictures follow the same passes, and an uploaded picture's
+ * `asset:<id>` src is its identity in passes 1 and 2 as a ref is a link's; the
+ * shipped image rule (`asset:`) is part of pass 3, so a new occupant of a
+ * shown path never captures a picture that continues its identity (L39, L41).
  */
 import {
   type AheadRef,
@@ -23,6 +24,7 @@ import {
   assignFreshLink,
   type HolderLinkScope,
   type LinkOccurrence,
+  occurrenceIdentity,
   type WrittenGrammar,
   walkLinkOccurrences,
   writtenSourceUri,
@@ -87,7 +89,7 @@ export function assignOccurrences(input: AssignOccurrencesInput): {
       .map((occurrence, index) => ({ occurrence, index }))
       .filter(({ occurrence }) => isKind(occurrence) && !isAsset(occurrence));
     if (writtenIndexes.length === 0) continue;
-    const old = input.old.filter((occurrence) => isKind(occurrence) && !isAsset(occurrence));
+    const old = input.old.filter(isKind);
     const assigned = assignKind({
       grammar,
       old,
@@ -150,12 +152,12 @@ function assignKind(input: {
 }): OccurrenceAttrs[] {
   const { grammar, scope } = input;
   const holderUri = scope.holder.uri;
-  // Null-ref occurrences (contextual, external) never enter correspondence.
-  const referenced = input.old.filter((occurrence) => occurrence.attrs.ref !== null);
-  const contextual = input.old.filter((occurrence) => occurrence.attrs.ref === null);
+  // Occurrences without an identity (contextual, external) never enter correspondence.
+  const referenced = input.old.filter((occurrence) => occurrenceIdentity(occurrence) !== null);
+  const contextual = input.old.filter((occurrence) => occurrenceIdentity(occurrence) === null);
   const matches: LinkMatch[] = correspondLinks({
     old: referenced.map((occurrence) => {
-      const ref = occurrence.attrs.ref as string;
+      const ref = occurrenceIdentity(occurrence) as string;
       return {
         label: occurrence.label,
         ref,
@@ -192,6 +194,8 @@ function assignKind(input: {
       return (contextual[twin] as LinkOccurrence).attrs;
     }
     if (match.pass === 2) {
+      if (isAssetSrc(match.ref))
+        return { ref: null, href: match.ref, title: occurrence.attrs.title };
       // The match came from a showing, so a latest showing always exists.
       const shownAddress = latestShownAddress(input.shown, match.ref);
       const address = currentUri(scope, { ref: match.ref, href: shownAddress }) ?? shownAddress;
@@ -216,6 +220,8 @@ function continued(
   written: OccurrenceAttrs,
   writtenSuffix: string,
 ): OccurrenceAttrs {
+  // An upload's src is its identity and carries no suffix.
+  if (old.ref === null) return written.title === old.title ? old : { ...old, title: written.title };
   const oldSuffix = splitDocumentHrefSuffix(old.href).suffix;
   if (written.title === old.title && writtenSuffix === oldSuffix) return old;
   const ref = old.ref as string;
@@ -291,7 +297,11 @@ function suffixOf(grammar: Grammar, href: string, holderUri: string | null): str
 }
 
 function isAsset(occurrence: LinkOccurrence): boolean {
-  return occurrence.kind !== "link" && occurrence.attrs.href.startsWith("asset:");
+  return occurrence.kind !== "link" && isAssetSrc(occurrence.attrs.href);
+}
+
+function isAssetSrc(src: string): boolean {
+  return src.startsWith("asset:");
 }
 
 /**

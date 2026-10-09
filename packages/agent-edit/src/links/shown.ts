@@ -1,13 +1,14 @@
 /**
- * Shown-link facts (contract §7.1): for each link the model was shown, its
- * ref and the absolute address shown. Host-only; never in model text.
+ * Shown-link facts (contract §7.1): for each link or picture the model was
+ * shown, its identity (a ref, or an upload's `asset:<id>`) and the absolute
+ * address shown. Host-only; never in model text.
  *
  * Facts come from the render itself. A scoped codec keeps a ledger of every
  * link-bearing hashline it rendered: the hash and body it emitted, and the
- * address each ref-bearing occurrence spelled in that same scope; a render
+ * address each identity-bearing occurrence spelled in that same scope; a render
  * with no refs is kept too, so equal text shown without them claims nothing. A
  * result's items are then looked up by the hash they carry, never by the
- * document's current state. A whole item counts all its ref-bearing
+ * document's current state. A whole item counts all its identity-bearing
  * occurrences; a truncated one counts only those whose source span ends
  * inside the shown prefix. A claimed showing that was cut off could assign a
  * later link wrongly, while a missed one only weakens assignment toward a fresh
@@ -15,7 +16,7 @@
  */
 import type { LinkView } from "@meridian/contracts";
 import type { DocumentLinkScope, ParsedContentWithSpans, PMNode } from "@meridian/markup";
-import { type SpelledLinkFact, walkLinkOccurrences } from "@meridian/markup/links";
+import { type SpelledLinkFact, spelledFact, walkLinkOccurrences } from "@meridian/markup/links";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { AgentEditBlockItem, AgentEditModelPayload } from "../tool/model-result.js";
 import { modelBlockItem } from "../tool/model-result.js";
@@ -32,7 +33,7 @@ export interface ShownLinkLedger {
 
 interface Rendered {
   body: string;
-  /** Index-aligned with the block's link occurrences; null when no ref or no address. */
+  /** Index-aligned with the block's link occurrences; null when no identity or no address. */
   facts: (SpelledLinkFact | null)[];
   /** Source spans of the occurrences in `body`, parsed only when a prefix needs them. */
   spans?: ParsedContentWithSpans["spans"] | null;
@@ -75,17 +76,10 @@ export function createShownLinkLedger(
         const body = bodies[index];
         if (hash === undefined || body === undefined) return;
         const occurrences = walkLinkOccurrences([block]);
-        // A render of links without refs is kept: it is the negative evidence
+        // A render of links without identities is kept: it is the negative evidence
         // that clears a fact an equal-text render once showed.
         if (occurrences.length === 0) return;
-        const facts = occurrences.map(({ kind, attrs }): SpelledLinkFact | null => {
-          if (attrs.ref === null) return null;
-          const { address } =
-            kind === "link"
-              ? scope.spellLink({ href: attrs.href, ref: attrs.ref })
-              : scope.spellSource({ src: attrs.href, ref: attrs.ref });
-          return address === null ? null : { ref: attrs.ref, address };
-        });
+        const facts = occurrences.map((occurrence) => spelledFact(occurrence, scope));
         const entries = byHash.get(hash) ?? [];
         if (!entries.some((entry) => entry.body === body && sameFacts(entry.facts, facts)))
           entries.push({ body, facts });
@@ -141,7 +135,7 @@ export interface ShownCommandLinks {
 
 /**
  * Host-only evidence for rendered items, from the command links that rendered them.
- * Empty when nothing ref-bearing was shown, or when those links spelled for no
+ * Empty when nothing identity-bearing was shown, or when those links spelled for no
  * holder (relative spellings then have no base to claim).
  */
 export function shownEvidence(
