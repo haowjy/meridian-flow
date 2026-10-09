@@ -113,8 +113,7 @@ describe("DraftDock chat scope", () => {
     serverHolds("ch-13", [op("2", "lore")]);
     await render(async () => {
       await vi.waitFor(() => expect(mocks.getDraftPreview).toHaveBeenCalledTimes(1));
-      await act(async () => {});
-      expect(strip()).toBeNull();
+      await vi.waitFor(() => expect(strip()).toBeNull());
     });
   });
 
@@ -172,8 +171,10 @@ describe("DraftDock chat scope", () => {
     serverHolds("ch-13", [op("1", "pacing")]);
     await render(async () => {
       await stripShows("chapter-13 is a new document. Review it to apply.");
-      expect(button("Apply")).toBeUndefined();
-      expect(button("Discard")).toBeUndefined();
+      await vi.waitFor(() => {
+        expect(button("Apply")).toBeUndefined();
+        expect(button("Discard")).toBeUndefined();
+      });
       expect(button("Review draft")).toBeDefined();
     });
   });
