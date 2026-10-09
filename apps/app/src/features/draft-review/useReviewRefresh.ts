@@ -14,24 +14,19 @@
  * review does not sit on a stale list until the stream ends.
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { DocumentSession } from "@/core/editor/document-session";
-import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
-
-import { reviewRoomRef } from "./review-room-ref";
 
 const SETTLE_MS = 500;
 const MAX_WAIT_MS = 2_000;
-
-let refreshOwnerSequence = 0;
 
 export function useReviewRefresh({
   projectId,
   workId,
   review,
-  roomName,
+  session,
   liveSession,
 }: {
   projectId: string | null;
@@ -39,30 +34,18 @@ export function useReviewRefresh({
   /** The open review's draft, or null when none is open. */
   review: { documentId: string; draftId: string } | null;
   /** The review's room, once resolved. */
-  roomName: string | null;
+  session: DocumentSession | null;
   /** The live document of the reviewed draft, when a surface holds it. */
   liveSession: DocumentSession | null;
 }): void {
   const queryClient = useQueryClient();
-  const registry = useLiveDocumentSessionRegistry();
-  const owner = useRef(`draft-review-refresh:${++refreshOwnerSequence}`);
   const documentId = review?.documentId ?? null;
   const draftId = review?.draftId ?? null;
 
   useEffect(() => {
     if (!projectId || !workId || !documentId || !draftId) return;
     const sources: DocumentSession[] = [];
-    if (roomName) {
-      registry.retainBranchRooms(owner.current, [
-        reviewRoomRef(queryClient, { projectId, workId, documentId, draftId }, roomName),
-      ]);
-      try {
-        sources.push(registry.getBranchRoom(roomName));
-      } catch (error) {
-        registry.releaseBranchRooms(owner.current);
-        throw error;
-      }
-    }
+    if (session) sources.push(session);
     if (liveSession) sources.push(liveSession);
 
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -89,7 +72,6 @@ export function useReviewRefresh({
     return () => {
       if (timer !== null) clearTimeout(timer);
       for (const source of sources) source.document.off("update", schedule);
-      if (roomName) registry.releaseBranchRooms(owner.current);
     };
-  }, [projectId, workId, documentId, draftId, roomName, liveSession, queryClient, registry]);
+  }, [projectId, workId, documentId, draftId, session, liveSession, queryClient]);
 }

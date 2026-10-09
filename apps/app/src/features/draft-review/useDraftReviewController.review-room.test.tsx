@@ -14,8 +14,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { OpenContextRoute } from "@/features/project/routing/ProjectNavigationContext";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
+import { sessionFor } from "@/test-support/editor-session-fakes";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
+import {
+  type DraftReviewController,
+  useDraftReviewController,
+  useDraftReviewStateOwner,
+} from "./useDraftReviewController";
+import { useReviewRoomOwner } from "./useReviewRoomOwner";
 
 const work = { id: "work-a", projectId: "project-a", name: "w", isNoWork: false } as Work;
 
@@ -48,6 +54,8 @@ vi.mock("@/client/api/drafts-api", () => ({
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => ({}),
+  useOptionalAccountResourceReplica: () => null,
+  useLiveDocumentSessionRegistry: () => roomRegistry,
 }));
 
 let controller: DraftReviewController;
@@ -65,8 +73,21 @@ function Claimant({ review }: { review: DraftReviewController }) {
   return null;
 }
 
+const roomRegistry = {
+  retainBranchRooms: () => {},
+  releaseBranchRooms: () => {},
+  getBranchRoom: sessionFor,
+};
 function Owner() {
-  controller = useDraftReviewController({ projectId: "project-a", work });
+  const stateOwner = useDraftReviewStateOwner();
+  controller = useDraftReviewController({ projectId: "project-a", work, stateOwner });
+  useReviewRoomOwner({
+    projectId: "project-a",
+    workId: work.id,
+    review: controller.inlineReview,
+    dispatch: stateOwner.dispatch,
+    disposing: controller.isDisposing,
+  });
   return <Claimant review={controller} />;
 }
 

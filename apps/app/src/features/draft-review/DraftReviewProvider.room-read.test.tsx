@@ -20,6 +20,7 @@ import {
   renderReviewScopes,
   type ScopeProbe,
 } from "@/test-support/draft-review-scope";
+import { sessionFor } from "@/test-support/editor-session-fakes";
 
 const mocks = vi.hoisted(() => ({
   listWorkDrafts: vi.fn(),
@@ -32,14 +33,15 @@ vi.mock("@/client/query/useContextCatalog", () => ({
   useContextCatalogView: () => ({ catalog: null }),
   projectCatalogView: () => ({ findDocument: () => null }),
 }));
+const roomRegistry = {
+  retainBranchRooms: vi.fn(),
+  releaseBranchRooms: vi.fn(),
+  getBranchRoom: sessionFor,
+};
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => ({ promoteAppliedDraft: vi.fn(), discardDraft: vi.fn() }),
   useOptionalAccountResourceReplica: () => null,
-  useLiveDocumentSessionRegistry: () => ({
-    retainBranchRooms: vi.fn(),
-    releaseBranchRooms: vi.fn(),
-    getBranchRoom: () => ({ document: { on: vi.fn(), off: vi.fn() } }),
-  }),
+  useLiveDocumentSessionRegistry: () => roomRegistry,
 }));
 
 const roomOf = (generation: number) => `review-room-a-g${generation}`;

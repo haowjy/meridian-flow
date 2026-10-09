@@ -27,13 +27,15 @@ import {
   type DraftReviewController,
   type DraftReviewStateOwner,
   useDraftReviewController,
+  useDraftReviewStateOwner,
 } from "./useDraftReviewController";
 import { useReconcileReviewFocus } from "./useReconcileReviewFocus";
-import { useCachedProposal } from "./useReviewGeneration";
 import { useReviewRefresh } from "./useReviewRefresh";
+import { type ReviewRoomOwner, useReviewRoomOwner } from "./useReviewRoomOwner";
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
+  roomOwner: ReviewRoomOwner;
   files: ReviewFileTarget[];
   drafts: ThreadDraftsStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
@@ -115,11 +117,20 @@ export function useDraftReviewScopeValue({
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
   const files = drafts.files ?? [];
+  const localStateOwner = useDraftReviewStateOwner();
+  const reviewState = stateOwner ?? localStateOwner;
   const controller = useDraftReviewController({
     projectId: effectiveProjectId,
     work,
     threadId,
-    stateOwner,
+    stateOwner: reviewState,
+  });
+  const roomOwner = useReviewRoomOwner({
+    projectId: effectiveProjectId,
+    workId: effectiveWorkId,
+    review: controller.inlineReview,
+    dispatch: reviewState.dispatch,
+    disposing: controller.isDisposing,
   });
   useReconcileReviewFocus(controller);
 
@@ -162,55 +173,6 @@ export function useDraftReviewScopeValue({
         : null,
     [controller.inlineReview, controller.reviewRoomName],
   );
-
-  // The reviewed draft left the active list (applied or discarded elsewhere).
-  // The list and the preview are separate reads and either can lag the other, so
-  // the list's silence is not decided here: the reducer weighs it against the
-  // generation the review shows and the newest preview (row X). A preview that
-  // lists changes says the draft is alive; it is read again, and the next read
-  // either confirms it or ends the review.
-  const reviewedDocumentId = controller.inlineReview?.documentId ?? "";
-  const reviewedDraftId = controller.inlineReview?.draftId ?? "";
-  // The writer handled the last change: the draft leaving the list is the
-  // result they just caused, and the review stays open to say so.
-  const reviewHandled = controller.inlineReview?.completion !== undefined;
-  const cachedProposal = useCachedProposal({
-    projectId: effectiveProjectId,
-    workId: effectiveWorkId,
-    documentId: reviewedDocumentId,
-    draftId: reviewedDraftId,
-  });
-  useEffect(() => {
-    if (!reviewedDraftId || reviewHandled || controller.isDisposing) return;
-    if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const stillActive = (drafts.drafts ?? []).some(
-      (draft) => draft.documentId === reviewedDocumentId && draft.draftId === reviewedDraftId,
-    );
-    if (stillActive) return;
-    controller.reviewDraftAbsentFromList(reviewedDocumentId, reviewedDraftId, cachedProposal);
-    if (cachedProposal?.proposal) {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftPreview(
-          effectiveProjectId,
-          effectiveWorkId,
-          reviewedDocumentId,
-          reviewedDraftId,
-        ),
-      });
-    }
-  }, [
-    controller.reviewDraftAbsentFromList,
-    reviewedDocumentId,
-    reviewedDraftId,
-    reviewHandled,
-    controller.isDisposing,
-    drafts.drafts,
-    drafts.status,
-    cachedProposal,
-    effectiveProjectId,
-    effectiveWorkId,
-    queryClient,
-  ]);
 
   // A draft-only tab whose draft left the active list was disposed of
   // elsewhere. The list cannot say how, so the catalog decides: a document
@@ -280,7 +242,7 @@ export function useDraftReviewScopeValue({
     projectId,
     workId,
     review: controller.inlineReview,
-    roomName: controller.reviewRoomName,
+    session: roomOwner.session,
     liveSession:
       activeEditorProjection?.documentId === controller.inlineReview?.documentId
         ? (activeEditorProjection?.session ?? null)
@@ -309,6 +271,7 @@ export function useDraftReviewScopeValue({
   const value = useMemo<DraftReviewContextValue>(
     () => ({
       controller,
+      roomOwner,
       files,
       drafts,
       fileForDocument,
@@ -316,7 +279,15 @@ export function useDraftReviewScopeValue({
       activeEditorDocumentId,
       setActiveEditorDocumentId,
     }),
-    [controller, files, drafts, fileForDocument, reviewRoomNameForDraft, activeEditorDocumentId],
+    [
+      controller,
+      roomOwner,
+      files,
+      drafts,
+      fileForDocument,
+      reviewRoomNameForDraft,
+      activeEditorDocumentId,
+    ],
   );
 
   return value;

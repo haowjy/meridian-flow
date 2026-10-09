@@ -5,9 +5,9 @@ import { I18nProvider } from "@lingui/react";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import { act, type ReactNode, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Doc } from "yjs";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
@@ -24,7 +24,7 @@ import {
 import { WorkChanges } from "./WorkChanges";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
-let room: Doc;
+let room: DocumentSession;
 const retain = vi.fn();
 const navigate = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
@@ -32,13 +32,13 @@ beforeEach(() => {
   resetDraftCommandRecords();
   navigate.mockClear();
   i18n.loadAndActivate({ locale: "en", messages: {} });
-  room = new Doc();
+  room = new DocumentSession({ roomKey: "room-draft-a", persistence: { kind: "none" } });
   retain.mockClear();
   fixture = createReviewScopeFixture({
     registry: {
       retainBranchRooms: retain,
       releaseBranchRooms: () => {},
-      getBranchRoom: () => ({ document: room }),
+      getBranchRoom: () => room,
     } as unknown as LiveDocumentSessionRegistry,
   });
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);

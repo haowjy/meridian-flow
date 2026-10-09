@@ -64,7 +64,10 @@ vi.mock("@/features/change-trail/trail-detail-query", () => ({
   usePrefetchTrailDetails: () => {},
 }));
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
-  useDraftReview: () => ({ controller }),
+  useDraftReview: () => ({
+    controller,
+    roomOwner: { session: null, onBeforeReplace: () => () => {} },
+  }),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry,

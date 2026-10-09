@@ -25,7 +25,6 @@ import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { projectResourceLocation, resourceForDocumentIdentity } from "@meridian/resource-replica";
-import { useQueryClient } from "@tanstack/react-query";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -53,12 +52,8 @@ import {
 } from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { reviewRoomRef } from "@/features/draft-review/review-room-ref";
 import { useLinkableDocuments } from "@/features/links";
-import {
-  useAccountResourceProjection,
-  useLiveDocumentSessionRegistry,
-} from "@/features/project/context/account-feature-context";
+import { useAccountResourceProjection } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
@@ -126,8 +121,6 @@ export type EditorViewProps = {
   | { reviewDraftId?: null; onReviewRoomStale?: never }
 );
 
-let editorSessionOwnerSequence = 0;
-
 /**
  * How long a painted review editor waits for its change marks before showing
  * anyway. The preview is normally already cached from opening the room, so this
@@ -173,17 +166,15 @@ export function EditorView(props: EditorViewProps) {
   // Review is intended from the click, before its room resolves or paints. Until
   // the branch editor owns input, the live manuscript stays painted but read-only.
   const reviewRequested = Boolean(props.reviewDraftId);
-  const registry = useLiveDocumentSessionRegistry();
-  const queryClient = useQueryClient();
-  const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
+
   // The review mount whose editor exists. Until then the live editor stays on
   // screen, so entering review never shows an empty body.
   const [paintedReviewKey, setPaintedReviewKey] = useState<string | null>(null);
-  // The painted review while its refused room is rebuilt: an inert copy, so neither the
+  // The painted review while its room is replaced: an inert copy, so neither the
   // live prose nor an empty shell shows under a review the writer is still in. It belongs to
-  // the one review identity (document, room, draft) it was copied from and renders for no other.
-  const reviewIdentity = inReview ? editorMountKey(identity) : null;
-  const { controller } = useDraftReview();
+  // the one review identity (document, draft) it was copied from and renders for no other.
+  const reviewIdentity = props.reviewDraftId ? `${props.documentId}:${props.reviewDraftId}` : null;
+  const { controller, roomOwner } = useDraftReview();
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
   const liveSession = props.session ?? null;
   // The writer handled the last change. A Discard leaves live as it is, so the
@@ -215,126 +206,20 @@ export function EditorView(props: EditorViewProps) {
     markup: FrozenReviewMarkup;
   } | null>(null);
   const replacedReview = replaced && replaced.identity === reviewIdentity ? replaced.markup : null;
-  // The rebuild in flight for the current review identity. Leaving or changing the review
-  // retires it, so a late completion or failure can neither bind nor report for another review.
-  const rebuildAttemptRef = useRef<symbol | null>(null);
   const reviewHostRef = useRef<HTMLDivElement | null>(null);
   const reviewPaintedRef = useRef(false);
-  const sessionOwnerIdRef = useRef<string | null>(null);
-  sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
-
-  useEffect(() => {
-    if (!inReview || settled) {
-      setBoundSession(null);
-      setPaintedReviewKey(null);
-      setReplaced(null);
-      return;
-    }
-    const ownerId = sessionOwnerIdRef.current;
-    if (!ownerId) return;
-    if (!props.projectId || !props.reviewWorkId || !reviewDraftId || !props.onReviewRoomStale) {
-      throw new Error("Review hosts require a draft target and onReviewRoomStale");
-    }
-    registry.retainBranchRooms(ownerId, [
-      reviewRoomRef(
-        queryClient,
-        {
-          projectId: props.projectId,
-          workId: props.reviewWorkId,
-          documentId: props.documentId,
-          draftId: reviewDraftId,
-        },
-        roomKey,
-      ),
-    ]);
-    let session: DocumentSession;
-    try {
-      session = registry.getBranchRoom(roomKey);
-    } catch (error) {
-      registry.releaseBranchRooms(ownerId);
-      throw error;
-    }
-    setBoundSession(session);
-    return () => {
-      rebuildAttemptRef.current = null;
-      setReplaced(null);
-      registry.releaseBranchRooms(ownerId);
-    };
-  }, [
-    inReview,
-    settled,
-    registry,
-    roomKey,
-    queryClient,
-    props.projectId,
-    props.reviewWorkId,
-    props.documentId,
-    reviewDraftId,
-    props.onReviewRoomStale,
-  ]);
-
-  useEffect(() => {
-    if (!inReview || boundSession?.roomKey !== roomKey) return;
-    let rebuilding = false;
-    return boundSession.subscribe((snapshot) => {
-      if (rebuilding) return;
-      const connection = snapshot.connectionState;
-      switch (connection?.kind === "reset" ? connection.disposition : null) {
-        case "superseded":
-          if (reviewDraftId) props.onReviewRoomStale?.(props.documentId, reviewDraftId, roomKey);
-          return;
-        case "rebuild":
-        case "refused": {
-          // Hold the painted review while the pool and handoff join the same fresh session.
-          rebuilding = true;
-          // Hold what is painted, then unbind before the retired session's Y.Doc is destroyed
-          // under the editor. A replacement still waiting to paint keeps the copy already held.
-          if (reviewPaintedRef.current) {
-            const held = captureReview(reviewHostRef.current);
-            if (held && reviewIdentity) setReplaced({ identity: reviewIdentity, markup: held });
-          }
-          setBoundSession(null);
-          const attempt = Symbol("review-rebuild");
-          rebuildAttemptRef.current = attempt;
-          void registry.rebuildBranchRoom(roomKey).then(
-            (rebuilt) => {
-              if (rebuildAttemptRef.current === attempt) setBoundSession(rebuilt);
-            },
-            () => {
-              if (rebuildAttemptRef.current !== attempt) return;
-              setReplaced(null);
-              props.onReviewSessionUnavailable?.();
-            },
-          );
-          return;
-        }
-        case "schema":
-          props.onReviewSessionUnavailable?.();
-          return;
-      }
-      if (
-        snapshot.status === "destroyed" ||
-        connection?.kind === "terminal" ||
-        connection?.kind === "unauthorized" ||
-        connection?.kind === "reset"
-      ) {
-        props.onReviewSessionUnavailable?.();
-      }
-    });
-  }, [
-    boundSession,
-    props.onReviewSessionUnavailable,
-    props.onReviewRoomStale,
-    props.documentId,
-    reviewDraftId,
-    inReview,
-    registry,
-    roomKey,
-    reviewIdentity,
-  ]);
+  useLayoutEffect(
+    () =>
+      roomOwner.onBeforeReplace(() => {
+        if (!reviewPaintedRef.current || !reviewIdentity) return;
+        const markup = captureReview(reviewHostRef.current);
+        if (markup) setReplaced({ identity: reviewIdentity, markup });
+      }),
+    [roomOwner.onBeforeReplace, reviewIdentity],
+  );
 
   const reviewSession =
-    inReview && !settled && boundSession?.roomKey === roomKey ? boundSession : null;
+    inReview && !settled && roomOwner.session?.roomKey === roomKey ? roomOwner.session : null;
   const reviewKey =
     inReview && reviewSession ? `${editorMountKey(identity)}|${reviewSession.document.guid}` : null;
   const reviewPainted = reviewSession !== null && paintedReviewKey === reviewKey;
@@ -343,7 +228,7 @@ export function EditorView(props: EditorViewProps) {
   const reviewVisible = reviewPainted && (marksReady || marksWaitOverFor === reviewKey);
   reviewPaintedRef.current = reviewVisible;
   // Until the replacement paints, the copy stands in for the review it replaces.
-  const replacing = inReview && !reviewVisible && replacedReview !== null;
+  const replacing = reviewRequested && !settled && !reviewVisible && replacedReview !== null;
   // With no live editor underneath, the branch's own shell (or notice) is all
   // there is to see, so it shows from its first render.
   const reviewShown = reviewVisible || (!liveSession && !replacing);
@@ -405,7 +290,11 @@ export function EditorView(props: EditorViewProps) {
             {...props}
             identity={identity}
             session={reviewSession}
-            onPainted={() => setPaintedReviewKey(reviewKey)}
+            editable={roomOwner.inputEligible ? props.editable : false}
+            onPainted={() => {
+              setPaintedReviewKey(reviewKey);
+              roomOwner.reportPaint(reviewSession);
+            }}
           />
         </div>
       ) : null}

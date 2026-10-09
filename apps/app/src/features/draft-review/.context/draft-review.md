@@ -181,16 +181,20 @@ input arrives as an action addressed to the draft and compares its generation wi
 
 **Re-enter generation G'** is the one transition that moves R: R becomes G', K is
 the claim's if it acted on G' (else none), focus is cleared, marks show, the room
-is cleared and the controller reads it again. `useReviewGeneration` observes the
-draft's cached list row and preview and reports them; `useReviewCommandCompletion`
-reports claims; the controller's room read reports the room; `EditorView` hands a
-stale room to the controller (`onReviewRoomStale`) and leaves review only for
-`unauthorized`, `terminal`, a destroyed session or any other reset.
+is cleared and `useReviewRoomOwner` reads it again. That owner observes list and
+preview together, interprets list silence, acquires and retains the selected
+session, and joins the pool's replacement on reset. `useReviewCommandCompletion`
+reports generation-tagged claims to the same reducer. The editor binds the
+supplied session and reports actual paint; refresh watches it without acquiring
+another room. Before replacing a painted session the editor captures inert
+`FrozenReview` markup, which stays until its successor paints. Room retention
+still supplies `reviewRoomRef` to the pool; writer handoff, draining and teardown
+quarantine are exclusively session-layer operations.
 Invariants: a generation never goes backwards (the preview query keeps a newer
 cached read, `keepNewerGeneration`); a completion belongs to one generation;
 `useReviewChanges` and `useInlineReviewSync` list and project only R's preview;
-arrival order does not change the outcome. Row X is the provider's "draft left the
-list" exit made an action: the provider reports the empty row with the newest cached
+arrival order does not change the outcome. Row X is the owner's "draft left the
+list" observation: it reports the empty row with the newest cached
 preview as evidence and the reducer decides against R, so a proposal that has not
 re-entered yet still counts as the draft being alive. A preview that lists changes
 also gets read afresh; a genuine external close (no proposal at R or above) ends the

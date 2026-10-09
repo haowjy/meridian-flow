@@ -25,7 +25,7 @@ function Owner({ withLive = false }: { withLive?: boolean }) {
     projectId: "p",
     workId: "w",
     review,
-    roomName: "room-a",
+    session: sessionFor("room-a"),
     liveSession: withLive ? sessionFor("live-a") : null,
   });
   return null;

@@ -5,10 +5,10 @@ import { I18nProvider } from "@lingui/react";
 import { EditorContent } from "@tiptap/react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Doc } from "yjs";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
@@ -24,7 +24,7 @@ import { MobileDocumentReview } from "./MobileDocumentReview";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 let manuscript: ReturnType<typeof createStandaloneEditor>;
-let room: Doc;
+let room: DocumentSession;
 const navigate = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
   vi.useFakeTimers();
@@ -32,12 +32,12 @@ beforeEach(() => {
   navigate.mockClear();
   i18n.loadAndActivate({ locale: "en", messages: {} });
   manuscript = createStandaloneEditor({ content: "<p>The writer's manuscript survives.</p>" });
-  room = new Doc();
+  room = new DocumentSession({ roomKey: "review-room-a", persistence: { kind: "none" } });
   // Refresh subscription only. This journey does not certify transport or review paint (#731).
   const registry = {
     retainBranchRooms: () => {},
     releaseBranchRooms: () => {},
-    getBranchRoom: () => ({ document: room }),
+    getBranchRoom: () => room,
   } as unknown as LiveDocumentSessionRegistry;
   fixture = createReviewScopeFixture({ registry });
   vi.spyOn(projectsApi, "listProjectWorks").mockReturnValue(new Promise(() => {}));
