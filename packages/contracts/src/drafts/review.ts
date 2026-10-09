@@ -15,12 +15,9 @@ export interface ThreadDraftListItem {
   /** Chats with pending agent writes in this draft, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;
-  proposedOperationCount?: number | null;
-  wordsAdded: number | null;
-  wordsRemoved: number | null;
   /**
    * the draft contains a document outside the writer's live project manifest.
-   * Drives the dock row `New` badge + additions-only stats and the review
+   * Drives the dock row `New` badge and the review
    * card's `New document` variant. Derived server-side from the branching
    * model; consumed here. Absent/false = edit of a live document.
    */

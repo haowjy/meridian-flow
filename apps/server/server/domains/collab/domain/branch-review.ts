@@ -15,8 +15,6 @@ export type ReviewableDraft = {
   updatedAt: Date;
   documentName: string | null;
   contextPath: string | null;
-  wordsAdded: number | null;
-  wordsRemoved: number | null;
   createdDocument?: boolean;
 };
 

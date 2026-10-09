@@ -102,8 +102,6 @@ export function createWorkDraftReviewService(input: {
           threadId,
           title: titles.get(threadId) ?? null,
         })),
-        wordsAdded: null,
-        wordsRemoved: null,
         updatedAt: branch.updatedAt,
         documentName: documentTitleFromUri(uri),
         contextPath: manuscriptContextPath(uri),

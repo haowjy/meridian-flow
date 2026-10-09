@@ -31,8 +31,6 @@ const draft = (documentId: string, name: string, isNewDocument = false) =>
       lastActorTurnId: null,
       actorThreads: [],
       updatedAt: "2026-01-01T00:00:00Z",
-      wordsAdded: 3,
-      wordsRemoved: 0,
       isNewDocument,
     },
   }) as const;

@@ -1,6 +1,6 @@
 /**
  * WorkChangeFile — one draft file in the Work page's "Changes to review": its
- * name (opens the file's review at the top), word stats, a New badge, a refusal
+ * name (opens the file's review at the top), a New badge, a refusal
  * held on its draft with Dismiss, and a disclosure that expands the row in place
  * to that file's changes. Expanding is the only thing that reads the file's
  * preview, so a Work with many drafts previews none of them until asked.
@@ -22,7 +22,6 @@ import {
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { NewBadge } from "@/components/app/NewBadge";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import { DraftStatsLabel, draftStats } from "@/features/draft-review/draft-stats";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
 import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
@@ -51,7 +50,6 @@ export function WorkChangeFile({
   const draft = { projectId, workId, documentId: file.documentId, draftId: file.draft.draftId };
   const refused = draftCommandFailure(records, draft);
   const name = file.documentName || file.contextPath || t`Untitled manuscript`;
-  const stats = draftStats(file.draft);
 
   const review = (focusOperationIds?: readonly string[]) => {
     if (!file.contextPath) return;
@@ -95,11 +93,6 @@ export function WorkChangeFile({
         >
           <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
           {file.isNewDocument ? <NewBadge /> : null}
-          {stats ? (
-            <span className="shrink-0 text-caption">
-              <DraftStatsLabel stats={stats} wordsSuffix={false} />
-            </span>
-          ) : null}
         </button>
       </div>
       {refused ? (
