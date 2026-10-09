@@ -29,10 +29,7 @@ if (!RUN_DB_TESTS || !url) {
   describe("shown links (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
-    const { assertThrowawayDatabaseForRunDbTests } = await import(
-      "@meridian/database/__test-support__/db-fixtures"
-    );
-    const { conformanceUserValues } = await import(
+    const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
@@ -48,7 +45,6 @@ if (!RUN_DB_TESTS || !url) {
     const db = createDb(url, { max: 8 });
     afterAll(() => db.close());
     const compactionFixture = createCompactionFixture(db);
-    type Repos = ReturnType<typeof createDrizzleRepositoriesForTest>;
 
     /** A PostgreSQL project with one document; the in-memory adapter needs neither row. */
     async function seedDocument(projectId: string) {
@@ -78,7 +74,7 @@ if (!RUN_DB_TESTS || !url) {
     ) {
       const userId = crypto.randomUUID() as UserId;
       const projectId = crypto.randomUUID() as ProjectId;
-      let repos: Repos;
+      let repos: ReturnType<typeof createDrizzleRepositoriesForTest>;
       let documentId: string = crypto.randomUUID();
       if (adapter === "drizzle") {
         await db.insert(schema.users).values(conformanceUserValues(userId, "shown-links"));
@@ -88,7 +84,7 @@ if (!RUN_DB_TESTS || !url) {
         repos = createDrizzleRepositoriesForTest(db);
         documentId = await seedDocument(projectId);
       } else {
-        repos = createInMemoryRepositories({ transactionOwner: owner }) as unknown as Repos;
+        repos = createInMemoryRepositories({ transactionOwner: owner }) as unknown as typeof repos;
       }
       const thread = await repos.threads.create({ userId, projectId });
       const answer = await repos.turns.create({
