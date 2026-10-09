@@ -95,7 +95,11 @@ export function branchHandoffHarness() {
       }),
   });
   handoff = new BranchWriterHandoff({ pool, epochSignal: epoch.signal, retryDelaysMs: [10] });
-  const wire = (room: string) => wires.get(room)!.at(-1)!;
+  const wire = (room: string) => {
+    const transport = wires.get(room)?.at(-1);
+    if (!transport) throw new Error(`No transport for ${room}`);
+    return transport;
+  };
   const changed = vi.fn();
   let currentRoom: () => Promise<string | null> = async () => null;
   const ref = (roomKey: string): BranchRoomRef => ({
