@@ -21,6 +21,7 @@
  */
 
 import { t } from "@lingui/core/macro";
+import { storedLinkRef } from "@meridian/contracts";
 import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { AddMarkStep, RemoveMarkStep } from "@tiptap/pm/transform";
@@ -177,7 +178,7 @@ function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginStat
     if (!target || !isInternalLinkTarget(target)) return false;
 
     const link: LinkKey = {
-      ref: typeof mark.attrs.ref === "string" ? mark.attrs.ref : null,
+      ref: storedLinkRef(mark.attrs.ref),
       href: linkTargetHref(target),
     };
     links.set(`${link.ref ?? ""}\u0000${link.href}`, link);

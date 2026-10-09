@@ -9,7 +9,7 @@
  * serves the right-click menu, which must act on the link the pointer hit
  * rather than on wherever the caret happened to be.
  */
-import type { DocumentRef } from "@meridian/contracts";
+import { type DocumentRef, storedLinkRef } from "@meridian/contracts";
 import { type Editor, getMarkRange } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import type { Mark } from "@tiptap/pm/model";
@@ -282,7 +282,7 @@ function committedLinkAttrs(
     return {
       href: String(attrs.href ?? href),
       title: typeof attrs.title === "string" ? attrs.title : null,
-      ref: typeof attrs.ref === "string" ? attrs.ref : null,
+      ref: storedLinkRef(attrs.ref),
     };
   }
   if (picked) return { href, title: null, ref: picked };

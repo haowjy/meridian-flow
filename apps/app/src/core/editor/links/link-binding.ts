@@ -26,6 +26,7 @@ import {
   parseContextUri,
   resolveDocumentHref,
   storedHref,
+  storedLinkRef,
 } from "@meridian/contracts";
 import { Fragment, type Mark, type Node as PMNode, Slice } from "@tiptap/pm/model";
 
@@ -129,7 +130,7 @@ export function bindPastedNodes(
   const bound = new Map<string, BoundLink>();
   let changed = false;
   const rebind = (mark: Mark): Mark => {
-    if (mark.type.name !== "link" || mark.attrs.ref != null) return mark;
+    if (mark.type.name !== "link" || storedLinkRef(mark.attrs.ref) !== null) return mark;
     const href = String(mark.attrs.href ?? "");
     let binding = bound.get(href);
     if (!binding) {

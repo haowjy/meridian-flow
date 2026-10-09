@@ -5,6 +5,7 @@
  * assignment all walk ProseMirror the same way through here, and
  * `parseWithSpans` aligns its source spans to this exact order.
  */
+import { storedLinkRef } from "@meridian/contracts";
 import type { Mark, Node as PMNode } from "prosemirror-model";
 
 import { parseImageHtmlAst } from "./markdown/blocks/image-html.js";
@@ -60,7 +61,7 @@ function walkInline(parent: PMNode, block: number, path: number[], out: LinkOccu
     out.push({
       kind: "link",
       label: run.label,
-      attrs: { ref: stringOrNull(ref), href: String(href ?? ""), title: stringOrNull(title) },
+      attrs: { ref: storedLinkRef(ref), href: String(href ?? ""), title: stringOrNull(title) },
       at: { block, path: [...path, run.start], count: run.count },
     });
     run = null;
@@ -89,7 +90,7 @@ function sourceOccurrence(
     kind,
     label: String(node.attrs.alt ?? ""),
     attrs: {
-      ref: stringOrNull(node.attrs.ref),
+      ref: storedLinkRef(node.attrs.ref),
       href: String(node.attrs.src ?? ""),
       title: kind === "image" ? stringOrNull(node.attrs.title) : null,
     },
