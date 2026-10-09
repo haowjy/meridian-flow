@@ -152,7 +152,7 @@ const rowOf = (classId: string) =>
 
 async function openMenu() {
   await act(async () => {
-    button("All drafts")?.dispatchEvent(
+    button("All changes")?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
   });
@@ -453,8 +453,8 @@ describe("Apply all and Discard all", () => {
           "Changes in Chapter 13",
         ]);
         await openMenu();
-        expect(menuItem("Apply all 4 drafts")).toBeDefined();
-        await act(async () => menuItem("Apply all 4 drafts")?.click());
+        expect(menuItem("Apply all changes")).toBeDefined();
+        await act(async () => menuItem("Apply all changes")?.click());
 
         // Unopened, new, formatting-only and the Editor's open review, all in one batch.
         await vi.waitFor(() => expect(documentsSent(mocks.applyDraft)).toEqual(all));
@@ -474,18 +474,21 @@ describe("Apply all and Discard all", () => {
       async (probe) => {
         await listed3(probe, 4);
         await openMenu();
-        await act(async () => menuItem("Discard all 4 drafts")?.click());
-        expect(document.body.textContent).toContain("Discard all 4 drafts?");
-        expect(button("All drafts")).toBeNull();
+        await act(async () => menuItem("Discard all changes")?.click());
+        expect(document.body.textContent).toContain("Discard all changes?");
+        expect(document.body.textContent).toContain(
+          "This removes pending changes from every document in this Work.",
+        );
+        expect(button("All changes")).toBeNull();
         expect(mocks.discardDraft).not.toHaveBeenCalled();
 
         // Keep backs out and sends nothing.
         await act(async () => textButton("Keep")?.click());
-        expect(button("All drafts")).not.toBeNull();
+        expect(button("All changes")).not.toBeNull();
         expect(mocks.discardDraft).not.toHaveBeenCalled();
 
         await openMenu();
-        await act(async () => menuItem("Discard all 4 drafts")?.click());
+        await act(async () => menuItem("Discard all changes")?.click());
         await act(async () => textButton("Discard")?.click());
         await vi.waitFor(() => expect(documentsSent(mocks.discardDraft)).toEqual(all));
       },
@@ -544,7 +547,7 @@ describe("the scope that runs a Work page's batch", () => {
   }
   const applyAll = async () => {
     await openMenu();
-    await act(async () => menuItem("Apply all 1 draft")?.click());
+    await act(async () => menuItem("Apply all changes")?.click());
   };
   const ran = (scopes: Record<string, DraftReviewContextValue>) =>
     Object.entries(scopes)
@@ -636,8 +639,8 @@ describe("the scope that runs a Work page's batch", () => {
 
       await act(async () => archive());
       await openMenu();
-      expect(locked("Apply all 1 draft")).toBe(true);
-      expect(locked("Discard all 1 draft")).toBe(true);
+      expect(locked("Apply all changes")).toBe(true);
+      expect(locked("Discard all changes")).toBe(true);
 
       // The batch still runs to its end; the page stays where it is.
       await act(async () => finish());
@@ -645,7 +648,7 @@ describe("the scope that runs a Work page's batch", () => {
       expect(document.body.textContent).toContain("Changes to review");
       expect(mocks.openAiDraft).not.toHaveBeenCalled();
       expect(scopes.third.controller.disposeDrafts).toHaveBeenCalledOnce();
-      expect(locked("Apply all 1 draft")).toBe(true);
+      expect(locked("Apply all changes")).toBe(true);
     });
   });
 });

@@ -123,7 +123,7 @@ msgstr ""
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-msgid "{0, plural, one {# more draft did not apply} other {# more drafts did not apply}}"
+msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr ""
 
 #. placeholder {0}: editedDocuments.size
@@ -352,10 +352,6 @@ msgstr ""
 msgid "{title} removed from Favorites"
 msgstr ""
 
-#: src/features/project/work/WorkChanges.tsx
-msgid "{total, plural, one {Discard 1 draft?} other {Discard all # drafts?}}"
-msgstr ""
-
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr ""
@@ -565,16 +561,16 @@ msgstr ""
 msgid "All"
 msgstr ""
 
+#: src/features/project/work/WorkChanges.tsx
+msgid "All changes"
+msgstr ""
+
 #: src/features/draft-review/WorkChangesLink.tsx
 msgid "All changes in {name}"
 msgstr ""
 
 #: src/features/project/chat-index/ChatIndexButton.tsx
 msgid "All chats"
-msgstr ""
-
-#: src/features/project/work/WorkChanges.tsx
-msgid "All drafts"
 msgstr ""
 
 #: src/features/project/work/useWorkChrome.tsx
@@ -612,16 +608,8 @@ msgstr ""
 msgid "Apply"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Apply all"
-#~ msgstr ""
-
 #: src/features/project/work/WorkChanges.tsx
-msgid "Apply all {total} drafts"
-msgstr ""
-
-#: src/features/project/work/WorkChanges.tsx
-msgid "Apply all 1 draft"
+msgid "Apply all changes"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -1764,21 +1752,13 @@ msgstr ""
 msgid "Discard"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Discard all"
-#~ msgstr ""
-
 #: src/features/project/work/WorkChanges.tsx
-msgid "Discard all {total} drafts"
+msgid "Discard all changes"
 msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
-msgid "Discard all 1 draft"
+msgid "Discard all changes?"
 msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#~ msgid "Discard all changes?"
-#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Discard changes"
@@ -4310,6 +4290,10 @@ msgstr ""
 msgid "This project couldn’t load. It may be unavailable."
 msgstr ""
 
+#: src/features/project/work/WorkChanges.tsx
+msgid "This removes pending changes from every document in this Work."
+msgstr ""
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "This report is from its previous run. It's running again now."
 msgstr ""
@@ -4335,7 +4319,7 @@ msgid "This Work is archived."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This Work is archived. Unarchive it to apply or discard its drafts."
+msgid "This Work is archived. Unarchive it to apply or discard its changes."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
