@@ -12,12 +12,17 @@
  *
  * A batch is one command per draft, in order. Every draft gets its turn: a
  * refusal (or a draft another command holds) on one does not stop the next,
- * and each outcome is reported for its own draft. Nothing navigates. It is not
+ * and each outcome is reported for its own draft. Nothing navigates. At the
+ * click every draft's selection leaves every surface (queued in the command
+ * record); each returns to its own state as its command begins (the claim
+ * hides it from then on) or the batch ends, so a refused draft shows its
+ * reason without waiting for the drafts after it. It is not
  * `disposeDrafts`, which applies or discards whole drafts under one batch
  * lifecycle (Apply all, Discard all).
  */
 
 import { useCallback, useRef } from "react";
+import { queueChangeSelection } from "@/client/query/change-command-record";
 import type { ChangeSelection } from "@/client/query/draft-command-record";
 import { useEditorDraftReview } from "./DraftReviewProvider";
 import type { DraftCommandOutcome, DraftReviewSelection } from "./draft-review-session";
@@ -76,9 +81,21 @@ export function useChangeCommandRunner(caller: DraftReviewController): ChangeCom
   const batch = useCallback(
     async (mode: "apply" | "discard", items: readonly DraftSelection[]) => {
       const from = scopes.current.caller;
+      const scope = { projectId: from.projectId, workId: from.workId };
+      const retires = items.map(({ draft, selection }) =>
+        queueChangeSelection({ ...scope, ...draft }, selection),
+      );
       const outcomes: DraftSelectionOutcome[] = [];
-      for (const { draft, selection } of items) {
-        outcomes.push({ draft, outcome: await run(from, mode, draft, selection) });
+      try {
+        for (const [index, { draft, selection }] of items.entries()) {
+          const outcome = run(from, mode, draft, selection);
+          // The command claims its draft synchronously, before its first
+          // await, so the claim already hides what the queue was hiding.
+          retires[index]?.();
+          outcomes.push({ draft, outcome: await outcome });
+        }
+      } finally {
+        for (const retire of retires) retire();
       }
       return outcomes;
     },

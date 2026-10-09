@@ -11,7 +11,7 @@
  * file; nothing navigates.
  */
 import { t } from "@lingui/core/macro";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import {
   type ChangeCommandState,
   changeCommandState,
@@ -32,8 +32,6 @@ export type DraftDockModel = ReturnType<typeof useDraftDock>;
 export type DockFileFailure =
   | { kind: "changes"; failure: Extract<ChangeCommandState, { phase: "failed" }> }
   | { kind: "draft"; failure: DraftCommandFailure };
-
-const NO_OPERATIONS: ReadonlySet<string> = new Set();
 
 export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
   const { groups, controller } = useDraftReview();
@@ -64,18 +62,15 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const open = editor.workId === workId ? editor.inlineReview : null;
   const entries = useDraftPreviews(targets, { openReview: open });
 
-  // Operations of a batch the writer has just sent. The runner takes the files
-  // one by one, so the files it has not reached yet leave the strip here.
-  const [submitted, setSubmitted] = useState<ReadonlySet<string>>(NO_OPERATIONS);
   const untitled = t`Document`;
   const files = useMemo(
     () =>
       candidates
         .map((row, index) =>
-          dockFile(row, reviewFileTargetName(row, untitled), entries[index], threadId, submitted),
+          dockFile(row, reviewFileTargetName(row, untitled), entries[index], threadId),
         )
         .filter(isOnStrip),
-    [candidates, entries, threadId, submitted, untitled],
+    [candidates, entries, threadId, untitled],
   );
   const notes = useMemo(() => dockNotes(files), [files]);
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
@@ -106,10 +101,10 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
         selection: selectionOf(file.actionable),
       }));
       if (items.length === 0) return;
-      setSubmitted(new Set(items.flatMap((item) => item.selection.operationIds)));
+      // The runner hides every file's selection at the click and returns each as
+      // its own command answers; the records carry the outcomes.
       const batch = mode === "apply" ? runner.applyBatch(items) : runner.discardBatch(items);
-      // The records carry each file's outcome; the changes come back on a refusal.
-      void batch.catch(() => {}).finally(() => setSubmitted(NO_OPERATIONS));
+      void batch.catch(() => {});
     },
     [actionableFiles, runner],
   );
