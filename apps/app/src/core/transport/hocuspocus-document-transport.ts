@@ -304,7 +304,12 @@ export function createHocuspocusDocumentTransport({
         notifyYjsRoomAttached(roomName, observedClientID);
       }
     }
-    if (origin !== provider) outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
+    if (origin !== provider) {
+      outbox = outbox ? Y.mergeUpdates([outbox, update]) : update.slice();
+      // The provider sends before this listener runs. Its acknowledgement signal
+      // therefore precedes the outbox write; publish again with the bytes visible.
+      for (const listener of acknowledgementListeners) listener(false);
+    }
   }
 
   function handleAuthenticated({ scope }: onAuthenticatedParameters): void {
