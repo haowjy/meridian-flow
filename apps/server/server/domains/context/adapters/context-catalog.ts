@@ -108,6 +108,7 @@ function scopeForSource(row: {
   projectUserId: string | null;
   projectIsPersonal: boolean | null;
   workProjectId: string | null;
+  workIsNoWork: boolean | null;
   sourceSlug: string;
 }): CatalogScope | null {
   if (row.sourceRootThreadId && row.sourceProjectId)
@@ -116,6 +117,7 @@ function scopeForSource(row: {
       projectId: row.sourceProjectId,
       rootThreadId: row.sourceRootThreadId,
     };
+  if (row.sourceSlug === "scratch" && row.workIsNoWork) return null;
   if (row.sourceWorkId && row.workProjectId) {
     return { kind: "work", projectId: row.workProjectId, workId: row.sourceWorkId };
   }
@@ -142,6 +144,7 @@ async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly C
       projectUserId: projects.userId,
       projectIsPersonal: projects.isPersonal,
       workProjectId: works.projectId,
+      workIsNoWork: works.isNoWork,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
@@ -160,7 +163,11 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
           isNull(contextSources.deletedAt),
         )
       : scope.kind === "work"
-        ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
+        ? and(
+            eq(contextSources.workId, scope.workId),
+            isNull(contextSources.deletedAt),
+            sql`NOT (${contextSources.slug} = 'scratch' AND ${works.isNoWork})`,
+          )
         : scope.kind === "user"
           ? and(
               eq(projects.userId, scope.userId),
