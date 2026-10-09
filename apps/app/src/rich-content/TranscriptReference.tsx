@@ -119,9 +119,13 @@ export function TranscriptReference({
   const chip = documentId
     ? referenceChip(uri ?? "", resolution?.available ?? true)
     : syntax && linkChip(syntax, answer);
-  // The dashed outline says "nothing here yet" to the eye; this says it to a
-  // screen reader, in the words the Editor's hint and the follow already use.
-  const missing = chip?.state === "dashed" ? t`Doesn't exist yet` : undefined;
+  // The dashed outline says "nothing reachable" to the eye; this says which to
+  // a screen reader, in the words the Editor's hint and the follow use: a
+  // reference whose document is gone is no longer available, and a link to
+  // an address nothing is at yet does not exist yet.
+  const gone = documentId ? resolution?.available === false : answer?.state === "gone";
+  const missing =
+    chip?.state !== "dashed" ? undefined : gone ? t`No longer available` : t`Doesn't exist yet`;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -178,11 +182,12 @@ function useLinkAnswer(
     (listener: () => void) => resolution?.subscribe(listener) ?? (() => {}),
     [resolution],
   );
+  // A transcript link is Markdown syntax: it carries no ref.
   const entry = useSyncExternalStore(
     subscribe,
-    () => (resolution && href ? resolution.read(href) : null),
+    () => (resolution && href ? resolution.read({ ref: null, href }) : null),
     () => null,
   );
-  useEffect(() => (watch && href ? watch(href) : undefined), [watch, href]);
+  useEffect(() => (watch && href ? watch({ ref: null, href }) : undefined), [watch, href]);
   return entry;
 }

@@ -18,7 +18,7 @@ const DOCUMENTS = [
   "manuscript://volume-1/Jade Gate.md",
   "kb://places/Jade Gate.md",
   "kb://characters/Lin Feng.md",
-];
+].map((uri, at) => ({ documentId: `doc-${at}`, uri }));
 
 const live: Editor[] = [];
 afterEach(() => {
@@ -26,13 +26,16 @@ afterEach(() => {
 });
 
 /** An Editor whose link index holds `targets`, or is still loading (null). */
-function editor(targets: readonly string[] | null, content = "<p></p>"): Editor {
+function editor(
+  targets: readonly { documentId: string; uri: string }[] | null,
+  content = "<p></p>",
+): Editor {
   const catalog: WikilinkPasteCatalog | null = targets && {
     holderUri: HOLDER,
     targets,
     linkAhead: (name, folders) => {
       const uri = linkAheadAddress(HOLDER, name, folders);
-      return uri && !DOCUMENTS.includes(uri) ? { uri } : null;
+      return uri && !DOCUMENTS.some((document) => document.uri === uri) ? { uri } : null;
     },
   };
   const created = new Editor({
@@ -43,11 +46,11 @@ function editor(targets: readonly string[] | null, content = "<p></p>"): Editor 
   return created;
 }
 
-function links(target: Editor): [string, string][] {
-  const out: [string, string][] = [];
+function links(target: Editor): [string, string, string | null][] {
+  const out: [string, string, string | null][] = [];
   target.state.doc.descendants((node) => {
     const mark = node.marks.find((candidate) => candidate.type.name === "link");
-    if (mark && node.text) out.push([node.text, mark.attrs.href]);
+    if (mark && node.text) out.push([node.text, mark.attrs.href, mark.attrs.ref]);
   });
   return out;
 }
@@ -95,7 +98,7 @@ it("keeps the characters when dropped into a code block, and links them dropped 
 
   const prose = editor(DOCUMENTS, "<p>x</p>");
   drop(prose, 2, { "text/plain": "see [[Lin Feng]] here" });
-  expect(links(prose)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
+  expect(links(prose)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md", "doc:doc-4"]]);
 });
 
 it("gives paste without formatting the characters, while an ordinary paste links", () => {
@@ -109,7 +112,7 @@ it("gives paste without formatting the characters, while an ordinary paste links
 
   const ordinary = editor(DOCUMENTS);
   paste(ordinary, { "text/plain": "Lin met [[Lin Feng]]." });
-  expect(links(ordinary)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md"]]);
+  expect(links(ordinary)).toEqual([["Lin Feng", "kb://characters/Lin Feng.md", "doc:doc-4"]]);
 });
 
 const menuPaste = () => new Event("paste") as ClipboardEvent;

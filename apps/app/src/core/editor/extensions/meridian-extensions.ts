@@ -34,6 +34,7 @@ import { imageDragPreviewPlugin } from "../images/image-drag-preview";
 import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
+import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
 import {
   classifyLinkTarget,
   internalClipboardTarget,
@@ -280,14 +281,26 @@ export const MeridianTableCell = TableCell.extend({
 });
 
 /**
- * The stored link target (`doc:`/`ahead:`) on links, images and figures.
- * Never rendered to the DOM and never read back from it: a ref is not a
- * browser attribute, and HTML from anywhere must not be able to claim one.
+ * The stored link target (`doc:`/`ahead:`) on images and figures. Never
+ * rendered to the DOM and never read back from it: a ref is not a browser
+ * attribute, and HTML from anywhere must not be able to claim one.
  */
 const LINK_REF_ATTRIBUTE = {
   default: null,
   rendered: false,
   parseHTML: () => null,
+};
+
+/**
+ * The link mark's ref. Never rendered; read back only from the attribute the
+ * link clipboard plugin leaves on a same-project rich paste, which the paste
+ * sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
+ */
+const LINK_MARK_REF_ATTRIBUTE = {
+  default: null,
+  rendered: false,
+  parseHTML: (element: HTMLElement) =>
+    clipboardLinkRef(element.getAttribute(LINK_KEPT_REF_ATTRIBUTE)),
 };
 
 // ─── Customized extensions ──────────────────────────────────────────
@@ -349,7 +362,7 @@ export const MeridianLink = Link.extend({
           element.getAttribute("href"),
       },
       title: { default: null },
-      ref: LINK_REF_ATTRIBUTE,
+      ref: LINK_MARK_REF_ATTRIBUTE,
     };
   },
 }).configure({

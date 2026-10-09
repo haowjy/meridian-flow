@@ -72,14 +72,15 @@ export function LinkMenu({
   menu: LinkMenuRequest;
 }) {
   const close = () => surface.closeMenu();
-  const resolution = useLinkResolution(editor, menu.href);
+  const resolution = useLinkResolution(editor, { ref: menu.ref, href: menu.href });
   const label =
     resolution?.state === "resolved"
       ? resolution.document.title
       : menu.target
         ? linkTargetLabel(menu.target)
         : menu.href;
-  const followable = canFollowLink(menu.target, surface.navigator);
+  // A gone link goes nowhere, so the menu has no Open verb for it (law 5).
+  const followable = canFollowLink(menu.target, surface.navigator) && resolution?.state !== "gone";
   // A refusal is remembered for as long as this menu is open: the row greys
   // where the writer pressed it, in the same words the clipboard block below
   // uses. The next open asks the browser again, because capability can come
@@ -109,10 +110,16 @@ export function LinkMenu({
       {resolution?.state === "unresolved" ? (
         <EditorMenuLabel>{t`Doesn't exist yet`}</EditorMenuLabel>
       ) : null}
+      {resolution?.state === "gone" ? (
+        <EditorMenuLabel>{t`No longer available`}</EditorMenuLabel>
+      ) : null}
       {followable ? (
         <EditorMenuItem
           onSelect={() => {
-            followLink({ target: menu.target, disposition: "current" }, surface.navigator);
+            followLink(
+              { target: menu.target, ref: menu.ref, disposition: "current" },
+              surface.navigator,
+            );
             close();
           }}
         >

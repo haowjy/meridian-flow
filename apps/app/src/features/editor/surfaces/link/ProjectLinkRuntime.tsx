@@ -64,7 +64,7 @@ export function ProjectLinkRuntime({
   active,
 }: {
   editor: Editor | null;
-  /** The document holding the links: a server fallback names it as the holder. */
+  /** The document holding the links: the scope is one document's text. */
   documentId: string;
   /**
    * The document's own address: what its relative links are relative to.
@@ -105,8 +105,8 @@ export function ProjectLinkRuntime({
 
   useEffect(() => {
     if (!active || !surface || !projectId) return;
-    const navigate: InternalLinkNavigator = ({ target, disposition }) => {
-      follower.follow(target, disposition);
+    const navigate: InternalLinkNavigator = ({ target, ref, disposition }) => {
+      follower.follow(target, disposition, ref);
     };
     const unregisterNavigator = surface.registerNavigator(navigate);
     // What the outcome dialog's Close, Cancel, and Try again mean is the

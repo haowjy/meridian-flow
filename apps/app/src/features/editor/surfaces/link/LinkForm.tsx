@@ -1,7 +1,7 @@
 /** Destination and display-text editing over the anchored link commands. */
 
 import { t } from "@lingui/core/macro";
-import { spellDocumentHref } from "@meridian/contracts";
+import { type DocumentRef, documentRef, spellDocumentHref } from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
@@ -25,7 +25,6 @@ import {
 import {
   classifyLinkTarget,
   commitLinkDraft,
-  getLinkResolution,
   type LinkDraft,
   type LinkFormRequest,
   type LinkSurface,
@@ -111,6 +110,9 @@ function LinkFields({
 }) {
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
+  // The document picked from search, bound by its id at commit.
+  const [picked, setPicked] = useState<DocumentRef | null>(null);
+  const draftRef = typeof draft.identity?.attrs.ref === "string" ? draft.identity.attrs.ref : null;
   const [query, setQuery] = useState("");
   const [choosing, setChoosing] = useState(!draft.href);
   const [selectedDestination, setSelectedDestination] = useState<{
@@ -119,7 +121,12 @@ function LinkFields({
   } | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [refused, setRefused] = useState(false);
-  const resolution = useLinkResolution(editor, href || null);
+  // The existing link's own answer while its destination is unchanged; a
+  // destination the writer typed has no ref until it is committed.
+  const resolution = useLinkResolution(
+    editor,
+    href ? { ref: picked ?? (href === draft.href ? draftRef : null), href } : null,
+  );
   const target = classifyLinkTarget(href);
   const destinationLabel =
     selectedDestination?.label ??
@@ -149,10 +156,10 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              // Spelled from the holder the way the Editor's `@` spells it:
-              // relative within its area, a full Context URI across areas.
-              const holderUri = getLinkResolution(editor)?.baseUri ?? null;
-              setHref(spellDocumentHref(holderUri, row.action.reference.uri));
+              // Bound the way the Editor's `@` binds it: by the document's id,
+              // spelled with its full address.
+              setHref(spellDocumentHref(null, row.action.reference.uri));
+              setPicked(documentRef(row.action.reference.documentId));
               setSelectedDestination({ label: row.label, location: row.location });
               setText((current) => current || row.label);
               setChoosing(false);
@@ -219,7 +226,11 @@ function LinkFields({
       setInvalid(true);
       return;
     }
-    const result = commitLinkDraft(editor, readDraft(), { text, href: normalized });
+    const result = commitLinkDraft(editor, readDraft(), {
+      text,
+      href: normalized,
+      ...(picked && !choosing ? { ref: picked } : {}),
+    });
     if (result === "invalid") {
       setInvalid(true);
       return;
@@ -279,6 +290,9 @@ function LinkFields({
           ) : null}
           {resolution?.state === "unresolved" ? (
             <span className="text-xs text-muted-foreground">{t`Doesn't exist yet`}</span>
+          ) : null}
+          {resolution?.state === "gone" ? (
+            <span className="text-xs text-muted-foreground">{t`No longer available`}</span>
           ) : null}
         </div>
       )}

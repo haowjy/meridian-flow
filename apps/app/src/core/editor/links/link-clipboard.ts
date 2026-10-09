@@ -2,34 +2,53 @@
  * How an internal link keeps naming the same document when it travels on the
  * clipboard.
  *
- * A relative link means something only beside the document holding it:
- * `../volume-2/chapter-1.md` pasted into `notes/plan.md` would point somewhere
- * else. So copying records, for every internal link in the clipboard HTML, the
- * address it resolves to (`data-meridian-address`, the canonical Context URI
- * with any fragment or query) beside the href as written
- * (`data-meridian-link`). Each paste target spells that address for itself:
+ * Copying records, on every internal link in the clipboard HTML, what it
+ * names beside the href as stored (`data-meridian-link`):
  *
- * - an Editor re-spells it for its own holder (`spellDocumentHref`): relative
- *   within the holder's area, the full URI across areas or from a document
- *   with no address yet;
- * - the chat composer takes the full Context URI (chat has no folder);
- * - the text/plain flavour carries full addresses, so it means the same thing
- *   in another app or through the Markdown paste door.
+ * - `data-meridian-address`: where it points now, as a full Context URI with
+ *   any fragment or query. A link whose document has moved records the
+ *   document's current address, never the stale one it was written with;
+ * - `data-meridian-ref` and `data-meridian-project`: the stored ref and the
+ *   project it names a document in, for a link that carries one.
  *
- * A link with no recorded address (pasted from outside the app) keeps its href.
- * Nothing here enters the schema or the stored Markdown: the address lives only
- * on the clipboard.
+ * Pasting into an Editor keeps the ref only when the copy came from the same
+ * project; the link is then `{ ref, href: address }`. Anything else (another
+ * project, a link with no metadata, Markdown text) is bound fresh from its
+ * address by the editor's one paste door (`transformPasted`, through
+ * `link-binding.ts`), exactly as if the writer had typed it. The metadata is
+ * never a capability: a kept `doc:` ref still resolves through the reader's
+ * own catalog and draws gone when they cannot read it.
+ *
+ * The text/plain flavour spells every internal link as its full address, so
+ * it means the same thing in another app or through the Markdown paste door.
+ * The chat composer reads the recorded address (chat has no folder).
  */
 
-import { parseContextUri, resolveDocumentHref, spellDocumentHref } from "@meridian/contracts";
+import {
+  parseContextUri,
+  parseLinkRef,
+  resolveDocumentHref,
+  spellDocumentHref,
+  splitDocumentHrefSuffix,
+} from "@meridian/contracts";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { DOMSerializer, Fragment, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
+import { type DocumentLinkScope, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { DOMSerializer, type Mark, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
-import type { LinkResolution } from "./link-resolution";
+import { bindPastedSlice } from "./link-binding";
+import type { LinkKey, LinkResolution } from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
 
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
+export const LINK_REF_ATTRIBUTE = "data-meridian-ref";
+export const LINK_PROJECT_ATTRIBUTE = "data-meridian-project";
+/**
+ * What the paste transform leaves for the link mark's parser: a ref it chose
+ * to keep. Never copied and never allowed through the paste sanitizer, so
+ * clipboard HTML cannot set it.
+ */
+export const LINK_KEPT_REF_ATTRIBUTE = "data-meridian-kept-ref";
 
 const linkClipboardPluginKey = new PluginKey<LinkResolution>("meridianLinkClipboard");
 
@@ -65,6 +84,18 @@ function qualifiedByHolder(uri: string, holderUri: string | null): string {
 }
 
 /**
+ * Where a stored link points now, as a full address: the document its ref
+ * resolved to, at that document's current address, else the address its href
+ * names. Null for an external or unresolvable link.
+ */
+function currentLinkAddress(link: LinkKey, resolution: LinkResolution | null): string | null {
+  const entry = link.ref && resolution ? resolution.read(link) : null;
+  if (entry?.state === "resolved")
+    return spellDocumentHref(null, entry.document.uri) + splitDocumentHrefSuffix(link.href).suffix;
+  return linkHrefAddress(link.href, resolution?.baseUri ?? null);
+}
+
+/**
  * A recorded address read back from untrusted clipboard HTML, or null: only a
  * full address in exactly the spelling `linkHrefAddress` writes.
  */
@@ -76,85 +107,113 @@ export function clipboardLinkAddress(value: string | null): string | null {
     : null;
 }
 
-/** An address spelled for the document it lands in. */
-function spellLinkAddress(address: string, holderUri: string | null): string | null {
-  const resolved = resolveDocumentHref(address, null);
-  return resolved ? spellDocumentHref(holderUri, resolved.uri) + resolved.suffix : null;
+/** A recorded ref read back from untrusted clipboard HTML, or null. */
+export function clipboardLinkRef(value: string | null): string | null {
+  return value && parseLinkRef(value) ? value : null;
 }
 
-/** Copy, HTML flavour: record each internal link's address beside its href. */
-function recordLinkAddresses(root: ParentNode, holderUri: string | null): void {
-  for (const element of root.querySelectorAll("[data-meridian-link]")) {
-    const address = linkHrefAddress(element.getAttribute("data-meridian-link") ?? "", holderUri);
-    if (address) element.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
+/** A recorded project id read back from untrusted clipboard HTML, or null. */
+export function clipboardLinkProject(value: string | null): string | null {
+  return value && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : null;
+}
+
+/** Copy, HTML flavour: what one rendered link mark names, beside its href. */
+function recordLinkMetadata(element: Element, mark: Mark, resolution: LinkResolution): void {
+  const href = String(mark.attrs.href ?? "");
+  const ref = clipboardLinkRef(typeof mark.attrs.ref === "string" ? mark.attrs.ref : null);
+  const address = currentLinkAddress({ ref, href }, resolution);
+  if (address) element.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
+  const projectId = resolution.binding?.projectId ?? null;
+  if (ref && projectId) {
+    element.setAttribute(LINK_REF_ATTRIBUTE, ref);
+    element.setAttribute(LINK_PROJECT_ATTRIBUTE, projectId);
   }
 }
 
-/** Paste into an Editor: spell every recorded address for this holder. */
-function respellPastedLinks(html: string, holderUri: string | null): string {
-  if (!html.includes(LINK_ADDRESS_ATTRIBUTE)) return html;
+/**
+ * Paste into an Editor: a same-project link keeps its ref at its recorded
+ * address; every other recorded link pastes its address unbound, for the
+ * paste door to bind fresh.
+ */
+function keepPastedRefs(html: string, projectId: string | null): string {
+  if (!html.includes("data-meridian-")) return html;
   const container = document.createElement("template");
   container.innerHTML = html;
-  for (const element of container.content.querySelectorAll(`[${LINK_ADDRESS_ATTRIBUTE}]`)) {
+  for (const element of container.content.querySelectorAll("[data-meridian-link]")) {
     const address = clipboardLinkAddress(element.getAttribute(LINK_ADDRESS_ATTRIBUTE));
-    const href = address ? spellLinkAddress(address, holderUri) : null;
-    if (href && element.hasAttribute("data-meridian-link"))
-      element.setAttribute("data-meridian-link", href);
-    element.removeAttribute(LINK_ADDRESS_ATTRIBUTE);
+    const ref = clipboardLinkRef(element.getAttribute(LINK_REF_ATTRIBUTE));
+    const project = clipboardLinkProject(element.getAttribute(LINK_PROJECT_ATTRIBUTE));
+    for (const attribute of [
+      LINK_ADDRESS_ATTRIBUTE,
+      LINK_REF_ATTRIBUTE,
+      LINK_PROJECT_ATTRIBUTE,
+      LINK_KEPT_REF_ATTRIBUTE,
+    ])
+      element.removeAttribute(attribute);
+    if (!address) continue;
+    element.setAttribute("data-meridian-link", address);
+    if (ref && projectId && project === projectId)
+      element.setAttribute(LINK_KEPT_REF_ATTRIBUTE, ref);
   }
   return container.innerHTML;
 }
 
-/** Copy, text/plain flavour: every internal link spelled as its full address. */
-export function linksAsAddresses(slice: Slice, state: EditorState): Slice {
-  const holderUri = linkClipboardPluginKey.getState(state)?.baseUri ?? null;
-  const addressed = (fragment: Fragment): Fragment => {
-    const nodes: PMNode[] = [];
-    fragment.forEach((node) => {
-      if (!node.isText) {
-        nodes.push(node.copy(addressed(node.content)));
-        return;
-      }
-      const link = node.marks.find((mark) => mark.type.name === "link");
-      const address = link ? linkHrefAddress(String(link.attrs.href ?? ""), holderUri) : null;
-      nodes.push(
-        link && address
-          ? node.mark(
-              node.marks.map((mark) =>
-                mark === link ? mark.type.create({ ...mark.attrs, href: address }) : mark,
-              ),
-            )
-          : node,
-      );
-    });
-    return Fragment.from(nodes);
+/**
+ * Copy, text/plain flavour: the Markdown codec's link scope for this editor.
+ * Every internal link is spelled as its full current address (a resolved ref
+ * at its document's address now, otherwise the address its href names), so
+ * the text means the same thing wherever it lands, holder or not.
+ */
+export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
+  const resolution = linkClipboardPluginKey.getState(state) ?? null;
+  return {
+    spellLink: ({ href, ref }) => {
+      const address = currentLinkAddress({ ref, href }, resolution);
+      return {
+        href: address ?? href,
+        address: ref && address ? (resolveDocumentHref(address, null)?.uri ?? null) : null,
+      };
+    },
+    spellSource: UNSCOPED_DOCUMENT_LINKS.spellSource,
   };
-  return new Slice(addressed(slice.content), slice.openStart, slice.openEnd);
 }
 
 /**
  * The plugin that owns both directions on an Editor: the clipboard serializer
- * that records addresses, and the paste transform that re-spells them. Its
- * state is the editor's resolution, whose `baseUri` is the holder's address.
- * It runs after the paste sanitizer, which keeps a well-formed address.
+ * that records what each link names, the HTML transform that keeps a
+ * same-project ref, and the paste transform that binds every link still
+ * unbound. Its state is the editor's resolution, whose binding scope is the
+ * holder's address, project and local index. Its HTML transform runs after
+ * the paste sanitizer, which keeps well-formed metadata only.
  */
 export function linkClipboardPlugin(schema: Schema, resolution: LinkResolution): Plugin {
   const base = DOMSerializer.fromSchema(schema);
-  class AddressRecordingSerializer extends DOMSerializer {
-    override serializeFragment(
-      ...args: Parameters<DOMSerializer["serializeFragment"]>
-    ): ReturnType<DOMSerializer["serializeFragment"]> {
-      const out = super.serializeFragment(...args);
-      recordLinkAddresses(out, resolution.baseUri);
-      return out;
-    }
-  }
+  const renderLink = base.marks.link;
+  const marks = renderLink
+    ? {
+        ...base.marks,
+        link: (mark: Mark, inline: boolean) => {
+          const rendered = DOMSerializer.renderSpec(document, renderLink(mark, inline));
+          if (rendered.dom instanceof Element && rendered.dom.hasAttribute("data-meridian-link"))
+            recordLinkMetadata(rendered.dom, mark, resolution);
+          return rendered;
+        },
+      }
+    : base.marks;
   return new Plugin<LinkResolution>({
     key: linkClipboardPluginKey,
     state: { init: () => resolution, apply: (_transaction, value) => value },
     props: {
-      clipboardSerializer: new AddressRecordingSerializer(base.nodes, base.marks),
-      transformPastedHTML: (html) => respellPastedLinks(html, resolution.baseUri),
+      clipboardSerializer: new DOMSerializer(base.nodes, marks),
+      transformPastedHTML: (html) => keepPastedRefs(html, resolution.binding?.projectId ?? null),
+      transformPasted: (slice, view) =>
+        // A drag inside the editor moves links it already holds, as stored.
+        view.dragging
+          ? slice
+          : bindPastedSlice(
+              slice,
+              resolution.binding ?? { holderUri: null, projectId: null, index: null },
+            ),
     },
   });
 }

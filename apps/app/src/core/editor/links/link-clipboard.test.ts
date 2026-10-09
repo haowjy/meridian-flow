@@ -1,53 +1,79 @@
 // @vitest-environment jsdom
-/** Clipboard address metadata must preserve the target, never inject an href. */
+/**
+ * Clipboard link metadata carries what a link names into the paste, keeps a
+ * ref only inside its own project, and never injects an href.
+ */
 import { Schema } from "@tiptap/pm/model";
 import { expect, it } from "vitest";
-import { linkClipboardPlugin } from "./link-clipboard";
+import { LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
 import { createLinkResolution } from "./link-resolution";
 
 const schema = new Schema({
   nodes: { doc: { content: "text*" }, text: {} },
   marks: {
     link: {
-      attrs: { href: {} },
+      attrs: { href: {}, ref: { default: null } },
       toDOM: (mark) => ["a", { "data-meridian-link": mark.attrs.href }, 0],
     },
   },
 });
 
-function clipboard(holder: string | null) {
+function clipboard(holder: string | null, projectId = "project-a") {
   const resolution = createLinkResolution();
-  resolution.registerResolver(async () => null, { baseUri: holder });
+  resolution.registerResolver(async (questions) => questions.map(() => null), {
+    baseUri: holder,
+    projectId,
+  });
   return linkClipboardPlugin(schema, resolution);
 }
 
-function paste(html: string, holder: string | null) {
-  const plugin = clipboard(holder);
+function paste(html: string, holder: string | null, projectId = "project-a") {
+  const plugin = clipboard(holder, projectId);
   return plugin.props.transformPastedHTML?.call(plugin, html, null as never);
 }
 
 it.each([
-  ["manuscript://a/source.md", "target.md#scene", "manuscript://b/new.md", "../a/target.md#scene"],
-  [
-    "scratch://@revision/notes/a.md",
-    "scratch://plan.md",
-    "scratch://@other/b.md",
-    "scratch://@revision/plan.md",
-  ],
-])("re-spells a link copied from %s (%s) for %s", (source, href, holder, expected) => {
+  {
+    row: "a relative link pastes as the address it named",
+    copied: { from: "manuscript://a/source.md", href: "target.md#scene", ref: null },
+    into: { holder: "manuscript://b/new.md", project: "project-a" },
+    pasted: { link: "manuscript://a/target.md#scene", ref: null },
+  },
+  {
+    row: "a contextual Scratch link keeps the Work it meant",
+    copied: { from: "scratch://@revision/notes/a.md", href: "scratch://plan.md", ref: null },
+    into: { holder: "scratch://@other/b.md", project: "project-a" },
+    pasted: { link: "scratch://@revision/plan.md", ref: null },
+  },
+  {
+    row: "a same-project paste keeps the ref",
+    copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: "doc:kael" },
+    into: { holder: "manuscript://b/new.md", project: "project-a" },
+    pasted: { link: "manuscript://a/kael.md", ref: "doc:kael" },
+  },
+  {
+    row: "another project's paste drops the ref for a fresh binding",
+    copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: "doc:kael" },
+    into: { holder: "manuscript://b/new.md", project: "project-b" },
+    pasted: { link: "manuscript://a/kael.md", ref: null },
+  },
+])("$row", ({ copied, into, pasted }) => {
   const fragment = schema.node(
     "doc",
     null,
-    schema.text("x", [schema.marks.link.create({ href })]),
+    schema.text("x", [schema.marks.link.create({ href: copied.href, ref: copied.ref })]),
   ).content;
-  const copied = document.createElement("div");
-  const serializer = clipboard(source).props.clipboardSerializer;
+  const html = document.createElement("div");
+  const serializer = clipboard(copied.from).props.clipboardSerializer;
   if (!serializer) throw new Error("Missing clipboard serializer");
-  copied.append(serializer.serializeFragment(fragment));
-  const html = paste(copied.innerHTML, holder);
+  html.append(serializer.serializeFragment(fragment));
   const container = document.createElement("template");
-  container.innerHTML = html ?? "";
-  expect(container.content.querySelector("a")?.getAttribute("data-meridian-link")).toBe(expected);
+  container.innerHTML = paste(html.innerHTML, into.holder, into.project) ?? "";
+  const anchor = container.content.querySelector("a");
+  expect({
+    link: anchor?.getAttribute("data-meridian-link"),
+    ref: anchor?.getAttribute(LINK_KEPT_REF_ATTRIBUTE) ?? null,
+  }).toEqual(pasted);
 });
 
 it.each([

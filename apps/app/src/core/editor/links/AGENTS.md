@@ -29,7 +29,7 @@ offering a dead verb.
 
 **Which chip a link draws is a rule here, not a style.** `linkChip()` maps a
 target and its resolution answer to a state (filled, or dashed when nothing is
-at that address) and a family icon name; every surface emits its
+at that address or the document it named is gone) and a family icon name; every surface emits its
 attributes (the Editor on the decoration spans inside its `<a>`) and the look
 lives in
 [`components/app/link-chip/`](../../../components/app/link-chip/AGENTS.md).
@@ -65,7 +65,7 @@ pointer, and calls into it.
   thing: no answer at all, rendered as an ordinary link.
 - **Invalidation is a registration, and a registration is a generation.**
   Registering the port starts a generation that owns its answers, its one
-  question per href, its queue, and its in-flight counter; a question settles
+  question per link key (ref and href), its queue, and its in-flight counter; a question settles
   against the generation that asked it, never against whatever is waiting under
   that href now. The app registers again when the scope, the project's
   document catalog, or the holding document's text changes, so there is no
@@ -73,19 +73,22 @@ pointer, and calls into it.
   here. A question a click waits on
   (`resolve()`) is carried into the next generation and asked again; one only
   the decorations asked is dropped with its generation.
-- **No resolution is ever stored.** The state rides a decoration, not a schema
-  attribute (law 9), so `[Chapter 214](chapter-214.md)` from an LLM needs no extra
-  attributes and no peer receives an answer that was true in someone else's
-  project.
+- **A link names a document; no resolution is ever stored.** The mark stores
+  a `ref` (`doc:`/`ahead:`) beside its href, and every producer binds through
+  `link-binding.ts` without parsing or waiting on the network. Where the
+  document is now, and whether the reader can reach it, rides a decoration
+  keyed by ref and href (law 9), so no peer receives an answer that was true
+  in someone else's project. A move writes nothing into linking documents.
 - **The decorations are mapped on an ordinary keystroke and rebuilt only when
   something reached a link** — a mark step, an edit inside one, an answer
   landing. The exception is a remote write: mapping across the whole-document
   replace reports every position deleted and would erase the drawing, so
   `isRemoteDocumentRebuild` rebuilds instead.
 - **A copied link keeps its document.** The clipboard records each internal
-  link's address beside its href, and every paste target spells it for itself
-  (`link-clipboard.ts`); never paste a relative href into a different holder
-  as written.
+  link's current address, ref and project; a paste in the same project keeps
+  the ref and any other binds the address fresh (`link-clipboard.ts`). Never
+  paste a relative href into a different holder as written, and never trust
+  clipboard metadata as a capability.
 - Register keys and claims from the plugin's `view()`, never TipTap's
   `onCreate` — it fires a macrotask late and the first Ctrl+K misses it.
 

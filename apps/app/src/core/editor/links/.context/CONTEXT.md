@@ -113,12 +113,17 @@ Two registrations, both the app's, both absent until it mounts
 ```ts
 type InternalLinkNavigator = (request: {
   target: LinkTarget;
+  ref: string | null;                 // the mark's ref, read from the mark, never the DOM
   disposition: "current" | "new-tab";
 }) => void;
 getLinkSurface(editor)?.registerNavigator(navigate);      // returns an unregister
 
-type InternalLinkResolver = (target: LinkTarget) => Promise<ResolvedDocumentLink | null>;
-getLinkResolution(editor)?.registerResolver(resolve);     // returns an unregister
+type LinkKey = { ref: string | null; href: string };
+type LinkQuestion = { ref: string | null; target: LinkTarget };
+type InternalLinkResolver = (
+  questions: readonly LinkQuestion[],                     // at most MAX_BATCH (200)
+) => Promise<readonly (LinkAnswer | null)[]>;             // request order; null = not asked
+getLinkResolution(editor)?.registerResolver(resolve, { baseUri, projectId, index });
 ```
 
 The navigator is where a follow goes. The resolver is where every rendered
@@ -131,13 +136,24 @@ so its Close, Cancel, and Try again reach the follower through
 `dismissFollow()` and `retryFollow()`; only the follower knows which follow
 owns what is shown. With nothing registered, `dismissFollow()` just clears.
 
-`createLinkResolution` keys answers by `linkTargetHref(target)` — the
-classifier's own spelling. Three states are answers (`pending`, `resolved`,
-`unresolved`) and a fourth outcome is not: a request that THROWS caches
-nothing, and the link draws as a filled chip in its own family, because a link
-the editor could not ask about must never be drawn as a link that does not
-exist. Addresses are unique, so there is no "several documents" state: a link
-names one document or none.
+`createLinkResolution` keys answers by the link's whole identity, its ref and
+`linkTargetHref(target)` (the classifier's own spelling), so two links sharing
+an href but naming different documents never share an answer. Four states are
+answers (`pending`, `resolved`, `unresolved`, `gone`) and a fifth outcome is
+not: a request that THROWS caches nothing, and the link draws as a filled chip
+in its own family, because a link the editor could not ask about must never be
+drawn as a link that does not exist. `gone` is a ref whose document the reader
+can no longer reach (deleted, discarded, unreadable); it never falls back to
+the address. Addresses are unique, so there is no "several documents" state: a
+link names one document or none.
+
+Questions go to the port in batches: the decoration scan's `request()` queues
+every unanswered link and pumps once, so one scan is one batch of up to 200;
+a click's `resolve()` pumps at once. Four batches are in flight at most.
+
+The registration's options are also the editor's binding scope
+(`resolution.binding`): the holder's address, its project, and the local
+document index that `link-binding.ts` binds written links against.
 
 ### A registration is a generation
 
@@ -149,8 +165,8 @@ everything true of it:
 | It owns | Which means |
 |---|---|
 | its answers and its failures | they go with the generation, so nothing can read the previous one's |
-| the one question out per href | a request carries the waiter it settles, and a completion never looks one up by href |
-| its queue and its in-flight counter | four at a time means four of THIS generation's questions |
+| the one question out per link key | a request carries the waiter it settles, and a completion never looks one up by key |
+| its queue and its in-flight counter | four batches at a time means four of THIS generation's batches |
 
 Two properties follow, and each is a writer-visible failure the moment it does
 not hold:
@@ -221,7 +237,7 @@ load-bearing: a mark ranked above the link would split the `<a>`, and a change
 to the decoration shape is a silently undrawn chip.
 
 A React surface with no document to scan (the chat transcript) does the same
-through `createLinkRequester`: each shown link `watch`es its href, one
+through `createLinkRequester`: each shown link `watch`es its key, one
 requester per surface asks about the whole watched set in one microtask-
 coalesced `request()` on mount and on every publish, and each link only reads
 its answer. Asking per link costs links × publishes.
@@ -241,7 +257,14 @@ surface draws from it: the transcript and the composer on their own element
 |---|---|---|
 | resolved | filled | the resolved document's scheme |
 | unresolved | dashed | the target's own family |
+| gone | dashed, no hover, not followable | the target's own family |
 | pending, failed, not asked | filled | the target's own family |
+
+Gone draws like chat's unavailable reference. The decoration span carries
+`data-link-state="gone"`, which the stylesheet uses to drop the hover, and an
+`aria-description` of "No longer available" (a missing link's is "Doesn't
+exist yet"); the hint, the menu and the form say the same words, and the menu
+offers no Open link.
 
 A scheme URI knows its family from its prefix and a relative path from the
 holder's `baseUri`. The one link that cannot know it yet is a relative path
@@ -301,27 +324,51 @@ outside the document rather than throwing: it is called from inside a Yjs
 update handler, where a throw is swallowed and the editor quietly stops
 applying peer writes.
 
+## Binding written links
+
+A stored internal link carries a `ref` (`doc:<id>`, or `ahead:<uuid>` for an
+address nothing is at yet) beside its `href`, the full address it was written
+with. Every client producer binds without parsing and without the network
+(`link-binding.ts`):
+
+| Producer | Writes |
+|---|---|
+| `@` document row | `doc:<id>`, href its current full URI |
+| `@` link-ahead row | `mintAheadRef()`, href `aheadAddress(uri, "link")` |
+| Ctrl+K, toolbar, menu Edit (`commitLinkDraft`) | a picked document's `doc:`, else `bindWrittenHref`; an unchanged destination keeps the link's attrs, any other is a retarget with a fresh binding |
+| pasted `[[…]]` | the catalog row's `doc:`, else a minted ahead ref at the link-ahead address |
+| any paste (Markdown, HTML without metadata, another project's rich copy) | `bindPastedNodes` on every link still unbound, in the link clipboard plugin's `transformPasted` |
+| same-project rich paste | the copied ref, at the copied current address |
+| image uploads | `asset:` src, no ref |
+
+`bindWrittenHref` classifies (`classifyWrittenLink`): external and contextual
+links keep `ref: null` and their href; an internal one gets the local index's
+document (`indexedDocumentAt`, the server's address rule) or a fresh ahead ref.
+A missing or incomplete index is safe: an ahead ref minted for an occupied
+address settles on its occupant server-side.
+
 ## Clipboard references
 
 Internal links have no browser `href`. Their validated stored target travels in
 `data-meridian-link` in rich HTML, and plain clipboard text uses the Markdown
 codec (`[label](destination)`).
 
-A relative href means something only beside its holder, so the clipboard also
-carries where each internal link points (`link-clipboard.ts`). Copying records
-`data-meridian-address`, the canonical Context URI plus any fragment or query
-(`resolveDocumentHref(href, holderUri)`), beside the href as written; the
-address-recording `clipboardSerializer` is a prop of the link clipboard plugin,
-whose state is the editor's resolution (`baseUri` is the holder). The text
-flavour (`markdownClipboardSerializer`) spells every internal link as its full
-address through `linksAsAddresses`, so it means the same thing in another app
-or through the Markdown paste door. On paste the sanitizer keeps a well-formed
-address, and the plugin's `transformPastedHTML` (which runs after it) re-spells
-each recorded link with `spellDocumentHref(holderUri, uri)`: relative within the
-holder's area, the full URI across areas or from a document with no address.
-The chat composer takes the full address. A link with no recorded address
-(pasted from outside the app) keeps its href. Nothing enters the schema or the
-stored Markdown. The app's click handler reads the semantic
+Copying records, on each internal link mark (the clipboard serializer wraps the
+link mark's own DOM), `data-meridian-address` (where it points now: a resolved
+ref's document at its current address, else the address its href names, as a
+full URI with any fragment or query), and for a link with a ref,
+`data-meridian-ref` and `data-meridian-project`. The text flavour
+(`markdownClipboardSerializer`) serializes through `clipboardLinkScope`, which
+spells every internal link as that same full address, so it means the same
+thing in another app or through the Markdown paste door. On paste the sanitizer
+keeps well-formed metadata, and the plugin's `transformPastedHTML` (which runs
+after it) sets each recorded link's href to its address and keeps its ref only
+when the project matches, as `data-meridian-kept-ref`, the one attribute the
+link mark's parser reads a ref from and which the sanitizer never lets through.
+Every link still unbound is then bound fresh by `transformPasted`. Metadata is
+never a capability: a kept `doc:` ref resolves through the reader's catalog
+and draws gone when they cannot read it. The chat composer takes the full
+address. Nothing here enters the stored Markdown. The app's click handler reads the semantic
 target; native URL copying must not interpret it relative to the current route.
 The link menu copies the pointed-at slice without moving the writer's selection.
 External links retain URL copying. Rich HTML restores stored mark spelling and
@@ -385,7 +432,8 @@ writes, and text already stored stay text; so does a drag inside the editor.
 - **No match**: `linkAhead(name, folders)`, which is `linkAheadAddress`: beside
   the holder, a folder form under the holder's area root, the manuscript root
   from a holder with no address or in an area Create refuses (Scratch,
-  Uploads, Unfiled). The link is dashed until a follow's Create
-  makes the document.
-- **Spelling**: `spellDocumentHref(holderUri, uri)` plus the suffix, as `@`
-  writes. The paste is one transaction, so one undo removes it.
+  Uploads, Unfiled). It gets a fresh ahead ref, and is dashed until a
+  document arrives there (a follow's Create), which settles the ref.
+- **Binding**: a match is `doc:<id>` from the catalog row, spelled as its full
+  URI plus the suffix, as `@` writes. The paste is one transaction, so one
+  undo removes it.

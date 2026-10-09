@@ -2,11 +2,14 @@
  * Drawing what the resolver answered, without storing any of it.
  *
  * The state rides a decoration rather than a schema attribute, which is the
- * whole point of law 9: `[The Second Gate](gate.md)` from an LLM needs no extra
- * attributes to render correctly, and nothing about whether it resolves ever
- * reaches the wire or another peer's document. A decoration is also the only
- * shape that can change without a write, and this one changes as soon as an
- * answer lands.
+ * whole point of law 9: the mark stores what a link names (its ref and href),
+ * and nothing about whether it resolves ever reaches the wire or another
+ * peer's document. A decoration is also the only shape that can change
+ * without a write, and this one changes as soon as an answer lands.
+ *
+ * Gone and missing both draw dashed, and the span says which in words for a
+ * screen reader: a gone link is no longer available, a missing one does not
+ * exist yet.
  *
  * ProseMirror puts an inline decoration's attributes on a span INSIDE the link
  * mark's `<a>`, one span per text node, so a label with bold in it carries
@@ -16,6 +19,7 @@
  * `:has()`. That is a fact about how marks and decorations nest, not a choice.
  */
 
+import { t } from "@lingui/core/macro";
 import type { MarkType, Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
 import { AddMarkStep, RemoveMarkStep } from "@tiptap/pm/transform";
@@ -23,15 +27,15 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 import { isRemoteDocumentRebuild } from "../anchors";
 import { linkChip, linkChipPartAttributes } from "./link-chip";
-import type { LinkResolution } from "./link-resolution";
+import type { LinkKey, LinkResolution, LinkResolutionEntry } from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
 const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
 
 type LinkResolutionPluginState = {
   decorations: DecorationSet;
-  /** Every internal href in the document, canonically spelled. */
-  hrefs: ReadonlySet<string>;
+  /** Every internal link in the document, once per ref and canonical href. */
+  links: readonly LinkKey[];
 };
 
 /** Meta that says "an answer landed", the one reason to redraw without an edit. */
@@ -39,7 +43,7 @@ const ANSWERED = "answered";
 
 const EMPTY: LinkResolutionPluginState = {
   decorations: DecorationSet.empty,
-  hrefs: new Set(),
+  links: [],
 };
 
 export function linkResolutionPlugin(resolution: LinkResolution): Plugin {
@@ -74,7 +78,7 @@ export function linkResolutionPlugin(resolution: LinkResolution): Plugin {
         }
         return {
           decorations: value.decorations.map(transaction.mapping, transaction.doc),
-          hrefs: value.hrefs,
+          links: value.links,
         };
       },
     },
@@ -86,7 +90,7 @@ export function linkResolutionPlugin(resolution: LinkResolution): Plugin {
     /**
      * The effectful half. Asking is a side effect and belongs nowhere near
      * `apply`, so the view asks about whatever the last scan found and redraws
-     * when an answer arrives. The loop terminates because a href with an
+     * when an answer arrives. The loop terminates because a link with an
      * answer is never asked about again.
      */
     view(view) {
@@ -106,7 +110,7 @@ export function linkResolutionPlugin(resolution: LinkResolution): Plugin {
       const unsubscribe = resolution.subscribe(redraw);
       const ask = () => {
         const state = linkResolutionPluginKey.getState(view.state);
-        if (state) resolution.request(state.hrefs);
+        if (state) resolution.request(state.links);
       };
       ask();
 
@@ -162,7 +166,7 @@ function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginStat
   if (!resolution.available) return EMPTY;
 
   const decorations: Decoration[] = [];
-  const hrefs = new Set<string>();
+  const links = new Map<string, LinkKey>();
 
   doc.descendants((node, pos) => {
     if (!node.isText) return true;
@@ -171,20 +175,32 @@ function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginStat
     const target = classifyLinkTarget(String(mark.attrs.href ?? ""));
     if (!target || !isInternalLinkTarget(target)) return false;
 
-    const href = linkTargetHref(target);
-    hrefs.add(href);
-    const entry = resolution.read(href);
+    const link: LinkKey = {
+      ref: typeof mark.attrs.ref === "string" ? mark.attrs.ref : null,
+      href: linkTargetHref(target),
+    };
+    links.set(`${link.ref ?? ""}\u0000${link.href}`, link);
+    const entry = resolution.read(link);
     // Every internal link is drawn, answered or not: a failed or unasked one
     // is a filled chip in its own family, never a missing one.
     const chip = linkChip(target, entry, resolution.baseUri);
+    const description = linkStateDescription(entry);
     decorations.push(
       Decoration.inline(pos, pos + node.nodeSize, {
         ...(entry ? { "data-link-state": entry.state } : {}),
+        ...(description ? { "aria-description": description } : {}),
         ...(chip ? linkChipPartAttributes(chip) : {}),
       }),
     );
     return false;
   });
 
-  return { decorations: DecorationSet.create(doc, decorations), hrefs };
+  return { decorations: DecorationSet.create(doc, decorations), links: [...links.values()] };
+}
+
+/** What a dashed link says to a screen reader, in the hint's own words. */
+export function linkStateDescription(entry: LinkResolutionEntry | null): string | null {
+  if (entry?.state === "gone") return t`No longer available`;
+  if (entry?.state === "unresolved") return t`Doesn't exist yet`;
+  return null;
 }

@@ -50,13 +50,12 @@ request, and which addresses the Editor's `@` link-ahead row may not take.
   sent), because a rename rewrites the text an answer was given for. It moves
   once per burst, 400 ms after the last document-changing edit: once per
   keystroke would re-ask the server about every unanswered link on every
-  character. Its
-  server fallbacks name the holding document so the server can answer through
-  a pending redirect; chat has no holder.
+  character. An answer is keyed by the link's ref and href, so two links
+  sharing an href never share an answer; a gone ref is never followable.
 - **No component invalidates the link cache.** A create or rename anywhere is a
   new catalog, and the catalog is what the scope is keyed on. A mutation that
   also pokes the resolution store is a second owner of the same rule.
-- **One follow procedure.** A surface never calls `resolveDocumentLink` or
+- **One follow procedure.** A surface never calls `resolveDocumentLinks` or
   reads the resolution cache to decide what a click does; only this module
   does. Whether a reference is a link at all is `follower.canFollow`, which
   depends on the target and base URI, never on loading. Destination policy
