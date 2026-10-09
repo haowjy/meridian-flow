@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Phone review confirmations stay inside the change sheet; each contributing-chat link has a 44px touch target.
+
 - Offline Work batches refuse every file immediately, even before network notifications catch up; they do not wait for refreshes or send later files on reconnect.
 
 - Stepping through draft changes works with marks hidden on desktop and phone, without showing the marks again.
