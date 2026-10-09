@@ -23,7 +23,6 @@ function view(): CatalogCacheView {
     observedHeadRevision: "1",
     cursor: "",
     entries: new Map(),
-    invalidatedEntryIds: new Set(),
     childIdsByParentId: new Map(),
     sourceIdsByScheme: new Map(),
   };

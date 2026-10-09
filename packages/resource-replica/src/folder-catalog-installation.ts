@@ -24,8 +24,7 @@ export function installedFolderLocation(
     if (checkpoint.projectId !== projectId) continue;
     const view = catalogViewFromCheckpoint(checkpoint);
     const entry = view.entries.get(folderId);
-    if (entry?.kind === "folder" && !view.invalidatedEntryIds.has(folderId))
-      return catalogEntryLocation(view, entry);
+    if (entry?.kind === "folder") return catalogEntryLocation(view, entry);
   }
   return null;
 }
@@ -60,8 +59,7 @@ export function planFolderCatalogInstallation(input: {
     if (record.projectId !== null && record.projectId !== input.projectId) continue;
     const entry = input.view.entries.get(record.folderId);
     const observed = input.fence.folders?.get(record.handle);
-    if (entry?.kind !== "folder" || input.view.invalidatedEntryIds.has(entry.entryId) || !observed)
-      continue;
+    if (entry?.kind !== "folder" || !observed) continue;
     const location = catalogEntryLocation(input.view, entry);
     if (record.canonicalRefresh) {
       if (observed.refreshOperationId !== record.canonicalRefresh.operationId) continue;

@@ -39,16 +39,23 @@ const file: CatalogEntry = {
 };
 
 describe("catalog cache reducer", () => {
-  it("applies whole commits idempotently and invalidates a subtree immediately", () => {
+  it("replaces a subtree atomically after a separately published upsert without retaining stale entries", () => {
+    const stale = { ...file, entryId: "removed-document" };
     const initial = catalogViewFromSnapshot({
       scope,
       generation: "generation-1",
       headRevision: "1",
       cursor: "cursor-1",
-      entries: [source, folder, file],
+      entries: [source, folder, file, stale],
     });
-    const delta = {
-      kind: "delta" as const,
+    const renamed = {
+      ...file,
+      name: "Renamed.md",
+      path: ["Arc", "Renamed.md"],
+      uri: "manuscript://Arc/Renamed.md" as never,
+    };
+    const published = applyCatalogChanges(initial, {
+      kind: "delta",
       scope,
       commits: [
         {
@@ -56,20 +63,67 @@ describe("catalog cache reducer", () => {
           commitId: "commit-2",
           firstRevision: "2",
           lastRevision: "2",
-          changes: [
-            { operation: "invalidate-subtree" as const, ordinal: 0, rootEntryId: "folder-1" },
-          ],
+          changes: [{ operation: "upsert", ordinal: 0, entry: renamed }],
         },
       ],
       nextCursor: "cursor-2",
       headRevision: "2",
       hasMore: false,
+    });
+    expect(published && catalogFiles(published)).toContainEqual(renamed);
+    const delta = {
+      kind: "delta" as const,
+      scope,
+      commits: [
+        {
+          eventId: "event-3",
+          commitId: "commit-3",
+          firstRevision: "3",
+          lastRevision: "3",
+          changes: [
+            { operation: "invalidate-subtree" as const, ordinal: 0, rootEntryId: folder.entryId },
+            { operation: "upsert" as const, ordinal: 1, entry: folder },
+            { operation: "upsert" as const, ordinal: 2, entry: renamed },
+          ],
+        },
+      ],
+      nextCursor: "cursor-3",
+      headRevision: "3",
+      hasMore: false,
     };
-    const first = applyCatalogChanges(initial, delta);
-    const duplicate = first && applyCatalogChanges(first, delta);
-    expect(first && catalogFiles(first)).toEqual([]);
-    expect(duplicate?.entries.size).toBe(3);
-    expect(duplicate?.cursor).toBe("cursor-2");
+    const replaced = published && applyCatalogChanges(published, delta);
+    const fresh = catalogViewFromSnapshot({
+      scope,
+      generation: "generation-1",
+      headRevision: "3",
+      cursor: "cursor-3",
+      entries: [source, folder, renamed],
+    });
+    expect(replaced).toEqual(fresh);
+    expect(replaced && applyCatalogChanges(replaced, delta)).toEqual(fresh);
+    const deleted =
+      replaced &&
+      applyCatalogChanges(replaced, {
+        kind: "delta",
+        scope,
+        commits: [
+          {
+            eventId: "event-4",
+            commitId: "commit-4",
+            firstRevision: "4",
+            lastRevision: "4",
+            changes: [
+              { operation: "invalidate-subtree", ordinal: 0, rootEntryId: renamed.entryId },
+            ],
+          },
+        ],
+        nextCursor: "cursor-4",
+        headRevision: "4",
+        hasMore: false,
+      });
+    expect(deleted?.entries.has(renamed.entryId)).toBe(false);
+    expect(deleted && catalogFiles(deleted)).toEqual([]);
+    expect(initial.entries.has(stale.entryId)).toBe(true);
   });
 
   it("applies bounded pages without advancing applied revision to the observed head", () => {

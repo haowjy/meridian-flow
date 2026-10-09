@@ -516,13 +516,27 @@ export function createDrizzleContextCatalog(
         .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
       const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
       const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
+      // Replay clears the old subtree before installing this commit. Restore every
+      // survivor, including entries already published by a separate repair and
+      // descendants that moved out of the root during this refresh.
+      const replacedIds = new Set(invalidatedRootIds);
+      const children = new Map<string, Set<string>>();
+      for (const entry of [...oldById.values(), ...nextById.values()]) {
+        if (entry.kind !== "folder" && entry.kind !== "file") continue;
+        const ids = children.get(entry.parentId) ?? new Set<string>();
+        ids.add(entry.entryId);
+        children.set(entry.parentId, ids);
+      }
+      for (const entryId of replacedIds) {
+        for (const childId of children.get(entryId) ?? []) replacedIds.add(childId);
+      }
       const changes: CatalogChange[] = [];
       for (const rootEntryId of new Set(invalidatedRootIds)) {
         changes.push({ operation: "invalidate-subtree", ordinal: changes.length, rootEntryId });
       }
       for (const [entryId, entry] of nextById) {
         const old = oldById.get(entryId);
-        if (!old || stableJson(old) !== stableJson(entry)) {
+        if (replacedIds.has(entryId) || !old || stableJson(old) !== stableJson(entry)) {
           changes.push({ operation: "upsert", ordinal: changes.length, entry });
         }
       }
