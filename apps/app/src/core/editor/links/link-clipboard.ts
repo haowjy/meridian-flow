@@ -37,7 +37,7 @@ import { DOMSerializer, type Mark, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
 import { bindPastedSlice } from "./link-binding";
-import { type LinkAnswerCache, type LinkKey, linkCacheKey, linkKeyOfMark } from "./link-resolution";
+import { type LinkAnswerCache, type LinkKey, linkKeyOfMark } from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
 
 export const LINK_ADDRESS_ATTRIBUTE = "data-meridian-address";
