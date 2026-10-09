@@ -6,7 +6,7 @@
  * The identity row's controls and the phone header are two layouts over this one
  * model, so Apply draft, Discard draft, "No changes left" and the refusal line
  * cannot drift between them. Work-wide Apply all and Discard all belong to the
- * Changes list (`ReviewFiles`), not here.
+ * Work page's Changes to review (`WorkChanges`), not here.
  */
 import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";

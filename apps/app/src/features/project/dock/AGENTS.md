@@ -66,7 +66,8 @@ rail's) and shows no switch.
 - **Don't unmount the primary body.** It breaks the surface-parking invariant
   and loses chat state.
 - **Don't put draft review state or a Changes list in the dock.** Draft review
-  lives in the scopes' own surfaces; Draft chip, identity row and Work page.
+  lives in each scope's own surface: the composer strip, the document's identity
+  row (the change sheet on the phone), and the Work page.
 - **Don't persist the dock view choice.** A stale view across reloads is worse
   than starting fresh.
 - **Don't add a tailwind-merge dependency on `border-border-subtle`.** See the

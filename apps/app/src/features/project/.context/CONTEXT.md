@@ -161,8 +161,8 @@ session-only `workFile` state carries `{ workId, tab }`; opening a second file
 replaces the first. `DockShell` keeps the Chat occupant mounted and inert behind
 the viewer, and the contained dock switch can return to Chat or close the file.
 `viewerTabForCatalogFile` is the common catalog-file to viewer-tab builder for
-Scratch and Uploads. The Files tab shows Drafts and Scratch only; Work Uploads
-have no Files tab surface (composer attachments still land there, see
+Scratch and Uploads. The Files tab shows Changes to review and Scratch only;
+Work Uploads have no Files tab surface (composer attachments still land there, see
 [TODO](TODO)). The "Changes to review" group (`WorkChanges`) lists the Work's draft files; a
 row's name launches review through the same `useAiDraftLauncher` handoff as the
 other review launchers, not a plain document open, and the row expands in place
@@ -246,12 +246,15 @@ membership is unchanged. No feed owns read/unread state. Lifecycle projection up
 `actionRequired` in cached rows when a subscribed thread emits; unsubscribed
 threads are only refreshed by ordinary query reads, not a background signal.
 
-Draft review follows the same persistent-shell rule with two sibling owners.
+Draft review follows the same persistent-shell rule with sibling scope owners.
 The hydrated project owns one Chat review value (Chat Work plus thread) and one
 Editor review value (Editor Work, no thread authority) above desktop/phone
 selection. Boundaries only re-provide those values: ChatSurface and the Chat
 context dock share the Chat value, while viewer/editor surfaces receive the
-Editor value. An explicit latest-wins route handoff carries review commands into
+Editor value. `HydratedReviewControllers` also mounts a third scope for a Work
+page whose Work neither the Editor nor the chat has, and wraps both shells in
+`EditorReviewScope`; `useWorkReviewScope` picks Editor, then chat, then third.
+An explicit latest-wins route handoff carries review commands into
 the matching Editor. A matching committed Editor may claim immediately; other
 destinations claim after navigation. Claims require Work, manuscript path,
 mounted document, and draft membership to agree. The document address persists
@@ -410,7 +413,7 @@ again. Writer close and Work pruning are reversible, while acknowledged deletion
 and confirmed draft discard keep exact re-entry guards against stale
 resurrection. A draft-only Discard closes its tab at once and is never
 reopened; a refusal shows on the pending draft instead
-([draft review](../../chat/.context/draft-review.md#the-pending-signal-and-draft-only-tab-lifecycle)).
+([draft review](../../draft-review/.context/draft-review.md)).
 
 ## Project routing, identity, and controllers
 
@@ -483,7 +486,7 @@ navigating to a cached path. `gateLiveView` reports `pending`, `failed` or
 boundary's error and Retry (address and `?draft=` kept), and the phone host
 treats a failed address as neither pending nor settled, so it never rejects the route.
 A launch that fails records `review-failed` on the draft's command record, so the
-row or chip the writer clicked shows it (`chat/.context/draft-review.md`).
+row or chip the writer clicked shows it ([draft review](../../draft-review/.context/draft-review.md)).
 
 A path never refutes identity. Renaming or moving a document with its review
 open keeps the review: once the address has resolved, identity decides whether
@@ -493,8 +496,8 @@ rename or move through the identity bar or the tree replaces the current entry
 with the new path in the same history entry, and `?draft=` is never dropped on
 the way. The removal coordinator's route repair carries the address's review, a
 review launch on the current document never moves the address, and replacing an
-entry with its own URL writes no history. Draft rows (composer strip, Work Files)
-take the name from the live catalog entry, so a rename shows there in the same
+entry with its own URL writes no history. Draft rows (composer strip, the Work
+page's Changes to review) take the name from the live catalog entry, so a rename shows there in the same
 frame; a draft-only document keeps its recorded label.
 
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.

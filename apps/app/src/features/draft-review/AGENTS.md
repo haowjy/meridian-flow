@@ -78,7 +78,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   surface-specific guard or lock beside it.
 - **There is no review header row on the desktop.** The review's controls live in
   the document's identity row (`DocumentIdentityBar`): the Draft chip with its
-  menu after the breadcrumb, then the stepper, Show changes, Discard and Apply
+  menu after the breadcrumb, then the list button, the stepper, Show changes,
+  Discard and Apply
   on the right (`features/editor/DraftReviewBand`, sized to the row's 22px
   box, so entering review moves nothing below it). The state lines of the
   review ("No changes left" with Next draft, "Applying", "Formatting changes
@@ -87,7 +88,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   while there is one). Narrow rows collapse in a fixed order, always on one row:
   folders become `…`, Show changes becomes an icon (same name), `4 of 4`
   becomes `4/4`, the scheme's name becomes its icon, then the file name
-  truncates. The Draft chip, Discard and Apply never hide.
+  truncates. The Draft chip, the list button, Discard and Apply never hide in a
+  narrow row.
 - **`useReviewHeader`** is the header's model without its layout: the next draft
   file, the whole-draft commands that move on to it, the refusal line and "No
   changes left". The identity row's band and the phone's header
@@ -100,8 +102,9 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   so tab and row read as one draft surface. Its menu is the versions of THIS
   document: the live version and its draft (a document has one active draft
   per Work today, so those are the two; listing drafts of one document across
-  Works needs an endpoint the server does not have), plus Rename, and on the
-  phone Apply draft, Discard draft and Hide changes. It names no other file.
+  Works needs an endpoint the server does not have). The desktop offers Rename;
+  the phone adds Apply draft, Discard draft and Show/Hide changes. A new document
+  offers Close review instead of Live version. It names no other file.
 - **Three scopes, three surfaces; one file order.** Each list of changes is 1:1
   with the thing it sits on. This chat's changes are the composer strip. This
   document's are `DocumentChanges` (`DocumentChangeRows` plus the open review's
@@ -148,7 +151,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   a removal). `markKeys` are the keys the manuscript paints a change by.
   `previewWithoutOperations` never hides a hunk no operation owns.
 - **A move from one draft's review to another's is held** (`features/project/dock/review-handover`).
-  Switcher pick, Apply draft, Discard draft, Next draft and Open on a refused draft all go through
+  Apply draft, Discard draft, Next draft and Open on a refused draft all go through
   `openEditorReview`, which hands the page's painted review (header, identity bar, body) to
   `ReviewHandoverFrame` as inert markup, the way `FrozenReview` holds a review across a room
   rebuild. The route, tab and URL change at the click. One hold has one owner (the handoff
@@ -249,13 +252,13 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   whole-draft Discard has no unknown outcome: a lost answer is `discard-offline`. The copy promises no automatic update: only
   a read after the failure can resolve the change, and one can find it still there. A rejected
   whole-draft Apply is held on that draft's record (`apply-offline`, `apply-refused`, `apply-server-error`) and shown
-  wherever the draft is listed (switcher row, composer strip, the Work page's
-  Changes to review) after the review moved on to the next draft; it never navigates back.
+  wherever the draft is listed (the strip of each chat that wrote it, the Work
+  page's Changes to review) after the review moved on to the next draft; it never navigates back.
   The review the writer is in also says it: `useReviewHeader.failedElsewhere`
   lists the Work's other drafts that hold a refusal or lost answer, and
   `ReviewHeaderNotices` shows each by name with an Open button, on both shells
-  (Apply draft and Apply all move on or finish while the command runs, and the
-  switcher's row is behind a closed menu). Opening the draft is the writer's
+  (Apply draft moves on while the command runs, and Apply all runs from the
+  Work page, away from the review). Opening the draft is the writer's
   move and keeps its failure (opening Review clears only a failed launch,
   `clearDraftReviewLaunchFailure`); it is then that draft's own header message
   until the writer acts on it again. **A batch (Apply all, Discard all) never stops at
