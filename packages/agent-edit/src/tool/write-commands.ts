@@ -1,7 +1,7 @@
 // Mutating and query write command handlers.
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
-import { snapshotBlocks } from "../apply/echo.js";
+import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
@@ -178,8 +178,8 @@ export function createWriteCommands(deps: {
       return status("invalid_write", MISSING_COPIED_NODES_MESSAGE);
     }
     const content = command.command === "create" ? (command.content ?? "") : "";
-    // Host-bound content (§6.2) arrives as nodes and is never assigned again.
-    const boundBlocks = command.command === "create" ? context.boundBlocks : undefined;
+    // Host-prepared content (§6.2) arrives bound and as an update; it is never assigned again.
+    const prepared = command.command === "create" ? context.prepared : undefined;
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
@@ -194,7 +194,7 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
-    const given = copiedNodes ?? boundBlocks;
+    const given = copiedNodes ?? prepared?.blocks;
     const parsed: ParseForCommandResult = given
       ? { ok: true, parsed: { blocks: [...given] } }
       : renderer.parseForCommand(content);
@@ -257,8 +257,8 @@ export function createWriteCommands(deps: {
       docs: [runtime.doc],
       ...(copiedNodes
         ? {}
-        : boundBlocks
-          ? { bound: boundBlocks }
+        : prepared
+          ? { bound: prepared.blocks }
           : { written: parsed.parsed.blocks }),
       shown,
       context,
@@ -272,7 +272,7 @@ export function createWriteCommands(deps: {
       );
     }
     let overwrite: Extract<ReturnType<typeof resolveWrite>, { ok: true }> | undefined;
-    if (overwriting && existingBlocks.length > 0) {
+    if (overwriting && existingBlocks.length > 0 && !prepared) {
       const empty = given ? given.length === 0 : content.length === 0;
       // Overwrite is whole-document correspondence: resolve binds against every old block.
       const resolved = resolveWrite(
@@ -280,7 +280,7 @@ export function createWriteCommands(deps: {
           doc: toDocHandle(runtime.doc),
           model: options.model,
           codec: links.codec,
-          ...(boundBlocks ? {} : { links: assigner }),
+          links: assigner,
         },
         empty
           ? {
@@ -328,7 +328,26 @@ export function createWriteCommands(deps: {
     let deletedHashes = new Set<string>();
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
-    if (overwrite) {
+    if (prepared) {
+      Y.applyUpdate(runtime.doc, prepared.update, origin);
+      if (runtime.doc.store.pendingStructs !== null || runtime.doc.store.pendingDs !== null) {
+        restorePreWriteSnapshot(runtime, preWriteSnapshot);
+        return status(
+          "invalid_write",
+          "Prepared content's base is not in this document; prepare it again.",
+        );
+      }
+      if (sameBytes(Y.encodeStateAsUpdate(runtime.doc), preWriteSnapshot)) {
+        return formatUnchangedSuccess();
+      }
+      const changes = diffSnapshots(
+        before,
+        snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
+      );
+      touchedHashes = new Set([...changes.changed, ...changes.inserted]);
+      deletedHashes = changes.deleted;
+      insertedHashes = [...changes.inserted];
+    } else if (overwrite) {
       semanticEditIr = overwrite.ir;
       const applied = applyEdits(toDocHandle(runtime.doc), options.model, overwrite.edits, origin);
       if (!applied.ok) {
@@ -917,6 +936,10 @@ export function createWriteCommands(deps: {
 }
 
 const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blocks are missing.";
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
   const restored = new Y.Doc({ gc: false });

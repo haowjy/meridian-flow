@@ -40,7 +40,7 @@ import type {
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
-import type { BoundContent, LinkBinder } from "./domain/link-binding.js";
+import type { LinkBinder, PreparedWrite } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -209,7 +209,7 @@ export type HashlineRead = VersionedDocumentRead<string[]> & {
 };
 
 /**
- * Whole-document reads and writes. Writes take `BoundContent`: bind it with
+ * Whole-document reads and writes. Writes take `PreparedWrite`: bind it with
  * `bindMarkdown` before opening any transaction, then apply it inside one
  * (contract §6.2).
  */
@@ -222,12 +222,12 @@ export type MarkdownDocumentStore = LinkBinder & {
   /** Writes only a document with no state yet; otherwise a no-op. */
   seedFromMarkdown(
     documentId: string,
-    content: BoundContent,
+    content: PreparedWrite,
     origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
-    content: BoundContent;
+    content: PreparedWrite;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;

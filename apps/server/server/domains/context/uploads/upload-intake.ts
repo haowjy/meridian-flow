@@ -81,10 +81,21 @@ export interface UploadIntakeRepository {
   consume(documentIds: readonly string[]): Promise<void>;
 }
 
-/** ContextFS adapter seam; it is the only content/catalog mutation dependency. */
-export interface UploadContentPort {
+/**
+ * ContextFS adapter seam; it is the only content/catalog mutation dependency.
+ * `prepare` runs before finalize's transaction opens: preparing tracked text
+ * binds its links and may register ahead refs, which must not wait on the
+ * locks finalize holds (contract §6.2). `persist` applies what it prepared.
+ */
+export interface UploadContentPort<Prepared = unknown> {
+  prepare(input: {
+    reservation: UploadReservation;
+    actorUserId: string;
+    bytes: Uint8Array;
+  }): Promise<{ ok: true; prepared: Prepared } | { ok: false; definite: boolean }>;
   persist(input: {
     reservation: UploadReservation;
+    prepared: Prepared;
     actorUserId: string;
     mimeType: string;
     bytes: Uint8Array;
@@ -189,9 +200,9 @@ async function cleanupObject(
   }
 }
 
-export function createUploadIntake(deps: {
+export function createUploadIntake<Prepared>(deps: {
   repository: UploadIntakeRepository;
-  content: UploadContentPort;
+  content: UploadContentPort<Prepared>;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
 }): UploadIntake {
@@ -264,11 +275,18 @@ export function createUploadIntake(deps: {
       }
 
       try {
+        const prepared = await deps.content.prepare({
+          reservation,
+          actorUserId: raw.actorUserId,
+          bytes: raw.bytes,
+        });
+        if (!prepared.ok) throw Object.assign(new Error("upload preparation failed"), prepared);
         const finalized = await deps.repository.transaction(async () => {
           const current = await deps.repository.lockForFinalize(raw.owner.projectId, raw.intakeId);
           if (current.state === "finalized") return current;
           const persisted = await deps.content.persist({
             reservation: current,
+            prepared: prepared.prepared,
             actorUserId: raw.actorUserId,
             mimeType,
             bytes: raw.bytes,
