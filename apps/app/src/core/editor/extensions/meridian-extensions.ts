@@ -32,6 +32,7 @@ import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
 import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
+import { browserPictureSource } from "../images/image-workflow";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
@@ -288,6 +289,19 @@ export const MeridianTableCell = TableCell.extend({
  * on a same-project rich paste's `<img>` (a figure's own picture), which the
  * paste sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
  */
+/**
+ * A picture's stored source. Rendered only when the browser may fetch it as
+ * written; anything else is named on the clipboard by its metadata
+ * (`links/link-clipboard.ts`), never by an `<img src>` the browser would load.
+ */
+const PICTURE_SOURCE_ATTRIBUTE = {
+  default: "",
+  renderHTML: (attrs: Record<string, unknown>) => {
+    const src = browserPictureSource(typeof attrs.src === "string" ? attrs.src : "");
+    return src === null ? {} : { src };
+  },
+};
+
 const PICTURE_REF_ATTRIBUTE = {
   default: null,
   rendered: false,
@@ -504,7 +518,7 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>
 
   addAttributes() {
     return {
-      src: { default: "" },
+      src: PICTURE_SOURCE_ATTRIBUTE,
       alt: { default: null },
       title: { default: null },
       uploadToken: UPLOAD_TOKEN_ATTRIBUTE,
@@ -645,7 +659,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
 
   addAttributes() {
     return {
-      src: { default: "" },
+      src: { default: "", rendered: false },
       alt: { default: null },
       label: { default: null },
       caption: { default: "" },
@@ -677,9 +691,9 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
     return ReactNodeViewRenderer(FigureNodeView);
   },
 
-  renderHTML({ HTMLAttributes }) {
+  renderHTML({ node, HTMLAttributes }) {
     const attrs = HTMLAttributes as RenderAttrs;
-    const src = typeof attrs.src === "string" ? attrs.src : "";
+    const src = browserPictureSource(typeof node.attrs.src === "string" ? node.attrs.src : "");
     const alt = typeof attrs.alt === "string" ? attrs.alt : null;
     const label = typeof attrs.label === "string" ? attrs.label : null;
     const caption = typeof attrs.caption === "string" ? attrs.caption : "";
@@ -687,7 +701,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
     return [
       "figure",
       mergeAttributes(HTMLAttributes, { "data-type": "figure", "data-label": label }),
-      ["img", { src, alt }],
+      ["img", src === null ? { alt } : { src, alt }],
       ["figcaption", caption],
     ];
   },

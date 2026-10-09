@@ -10,7 +10,10 @@ the figure endpoint, or signed-URL rendering policy (`asset-image-render-state.t
 which draws an `asset:` source and a document-address one alike: the address
 (and its ref, if any) is answered by the link lane's cache, and its document
 signs exactly as an upload does. A node view retargeted to another picture
-never keeps drawing the previous one).
+never keeps drawing the previous one. An upload the signed-URL route answers
+404 for is drawn as gone, with no Retry, and asked again on the next catalog
+change). A stored source is never a browser URL: rendered HTML (clipboard,
+drag) carries `src` only for a web or `data:` source (`browserPictureSource`).
 
 ## Mental model
 
