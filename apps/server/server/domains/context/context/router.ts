@@ -387,7 +387,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
-      const creation = r.value.requireCreation("entry");
+      const creation = r.value.requireCreation("intake");
       if (!creation.ok) {
         const existing = await callAdapter(canonical, () => adapter.stat(path));
         if (!existing.ok) return existing;
@@ -404,9 +404,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
       const creation = r.value.requireCreation("entry");
       if (!creation.ok) return creation;
       const ensured = await callAdapter(canonical, () =>
@@ -545,9 +542,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
+      const creation = r.value.requireCreation("intake");
+      if (!creation.ok) return creation;
       if (!adapter.capabilities.creatable && path.includes("/")) {
         return Err({
           code: "invalid_operation",
@@ -555,8 +551,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           message: UPLOAD_FOLDER_CREATION_DENIED_MESSAGE,
         });
       }
-      const creation = r.value.requireCreation("intake");
-      if (!creation.ok) return creation;
       const result = await callAdapter(canonical, () => adapter.writeBinary(path, options));
       return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
@@ -619,9 +613,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      if (!adapter.capabilities.writable) {
-        return Err({ code: "permission_denied", uri: canonical });
-      }
       const creation = r.value.requireCreation("entry");
       if (!creation.ok) return creation;
       return callAdapter(canonical, () => adapter.mkdir(path, options));
