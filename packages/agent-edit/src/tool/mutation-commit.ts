@@ -78,6 +78,12 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
 
 export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnapshot"> {
   runtime: MutationCommitRuntime;
+  /**
+   * What admission answers when the document is not empty at that moment. A
+   * create without overwrite lands only in an empty document, and this is the
+   * one acquisition that journals, so the check belongs here and not earlier.
+   */
+  refuseUnlessEmpty?: InternalWriteResult;
   before: readonly BlockSnapshot[];
   preOwnSnapshot: Uint8Array;
 }
@@ -272,6 +278,9 @@ export function createMutationCommit(deps: {
         input.docId,
         input.commandName,
         async (liveDoc) => {
+          if (input.refuseUnlessEmpty && model.getBlocks(toDocHandle(liveDoc)).length > 0) {
+            return input.refuseUnlessEmpty;
+          }
           const applied = await applyJournaledUpdateUnderLock(liveDoc, {
             ...input,
             ownTurnId: input.turnId,

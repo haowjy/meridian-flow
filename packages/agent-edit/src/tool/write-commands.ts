@@ -217,16 +217,17 @@ export function createWriteCommands(deps: {
       command.overwrite === true ||
       (deferNewDocumentCreation && bufferedResponseUpdates.length === 0);
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
+    const alreadyExists = status(
+      "invalid_write",
+      `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
+    );
     const liveCheck = await withLiveDocument(
       options.coordinator,
       address.documentId,
       command.command,
       (liveDoc) =>
         options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
-          ? status(
-              "invalid_write",
-              `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
-            )
+          ? alreadyExists
           : null,
     );
     const missingLiveForDeferredNewDocument =
@@ -262,12 +263,7 @@ export function createWriteCommands(deps: {
     });
     const assigner = linkAssigner(address.documentId, links.scope, shown);
     const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
-    if (existingBlocks.length > 0 && !overwriting) {
-      return status(
-        "invalid_write",
-        `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
-      );
-    }
+    if (existingBlocks.length > 0 && !overwriting) return alreadyExists;
     let overwrite: Extract<ResolveWriteResult, { ok: true }> | undefined;
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveOverwrite(
@@ -434,6 +430,8 @@ export function createWriteCommands(deps: {
         touchedHashes,
         deletedHashes,
         preOwnSnapshot: preWriteSnapshot,
+        // Empty when checked and restored is not empty when admitted: a writer may land between.
+        ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
         ...(turnId ? { turnId } : {}),
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
