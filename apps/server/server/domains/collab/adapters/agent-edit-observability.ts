@@ -1,6 +1,7 @@
 /** Event-sink adapters for agent-edit diagnostics and lifecycle observability. */
 import type {
   createAgentEditCore,
+  LinkSpliceFallbackDetail,
   ResponseLifecycleClaimDiscardedDetail,
   ReversalNoticeFailedDetail,
   ReversalNoticePort,
@@ -253,6 +254,7 @@ export function createAgentEditObservabilityOptions(input: {
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
   | "onReversalNoticeFailed"
+  | "onLinkSpliceFallback"
 > {
   return {
     ...(input.reversalNoticePort ? { reversalNoticePort: input.reversalNoticePort } : {}),
@@ -263,6 +265,27 @@ export function createAgentEditObservabilityOptions(input: {
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
     onReversalNoticeFailed: reversalNoticeFailedObserver(input.eventSink),
+    onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
+  };
+}
+
+/**
+ * A formatted find whose splice changed how its surroundings parse binds the
+ * whole block group (contract §5.4): identity still holds, but unchanged links
+ * there may churn their formatting. The only approximation in the write path.
+ */
+function linkSpliceFallbackObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onLinkSpliceFallback"]> {
+  return (event: LinkSpliceFallbackDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.agent_edit",
+      name: "write.link_splice_fallback",
+      correlation: { documentId: event.documentId },
+      payload: { reason: event.reason },
+    });
   };
 }
 
