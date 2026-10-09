@@ -1,8 +1,7 @@
-import type { LinkView } from "@meridian/contracts";
-import type { SpelledLinkFact } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
+import type { LinkShowing } from "../links/shown.js";
 
 export interface ResolvedSpan {
   start: number;
@@ -112,10 +111,8 @@ export interface ConcurrentEditRun {
   blocks: string[];
   /** Explicit deletion evidence. A tombstone is never emitted without its captured body. */
   tombstones: Array<{ hash: string; capturedBody: string }>;
-  /** Host-only: the links this run's rendered blocks showed the model (never in model text). */
-  shownLinks?: readonly SpelledLinkFact[];
-  /** Host-only: the view `shownLinks` were spelled in; set whenever they are. */
-  shownView?: LinkView;
+  /** Host-only: what this run's rendered blocks showed the model (never in model text). */
+  showing?: LinkShowing;
 }
 
 export type ApplyResult =

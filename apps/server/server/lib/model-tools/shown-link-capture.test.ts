@@ -45,6 +45,7 @@ const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
 const DRAFT: LinkView = { kind: "draft", workId: crypto.randomUUID() };
+const TARGET_URI = "user://target.md";
 
 const call: { context?: ResolvedModelContextPort } = {};
 
@@ -71,11 +72,15 @@ const fact = (n: number): SpelledLinkFact => ({
   address: `user://target-${n}.md`,
 });
 
-/** A core outcome whose facts were spelled in `view`, which need not be the grant's. */
+/**
+ * A core outcome whose facts were spelled in `view` from `holderUri`; either
+ * may differ from the grant's and the address the handler resolved.
+ */
 function success(
   command: "read" | "insert",
-  shownLinks: SpelledLinkFact[],
+  links: SpelledLinkFact[],
   view: LinkView = { kind: "live" },
+  holderUri = "user://source.md",
 ): WriteOutcome {
   return {
     status: "success",
@@ -84,7 +89,7 @@ function success(
     isError: false,
     revision: null,
     result: { command, status: "success", phase: "committed" } as never,
-    ...(shownLinks.length > 0 ? { shownLinks, shownView: view } : {}),
+    ...(links.length > 0 ? { showing: { holderUri, view, links } } : {}),
   };
 }
 
@@ -127,7 +132,15 @@ function pausedRead() {
   return { release, pending, wait };
 }
 
-async function harness(options: { read?: () => Promise<void>; readTimeoutMs?: number } = {}) {
+async function harness(
+  options: {
+    read?: () => Promise<void>;
+    readTimeoutMs?: number;
+    /** The blocks every document's search read returns, with each block's facts. */
+    search?: { entries: string[]; links: SpelledLinkFact[][] };
+    write?: (context: { responseId?: string }) => Promise<WriteOutcome>;
+  } = {},
+) {
   const transactionOwner = new InMemoryTransactionOwner();
   const inner = createInMemoryShownLinkStore({
     transactionOwner,
@@ -147,9 +160,14 @@ async function harness(options: { read?: () => Promise<void>; readTimeoutMs?: nu
   let plainReads = 0;
   const documentSync = {
     ensureDocument: async () => {},
-    readEffectiveHashlines: async () => ({
+    readEffectiveHashlines: async ({ documentId }: { documentId: string }) => ({
       ok: true,
-      value: { content: searchEntries, revision: "r1", links: searchLinks },
+      value: {
+        content: options.search?.entries ?? searchEntries,
+        revision: "r1",
+        links: options.search?.links ?? searchLinks,
+        holder: { uri: `user://${names[documentId]}.md`, view: { kind: "live" } },
+      },
     }),
     refreshDocumentProjection: async () => {},
     agentEdit: () => ({
@@ -161,8 +179,16 @@ async function harness(options: { read?: () => Promise<void>; readTimeoutMs?: nu
         await options.read?.();
         return success("read", [fact(91 + 10 * n)], DRAFT);
       },
-      write: async () => success("insert", [fact(92)]),
+      write: async (_command: unknown, context: { responseId?: string }) =>
+        options.write
+          ? options.write(context)
+          : success("insert", [fact(92)], undefined, TARGET_URI),
     }),
+  };
+  const names: Record<string, string> = {
+    [SOURCE]: "source",
+    [TARGET]: "target",
+    [HIDDEN]: "hidden",
   };
   const registry = createInMemoryUnifiedContextStoreRegistry();
   const userStore = getInMemoryProjectContextStore(registry, PROJECT, USER, "user");
@@ -244,6 +270,7 @@ async function runTurn(
     during?: (rig: Rig) => Promise<void>;
     userBlocks?: UserMessageBlock[];
     referenceReader?: ReferenceReader;
+    responseWrites?: Parameters<typeof runtimeScenario>[0]["responseWrites"];
   } = {},
 ) {
   const toolRegistry = createToolRegistry({ registrations: h.registrations });
@@ -255,6 +282,7 @@ async function runTurn(
     shownLinks: h.store,
     transactionOwner: h.transactionOwner,
     referenceReader: control.referenceReader ?? h.referenceReader,
+    ...(control.responseWrites ? { responseWrites: control.responseWrites } : {}),
   });
   let turnId: string | undefined;
   const executed = (async () => {
@@ -363,6 +391,95 @@ const rows: Array<{
         store: h.store,
         threadId,
         shown: { [SOURCE]: passages, [TARGET]: passages, [HIDDEN]: [] },
+      };
+    },
+  },
+  {
+    name: "a search window records neither a link it left out nor one it cut through; verbose shows both",
+    async act(check) {
+      // The window keeps about 120 characters either side of the match.
+      const filler = "filler ".repeat(100);
+      const search = {
+        entries: [
+          `h0|needle ${filler}[Secret](user://never-shown.md)`,
+          `h1|${"word ".repeat(22)}needle ${"word ".repeat(22)}[Cut through here](user://cut.md) ${filler}`,
+        ],
+        links: [[fact(80)], [fact(81)]],
+      };
+      const windowed = await harness({ search });
+      const plain = await runTurn(windowed, [toolCall("search", { pattern: "needle" })]);
+      // What the model reads: the rendered text, not the typed hits beside it.
+      const output = plain.results
+        .map((result) => String((result as { output?: unknown }).output))
+        .join("\n");
+      check(output, "the left-out link is not in the output").not.toContain("never-shown.md");
+      check(output, "the window cuts into the second link").toContain("[Cut…");
+      check(output, "its destination is cut off").not.toContain("user://cut.md)");
+      check(await shown(windowed.store, plain.threadId, SOURCE), "windowed").toEqual([]);
+      const whole = await harness({ search });
+      const verbose = await runTurn(whole, [
+        toolCall("search", { pattern: "needle", verbose: true }),
+      ]);
+      return {
+        store: whole.store,
+        threadId: verbose.threadId,
+        shown: { [SOURCE]: expected([fact(80), fact(81)]) },
+      };
+    },
+  },
+  {
+    name: "a staged echo and its settled receipt each keep the holder their own render spelled from",
+    async act(check) {
+      const MOVED = "user://moved/target.md";
+      const h = await harness({
+        write: async (context) => ({
+          ...success("insert", [fact(94)], undefined, TARGET_URI),
+          phase: "staged",
+          ...(context.responseId ? { writeId: "w1", settlementId: "s1" } : {}),
+        }),
+      });
+      const receipt = {
+        ...success("insert", [fact(95)], undefined, MOVED),
+        writeId: "w1",
+        settlementId: "s1",
+      };
+      const { threadId, results } = await runTurn(
+        h,
+        [toolCall("write", { command: "insert", path: TARGET_URI, content: "x" })],
+        {
+          // The holder moved between the echo and the save: the receipt spells from its new folder.
+          responseWrites: {
+            async commitResponse(_id, _ctx, beforeCommit) {
+              const settled = {
+                status: "committed" as const,
+                receipts: [{ documentId: TARGET, receipt: receipt as never }],
+                concurrentEdits: [],
+                refused: [],
+              };
+              await beforeCommit(settled);
+              return settled;
+            },
+            async rollbackResponse() {},
+          },
+        },
+      );
+      check(results, "the staged echo, then the settled receipt").toEqual([
+        expect.not.objectContaining({ isError: true }),
+        expect.not.objectContaining({ isError: true }),
+      ]);
+      const bases = (await h.store.forDocument(threadId, TARGET))
+        .map((link) => `${link.ref.slice(4, 12)}@${link.holderUri}`)
+        .sort();
+      check(bases, "each showing's base").toEqual(
+        [
+          `${fact(94).ref.slice(4, 12)}@${TARGET_URI}`,
+          `${fact(95).ref.slice(4, 12)}@${MOVED}`,
+        ].sort(),
+      );
+      return {
+        store: h.store,
+        threadId,
+        shown: { [TARGET]: expected([fact(94), fact(95)]) },
       };
     },
   },

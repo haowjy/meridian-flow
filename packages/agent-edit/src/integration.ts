@@ -45,6 +45,7 @@ export {
 export type { AssignInput, AssignResult } from "./links/assign-refs.js";
 export { assignLinkRefs, bindSources } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
+export type { LinkShowing } from "./links/shown.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";

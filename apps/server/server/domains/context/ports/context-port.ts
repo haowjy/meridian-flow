@@ -187,6 +187,14 @@ export interface SearchMatch {
   blockHash?: string;
 }
 
+/** What a search hit's passages spell, from the read binding that spelled them. */
+export interface SearchShowing {
+  holderUri: string;
+  view: LinkView;
+  /** Aligned with {@link SearchResult.matches}. */
+  passages: readonly (readonly SpelledLinkFact[])[];
+}
+
 /** Every passage one file contributed to a {@link ContextPort.search}. */
 export interface SearchResult {
   /** Host-only source identity; tools strip it from model-facing output. */
@@ -204,13 +212,13 @@ export interface SearchResult {
   /** Relevance score, 0-1. Adapter-dependent. */
   score?: number;
   /**
-   * Host-only: each ref-bearing link the returned passages spell, as spelled,
-   * computed after the passage cap. Tools strip it; the host records it as shown
-   * only for hits the reader may see.
+   * Host-only: each ref-bearing link the returned passages spell, aligned with
+   * `matches`, and the holder URI and view the read's binding spelled them
+   * from. Tools strip it; the host records a passage's links only when the
+   * text the model receives shows that passage whole, and only for hits the
+   * reader may see.
    */
-  shownLinks?: readonly SpelledLinkFact[];
-  /** Host-only: the view `shownLinks` were spelled in. */
-  shownView?: LinkView;
+  shown?: SearchShowing;
 }
 
 export type WriteProvenance =

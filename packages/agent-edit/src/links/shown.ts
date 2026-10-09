@@ -126,23 +126,37 @@ function sameFacts(left: readonly (SpelledLinkFact | null)[], right: typeof left
   return spell(left) === spell(right);
 }
 
-/** A command's binding as evidence needs it: the codec that rendered, and the view it spelled in. */
+/**
+ * What one render showed the model in one holder: the facts its codec spelled,
+ * and the holder URI and view it spelled them from. All three come from the
+ * one binding that rendered, so a holder moving after the render cannot lend
+ * the facts another base. Host-only; never in model text.
+ */
+export interface LinkShowing {
+  holderUri: string;
+  view: LinkView;
+  links: readonly SpelledLinkFact[];
+}
+
+/** A command's binding as evidence needs it: the codec that rendered, and the holder it spelled for. */
 export interface ShownBinding {
   codec: Pick<ShownLinkLedger, "shownLinks">;
-  scope: { holder: { view: LinkView } };
+  scope: { holder: { uri: string | null; view: LinkView } };
 }
 
 /**
- * Host-only evidence for rendered items: the facts the binding's codec
- * rendered, and the view it spelled them in. Empty when nothing ref-bearing
- * was shown.
+ * Host-only evidence for rendered items, from the binding that rendered them.
+ * Empty when nothing ref-bearing was shown, or when the binding spelled for no
+ * holder (relative spellings then have no base to claim).
  */
 export function shownEvidence(
   items: readonly AgentEditBlockItem[],
   links: ShownBinding,
-): { shownLinks?: readonly SpelledLinkFact[]; shownView?: LinkView } {
-  const shownLinks = links.codec.shownLinks(items);
-  return shownLinks.length > 0 ? { shownLinks, shownView: links.scope.holder.view } : {};
+): { showing?: LinkShowing } {
+  const { uri, view } = links.scope.holder;
+  if (uri === null) return {};
+  const shown = links.codec.shownLinks(items);
+  return shown.length > 0 ? { showing: { holderUri: uri, view, links: shown } } : {};
 }
 
 /** Every block item a model payload renders: block groups and concurrent runs. */
