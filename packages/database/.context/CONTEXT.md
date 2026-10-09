@@ -31,8 +31,8 @@ runs before the origin foreign key, in this order:
 Demotion erases the dangling origin and the old depth, so it runs last.
 Re-rooting the whole subtree preserves the threads domain's one-root lineage
 contract ([threads context](../../../apps/server/server/domains/threads/.context/CONTEXT.md)).
-Never hand-patch an applied database's migration ledger or reset a shared
-database. Rationale and rejected repairs: [Drizzle Migration Integrity][kb-migration-integrity].
+Never hand-patch an applied database's migration ledger. Resetting a shared
+database requires explicit owner authorization. Rationale and rejected repairs: [Drizzle Migration Integrity][kb-migration-integrity].
 
 [kb-migration-integrity]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/stack/drizzle-migration-integrity.md
 
@@ -338,31 +338,21 @@ Agent package installations retain account/system current and upstream source he
 FKs clean up deleted Projects and catalog entries; publication and definition
 revision changes preserve exclusions. It is not another definition owner.
 
-### No Work Scratch archival rollout (0032–0034)
+### No Work Scratch archival upgrade (0032–0034)
 
-Migrate first, then swap to the lineage-Scratch app. 0032 installs NOT VALID
-scope checks and a temporary `root_thread_id IS NULL` write fence. 0033 moves
-every No Work Scratch source (including trashed content) into a fresh Unfiled
-root, taking `Scratch`, `Scratch (2)`, etc., never merging existing entries.
-0034 builds permanent replacement indexes concurrently, validates the checks,
-then removes the fence and drops the old guard last. Until fence removal no
-lineage row may be admitted. Retry the complete 0034 file after failure; do not
-launch the new app until migration completes.
+Until launch, migrations need not keep the previous server version working, and
+a broken deploy is reset.
 
-Marker files tolerate BOM/CRLF and isolate every concurrent statement in its
-breakpoint chunk. Builds use IF NOT EXISTS; the runner pre-drops only invalid
-indexes those builds name, never a valid retry guard. Short lock_timeout is
-scoped only around ACCESS EXCLUSIVE statements (the fence drop), not concurrent
-builds, drops or CHECK validation.
-
-The old binary may recreate a work-scoped Scratch source in the rollout window.
-The new catalog and availability readers ignore No Work Scratch rows instead
-of spelling invalid URIs. Notes written there after the archival transaction
-are not moved automatically: quiesce old writers before migration, or arrange
-a repeat archival operation before completing the app swap.
+0032 installs NOT VALID scope checks. 0033 moves every No Work Scratch source
+(including trashed content) into a fresh Unfiled root, taking `Scratch`,
+`Scratch (2)`, etc., never merging existing entries. 0034 builds permanent
+replacement indexes concurrently, validates the checks, and drops the old
+project guard last. Retry the complete 0034 file after failure.
 
 Document/folder IDs, content, Yjs state and storage object keys survive the
-move. Upload intake source, work ownership, path/URI and location token change.
+move. Upload intakes retain their Work ownership; source, path/URI and location
+token change. Only live, traversable destination occupants consume Unfiled
+previous-location aliases.
 Catalog heads for both scopes are deleted (cascading replay/entries), so the
 next snapshot rebuilds from authoritative rows with a fresh generation. Old
 Scratch previous-location aliases cascade away with their source. Stored

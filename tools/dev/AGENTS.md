@@ -45,10 +45,11 @@ Local-dev-only utilities. Never imported by the application runtime.
   chunk. Builds require IF NOT EXISTS: before execution the runner concurrently
   drops only invalid indexes those builds name, never valid guards. All other
   statements must also be re-runnable. Scope short lock_timeout settings only
-  around ACCESS EXCLUSIVE statements, not online builds, drops or validation. The runner
-  refuses structurally invalid, divergent, or out-of-order history. Only reset a
+  around ACCESS EXCLUSIVE statements, not online builds, drops or validation.
+  The runner refuses structurally invalid, divergent, or out-of-order history. Only reset a
   database owned by the current dev checkout. Shared and deployed database
-  history requires human repair, never a reset.
+  resets require explicit owner authorization; until launch, the owner may reset
+  a broken deploy instead of preserving previous-server compatibility.
 - **New DB-shape contracts get tests.** Slug-rewrite, name-validation, idempotency, and reserved-name behavior are covered by `__tests__/dev-env.test.ts` and `__tests__/dev-db.test.ts`. Add cases when you change those contracts.
 - **The local DB gate is reachability-aware, not optional on failure.** `pnpm check` runs `check-db-gate.ts`: it skips loudly only when the configured Postgres server is absent or unreachable, then runs the full managed `pnpm test:db` suite once the server is reachable. `pnpm test:db` always forces the gate.
 - **Dev stack cleanup is targeted.** Use `pnpm dev --stop` to stop this worktree's dev tmux session(s) and prune portless routes. Tailscale cleanup is surgical per-route `off` only; never use `tailscale serve reset`, and never remove routes whose local target is still listening.
