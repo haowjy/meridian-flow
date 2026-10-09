@@ -15,7 +15,6 @@
 import { t } from "@lingui/core/macro";
 import { ChevronUp } from "lucide-react";
 import type { ComponentProps } from "react";
-import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
@@ -39,11 +38,6 @@ function useChatScratch(projectId: string, threadId: string | null) {
       ? workFromSnapshot({ works: works ?? [], noWork }, thread.workId)
       : null;
   const owner = chatScratchOwner({ thread, work });
-  const lineageTitle = useLineageTitle(
-    projectId,
-    owner?.kind === "lineage" ? { rootThreadId: owner.rootThreadId } : null,
-  );
-  const name = owner?.kind === "work" ? work?.name : lineageTitle;
   const source = useCatalogMenuSource({
     projectId,
     owner:
@@ -52,7 +46,13 @@ function useChatScratch(projectId: string, threadId: string | null) {
         : { workId: owner?.workId ?? null },
     // A chat rebound onto a Work keeps its lineage's notes findable.
     earlierRootThreadId: owner?.kind === "work" ? (thread?.rootThreadId ?? null) : null,
-    heading: name ? t`Scratch for ${name}` : schemeLabel("scratch"),
+    // The rail always means the chat on screen, so a chat's own notes need no name.
+    heading:
+      owner?.kind === "work" && work
+        ? t`Scratch for ${work.name}`
+        : owner?.kind === "lineage"
+          ? t`Scratch for this chat`
+          : schemeLabel("scratch"),
   });
   const openNote = useOpenScratchNote();
   if (!owner || !thread) return null;

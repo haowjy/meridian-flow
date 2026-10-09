@@ -3301,13 +3301,22 @@ msgstr "Scratch"
 msgid "Scratch couldn’t load"
 msgstr "Scratch couldn’t load"
 
+#. placeholder {0}: work.name
+#: src/features/project/chat/ChatScratch.tsx
+msgid "Scratch for {0}"
+msgstr "Scratch for {0}"
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Scratch for {chatTitle}"
 msgstr "Scratch for {chatTitle}"
 
 #: src/features/project/chat/ChatScratch.tsx
-msgid "Scratch for {name}"
-msgstr "Scratch for {name}"
+#~ msgid "Scratch for {name}"
+#~ msgstr "Scratch for {name}"
+
+#: src/features/project/chat/ChatScratch.tsx
+msgid "Scratch for this chat"
+msgstr "Scratch for this chat"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
