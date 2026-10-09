@@ -288,3 +288,38 @@ describe("context router scheme creation capabilities", () => {
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });
 });
+
+it("guards both tracked creation doors by lineage actor while binding remains preparation", async () => {
+  const adapter = writableAdapter("scratch");
+  adapter.bindTrackedDocument = vi.fn(async (_path, markdown) =>
+    Ok({ markdown, bindings: [] } as never),
+  );
+  adapter.createBoundDocument = vi.fn(async () => Ok({ documentId: "bound-new" }));
+  const port = createContextPortRouter({
+    sources: new Map(),
+    workAuthorities: new Map(),
+    resolveLineageSource: async () => ({
+      adapter,
+      authority: { kind: "lineage", rootThreadRef: "c12" },
+    }),
+  });
+  const uri = "scratch://@/c12/note.md";
+  const origin = { type: "human" as const, userId: "writer" };
+  const bound = await port.bindTrackedDocument(uri, "prepared");
+  expect(bound.ok).toBe(true);
+  if (!bound.ok) throw new Error("binding failed");
+  await expect(port.createTrackedDocument(uri, "writer", { origin })).resolves.toMatchObject({
+    ok: false,
+    error: { code: "permission_denied" },
+  });
+  await expect(
+    port.createBoundDocument(uri, bound.value, { origin, documentId: "reserved" }),
+  ).resolves.toMatchObject({ ok: false, error: { code: "permission_denied" } });
+  expect(adapter.createTrackedDocument).not.toHaveBeenCalled();
+  expect(adapter.createBoundDocument).not.toHaveBeenCalled();
+  await expect(
+    port.createTrackedDocument(uri, "agent", {
+      origin: { type: "agent", threadId: "thread", turnId: "turn" } as never,
+    }),
+  ).resolves.toMatchObject({ ok: true });
+});
