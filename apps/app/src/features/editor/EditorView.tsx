@@ -40,7 +40,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import { usePaintPending } from "@/components/app/PaintHold";
+import { PaintCapture, PaintScope, usePaintPending } from "@/components/app/PaintHold";
+import { Button } from "@/components/ui/button";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
@@ -61,7 +62,6 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
-import { captureReview, FrozenReview, type FrozenReviewMarkup } from "./FrozenReview";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
@@ -77,6 +77,8 @@ import "./editor.css";
 
 export type EditorViewProps = {
   documentId: string;
+  draftOnly?: boolean;
+  onCloseDraftOnly?: () => void;
   /** Exact host-owned live/local session. Omitted only for branch review until F1-I3. */
   session?: DocumentSession;
   /** Stable editor lifetime across local identity remint/materialization. */
@@ -154,19 +156,11 @@ export function EditorView(props: EditorViewProps) {
   const identity = mountIdentity(props, "review");
   const roomKey = editorRoomKey(identity);
   const inReview = identity.surface === "review";
-  // Review is intended from the click, before its room resolves or paints. Until
-  // the branch editor owns input, the live manuscript stays painted but read-only.
+  // A requested review is the destination before its room resolves or paints.
   const reviewRequested = Boolean(props.reviewDraftId);
 
-  // The review mount whose editor exists. Until then the live editor stays on
-  // screen, so entering review never shows an empty body.
+  // Marks and editor construction jointly decide when the review paints.
   const [paintedReviewKey, setPaintedReviewKey] = useState<string | null>(null);
-  // The painted review while its room is replaced: an inert copy, so neither the
-  // live prose nor an empty shell shows under a review the writer is still in. It belongs to
-  // the one review identity (document, draft) it was copied from and renders for no other.
-  const reviewIdentity = props.reviewDraftId
-    ? `${props.projectId}:${props.reviewWorkId}:${props.documentId}:${props.reviewDraftId}`
-    : null;
   const { controller, roomOwner } = useDraftReview();
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
   const liveSession = props.session ?? null;
@@ -194,23 +188,6 @@ export function EditorView(props: EditorViewProps) {
     controller.inlineReview.draftId === reviewDraftId &&
     controller.inlineReview.previewIdentity !== undefined;
   const [marksWaitOverFor, setMarksWaitOverFor] = useState<string | null>(null);
-  const [replaced, setReplaced] = useState<{
-    identity: string;
-    markup: FrozenReviewMarkup;
-  } | null>(null);
-  const replacedReview = replaced && replaced.identity === reviewIdentity ? replaced.markup : null;
-  const reviewHostRef = useRef<HTMLDivElement | null>(null);
-  const reviewPaintedRef = useRef(false);
-  useLayoutEffect(
-    () =>
-      roomOwner.onBeforeReplace(() => {
-        if (!reviewPaintedRef.current || !reviewIdentity) return;
-        const markup = captureReview(reviewHostRef.current);
-        if (markup) setReplaced({ identity: reviewIdentity, markup });
-      }),
-    [roomOwner.onBeforeReplace, reviewIdentity],
-  );
-
   const reviewSession =
     inReview && !settled && roomOwner.session?.roomKey === roomKey ? roomOwner.session : null;
   const reviewKey =
@@ -219,17 +196,6 @@ export function EditorView(props: EditorViewProps) {
   // The editor existing is not enough: the review shows with its marks, in one
   // frame, so the writer never sees the draft text unmarked.
   const reviewVisible = reviewPainted && (marksReady || marksWaitOverFor === reviewKey);
-  reviewPaintedRef.current = reviewVisible;
-  // Until the replacement paints, the copy stands in for the review it replaces.
-  const replacing = reviewRequested && !settled && !reviewVisible && replacedReview !== null;
-  // With no live editor underneath, the branch's own shell (or notice) is all
-  // there is to see, so it shows from its first render.
-  const reviewShown = reviewVisible || (!liveSession && !replacing);
-
-  useEffect(() => {
-    if (reviewVisible) setReplaced(null);
-  }, [reviewVisible]);
-
   useEffect(() => {
     if (!reviewPainted || marksReady || !reviewKey) return;
     const timer = window.setTimeout(() => setMarksWaitOverFor(reviewKey), REVIEW_MARKS_WAIT_MS);
@@ -239,59 +205,139 @@ export function EditorView(props: EditorViewProps) {
   // Review chrome (the header, the chip swap) shows with the review body and
   // never before it. A layout effect, so the controller's update lands before
   // paint, in the same frame as the body swap above.
-  const chromeShown = inReview && (reviewShown || replacing || settled);
+  const chromeShown = inReview && (reviewVisible || settled);
   const { setInlineReviewShown } = controller;
   useLayoutEffect(() => {
     if (!reviewDraftId) return;
     setInlineReviewShown(props.documentId, reviewDraftId, chromeShown);
   }, [setInlineReviewShown, props.documentId, reviewDraftId, chromeShown]);
 
-  if (!liveSession && !reviewSession && !replacing) return <PendingEditorShell {...props} />;
-
-  // The one place an editor's lifetime is decided. Every input a session lookup
-  // reads is part of its key, so a session swap always arrives with a fresh
-  // mount and nothing else can force one. A rebuilt or reopened room keeps its
-  // name, so the session's own Y.Doc is part of the key. A document's live
-  // editor stays mounted, hidden, underneath its review: Apply, Discard and
-  // Back to live then reveal the warm editor instead of rebuilding one.
+  const [reviewSnapshot, setReviewSnapshot] = useState<{
+    session: DocumentSession | null;
+    snapshot: DocumentSessionSnapshot | null;
+  }>({ session: null, snapshot: null });
+  useLayoutEffect(
+    () =>
+      reviewSession?.subscribe((snapshot) =>
+        setReviewSnapshot({ session: reviewSession, snapshot }),
+      ),
+    [reviewSession],
+  );
+  const snapshot =
+    reviewSnapshot.session === reviewSession
+      ? reviewSnapshot.snapshot
+      : reviewSession?.getSnapshot();
+  const schemaStale =
+    snapshot?.connectionState?.kind === "reset" &&
+    snapshot.connectionState.reason === WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason;
+  const failed = reviewRequested && controller.reviewRoomError;
+  const terminal = failed || schemaStale || (props.draftOnly && !reviewRequested);
+  const liveKey = liveSession
+    ? `${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`
+    : "";
+  const surface = terminal
+    ? "review-error"
+    : settled
+      ? `live:${liveKey}`
+      : reviewVisible
+        ? `review:${reviewKey}`
+        : reviewRequested || !liveSession
+          ? "pending"
+          : `live:${liveKey}`;
+  const liveVisible = surface.startsWith("live:");
+  const reviewOnScreen = surface.startsWith("review:");
   return (
     <>
-      {liveSession ? (
-        <div
-          data-editor-surface="live"
-          className={reviewVisible || replacing ? "hidden" : "contents"}
-        >
-          <SessionEditorView
-            key={`${editorMountKey(mountIdentity(props, "live"))}|${liveSession.document.guid}`}
-            {...props}
-            editable={reviewRequested && !closed ? false : props.editable}
-            identity={mountIdentity(props, "live")}
-            session={liveSession}
-            held={reviewRequested && !closed}
-          />
-        </div>
+      <PaintCapture surface={surface} />
+      {terminal ? (
+        schemaStale ? (
+          <p data-document-schema-stale>
+            <Trans>This chapter is temporarily unavailable</Trans>
+          </p>
+        ) : (
+          <ReviewError props={props} />
+        )
       ) : null}
-      {replacing && replacedReview ? <FrozenReview markup={replacedReview} /> : null}
-      {reviewSession && reviewKey ? (
-        <div
-          ref={reviewHostRef}
-          data-editor-surface="review"
-          className={reviewShown ? "contents" : "hidden"}
-        >
-          <SessionEditorView
-            key={reviewKey}
-            {...props}
-            identity={identity}
-            session={reviewSession}
-            editable={roomOwner.inputEligible ? props.editable : false}
-            onPainted={() => {
-              setPaintedReviewKey(reviewKey);
-              roomOwner.reportPaint(reviewSession);
-            }}
-          />
-        </div>
+      {surface === "pending" ? <PendingEditorShell {...props} /> : null}
+      {liveSession ? (
+        <PaintScope active={liveVisible}>
+          <div data-editor-surface="live" className={liveVisible ? "contents" : "hidden"}>
+            <SessionEditorView
+              key={liveKey}
+              {...props}
+              editable={reviewRequested && !closed ? false : props.editable}
+              identity={mountIdentity(props, "live")}
+              session={liveSession}
+              held={!liveVisible || (reviewRequested && !closed)}
+            />
+          </div>
+        </PaintScope>
+      ) : null}
+      {!terminal && reviewSession && reviewKey ? (
+        <PaintScope active={reviewOnScreen}>
+          <div data-editor-surface="review" className={reviewOnScreen ? "contents" : "hidden"}>
+            <SessionEditorView
+              key={reviewKey}
+              {...props}
+              identity={identity}
+              session={reviewSession}
+              editable={roomOwner.inputEligible ? props.editable : false}
+              onPainted={() => {
+                setPaintedReviewKey(reviewKey);
+                roomOwner.reportPaint(reviewSession);
+              }}
+              onUnpainted={() => setPaintedReviewKey(null)}
+            />
+          </div>
+        </PaintScope>
       ) : null}
     </>
+  );
+}
+
+function ReviewError({ props }: { props: EditorViewProps }) {
+  const { controller } = useDraftReview();
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
+        <p className="font-medium text-foreground text-sm">
+          {props.reviewDraftId ? (
+            <Trans>Couldn't open review mode.</Trans>
+          ) : (
+            <Trans>Couldn't open this draft.</Trans>
+          )}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {props.draftOnly ? (
+            <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
+          ) : (
+            <Trans>Try again, or return to the live document.</Trans>
+          )}
+        </p>
+        <div className="flex justify-center gap-2">
+          {props.reviewDraftId ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                controller.enterInlineReview(props.documentId, props.reviewDraftId as string)
+              }
+            >
+              <Trans>Retry</Trans>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={props.draftOnly ? props.onCloseDraftOnly : controller.exitInlineReview}
+          >
+            {props.draftOnly ? <Trans>Close</Trans> : <Trans>Back to live</Trans>}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -302,6 +348,7 @@ type SessionEditorViewProps = EditorViewProps & {
   held?: boolean;
   /** Called once this mount's TipTap editor exists and is showing its content. */
   onPainted?: () => void;
+  onUnpainted?: () => void;
 };
 
 function SessionEditorView(props: SessionEditorViewProps) {
@@ -366,6 +413,7 @@ function ActiveSessionEditorView({
   session,
   held = false,
   onPainted,
+  onUnpainted,
   snapshot,
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
@@ -570,9 +618,13 @@ function ActiveSessionEditorView({
     return registerLiveRangeEditor(documentId, editor);
   }, [documentId, editor, inReview, held]);
 
+  const paintCallbacks = useRef({ onPainted, onUnpainted });
+  paintCallbacks.current = { onPainted, onUnpainted };
   useEffect(() => {
-    if (editor) onPainted?.();
-  }, [editor, onPainted]);
+    if (!editor) return;
+    paintCallbacks.current.onPainted?.();
+    return () => paintCallbacks.current.onUnpainted?.();
+  }, [editor]);
 
   useEffect(
     () => () => {

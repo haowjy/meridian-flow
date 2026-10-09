@@ -66,7 +66,7 @@ vi.mock("@/features/change-trail/trail-detail-query", () => ({
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller,
-    roomOwner: { session: null, onBeforeReplace: () => () => {} },
+    roomOwner: { session: null },
   }),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({

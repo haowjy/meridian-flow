@@ -208,11 +208,16 @@ it("lets the entry read answer before a stale empty list can exit review", async
   });
 });
 
-it("a gone entry read exits a live document instead of waiting forever", async () => {
+it.each([false, true])("a gone entry read is authoritative (draft-only: %s)", async (draftOnly) => {
   fixture.network.listWorkDrafts.mockReturnValue(new Promise(() => {}));
   fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
   await fixture.render(async (probe) => {
+    if (draftOnly) probe().queryClient.setQueryData(listKey, [{ ...listed, isNewDocument: true }]);
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
-    await settled(() => expect(probe().editor.controller.inlineReview).toBeNull());
+    await settled(() =>
+      draftOnly
+        ? expect(probe().editor.controller.reviewRoomError).toBe(true)
+        : expect(probe().editor.controller.inlineReview).toBeNull(),
+    );
   });
 });

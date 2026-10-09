@@ -32,16 +32,6 @@ export function useReviewRoomOwner({
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
   const owner = useRef(`review-room:${++ownerSequence}`);
-  const beforeReplace = useRef(new Set<() => void>());
-  const prepareReplacement = useCallback(() => {
-    for (const capture of beforeReplace.current) capture();
-  }, []);
-  const onBeforeReplace = useCallback((capture: () => void) => {
-    beforeReplace.current.add(capture);
-    return () => {
-      beforeReplace.current.delete(capture);
-    };
-  }, []);
   const documentId = review?.documentId ?? "";
   const draftId = review?.draftId ?? "";
   const generation = review?.draftGeneration;
@@ -99,13 +89,6 @@ export function useReviewRoomOwner({
     const observations = reviewRoomObservations(rows, preview, draft, pendingWriterGeneration);
     for (const action of observations) {
       if (
-        action.type === "generationObserved" &&
-        action.proposal &&
-        generation !== undefined &&
-        action.draftGeneration > generation
-      )
-        prepareReplacement();
-      if (
         action.type !== "draftAbsentFromList" ||
         (entryAnswered === target && !review?.completion && !disposing)
       )
@@ -137,7 +120,6 @@ export function useReviewRoomOwner({
     disposing,
     queryClient,
     dispatch,
-    prepareReplacement,
   ]);
 
   const wanted = Boolean(review && !roomName && !review.roomError);
@@ -267,8 +249,10 @@ export function useReviewRoomOwner({
               : null,
         });
         if (connection?.kind === "reset") {
-          prepareReplacement();
           switch (connection.disposition) {
+            case "schema":
+              // Keep the terminal session so its schema notice can paint.
+              return;
             case "superseded":
               rebuilding = true;
               setBinding({ session: null, key });
@@ -295,8 +279,7 @@ export function useReviewRoomOwner({
         if (
           snapshot.status === "destroyed" ||
           connection?.kind === "terminal" ||
-          connection?.kind === "unauthorized" ||
-          connection?.kind === "reset"
+          connection?.kind === "unauthorized"
         ) {
           setBinding((prior) =>
             prior.session === null && prior.key === key ? prior : { session: null, key },
@@ -327,7 +310,6 @@ export function useReviewRoomOwner({
     registry,
     queryClient,
     dispatch,
-    prepareReplacement,
   ]);
 
   const session =
@@ -338,11 +320,11 @@ export function useReviewRoomOwner({
     inputEligible:
       session !== null &&
       painted === session &&
+      session.getSnapshot().connectionState?.kind !== "reset" &&
       review !== null &&
       !review.roomError &&
       review.completion?.phase !== "closed",
     reportPaint,
-    onBeforeReplace,
   } as const;
 }
 

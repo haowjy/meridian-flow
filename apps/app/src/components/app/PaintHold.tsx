@@ -89,7 +89,7 @@ export class PaintHold extends Component<
           ref={(node) => {
             this.frame = node;
           }}
-          className={this.props.className}
+          className={`${this.props.className ?? ""} outline-none`}
           tabIndex={-1}
         >
           <div
