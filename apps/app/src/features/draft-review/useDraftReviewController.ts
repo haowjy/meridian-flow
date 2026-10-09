@@ -166,7 +166,7 @@ export function useDraftReviewController({
   /** The Work whose drafts this surface reviews; null scopes nothing. */
   work: Work | null;
   threadId?: string | null;
-  stateOwner?: DraftReviewStateOwner;
+  stateOwner: DraftReviewStateOwner;
 }): DraftReviewController {
   const workId = work?.id ?? "";
   const draftsFrozen = work !== null && isWorkArchived(work);
@@ -177,8 +177,7 @@ export function useDraftReviewController({
   const applyMutation = useApplyDraft();
   const applyChangesMutation = useApplyDraftChanges();
   const discardMutation = useDiscardDraft();
-  const localStateOwner = useDraftReviewStateOwner();
-  const { state, dispatch } = stateOwner ?? localStateOwner;
+  const { state, dispatch } = stateOwner;
   // One session per Work: the controller outlives navigation between Works, and
   // a command still in flight in the Work left behind must not keep the new
   // Work's controls disabled. The session owns its ports from its creation: each

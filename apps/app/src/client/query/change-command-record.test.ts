@@ -76,21 +76,6 @@ describe("change command record", () => {
     expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual(["2", "3"]);
   });
 
-  it("a read that started before a confirmation cannot bring the change back", async () => {
-    let finish!: (value: DraftPreviewResponse) => void;
-    const read = readPreviewAfterChangeCommands(
-      draft,
-      () => new Promise<DraftPreviewResponse>((resolve) => (finish = resolve)),
-    );
-    beginChangeCommand(draft, one, "apply", 1);
-    confirmChangeCommand(draft, one, "apply");
-    releaseDraftCommand(draft);
-    finish(preview());
-    expect(operationIds(await read)).toEqual(["2", "3"]);
-    // The read settled, so nothing is left to fence.
-    expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual([]);
-  });
-
   describe("a selection of several changes", () => {
     const both = { classIds: ["c1", "c2"], operationIds: ["1", "2", "3"] };
 

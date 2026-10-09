@@ -40,7 +40,7 @@ visible is a browser question and belongs in a probe.
   `surface`, and the chat strip through `chatSurface`. `host` wraps those scopes
   inside the query provider for shell providers. The default removal coordinator
   uses the real tab workspace; pass an owned coordinator for route coordination.
-  The default room document is only a refresh subscription source, never a
+  The default detached sessions supply room subscriptions, never a
   delivery or editor-paint witness. Supply a session registry and mounted editor
   when claiming those outcomes. Existing consumers may still supply their own
   network/account seams to `renderReviewScopes`; importing the helper installs

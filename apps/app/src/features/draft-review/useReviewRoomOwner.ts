@@ -19,12 +19,14 @@ export function useReviewRoomOwner({
   review,
   dispatch,
   disposing,
+  draftOnly = false,
 }: {
   projectId: string;
   workId: string;
   review: InlineDraftReview | null;
   dispatch: Dispatch<DraftReviewAction>;
   disposing: boolean;
+  draftOnly?: boolean;
 }) {
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
@@ -49,6 +51,13 @@ export function useReviewRoomOwner({
   horizon.current = { key, queryClient, registry };
   const { data: rows } = useQuery({ ...workDraftsQueryOptions(projectId, workId), enabled: false });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
+  const target = JSON.stringify([projectId, workId, documentId, draftId]);
+  const kind = useRef({ target, queryClient, draftOnly });
+  if (kind.current.target !== target || kind.current.queryClient !== queryClient)
+    kind.current = { target, queryClient, draftOnly };
+  const row = rows?.find((row) => row.draftId === draftId && row.documentId === documentId);
+  // List omission after a close must not erase the draft-only destination's intent.
+  if (draftOnly || row) kind.current.draftOnly = draftOnly || row?.isNewDocument === true;
   const selected = useRef(review);
   selected.current = review;
   const [binding, setBinding] = useState<{
@@ -61,7 +70,10 @@ export function useReviewRoomOwner({
     key: "",
   });
   const [painted, setPainted] = useState<DocumentSession | null>(null);
-  const reportPaint = useCallback((session: DocumentSession) => setPainted(session), []);
+  const paintTarget = useRef<DocumentSession | null>(null);
+  const reportPaint = useCallback((session: DocumentSession) => {
+    if (paintTarget.current === session) setPainted(session);
+  }, []);
 
   // One adapter weighs both caches together; list silence never precedes the
   // newer preview observation in this dispatch batch.
@@ -116,16 +128,17 @@ export function useReviewRoomOwner({
       horizon.current.queryClient === queryClient &&
       horizon.current.registry === registry;
     const read = async () => {
-      for (let cancelled = 0; ; cancelled++) {
+      for (;;) {
         try {
           return await queryClient.fetchQuery({ ...draftPreviewQueryOptions(draft), staleTime: 0 });
         } catch (error) {
-          if (!isCancelledError(error) || !owned || cancelled >= 5) throw error;
+          if (!isCancelledError(error) || !current()) throw error;
         }
       }
     };
     void (async () => {
       let answer = await read();
+      if (!current()) return;
       const shown = selected.current;
       if (
         answer.status === "active" &&
@@ -179,12 +192,7 @@ export function useReviewRoomOwner({
       horizon.current.registry === registry;
     const unavailable = () => {
       if (!current()) return;
-      const row = queryClient
-        .getQueryData<import("@meridian/contracts/drafts").ThreadDraftListItem[]>(
-          projectQueryKeys.workDrafts(projectId, workId),
-        )
-        ?.find((row) => row.draftId === draftId);
-      if (row?.isNewDocument) {
+      if (kind.current.draftOnly) {
         dispatch({ type: "roomStale", documentId, draftId, roomName });
         dispatch({ type: "roomFailed", documentId, draftId });
       } else dispatch({ type: "exitInline" });
@@ -269,6 +277,7 @@ export function useReviewRoomOwner({
 
   const session =
     binding.key === key && binding.session?.roomKey === roomName ? binding.session : null;
+  paintTarget.current = session;
   const phase = !review
     ? "idle"
     : review.completion?.phase === "closed"
@@ -289,7 +298,7 @@ export function useReviewRoomOwner({
     inputEligible: session !== null && painted === session && phase === "bound",
     reportPaint,
     onBeforeReplace,
-  };
+  } as const;
 }
 
 /** Addressed cache observations, without interpreting an empty reset as a proposal. */
