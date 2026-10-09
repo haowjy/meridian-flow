@@ -44,7 +44,12 @@ Plain markdown convenience reads and versioned reads share collab serialization.
 - **Authoritative metadata catalog** — one normalized catalog beside ContextFS
   with per-scope heads, complete repeatable-read snapshots, bounded whole-commit
   replay/reset from an explicit captured head, direct children, and ID/path
-  lookup. Project Manuscript entries use live-manifest membership. ContextFS
+  lookup. `invalidate-subtree` clears the cached root and descendants; the same
+  commit re-upserts every authoritative survivor from the union of old and new
+  affected subtrees, including unchanged entries and children moved out of the
+  root. Never rely on a separate repair to restore visibility. An absent root
+  means the subtree is gone from this scope, not pending refetch.
+  Project Manuscript entries use live-manifest membership. ContextFS
   observations fail closed when membership cannot be read, while catalog
   reconciliation aborts and preserves its last good tree. Mutation-triggered
   Manuscript reconciliation reserves an availability generation, then publishes

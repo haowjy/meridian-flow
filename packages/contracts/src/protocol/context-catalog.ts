@@ -93,6 +93,8 @@ export type CatalogEntry =
 export type CatalogChange =
   | { operation: "upsert"; ordinal: number; entry: CatalogEntry }
   | { operation: "delete"; ordinal: number; entryId: string }
+  // Atomic replacement: clear root and descendants, then restore survivors via
+  // subsequent upserts in the same commit. Never a durable partial/hidden state.
   | { operation: "invalidate-subtree"; ordinal: number; rootEntryId: string };
 
 export type CatalogCommit = {

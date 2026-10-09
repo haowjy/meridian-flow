@@ -116,7 +116,6 @@ it("rolls back resource, intent, and checkpoint writes when the outer transactio
         observedHeadRevision: "1",
         cursor: "cursor",
         entries: [],
-        invalidatedEntryIds: [],
       },
       resources: [{ expectedRevision: null, next: invalid }],
       folders: [],
@@ -142,7 +141,6 @@ it("shares one account resource while qualifying the User catalog per consuming 
     observedHeadRevision: "1",
     cursor: "cursor-a",
     entries: [],
-    invalidatedEntryIds: [],
   };
   expect(
     await store.commitCatalog({

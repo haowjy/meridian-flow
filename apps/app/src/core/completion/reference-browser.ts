@@ -272,14 +272,7 @@ export function createReferenceBrowserController(
       (location.kind === "drilled" ? location.activeScope : undefined);
     if (targetScope) {
       const view = override ?? options.catalog.read(targetScope);
-      const containerId =
-        queriedContainer?.action.containerId ??
-        (parsed
-          ? view?.sourceIdsByScheme.get(parsed.scheme)
-          : location.kind === "drilled"
-            ? location.containerId
-            : undefined);
-      incomplete = acquisition !== null || containerIncomplete(view, containerId, parsed !== null);
+      incomplete = acquisition !== null || catalogIncomplete(view);
       loadFailed = options.catalog.status(targetScope) === "error" || loadFailed;
       if (loadFailed) incomplete = false;
     } else {
@@ -542,7 +535,7 @@ function rootRows(
         rows.push(row);
         continue;
       }
-      if (entry.kind !== "source" || view.invalidatedEntryIds.has(entry.entryId)) continue;
+      if (entry.kind !== "source") continue;
       const sourceRow = rowForEntry(entry, authorities);
       if (sourceRow && (!populated || populated.has(entry.entryId))) rows.push(sourceRow);
       appendDescendants(rows, view, entry.entryId, authorities, populated);
@@ -595,30 +588,10 @@ function drilledRows(
 }
 
 function catalogIncomplete(view: CatalogCacheView | null): boolean {
-  return !view?.generation || view.invalidatedEntryIds.size > 0;
+  return !view?.generation;
 }
 
-function containerIncomplete(
-  view: CatalogCacheView | null,
-  containerId: string | undefined,
-  explicit: boolean,
-): boolean {
-  if (!view?.generation) return true;
-  if (!containerId) return !explicit && view.invalidatedEntryIds.size > 0;
-  for (const id of view.invalidatedEntryIds) {
-    let entry = view.entries.get(id);
-    while (entry) {
-      if (entry.entryId === containerId) return true;
-      entry =
-        entry.kind === "folder" || entry.kind === "file"
-          ? view.entries.get(entry.parentId)
-          : undefined;
-    }
-  }
-  return false;
-}
-
-/** Snapshot metadata proves emptiness; cold or invalidated containers must not disappear. */
+/** Snapshot metadata proves emptiness; cold containers must not disappear. */
 function populatedContainers(
   view: CatalogCacheView,
   authorities: ReferenceAuthorityIndex,
@@ -631,14 +604,10 @@ function populatedContainers(
     return populated;
   }
   for (const entry of view.entries.values()) {
-    let parentId: string | undefined;
-    if (view.invalidatedEntryIds.has(entry.entryId)) parentId = entry.entryId;
-    else {
-      if (entry.kind !== "file") continue;
-      const row = rowForFile(entry, authorities);
-      if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
-      parentId = entry.parentId;
-    }
+    if (entry.kind !== "file") continue;
+    const row = rowForFile(entry, authorities);
+    if (!row || (kinds && !kinds.includes(row.fileKind))) continue;
+    let parentId: string | undefined = entry.parentId;
     while (parentId && !populated.has(parentId)) {
       populated.add(parentId);
       const parent = view.entries.get(parentId);
