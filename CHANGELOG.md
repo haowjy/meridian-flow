@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: verify Scratch upgrades with real document, manifest and attribution checkpoints, catalog rebuilding, and interrupted concurrent-index swaps.
+
 - Ignore legacy No Work Scratch rows during the app swap and include Unfiled notes among the Editor’s document-link paste targets.
 
 - Preserve existing No Work Scratch notes and upload intakes under Unfiled during the lineage Scratch upgrade, with retryable concurrent index migrations.

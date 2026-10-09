@@ -2,8 +2,10 @@
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
+import type { ContextCatalog } from "../../../apps/server/server/domains/context/ports/context-catalog.js";
 import { runMigrations } from "../../../tools/dev/lib/migration-runner.js";
 import {
   archiveNoteState,
@@ -17,6 +19,7 @@ const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
   it("preserves identities, bytes and trash, rebuilds catalogs, and retries every online swap cut", async () => {
     const target = postgres(databaseUrl ?? "", { max: 1, onnotice: () => {} });
+    const db = createDb(databaseUrl ?? "", { max: 1 });
     const directory = await mkdtemp(path.join(tmpdir(), "meridian-scratch-archive-"));
     const migrations = path.join(import.meta.dirname, "migrations");
     const journal = JSON.parse(await readFile(path.join(migrations, "meta/_journal.json"), "utf8"));
@@ -99,6 +102,35 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
           fingerprint: "retained-fingerprint",
         },
       ]);
+      // Load the actual catalog adapter at runtime: package typechecks must not
+      // pull Nitro's composition-only virtual assets into the database package.
+      const { createDrizzleContextCatalog } = (await import(
+        new URL(
+          "../../../apps/server/server/domains/context/adapters/context-catalog.ts",
+          import.meta.url,
+        ).href
+      )) as { createDrizzleContextCatalog(db: Database): ContextCatalog };
+      const catalog = createDrizzleContextCatalog(db);
+      const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });
+      expect(snapshot.entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            entryId: id(14),
+            uri: "unfiled://Scratch (2)/nested/deep/jade-map.md",
+          }),
+          expect.objectContaining({ entryId: id(15), uri: "unfiled://Scratch (2)/root-note.md" }),
+        ]),
+      );
+      expect(snapshot.entries.some((entry) => entry.entryId === id(16))).toBe(false);
+      expect(
+        (
+          await catalog.snapshot({
+            kind: "work",
+            projectId: id(2) as never,
+            workId: id(4) as never,
+          })
+        ).entries,
+      ).toEqual([]);
       const online = (
         await readFile(path.join(migrations, "0034_context_source_online_indexes.sql"), "utf8")
       ).split("--> statement-breakpoint");
@@ -133,6 +165,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         await target`SELECT conname FROM pg_constraint WHERE conrelid = 'context_sources'::regclass AND NOT convalidated`,
       ).toEqual([]);
     } finally {
+      await db.close();
       if (isolated)
         await target.begin(async (tx) => {
           await tx`ALTER EXTENSION pg_trgm SET SCHEMA scratch_archive_saved_public`;
