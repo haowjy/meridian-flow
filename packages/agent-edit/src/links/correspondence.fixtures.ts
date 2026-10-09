@@ -1,5 +1,5 @@
-// Normative round-7 reviewer fixtures; fresh resolution is deliberately left to the caller.
-import type { Binding, OldOccurrence, ShownLink, WrittenLink } from "../link-correspondence.js";
+// Round-7 reviewer fixtures; fresh resolution is deliberately left to the caller.
+import type { Binding, OldOccurrence, ShownLink, WrittenLink } from "./correspondence.js";
 
 export interface Fixture {
   name: string;
