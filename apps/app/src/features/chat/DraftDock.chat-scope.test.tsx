@@ -8,13 +8,11 @@ import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import {
-  arcOne,
   button,
   click,
   draftItem,
   expand,
   lore,
-  noWork,
   op,
   openWork,
   pacing,
@@ -37,8 +35,15 @@ const mocks = vi.hoisted(() => ({
   retainBranchRooms: vi.fn(),
   openAiDraft: vi.fn(),
 }));
+/** The project's Works, by the chat's Work (`work-a`): a named Work, or No Work. */
+const works = vi.hoisted(() => ({
+  list: [] as { id: string; name: string; isNoWork: boolean }[],
+}));
+const arcOne = { id: "work-a", name: "Arc One", isNoWork: false };
+const noWork = { id: "work-a", name: "No Work", isNoWork: true };
 
 vi.mock("@/client/api/drafts-api", () => mocks);
+vi.mock("@/client/query/useWorks", () => ({ useWorks: () => ({ works: works.list }) }));
 vi.mock("@/features/project/dock/useAiDraftLauncher", () => ({
   useAiDraftLauncher: () => ({ openAiDraft: mocks.openAiDraft }),
 }));
@@ -65,6 +70,7 @@ describe("DraftDock chat scope", () => {
     vi.clearAllMocks();
     resetDraftCommandRecords();
     resetServer();
+    works.list = [arcOne];
     mocks.getDraftPreview.mockImplementation(readPreview);
   });
 
@@ -415,12 +421,10 @@ describe("DraftDock chat scope", () => {
       drafts: [draftItem("ch-12", "chapter-12", [pacing])],
     });
     serverHolds("ch-12", [op("1", "pacing")]);
-    await render(
-      async () => {
-        await stripShows("1 change");
-        expect(text()).not.toContain("All changes in");
-      },
-      { work: noWork },
-    );
+    works.list = [noWork];
+    await render(async () => {
+      await stripShows("1 change");
+      expect(text()).not.toContain("All changes in");
+    });
   });
 });

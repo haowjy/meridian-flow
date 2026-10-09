@@ -187,7 +187,7 @@ draft) through `useChangeCommandRunner`; a refusal stays on its file. A new
 document is Review-only. The notes (a change tied to another chat's edit,
 changes only Apply draft or Discard draft handle, a new document) sit above the
 commands, collapsed or expanded. Work-wide lists and Apply all live on the Work
-page; the strip's last line opens it.
+page; the strip's last line is the shared `WorkChangesLink` to it.
 
 ## Transcript viewport (TurnList)
 

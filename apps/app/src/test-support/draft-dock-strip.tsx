@@ -13,18 +13,6 @@ import { useDraftDock } from "@/features/chat/useDraftDock";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import { listed, operation, preview, renderReviewScopes } from "./draft-review-scope";
 
-export const arcOne = {
-  id: "11111111-1111-4111-8111-111111111111",
-  name: "Arc One",
-  isNoWork: false,
-};
-export const noWork = {
-  id: "22222222-2222-4222-8222-222222222222",
-  name: "No Work",
-  isNoWork: true,
-};
-export type StripWork = { id: string; name: string; isNoWork: boolean };
-
 export const pacing = { threadId: "thread-a", title: "Pacing pass" };
 export const lore = { threadId: "thread-b", title: "Lore pass" };
 
@@ -86,8 +74,8 @@ export function resetServer() {
   for (const key of Object.keys(previews)) delete previews[key];
 }
 
-function Strip({ generating, work }: { generating: boolean; work: StripWork | null }) {
-  return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating, work })} />;
+function Strip({ generating }: { generating: boolean }) {
+  return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating })} />;
 }
 
 export const openWork = vi.fn().mockResolvedValue(undefined);
@@ -95,10 +83,10 @@ export const openWork = vi.fn().mockResolvedValue(undefined);
 export function renderStrip(
   listWorkDrafts: ReturnType<typeof vi.fn>,
   run: () => Promise<void>,
-  strip: { generating?: boolean; work?: StripWork | null } = {},
+  strip: { generating?: boolean } = {},
 ) {
   i18n.loadAndActivate({ locale: "en", messages: {} });
-  const { generating = false, work = arcOne } = strip;
+  const { generating = false } = strip;
   return renderReviewScopes(
     async () => {
       // The strip mounts with the scopes; wait for its candidates to be listed.
@@ -109,7 +97,7 @@ export function renderStrip(
       chatSurface: (
         <I18nProvider i18n={i18n}>
           <ProjectNavigationProvider openContextRoute={vi.fn()} openWork={openWork}>
-            <Strip generating={generating} work={work} />
+            <Strip generating={generating} />
           </ProjectNavigationProvider>
         </I18nProvider>
       ),

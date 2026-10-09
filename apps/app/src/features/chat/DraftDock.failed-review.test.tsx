@@ -46,7 +46,7 @@ const review = {
 } as unknown as DraftReviewContextValue;
 
 function Dock() {
-  return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating: false, work: null })} />;
+  return <DraftDock dock={useDraftDock({ threadId: "thread-a", generating: false })} />;
 }
 
 function render(openContextRoute: OpenContextRoute, run: () => Promise<void>) {

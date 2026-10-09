@@ -30,6 +30,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { WorkChangesLink } from "@/features/draft-review/WorkChangesLink";
 import { cn } from "@/lib/utils";
 import { DockFailureText, DockNotesText } from "./DraftDockMessages";
 import { type DockFile, dockNotes, hasNotes } from "./draft-dock-files";
@@ -53,18 +54,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const notes = dockNotes(dock.files);
   const noted = hasNotes(notes);
   const confirming = confirmingDiscard && dock.showCommands;
+  // The Work's whole list; the link is nothing for No Work or a Work not yet named.
   const footer =
-    dock.openWorkChanges && dock.workName && (!multi || expanded) ? (
-      <button
-        type="button"
-        onClick={dock.openWorkChanges}
-        className="focus-ring flex min-h-7 w-full items-center gap-[var(--chat-space-inline)] border-border-subtle border-t px-[var(--chat-card-pad-x)] text-left text-caption text-ink-muted hover:text-foreground [@media(pointer:coarse)]:min-h-11"
-      >
-        <ChevronRight className="size-3 shrink-0" aria-hidden />
-        <span className="min-w-0 truncate">
-          <Trans>All changes in {dock.workName}</Trans>
-        </span>
-      </button>
+    !multi || expanded ? (
+      <WorkChangesLink
+        projectId={dock.projectId}
+        workId={dock.workId}
+        className="min-h-7 gap-[var(--chat-space-inline)] rounded-none border-border-subtle border-t px-[var(--chat-card-pad-x)] py-0 text-ink-muted hover:bg-transparent [@media(pointer:coarse)]:min-h-11"
+      />
     ) : null;
 
   const commands = (

@@ -11,8 +11,6 @@
  * file; nothing navigates.
  */
 import { t } from "@lingui/core/macro";
-import { parseRequestId } from "@meridian/contracts/request-id";
-import type { Work } from "@meridian/contracts/works";
 import { useCallback, useMemo, useState } from "react";
 import {
   type ChangeCommandState,
@@ -26,7 +24,6 @@ import { useDraftReview, useEditorDraftReview } from "@/features/draft-review/Dr
 import { reviewFileTargetName, reviewFileTargets } from "@/features/draft-review/review-files";
 import { useChangeCommandRunner } from "@/features/draft-review/useChangeCommandRunner";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
-import { useOpenWork } from "@/features/project/routing/ProjectNavigationContext";
 import { type DockFile, dockFile, dockNotes, isOnStrip, totalChanges } from "./draft-dock-files";
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
@@ -38,19 +35,10 @@ export type DockFileFailure =
 
 const NO_OPERATIONS: ReadonlySet<string> = new Set();
 
-export function useDraftDock({
-  threadId,
-  generating,
-  work,
-}: {
-  threadId: string;
-  generating: boolean;
-  work: Pick<Work, "id" | "name" | "isNoWork"> | null;
-}) {
+export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
   const { groups, controller } = useDraftReview();
   const editor = useEditorDraftReview().controller;
   const { openAiDraft } = useAiDraftLauncher();
-  const openWork = useOpenWork();
   const runner = useChangeCommandRunner(controller);
   const records = useChangeCommandRecords();
   const { projectId, workId } = controller;
@@ -139,9 +127,6 @@ export function useDraftDock({
     return held ? { kind: "draft", failure: held } : null;
   };
 
-  // The strip links to the Work's whole list; No Work has no Work page.
-  const workPage = work && !work.isNoWork ? parseRequestId(work.id) : null;
-
   return {
     generating,
     files,
@@ -154,19 +139,12 @@ export function useDraftDock({
     /** Review is held while a whole-draft command is running in this Work. */
     reviewBusy: controller.isDisposing,
     reviewable: reviewable !== null,
-    workName: work?.name ?? null,
+    projectId,
+    workId,
     fileFailure,
     review,
     reviewFirst: () => reviewable && review(reviewable),
     apply: () => send("apply"),
     discard: () => send("discard"),
-    openWorkChanges:
-      workPage && openWork
-        ? () =>
-            void openWork(
-              { kind: "work-detail", workId: workPage, view: "files" },
-              { replace: false },
-            )
-        : null,
   };
 }
