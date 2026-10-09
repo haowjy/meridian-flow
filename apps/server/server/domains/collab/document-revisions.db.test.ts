@@ -41,7 +41,10 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
+import {
+  createTestDocumentLinkScopes,
+  lateBoundManifestMembership,
+} from "./test-support/document-link-scopes.js";
 
 /** The grant names this project and its owner, as the file policy would: the read's scope key. */
 function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
@@ -193,7 +196,12 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("a tree-only move changes the view revision, so compaction does not elide the stale read", async () => {
-    const f = await fixture(db, harnesses, "direct", { links: createTestDocumentLinkScopes(db) });
+    // The real manifest authority, so a Work view's own membership counts.
+    const manifest = lateBoundManifestMembership();
+    const f = await fixture(db, harnesses, "direct", {
+      links: createTestDocumentLinkScopes(db, { membership: manifest.membership }),
+    });
+    manifest.bind(f.effective);
     const doc = f.hocuspocus.documents.get(ALPHA_ID);
     if (!doc) throw new Error("Fixture live room missing");
     const before = Y.encodeStateVector(doc);
@@ -221,6 +229,29 @@ describe("document revisions (postgres and collab)", () => {
     const moved = await f.current();
     expect(moved).not.toBe(shown);
     expect((await f.read()).revision).toBe(moved);
+
+    // Alpha stays untouched in its Work, whose manifest drops the link's target:
+    // every effective door renders that view from the live content, none live.
+    await f.effective.recordManifestDocumentDeleted(BETA_ID, {
+      projectId: PROJECT_ID,
+      workId: WORK_ID,
+      threadId: THREAD_ID,
+    });
+    const view = {
+      documentId: ALPHA_ID,
+      threadId: THREAD_ID,
+      destination: "draft" as const,
+      workId: WORK_ID,
+    };
+    const markdown = await f.effective.readEffectiveMarkdown(view);
+    const hashlines = await f.effective.readEffectiveHashlines(view);
+    const revision = await f.effective.readEffectiveRevision(view);
+    if (!markdown.ok || !hashlines.ok) throw new Error(JSON.stringify({ markdown, hashlines }));
+    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](beta.md)");
+    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](beta.md)");
+    expect
+      .soft([markdown.value.revision, revision], "one view")
+      .toEqual([hashlines.value.revision, hashlines.value.revision]);
   });
 
   it("captures the apply token before a writer edit and receipt rewrite", async () => {

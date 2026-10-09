@@ -49,12 +49,12 @@ import {
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
   isAgentEditResultEnvelope,
+  type LinkShowing,
   modelConcurrentResult,
   modelResult,
   type ResponseCommitWriteReceipt,
   renderAgentEditResult,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
 import {
   type MeridianError,
   meridianErrorFromGateway,
@@ -77,7 +77,6 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { SpelledLinkFact } from "@meridian/markup";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -1418,23 +1417,10 @@ function createResponseScope(input: {
       uri: string | null;
     }>
   >();
-  /** Records what a settled receipt or a backfilled concurrent run showed the model, in the view it was spelled in. */
-  const recordShown = async (
-    documentId: string,
-    write: { uri: string | null },
-    shown: { shownLinks?: readonly SpelledLinkFact[]; shownView?: LinkView },
-  ) => {
-    const links = shown.shownLinks;
-    if (!write.uri || !links || links.length === 0) return;
-    if (!shown.shownView) throw new Error(`Shown links for ${documentId} carry no view.`);
-    await deps.shownLinks.record({
-      threadId,
-      turnId,
-      documentId,
-      holderUri: write.uri,
-      view: shown.shownView,
-      links,
-    });
+  /** Records what a settled receipt or a backfilled concurrent run showed the model, from the binding that rendered it. */
+  const recordShown = async (documentId: string, shown: { showing?: LinkShowing }) => {
+    if (!shown.showing) return;
+    await deps.shownLinks.record({ threadId, turnId, documentId, ...shown.showing });
   };
   let id = input.responseId;
   let active = true;
@@ -1476,7 +1462,7 @@ function createResponseScope(input: {
         receipt: ResponseCommitWriteReceipt,
       ) => {
         // The settled receipt replaces the staged echo; both were shown.
-        await recordShown(documentId, write, receipt);
+        await recordShown(documentId, receipt);
         return persistCommittedWriteResult({
           deps,
           threadId,
@@ -1569,7 +1555,7 @@ function createResponseScope(input: {
         const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
         if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
         // Only runs that fit the render budget were shown.
-        for (const run of boundedEdits.runs) await recordShown(documentId, last, run);
+        for (const run of boundedEdits.runs) await recordShown(documentId, run);
       }
     },
     async rollback() {

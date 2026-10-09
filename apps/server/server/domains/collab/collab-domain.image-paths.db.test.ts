@@ -400,6 +400,76 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
       expect.soft(after.value.content.join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
+
+      // The same comparison in live: a reply that creates a chapter live sees it
+      // in its own live view, never in baseline live or its draft view.
+      const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
+      const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
+      await db.insert(documents).values({
+        id: LIVE_CREATED_ID,
+        contextSourceId: SOURCE_ID,
+        name: "live-created",
+        extension: "md",
+      });
+      await db.insert(modelResponses).values({
+        id: LIVE_RESPONSE_ID as never,
+        turnId: TURN_ID as never,
+        sequence: 1,
+        provider: "mock",
+        model: "mock",
+        requestMessageCount: 0,
+        predictedCacheState: "cold",
+        predictedCacheReason: "facts_unavailable",
+      });
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "create",
+            file: "live-created.md",
+            documentId: LIVE_CREATED_ID,
+            content: "Live.",
+          },
+          {
+            ...ctx,
+            grant: {
+              ...grant,
+              destination: { kind: "live" },
+              facts: {
+                ...grant.facts,
+                target: { kind: "document", documentId: LIVE_CREATED_ID as never },
+              },
+            },
+            responseId: LIVE_RESPONSE_ID,
+            createdDocument: true,
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      await links.within(
+        { projectId: PROJECT_ID, viewer: { accountId: USER_ID, threadId: THREAD_ID } },
+        async () => {
+          const replyLive = { kind: "live", responseId: LIVE_RESPONSE_ID } as const;
+          const replyDraft = {
+            kind: "draft",
+            workId: WORK_ID,
+            responseId: LIVE_RESPONSE_ID,
+          } as const;
+          const views = [replyLive, { kind: "live" } as const, replyDraft];
+          await links.prepare({
+            holders: views.map((each) => ({ documentId: DOC_ID, view: each })),
+            refs: [`doc:${LIVE_CREATED_ID}`],
+          });
+          const link = { ref: `doc:${LIVE_CREATED_ID}`, href: "manuscript://stale.md" };
+          const [ownLive, baseline, ownDraft] = views.map((each) =>
+            links.holder({ documentId: DOC_ID, view: each }),
+          );
+          expect
+            .soft(ownLive?.spellLink(link).href, "the reply's live view")
+            .toBe("live-created.md");
+          expect.soft(baseline?.resolve(link), "baseline live").toEqual({ kind: "gone" });
+          expect.soft(ownDraft?.resolve(link), "the reply's draft view").toEqual({ kind: "gone" });
+        },
+      );
+      await collab.agentEdit().rollbackResponse(LIVE_RESPONSE_ID);
     });
 
     it("undoes and redoes a live turn on a chapter with an image", async () => {

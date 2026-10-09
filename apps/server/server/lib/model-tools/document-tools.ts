@@ -50,7 +50,7 @@ import {
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
-import { showing, threadShownLinks } from "./shown-link-capture.js";
+import { showingOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -199,7 +199,7 @@ async function writeUnderGrant(
   }
   // The echo, staged or immediate, and an undo or redo result were shown; so
   // was a partial failure's echo. An error without echo text carries no facts.
-  const shown = showing(address.documentId, address.uri, written);
+  const shown = showingOf(address.documentId, written);
   if (written.isError) return { isError: true, output: written.result, shown };
   // Undo and redo go where history says, so only forward writes name a destination.
   const reversal = parsed.command === "undo" || parsed.command === "redo";
@@ -235,7 +235,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     return {
       output: outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
-      shown: showing(address.documentId, address.uri, outcome),
+      shown: showingOf(address.documentId, outcome),
     };
   };
 }
