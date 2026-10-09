@@ -23,9 +23,12 @@ const H = uuid(1);
 const A = uuid(2);
 const B = uuid(3);
 const C = uuid(4);
+const P = uuid(5);
 const ch = (path: string) => `manuscript://chapters/${path}`;
 const HOLDER = ch("holder.md");
 const fact = (id: string, path: string) => ({ ref: documentRef(id), address: ch(path) });
+// An upload's identity is its `src`, shown at its manuscript path.
+const upload = { ref: `asset:${P}`, address: "manuscript://assets/map.png" };
 
 function setup() {
   return linkHarness({
@@ -35,6 +38,7 @@ function setup() {
       catalogDocument(A, ch("a-moved.md")),
       catalogDocument(B, ch("b.md")),
       catalogDocument(C, ch("c.md")),
+      catalogDocument(P, "manuscript://assets/map.png", { image: true }),
     ],
     blocks: [
       schema.node("heading", { level: 1 }, [
@@ -49,7 +53,10 @@ function setup() {
         " words.",
       ),
       paragraph("Edit me."),
-      paragraph("See ", docLink("Alpha", A, ch("a.md")), " soon."),
+      schema.node("paragraph", null, [
+        ...paragraph("See ", docLink("Alpha", A, ch("a.md")), " soon. ").content.content,
+        schema.node("image", { src: `asset:${P}`, alt: "Map" }),
+      ]),
       paragraph("One two three four five six seven ", docLink("cut label", B, ch("b.md")), "."),
     ],
   });
@@ -63,13 +70,13 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
       expected: {
         holderUri: HOLDER,
         view: { kind: "live" },
-        links: [fact(C, "c.md"), fact(B, "b.md"), fact(A, "a-moved.md")],
+        links: [fact(C, "c.md"), fact(B, "b.md"), fact(A, "a-moved.md"), upload],
       },
     },
     {
       name: "a narrowed read shows only the selected block's links",
       facts: async () => (await setup().read({ in: [4, 4] })).showing?.links,
-      expected: [fact(A, "a-moved.md")],
+      expected: [fact(A, "a-moved.md"), upload],
     },
     {
       name: "an outline read shows only heading links",
@@ -84,7 +91,7 @@ it("A1-9: a truncated echo or narrowed read never claims a link that was cut off
         // Context blocks 2 and 4 around the edit; block 2's link starts past word eight.
         return outcome.showing?.links;
       },
-      expected: [fact(A, "a-moved.md")],
+      expected: [fact(A, "a-moved.md"), upload],
     },
     {
       name: "an echo next to a link the eight-word cut splits claims nothing for it",

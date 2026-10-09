@@ -47,8 +47,8 @@ export const imageCodec: BlockCodec<MdastImage> = {
 
 /**
  * The node a wire spelling means. Parse is pure syntax: the source stays as
- * written, and the host's binding pass claims a known picture as its
- * `asset:` ref (agent-edit `assignSources`).
+ * written, and the host's ref assignment claims a known picture as its
+ * `asset:` src (agent-edit `assignLinkRefs`).
  */
 export function imageNodeFromAttributes(ctx: ParseContext, tag: ImageHtmlAttributes): PMNode {
   return ctx.schema.node("image", {
