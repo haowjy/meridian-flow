@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Empty Chat side panels show only the Open document header. Its menu and the document header menu have no root heading; folder back rows remain.
+
 - Copying links from a chat’s Scratch keeps its chat handle without changing Uploads ownership.
 
 - Writer file creation cannot bypass the AI-only policy of a chat’s Scratch.
@@ -14,7 +16,7 @@
 
 - "View projects" moves below your account at the foot of the left sidebar, so a near miss on Scratch no longer leaves the project.
 
-- On the Chat screen, the side panel's header now has an "Open document" menu even when nothing is open, listing Manuscript, Knowledge Base, User, Unfiled and Scratch. Clicking a file in the left project tree also opens it in the side panel (images and PDFs included), and the tree highlights it. The empty panel says where to pick a document. On the Editor and Work screens and on a phone, tree clicks open as before.
+- On the Chat screen, the side panel's header now has an "Open document" menu even when nothing is open, listing Manuscript, Knowledge Base, User, Unfiled and Scratch. Clicking a file in the left project tree also opens it in the side panel (images and PDFs included), and the tree highlights it. On the Editor and Work screens and on a phone, tree clicks open as before.
 - On the Chat screen, opening a document from the chat (a link chip, a receipt row, a search or tool-result door, an `@` reference) now opens it in the side panel beside the chat instead of leaving for the Editor. From the Editor or Work screen and on a phone, they open as before.
 - The side panel's document header now has Close on the left, an expand button on the right that opens the document in the Editor, and a menu that climbs from the document's folder to the project's areas (Manuscript, Knowledge Base, User, Unfiled and Scratch) so any document is a few taps away.
 - Unfiled now has its own inbox icon, so it no longer looks like Scratch. It shows in the sidebar and on Unfiled link chips.

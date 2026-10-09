@@ -1622,10 +1622,6 @@ msgstr "Document"
 msgid "Document name and location"
 msgstr "Document name and location"
 
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Documents the AI reads in this chat appear here."
-msgstr "Documents the AI reads in this chat appear here."
-
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
@@ -2698,10 +2694,6 @@ msgstr "Open {0} at this passage. {1}"
 msgid "Open {title}"
 msgstr "Open {title}"
 
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Open a chat to see what the AI referenced."
-msgstr "Open a chat to see what the AI referenced."
-
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Open a document from the project tree, or start a new one."
 msgstr "Open a document from the project tree, or start a new one."
@@ -2816,10 +2808,6 @@ msgstr "Pending drafts couldn’t load"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr "photo"
-
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Pick a document from the left or the chat to open it here."
-msgstr "Pick a document from the left or the chat to open it here."
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
@@ -3264,11 +3252,6 @@ msgstr "Scratch"
 msgid "Scratch couldn’t load"
 msgstr "Scratch couldn’t load"
 
-#. placeholder {0}: work.name
-#: src/features/project/chat/ChatScratch.tsx
-#~ msgid "Scratch for {0}"
-#~ msgstr "Scratch for {0}"
-
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Scratch for {chatTitle}"
 msgstr "Scratch for {chatTitle}"
@@ -3277,10 +3260,6 @@ msgstr "Scratch for {chatTitle}"
 #: src/features/project/dock/use-dock-browse-scratch.ts
 msgid "Scratch for {workName}"
 msgstr "Scratch for {workName}"
-
-#: src/features/project/dock/DockDocumentTitle.tsx
-#~ msgid "Scratch for {workScratchName}"
-#~ msgstr "Scratch for {workScratchName}"
 
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"

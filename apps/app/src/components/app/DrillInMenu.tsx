@@ -1,8 +1,8 @@
 /**
  * DrillInMenu — a dropdown that browses a folder tree in place and ends in
  * actions. A folder opens inside the same menu, with a "‹ folder" row on top to
- * step back out; there are no flyouts. At the top level a heading names the
- * tree's source. A divider then separates the tree from the actions.
+ * step back out; there are no flyouts or root heading. A divider separates
+ * the tree from the actions.
  *
  * The component takes a tree source and an action list, so the dock's
  * document title and any other tree source can share it (the rail's Scratch
@@ -17,7 +17,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -130,11 +129,7 @@ export function DrillInMenu({
               {folder.title ?? folder.name}
             </span>
           </DropdownMenuItem>
-        ) : (
-          <DropdownMenuLabel className="truncate text-muted-foreground">
-            {tree.heading}
-          </DropdownMenuLabel>
-        )}
+        ) : null}
         {entries.length === 0 ? (
           <p className="px-2 py-1.5 text-sm text-muted-foreground">
             {folder ? (
