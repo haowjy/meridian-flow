@@ -1,5 +1,4 @@
 /** Journal-locked cuts and compare-and-set publication of document derived outputs. */
-import { isProjectScopedScheme, parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -19,6 +18,7 @@ import {
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
   type DerivationScope,
@@ -33,23 +33,18 @@ import { createDrizzleJournal } from "./drizzle-journal.js";
 export async function captureDocumentDerivation(
   tx: DrizzleDb,
   documentId: DocumentId,
-  resolveUri: (tx: DrizzleDb, documentId: DocumentId) => Promise<string | null>,
+  lastAddress: DocumentLastAddress,
 ): Promise<DocumentDerivationCut | null> {
-  const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
   const [row] = await tx
     .select({
       generation: documentYjsHeads.authorityGeneration,
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
       locationVersion: documents.locationVersion,
-      holderProjectId: projects.id,
       kind: documents.kind,
       deletedAt: documents.deletedAt,
     })
     .from(documents)
     .innerJoin(documentYjsHeads, eq(documents.id, documentYjsHeads.documentId))
-    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-    .leftJoin(works, eq(works.id, contextSources.workId))
-    .innerJoin(projects, sql`${projects.id} = ${projectId}`)
     .where(eq(documents.id, documentId))
     .limit(1);
   // An already-staged push must still settle after a soft deletion.
@@ -57,21 +52,14 @@ export async function captureDocumentDerivation(
   // Never certify a warm room: writer admission precedes its in-memory apply.
   const state = await loadDocumentState(createDrizzleJournal(tx as Database), documentId);
   if (!state) return null;
-  const holderUri = row.kind === "manifest" ? null : await resolveUri(tx, documentId);
-  if (row.kind === "content" && !row.deletedAt && !holderUri)
+  const address = row.kind === "manifest" ? null : await lastAddress(documentId);
+  if (row.kind === "content" && !row.deletedAt && !address)
     throw new Error(`Missing canonical URI for live document ${documentId}`);
-  if (holderUri) {
-    const parsed = parseContextUri(holderUri);
-    if (
-      !parsed.ok ||
-      (!isProjectScopedScheme(parsed.value.scheme) && parsed.value.authority.kind === "contextual")
-    )
-      throw new Error(`Holder URI requires explicit authority: ${holderUri}`);
-  }
+  // Under the deleted-ancestor rule a document in a deleted folder or Work holds no address.
+  const holderUri = address && !address.deleted ? address.uri : null;
   return {
     documentId,
     holderUri,
-    holderProjectId: row.holderProjectId,
     kind: row.kind,
     state,
     watermark: {
@@ -175,7 +163,7 @@ const AHEAD_RECOVERY_PAGE = 100;
 
 export function createDrizzleDocumentDerivationStore(
   db: Database,
-  resolveUri: (tx: DrizzleDb, documentId: DocumentId) => Promise<string | null>,
+  lastAddress: DocumentLastAddress,
   aheads?: { registry: AheadRegistrationRecovery; eventSink?: EventSink },
 ): DocumentDerivationStore {
   const page = async (
@@ -225,7 +213,7 @@ export function createDrizzleDocumentDerivationStore(
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);
         await lockDocumentMutation(tx, documentId);
-        return captureDocumentDerivation(tx, documentId, resolveUri);
+        return captureDocumentDerivation(tx, documentId, lastAddress);
       });
     },
     certify(cut, outputs, at) {

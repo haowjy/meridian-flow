@@ -8,7 +8,6 @@ import {
   documentLinks,
   documents,
   documentYjsCheckpoints,
-  documentYjsUpdates,
   folders,
   linkAheadRefs,
   projects,
@@ -22,8 +21,10 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
 import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
-import { resolveDocumentUri } from "../../context/document-uri-resolver.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
+import {
+  createDocumentLastAddress,
+  createDocumentUriResolver,
+} from "../../context/document-uri-resolver.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import {
@@ -51,9 +52,7 @@ describe("durable document derivations", () => {
   const sourceId = randomUUID();
   const documentId = randomUUID();
   const persistence = createDrizzleCollabPersistence(db);
-  const store = createDrizzleDocumentDerivationStore(db, (tx, id) =>
-    resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-  );
+  const store = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db));
   let fail = false;
   const service = createDocumentDerivationService({
     deferred: () => {},
@@ -333,6 +332,10 @@ describe("durable document derivations", () => {
     expect(await store.stale({ projectId })).toEqual([documentId]);
     await service.flush({ projectId });
     expect(await store.stale({ projectId })).toEqual([]);
+    // A live document under a deleted folder holds no address there (deleted-ancestor rule).
+    await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, folderId));
+    expect((await store.capture(documentId))?.holderUri).toBeNull();
+    expect(await createDocumentUriResolver(db)(documentId)).toBeNull();
     doc.destroy();
   });
 
@@ -537,18 +540,14 @@ describe("durable document derivations", () => {
   it("the sweep registers a client-minted ahead ref whose registration failed after certification", async () => {
     const real = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
     let failRegistration = true;
-    const aheadStore = createDrizzleDocumentDerivationStore(
-      db,
-      (tx, id) => resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-      {
-        registry: {
-          async registerUnregistered(scope, page) {
-            if (failRegistration) throw new Error("registry unavailable");
-            return real.registerUnregistered(scope, page);
-          },
+    const aheadStore = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), {
+      registry: {
+        async registerUnregistered(scope, page) {
+          if (failRegistration) throw new Error("registry unavailable");
+          return real.registerUnregistered(scope, page);
         },
       },
-    );
+    });
     const aheadService = createDocumentDerivationService({
       deferred: () => {},
       store: aheadStore,

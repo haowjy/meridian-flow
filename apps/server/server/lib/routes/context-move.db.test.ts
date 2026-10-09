@@ -110,7 +110,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({

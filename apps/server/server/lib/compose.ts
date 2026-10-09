@@ -549,7 +549,6 @@ export async function createProductionAppPorts(input: {
     aheadRefs: linkAheadRegistry,
     eventSink,
     notices,
-    workAuthorityResolver,
     workProjectionMutation,
     threadContext: {
       async requireThreadOwner(input) {

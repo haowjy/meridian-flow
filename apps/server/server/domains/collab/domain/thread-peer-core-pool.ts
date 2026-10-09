@@ -713,8 +713,6 @@ export function createThreadPeerCorePool(input: {
   });
 }
 
-export const createThreadPeerAgentEditCore = createThreadPeerCorePool;
-
 function mergeSaveResults(
   responseId: string,
   results: readonly ResponseCommitSuccessResult[],

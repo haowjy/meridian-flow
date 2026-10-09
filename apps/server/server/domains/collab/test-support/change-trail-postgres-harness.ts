@@ -15,9 +15,8 @@ import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
-import { resolveDocumentUri as resolvePersistedDocumentUri } from "../../context/document-uri-resolver.js";
+import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 import {
@@ -387,9 +386,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     durableProjectionSerializer,
     createDrizzleDocumentProjectionEffects(db),
     changeTrails,
-    createDrizzleDocumentDerivationStore(db, (tx, id) =>
-      resolvePersistedDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-    ),
+    createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     notices,
     undefined,
     options.arrivals,

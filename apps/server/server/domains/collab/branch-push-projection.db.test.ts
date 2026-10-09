@@ -27,8 +27,7 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { resolveDocumentUri } from "../context/document-uri-resolver.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
+import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
@@ -175,9 +174,7 @@ describe("branch-push durable projection", () => {
       serializer,
       createDrizzleDocumentProjectionEffects(db),
       changeTrails,
-      createDrizzleDocumentDerivationStore(db, (tx, id) =>
-        resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-      ),
+      createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
     const liveDoc = createCollabYDoc({ gc: false });
@@ -402,9 +399,7 @@ describe("branch-push durable projection", () => {
         engine,
         createDrizzleDocumentProjectionEffects(db),
         changeTrails,
-        createDrizzleDocumentDerivationStore(db, (tx, id) =>
-          resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-        ),
+        createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
       ),
       branchCoordinator,
       journal: persistence.journal,
