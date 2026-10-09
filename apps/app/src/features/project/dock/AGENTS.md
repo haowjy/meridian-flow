@@ -82,6 +82,9 @@ finds an active draft.
    are the Editor's. Never give it a session, room, or capture of its own, and never
    paint a background on it: the dock slot owns the material. It is never held on the
    Editor screen (documents open as tabs there) or on the phone (full-screen editor).
+   Rail switches hand off only the visible document between Editor and Chat; Work
+   receives none. Peeks and Close do not change Editor tabs. Browser history and phone
+   navigation do not hand off. The slot and Editor tabs remain separate owners.
    Picking a view on its screen replaces it; `DockShell` keeps the occupant mounted
    and inert behind it.
 

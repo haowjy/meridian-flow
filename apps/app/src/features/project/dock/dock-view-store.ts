@@ -1,21 +1,21 @@
 /** Session-only view choices and the transient document slot for the project dock. */
 import { create } from "zustand";
-import type { ServerContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 
 /** Dock destinations the writer switches between. */
 export type DockView = "chat" | "context" | "changes";
 
 /**
- * The one document the dock shows in place of its views, until it is closed or
- * the writer leaves what opened it. It carries its project, so another
- * project's document is never shown. The Editor screen never holds one: there,
- * documents open as tabs.
+ * The one document the dock shows in place of its views, until the writer
+ * closes it. Work documents also close on leaving their Work screen. Its
+ * project prevents a document appearing in another project. On the Editor
+ * screen documents open as tabs instead; a Chat document can stay parked.
  */
 export type DockDocument = {
   projectId: string;
   screen: Exclude<ScreenKey, "context">;
-  tab: ServerContextTab;
+  tab: ContextTab;
 };
 
 type DockViewSet = {
@@ -59,7 +59,7 @@ type DockViewState = {
   /** Show the document if `claim` is still the latest intent; false means it was superseded. */
   commit: (claim: number, document: DockDocument) => boolean;
   closeDocument: () => void;
-  /** Drop an occupant that does not belong to where the writer now is. */
+  /** Fence project changes and departures from a Work; Chat documents can stay parked. */
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
@@ -98,8 +98,8 @@ export const useDockViewStore = create<DockViewState>((set, get) => {
         const stays =
           occupant != null &&
           occupant.projectId === projectId &&
-          occupant.screen === screen &&
-          (screen !== "work" || occupant.tab.workId === workId);
+          (occupant.screen !== "work" ||
+            (screen === "work" && occupant.tab.kind !== "new" && occupant.tab.workId === workId));
         return {
           scope,
           workId: screen === "work" ? workId : null,

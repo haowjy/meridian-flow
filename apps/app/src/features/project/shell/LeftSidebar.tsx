@@ -122,8 +122,10 @@ export function LeftSidebar({
           <ContextTreePanel
             projectId={projectId}
             editorWorkId={editorWorkId}
-            activeScheme={docked ? docked.scheme : activeContextScheme}
-            activePath={docked ? docked.path : activeContextPath}
+            activeScheme={
+              docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
+            }
+            activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
             onSelectFile={handleSelectFile}
           />
         ) : null}

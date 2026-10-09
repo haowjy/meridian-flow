@@ -1,5 +1,5 @@
 /** The dock document's tab as the resource projection now shows it, or null once it is gone. */
-import type { ServerContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { useAccountResourceProjection } from "../context/account-feature-context";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import type { DockDocument } from "./dock-view-store";
@@ -13,9 +13,6 @@ export function useDockDocumentTab(projectId: string, document: DockDocument) {
   const projection = projectResourceTab(projectId, document.tab, records, folders);
   if (projection.kind === "removed" || projection.kind === "terminal")
     return { tab: document.tab, gone: true };
-  const tab: ServerContextTab =
-    projection.kind === "projected" && projection.tab.kind !== "new"
-      ? projection.tab
-      : document.tab;
+  const tab: ContextTab = projection.kind === "projected" ? projection.tab : document.tab;
   return { tab, gone: false };
 }

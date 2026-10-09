@@ -16,7 +16,7 @@
  * attempt can never replace a newer choice; a superseded commit is `cancelled`.
  */
 import { useCallback } from "react";
-import type { ServerContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
 import { useChatNavigation } from "../routing/chat-navigation";
@@ -41,17 +41,13 @@ export function useDockPlacement() {
   const phone = usePhoneShell() === true;
   const projectId = useProjectDocumentNavigationProjectId();
   const { revealDock } = useChatNavigation();
-  const commitToStore = useDockViewStore((state) => state.commit);
   /** Show `tab` in the dock under `claim` (a fresh one when the caller has none). */
   const commit = useCallback(
-    (tab: ServerContextTab, claim?: number): DockCommit => {
+    (tab: ContextTab, claim?: number): DockCommit => {
       if (!projectId || (screen !== "chat" && screen !== "work")) return "cancelled";
-      const attempt = claim ?? useDockViewStore.getState().claim();
-      if (!commitToStore(attempt, { projectId, screen, tab })) return "cancelled";
-      revealDock("document");
-      return "opened";
+      return commitDockDocument(projectId, screen, tab, revealDock, claim);
     },
-    [commitToStore, projectId, revealDock, screen],
+    [projectId, revealDock, screen],
   );
   return {
     screen,
@@ -60,4 +56,19 @@ export function useDockPlacement() {
     holdsDocument: dockHoldsDocument(screen, phone),
     commit,
   };
+}
+
+/** The shared commit boundary for document picks and a rail-switch hand-off. */
+export function commitDockDocument(
+  projectId: string,
+  screen: "chat" | "work",
+  tab: ContextTab,
+  revealDock: (view: "document") => void,
+  claim?: number,
+): DockCommit {
+  const store = useDockViewStore.getState();
+  const attempt = claim ?? store.claim();
+  if (!store.commit(attempt, { projectId, screen, tab })) return "cancelled";
+  revealDock("document");
+  return "opened";
 }

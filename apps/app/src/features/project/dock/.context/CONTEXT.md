@@ -49,15 +49,26 @@ title chip on the left, and Open in Editor (an expand button) then the collapse 
 replaces the first. `setDockView` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the writer's last explicit view.
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
-when the project or the screen changes, and a Work's note when the Work changes; a
-Chat-screen occupant stays on the Chat screen (the sync also records the Work on the Work
+when the project changes, and a Work-screen document when leaving that Work or its screen; a
+Chat-screen occupant survives screen and chat changes, but is only shown on Chat (the sync also records the Work on the Work
 screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
 `claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
 handling the slot has. Nothing is persisted across reloads.
 
+Rail screen switches (`ReadableProjectRoute.selectScreen`) call `handOffVisibleDocument`:
+the Editor's visible route-owned tab replaces the Chat slot and reveals the dock; a visible
+Chat or Work dock document opens or focuses through `openDocumentInEditor`, the same path
+as the header's Open in Editor button. Work receives no document. A collapsed dock, an
+Editor chooser or an unresolved route carries nothing; the destination keeps its own state.
+The hand-off uses the resource projection and the existing dock commit/claim boundary, so
+an earlier asynchronous open cannot overwrite it. Browser back/forward does not hand off.
+Peeking and closing the dock never write Editor tabs. There is no third active-document
+store or continuous synchronization. An Untitled Editor tab can also be carried: the dock
+binds its existing resource session and marks it create-eligible on first input.
+
 Where a document opens is decided once, in `use-dock-placement.ts`, which also owns the one commit
-into the dock (`useDockPlacement().commit`, with `revealDock("document")`). Two rules differ on
+into the dock (`commitDockDocument`, used by `useDockPlacement().commit`, with `revealDock("document")`). Two rules differ on
 purpose: a chat or Scratch pick goes *beside the chat* (`opensBesideChat`: the Chat screen, wide), and
 Work Files plus the dock's own title menu may also replace the dock document on the Work screen
 (`dockHoldsDocument`). The Editor screen and the phone never hold a dock document, so those picks open
