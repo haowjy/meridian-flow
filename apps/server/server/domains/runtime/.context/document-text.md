@@ -45,16 +45,32 @@ never sees them: agent-edit's facts stay host-only on `WriteOutcome`, receipts,
 concurrent runs and search hits, and handlers send only `result` or the
 stripped hit.
 
-Who records, all through the one store:
+The view recorded is the one the facts were actually spelled in, never one
+rebuilt from the grant: agent-edit reports it as `shownView` beside every
+`shownLinks` (its binding's `scope.holder.view`), and a search hit carries
+ContextFS's `shownView`.
 
-| Showing | Recorded in |
-|---|---|
-| successful read, narrowed or outline | `read` handler (`lib/model-tools/document-tools.ts`) |
-| returned, authorized search passages | `search` handler (`listing-tools.ts`) |
-| write echoes, staged or immediate, undo/redo, a partial failure's echo | `writeUnderGrant` |
-| settled receipts | the response scope's commit (`loop/orchestrator.ts`), inside the save transaction |
-| concurrent runs that fit the render budget | the response scope's backfill |
-| `@` reference reads | `lib/model-tools/reference-reader.ts` |
+Ordinary tool evidence commits only with the result the model is shown.
+Handlers compute facts but never record: they return them as host-only
+`shown` candidates beside the result, the executor forwards them only for a
+handler result it accepts (never for an abort, a timeout or a throw, even when
+the abandoned handler finishes later), and `dispatchToolCall` records them in
+the transaction that persists the tool result. Handlers get only
+`forDocument`.
+
+| Showing | Candidates from | Recorded |
+|---|---|---|
+| successful read, narrowed or outline | `read` handler (`lib/model-tools/document-tools.ts`) | with the tool result (`loop/tool-dispatch.ts`) |
+| returned, authorized search passages | `search` handler (`listing-tools.ts`) | with the tool result |
+| write echoes, staged or immediate, undo/redo, a partial failure's echo | `writeUnderGrant` | with the tool result |
+| settled receipts | the response save | the response scope's commit (`loop/orchestrator.ts`), inside the save transaction |
+| concurrent runs that fit the render budget | the response save | the response scope's backfill |
+| `@` reference reads | `lib/model-tools/reference-reader.ts` | at read time, unless the run was cancelled |
+
+`@` reference blocks persist through run preparation and inbox adoption, not
+tool dispatch, so a reference read still records when it returns; it skips
+recording once its run is cancelled, but a cancellation landing during the
+record is not excluded.
 
 Nothing else records evidence. Capture lives in the handlers, never in
 `readDocument`, so a copy's private source read records nothing. Matches past
@@ -64,10 +80,22 @@ that is revision evidence, and history copies carry it with null revisions.
 
 The rows are independent of transcript blocks, so compaction and restart
 lose none of them. A response that rolls back keeps its rows, since the model
-saw the echo. Dedup keeps the latest showing per key, ordered by one global
-`seq`. A fork reads its own rows plus its source's rows at turns up to its
-cutoff position, recursively; nothing is copied at fork time. Handoffs and
-spawned children inherit nothing, because they start from a brief.
+saw the echo.
+
+Storage keeps one row per showing key **per turn** (key: thread, document,
+ref, address, holder URI, view; plus turn). This amends contract §7.3's one
+mutable row per key, which could not keep its own cutoff promise: a source's
+later repeat moved the row past a fork's cutoff and erased what the fork saw.
+Now a repeat in a later turn adds a row; within a turn the row keeps the
+greatest `seq` from the one global sequence. The upsert applies only when
+`excluded.seq > seq`, because a sequence value is drawn before conflict
+arbitration and a writer delayed after drawing can arrive second.
+
+Readers select first and deduplicate second: a fork reads its own rows plus
+its source's rows at turns up to its cutoff position, recursively, and only
+then keeps the latest eligible showing per key (its `at`). Nothing is copied at
+fork time. Handoffs and spawned children inherit nothing, because they start
+from a brief.
 
 Delivery: `writeUnderGrant` binds `WriteContext.shownLinks` to
 `ShownLinkStore.forDocument(threadId, ·)`. The pool spreads the context
