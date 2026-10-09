@@ -28,38 +28,15 @@ it.each([
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
     for (const source of ["agent", "writer"] as const) {
-      const staged = await f.branchCoordinator.readBranch(
-        branch.branchId,
-        async (doc, snapshot) => {
-          const clone = createCollabYDoc({ gc: false });
-          Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-          return { clone, generation: snapshot.generation };
-        },
-      );
-      try {
+      await stageEdit(f, branch.branchId, source, (doc) => {
         if (source === "agent") {
-          const b = f.model.getBlocks(toDocHandle(staged.clone))[0];
-          f.model.applyTextEdit(toDocHandle(staged.clone), b, { from: 11, to: 11 }, " Agent");
+          const b = f.model.getBlocks(toDocHandle(doc))[0];
+          f.model.applyTextEdit(toDocHandle(doc), b, { from: 11, to: 11 }, " Agent");
         } else {
-          const para = staged.clone
-            .getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)
-            .get(1) as Y.XmlElement;
+          const para = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1) as Y.XmlElement;
           (para.get(0) as Y.XmlText).format(0, 4, { strong: {} });
         }
-        await f.branchCoordinator.commitSyncFromDoc({
-          branchId: branch.branchId,
-          sourceDoc: staged.clone,
-          expectedGeneration: staged.generation,
-          source,
-          actorUserId: source === "writer" ? USER_ID : null,
-          threadId: THREAD_ID,
-          turnId: source === "agent" ? TURN_ID : null,
-          wId: null,
-          updateMeta: null,
-        });
-      } finally {
-        staged.clone.destroy();
-      }
+      });
     }
     const cmd = {
       workId: WORK_ID,
@@ -103,16 +80,8 @@ it.each([
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
     async function stage(source: "agent" | "writer") {
-      const staged = await f.branchCoordinator.readBranch(
-        branch.branchId,
-        async (doc, snapshot) => {
-          const clone = createCollabYDoc({ gc: false });
-          Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-          return { clone, generation: snapshot.generation };
-        },
-      );
-      try {
-        const fragment = staged.clone.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+      await stageEdit(f, branch.branchId, source, (doc) => {
+        const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
         if (shape === "created-parent" && source === "agent") {
           const paragraph = new Y.XmlElement("paragraph");
           const text = new Y.XmlText();
@@ -127,20 +96,7 @@ it.each([
             source === "agent" ? "ABC" : "X",
           );
         }
-        await f.branchCoordinator.commitSyncFromDoc({
-          branchId: branch.branchId,
-          sourceDoc: staged.clone,
-          expectedGeneration: staged.generation,
-          source,
-          actorUserId: source === "writer" ? USER_ID : null,
-          threadId: THREAD_ID,
-          turnId: source === "agent" ? TURN_ID : null,
-          wId: null,
-          updateMeta: null,
-        });
-      } finally {
-        staged.clone.destroy();
-      }
+      });
     }
     await stage("agent");
     const command = {
@@ -194,36 +150,15 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
     for (const edit of ["insert", "remove"] as const) {
-      const staged = await f.branchCoordinator.readBranch(
-        branch.branchId,
-        async (doc, snapshot) => {
-          const clone = createCollabYDoc({ gc: false });
-          Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-          return { clone, generation: snapshot.generation };
-        },
-      );
-      try {
-        const block = f.model.getBlocks(toDocHandle(staged.clone))[0];
+      await stageEdit(f, branch.branchId, "agent", (doc) => {
+        const block = f.model.getBlocks(toDocHandle(doc))[0];
         f.model.applyTextEdit(
-          toDocHandle(staged.clone),
+          toDocHandle(doc),
           block,
           edit === "insert" ? { from: 0, to: 0 } : { from: 4, to: 9 },
           edit === "insert" ? "New " : "",
         );
-        await f.branchCoordinator.commitSyncFromDoc({
-          branchId: branch.branchId,
-          sourceDoc: staged.clone,
-          expectedGeneration: staged.generation,
-          source: "agent",
-          actorUserId: null,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          wId: null,
-          updateMeta: null,
-        });
-      } finally {
-        staged.clone.destroy();
-      }
+      });
     }
     // Fault-inject missing attribution evidence while preserving the persisted effect.
     const rows = await f.db.select().from(f.schema.branchWriteJournal);
@@ -265,3 +200,35 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
     harness.destroyWarmState();
   }
 });
+
+type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
+
+/** Admit the scenario's explicit mutation with its author over a real branch snapshot. */
+async function stageEdit(
+  f: Fixture,
+  branchId: string,
+  source: "agent" | "writer",
+  mutate: (doc: Y.Doc) => void,
+) {
+  const staged = await f.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
+    const clone = createCollabYDoc({ gc: false });
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    return { clone, generation: snapshot.generation };
+  });
+  try {
+    mutate(staged.clone);
+    await f.branchCoordinator.commitSyncFromDoc({
+      branchId,
+      sourceDoc: staged.clone,
+      expectedGeneration: staged.generation,
+      source,
+      actorUserId: source === "writer" ? USER_ID : null,
+      threadId: THREAD_ID,
+      turnId: source === "agent" ? TURN_ID : null,
+      wId: null,
+      updateMeta: null,
+    });
+  } finally {
+    staged.clone.destroy();
+  }
+}
