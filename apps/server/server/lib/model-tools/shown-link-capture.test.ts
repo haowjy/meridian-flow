@@ -25,16 +25,17 @@ import {
 import type { GenerateResult } from "../../domains/runtime/gateway/index.js";
 import {
   createInMemoryShownLinkStore,
+  createInspectionToolRegistrations,
   createToolExecutor,
   createToolRegistry,
   type ShownLinkStore,
   type ToolRegistration,
+  type ToolRegistry,
 } from "../../domains/runtime/index.js";
 import { runtimeScenario } from "../../domains/runtime/loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../../domains/runtime/loop/__tests__/test-gateway.js";
 import type { ReferenceReader } from "../../domains/runtime/loop/reference-context.js";
 import { dispatchToolCall } from "../../domains/runtime/loop/tool-dispatch.js";
-import { readThreadHistory } from "../../domains/runtime/spawn/thread-history.js";
 import { createInMemoryRepositories } from "../../domains/threads/adapters/in-memory/index.js";
 import { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
 import { createModelToolRegistrations, createReferenceReader } from "./index.js";
@@ -260,8 +261,9 @@ const reference = (documentId: string, name: string) => ({
 
 /**
  * Runs one model turn that makes `calls`, returning every tool result it
- * persisted. `during` runs once `pending` resolves, while the run prepares or
- * executes.
+ * persisted. `history` seeds the thread before the run, which then also has
+ * the inspection tools. `during` runs once `pending` resolves, while the run
+ * prepares or executes.
  */
 async function runTurn(
   h: Harness,
@@ -273,9 +275,23 @@ async function runTurn(
     userBlocks?: UserMessageBlock[];
     referenceReader?: ReferenceReader;
     responseWrites?: Parameters<typeof runtimeScenario>[0]["responseWrites"];
+    history?: (rig: Rig) => Promise<void>;
   } = {},
 ) {
-  const toolRegistry = createToolRegistry({ registrations: h.registrations });
+  // The inspection tools read the scenario's repositories, which exist only once it is built.
+  const inspection = {
+    repos: undefined as unknown as Rig["repos"],
+    registry: undefined as unknown as ToolRegistry,
+    statusReader: {} as never,
+    tokenizer: async () => "anthropic" as const,
+  };
+  const toolRegistry = createToolRegistry({
+    registrations: [
+      ...h.registrations,
+      ...(control.history ? createInspectionToolRegistrations(inspection) : []),
+    ],
+  });
+  inspection.registry = toolRegistry;
   const gateway = scriptedGateway({ results: [...calls, done] });
   const rig = await runtimeScenario({
     gateway,
@@ -286,6 +302,8 @@ async function runTurn(
     referenceReader: control.referenceReader ?? h.referenceReader,
     ...(control.responseWrites ? { responseWrites: control.responseWrites } : {}),
   });
+  inspection.repos = rig.repos;
+  await control.history?.(rig);
   let turnId: string | undefined;
   const executed = (async () => {
     const run = await rig.orchestrator.prepare({
@@ -525,47 +543,44 @@ const rows: Array<{
     name: "a thread_history item quoting an earlier write is never recorded",
     async act(check) {
       const h = await harness();
-      const thread = await h.repos.threads.create({ projectId: PROJECT, userId: USER });
-      const turn = await h.repos.turns.create({
-        threadId: thread.id,
-        role: "assistant",
-        origin: "assistant",
-        status: "complete",
-        metadata: null,
-      });
-      const toolCallId = crypto.randomUUID();
-      const input = { command: "insert", path: "user://target.md", content: "[a](b.md)" };
-      await h.repos.blocks.create({
-        turnId: turn.id as TurnId,
-        blockType: "tool_use",
-        sequence: 0,
-        content: { toolCallId, toolName: "write", input },
-      });
-      await h.repos.blocks.create({
-        turnId: turn.id as TurnId,
-        blockType: "tool_result",
-        sequence: 1,
-        content: {
-          toolCallId,
-          toolName: "write",
-          output: "status: success\n\n[a](user://target-1.md)",
-          isError: false,
-          metadata: {
-            documentRevisions: [{ documentId: TARGET, uri: "user://target.md", revision: "r" }],
-          },
+      const { threadId, results } = await runTurn(h, [toolCall("thread_history", {})], {
+        async history({ repos, thread }) {
+          const turn = await repos.turns.create({
+            threadId: thread.id,
+            role: "assistant",
+            origin: "assistant",
+            status: "complete",
+            metadata: null,
+          });
+          const toolCallId = crypto.randomUUID();
+          const input = { command: "insert", path: TARGET_URI, content: "[a](b.md)" };
+          await repos.blocks.create({
+            turnId: turn.id as TurnId,
+            blockType: "tool_use",
+            sequence: 0,
+            content: { toolCallId, toolName: "write", input },
+          });
+          await repos.blocks.create({
+            turnId: turn.id as TurnId,
+            blockType: "tool_result",
+            sequence: 1,
+            content: {
+              toolCallId,
+              toolName: "write",
+              output: "status: success\n\n[a](user://target-1.md)",
+              isError: false,
+              metadata: {
+                documentRevisions: [{ documentId: TARGET, uri: TARGET_URI, revision: "r" }],
+              },
+            },
+          });
         },
       });
-      const caller = await h.repos.threads.findById(thread.id as ThreadId);
-      if (!caller) throw new Error("thread missing");
-      const history = await readThreadHistory({
-        repos: h.repos,
-        registry: createToolRegistry({ registrations: h.registrations }),
-        caller,
-        input: {},
-        tokenizer: "anthropic",
-      });
-      check(JSON.stringify(history), "history quotes the write").toContain("target.md");
-      return { store: h.store, threadId: thread.id, shown: { [TARGET]: [] } };
+      check(
+        results.map((result) => (result as { output?: unknown }).output),
+        "the model got the history quoting the write",
+      ).toEqual([expect.stringContaining("target.md")]);
+      return { store: h.store, threadId, shown: { [TARGET]: [] } };
     },
   },
   {
