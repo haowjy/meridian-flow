@@ -49,7 +49,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   draft's last changes and the server's `draftClosed` answer live in the draft's
   claim (`draft-command-record`), and whichever review has the draft open follows
   them (`useReviewCommandCompletion`; a review that opens mid-command adopts the
-  pending completion), whoever sent it. Surfaces send through
+  pending completion), whoever sent it. Nothing of the answer outlives the claim:
+  the server reuses a closed draft's id for its next proposal. Surfaces send through
   `useChangeCommandRunner(callerController)`, which routes a draft that is the
   Editor's open review (in the caller's project and Work) to the Editor's
   controller and any other to the caller's, and runs a batch as one command per
@@ -62,11 +63,12 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   overlap-aware rule (a shared class id or operation, newest wins) for showing it
   on each overlapping change and on the file that sent the selection, and for
   retiring it.
-- **Optimistic by record.** A change with an Apply or Discard in flight, or
-  confirmed, is already gone from the preview these read
+- **Optimistic by record.** A change with an Apply or Discard queued in a
+  batch, in flight, or confirmed, is already gone from the preview these read
   (`client/query/change-command-record`). A failure brings it back with its
   reason, shown on its bar and row. A read that started before a confirmation
-  cannot bring a change back.
+  cannot bring a change back. No surface keeps an optimistic hide of its own (a
+  strip-local one held a refused file hidden until its whole batch ended).
 - **One command authority per draft.** `draft-command-record` holds the one
   claim per draft (project, Work, document, draft): a whole-draft Apply or
   Discard, or a per-change one with its operation set. It is reserved
