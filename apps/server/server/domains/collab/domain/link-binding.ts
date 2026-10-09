@@ -14,7 +14,10 @@
  * Because preparing and applying are separated, a prepared write is a Yjs
  * mutation against the base it was bound to, never a desired state: anything
  * admitted in between merges with it instead of being undone. It also names
- * the one holder it was prepared for, so it is never applied to another.
+ * the one holder it was prepared for, so it is never applied to another, and
+ * certifies the authority generation its base belonged to, so it is never
+ * admitted into another (a restore replaces the generation even when its
+ * checkpoint keeps every clock the base had).
  *
  * Against a base, the mutation is agent-edit's whole-document overwrite of it
  * (`lowerOverwrite`), so the write also carries that overwrite's semantic IR
@@ -41,6 +44,8 @@ import { type MarkupCodec, type PMNode, walkLinkOccurrences } from "@meridian/ma
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { documentAuthority } from "./document-handle.js";
+import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 import {
   type AheadRefRegistrar,
   type DocumentLinkScopes,
@@ -58,8 +63,16 @@ export type PreparedHolder =
   /** Fixed, link-free content (`bindStatic`): seeds any new document. */
   | { kind: "static" };
 
-/** The state a write was prepared against; applying needs every item in it. */
+/**
+ * The base a write was prepared against. Two separate checks guard applying
+ * it: the authority generation must still be the one the base was read from
+ * (the certificate; admission checks it under the document's lock), and the
+ * document must hold every clock in `stateVector` (the update's dependency).
+ * Neither implies the other: a restore can keep every clock yet replace the
+ * generation, and a state vector says nothing of which generation it is in.
+ */
 export interface PreparedBase {
+  readonly authority: Readonly<CheckpointAuthority>;
   readonly stateVector: Uint8Array;
 }
 
@@ -132,7 +145,11 @@ export class LinkBindingInsideTransactionError extends Error {
   }
 }
 
-/** Whether `doc` holds every item `base` names, so `update` can merge into it. */
+/**
+ * Whether `doc` has seen every clock `base` names, so `update`'s dependencies
+ * are present. Clock containment only: it is no generation fence (see
+ * `sameAuthority`), and it does not prove the base's items are still live.
+ */
 export function containsBase(doc: Y.Doc, base: PreparedBase | null): boolean {
   if (base === null) return true;
   const have = Y.decodeStateVector(Y.encodeStateVector(doc));
@@ -140,6 +157,14 @@ export function containsBase(doc: Y.Doc, base: PreparedBase | null): boolean {
     if ((have.get(client) ?? 0) < clock) return false;
   }
   return true;
+}
+
+/** Whether a document's authority is the generation a prepared base certified. */
+export function sameAuthority(current: Readonly<CheckpointAuthority>, base: PreparedBase): boolean {
+  return (
+    current.authorityId === base.authority.authorityId &&
+    current.generation === base.authority.generation
+  );
 }
 
 export interface LinkBinderDeps {
@@ -178,7 +203,12 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
    */
   function prepared(input: {
     holder: PreparedHolder;
-    base: { doc: Y.Doc; documentId: DocumentId; codec: AgentEditCodec } | null;
+    base: {
+      doc: Y.Doc;
+      authority: Readonly<CheckpointAuthority>;
+      documentId: DocumentId;
+      codec: AgentEditCodec;
+    } | null;
     blocks: readonly PMNode[];
     markdown: string;
     schemaType: YjsTrackedSchemaType;
@@ -216,7 +246,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       }
       return {
         holder: input.holder,
-        base: input.base ? { stateVector: baseVector } : null,
+        base: input.base ? { authority: input.base.authority, stateVector: baseVector } : null,
         update,
         certified,
         blocks: input.blocks,
@@ -228,20 +258,26 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     }
   }
 
-  /** The holder's current document, as a private clone; null if it has no state yet. */
-  async function currentDocument(documentId: DocumentId): Promise<Y.Doc | null> {
-    let state: Uint8Array;
+  /**
+   * The holder's current document, as a private clone, with the authority
+   * generation it was read in; null if it has no state yet.
+   */
+  async function currentDocument(
+    documentId: DocumentId,
+  ): Promise<{ doc: Y.Doc; authority: Readonly<CheckpointAuthority> } | null> {
+    let read: { state: Uint8Array; authority: Readonly<CheckpointAuthority> };
     try {
-      state = await deps.coordinator.withDocument(documentId, async (doc) =>
-        Y.encodeStateAsUpdate(doc),
-      );
+      read = await deps.coordinator.withDocument(documentId, async (doc) => ({
+        state: Y.encodeStateAsUpdate(doc),
+        authority: documentAuthority(doc),
+      }));
     } catch (cause) {
       if (isDocumentNotFoundError(cause)) return null;
       throw cause;
     }
     const clone = createCollabYDoc({ gc: false });
-    Y.applyUpdate(clone, state);
-    return clone;
+    Y.applyUpdate(clone, read.state);
+    return { doc: clone, authority: read.authority };
   }
 
   async function bind(input: BindMarkdownInput): Promise<PreparedWrite> {
@@ -258,7 +294,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     const base =
       input.against === "current" && documentId ? await currentDocument(documentId) : null;
     try {
-      const previous = base ? [...deps.model.projectBlocks(toDocHandle(base))] : [];
+      const previous = base ? [...deps.model.projectBlocks(toDocHandle(base.doc))] : [];
       const prepare = async (written: readonly PMNode[]) => {
         await deps.links.prepare({
           holders: documentId ? [{ documentId, view }] : [],
@@ -275,8 +311,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       const finish = (blocks: readonly PMNode[], markdown: string) =>
         prepared({
           holder: preparedHolder,
-          base:
-            base && documentId ? { doc: base, documentId, codec: codecs.bind(scopeFor()) } : null,
+          base: base && documentId ? { ...base, documentId, codec: codecs.bind(scopeFor()) } : null,
           blocks,
           markdown,
           schemaType,
@@ -315,7 +350,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       await register(assigned.minted, scope);
       return finish(keepUnchangedPrefix(previous, current, written, assigned.nodes), markdown);
     } finally {
-      base?.destroy();
+      base?.doc.destroy();
     }
   }
 
