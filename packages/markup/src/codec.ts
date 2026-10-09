@@ -31,13 +31,7 @@ export function requiredBlockNamesForSchema(schema: Schema): string[] {
   return Object.keys(schema.nodes).filter((name) => !NON_CODEC_SCHEMA_NODES.has(name));
 }
 
-const NO_ASSET_PATHS: ParseContext["assetForPath"] = () => null;
-
-export function createMarkupCodec(options: {
-  schema: Schema;
-  /** Transitional image rule; see `ParseContext.assetForPath`. */
-  assetForPath?: ParseContext["assetForPath"];
-}): MarkupCodecBuilder {
+export function createMarkupCodec(options: { schema: Schema }): MarkupCodecBuilder {
   const plugins: MarkupPlugin[] = [];
   return {
     use(plugin: MarkupPlugin) {
@@ -45,19 +39,13 @@ export function createMarkupCodec(options: {
       return this;
     },
     build(buildOptions?: BuildOptions) {
-      return buildMarkupCodec(
-        options.schema,
-        options.assetForPath ?? NO_ASSET_PATHS,
-        plugins,
-        buildOptions ?? {},
-      );
+      return buildMarkupCodec(options.schema, plugins, buildOptions ?? {});
     },
   };
 }
 
 function buildMarkupCodec(
   schema: Schema,
-  assetForPath: ParseContext["assetForPath"],
   plugins: readonly MarkupPlugin[],
   options: BuildOptions,
 ): MarkupCodec {
@@ -125,10 +113,7 @@ function buildMarkupCodec(
   ): { blocks: PMNode[]; spans: OccurrenceSpan[] } => {
     const source = preprocess(content);
     const runtime = makeRuntime(source);
-    const ctx = withRuntime<ParseContext>(
-      { schema: baseCtx.schema, assetForPath: baseCtx.assetForPath },
-      runtime,
-    );
+    const ctx = withRuntime<ParseContext>({ schema: baseCtx.schema }, runtime);
     const tree = parsePreparedMarkdown(source);
     const blocks: PMNode[] = [];
     const spans: OccurrenceSpan[] = [];
@@ -146,7 +131,7 @@ function buildMarkupCodec(
 
   const parseDocument = (content: string, withSpans: boolean) => {
     if (content.trim().length === 0) return { blocks: [schema.node("paragraph")], spans: [] };
-    const parsed = parseTopLevel(content, { schema, assetForPath }, withSpans);
+    const parsed = parseTopLevel(content, { schema }, withSpans);
     return parsed.blocks.length > 0 ? parsed : { blocks: [schema.node("paragraph")], spans: [] };
   };
 

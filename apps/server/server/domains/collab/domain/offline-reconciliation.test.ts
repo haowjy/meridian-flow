@@ -1,15 +1,16 @@
 /** Behavioral coverage for offline journal reconciliation. */
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { mergeTrailChanges } from "../adapters/drizzle-change-trail-aggregate.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
+import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createOfflineReconciliation } from "./offline-reconciliation.js";
 import type { NormalizedTrail, TrailChangeV1 } from "./trail-read-kernel.js";
 
@@ -20,7 +21,6 @@ const RESPONSE_ID = "response-agent";
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
-const agentCodec = createAgentEditCodec(codec, UNSCOPED_DOCUMENT_LINKS);
 
 describe("offline reconciliation", () => {
   it("records hidden writer content once in the ordinary receipt shape", async () => {
@@ -95,7 +95,8 @@ async function setup(input: {
       },
     },
     model,
-    codec: agentCodec,
+    codec: createAgentEditCodecFactory(codec),
+    links: createStaticDocumentLinkScopes(),
     identifyUpdate: () => "incoming-identity",
     resolveThreadId: async () => THREAD_ID,
     resolveDocumentTitle: async () => "Chapter",

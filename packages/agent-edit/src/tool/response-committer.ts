@@ -2,7 +2,7 @@
 import * as Y from "yjs";
 import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
+import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
@@ -15,6 +15,7 @@ import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { internalResultError, isInternalWriteResult } from "./internal-result.js";
+import { type BoundLinks, bindLinks } from "./link-binding.js";
 import { modelResult } from "./model-result.js";
 import type {
   CommitPreflightInput,
@@ -220,7 +221,8 @@ export function createResponseCommitter(deps: {
   mutationCommit: MutationCommit;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  links: import("../ports/document-links.js").DocumentLinksPort;
   ensureDocument?: (docId: string) => Promise<void>;
   onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
@@ -237,6 +239,13 @@ export function createResponseCommitter(deps: {
     onTransition,
   } = deps;
   const responses = new Map<string, ResponseState>();
+  /** Each document's binding for the commit attempt that renders its receipts. */
+  const commitBindings = new WeakMap<ResponseDocumentBuffer, BoundLinks>();
+  const linksOf = (docBuffer: ResponseDocumentBuffer): BoundLinks => {
+    const bound = commitBindings.get(docBuffer);
+    if (!bound) throw new Error(`Response document ${docBuffer.docId} was not bound for commit.`);
+    return bound;
+  };
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
   const closedResponseOrder: string[] = [];
 
@@ -360,6 +369,16 @@ export function createResponseCommitter(deps: {
     let recoveryRecheckInputs: ReadonlyMap<string, CommitPreflightInput> | null = null;
 
     try {
+      for (const docBuffer of docBuffers) {
+        commitBindings.set(
+          docBuffer,
+          await bindLinks(deps, {
+            documentId: docBuffer.docId,
+            docs: [docBuffer.runtime.doc],
+            context: { responseId, threadId: docBuffer.session.threadId },
+          }),
+        );
+      }
       const preflights = new Map<
         string,
         import("./mutation-commit.js").CapturedConcurrentDetection | undefined
@@ -379,6 +398,7 @@ export function createResponseCommitter(deps: {
             return mutationCommit.captureCommitPreflight(liveDoc, {
               docId: docBuffer.docId,
               runtime: docBuffer.runtime,
+              links: linksOf(docBuffer),
               deletedHashes: hashes.deletedHashes,
               touchedHashes: hashes.touchedHashes,
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -415,6 +435,7 @@ export function createResponseCommitter(deps: {
             {
               docId: docBuffer.docId,
               runtime: docBuffer.runtime,
+              links: linksOf(docBuffer),
               deletedHashes: new Set(hashes.deletedHashes),
               touchedHashes: new Set(hashes.touchedHashes),
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -445,6 +466,7 @@ export function createResponseCommitter(deps: {
               {
                 docId: docBuffer.docId,
                 runtime: docBuffer.runtime,
+                links: linksOf(docBuffer),
                 deletedHashes: hashes.deletedHashes,
                 touchedHashes: hashes.touchedHashes,
                 preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
@@ -478,13 +500,13 @@ export function createResponseCommitter(deps: {
                       applied.concurrent.detectionSnapshot,
                       applied.lateSweep.affectedBlockHashes,
                       deps.model,
-                      deps.codec,
+                      linksOf(docBuffer).codec,
                     ),
                     captureDeletedBodies(
                       docBuffer.updates[0]?.preOwnSnapshot,
                       applied.lateSweep.affectedBlockHashes,
                       deps.model,
-                      deps.codec,
+                      linksOf(docBuffer).codec,
                     ),
                   ),
                 ),
@@ -706,7 +728,8 @@ export function createResponseCommitter(deps: {
     revision: string | null,
     lateSweep?: DestructiveSweepReport,
   ): ResponseCommitDocumentResult["receipts"] {
-    const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, deps.codec);
+    const links = linksOf(docBuffer);
+    const after = snapshotBlocks(toDocHandle(docBuffer.runtime.doc), deps.model, links.codec);
     const lastIndex = docBuffer.updates.length - 1;
     return docBuffer.updates.map((update, index) => {
       const beforeDoc = new Y.Doc({ gc: false });
@@ -714,7 +737,8 @@ export function createResponseCommitter(deps: {
         Y.applyUpdate(beforeDoc, update.preOwnSnapshot);
         const summary = mutationCommit.summarizeMutationEcho({
           runtime: docBuffer.runtime,
-          before: snapshotBlocks(toDocHandle(beforeDoc), deps.model, deps.codec),
+          links,
+          before: snapshotBlocks(toDocHandle(beforeDoc), deps.model, links.codec),
           touchedHashes: update.touchedHashes,
           deletedHashes: update.deletedHashes,
           afterSnapshot: after,
@@ -737,7 +761,7 @@ export function createResponseCommitter(deps: {
           ...(update.deletedHashes.size > 0 ? { deletedBlocks: [...update.deletedHashes] } : {}),
           ...(lateSweep && index === lastIndex ? { lateSweep } : {}),
           ...(index === lastIndex &&
-          isDocumentEmpty(deps.model, deps.codec, toDocHandle(docBuffer.runtime.doc))
+          isDocumentEmpty(deps.model, links.codec, toDocHandle(docBuffer.runtime.doc))
             ? { documentEmpty: true }
             : {}),
           ...(update.copied

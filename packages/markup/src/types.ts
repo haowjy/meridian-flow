@@ -53,12 +53,6 @@ export interface SerializeContext {
 /** Context threaded through block/mark parse calls. */
 export interface ParseContext {
   schema: Schema;
-  /**
-   * Transitional (#729/#730 lane F2 removes it): the shipped image rule, a
-   * known manuscript path parses as `asset:<id>`. F2 moves the rule into the
-   * binding pass after parse, which leaves parse pure syntax.
-   */
-  assetForPath(path: string): string | null;
 }
 
 /** Block-level: one registration per PM block node type. */

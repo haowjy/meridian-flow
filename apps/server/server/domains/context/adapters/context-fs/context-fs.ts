@@ -12,12 +12,13 @@ import {
   filetypeForPath,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import type { SpelledLinkFact } from "@meridian/markup";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import type {
   BranchPeerShadowAccess,
-  DocumentAssetPaths,
   DocumentCreationAggregate,
+  DocumentLinkScopes,
   DocumentSeedOrigin,
   MarkdownDocumentStore,
   SyncError,
@@ -64,7 +65,8 @@ import { resolveVisibleDocumentMembership } from "../../visible-document-members
 import { matchDocument } from "./match.js";
 
 export interface ContextFSDeps {
-  assetPaths: Pick<DocumentAssetPaths, "within">;
+  /** Search spells its source's chapters from one snapshot; each read prepares its own. */
+  links: Pick<DocumentLinkScopes, "within">;
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
@@ -175,7 +177,7 @@ export class ContextFS implements ContextSchemeAdapter {
   readonly name: string;
   readonly capabilities: SchemeCapabilities;
 
-  private readonly assetPaths: ContextFSDeps["assetPaths"];
+  private readonly links: ContextFSDeps["links"];
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: ContextFSDeps["documentSync"];
@@ -193,7 +195,7 @@ export class ContextFS implements ContextSchemeAdapter {
   };
 
   constructor(deps: ContextFSDeps) {
-    this.assetPaths = deps.assetPaths;
+    this.links = deps.links;
     this.capabilities = schemeCapabilities(deps.scheme);
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
@@ -820,22 +822,26 @@ export class ContextFS implements ContextSchemeAdapter {
     const first = searchable[0];
     if (!first) return Ok([]);
     // One source has one project association, including personal and Work sources.
-    return this.assetPaths.within(
+    return this.links.within(
       { documentId: first.document.id, documentIds: searchable.map(({ document }) => document.id) },
       async () => {
         const hits: AdapterSearchHit[] = [];
         for (const row of searchable) {
           const read = await this.searchableLines(row.document.id);
           if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-          const match = matchDocument(read.value.entries, query, {
+          const found = matchDocument(read.value.entries, query, {
             hashlines: read.value.hashlines,
           });
-          if (!match) continue;
+          if (!found) continue;
+          const { entries: passageEntries, ...match } = found;
+          // Only the returned passages were shown, never the matches past the cap.
+          const shownLinks = passageEntries.flatMap((entry) => read.value.links[entry] ?? []);
           hits.push({
             path: row.path,
             documentId: row.document.id,
             revision: read.value.revision,
             ...match,
+            ...(shownLinks.length > 0 ? { shownLinks } : {}),
           });
         }
         return Ok(hits);
@@ -865,15 +871,18 @@ export class ContextFS implements ContextSchemeAdapter {
     threadId: string;
     responseId?: string | null;
     version: "draft" | "live";
+    workId: string | null;
   } | null {
     const view = this.readView;
     if (!view) return null;
     // Without a separate draft both versions are the same document (D3).
     const ownVersion = sourceDestination(this.scheme, view.draftWork).kind;
+    const version = view.version === "live" ? "live" : ownVersion;
     return {
       threadId: view.threadId,
       responseId: view.responseId,
-      version: view.version === "live" ? "live" : ownVersion,
+      version,
+      workId: version === "draft" ? (view.draftWork?.id ?? null) : null,
     };
   }
 
@@ -885,6 +894,7 @@ export class ContextFS implements ContextSchemeAdapter {
         threadId: view.threadId as never,
         responseId: view.responseId,
         destination: view.version,
+        workId: view.workId as never,
       });
       return read.ok ? Ok(read.value.content) : read;
     }
@@ -898,10 +908,16 @@ export class ContextFS implements ContextSchemeAdapter {
    * thread view falls back to plain markdown and would otherwise be parsed as
    * hashlines it does not have.
    */
-  private async searchableLines(
-    documentId: string,
-  ): Promise<
-    Result<{ entries: string[]; hashlines: boolean; revision: string | null }, SyncError>
+  private async searchableLines(documentId: string): Promise<
+    Result<
+      {
+        entries: string[];
+        hashlines: boolean;
+        revision: string | null;
+        links: readonly (readonly SpelledLinkFact[])[];
+      },
+      SyncError
+    >
   > {
     const view = this.threadView();
     if (view) {
@@ -910,12 +926,14 @@ export class ContextFS implements ContextSchemeAdapter {
         threadId: view.threadId as never,
         responseId: view.responseId,
         destination: view.version,
+        workId: view.workId as never,
       });
       return hashlines.ok
         ? Ok({
             entries: hashlines.value.content,
             hashlines: true,
             revision: hashlines.value.revision,
+            links: hashlines.value.links,
           })
         : hashlines;
     }
@@ -925,6 +943,8 @@ export class ContextFS implements ContextSchemeAdapter {
           entries: read.value.content.split("\n"),
           hashlines: false,
           revision: read.value.revision,
+          // Plain lines are not blocks; outside a thread no model is shown anything.
+          links: [],
         })
       : read;
   }

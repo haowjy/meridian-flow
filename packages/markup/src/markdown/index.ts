@@ -5,7 +5,7 @@ import type { PluggableList } from "unified";
 
 import { createMarkupCodec } from "../codec.js";
 import { demoteAutolinks } from "../helpers.js";
-import type { BlockCodec, MarkCodec, MarkupPlugin, ParseContext } from "../types.js";
+import type { BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
 import {
   blockquoteCodec,
   bulletListCodec,
@@ -67,12 +67,7 @@ export function markdown(): MarkupPlugin {
  * The canonical Markdown codec. Callers may extend parsing with
  * `remarkPlugins`; without them it is the wire codec.
  */
-export function markdownCodec(options: {
-  schema: Schema;
-  /** Transitional image rule; see `ParseContext.assetForPath`. */
-  assetForPath?: ParseContext["assetForPath"];
-  remarkPlugins?: PluggableList;
-}) {
+export function markdownCodec(options: { schema: Schema; remarkPlugins?: PluggableList }) {
   const { remarkPlugins, ...codecOptions } = options;
   return createMarkupCodec(codecOptions)
     .use(markdown())

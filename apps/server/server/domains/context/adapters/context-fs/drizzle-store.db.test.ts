@@ -9,8 +9,8 @@ import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
 } from "../../../../test-support/drizzle-reset.js";
+import { createTestDocumentLinkScopes } from "../../../collab/test-support/document-link-scopes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
-import { createDrizzleDocumentAssetPaths } from "../asset-path-resolver.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { ContextFS } from "./context-fs.js";
 import {
@@ -80,7 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       let beforeCollabWrite: (() => Promise<void>) | null = null;
       const mutationStore = new DrizzleContextTreeMutationStore(db);
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore,
         scheme: "kb",

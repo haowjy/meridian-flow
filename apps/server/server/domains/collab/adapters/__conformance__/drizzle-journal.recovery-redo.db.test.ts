@@ -1,7 +1,8 @@
 /** Recovery/redo integration tests using the Drizzle journal against local Postgres. */
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   createAgentEditCore,
+  createStaticDocumentLinks,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type ReversalStore,
@@ -49,7 +50,8 @@ const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(mdxCodec({ schema }), UNSCOPED_DOCUMENT_LINKS);
+const codecFactory = createAgentEditCodecFactory(mdxCodec({ schema }));
+const codec = codecFactory.bind(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
@@ -217,7 +219,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const core = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
@@ -282,7 +285,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const core = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
@@ -332,7 +336,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const restarted = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
@@ -356,7 +361,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const core = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
@@ -396,7 +402,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const restarted = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
