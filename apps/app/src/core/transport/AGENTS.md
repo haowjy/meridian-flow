@@ -12,7 +12,9 @@ transport behavior.
 
 Document transports keep a merged outbox of local Yjs updates until the current
 connection acknowledges them. Reconnect keeps it; a terminal transition freezes
-it. Provider-origin updates never enter it. Named close and denial reasons map
+it. Provider-origin updates never enter it. Local outbox writes publish the
+acknowledgement observation after storing bytes, even when already unacknowledged;
+session subscribers must see pending editing before a list omission can end review. Named close and denial reasons map
 through one reset-disposition table, including in-band closes with code 1000.
 
 ## Key rules
