@@ -73,7 +73,12 @@ export {
   linkKeyOfMark,
   pictureKeyOfNode,
 } from "./link-resolution";
-export { getLinkAnswerCache, getLinkSurface, mountedLinkAnswerCache } from "./link-storage";
+export {
+  getLinkAnswerCache,
+  getLinkSurface,
+  type MountedLinks,
+  mountedLinks,
+} from "./link-storage";
 export {
   type LinkFollowOutcome,
   type LinkFormRequest,

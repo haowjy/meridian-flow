@@ -1,7 +1,7 @@
 /**
- * One asker for every link a React surface shows: what the Editor's
- * decoration plugin does in its `view()`, for a surface with no document to
- * scan (the chat transcript).
+ * One asker for every link a surface shows: each Editor has one, which its
+ * link mark views and picture node views watch through, and so does the chat
+ * transcript.
  *
  * A shown link `watch`es its key while mounted. The requester asks the cache
  * about the whole watched set in one `request()`, coalesced to one microtask,

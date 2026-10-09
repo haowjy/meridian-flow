@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * A picture that names a document renders that document: the editor's link
- * scan asks about image and figure refs, and the render state draws the answer
- * through the same signed-URL lifecycle as an `asset:` picture, or says
- * honestly that nothing is there.
+ * A picture that names a document renders that document: the picture asks
+ * through its editor's requester while it is mounted, and the render state
+ * draws the answer through the same signed-URL lifecycle as an `asset:`
+ * picture, or says honestly that nothing is there.
  */
 import { Editor } from "@tiptap/core";
 import { act } from "react";
@@ -14,8 +14,8 @@ import { getFigureSignedUrl } from "@/client/api/figures-api";
 
 import { type AssetImageRenderState, useAssetImageRenderState } from "./asset-image-render-state";
 import { createStandaloneEditorExtensions } from "./config";
-import { type LinkAnswer, type LinkAnswerCache, type LinkQuestion, linkTargetHref } from "./links";
-import { LINK_SURFACE_NAME } from "./links/link-storage";
+import { type LinkAnswer, type LinkQuestion, linkTargetHref } from "./links";
+import { type MountedLinks, mountedLinks } from "./links/link-storage";
 
 vi.mock("@/client/api/figures-api", () => ({ getFigureSignedUrl: vi.fn() }));
 
@@ -55,14 +55,14 @@ const ANSWERS: Record<string, LinkAnswer> = {
 function Probe(props: {
   src: string;
   pictureRef: string | null;
-  resolution: LinkAnswerCache;
+  links: MountedLinks | null;
   report: (state: AssetImageRenderState) => void;
 }) {
   const [state] = useAssetImageRenderState({
     projectId: "project-a",
     src: props.src,
     ref: props.pictureRef,
-    resolution: props.resolution,
+    links: props.links,
   });
   props.report(state);
   return null;
@@ -135,43 +135,24 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
     },
   ];
 
-  const editor = new Editor({
-    extensions: createStandaloneEditorExtensions({
-      assetRenderContext: { projectId: "project-a" },
-    }),
-    content: {
-      type: "doc",
-      content: [
-        {
-          type: "paragraph",
-          content: rows
-            .filter(({ ref }) => ref !== GONE)
-            .map(({ src, ref }) => ({ type: "image", attrs: { src, ref } })),
-        },
-        { type: "figure", attrs: { src: "manuscript://art/doomed.png", ref: GONE } },
-      ],
-    },
-  });
+  // The node views' own editor: its link cache and its one requester.
+  const editor = new Editor({ extensions: createStandaloneEditorExtensions({}) });
+  const links = mountedLinks(editor);
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   try {
-    const resolution = editor.storage[LINK_SURFACE_NAME].resolution;
-    const asked: LinkQuestion[] = [];
-    resolution.registerResolver({
+    const resolution = links?.resolution;
+    const asked: LinkQuestion[][] = [];
+    const named = (batch: readonly LinkQuestion[] | undefined) =>
+      batch?.map(({ ref, target }) => ref ?? linkTargetHref(target)).sort();
+    resolution?.registerResolver({
       remote: async (questions) => {
-        asked.push(...questions);
+        asked.push([...questions]);
         return questions.map(({ ref, target }) => ANSWERS[ref ?? linkTargetHref(target)] ?? null);
       },
     });
-    // The editor's own scan asks about every ref-bearing picture, figures
-    // included; nothing else in the test requests a key.
-    await vi.waitFor(() => expect(asked).toHaveLength(5));
-    expect
-      .soft(
-        asked.map(({ ref, target }) => ref ?? linkTargetHref(target)).sort(),
-        "the scan asks about picture refs, and ref-less internal sources by address",
-      )
-      .toEqual([SETTLED, UNSETTLED, GONE, `doc:${PLATE_ID}`, "uploads://seal.png"].sort());
 
+    // Nothing in the test requests a key: each mounted picture watches its
+    // own, and a page of them is one batch.
     const drawn = new Map<string, AssetImageRenderState>();
     await act(async () => {
       root.render(
@@ -180,12 +161,16 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
             key={row}
             src={src}
             pictureRef={ref}
-            resolution={resolution}
+            links={links}
             report={(state) => drawn.set(row, state)}
           />
         )),
       );
     });
+    await vi.waitFor(() => expect(asked).toHaveLength(1));
+    expect
+      .soft(named(asked[0]), "picture refs, and ref-less internal sources by address")
+      .toEqual([SETTLED, UNSETTLED, GONE, `doc:${PLATE_ID}`, "uploads://seal.png"].sort());
     await vi.waitFor(() => {
       for (const { row, drawn: expected } of rows)
         expect(drawn.get(row), row).toMatchObject(expected as object);
@@ -198,24 +183,37 @@ it("renders a picture's ref through the link resolver, and says when nothing is 
       <Probe
         src={src}
         pictureRef={pictureRef}
-        resolution={resolution}
+        links={links}
         report={(state) => retargeted.push(state)}
       />
     );
     await act(async () => root.render(retarget("manuscript://art/map.png", SETTLED)));
     await vi.waitFor(() => expect(retargeted.at(-1)).toMatchObject({ kind: "ready" }));
     // A catalog change is a new generation whose answers have not arrived.
+    // Unmounted pictures were released, so it asks about the one still shown.
+    const revalidating: LinkQuestion[][] = [];
+    const unanswered = (questions: readonly LinkQuestion[]) => {
+      revalidating.push([...questions]);
+      return new Promise<never>(() => {});
+    };
     await act(async () => {
-      resolution.registerResolver({ remote: () => new Promise(() => {}) });
+      resolution?.registerResolver({ remote: unanswered });
     });
     expect
       .soft(retargeted.at(-1), "the same picture stays drawn while it revalidates")
       .toEqual({ kind: "loading", url: `https://signed.example/${MAP_ID}` });
-    resolution.request([{ ref: NEXT, href: "manuscript://art/next.png" }]);
     await act(async () => root.render(retarget("manuscript://art/next.png", NEXT)));
     expect
       .soft(retargeted.at(-1), "a retargeted picture loads without the previous one")
       .toEqual({ kind: "loading", url: null });
+    // A retargeted picture asks about its new key and releases the old one.
+    await act(async () => {
+      resolution?.registerResolver({ remote: unanswered });
+    });
+    await vi.waitFor(() => expect(revalidating).toHaveLength(3));
+    expect
+      .soft(revalidating.map(named), "unmounted and retargeted keys are released")
+      .toEqual([[SETTLED], [NEXT], [NEXT]]);
   } finally {
     act(() => root.unmount());
     editor.destroy();
