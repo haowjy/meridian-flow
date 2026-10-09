@@ -289,13 +289,7 @@ export function createWriteCommands(deps: {
     let semanticEditIr: SemanticEditIRV1 | undefined;
     if (overwrite) {
       semanticEditIr = overwrite.ir;
-      const applied = applyEdits(
-        toDocHandle(runtime.doc),
-        options.model,
-        options.codec,
-        overwrite.edits,
-        origin,
-      );
+      const applied = applyEdits(toDocHandle(runtime.doc), options.model, overwrite.edits, origin);
       if (!applied.ok) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
@@ -518,13 +512,7 @@ export function createWriteCommands(deps: {
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    const applied = applyEdits(
-      toDocHandle(runtime.doc),
-      options.model,
-      options.codec,
-      resolved.edits,
-      origin,
-    );
+    const applied = applyEdits(toDocHandle(runtime.doc), options.model, resolved.edits, origin);
     if (!applied.ok) {
       restorePreWriteSnapshot(runtime, preOwnSnapshot);
       return errorResponse(applied.error.code, applied.error.message, address.filePath);

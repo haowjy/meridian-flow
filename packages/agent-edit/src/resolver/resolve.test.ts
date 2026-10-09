@@ -6,7 +6,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
-import type { ResolvedEdit } from "../apply/types.js";
+import { inlineReplacementText, type ResolvedEdit } from "../apply/types.js";
 import { createAgentEditCodec } from "../codec-adapter.js";
 import { yProsemirrorModel } from "../model/y-prosemirror.js";
 import { type ResolveWriteParams, type ResolveWriteResult, resolveWrite } from "./resolve.js";
@@ -86,9 +86,12 @@ describe("resolveWrite", () => {
     expect(edits).toHaveLength(1);
     expect(edits[0]).toMatchObject({
       kind: "textRanges",
-      replacements: [{ span: { start: 0, end: 5 }, newText: "tea" }],
+      replacements: [{ span: { start: 0, end: 5 } }],
       output: "tea",
     });
+    const [edit] = edits;
+    if (edit?.kind !== "textRanges") throw new Error("expected textRanges");
+    expect(edit.replacements.map(inlineReplacementText)).toEqual(["tea"]);
   });
 
   it("scopes find-based writes to the around window", () => {

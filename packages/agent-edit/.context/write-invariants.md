@@ -160,3 +160,7 @@ going blind to a concurrent human edit.
   All formatted, escaped, entity, and cross-block cases splice and parse the
   affected serialized range before `replaceScope(...)`; they must not use
   serialized-body→flat offset mapping.
+- **No serialize/reparse between resolution and application.** Resolved edits
+  carry ProseMirror nodes; apply and the model adapter mutate from those nodes
+  and never call the codec. Parse failures surface in the resolver, before any
+  transaction.

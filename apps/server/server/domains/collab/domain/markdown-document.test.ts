@@ -85,10 +85,23 @@ describe("code document serialization", () => {
     });
     projection.destroy();
   });
+});
 
-  it("restores a code checkpoint without turning fences into literal code", async () => {
-    const subject = setup();
-    await seedCode(subject, "const original = true;");
+describe("checkpoint restore", () => {
+  it.each([
+    [
+      "a code checkpoint without turning fences into literal code",
+      "typescript",
+      "const original = true;",
+    ],
+    [
+      "a document checkpoint's nodes as projected",
+      "md",
+      '# Title\n\nA *quiet* [link](https://example.com "t").\n',
+    ],
+  ])("restores %s", async (_name, filetype, original) => {
+    const subject = setup(filetype);
+    await seedCode(subject, original);
     const checkpoints = createCheckpointService({
       coordinator: subject.coordinator,
       store: subject.journal,
@@ -110,7 +123,7 @@ describe("code document serialization", () => {
     });
     await expect(subject.engine.readAsMarkdown(DOCUMENT_ID)).resolves.toEqual({
       ok: true,
-      value: "const original = true;",
+      value: original,
     });
   });
 });
