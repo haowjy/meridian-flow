@@ -4,6 +4,8 @@
 
 - "View projects" moves below your account at the foot of the left sidebar, so a near miss on Scratch no longer leaves the project.
 
+- On the Chat screen, opening a document from the chat (a link chip, a receipt row, a search or tool-result door, an `@` reference) now opens it in the side panel beside the chat instead of leaving for the Editor. From the Editor or Work screen and on a phone, they open as before.
+- The side panel's document header now has Close on the left, an expand button on the right that opens the document in the Editor, and a menu that climbs from the document's folder to the project's areas (Manuscript, Knowledge Base, User, Unfiled and Scratch) so any document is a few taps away.
 - Unfiled now has its own inbox icon, so it no longer looks like Scratch. It shows in the sidebar and on Unfiled link chips.
 - The phone's Results screen and its button in the chat top bar are removed.
 - On the Chat screen, clicking a Recent document in the right context rail opens it in the editor beside the chat, in the side panel that covers the rail until you close it. The rail now looks like the left sidebar, with the same rows and section head, and no longer shows file sizes. Results are gone from the rail, and the phone's Results screen is removed.

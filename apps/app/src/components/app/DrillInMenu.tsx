@@ -28,6 +28,8 @@ export type DrillNode = {
   /** The document a file entry opens, when it differs from `id`. */
   documentId?: string;
   name: string;
+  /** What the back row says inside a folder, when that is richer than the row's name. */
+  title?: string;
   icon: LucideIcon;
   /** A folder drills in; anything else is picked. */
   folder: boolean;
@@ -127,10 +129,12 @@ export function DrillInMenu({
               event.preventDefault();
               drill(trail.slice(0, -1));
             }}
-            aria-label={t`Back from ${folder.name}`}
+            aria-label={t`Back from ${folder.title ?? folder.name}`}
           >
             <ChevronLeft aria-hidden />
-            <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {folder.title ?? folder.name}
+            </span>
           </DropdownMenuItem>
         ) : (
           <DropdownMenuLabel className="truncate text-muted-foreground">

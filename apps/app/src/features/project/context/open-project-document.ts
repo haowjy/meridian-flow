@@ -46,10 +46,10 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { isEditorScheme, useContextTabsActions } from "@/client/stores";
+import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
-import { contextOwnerOf, contextTabFromFile } from "./context-tab-from-file";
+import { contextOwnerOf, contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -217,6 +217,13 @@ export type OpenProjectDocumentRequest = {
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
   disposition?: "current" | "background";
+  /**
+   * Offered the resolved tab before the route changes: a surface that shows
+   * documents beside the writer's place (the Chat screen's dock) takes it and
+   * returns true, so the open finishes without leaving. False falls through to
+   * the ordinary open.
+   */
+  beside?: (tab: ServerContextTab) => boolean;
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
@@ -304,7 +311,7 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId, disposition = "current", signal }: OpenProjectDocumentRequest,
+    { documentId, workId, disposition = "current", beside, signal }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -344,6 +351,7 @@ export class ProjectDocumentNavigationAdapter {
             routeWorkId: resolved.workId ?? workId,
             rootThreadId: resolved.rootThreadId,
             disposition,
+            beside,
             isCurrent,
             canCommit,
           });
@@ -415,6 +423,7 @@ export class ProjectDocumentNavigationAdapter {
         routeWorkId,
         rootThreadId,
         disposition,
+        beside,
         isCurrent,
         canCommit,
       });
@@ -500,6 +509,7 @@ export class ProjectDocumentNavigationAdapter {
     /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
     rootThreadId?: string;
     disposition: "current" | "background";
+    beside?: (tab: ServerContextTab) => boolean;
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
@@ -513,6 +523,25 @@ export class ProjectDocumentNavigationAdapter {
         )
       : undefined;
     if (!input.isCurrent()) return "cancelled";
+    if (input.disposition === "current" && input.beside) {
+      // A document with no owner row to name (never a dock candidate) is left to the route.
+      let besideTab: ServerContextTab | null = null;
+      try {
+        besideTab = serverTabFromFile(
+          input.scheme,
+          input.file,
+          input.rootThreadId
+            ? { rootThreadId: input.rootThreadId }
+            : { workId: input.routeWorkId ?? null },
+        );
+      } catch {
+        besideTab = null;
+      }
+      if (besideTab && input.beside(besideTab)) {
+        this.current = null;
+        return "applied";
+      }
+    }
     if (input.disposition === "current") {
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");

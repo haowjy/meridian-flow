@@ -202,6 +202,9 @@ notes; there is no New note). A pick opens beside the chat by the existing rule
 foot of the drawer: a pick closes the drawer and opens the note full screen. Wherever else a lineage is named (a missing-link
 dialog, the dock title chip's menu) it is by its first chat's title (`useLineageTitle`), never its handle.
 
+On the Chat screen every chat door opens its document in the dock instead of leaving for the Editor
+(see `dock/.context/CONTEXT.md`); the Editor and Work screens and the phone are unchanged.
+
 The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with the left tree's
 parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), rows are
 `RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its

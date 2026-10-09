@@ -9,7 +9,10 @@
  * never gates the route change, so a search row whose passage has moved still
  * opens its document.
  */
-import { type ReactNode, useCallback, useMemo } from "react";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import { contextOwner } from "@meridian/contracts/protocol";
+import { type ReactNode, useCallback, useContext, useMemo } from "react";
+import { lookupContextCatalogFile } from "@/client/query/useContextCatalog";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
@@ -23,6 +26,7 @@ import {
   contextRouteTargetFromUri,
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
+import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { usePassageDoors } from "./usePassageDoors";
 
@@ -63,15 +67,58 @@ export function ProjectChatContextNavigationProvider({
     [ownHandle, rootThreadId, threads],
   );
   const doorOpened = usePassageDoors(projectId, activeWork?.id ?? null);
+  const besideChat = useContext(BesideChatContext);
+  const openChatDocument = useOpenChatDocument(projectId);
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
       if (!onOpenContextTarget || !activeWork || !noWorkId) return;
       const target = contextRouteTargetFromUri(uri, activeWork, availableWorks, noWorkId, lineages);
       if (!target) return;
-      onOpenContextTarget({ ...target, workId: target.workId ?? undefined });
-      doorOpened({ ...target, uri }, passage);
+      // The catalog knows a chat's Scratch only by its canonical spelling; a bare `scratch://x`
+      // means the chat on screen's own lineage, so name that chat's handle.
+      const ref = target.rootThreadId
+        ? target.rootThreadId === rootThreadId
+          ? ownHandle
+          : threads?.find((thread) => thread.id === target.rootThreadId)?.ref
+        : null;
+      const catalogUri =
+        ref && target.scheme === "scratch" && !uri.startsWith("scratch://@")
+          ? canonicalContextUri("scratch", target.path, { kind: "lineage", rootThreadRef: ref })
+          : uri;
+      const route = () => onOpenContextTarget({ ...target, workId: target.workId ?? undefined });
+      if (besideChat) {
+        // The chat is in the middle: the document opens beside it, and the route stays on the chat.
+        // A document the catalog cannot find keeps the route, which says so in place.
+        void lookupContextCatalogFile(
+          projectId,
+          target.scheme,
+          contextOwner(target.workId, target.rootThreadId),
+          { uri: catalogUri },
+        ).then((file) => {
+          if (file)
+            void openChatDocument({
+              documentId: file.documentId,
+              workId: target.workId ?? undefined,
+            });
+          else route();
+        }, route);
+      } else route();
+      doorOpened({ ...target, uri: catalogUri }, passage);
     },
-    [activeWork, availableWorks, noWorkId, lineages, doorOpened, onOpenContextTarget],
+    [
+      activeWork,
+      availableWorks,
+      noWorkId,
+      lineages,
+      doorOpened,
+      onOpenContextTarget,
+      besideChat,
+      openChatDocument,
+      projectId,
+      rootThreadId,
+      ownHandle,
+      threads,
+    ],
   );
   const canOpenContextUri = useCallback(
     (uri: string) =>
