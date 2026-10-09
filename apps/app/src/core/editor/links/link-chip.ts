@@ -9,10 +9,12 @@
  * attribute come from the app's family icon data. Core names the family and
  * never draws it, so it imports no icons.
  *
- * Dashed means one thing: nothing is at that address. Every state that is
- * not settled yet (asking, failed) draws filled, because
- * guessing "not written" and correcting it a moment later is worse than
- * waiting.
+ * Dashed means the link reaches no document: nothing is at its address yet,
+ * or the document it named is gone. Every state that is not settled yet
+ * (asking, failed) draws filled, because guessing "not written" and
+ * correcting it a moment later is worse than waiting. A gone link is drawn
+ * like chat's unavailable reference: dashed, and the surface gives it no
+ * hover and no follow.
  */
 
 import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "@meridian/contracts/context-uri";
@@ -49,7 +51,8 @@ export function linkChip(
   if (target.kind === "external") return null;
   if (entry?.state === "resolved") return { state: "filled", icon: entry.document.scheme };
   const icon = targetFamily(target, baseUri) ?? "file";
-  return { state: entry?.state === "unresolved" ? "dashed" : "filled", icon };
+  const reachesNothing = entry?.state === "unresolved" || entry?.state === "gone";
+  return { state: reachesNothing ? "dashed" : "filled", icon };
 }
 
 /**

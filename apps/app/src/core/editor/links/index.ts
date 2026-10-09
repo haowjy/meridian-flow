@@ -6,12 +6,7 @@
  * which is where a link surface actually renders.
  */
 
-export {
-  getLinkResolution,
-  getLinkSurface,
-  LinkSurfaceExtension,
-  openLinkForm,
-} from "./LinkSurfaceExtension";
+export { LinkSurfaceExtension, openLinkForm } from "./LinkSurfaceExtension";
 export {
   addressDocumentName,
   type CreatableLinkScheme,
@@ -22,13 +17,31 @@ export {
   linkTargetAddress,
 } from "./link-address";
 export {
+  type BoundLink,
+  bindPastedNodes,
+  bindWrittenHref,
+  indexedDocumentAt,
+  indexedDocumentAtExactly,
+  type LinkBindingDocument,
+  type LinkBindingIndex,
+  type LinkBindingScope,
+} from "./link-binding";
+export {
   LINK_CHIP_ICONS,
   type LinkChipIcon,
   linkChip,
   linkChipAttributes,
   referenceChip,
 } from "./link-chip";
-export { clipboardLinkAddress, LINK_ADDRESS_ATTRIBUTE, linksAsAddresses } from "./link-clipboard";
+export {
+  clipboardLinkAddress,
+  clipboardLinkProject,
+  clipboardLinkRef,
+  clipboardLinkScope,
+  LINK_ADDRESS_ATTRIBUTE,
+  LINK_PROJECT_ATTRIBUTE,
+  LINK_REF_ATTRIBUTE,
+} from "./link-clipboard";
 export {
   commitLinkDraft,
   type LinkAnchor,
@@ -49,9 +62,14 @@ export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {
   createLinkResolution,
   type InternalLinkResolver,
+  type LinkAnswer,
+  type LinkKey,
+  type LinkQuestion,
   type LinkResolution,
   type LinkResolutionEntry,
+  MAX_BATCH,
 } from "./link-resolution";
+export { getLinkResolution, getLinkSurface } from "./link-storage";
 export {
   type LinkFollowOutcome,
   type LinkFormRequest,

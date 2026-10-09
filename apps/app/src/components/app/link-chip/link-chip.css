@@ -77,16 +77,20 @@
 }
 
 /* Only a chip that goes somewhere answers the pointer. A transcript or
-   composer chip says so with an enabled `role="link"`; an Editor chip always
-   goes somewhere (a plain click follows it), so its anchor form answers
-   without needing a role. */
-:is([data-link-chip][role="link"]:not([aria-disabled="true"]), a:has([data-link-chip-part])):hover {
+   composer chip says so with an enabled `role="link"`; an Editor chip goes
+   somewhere unless its document is gone (a plain click follows it), so its
+   anchor form answers without needing a role, and a gone one, like chat's
+   unavailable reference, does not answer at all. */
+:is(
+  [data-link-chip][role="link"]:not([aria-disabled="true"]),
+  a:has([data-link-chip-part]):not(:has([data-link-state="gone"]))
+):hover {
   background-color: var(--link-chip-fill-hover, var(--color-sidebar-accent));
 }
 
 :is(
   [data-link-chip="dashed"][role="link"]:not([aria-disabled="true"]),
-  a:has([data-link-chip-part="dashed"])
+  a:has([data-link-chip-part="dashed"]):not(:has([data-link-state="gone"]))
 ):hover {
   background-color: var(--link-chip-fill, var(--color-muted));
 }

@@ -10,17 +10,19 @@ paste policy). The surface is `AtReferenceMenu` in
 
 ## Key rules
 
-- **A choice is a link, spelled from the holder.** `insertDocumentLink` writes
-  `spellDocumentHref(holderUri, uri)`: relative within the holder's area, a full
-  Context URI across areas or from a holder with no address. An uploaded picture
-  goes in as an image with its `asset:` identity instead.
+- **A choice is a link that names its document.** `insertDocumentReference`
+  writes `{ href: <full Context URI>, ref: doc:<id> }`: the row's id, never a
+  parsed path, so the link follows the document through moves while every
+  surface spells its current path. An uploaded picture goes in as an image with
+  its `asset:` identity instead.
 - **The Editor links ahead.** When a root search names no listed document
   exactly, the catalog's `linkAhead` adds one row that links
   `<holder folder>/<name>.md` (`linkAheadAddress`, the filename rule a follow's
   Create shares; `manuscript://<name>.md` from a holder with no address or in
   Scratch, Uploads, or Unfiled, which a link cannot create into). It
-  inserts a link and creates nothing: the chip is dashed until a follow's Create
-  makes the document at exactly that address.
+  inserts a link with a freshly minted ahead ref (`insertLinkAhead`, offline,
+  at `aheadAddress`) and creates nothing: the chip is dashed until a document
+  arrives at exactly that address (a follow's Create), which settles the ref.
 - **The composer reuses this lane with its own insertion** (`insertReference`)
   and no `linkAhead`: a chat reference is identity-bearing and must name an
   existing document.

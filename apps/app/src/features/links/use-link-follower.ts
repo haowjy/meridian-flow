@@ -36,6 +36,7 @@ import {
   type LinkFollowDisposition,
   type LinkResolution,
   type LinkTarget,
+  linkTargetHref,
 } from "@/core/editor/links";
 
 import { type FollowReporter, followProjectLink, type LinkDestination } from "./follow-link";
@@ -43,21 +44,24 @@ import { createProjectLinkResolver, type LinkResolutionScope } from "./project-l
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
 export type LinkFollower = {
-  follow(target: LinkTarget, gesture?: LinkFollowDisposition): void;
+  /** `ref` is the stored link's ref; a link written as syntax (chat) has none. */
+  follow(target: LinkTarget, gesture?: LinkFollowDisposition, ref?: string | null): void;
   /** Close what is shown; if its follow is still asking, stop that follow. */
   dismiss(): void;
   /** Follow the shown outcome's link again, as the new owner of the dialog. */
   retry(): void;
   /**
    * Internal, and relative only with a base URI. Independent of loading: a
-   * link that can be followed once the scope arrives is followable now.
+   * link that can be followed once the scope arrives is followable now. A
+   * link already known to be gone is not.
    */
-  canFollow(target: LinkTarget): boolean;
+  canFollow(target: LinkTarget, ref?: string | null): boolean;
 };
 
 type Shown = {
   owner: AbortController;
   target: LinkTarget;
+  ref: string | null;
   gesture: LinkFollowDisposition;
 };
 
@@ -115,7 +119,7 @@ export function useLinkFollower({
     if (!resolution || !projectId || !workId) return;
     const unregister = resolution.registerResolver(
       createProjectLinkResolver({ projectId, workId, baseUri, holderDocumentId }, index),
-      { baseUri },
+      { baseUri, projectId, index },
     );
     for (const release of scopeWaiters.current) release();
     scopeWaiters.current.clear();
@@ -187,7 +191,7 @@ export function useLinkFollower({
   const start = useCallback(
     // `retrying`: Try again. It owns the shown outcome from the start, so a
     // fast answer can clear the failure it replaces.
-    (target: LinkTarget, gesture: LinkFollowDisposition, retrying: boolean) => {
+    (target: LinkTarget, ref: string | null, gesture: LinkFollowDisposition, retrying: boolean) => {
       // Without a scope no resolver is registered, and asking anyway would
       // report "could not be checked" about a question nobody could ask.
       if (!resolution || !active || (!projectId && !pending)) return;
@@ -197,10 +201,10 @@ export function useLinkFollower({
         currentFollow.current = controller;
       }
       inFlight.current.add(controller);
-      if (retrying) shown.current = { owner: controller, target, gesture };
+      if (retrying) shown.current = { owner: controller, target, ref, gesture };
       const owned: FollowReporter = {
         report(outcome) {
-          shown.current = { owner: controller, target, gesture };
+          shown.current = { owner: controller, target, ref, gesture };
           latest.current.reporter.report(outcome);
         },
         clear() {
@@ -222,6 +226,7 @@ export function useLinkFollower({
           });
       void followProjectLink({
         target,
+        ref,
         gesture,
         resolution,
         open: (document, how) => latest.current.open(document, how),
@@ -237,8 +242,8 @@ export function useLinkFollower({
   );
 
   const follow = useCallback(
-    (target: LinkTarget, gesture: LinkFollowDisposition = "current") =>
-      start(target, gesture, false),
+    (target: LinkTarget, gesture: LinkFollowDisposition = "current", ref: string | null = null) =>
+      start(target, ref, gesture, false),
     [start],
   );
 
@@ -254,16 +259,17 @@ export function useLinkFollower({
 
   const retry = useCallback(() => {
     const again = shown.current;
-    if (again) start(again.target, again.gesture, true);
+    if (again) start(again.target, again.ref, again.gesture, true);
   }, [start]);
 
   const followable = scope !== null;
   const canFollow = useCallback(
-    (target: LinkTarget) =>
+    (target: LinkTarget, ref: string | null = null) =>
       followable &&
       isInternalLinkTarget(target) &&
-      (target.kind !== "relative" || baseUri !== null),
-    [baseUri, followable],
+      (target.kind !== "relative" || baseUri !== null) &&
+      resolution?.read({ ref, href: linkTargetHref(target) })?.state !== "gone",
+    [baseUri, followable, resolution],
   );
 
   return useMemo(

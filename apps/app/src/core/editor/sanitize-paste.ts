@@ -2,8 +2,12 @@
 
 import {
   clipboardLinkAddress,
+  clipboardLinkProject,
+  clipboardLinkRef,
   internalClipboardTarget,
   LINK_ADDRESS_ATTRIBUTE,
+  LINK_PROJECT_ATTRIBUTE,
+  LINK_REF_ATTRIBUTE,
   normalizeLinkHref,
 } from "./links";
 
@@ -91,10 +95,17 @@ function copyLinkHref(source: Element, target: Element): void {
   const internal = internalClipboardTarget(source.getAttribute("data-meridian-link"));
   if (internal) {
     target.setAttribute("data-meridian-link", internal);
-    // The document it named where it was copied; the link transform after
-    // this spells it for the document it lands in.
+    // What it named where it was copied: its address, and its ref and
+    // project. The link transform after this decides whether the ref is kept
+    // (same project) or the address is bound fresh.
     const address = clipboardLinkAddress(source.getAttribute(LINK_ADDRESS_ATTRIBUTE));
     if (address) target.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
+    const ref = clipboardLinkRef(source.getAttribute(LINK_REF_ATTRIBUTE));
+    const project = clipboardLinkProject(source.getAttribute(LINK_PROJECT_ATTRIBUTE));
+    if (ref && project) {
+      target.setAttribute(LINK_REF_ATTRIBUTE, ref);
+      target.setAttribute(LINK_PROJECT_ATTRIBUTE, project);
+    }
     return;
   }
   const rawHref = source.getAttribute("href");

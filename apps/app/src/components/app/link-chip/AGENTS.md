@@ -1,7 +1,8 @@
 # components/app/link-chip — the one look for links
 
 How a link looks in every surface that shows one: internal links as a tag chip
-(soft fill, family icon, name; dashed when nothing is at that address),
+(soft fill, family icon, name; dashed when nothing is at that address or the
+document a link named is gone),
 external links as underlined text with an outbound arrow. What a link *means*
 and which state it is in is [`core/editor/links/`](../../../core/editor/links/AGENTS.md);
 this directory only draws.
@@ -46,7 +47,10 @@ them back. A new surface whose tone is the recess does the same.
 
 - **No surface restyles a chip.** A local class on a chip is a second look.
   Change `link-chip.css`, and every surface changes together.
-- **Dashed means nothing is at that address.** Asking and failed draw
+- **Dashed means the link reaches no document**: nothing is at that address
+  yet, or the document it named is gone. A gone Editor link
+  (`data-link-state="gone"`) also loses the hover, as chat's unavailable
+  reference does. Asking and failed draw
   filled; a guess that corrects itself is worse than waiting. The dashed
   border carries the quietness, never the ink: a dashed name stays at 4.5:1
   on every surface (`--color-muted-foreground`).

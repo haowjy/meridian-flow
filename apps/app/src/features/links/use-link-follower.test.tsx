@@ -6,7 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resolveDocumentLink } from "@/client/api/document-links-api";
+import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import { createLinkResolution, type LinkResolution, type LinkTarget } from "@/core/editor/links";
 
 import { CHECKING_DELAY_MS, type FollowReporter, type LinkDestination } from "./follow-link";
@@ -14,10 +14,10 @@ import type { LinkResolutionScope } from "./project-link-resolver";
 import { type LinkFollower, useLinkFollower } from "./use-link-follower";
 import type { LinkableDocumentIndex } from "./useLinkableDocuments";
 
-vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLink: vi.fn() }));
+vi.mock("@/client/api/document-links-api", () => ({ resolveDocumentLinks: vi.fn() }));
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-const server = vi.mocked(resolveDocumentLink);
+const server = vi.mocked(resolveDocumentLinks);
 
 function doc(name: string): ResolvedDocumentLink {
   return {
@@ -95,11 +95,24 @@ beforeEach(() => {
   events = [];
   resolution = createLinkResolution();
   server.mockReset();
+  // One link per batch here: each follow asks on its own.
   server.mockImplementation(
-    (_projectId, { target }) =>
+    (_projectId, { links }) =>
       new Promise((done) => {
-        const name = target.kind === "scheme" ? target.uri.slice("manuscript://".length, -3) : "";
-        pending.set(name, (document) => done({ document }));
+        const href = links[0]?.href ?? "";
+        pending.set(href.slice("manuscript://".length, -3), (document) =>
+          done({
+            answers: [
+              document
+                ? {
+                    state: "document",
+                    document: { ...document, id: document.documentId },
+                    inDraft: false,
+                  }
+                : { state: "missing", uri: href },
+            ],
+          }),
+        );
       }),
   );
   host = document.createElement("div");
@@ -141,21 +154,22 @@ describe("useLinkFollower", () => {
   it("drops a cached server answer when the holder revision changes", async () => {
     const holding: LinkResolutionScope = {
       ...scope,
+      baseUri: "manuscript://Holder.md",
       holderDocumentId: "doc-holder",
       documentRevision: 0,
     };
-    const href = "manuscript://Ch6.md";
+    const link = { ref: null, href: "manuscript://Ch6.md" };
     // One catalog throughout: only the holder's text changes.
     const index = catalog("a");
     render({ scope: holding, index });
-    act(() => resolution.request([href]));
+    act(() => resolution.request([link]));
     await answer("Ch6", doc("old-ch6"));
 
-    expect(resolution.read(href)?.state).toBe("resolved");
+    expect(resolution.read(link)?.state).toBe("resolved");
 
     // A rewrite arrived: the same text now spells a different document.
     render({ scope: { ...holding, documentRevision: 1 }, index });
     await elapse(0);
-    expect(resolution.read(href)).toBeNull();
+    expect(resolution.read(link)).toBeNull();
   });
 });

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- A link to a deleted or unreadable document stays where you wrote it, drawn dashed, and says "No longer available" in its hint, menu and link form. It no longer opens anything, and it never jumps to another document that later takes the same path. A link to a document you have not written yet still says "Doesn't exist yet" and offers Create.
+- Links you insert with `@`, Ctrl+K or a paste name their document, so they keep pointing at it when it moves or is renamed. Copying and pasting within a project keeps each link on its document; pasting into another project links by address.
+- Copied plain text spells every internal link as its document's current full address.
+
 - Development: add pure link-ref correspondence with lexicographic matching, historical holder normalization and diagnostic bounded order completion. Reviewer fixtures and exhaustive oracle rows reuse the existing test-count budget.
 - Development: model writes and checkpoint restore apply ProseMirror nodes directly, with no Markdown round trip between resolving and applying. Markdown-generated writes are unchanged; a restored native snapshot keeps structure the old round trip normalized away. A restore that fails leaves the journal and live document untouched.
 - Development: preserve link identity across rewritten and reordered spans with exact lexicographic correspondence and historical holder normalization.
