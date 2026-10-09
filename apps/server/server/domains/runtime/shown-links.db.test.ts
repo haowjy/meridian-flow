@@ -146,25 +146,33 @@ if (!RUN_DB_TESTS || !url) {
       const released = new Promise<void>((resolve) => {
         release = resolve;
       });
-      let held!: () => void;
-      const holding = new Promise<void>((resolve) => {
+      let held!: (pid: number) => void;
+      const holding = new Promise<number>((resolve) => {
         held = resolve;
       });
       const holder = db.transaction(async (tx) => {
-        await tx.execute(sql.raw(`SELECT pg_advisory_xact_lock(${lockKey})`));
-        held();
+        const [{ pid }] = (await tx.execute(
+          sql.raw(`SELECT pg_backend_pid() AS pid, pg_advisory_xact_lock(${lockKey})`),
+        )) as unknown as Array<{ pid: number }>;
+        held(pid);
         await released;
       });
+      let delayed: Promise<void> | undefined;
       try {
-        await holding;
-        const delayed = r.show(r.source.id, { id: input.turnId } as Turn, [input.fact]);
+        const holderPid = await holding;
+        delayed = r.show(r.source.id, { id: input.turnId } as Turn, [input.fact]);
+        // The delayed insert is the backend this holder blocks on this key, not any advisory waiter.
+        const deadline = Date.now() + 5_000;
         for (;;) {
           const waiting = await db.execute(
-            sql.raw(
-              `SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event = 'advisory'`,
-            ),
+            sql.raw(`SELECT 1 FROM pg_locks l
+              WHERE l.locktype = 'advisory' AND NOT l.granted
+                AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                AND l.classid = 0 AND l.objid = ${lockKey} AND l.objsubid = 1
+                AND ${holderPid} = ANY(pg_blocking_pids(l.pid))`),
           );
           if (waiting.length > 0) break;
+          if (Date.now() > deadline) throw new Error("the delayed insert never waited on the lock");
           await new Promise((resolve) => setTimeout(resolve, 10));
         }
         await input.meanwhile();
@@ -173,7 +181,7 @@ if (!RUN_DB_TESTS || !url) {
         await delayed;
       } finally {
         release();
-        await holder.catch(() => {});
+        await Promise.allSettled([holder, delayed]);
         await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fn} ON thread_shown_links`));
         await db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fn}()`));
       }
