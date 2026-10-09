@@ -33,6 +33,7 @@ import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { PaintCapture, usePaintPending } from "@/components/app/PaintHold";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -68,11 +69,13 @@ export type DraftReviewBandProps = {
 export function DraftReviewBand(props: DraftReviewBandProps) {
   const header = useReviewHeader(props);
   const { controller, view, locked, finished } = header;
+  usePaintPending(view.status === "loading");
   const count = view.items.length;
   const listed = view.status === "ready" && count > 0;
 
   return (
     <>
+      <PaintCapture surface={view.status} />
       <DraftSwitcher
         draftOnly={header.draftOnly}
         disabled={locked}

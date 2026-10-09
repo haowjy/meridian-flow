@@ -5,6 +5,7 @@
  * Editor's Work is that file's Work. Archiving here freezes them at once; the
  * server's own read-only scope follows.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
   isWorkScopedProjectContextScheme,
@@ -15,10 +16,10 @@ import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { ReviewHandoverFrame } from "../dock/review-handover";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
@@ -149,85 +150,97 @@ export function ContextViewer({
       />
       {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
-      <ReviewHandoverFrame className="page-sheet relative">
-        {/* A jump that could not find its passage says so here, over the page
+      <PaintHold
+        status={activeTab ? t`Opening ${activeTab.name}` : t`Opening draft`}
+        className="page-sheet relative"
+      >
+        <PaintScope active={active}>
+          <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
+          {/* A jump that could not find its passage says so here, over the page
             rather than in the layout. */}
-        <PassageNotice documentId={activeTabId} />
-        {archivedEditorWork && editorFrozen ? (
-          <ArchivedWorkNotice
-            projectId={projectId}
-            work={archivedEditorWork}
-            className="px-4 pt-3"
-          />
-        ) : null}
-        {/* Identity bar — the top edge of the page every open document
+          <PassageNotice documentId={activeTabId} />
+          {archivedEditorWork && editorFrozen ? (
+            <ArchivedWorkNotice
+              projectId={projectId}
+              work={archivedEditorWork}
+              className="px-4 pt-3"
+            />
+          ) : null}
+          {/* Identity bar — the top edge of the page every open document
             shares, and the home of its review controls while it is under
             review. Keyed by document so edit state never crosses tabs. */}
-        {activeTab ? (
-          <DocumentIdentityBar
-            key={activeTab.documentId}
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            tab={activeTab}
-            readOnly={fileFrozen}
-            onCommitted={onCommitted}
-            onOpenExisting={onOpenExisting}
-            onCloseDraftOnly={
-              activeTab.kind !== "new" && activeTab.draftOnly
-                ? () => onCloseTab(activeTab.documentId)
-                : undefined
-            }
-          />
-        ) : null}
-        {/* The TRACKED editor host stays mounted while ANY tracked tab is
+          {activeTab ? (
+            <DocumentIdentityBar
+              key={activeTab.documentId}
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              tab={activeTab}
+              readOnly={fileFrozen}
+              onCommitted={onCommitted}
+              onOpenExisting={onOpenExisting}
+              onCloseDraftOnly={
+                activeTab.kind !== "new" && activeTab.draftOnly
+                  ? () => onCloseTab(activeTab.documentId)
+                  : undefined
+              }
+            />
+          ) : null}
+          {/* The TRACKED editor host stays mounted while ANY tracked tab is
             open — even when the active tab is a viewer — so the warm-set
             editors aren't torn down on a quick image/PDF detour. We just
             hide the whole host when the active tab isn't tracked. */}
-        {trackedTabs.length > 0 ? (
-          <div
-            className={
-              activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
-            }
-          >
-            <ContextEditorMountHost
+          {trackedTabs.length > 0 ? (
+            <PaintScope active={activeIsEditable}>
+              <div
+                className={
+                  activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+                }
+              >
+                <ContextEditorMountHost
+                  projectId={projectId}
+                  trackedTabs={trackedTabs}
+                  activeTabId={activeIsEditable ? activeTabId : null}
+                  active={active}
+                  // Warm editors are hidden, so following the front tab is enough.
+                  readOnly={editorFrozen}
+                  onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+                />
+              </div>
+            </PaintScope>
+          ) : null}
+          {activeTab?.kind === "viewer" ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ContextViewerHost
+                projectId={projectId}
+                editorWorkId={editorWorkId}
+                tab={activeTab}
+              />
+            </div>
+          ) : null}
+          {optimisticTab ? (
+            <div className="relative min-h-0 flex-1" aria-busy>
+              <DelayedContentSkeleton
+                key={JSON.stringify([projectId, optimisticTab.id])}
+                className="absolute inset-0"
+              />
+            </div>
+          ) : null}
+          {paneState.kind === "dead-route" ? (
+            <MissingDocumentState destination={paneState.destination} />
+          ) : null}
+          {paneState.kind === "empty-workspace" ? (
+            <RecentDocumentsLanding
               projectId={projectId}
-              trackedTabs={trackedTabs}
-              activeTabId={activeIsEditable ? activeTabId : null}
-              active={active}
-              // Warm editors are hidden, so following the front tab is enough.
-              readOnly={editorFrozen}
-              onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+              editorWorkId={editorWorkId}
+              onNewDocument={onNewDocument}
             />
-          </div>
-        ) : null}
-        {activeTab?.kind === "viewer" ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
-          </div>
-        ) : null}
-        {optimisticTab ? (
-          <div className="relative min-h-0 flex-1" aria-busy>
-            <DelayedContentSkeleton
-              key={JSON.stringify([projectId, optimisticTab.id])}
-              className="absolute inset-0"
-            />
-          </div>
-        ) : null}
-        {paneState.kind === "dead-route" ? (
-          <MissingDocumentState destination={paneState.destination} />
-        ) : null}
-        {paneState.kind === "empty-workspace" ? (
-          <RecentDocumentsLanding
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            onNewDocument={onNewDocument}
-          />
-        ) : null}
-        {paneState.kind === "route-error" ? <RouteErrorState /> : null}
-        {controller.inlineReview?.shown ? (
-          <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
-        ) : null}
-      </ReviewHandoverFrame>
+          ) : null}
+          {paneState.kind === "route-error" ? <RouteErrorState /> : null}
+          {controller.inlineReview?.shown ? (
+            <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
+          ) : null}
+        </PaintScope>
+      </PaintHold>
     </div>
   );
 }

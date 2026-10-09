@@ -52,6 +52,7 @@ export function useReviewRoomOwner({
   horizon.current = { key, queryClient, registry };
   const { data: rows } = useQuery({ ...workDraftsQueryOptions(projectId, workId), enabled: false });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
+  const [entryAnswered, setEntryAnswered] = useState<string | null>(null);
   const target = JSON.stringify([projectId, workId, documentId, draftId]);
   const writerScope = useRef({ target, queryClient, registry });
   if (
@@ -104,7 +105,10 @@ export function useReviewRoomOwner({
         action.draftGeneration > generation
       )
         prepareReplacement();
-      if (action.type !== "draftAbsentFromList" || (!review?.completion && !disposing))
+      if (
+        action.type !== "draftAbsentFromList" ||
+        (entryAnswered === target && !review?.completion && !disposing)
+      )
         dispatch(action.type === "generationObserved" ? { ...action, claim } : action);
     }
     if (
@@ -119,6 +123,8 @@ export function useReviewRoomOwner({
       });
     }
   }, [
+    entryAnswered,
+    target,
     rows,
     preview,
     pendingWriterGeneration,
@@ -162,7 +168,16 @@ export function useReviewRoomOwner({
         answer.draftGeneration < shown.draftGeneration
       )
         answer = await read();
-      if (!current() || answer.status !== "active") return;
+      if (!current()) return;
+      setEntryAnswered(target);
+      if (answer.status === "gone") {
+        dispatch(
+          kind.current.draftOnly
+            ? { type: "roomFailed", documentId, draftId }
+            : { type: "exitInline" },
+        );
+        return;
+      }
       dispatch({
         type: "generationObserved",
         documentId,
@@ -172,14 +187,25 @@ export function useReviewRoomOwner({
         claim: draftClaim(queryClient, draft),
         roomName: answer.reviewRoomName,
       });
-    })().catch(() => {
-      if (current()) dispatch({ type: "roomFailed", documentId, draftId });
+    })().catch((error: unknown) => {
+      if (!current()) return;
+      setEntryAnswered(target);
+      dispatch(
+        error &&
+          typeof error === "object" &&
+          "status" in error &&
+          error.status === 404 &&
+          !kind.current.draftOnly
+          ? { type: "exitInline" }
+          : { type: "roomFailed", documentId, draftId },
+      );
     });
     return () => {
       owned = false;
     };
   }, [
     wanted,
+    target,
     key,
     projectId,
     workId,

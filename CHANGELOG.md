@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Document switches keep the last finished page inert until the destination paints or fails, on desktop and phone.
+
 - Phone review confirmations stay inside the change sheet; each contributing-chat link has a 44px touch target.
 
 - Offline Work batches refuse every file immediately, even before network notifications catch up; they do not wait for refreshes or send later files on reconnect.

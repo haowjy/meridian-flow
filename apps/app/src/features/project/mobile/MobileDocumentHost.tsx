@@ -18,6 +18,7 @@ import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
+import { PaintCapture, PaintHold, usePaintPending } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -28,7 +29,7 @@ import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner"
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useRefusedEditsReopen } from "../context/use-refused-edits-reopen";
-import { ReviewHandoverFrame } from "../dock/review-handover";
+import { useRequestedReview } from "../dock/editor-review-handoff";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
@@ -46,9 +47,12 @@ export type MobileDocumentHostProps = {
  */
 export function MobileDocumentHost(props: MobileDocumentHostProps) {
   return (
-    <ReviewHandoverFrame className="relative h-full min-h-0">
+    <PaintHold status={t`Opening draft`} className="relative h-full min-h-0">
+      <PaintCapture
+        surface={`${props.localTab ? "local" : props.route.tab?.kind === "tracked" && props.route.tab.draftOnly ? "draft-only" : "server"}:${props.localTab?.documentId ?? props.route.tab?.documentId ?? props.route.path}`}
+      />
       <MobileDocumentHostForRoute {...props} />
-    </ReviewHandoverFrame>
+    </PaintHold>
   );
 }
 
@@ -250,15 +254,16 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   useMobileRouteBinding({ projectId, workId, route, activate: true });
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
-  const selectedReviewDraftId =
-    activeEditorDocumentId && controller.inlineReview?.documentId === activeEditorDocumentId
-      ? controller.inlineReview.draftId
-      : null;
+  const selectedReviewDraftId = useRequestedReview({
+    editorWorkId,
+    activeScheme: activeContextScheme,
+    documentId: activeEditorDocumentId,
+  });
   const reviewRoomName =
     activeEditorDocumentId && selectedReviewDraftId
       ? reviewRoomNameForDraft(activeEditorDocumentId, selectedReviewDraftId)
       : null;
-  const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
+  const reviewDraftId = selectedReviewDraftId;
 
   const live = useLiveDocumentBinding({
     projectId,
@@ -296,9 +301,31 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     return () => liveState.session.resumePresence();
   }, [activeEditorDocumentId, liveState, selectedReviewDraftId]);
 
+  const failed = liveState.kind === "failed" && liveState.documentId === activeTab?.documentId;
+  const opening = Boolean(
+    activeContextScheme &&
+      activeContextPath &&
+      (!activeTab
+        ? !(isError || catalogResolved)
+        : activeTab.editable && !failed && !bindableLiveSession),
+  );
+  usePaintPending(opening);
+  const capture = (
+    <PaintCapture
+      surface={
+        opening
+          ? "opening"
+          : failed || isError
+            ? "error"
+            : activeTab?.editable
+              ? "editor"
+              : "viewer"
+      }
+    />
+  );
   if (!activeContextScheme || !activeContextPath) {
     return (
-      <DocumentStatus tone="muted">
+      <DocumentStatus capture={capture} tone="muted">
         <Trans>Select a document.</Trans>
       </DocumentStatus>
     );
@@ -307,7 +334,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   if (!activeTab) {
     if (addressState === "pending" || (isFetching && !catalogResolved)) {
       return (
-        <DocumentStatus tone="muted">
+        <DocumentStatus capture={capture} tone="muted">
           <Loader2 className="size-4 animate-spin" aria-hidden />
           <Trans>Opening document…</Trans>
         </DocumentStatus>
@@ -315,18 +342,21 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     }
     if (isError || catalogResolved) {
       return (
-        <DocumentStatus tone="error">
+        <DocumentStatus capture={capture} tone="error">
           <AlertCircle className="size-4" aria-hidden />
           <Trans>Couldn't open this document.</Trans>
         </DocumentStatus>
       );
     }
-    return null;
+    return capture;
   }
 
   if (!activeTab.editable) {
     return (
-      <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+      <>
+        {capture}
+        <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+      </>
     );
   }
 
@@ -336,7 +366,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
       : null;
   if (liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
     return (
-      <DocumentStatus tone="error">
+      <DocumentStatus capture={capture} tone="error">
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Couldn't open this document.</Trans>
       </DocumentStatus>
@@ -344,7 +374,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
   if (!liveSession) {
     return (
-      <DocumentStatus tone="muted">
+      <DocumentStatus capture={capture} tone="muted">
         <Loader2 className="size-4 animate-spin" aria-hidden />
         <Trans>Opening document…</Trans>
       </DocumentStatus>
@@ -353,6 +383,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
 
   return (
     <MobileDocumentReview documentId={activeTab.documentId}>
+      {capture}
       <div className="relative min-h-0 flex-1">
         <PassageNotice documentId={activeTab.documentId} />
         <EditorView
@@ -380,7 +411,9 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
 function DocumentStatus({
   children,
   tone,
+  capture,
 }: {
+  capture?: React.ReactNode;
   children: React.ReactNode;
   tone: "muted" | "error";
 }) {
@@ -392,6 +425,7 @@ function DocumentStatus({
           : "grid h-full place-items-center px-6 text-center text-sm text-muted-foreground"
       }
     >
+      {capture}
       <div className="flex items-center gap-2">{children}</div>
     </div>
   );
