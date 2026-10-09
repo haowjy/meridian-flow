@@ -36,8 +36,6 @@ export interface AssignInput {
   /** Parsed nodes of the replaced span. */
   written: readonly PMNode[];
   scope: HolderLinkScope;
-  /** The holder document, recorded on every ahead ref minted for it. */
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   /** Default `mintAheadRef`; injected only by tests. */
   mint?: () => AheadRef;
@@ -61,7 +59,6 @@ export interface BindOccurrencesInput {
   /** Written occurrences, already past the `asset:` rule. */
   written: readonly LinkOccurrence[];
   scope: HolderLinkScope;
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
 }
@@ -92,7 +89,6 @@ export function bindOccurrences(input: BindOccurrencesInput): {
       old,
       written: writtenIndexes.map(({ occurrence }) => occurrence),
       scope: input.scope,
-      holderDocumentId: input.holderDocumentId,
       shown: input.shown,
       mint,
       minted,
@@ -137,7 +133,7 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
       return uri ? { uri, suffix: splitDocumentHrefSuffix(href).suffix } : null;
     },
     correspondenceKey: (href) => writtenSourceUri(href),
-    classify: (href) => classifyWrittenSource(href),
+    classify: (href) => sourceClass(href),
     spell: (scope, attrs) => scope.spellSource({ src: attrs.href, ref: attrs.ref }).address,
     aheadKind: "source",
   },
@@ -148,7 +144,6 @@ function bindKind(input: {
   old: readonly LinkOccurrence[];
   written: readonly LinkOccurrence[];
   scope: HolderLinkScope;
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   mint: () => AheadRef;
   minted: AheadMint[];
@@ -165,7 +160,7 @@ function bindKind(input: {
         label: occurrence.label,
         ref,
         current: grammar.spell(scope, occurrence.attrs) ?? "",
-        live: scope.isLive(ref),
+        live: scope.isLive({ ref, href: occurrence.attrs.href }),
       };
     }),
     written: input.written.map((occurrence) => ({
@@ -173,9 +168,9 @@ function bindKind(input: {
       href: occurrence.attrs.href,
     })),
     shown: input.shown,
-    holderUri: holderUri ?? "",
-    normalize: (href, base) => grammar.correspondenceKey(href, base || null),
-    isLive: (ref) => scope.isLive(ref),
+    holderUri,
+    normalize: (href, base) => grammar.correspondenceKey(href, base),
+    isLive: (ref, address) => scope.isLive({ ref, href: address }),
   });
   const contextualTaken = new Set<number>();
   return input.written.map((occurrence, index) => {
@@ -198,8 +193,8 @@ function bindKind(input: {
     }
     if (binding.pass === 2) {
       // The binding came from a showing, so a latest showing always exists.
-      const address =
-        currentUri(scope, binding.ref) ?? latestShownAddress(input.shown, binding.ref);
+      const shownAddress = latestShownAddress(input.shown, binding.ref);
+      const address = currentUri(scope, { ref: binding.ref, href: shownAddress }) ?? shownAddress;
       return {
         ref: binding.ref,
         title: occurrence.attrs.title,
@@ -225,7 +220,7 @@ function continued(
   if (written.title === old.title && writtenSuffix === oldSuffix) return old;
   const ref = old.ref as string;
   const address =
-    currentUri(scope, ref) ??
+    currentUri(scope, { ref, href: old.href }) ??
     grammar.address(splitDocumentHrefSuffix(old.href).path, null)?.uri ??
     null;
   return {
@@ -242,7 +237,6 @@ function fresh(
   input: {
     grammar: Grammar;
     scope: HolderLinkScope;
-    holderDocumentId: string;
     mint: () => AheadRef;
     minted: AheadMint[];
   },
@@ -251,10 +245,7 @@ function fresh(
   const { grammar, scope } = input;
   const written = occurrence.attrs;
   const literal = { ref: null, href: written.href, title: written.title };
-  const classified =
-    grammar.aheadKind === "source"
-      ? sourceClass(written.href)
-      : grammar.classify(written.href, scope.holder.uri);
+  const classified = grammar.classify(written.href, scope.holder.uri);
   if (classified.kind !== "internal") return literal;
   const document = scope.documentFor(classified.uri);
   if (document) {
@@ -267,7 +258,7 @@ function fresh(
   const address = aheadAddress(classified.uri, grammar.aheadKind);
   if (!address) return literal;
   const ref = input.mint();
-  input.minted.push({ ref, address, holderDocumentId: input.holderDocumentId });
+  input.minted.push({ ref, address, holderProjectId: scope.holder.projectId });
   return { ref, title: written.title, href: storedHref(address, classified.suffix) };
 }
 
@@ -279,9 +270,12 @@ function sourceClass(src: string): ReturnType<typeof classifyWrittenSource> {
   return uri ? { kind: "internal", uri, suffix: splitDocumentHrefSuffix(src).suffix } : classified;
 }
 
-/** Where a ref leads now: its live document's address, or an unsettled ahead ref's own. */
-function currentUri(scope: HolderLinkScope, ref: string): string | null {
-  const resolution = scope.resolve({ ref, href: "" });
+/**
+ * Where a stored link leads now: its live document's address. An unsettled
+ * ahead ref leads to a document only once one holds the address its href names.
+ */
+function currentUri(scope: HolderLinkScope, link: { ref: string; href: string }): string | null {
+  const resolution = scope.resolve(link);
   if (resolution.kind === "document") return resolution.document.uri;
   return null;
 }
@@ -352,7 +346,6 @@ export interface WriteLinkAssigner {
 
 export function createWriteLinkAssigner(input: {
   scope: HolderLinkScope;
-  holderDocumentId: string;
   shown: readonly ShownLink[];
   mint?: () => AheadRef;
   /** Hears each splice that fell back to whole-group binding (possible format churn there). */
@@ -361,7 +354,6 @@ export function createWriteLinkAssigner(input: {
   const minted: AheadMint[] = [];
   const common = {
     scope: input.scope,
-    holderDocumentId: input.holderDocumentId,
     shown: input.shown,
     ...(input.mint ? { mint: input.mint } : {}),
   };

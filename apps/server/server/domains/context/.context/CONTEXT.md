@@ -117,9 +117,9 @@ router resolves to exact project-scoped Work authority before dispatch.
 - **Collab-aware markdown bridge** (`context/collab-document-sync.ts`) — maps
   ContextFS provenance to collab origins. Agent/human writes use the richer
   collab write APIs that return attribution metadata; system/import writes use
-  the markdown write API directly. The certified `ContextPort.edit` boundary is
-  a closed command surface; its current command is a fresh end-of-document
-  append. Opaque caller callbacks do not cross the boundary.
+  the markdown write API directly. There is no host edit or append door: a
+  host changes a document by writing it whole (or the model edits it through
+  agent-edit).
 - **Context tree mover** (`context/context-tree-mover.ts`) — CAS preflight/commit
   for `move`/`delete` operations. Callers may request exact-target moves so an
   existing destination folder is a collision rather than a Unix-style container.
@@ -173,7 +173,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `prepareTrackedDocument` + `createPreparedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
@@ -208,7 +208,8 @@ stays `linkUpdate: { links, documents }`.
 
 ## Whole-document writes
 
-`ContextFS.write`, `edit` (append) and `createTrackedDocument` with content
+`ContextFS.write` and `createTrackedDocument` with content (the layer is
+`context-fs/prepared-writes.ts`)
 prepare their Markdown (`documentSync.bindMarkdown`) **before**
 `commandExecutor.run`, then apply the `PreparedWrite` inside the
 namespace-locked transaction (collab `document-authority-and-schema.md`). The
@@ -217,14 +218,14 @@ transaction looks it up again and checks the prepared write was made for what
 occupies the path now. If the occupant changed, the document was restored to
 another authority generation since the base was read, or it no longer has the
 base's clocks, the transaction answers `stale_target` and
-`preparedCommand` prepares again against what is there (three attempts). An
+`PreparedWrites.command` prepares again against what is there (three attempts). An
 edit admitted in between merges with the prepared update. An actor's overwrite
-and every append prepare against the current document; import and system
+prepares against the current document; import and system
 writes prepare fresh. A new document prepares as the canonical URI it will have
 (`ContextFSDeps.holder`: the port's project and the source's Work authority).
 
 A caller that creates inside its own transaction prepares first:
-`ContextPort.prepareTrackedDocument`, then `createTrackedDocument` with the
+`ContextPort.prepareTrackedDocument`, then `createPreparedDocument` with the
 prepared write. Upload intake does this (`UploadContentPort.prepare` runs
 before finalize's transaction, `persist` applies under its locks).
 

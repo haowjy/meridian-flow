@@ -6,7 +6,6 @@ import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import type { ShownLink } from "../links/correspondence.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
 import type {
   AgentEditResultCommand,
@@ -152,13 +151,12 @@ export interface ResponseCommitterTransitionDetail {
 }
 
 /**
- * A host-prepared write (`WriteContext.prepared`) whose base's authority
- * generation was replaced before it could be admitted; the host prepares it
- * again against the document as it is now.
+ * A host-prepared write (`AgentEditCore.applyPrepared`) refused under the
+ * document's lock; the host prepares it again against the document as it is now.
  */
 export interface PreparedBaseExpiredDetail {
   type: "prepared_base";
-  code: "authority_replaced";
+  code: import("./prepared-update.js").PreparedRefusal;
   documentId: string;
 }
 
@@ -219,26 +217,6 @@ export interface WriteContext {
    */
   copiedNodes?: readonly Block[];
   /**
-   * A whole-document `create` the host prepared outside its transaction
-   * (server `LinkBinder`, contract §6.2): the bound result's nodes, and the
-   * Yjs update that turns the state it was prepared against into them. The
-   * update merges into the document, so edits admitted since then stay;
-   * nothing is parsed, assigned or aligned again. A prepared overwrite also
-   * carries its certified intent: the IR and the provenance facts the host
-   * wrote for it against the base, admitted with the update.
-   *
-   * `authority` certifies the generation the base was read in. The commit
-   * admits the update only while the document is still in it, and fences the
-   * journal append with it; otherwise the write is `invalid_write` with a
-   * `prepared_base` error, for the host to prepare again.
-   */
-  prepared?: {
-    blocks: readonly Block[];
-    update: Uint8Array;
-    authority?: import("../ports/update-journal.js").JournalAuthority;
-    certified?: { ir: SemanticEditIRV1; provenance: Uint8Array };
-  };
-  /**
    * Host-only showing evidence for this thread: every link the model was
    * shown in a document, with the address shown. Ref assignment reads it;
    * agent-edit never reads thread history itself. Absent for utility, seed
@@ -252,6 +230,11 @@ export interface WriteContext {
    */
   linkView?: LinkView;
 }
+
+/** Who a host-prepared write is recorded for (`WriteTool.applyPrepared`). */
+export type PreparedWriteContext = Pick<WriteContext, "sessionId" | "threadId"> & {
+  actor: MutationActor;
+};
 
 export type MutationActor =
   | { kind: "agent"; turnId: string; threadId: string; responseId?: string }

@@ -77,7 +77,7 @@ export function lowerOverwrite(input: {
     return { ok: true, ir: null };
   }
   const resolved = resolveOverwrite(
-    { doc: handle, model: input.model, codec: input.codec },
+    { doc: handle, model: input.model, codec: input.codec, links: "prebound" },
     { documentId: input.documentId, filePath: "document.md" },
     { content: input.content, parsedContent: { blocks: [...input.blocks] } },
     input.blocks.length === 0,

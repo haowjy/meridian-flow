@@ -51,7 +51,7 @@ export function createContextUploadContentPort(
       const classification = classifyFiletype(input.reservation.fileType);
       const result =
         classification.kind === "tracked"
-          ? await port.createTrackedDocument(input.reservation.canonicalUri, input.prepared ?? "", {
+          ? await port.createPreparedDocument(input.reservation.canonicalUri, input.prepared, {
               documentId: input.reservation.documentId,
               origin,
             })

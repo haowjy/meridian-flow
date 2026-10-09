@@ -132,7 +132,9 @@ function exhaustive(values: CorrespondenceInput): Binding[] {
       (showing) => values.normalize(values.written[j].href, showing.holderUri) === showing.address,
     );
     matching.sort(
-      (a, b) => Number(values.isLive(b.ref)) - Number(values.isLive(a.ref)) || showingOrder(a, b),
+      (a, b) =>
+        Number(values.isLive(b.ref, b.address)) - Number(values.isLive(a.ref, a.address)) ||
+        showingOrder(a, b),
     );
     return matching[0] ? { pass: 2, ref: matching[0].ref } : { pass: 3 };
   });
@@ -211,7 +213,7 @@ it("preserves r7 reviewer bindings, stated ambiguities and historical holder nor
           seen("D", "manuscript://two/T.md", 2, "manuscript://two/H.md"),
         ],
         holderUri: "manuscript://now/H.md",
-        normalize: (href, holder) => new URL(href, holder).href,
+        normalize: (href, holder) => new URL(href, holder ?? undefined).href,
       }),
       expected: [{ pass: 1, occurrence: 0 }, { pass: 3 }],
     },
@@ -225,7 +227,7 @@ it("preserves r7 reviewer bindings, stated ambiguities and historical holder nor
           seen("D", "manuscript://two/R.md", 2, "manuscript://two/H.md"),
         ],
         holderUri: "manuscript://now/H.md",
-        normalize: (href, holder) => new URL(href, holder).href,
+        normalize: (href, holder) => new URL(href, holder ?? undefined).href,
       }),
       expected: [{ pass: 1, occurrence: 0 }],
     },
@@ -252,7 +254,7 @@ it("preserves r7 reviewer bindings, stated ambiguities and historical holder nor
           seen("newer", "manuscript://two/T.md", 2, "manuscript://two/H.md"),
         ],
         holderUri: "manuscript://now/H.md",
-        normalize: (href, holder) => new URL(href, holder).href,
+        normalize: (href, holder) => new URL(href, holder ?? undefined).href,
       }),
       expected: [{ pass: 2, ref: "newer" }],
     },

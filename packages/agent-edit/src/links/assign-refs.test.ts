@@ -281,7 +281,6 @@ const doors: DoorCase[] = [
         old: [],
         written,
         scope: links.scopeFor(H, undefined),
-        holderDocumentId: H,
         shown: [],
       }).nodes;
       const ctx = linkHarness({
@@ -549,6 +548,33 @@ const doors: DoorCase[] = [
         expect.soft(await ctx.markdown(), label).toBe("Original.");
         expect.soft((await ctx.journal.read(H)).updates.length, label).toBe(before);
       }
+    },
+  },
+  {
+    name: "an unsettled ahead ref whose address a document now holds ranks live",
+    async run() {
+      const A = `ahead:${uuid(41)}`;
+      const ctx = linkHarness({
+        holder: { id: H, uri: HOLDER },
+        documents: [
+          catalogDocument(G, ch("gone.md"), { presence: "deleted" }),
+          catalogDocument(D, target),
+        ],
+        blocks: [
+          paragraph(
+            { text: "Target", ref: documentRef(G), href: storedHref(target, "") },
+            " and ",
+            { text: "Target", ref: A, href: storedHref(target, "") },
+          ),
+        ],
+      });
+      await ctx.write({ command: "replace", in: [1, 1], content: "[Target](target.md) only." });
+      expect
+        .soft(
+          storedLinks(ctx.live()).map((link) => link.ref),
+          this.name,
+        )
+        .toEqual([A]);
     },
   },
   {

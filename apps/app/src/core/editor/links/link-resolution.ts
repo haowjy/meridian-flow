@@ -46,6 +46,7 @@
  * generation; the next scan asks them again.
  */
 
+import { storedLinkRef } from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import type { LinkBindingIndex, LinkBindingScope } from "./link-binding";
@@ -62,11 +63,10 @@ export type LinkKey = { ref: string | null; href: string };
 /**
  * The stored link a link mark's attributes name. The only reading of a mark's
  * `ref` and `href`, so no two surfaces can disagree about which answer a link
- * has (an empty ref is no ref).
+ * has (an empty or malformed ref is no ref).
  */
 export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }): LinkKey {
-  const { ref, href } = attrs;
-  return { ref: typeof ref === "string" && ref ? ref : null, href: String(href ?? "") };
+  return { ref: storedLinkRef(attrs.ref), href: String(attrs.href ?? "") };
 }
 
 /** The one string a `LinkKey` is cached and deduplicated under. */
