@@ -132,7 +132,8 @@ export class PaintHold extends Component<
 
 class Capture extends Component<{ surface: string; frame: PaintHold | null; active: boolean }> {
   getSnapshotBeforeUpdate(previous: Readonly<typeof this.props>) {
-    if (this.props.active && previous.surface !== this.props.surface) this.props.frame?.capture();
+    if (previous.active && this.props.active && previous.surface !== this.props.surface)
+      this.props.frame?.capture();
     return null;
   }
   componentDidUpdate(previous: Readonly<typeof this.props>) {

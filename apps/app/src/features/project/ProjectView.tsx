@@ -40,6 +40,7 @@ import {
   retryWorkingSetHydration,
   type WorkingSetHydrationPlan,
 } from "@/client/working-set";
+import { PaintScope } from "@/components/app/PaintHold";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useReviewProseFocus } from "@/features/chat/review-prose-focus";
 import {
@@ -680,23 +681,26 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   activeScheme={props.activeContextScheme}
                 />
               ) : null}
-              <ContextViewerSurfaceController
-                projectId={props.projectId}
-                editorWorkId={mountedEditor.editorWorkId}
-                editorWork={mountedEditor.editorWork}
-                activeContextScheme={mountedEditor.activeContextScheme}
-                activeContextPath={mountedEditor.activeContextPath}
-                localDocumentId={mountedEditor.activeLocalDocumentId}
-                addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
-                active={editorActive}
-                sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                dockToggle={surfaceToggle("chat", t`Expand chat`)}
-                onSelectContextPath={props.onSelectContextPath}
-                onOpenContextTarget={props.onOpenContextTarget}
-                onShowEditorRecents={(options) =>
-                  void props.routeCommands.showEditorRecents(options)
-                }
-              />
+              {/* Paint visibility follows the screen, not route acquisition readiness. */}
+              <PaintScope active={props.activeScreen === "context"}>
+                <ContextViewerSurfaceController
+                  projectId={props.projectId}
+                  editorWorkId={mountedEditor.editorWorkId}
+                  editorWork={mountedEditor.editorWork}
+                  activeContextScheme={mountedEditor.activeContextScheme}
+                  activeContextPath={mountedEditor.activeContextPath}
+                  localDocumentId={mountedEditor.activeLocalDocumentId}
+                  addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
+                  active={editorActive}
+                  sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+                  dockToggle={surfaceToggle("chat", t`Expand chat`)}
+                  onSelectContextPath={props.onSelectContextPath}
+                  onOpenContextTarget={props.onOpenContextTarget}
+                  onShowEditorRecents={(options) =>
+                    void props.routeCommands.showEditorRecents(options)
+                  }
+                />
+              </PaintScope>
             </DraftReviewBoundary>
           ) : null}
         </ProjectRouteBoundary>

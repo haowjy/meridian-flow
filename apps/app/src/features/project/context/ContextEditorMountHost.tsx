@@ -141,7 +141,7 @@ export function ContextEditorMountHost({
             }
           }
           return (
-            <PaintScope active={active && isActive}>
+            <PaintScope active={isActive}>
               <PaintCapture surface={failed ? "failed" : hosted ? "editor" : "acquiring"} />
               <div
                 data-context-editor-document-id={tab.documentId}

@@ -40,6 +40,7 @@ async function run(test: () => Promise<void>, precursor = false) {
 }
 beforeEach(() => {
   vi.useFakeTimers();
+  frame = () => {};
   vi.stubGlobal(
     "requestAnimationFrame",
     vi.fn((callback: () => void) => {
@@ -94,6 +95,8 @@ it("keeps the first copy on a second move and releases for a terminal surface", 
 it("ignores inactive loading and releases when its scope deactivates", async () => {
   await run(async () => {
     await act(async () => move("hidden", true, false));
+    expect(cover()).toBeNull();
+    await act(async () => move("activating", true));
     expect(cover()).toBeNull();
     act(() => frame());
     await act(async () => move("finished"));

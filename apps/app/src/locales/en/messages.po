@@ -678,7 +678,7 @@ msgid "Back to chat"
 msgstr "Back to chat"
 
 #: src/features/draft-review/ReviewCompletion.tsx
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Back to live"
 msgstr "Back to live"
 
@@ -952,6 +952,7 @@ msgstr "Choose Work for new chat, currently {0}"
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
+#: src/features/editor/EditorView.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
@@ -1404,7 +1405,7 @@ msgstr "Couldn't load Work."
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
 
@@ -1412,6 +1413,10 @@ msgstr "Couldn't open review mode."
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
+
+#: src/features/editor/EditorView.tsx
+msgid "Couldn't open this draft."
+msgstr "Couldn't open this draft."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
@@ -3003,7 +3008,13 @@ msgstr "Open the chat that wrote this change"
 msgid "Open this document in a project to upload figures."
 msgstr "Open this document in a project to upload figures."
 
-#: src/features/project/dock/review-handover.tsx
+#. placeholder {0}: activeTab.name
+#: src/features/project/context/ContextViewer.tsx
+#~ msgid "Opening {0}"
+#~ msgstr "Opening {0}"
+
+#: src/features/project/context/ContextViewer.tsx
+#: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening {name}"
 msgstr "Opening {name}"
 
@@ -3016,7 +3027,8 @@ msgstr "Opening checkout…"
 msgid "Opening document…"
 msgstr "Opening document…"
 
-#: src/features/project/dock/review-handover.tsx
+#: src/features/project/context/ContextViewer.tsx
+#: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening draft"
 msgstr "Opening draft"
 
@@ -3385,6 +3397,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
+#: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -4376,11 +4389,11 @@ msgstr "Top up any time. Extra usage carries over month to month."
 msgid "Try again"
 msgstr "Try again"
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Try again, or close this tab. The draft stays in your list."
 msgstr "Try again, or close this tab. The draft stays in your list."
 
-#: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Try again, or return to the live document."
 msgstr "Try again, or return to the live document."
 
