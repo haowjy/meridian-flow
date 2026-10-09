@@ -61,13 +61,17 @@ export class BranchWriterHandoff {
           : retirement,
     };
     this.carries.set(room.branchId, entry);
+    entry.retirement.ref.writerChanges?.(entry.retirement.source.generation);
     void this.deliver(room.branchId, entry);
   }
 
   dispose = (): void => {
     this.disposed = true;
     this.deps.epochSignal.removeEventListener("abort", this.dispose);
-    for (const entry of this.carries.values()) entry.attempt.abort();
+    for (const entry of this.carries.values()) {
+      entry.attempt.abort();
+      entry.retirement.ref.writerChanges?.(null);
+    }
     this.carries.clear();
   };
 
@@ -98,6 +102,7 @@ export class BranchWriterHandoff {
           room.branchId === branchId &&
           room.generation >= entry.retirement.source.generation
         ) {
+          entry.retirement.ref.writerChanges?.(room.generation);
           this.deps.pool.retain(owner, [{ ...entry.retirement.ref, roomKey }]);
           const session = await this.deps.pool.rebuild(roomKey);
           if (!this.current(branchId, entry)) return;
@@ -123,10 +128,12 @@ export class BranchWriterHandoff {
               if (!this.current(branchId, entry)) return;
               if (outcome === "ready" && this.deps.pool.peek(roomKey) !== session)
                 outcome = "retry";
-              if (outcome === "ready") entry.retirement.ref.changed();
+              if (outcome === "ready") await entry.retirement.ref.changed();
             }
             if (outcome === "ready") {
+              if (!this.current(branchId, entry)) return;
               this.carries.delete(branchId);
+              entry.retirement.ref.writerChanges?.(null);
               return;
             }
           }
@@ -141,6 +148,7 @@ export class BranchWriterHandoff {
       if (!this.current(branchId, entry)) return;
       if (outcome === "refused" || entry.delivered) {
         this.carries.delete(branchId);
+        entry.retirement.ref.writerChanges?.(null);
         return;
       }
       const delays = this.deps.retryDelaysMs;

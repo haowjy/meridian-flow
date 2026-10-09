@@ -29,18 +29,20 @@ export function reviewRoomRef(
         throw error;
       }
     },
-    changed() {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDrafts(draft.projectId, draft.workId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftPreview(
-          draft.projectId,
-          draft.workId,
-          draft.documentId,
-          draft.draftId,
-        ),
-      });
+    async changed() {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDrafts(draft.projectId, draft.workId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDraftPreview(
+            draft.projectId,
+            draft.workId,
+            draft.documentId,
+            draft.draftId,
+          ),
+        }),
+      ]);
     },
   };
 }

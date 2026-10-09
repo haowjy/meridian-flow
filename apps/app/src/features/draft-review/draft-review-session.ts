@@ -438,7 +438,7 @@ export type DraftReviewAction =
   | {
       /**
        * The Work's draft list, once authoritative, has no row for the draft (row X). `evidence`
-       * is the draft's newest cached preview, null when none lists an active draft.
+       * is changes observed in the cached preview or session-layer writer delivery.
        */
       type: "draftAbsentFromList";
       documentId: string;
@@ -734,8 +734,8 @@ function observeGeneration(
 /**
  * Row X: the list has no row for the reviewed draft. With no completion (the
  * writer's own last change explains a missing row) that is an external close,
- * unless the newest preview lists changes at the shown generation or a newer
- * one: the draft is alive and the list lags. A newer generation is the
+ * unless the preview or session layer shows changes at the shown generation
+ * or a newer one: the draft is alive and the list lags. A newer generation is the
  * observer's to take up; deciding here, against R and the evidence together,
  * keeps the outcome independent of which read arrived first (invariant 4).
  */

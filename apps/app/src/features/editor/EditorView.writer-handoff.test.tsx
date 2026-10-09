@@ -170,6 +170,7 @@ it.each([
   "branch-stale-doc",
   "list",
   "successor typing",
+  "remote whole Discard",
 ])("writer edit survives reentry after %s", async (reason) => {
   vi.useFakeTimers();
   runtime = branchHandoffHarness();
@@ -188,11 +189,23 @@ it.each([
       let locate!: (room: string) => void;
 
       mocks.getDraftPreview.mockResolvedValue({
-        ...previewOf("5"),
+        ...previewOf(...(reason === "remote whole Discard" ? [] : ["5"])),
         draftGeneration: 2,
         reviewRoomName: newRoom,
       });
-      mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+      mocks.listWorkDrafts.mockResolvedValue({
+        drafts: reason === "remote whole Discard" ? [] : [{ ...listed, draftGeneration: 2 }],
+      });
+      if (reason === "remote whole Discard") {
+        await act(async () => {
+          await testQueryClient.invalidateQueries({
+            queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+          });
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+        expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+      }
       await act(async () => {
         if (reason === "list" || reason === "successor typing") {
           await testQueryClient.invalidateQueries({
@@ -231,6 +244,18 @@ it.each([
           disposition: reason === "branch-stale-doc" ? "rebuild" : "superseded",
         });
       });
+      if (reason === "remote whole Discard") {
+        await act(async () => {
+          await testQueryClient.invalidateQueries({
+            queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+          });
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+        expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
+      }
       await act(async () => {
         await vi.advanceTimersByTimeAsync(20);
       });
@@ -256,9 +281,24 @@ it.each([
           expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
           mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
         }
+        if (reason === "remote whole Discard") {
+          mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+          mocks.getDraftPreview.mockResolvedValue({
+            ...previewOf("writer"),
+            operations: [{ ...previewOf("writer").operations[0], kind: "writer" }],
+            draftGeneration: 2,
+            reviewRoomName: newRoom,
+          });
+        }
         runtime.wire(newRoom).ack();
         await vi.advanceTimersByTimeAsync(10);
       });
+      if (reason === "remote whole Discard") {
+        expect(surfaces()).toEqual(["review"]);
+        expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
+        expect(branchEditor().getText()).toContain("UNACKNOWLEDGED WRITER WORDS");
+        expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
+      }
       if (reason === "list") {
         expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
         expect(runtime.pool.peek(newRoom)).toBeUndefined();
