@@ -407,7 +407,8 @@ address the assignment index (the project catalog links are assigned from)
 holds that id at now when it holds it. A same-project paste restores the
 `asset:` source from that recorded identity alone, so a just-uploaded picture
 copies before the catalog knows it (decision L42); any other paste binds the
-recorded address fresh, and drops a picture that recorded none. The sanitizer
+recorded address fresh, and drops a picture that recorded none (a figure
+whole, caption and all). The sanitizer
 still admits no raw `asset:` source, and there is no second path-to-asset map. The text flavour spells a picture whose
 ref answers a document, or an upload the index holds, at that document's
 current address under the manuscript-root grammar (stored spelling otherwise),
