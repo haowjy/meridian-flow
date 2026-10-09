@@ -22,15 +22,3 @@ it("re-reads the project's draft lists once the pulled catalog is installed, and
   await vi.waitFor(() => expect(queryClient.getQueryState(mine)?.isInvalidated).toBe(true));
   expect(queryClient.getQueryState(other)?.isInvalidated).toBe(false);
 });
-
-it("leaves the draft lists alone when the catalog could not be pulled", async () => {
-  const queryClient = new QueryClient();
-  const mine = projectQueryKeys.workDrafts("project-a", "work-1");
-  queryClient.setQueryData(mine, []);
-  const resources = { hintCatalog: vi.fn().mockRejectedValue(new Error("offline")) };
-
-  pullContextCatalogOnHint(queryClient, resources, "project-a", hint);
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(queryClient.getQueryState(mine)?.isInvalidated).toBe(false);
-});

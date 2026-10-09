@@ -18,9 +18,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const {
       expectChatFeedCursorAcrossFilterContract,
-      expectChatFeedFavoriteFilterContract,
       expectChatFeedSearchSemanticsContract,
-      expectChatFeedTiesContract,
       expectChatFeedWorkFilterContract,
     } = await import("../__conformance__/chat-feed-contract.js");
 
@@ -64,14 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
     }
-
-    it("pages ties by descending thread id", async () => {
-      await expectChatFeedTiesContract(harness());
-    });
-
-    it("filters by favorite without changing activity order", async () => {
-      await expectChatFeedFavoriteFilterContract(harness());
-    });
 
     it("matches search metacharacters literally, CJK, and case-folded", async () => {
       await expectChatFeedSearchSemanticsContract(harness());

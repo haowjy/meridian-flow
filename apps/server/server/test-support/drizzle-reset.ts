@@ -198,17 +198,16 @@ export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]
       sql.raw(`LOCK TABLE ${lockOrder.join(", ")} IN ACCESS EXCLUSIVE MODE`),
     );
     await transaction.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
-    for (const table of tableOrder) {
-      // Insert-only bakes permit deletion only through their owning thread's cascade.
-      // This exemption requires the owner in the reset set; standalone bake deletes still fail.
-      // A preceding suite may leave bakes even when this suite never creates one.
-      if (
-        table.qualifiedName === quoteDrizzleTable(promptBakes) &&
-        derivedNames.has(quoteDrizzleTable(threads))
+    const deletes = tableOrder
+      .filter(
+        // Insert-only bakes can be deleted only by their owning thread's cascade.
+        (table) =>
+          table.qualifiedName !== quoteDrizzleTable(promptBakes) ||
+          !derivedNames.has(quoteDrizzleTable(threads)),
       )
-        continue;
-      await transaction.execute(sql.raw(`DELETE FROM ${table.qualifiedName}`));
-    }
+      .map((table) => `DELETE FROM ${table.qualifiedName}`);
+    // One round trip, still ordered statements under the same transaction and locks.
+    await transaction.execute(sql.raw(deletes.join(";\n")));
   });
 }
 

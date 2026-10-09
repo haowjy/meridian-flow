@@ -1,13 +1,16 @@
 /** Vitest guard preventing an absent or entirely skipped DB run from passing CI. */
-import type { File, Reporter } from "vitest";
+import type { Reporter, TestModule } from "vitest/node";
 
 export default class DbTestReporter implements Reporter {
-  onFinished(files: File[] = []): void {
-    const tests = files.flatMap((file) => file.tasks).filter((task) => task.type === "test");
-    const executed = tests.filter(
-      (test) => test.result?.state === "pass" || test.result?.state === "fail",
+  onTestRunEnd(modules: ReadonlyArray<TestModule>): void {
+    const dbModules = modules.filter((module) => module.moduleId.endsWith(".db.test.ts"));
+    const executed = dbModules.some((module) =>
+      [...module.children.allTests()].some((test) => {
+        const state = test.result().state;
+        return state === "passed" || state === "failed";
+      }),
     );
-    if (files.length === 0 || tests.length === 0 || executed.length === 0) {
+    if (!executed) {
       throw new Error("DB test guard: expected discovered, executed DB tests; none ran.");
     }
   }

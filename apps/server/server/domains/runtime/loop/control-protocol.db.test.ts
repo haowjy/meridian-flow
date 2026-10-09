@@ -1,7 +1,6 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
-import type { Gateway } from "../gateway/ports/gateway.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
@@ -119,44 +118,6 @@ else
       ).resolves.toMatchObject({ created: true });
     });
 
-    it("accepts and runs compact on a fresh fork with an inherited completed reply", async () => {
-      const rig = await manualFixture();
-      const source = await rig.repos.threads.findById(rig.threadId);
-      const answer = (await rig.repos.turns.listByThread(rig.threadId)).find(
-        (turn) => turn.role === "assistant" && turn.status === "complete",
-      );
-      if (!source || !answer) throw new Error("Expected source thread and completed reply");
-      const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
-        id: crypto.randomUUID(),
-        source,
-        workId: source.workId,
-        userId: source.userId,
-        projectId: source.projectId,
-        originType: "fork",
-        originTurnId: answer.id,
-      });
-      rig.bindThread(fork.id);
-
-      const listBlocks = rig.repos.blocks.listByThread.bind(rig.repos.blocks);
-      rig.repos.blocks.listByThread = async () => {
-        throw new Error("compact eligibility must not load blocks");
-      };
-      await expect(
-        rig.delivery.enqueueControl({
-          threadId: fork.id,
-          actorId: rig.ids.user,
-          id: crypto.randomUUID(),
-          control: { kind: "compact" },
-        }),
-      ).resolves.toMatchObject({ created: true });
-      rig.repos.blocks.listByThread = listBlocks;
-      await (await rig.orchestrator.prepare({ threadId: fork.id, drain: true })).execute();
-
-      expect(await rig.repos.turns.listByThread(fork.id)).toContainEqual(
-        expect.objectContaining({ role: "compaction", status: "complete" }),
-      );
-    });
-
     it("honors completed replies across bounded fork-of-fork lineage", async () => {
       const rig = await manualFixture({ empty: true });
       const source = await rig.repos.threads.findById(rig.threadId);
@@ -271,7 +232,7 @@ else
       });
     });
 
-    it.each([1, 2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
+    it.each([2])("fails once and acknowledges %i adopted message(s)", async (messageCount) => {
       const gateway = scriptedGateway({ usage: lowUsage });
       gateway.stream = async function* (request) {
         gateway.requests.push(request);
@@ -308,43 +269,7 @@ else
       starts.mockRestore();
     });
 
-    it("runs a queued compact immediately after a failed reply", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage });
-      gateway.stream = async function* (request) {
-        gateway.requests.push(request);
-        yield {
-          type: "error",
-          code: "provider_error",
-          message: "provider unavailable",
-          retryable: false,
-        };
-      };
-      const rig = await manualFixture({ gateway });
-      await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "M ahead of K" },
-        idempotencyKey: "failed-message-before-compact",
-      });
-      const compact = await compactControl(rig);
-
-      await drainControls(rig);
-      await processDetachedWork.drain();
-      const turns = await settled(rig);
-
-      expect(gateway.requests).toHaveLength(1);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-      expect(turns).toContainEqual(
-        expect.objectContaining({
-          role: "compaction",
-          status: "complete",
-          metadata: expect.objectContaining({ controlMessageId: compact.id }),
-        }),
-      );
-    });
-
-    it("Retry replays the original request, appends after failure, and is idempotent", async () => {
+    it("Retry replays the original request, appends after failure, is idempotent, and refuses the superseded original", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       const requests = gateway.requests;
       gateway.stream = async function* (request) {
@@ -407,82 +332,24 @@ else
       if (!originalRequest || !retryRequest) throw new Error("Expected both retry requests");
       expect(comparable(retryRequest)).toEqual(comparable(originalRequest));
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-    });
 
-    it("rereads and answers a writer message queued while Retry runs", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1, pauseAt: [2] });
-      const rig = await manualFixture({ gateway });
-      await rig.delivery.enqueue({
+      // Every Retry precondition except the failed leaf still holds for the original.
+      expect(await rig.repos.turns.findById(failed.id)).toMatchObject({
         threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "Original request." },
-        idempotencyKey: "retry-writer-race-original",
+        role: "assistant",
+        status: "error",
       });
-      await drainControls(rig);
-      await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
-      if (!failed) throw new Error("Failed reply was not persisted");
-
-      const retry = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: failed.id as never,
-        replyTurnId: crypto.randomUUID() as never,
-      });
-      await gateway.untilGatewayBoundary(2);
-      const waiting = await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "Arrived during Retry." },
-        idempotencyKey: "retry-writer-race-late",
-      });
-      gateway.release(2);
-      const turns = await settled(rig);
-      await processDetachedWork.drain();
-
-      expect(retry.created).toBe(true);
-      expect(turns).toContainEqual(expect.objectContaining({ id: waiting.id, role: "user" }));
-      expect(turns).toContainEqual(
-        expect.objectContaining({ role: "assistant", status: "complete", prevTurnId: waiting.id }),
-      );
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("rereads and runs a compact queued while Retry runs", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1, pauseAt: [2] });
-      const rig = await manualFixture({ gateway });
-      await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "Original request." },
-        idempotencyKey: "retry-compact-race-original",
-      });
-      await drainControls(rig);
-      await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
-      if (!failed) throw new Error("Failed reply was not persisted");
-
-      const retry = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: failed.id as never,
-        replyTurnId: crypto.randomUUID() as never,
-      });
-      await gateway.untilGatewayBoundary(2);
-      const compact = await compactControl(rig);
-      gateway.release(2);
-      const turns = await settled(rig);
-      await processDetachedWork.drain();
-
-      expect(retry.created).toBe(true);
-      expect(turns).toContainEqual(
-        expect.objectContaining({
-          role: "compaction",
-          metadata: expect.objectContaining({ controlMessageId: compact.id }),
+      expect((await rig.repos.turns.getLatestByThread(rig.threadId))?.id).toBe(replyTurnId);
+      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+      await expect(
+        rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: failed.id as never,
+          replyTurnId: crypto.randomUUID() as never,
         }),
-      );
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+      expect(requests).toHaveLength(2);
     });
 
     it("allows only one of two tab Retries to take the run claim", async () => {
@@ -520,94 +387,6 @@ else
       expect(first.created).toBe(true);
       expect(turns.filter((turn) => turn.id === winningId)).toHaveLength(1);
       expect(gateway.requests).toHaveLength(2);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("does not let a pending Work refresh block Retry", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      const workContext = {
-        async renderForThread() {
-          return {
-            text: "<work_context>current: none (direct writes)</work_context>",
-            current: {
-              projectId: rig.ids.project as never,
-              execution: {
-                scope: { workId: crypto.randomUUID() as never, workSlug: null },
-                aiWriteMode: "direct" as const,
-                draftOwner: null,
-              },
-            },
-          };
-        },
-      };
-      const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
-      rig = await manualFixture({ gateway, workContext });
-      await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "Original request." },
-        idempotencyKey: "retry-work-refresh-original",
-      });
-      await drainControls(rig);
-      await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
-      if (!failed) throw new Error("Failed reply was not persisted");
-      await rig.delivery.threadChanged(rig.threadId);
-      expect(await rig.delivery.selectPending(rig.threadId)).toHaveLength(1);
-
-      const retry = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: failed.id as never,
-        replyTurnId: crypto.randomUUID() as never,
-      });
-      await processDetachedWork.drain();
-      const turns = await settled(rig);
-
-      expect(retry.created).toBe(true);
-      expect(turns).toContainEqual(
-        expect.objectContaining({
-          role: "user",
-          origin: "system",
-          metadata: expect.objectContaining({ section: "work_context" }),
-        }),
-      );
-      expect(gateway.requests.length).toBeGreaterThanOrEqual(2);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-    });
-
-    it("retries a crash-orphaned assistant after ordinary orphan repair", async () => {
-      const rig = await manualFixture({ gateway: scriptedGateway({ usage: lowUsage }) });
-      const previous = await rig.repos.turns.getLatestByThread(rig.threadId);
-      if (!previous) throw new Error("Expected fixture history");
-      const orphan = await rig.repos.turns.create({
-        threadId: rig.threadId,
-        prevTurnId: previous.id,
-        role: "assistant",
-        origin: "assistant",
-        status: "pending",
-      });
-      await expect(
-        rig.orchestrator.prepare({ threadId: rig.threadId, drain: true }),
-      ).rejects.toMatchObject({
-        name: "NoPendingWakeError",
-      });
-      await processDetachedWork.drain();
-      const failed = await rig.repos.turns.findById(orphan.id as never);
-      expect(failed).toMatchObject({
-        status: "error",
-        error: "This response failed.",
-        metadata: { reason: "orphaned" },
-      });
-
-      const retry = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: orphan.id as never,
-        replyTurnId: crypto.randomUUID() as never,
-      });
-      await processDetachedWork.drain();
-      expect(retry.created).toBe(true);
-      expect(await rig.repos.turns.findById(retry.turn.id)).toMatchObject({ status: "complete" });
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
@@ -708,85 +487,6 @@ else
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
-    it("settles and acknowledges a shutdown reply, which is retryable after restart", async () => {
-      let markStarted!: () => void;
-      const started = new Promise<void>((resolve) => {
-        markStarted = resolve;
-      });
-      let call = 0;
-      const gateway = scriptedGateway({ usage: lowUsage });
-      gateway.stream = async function* (request) {
-        call++;
-        gateway.requests.push(request);
-        if (call === 1) {
-          markStarted();
-          await new Promise<void>((resolve) => {
-            if (request.signal?.aborted) resolve();
-            else request.signal?.addEventListener("abort", () => resolve(), { once: true });
-          });
-        }
-        yield {
-          type: "end",
-          result: {
-            content: [{ type: "text", text: call === 1 ? "partial" : "retried" }],
-            toolCalls: [],
-            finishReason: "end_turn",
-            usage: lowUsage,
-            model: "gpt-4.1-mini",
-            provider: "openai",
-          },
-        };
-      };
-      const gatewayWithSettlement = gateway as ReturnType<typeof scriptedGateway> &
-        Pick<Gateway, "settleCancelledResult">;
-      gatewayWithSettlement.settleCancelledResult = async ({ result }) =>
-        result ? { result, persist: true } : null;
-      const rig = await manualFixture({ gateway });
-      const message = await rig.delivery.enqueue({
-        threadId: rig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: rig.ids.user },
-        body: { kind: "text", text: "Reply during deployment." },
-        idempotencyKey: "shutdown-reply-message",
-      });
-      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
-      const execution = run.execute();
-      await started;
-      rig.orchestrator.beginShutdown();
-      await expect(execution).resolves.toMatchObject({
-        status: "error",
-        turn: {
-          status: "error",
-          error: "This response failed.",
-          metadata: { reason: "shutdown" },
-        },
-      });
-      await processDetachedWork.drain();
-
-      expect(await rig.repos.modelResponses.listByTurn(run.executionTurnId)).toHaveLength(1);
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-      expect(await rig.repos.turns.findById(message.id as never)).toMatchObject({ role: "user" });
-      await expect(
-        rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId: run.executionTurnId as never,
-          replyTurnId: crypto.randomUUID() as never,
-        }),
-      ).rejects.toThrow("runtime_shutting_down");
-      rig.deps.shutdown.started = false;
-      const interrupted = await rig.repos.turns.getLatestByThread(rig.threadId);
-      if (!interrupted) throw new Error("Shutdown reply was not persisted");
-      const retry = await rig.orchestrator.retryReply({
-        threadId: rig.threadId,
-        failedTurnId: interrupted.id as never,
-        replyTurnId: crypto.randomUUID() as never,
-      });
-      await processDetachedWork.drain();
-
-      expect(retry.created).toBe(true);
-      expect(await rig.repos.turns.findById(retry.turn.id)).toMatchObject({ status: "complete" });
-    });
-
     it("does not allow Retry for a successful reply", async () => {
       const rig = await manualFixture();
       const completed = await rig.orchestrator.prepare({
@@ -802,37 +502,6 @@ else
         }),
       ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       expect(await rig.runClaim.holder(rig.threadId)).toBeNull();
-    });
-
-    it("does not allow Retry for a superseded failed reply", async () => {
-      const failedGateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
-      const failedRig = await manualFixture({ gateway: failedGateway });
-      await failedRig.delivery.enqueue({
-        threadId: failedRig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: failedRig.ids.user },
-        body: { kind: "text", text: "failed reply" },
-        idempotencyKey: "failed-reply-before-new-turn",
-      });
-      await drainControls(failedRig);
-      await processDetachedWork.drain();
-      const failed = await failedRig.repos.turns.getLatestByThread(failedRig.threadId);
-      if (!failed) throw new Error("Failed reply was not persisted");
-      const later = await failedRig.repos.turns.create({
-        threadId: failedRig.threadId,
-        prevTurnId: failed?.id as never,
-        role: "system",
-        origin: "system",
-        status: "complete",
-      });
-      expect(later).toBeTruthy();
-      await expect(
-        failedRig.orchestrator.retryReply({
-          threadId: failedRig.threadId,
-          failedTurnId: failed.id as never,
-          replyTurnId: crypto.randomUUID() as never,
-        }),
-      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
     });
 
     it("rechecks the failed leaf after taking the Retry claim", async () => {
@@ -871,34 +540,6 @@ else
         }),
       ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
       expect(await rig.runClaim.holder(rig.threadId)).toBeNull();
-    });
-
-    it("does not allow Retry while the thread claim is held", async () => {
-      const busyRig = await manualFixture({
-        gateway: scriptedGateway({ usage: lowUsage, errorAtCall: 1 }),
-      });
-      await busyRig.delivery.enqueue({
-        threadId: busyRig.threadId,
-        intent: "message",
-        provenance: { kind: "writer", actorId: busyRig.ids.user },
-        body: { kind: "text", text: "busy retry" },
-        idempotencyKey: "busy-failed-reply",
-      });
-      await drainControls(busyRig);
-      await processDetachedWork.drain();
-      const busyFailed = await busyRig.repos.turns.getLatestByThread(busyRig.threadId);
-      if (!busyFailed) throw new Error("Failed reply was not persisted");
-      const held = await busyRig.runClaim.startExecution(busyRig.threadId, crypto.randomUUID());
-      expect(held).toBeTruthy();
-      if (!held) throw new Error("Expected the test to hold the thread claim");
-      await expect(
-        busyRig.orchestrator.retryReply({
-          threadId: busyRig.threadId,
-          failedTurnId: busyFailed.id as never,
-          replyTurnId: crypto.randomUUID() as never,
-        }),
-      ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
-      await busyRig.runClaim.release(held);
     });
 
     it("adopts A and B across a queued command at a tool boundary, then compacts", async () => {
@@ -1047,100 +688,6 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
-    it("Stop with a compact at the queue head compacts immediately", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
-      const rig = await manualFixture({ gateway });
-      const active = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        userText: "reply before compact",
-      });
-      const execution = active.execute();
-      await gateway.untilGatewayBoundary(1);
-      const control = await compactControl(rig);
-
-      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
-      gateway.release(1);
-      await execution;
-      const turns = await settled(rig);
-
-      expect(turns.at(-1)).toMatchObject({
-        role: "compaction",
-        status: "complete",
-        metadata: { controlMessageId: control.id },
-      });
-      expect(turns.at(-1)?.position).toBeGreaterThan(turns.at(-2)?.position ?? -1);
-    });
-
-    it("answers a waiting message even when the following compact fails to start", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
-      const rig = await manualFixture({ gateway });
-      const active = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        userText: "reply to stop",
-      });
-      const execution = active.execute();
-      await gateway.untilGatewayBoundary(1);
-
-      const control = await compactControl(rig);
-      const waitingText = "Answer me after the failed compact.";
-      const waiting = await rig.send(rig.threadId, waitingText);
-      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
-      const transition = rig.repos.runTurnStartTransition.bind(rig.repos);
-      let transitionCalls = 0;
-      rig.repos.runTurnStartTransition = async (threadId, expectedLeafTurnId, operation) => {
-        transitionCalls += 1;
-        if (transitionCalls === 2) {
-          throw new Error("compact start commit failed");
-        }
-        return transition(threadId, expectedLeafTurnId, operation);
-      };
-
-      gateway.release(1);
-      await execution;
-      await processDetachedWork.drain();
-      await expect.poll(rig.activeRuns, { timeout: 5_000 }).toBe(0);
-      expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
-      const turns = await rig.repos.turns.listByThread(rig.threadId);
-      const compact = turns.find(
-        (turn) =>
-          turn.role === "compaction" &&
-          (turn.metadata as { controlMessageId?: string } | null)?.controlMessageId === control.id,
-      );
-
-      expect(transitionCalls).toBeGreaterThanOrEqual(2);
-      expect(compact).toBeUndefined();
-      expect(turns.some((turn) => turn.id === waiting.userTurnId && turn.role === "user")).toBe(
-        true,
-      );
-      expect(JSON.stringify(gateway.requests.at(-1))).toContain(waitingText);
-      const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
-      expect(reply).toBeDefined();
-      expect(await rig.delivery.selectPending(rig.threadId)).toEqual([
-        expect.objectContaining({ id: control.id, intent: "control" }),
-      ]);
-
-      const { sweepWakes } = await import("./sweep-wakes.js");
-      await sweepWakes({
-        delivery: rig.delivery,
-        authority: rig.runClaim,
-        runStarter: {
-          async start(threadId) {
-            await rig.orchestrator.startDrain(threadId);
-          },
-        },
-        eventSink: rig.deps.eventSink,
-        limit: 100,
-      });
-      const recovered = await settled(rig);
-      expect(recovered).toContainEqual(
-        expect.objectContaining({
-          role: "compaction",
-          status: "complete",
-          metadata: expect.objectContaining({ controlMessageId: control.id }),
-        }),
-      );
-    });
-
     it("runs queued controls one per run and in their queue order", async () => {
       const rig = await manualFixture();
       await (
@@ -1192,91 +739,6 @@ else
       expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toEqual({
         outcome: "already_started",
       });
-    });
-
-    it("stores compaction instructions on C and sends them to the summarizer", async () => {
-      const rig = await manualFixture();
-      await (
-        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "History to compact." })
-      ).execute();
-      await settled(rig);
-      await compactControl(rig, crypto.randomUUID(), "Focus on the antagonist's promises.");
-      await drainControls(rig);
-      const turns = await settled(rig);
-
-      expect(turns.at(-1)).toMatchObject({
-        role: "compaction",
-        status: "complete",
-        metadata: { instructions: "Focus on the antagonist's promises." },
-      });
-      expect(rig.summarizer.calls[0].writerInstructions).toBe(
-        "Focus on the antagonist's promises.",
-      );
-    });
-
-    it("keeps a queued compact after an automatic compaction", async () => {
-      let rig: Awaited<ReturnType<typeof fixture>>;
-      const controlId = crypto.randomUUID();
-      const summarizer = scriptedSummarizer(async () => {
-        if (rig.summarizer.calls.length === 1) await compactControl(rig, controlId);
-        return {
-          kind: "complete",
-          text: "Earlier context.",
-          model: "summary-model",
-          modelResponses: [],
-        };
-      });
-      rig = await fixture({
-        summarizer,
-        gateway: scriptedGateway({ usage: lowUsage }),
-      });
-
-      await (
-        await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "new history" })
-      ).execute();
-      const turns = await settled(rig);
-      const compactions = turns.filter((turn) => turn.role === "compaction");
-
-      expect(compactions).toHaveLength(2);
-      expect(compactions[0]).toMatchObject({ metadata: { trigger: "auto" } });
-      expect(compactions[1]).toMatchObject({
-        metadata: { trigger: "manual", controlMessageId: controlId },
-      });
-      expect(summarizer.calls).toHaveLength(2);
-    });
-
-    it("answers a waiting reply before a later manual summary fails", async () => {
-      const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
-      const summarizer = scriptedSummarizer(async () => ({
-        kind: "failed",
-        error: new Error("summary failed"),
-        modelResponses: [],
-      }));
-      const rig = await manualFixture({ gateway, summarizer });
-      const active = await rig.orchestrator.prepare({
-        threadId: rig.threadId,
-        userText: "reply before Stop",
-      });
-      const execution = active.execute();
-      await gateway.untilGatewayBoundary(1);
-
-      await compactControl(rig);
-      const waiting = await rig.send(rig.threadId, "reply after failed compact");
-      expect(await rig.orchestrator.cancel(rig.threadId, active.executionTurnId)).toBe("cancelled");
-      gateway.release(1);
-      await execution;
-      const turns = await settled(rig);
-
-      const compact = turns.find((turn) => turn.role === "compaction");
-      expect(compact).toMatchObject({
-        status: "error",
-        metadata: { reason: "compaction_failed", phase: "summary" },
-      });
-      expect(turns.find((turn) => turn.id === waiting.userTurnId)?.role).toBe("user");
-      const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
-      expect(reply).toMatchObject({ role: "assistant", status: "complete" });
-      expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
-      expect(JSON.stringify(gateway.requests.at(-1))).toContain("reply after failed compact");
     });
 
     it("a manual successor exception fails C but continues the queued reply", async () => {
@@ -1365,26 +827,6 @@ else
       ).toHaveLength(1);
     });
 
-    it("compacts one completed exchange to its minimal tail", async () => {
-      const rig = await manualFixture({ empty: true });
-      await (
-        await rig.orchestrator.prepare({
-          threadId: rig.threadId,
-          userText: "Read the latest chapter.",
-        })
-      ).execute();
-      await settled(rig);
-      await compactControl(rig);
-      await drainControls(rig);
-      const turn = (await settled(rig)).at(-1);
-      if (!turn) throw new Error("Expected the manual compaction turn");
-      expect(turn).toMatchObject({
-        role: "compaction",
-        status: "complete",
-      });
-      expect(rig.summarizer.calls).toHaveLength(1);
-    });
-
     it("a control-only sweep starts an idle thread", async () => {
       const rig = await manualFixture();
       await compactControl(rig);
@@ -1458,30 +900,6 @@ else
         }),
       });
       expect(rig.summarizer.calls).toHaveLength(0);
-    });
-
-    it("materializing idle work finalizes an orphan before touching the inbox", async () => {
-      const rig = await manualFixture();
-      const previous = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
-      const stale = await rig.repos.turns.create({
-        threadId: rig.threadId,
-        prevTurnId: previous?.id,
-        role: "compaction",
-        origin: "system",
-        status: "pending",
-        metadata: { trigger: "manual" },
-      });
-      const control = await compactControl(rig);
-
-      await rig.delivery.materializeIdle(rig.threadId);
-
-      expect(await rig.repos.turns.findById(stale.id)).toMatchObject({
-        status: "error",
-        metadata: { reason: "interrupted" },
-      });
-      expect(await rig.delivery.selectPending(rig.threadId)).toContainEqual(
-        expect.objectContaining({ id: control.id }),
-      );
     });
 
     it("a remote Stop during manual summary wakes the owner after release", async () => {

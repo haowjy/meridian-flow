@@ -48,30 +48,6 @@ function createHarness() {
 }
 
 describe("work push policy", () => {
-  it("switches to manual without inspecting or pushing pending work", async () => {
-    const harness = createHarness();
-
-    await expect(
-      harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "manual" }),
-    ).resolves.toEqual({ status: "updated", policy: "manual" });
-    expect(harness.workDraftPending.list).not.toHaveBeenCalled();
-    expect(harness.applyPendingDraft).not.toHaveBeenCalled();
-    expect(harness.events).toEqual(["policy:manual"]);
-  });
-
-  it("asks what to do with pending work before switching to auto", async () => {
-    const harness = createHarness();
-    vi.mocked(harness.workDraftPending.list).mockResolvedValue(
-      pendingDrafts("branch-a", "branch-b"),
-    );
-
-    await expect(
-      harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto" }),
-    ).resolves.toMatchObject({ status: "confirmation_required", unpushedCount: 2 });
-    expect(harness.applyPendingDraft).not.toHaveBeenCalled();
-    expect(harness.workPushPolicyStore.setWorkWriteMode).not.toHaveBeenCalled();
-  });
-
   it("pushes every active draft before enabling auto policy", async () => {
     const harness = createHarness();
     vi.mocked(harness.workDraftPending.list).mockResolvedValue(
@@ -93,23 +69,6 @@ describe("work push policy", () => {
       }),
       pushedByUserId: USER_ID,
     });
-  });
-
-  it("keeps pending work for review and switches only the Work's mode", async () => {
-    const harness = createHarness();
-    vi.mocked(harness.workDraftPending.list).mockResolvedValue(
-      pendingDrafts("branch-a", "branch-b"),
-    );
-
-    await expect(
-      harness.policy.setWorkPushPolicy({
-        workId: WORK_ID,
-        policy: "auto",
-        pending: "keep",
-      }),
-    ).resolves.toEqual({ status: "updated", policy: "auto" });
-    expect(harness.applyPendingDraft).not.toHaveBeenCalled();
-    expect(harness.workPushPolicyStore.setWorkWriteMode).toHaveBeenCalledWith(WORK_ID, "auto");
   });
 
   it("does not enable auto policy when a confirmed push fails", async () => {

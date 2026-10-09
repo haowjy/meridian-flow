@@ -68,6 +68,7 @@ registerProcessShutdownCallback(async () => {
   record("begin-shutdown");
   runtime.runner.beginShutdown();
   record("drain-start");
+  process.stdout.write("draining\n");
   const drained = await runtime.backgroundTasks.drain(5_000);
   const turns = await runtime.repos.turns.listByThread(runtime.thread.id);
   const reply = turns.find((turn) => turn.role === "assistant");

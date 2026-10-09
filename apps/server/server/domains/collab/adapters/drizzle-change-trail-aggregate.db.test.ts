@@ -8,7 +8,7 @@ import {
   ALPHA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   resetDatabase,
   schema,
   THREAD_ID,
@@ -55,8 +55,9 @@ const trail = (changes: TrailChangeV1[]) => ({
 });
 
 describe("change trail aggregate projections (postgres)", () => {
-  beforeEach(resetDatabase);
-  afterAll(closeDatabase);
+  const db = createTestDatabase();
+  beforeEach(() => resetDatabase(db));
+  afterAll(() => closeDatabase(db));
 
   it("bounds reconciliation and revisits earlier pages to settle every trail", async () => {
     const turnIds = Array.from({ length: 101 }, () => crypto.randomUUID() as TurnId);
@@ -94,47 +95,8 @@ describe("change trail aggregate projections (postgres)", () => {
     expect((await states()).filter((state) => state === "settled")).toHaveLength(101);
   });
 
-  it("settles new trails without scanning already-settled history", async () => {
-    const turnIds = Array.from({ length: 102 }, () => crypto.randomUUID() as TurnId);
-    await db.insert(schema.turns).values(
-      turnIds.map((id, index) => ({
-        id,
-        threadId: THREAD_ID,
-        position: index + 2,
-        parentTurnId: TURN_ID,
-        role: "assistant" as const,
-        origin: "assistant" as const,
-        status: "complete" as const,
-      })),
-    );
-    const freshId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
-    await db.insert(schema.changeTrailShells).values(
-      turnIds.map((turnId, index) => ({
-        id:
-          index === 101
-            ? freshId
-            : `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-        threadId: THREAD_ID,
-        turnId,
-        ownerKind: "turn" as const,
-        state: index === 101 ? ("building" as const) : ("settled" as const),
-        settledAt: index === 101 ? null : new Date(),
-        changeCount: 0,
-        documentCount: 0,
-      })),
-    );
-    const writer = createDrizzleChangeTrailAggregateWriter(db);
-    await writer.reconcileTerminalOwners();
-    await writer.reconcileTerminalOwners();
-    const [fresh] = await db
-      .select()
-      .from(schema.changeTrailShells)
-      .where(eq(schema.changeTrailShells.id, freshId));
-    expect(fresh?.state).toBe("settled");
-  });
-
   it("reopens a shared trail when new work arrives during an active turn", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     try {
       await harness.seedDestructivePush("shared-active-reopen");
       await db

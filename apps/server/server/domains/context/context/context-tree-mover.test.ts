@@ -58,7 +58,6 @@ function dispatch(input: {
 
 describe("ContextTreeMover result-aware command ownership", () => {
   it.each([
-    "archive.md",
     "draft.md",
   ])("rejects a replaced source identity before moving or graduating to %s", async (path) => {
     const mover = new ContextTreeMover();

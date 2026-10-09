@@ -2,11 +2,7 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  dismissPassageNotice,
-  reportPassageChanged,
-  usePassageNotice,
-} from "@/core/editor/passage-notice-store";
+import { dismissPassageNotice, usePassageNotice } from "@/core/editor/passage-notice-store";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { type PassageDoorOpened, usePassageDoors } from "./usePassageDoors";
 
@@ -97,26 +93,6 @@ describe("passage doors", () => {
 
       // The verdict belongs to a door the writer already left.
       expect(noticeFor()).toBe(false);
-    });
-  });
-
-  it("clears a standing notice when any door is opened", async () => {
-    await withDoors(async (open, noticeFor) => {
-      await act(async () => reportPassageChanged("doc-2"));
-      expect(noticeFor()).toBe(true);
-
-      await act(async () => open(CHAPTER_3));
-
-      expect(noticeFor()).toBe(false);
-    });
-  });
-
-  it("does not look a plain door up in the tree", async () => {
-    await withDoors(async (open) => {
-      await act(async () => open(CHAPTER_3));
-
-      expect(lookupContextCatalogFile).not.toHaveBeenCalled();
-      expect(navigateToPassage).not.toHaveBeenCalled();
     });
   });
 

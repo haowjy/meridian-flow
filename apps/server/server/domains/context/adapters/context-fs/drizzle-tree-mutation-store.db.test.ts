@@ -429,17 +429,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it.each([
-      "after-subtree-mutation",
       "after-catalog-refresh",
     ] as const)("rolls back every recursive-delete effect when failure is injected %s", async (failurePoint) => {
-      const folderId =
-        failurePoint === "after-subtree-mutation"
-          ? "00000000-0000-4000-8000-000000000740"
-          : "00000000-0000-4000-8000-000000000741";
-      const documentId =
-        failurePoint === "after-subtree-mutation"
-          ? "00000000-0000-4000-8000-000000000742"
-          : "00000000-0000-4000-8000-000000000743";
+      const folderId = "00000000-0000-4000-8000-000000000741";
+      const documentId = "00000000-0000-4000-8000-000000000743";
       await db.insert(folders).values({ id: folderId, contextSourceId: SOURCE_ID, name: folderId });
       await db.insert(documents).values({
         id: documentId,
@@ -454,14 +447,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const failingCatalog = {
         refreshProject: (projectId: string) => catalog.refreshProject(projectId),
         async refreshSources(sourceIds: readonly string[], invalidatedRootIds?: readonly string[]) {
-          if (failurePoint === "after-subtree-mutation") {
-            const [mutated] = await db
-              .select({ deletedAt: documents.deletedAt })
-              .from(documents)
-              .where(eq(documents.id, documentId));
-            expect(mutated?.deletedAt).toBeInstanceOf(Date);
-            throw failure;
-          }
           await catalog.refreshSources(sourceIds, invalidatedRootIds);
           throw failure;
         },

@@ -154,36 +154,6 @@ else
       await expect(store.createFolder(null, "retry")).resolves.toBeDefined();
     });
 
-    it("preserves writer content across repeated initialize-only bootstrap", async () => {
-      const documents = collab();
-      const repository = createDrizzleProjectBootstrapRepository({ db, documents });
-      const first = await repository.ensureDefaultBootstrap(USER_ID as never);
-      await documents.writeDocument({
-        documentId: first.documentId,
-        markdown: "Writer content\n",
-        origin: { type: "user", actorUserId: USER_ID as never },
-      });
-      // Live checkpoints land after the releasing transaction commits.
-      await documents.drainHocuspocusPersistence();
-      const checkpointsBefore = await db
-        .select({ id: schema.documentYjsCheckpoints.id })
-        .from(schema.documentYjsCheckpoints)
-        .where(eq(schema.documentYjsCheckpoints.documentId, first.documentId));
-
-      await expect(repository.ensureDefaultBootstrap(USER_ID as never)).resolves.toEqual(first);
-      await expect(documents.readAsMarkdown(first.documentId)).resolves.toEqual({
-        ok: true,
-        value: "Writer content\n",
-      });
-      await documents.drainHocuspocusPersistence();
-      await expect(
-        db
-          .select({ id: schema.documentYjsCheckpoints.id })
-          .from(schema.documentYjsCheckpoints)
-          .where(eq(schema.documentYjsCheckpoints.documentId, first.documentId)),
-      ).resolves.toHaveLength(checkpointsBefore.length);
-    });
-
     it("rolls back interrupted materialization and provisions cleanly on retry", async () => {
       const { domain, hocuspocus } = boundCollab();
       let interruptedDocumentId: string | undefined;

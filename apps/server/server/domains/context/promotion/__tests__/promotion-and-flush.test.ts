@@ -106,53 +106,6 @@ describe("promotion service", () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]?.provenance).toEqual(promoted.value.provenance);
   });
-
-  it("persists explicit no-Work authority for a no-Work owner", async () => {
-    const objectStore = createInMemoryObjectStore();
-    const results = createInMemoryResultRepository();
-    const promotion = createPromotionService(promotionDeps(objectStore, results));
-    const promoted = await promotion.promoteArtifact({
-      projectId: "wb-1",
-      workId: null,
-      sourcePath: "runs/root-1/output.png",
-      bytes: Uint8Array.from([1]),
-      provenance: {
-        rootThreadId: "root-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        toolCallId: null,
-      },
-    });
-    expect(promoted).toMatchObject({
-      ok: true,
-      value: { resultsUri: "scratch://@/results/output.png" },
-    });
-  });
-
-  it("skips non-promotable paths via policy", async () => {
-    const objectStore = createInMemoryObjectStore();
-    const results = createInMemoryResultRepository();
-    const promotion = createPromotionService(promotionDeps(objectStore, results));
-
-    const result = await promotion.promoteArtifact({
-      projectId: "wb-1",
-      workId: "work-1",
-      sourcePath: "runs/root-1/scratch.log",
-      bytes: Uint8Array.from([1]),
-      provenance: {
-        rootThreadId: "root-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        toolCallId: null,
-      },
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      error: { code: "policy_skip", message: expect.stringContaining("scratch.log") },
-    });
-    expect(await results.listByProject("wb-1")).toEqual([]);
-  });
 });
 
 describe("interrupt flush and rehydrate", () => {

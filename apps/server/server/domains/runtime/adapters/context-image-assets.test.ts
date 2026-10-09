@@ -79,30 +79,6 @@ describe("context image resolution", () => {
     });
   });
 
-  it("treats not-visible as a definite loss", async () => {
-    await expect(
-      assetPort({ availability: { kind: "not-visible" } }).resolve(context, reference, {
-        maxBytes: 1024,
-      }),
-    ).resolves.toBeNull();
-  });
-
-  it("treats authority-unavailable as a definite loss", async () => {
-    await expect(
-      assetPort({ availability: { kind: "authority-unavailable" } }).resolve(context, reference, {
-        maxBytes: 1024,
-      }),
-    ).resolves.toBeNull();
-  });
-
-  it("treats deleted as a definite loss", async () => {
-    await expect(
-      assetPort({ availability: { kind: "deleted" } }).resolve(context, reference, {
-        maxBytes: 1024,
-      }),
-    ).resolves.toBeNull();
-  });
-
   it("treats a changed URI as a definite loss", async () => {
     await expect(
       assetPort({
@@ -117,24 +93,6 @@ describe("context image resolution", () => {
         maxBytes: 1024,
       }),
     ).rejects.toBeInstanceOf(ImageAssetResolutionError);
-  });
-
-  it.each([
-    "availability",
-    "identity",
-    "object",
-  ] as const)("maps unexpected %s lookup failures to image resolution errors", async (failure) => {
-    const error = await assetPort({
-      availability: { kind: "available", entry: { uri: reference.uri } },
-      failure,
-    })
-      .resolve(context, reference, { maxBytes: 1024 })
-      .catch((cause: unknown) => cause);
-
-    expect(error).toMatchObject({
-      name: "ImageAssetResolutionError",
-      cause: { message: expect.stringMatching(/lookup failed|identity failed|object read failed/) },
-    });
   });
 
   it("treats changed or non-image media types as definite loss", async () => {

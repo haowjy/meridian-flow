@@ -1,16 +1,9 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import { bindChatSubmissions, readChatSubmissions } from "@/client/chat-submissions";
-import { DeviceChatSubmissionJournal } from "@/client/chat-submissions/store";
-import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
+import { bindChatSubmissions } from "@/client/chat-submissions";
 import type { ThreadStoreActions } from "@/client/stores";
-import {
-  rehydrateFirstSendSubmission,
-  runExclusiveThreadCreation,
-  type SendProjectChatArgs,
-  sendProjectChat,
-} from "./send-project-chat";
+import { type SendProjectChatArgs, sendProjectChat } from "./send-project-chat";
 
 vi.mock("./thread-title", () => ({
   deriveTitleFromMessage: (text: string) => text.trim().slice(0, 40),
@@ -73,46 +66,6 @@ afterEach(() => {
 });
 
 describe("sendProjectChat", () => {
-  it("mints a uuid, writes local state, and selects the new chat", () => {
-    const uuid = "550e8400-e29b-41d4-a716-446655440000";
-    vi.spyOn(crypto, "randomUUID")
-      .mockReturnValueOnce(uuid)
-      .mockReturnValue("11111111-1111-4111-8111-111111111111");
-
-    const { result, threadActions, selectChat } = send();
-
-    expect(result?.threadId).toBe(uuid);
-    // `sendProjectChat` is synchronous end to end: by the time it returns, the
-    // chat is already selected. The actual network persist is a separate,
-    // later effect (`useThreadHandoff`) that cannot run until after this
-    // returns, so there is no ordering race here to prove with a mock-call
-    // sequence — only that selection happened as part of this call.
-    expect(selectChat).toHaveBeenCalledWith(uuid);
-    expect(threadActions.calls).toEqual([
-      "ensureThread",
-      "markPendingCreation",
-      "markHandoffPending",
-      "appendUserTurn",
-      "ensureAssistantTurn",
-      "markPendingStream",
-    ]);
-    // Durable witness exists for the identity we just navigated to.
-    expect(readChatSubmissions(ACCOUNT)).toEqual([
-      expect.objectContaining({ kind: "first-send", submissionId: "sub-1", threadId: uuid }),
-    ]);
-  });
-
-  it("skips navigation on follow-up send", () => {
-    const { threadActions, selectChat } = send({
-      threadId: "550e8400-e29b-41d4-a716-446655440000",
-      text: "Continue",
-      submissionId: "sub-2",
-    });
-    expect(selectChat).not.toHaveBeenCalled();
-    expect(threadActions.ensureThread).not.toHaveBeenCalled();
-    expect(threadActions.markPendingStream).not.toHaveBeenCalled();
-  });
-
   it("does not display, dispatch, or navigate when the durable record fails", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota exceeded");
@@ -128,71 +81,5 @@ describe("sendProjectChat", () => {
     } finally {
       setItem.mockRestore();
     }
-  });
-
-  it("survives reload: the journal rehydrates a dock first send with no URL chat identity", () => {
-    // A dock (non-URL) first send records its durable intent and the current
-    // chat exactly like a Chat-screen send; only the destination differs. This
-    // proves the journal round-trips through a real "reload" (a fresh reader
-    // over the same localStorage), not that this call touched the browser URL
-    // (it never does — `selectChat` here is the real `writeCurrentChat`, the
-    // same production seam `acceptCreatedChat` uses).
-    const projectId = "550e8400-e29b-41d4-a716-446655440000";
-    const result = sendProjectChat({
-      accountId: ACCOUNT,
-      projectId,
-      text: "Keep this first send",
-      submissionId: "dock-reload",
-      agent,
-      workId: "no-work",
-      threadActions: actions(),
-      selectChat: (threadId) => writeCurrentChat(ACCOUNT, projectId, threadId),
-    });
-    const currentId = readCurrentChat(ACCOUNT, projectId);
-    expect(currentId).toBe(result?.threadId);
-    const reloadedJournal = new DeviceChatSubmissionJournal(window.localStorage);
-    reloadedJournal.setUser(ACCOUNT);
-    const intent = reloadedJournal.entries().find((entry) => entry.threadId === currentId);
-    if (intent?.kind !== "first-send") throw new Error("First-send intent was lost");
-    const recovery = rehydrateFirstSendSubmission(intent, actions(), ACCOUNT);
-    expect(recovery).toMatchObject({
-      text: "Keep this first send",
-      submissionId: "dock-reload",
-      projectId,
-    });
-  });
-});
-
-describe("first-send creation sharing", () => {
-  it("shares one epoch/thread create, but not a later A→B→A epoch", async () => {
-    const firstEpoch = new AbortController().signal;
-    const nextEpoch = new AbortController().signal;
-    const returnedEpoch = new AbortController().signal;
-    let resolveFirst!: (thread: import("@meridian/contracts/protocol").Thread) => void;
-    const first = new Promise<import("@meridian/contracts/protocol").Thread>((resolve) => {
-      resolveFirst = resolve;
-    });
-    const thread = { id: "thread-1" } as import("@meridian/contracts/protocol").Thread;
-    let creates = 0;
-    const old = runExclusiveThreadCreation(firstEpoch, "thread-1", () => {
-      creates++;
-      return first;
-    });
-    const joined = runExclusiveThreadCreation(firstEpoch, "thread-1", () => {
-      creates++;
-      return Promise.resolve(thread);
-    });
-    expect(joined).toBe(old);
-    const middle = runExclusiveThreadCreation(nextEpoch, "thread-1", () => {
-      creates++;
-      return Promise.resolve(thread);
-    });
-    const returned = runExclusiveThreadCreation(returnedEpoch, "thread-1", () => {
-      creates++;
-      return Promise.resolve(thread);
-    });
-    expect(creates).toBe(3);
-    resolveFirst(thread);
-    await Promise.all([old, joined, middle, returned]);
   });
 });

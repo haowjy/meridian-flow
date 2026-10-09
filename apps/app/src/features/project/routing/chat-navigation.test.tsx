@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
+import { readCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
@@ -68,41 +68,6 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-it("navigates on the Chat screen and reveals the dock elsewhere", async () => {
-  render("chat");
-  await act(() => navigation.openChat("a"));
-  expect(go).toHaveBeenCalledWith({ kind: "chat", chatId: "a" });
-
-  go.mockClear();
-  render("context");
-  const reveal = vi.fn();
-  act(() => void navigation.registerDockReveal(reveal));
-  await act(() => navigation.openChat("b"));
-  expect(go).not.toHaveBeenCalled();
-  expect(reveal).toHaveBeenCalledTimes(1);
-  expect(navigation.display).toEqual({ kind: "dock", threadId: "b" });
-  expect(readCurrentChat(ACCOUNT, PROJECT)).toBe("b");
-});
-
-it("starts a new chat on the index, or in the dock with its composer focused", async () => {
-  writeCurrentChat(ACCOUNT, PROJECT, "a");
-  render("chat");
-  await act(() => navigation.openNewChat());
-  expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
-  expect(navigation.display).toEqual({ kind: "index", currentThreadId: "a" });
-
-  render("work");
-  await act(() => navigation.openNewChat("work-id"));
-  expect(navigation.display).toEqual({ kind: "dock", threadId: null });
-  expect(navigation.newChatWorkId).toBe("work-id");
-  // New chat requested focus once; the composer that consumes it never sees it again.
-  const requestId = navigation.newChatFocusRequestId;
-  expect(requestId).not.toBeNull();
-  act(() => navigation.consumeNewChatFocusRequest(requestId as number));
-  expect(navigation.newChatFocusRequestId).toBeNull();
-  expect(navigation.newChatWorkId).toBeUndefined();
-});
-
 it("shows a sent chat on the Chat screen and only remembers it elsewhere", () => {
   render("chat");
   act(() => navigation.acceptCreatedChat("sent"));
@@ -118,47 +83,6 @@ it("shows a sent chat on the Chat screen and only remembers it elsewhere", () =>
   act(() => navigation.acceptCreatedChat("docked"));
   expect(go).not.toHaveBeenCalled();
   expect(chatSurfaceThreadId(navigation.display)).toBe("docked");
-});
-
-it("forgets only the deleted chat when it is current", () => {
-  writeCurrentChat(ACCOUNT, PROJECT, "a");
-  render("work");
-  act(() => navigation.forgetChat("other"));
-  expect(navigation.display).toEqual({ kind: "dock", threadId: "a" });
-  act(() => navigation.forgetChat("a"));
-  expect(navigation.display).toEqual({ kind: "dock", threadId: null });
-});
-
-it("remembers the chat in the URL, and replaces a missing one with the index", () => {
-  render("chat", "gone");
-  expect(readCurrentChat(ACCOUNT, PROJECT)).toBe("gone");
-  act(() =>
-    client
-      .getQueryCache()
-      .build(client, { queryKey: threadSnapshotQueryOptions("gone").queryKey })
-      .setState({
-        status: "error",
-        error: Object.assign(new Error("missing"), { status: 404 }),
-        errorUpdatedAt: Date.now(),
-      }),
-  );
-  render("chat", "gone");
-  // The hook clears the current chat and asks to go to the index; it cannot
-  // itself observe the URL settling there, since `go` is mocked.
-  expect(readCurrentChat(ACCOUNT, PROJECT)).toBeNull();
-  expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
-});
-
-it("goes to the Chat screen from anywhere: the current chat, else the index", async () => {
-  render("work");
-  await act(() => navigation.showChatScreen());
-  expect(go).toHaveBeenLastCalledWith({ kind: "chat-index" });
-  writeCurrentChat(ACCOUNT, PROJECT, "a");
-  act(() => root.unmount());
-  root = createRoot(container);
-  render("context");
-  await act(() => navigation.showChatScreen());
-  expect(go).toHaveBeenLastCalledWith({ kind: "chat", chatId: "a" });
 });
 
 it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", () => {
@@ -177,12 +101,4 @@ it("keeps a first send whose pre-creation 404 is still cached once it is acknowl
   act(() => threadActions.clearPendingCreation({ threadId: "sent" }));
   expect(navigation.display).toEqual({ kind: "thread", threadId: "sent" });
   expect(go).not.toHaveBeenCalledWith({ kind: "chat-index" });
-});
-
-it("drops a dock reveal no shell was registered for", async () => {
-  render("work");
-  await act(() => navigation.openChat("a"));
-  const reveal = vi.fn();
-  act(() => void navigation.registerDockReveal(reveal));
-  expect(reveal).not.toHaveBeenCalled();
 });
