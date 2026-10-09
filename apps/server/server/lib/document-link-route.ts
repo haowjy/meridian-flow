@@ -33,11 +33,10 @@ export async function handleDocumentLinkResolveRequest(
     userId: input.userId,
     workId: input.workId,
     target: input.target,
-    holder: input.holder,
+    previousLocations: !input.holder,
   });
   if (!document) return { document };
-  // A link resolves only to a file the writer can read (file-access §4). This
-  // also covers answers found through the holder's pending redirects.
+  // A link resolves only to a file the writer can read (file-access §4).
   const access = await deps.fileAccess.listAccess({ accountId: input.userId }, [
     document.documentId as DocumentId,
   ]);

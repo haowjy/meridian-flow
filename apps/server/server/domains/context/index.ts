@@ -37,7 +37,6 @@ export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
-export { createLinkUpdateWorker, type LinkUpdateWorker } from "./links/link-update-worker.js";
 export type {
   AdapterFault,
   AdapterFileEntry,

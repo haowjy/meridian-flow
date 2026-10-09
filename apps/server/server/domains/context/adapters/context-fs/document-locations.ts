@@ -1,4 +1,5 @@
 /** Transactional namespace claims and direct-to-identity document location history. */
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contentDocumentPredicate,
@@ -122,6 +123,24 @@ async function lockAdvisoryKeys(db: Database, keys: readonly string[]): Promise<
     await currentDrizzleDb(db).execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0::bigint))`,
     );
+}
+
+/**
+ * Row-lock every document a move mutates (moved files and an overwrite victim), sorted. NO KEY
+ * UPDATE is compatible with the journal's holder FK KEY SHARE but orders a same-source move
+ * against derive certification and other moves of the same rows.
+ */
+export async function lockMovedDocumentRows(
+  db: Database,
+  documentIds: readonly DocumentId[],
+): Promise<void> {
+  if (documentIds.length === 0) return;
+  await currentDrizzleDb(db)
+    .select({ id: documents.id })
+    .from(documents)
+    .where(inArray(documents.id, [...new Set(documentIds)]))
+    .orderBy(documents.id)
+    .for("no key update");
 }
 
 export type NamespaceLocation = { id: string; path: string; kind: "file" | "directory" };

@@ -13,12 +13,13 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
+  documentLinks,
   documents,
   linkAheadRefs,
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
@@ -27,6 +28,13 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { isDrafted } from "../../file-policy/index.js";
 import {
+  createNoopEventSink,
+  type EventSink,
+  emitEvent,
+  unknownToEventPayload,
+} from "../../observability/index.js";
+import {
+  type AheadRecoveryScope,
   type AheadRegistration,
   type LinkAheadRegistry,
   RegistrationInsideTransactionError,
@@ -59,6 +67,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   constructor(
     private readonly db: Database,
     private readonly resolveManifestMembership: MembershipResolver,
+    private readonly eventSink: EventSink = createNoopEventSink(),
   ) {}
 
   async register(registrations: readonly AheadRegistration[]): Promise<void> {
@@ -128,6 +137,61 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       }
     }
     return settled;
+  }
+
+  async registerUnregistered(
+    scope: AheadRecoveryScope | undefined,
+    limit: number,
+  ): Promise<number> {
+    if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
+    const holderProject = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
+    const pending = await this.db
+      .selectDistinctOn([documentLinks.aheadId], {
+        aheadId: documentLinks.aheadId,
+        address: documentLinks.address,
+        holderProjectId: sql<ProjectId>`${holderProject}`,
+      })
+      .from(documentLinks)
+      .innerJoin(documents, eq(documents.id, documentLinks.sourceDocumentId))
+      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .leftJoin(works, eq(works.id, contextSources.workId))
+      .innerJoin(projects, sql`${projects.id} = ${holderProject}`)
+      .leftJoin(linkAheadRefs, eq(linkAheadRefs.aheadId, documentLinks.aheadId))
+      .where(
+        and(
+          isNotNull(documentLinks.aheadId),
+          isNotNull(documentLinks.address),
+          isNull(linkAheadRefs.aheadId),
+          isNull(documents.deletedAt),
+          scope === undefined
+            ? undefined
+            : "documentId" in scope
+              ? eq(documentLinks.sourceDocumentId, scope.documentId)
+              : scope.personalOwnerId
+                ? eq(projects.userId, scope.personalOwnerId)
+                : sql`${holderProject} = ${scope.projectId}`,
+        ),
+      )
+      .orderBy(documentLinks.aheadId)
+      .limit(limit);
+    let registered = 0;
+    for (const row of pending) {
+      if (!row.aheadId || !row.address) continue;
+      try {
+        await this.register([
+          { aheadId: row.aheadId, holderProjectId: row.holderProjectId, address: row.address },
+        ]);
+        registered++;
+      } catch (cause) {
+        emitEvent(this.eventSink, {
+          level: "warn",
+          source: "context.link-ahead",
+          name: "AheadRegistrationFailed",
+          payload: { aheadId: row.aheadId, ...unknownToEventPayload(cause) },
+        });
+      }
+    }
+    return registered;
   }
 
   /** Decoded canonical address → (project, scheme, Work, path), as `document-link-rows.ts` does. */
@@ -338,6 +402,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 export function createDrizzleLinkAheadRegistry(
   db: Database,
   resolveManifestMembership: MembershipResolver,
+  eventSink?: EventSink,
 ): LinkAheadRegistry {
-  return new DrizzleLinkAheadRegistry(db, resolveManifestMembership);
+  return new DrizzleLinkAheadRegistry(db, resolveManifestMembership, eventSink);
 }

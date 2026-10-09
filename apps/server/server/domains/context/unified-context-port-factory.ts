@@ -358,7 +358,6 @@ function createProductionStoreResolvers(
   manifestMembership: ManifestMembershipPort,
   catalogMutations: ContextCatalogMutationPort,
   eventSink?: EventSink,
-  kickLinkUpdates?: () => void,
   arrivals?: DocumentArrivals,
 ): ContextStoreResolvers {
   const membershipObserverFor = (
@@ -418,7 +417,6 @@ function createProductionStoreResolvers(
         manifestView ? membershipObserverFor(manifestView) : undefined,
         catalogMutations,
         eventSink,
-        kickLinkUpdates,
         arrivals,
       );
     },
@@ -461,7 +459,6 @@ export function createProductionUnifiedContextPortFactory(options: {
   documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
   manifestMembership: ManifestMembershipPort;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
-  kickLinkUpdates?: () => void;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
   /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
@@ -477,13 +474,12 @@ export function createProductionUnifiedContextPortFactory(options: {
     options.manifestMembership,
     catalogMutations,
     options.eventSink,
-    options.kickLinkUpdates,
     options.arrivals,
   );
 
-  function moveLinks(projectId: string, userId: string, responseId?: string | null) {
+  function moveLinks(projectId: string, userId: string) {
     return {
-      mover: { userId, responseId },
+      linkNoteProjectId: projectId,
       async flush(source: import("./context/context-tree-mover.js").ContextTreeDispatch) {
         if (!options.documentDerivations) return;
         const [project] = await options.db
@@ -526,7 +522,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         assetPaths: options.assetPaths,
         documentCreation: options.documentSync,
-        moveLinks: moveLinks(projectId, userId, thread?.responseId),
+        moveLinks: moveLinks(projectId, userId),
         operationReceipts: new ContextOperationReceipts(
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),

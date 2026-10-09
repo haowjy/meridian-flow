@@ -48,7 +48,6 @@ import {
   createFigureAssetService,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
-  createLinkUpdateWorker,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createUploadIntake,
@@ -57,7 +56,6 @@ import {
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
-  type LinkUpdateWorker,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type ProjectDocumentCatalogRefreshPort,
@@ -259,7 +257,6 @@ export type AppServices = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
-  linkUpdates: LinkUpdateWorker;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -348,7 +345,6 @@ export type ProductionAppPorts = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
-  linkUpdates: LinkUpdateWorker;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -510,16 +506,21 @@ export async function createProductionAppPorts(input: {
     readAgentChain: readChain,
   });
   // Built before the collab domain it serves: membership binds late, like the catalog's.
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, (input) => {
-    if (!boundManifestMembership) {
-      throw new Error("Manifest membership resolver used before the collab domain was bound");
-    }
-    return boundManifestMembership.resolveManifestMembership(input);
-  });
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
+    db,
+    (input) => {
+      if (!boundManifestMembership) {
+        throw new Error("Manifest membership resolver used before the collab domain was bound");
+      }
+      return boundManifestMembership.resolveManifestMembership(input);
+    },
+    eventSink,
+  );
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const documentSync = createCollabDomain({
     db,
     arrivals,
+    aheadRegistrations: linkAheadRegistry,
     fileAccess,
     assetPaths,
     eventSink,
@@ -557,18 +558,12 @@ export async function createProductionAppPorts(input: {
     workAuthorityResolver,
     eventSink,
   });
-  const linkUpdates = createLinkUpdateWorker({
-    db,
-    rewriteDocumentLinks: documentSync.rewriteDocumentLinks,
-    eventSink,
-  });
   contextPorts = createProductionUnifiedContextPortFactory({
     assetPaths,
     db,
     documentSync,
     manifestMembership: documentSync,
     documentDerivations: documentSync.documentDerivations,
-    kickLinkUpdates: linkUpdates.kick,
     catalogMutations: contextCatalog,
     eventSink,
     arrivals,
@@ -650,7 +645,6 @@ export async function createProductionAppPorts(input: {
     eventSink,
     eventQuery: input.eventQuery,
     documentSync,
-    linkUpdates,
     linkAheadRegistry,
     contextPorts,
     contextCatalog,
@@ -1068,7 +1062,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
-    linkUpdates: ports.linkUpdates,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -1121,7 +1114,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       runner.beginShutdown();
       handoffBriefs.beginShutdown();
       ports.documentSync.dispose();
-      await ports.linkUpdates.stop();
       await ports.documentSync.documentDerivations.stop();
       const timeoutMs = APP_DRAIN_DEADLINE_MS;
       const drained = await backgroundTasks.drain(timeoutMs);
@@ -1273,6 +1265,7 @@ export function createInMemoryAppServices(): AppServices {
   const linkAheadRegistry: LinkAheadRegistry = {
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
+    registerUnregistered: async () => unsupported(),
   };
 
   return {
@@ -1353,7 +1346,6 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     linkAheadRegistry,
-    linkUpdates: { sweep: async () => 0, kick() {}, stop: async () => {} },
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
     contextCatalogRefresh: {
