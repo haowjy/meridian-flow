@@ -5,6 +5,7 @@ import {
   documents,
   linkAheadRefs,
   projects,
+  threads,
   users,
   works,
 } from "@meridian/database/schema";
@@ -269,7 +270,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           membership: async (view) => {
             provisioned.push(view);
-            return { members: liveMembers };
+            return { members: view.workId === noWork ? [...liveMembers, discarded] : liveMembers };
           },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
@@ -338,6 +339,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const answer of response.answers)
         if (answer.state === "gone")
           expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
+      // A chat's lineage Scratch owner must not erase its No Work draft view.
+      const root = crypto.randomUUID();
+      await db
+        .insert(threads)
+        .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
+      const noWorkDraft = await handleDocumentLinkResolveRequest(deps, {
+        projectId: p,
+        userId: u as never,
+        request: {
+          rootThreadId: root,
+          baseUri: null,
+          links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded.md" }],
+        },
+      });
+      expect(noWorkDraft.answers).toMatchObject([
+        { state: "document", document: { id: discarded }, inDraft: true },
+      ]);
       // A Work of another project never reaches draft membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({
