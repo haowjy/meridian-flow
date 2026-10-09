@@ -34,8 +34,6 @@ export interface SpliceRestoreInput {
   /** `newText` parsed with spans. */
   parsed: ParsedContentWithSpans;
   splice: FindSplice;
-  /** Applies the `asset:` rule to freshly parsed nodes; occurrence order is kept. */
-  assignSources(blocks: readonly PMNode[]): PMNode[];
   /** Ref assignment for the inside occurrences, index-aligned with `written`. */
   assignOccurrences(
     old: readonly LinkOccurrence[],
@@ -59,7 +57,7 @@ export function restoreOutsideSplice(
   const oldOccurrences = walkLinkOccurrences(input.oldGroup);
   const { oldSpans, parsed } = input;
   const { newText } = input;
-  const blocks = input.assignSources(parsed.blocks);
+  const blocks = parsed.blocks;
   const newOccurrences = walkLinkOccurrences(blocks);
   // The serialized old group must reparse into the same occurrences, or its spans name nothing.
   if (oldSpans.length !== oldOccurrences.length || parsed.spans.length !== newOccurrences.length)
