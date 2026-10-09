@@ -63,8 +63,12 @@ export function WorkspaceNavBody({
       <div className="min-h-0 flex-1">{children}</div>
 
       {scratch ? (
+        // The control renders nothing with no chat on screen; `empty:hidden` drops its divider then.
         <div
-          className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
+          className={cn(
+            "shrink-0 border-t border-border-subtle px-2 empty:hidden",
+            phone ? "pt-2" : "py-1.5",
+          )}
         >
           {scratch}
         </div>
