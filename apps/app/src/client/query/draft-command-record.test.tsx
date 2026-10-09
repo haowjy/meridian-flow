@@ -69,7 +69,7 @@ describe("draft command records", () => {
     });
   });
 
-  it("keeps the answer that closed the draft after the claim is released, until the reads that could list it settle", async () => {
+  it("keeps nothing of the answer that closed the draft once the claim is released, even with a read in flight", async () => {
     await run(async () => {
       const closing = { classIds: ["c"], operationIds: ["1"], mode: "discard" as const };
       const earlier = deferred<typeof listed>();
@@ -77,28 +77,15 @@ describe("draft command records", () => {
       await act(async () => {
         beginDraftCommand(draft, { ...closing, completesDraft: true });
         answerDraftCommandClosed(draft, { documentName: "Chapter 13" });
-        releaseDraftCommand(draft);
       });
       expect(closedByCommand(held, draft)).toEqual({ documentName: "Chapter 13" });
-      expect(draftCommandPendingIn(held, scope)).toBe(false);
-      earlier.resolve(listed);
-      // The stale read that still lists the draft cannot bring it back.
-      expect(await read).toEqual([]);
-      await act(async () => undefined);
+      expect(draftCommandPendingIn(held, scope)).toBe(true);
+      await act(async () => releaseDraftCommand(draft));
+      // The server reuses the id for the next proposal: the answer is gone with the claim.
       expect(closedByCommand(held, draft)).toBeNull();
-
-      // With no read in flight the answer leaves nothing behind, and a claim that did not close the draft never does.
-      await act(async () => {
-        beginDraftCommand(draft, { ...closing, completesDraft: true });
-        answerDraftCommandClosed(draft, { documentName: "Chapter 13" });
-        releaseDraftCommand(draft);
-      });
       expect(held).toEqual({});
-      await act(async () => {
-        beginDraftCommand(draft, closing);
-        releaseDraftCommand(draft);
-      });
-      expect(held).toEqual({});
+      earlier.resolve(listed);
+      await read;
     });
   });
 
