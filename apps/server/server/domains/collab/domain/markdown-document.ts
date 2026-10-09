@@ -227,8 +227,8 @@ export function createMarkdownDocumentEngine(
     origin: RuntimeOrigin,
     schemaType: YjsTrackedSchemaType,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
-    // This copy stages the replacement update so journal admission completes
-    // before the live document is mutated; it is not a serialization guard.
+    // This copy stages the replacement so serialization and journal admission
+    // both complete before the live document is mutated.
     const draft = createCollabYDoc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
     const beforeVector = Y.encodeStateVector(draft);
@@ -239,6 +239,9 @@ export function createMarkdownDocumentEngine(
       deps.model.insertBlocks(toDocHandle(draft), null, parsed);
     }, yjsOrigin);
     const update = Y.encodeStateAsUpdate(draft, beforeVector);
+    // Serialize before admission: content the codec can't spell must fail
+    // while the journal and live document are still untouched.
+    const markdown = serializeForSchema(documentId, draft, schemaType);
     const meta = deps.metaForOrigin(origin);
     let seq = 0;
     await admitFreshAuthorship(
@@ -263,7 +266,7 @@ export function createMarkdownDocumentEngine(
     );
     return Ok({
       documentId,
-      markdown: serializeForSchema(documentId, draft, schemaType),
+      markdown,
       updateSeq: seq,
       updateData: update,
       meta: { ...meta, seq },

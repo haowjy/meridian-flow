@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: model writes and checkpoint restore apply ProseMirror nodes directly, with no Markdown round trip between resolving and applying. Markdown-generated writes are unchanged; a restored native snapshot keeps structure the old round trip normalized away. A restore that fails leaves the journal and live document untouched.
+
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 
 - Development: trim duplicate maintenance-attribution cases; retain four focused risks and one suite-owned PostgreSQL convergence witness.
