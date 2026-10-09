@@ -7,6 +7,7 @@
  * no document is yet and settles on the first one to arrive there.
  */
 import { parseContextUri } from "./context-uri.js";
+import { parseRequestId } from "./request-id.js";
 
 export type DocumentRef = `doc:${string}`;
 export type AheadRef = `ahead:${string}`;
@@ -16,23 +17,26 @@ export type ParsedLinkRef =
   | { kind: "doc"; documentId: string }
   | { kind: "ahead"; aheadId: string };
 
-// Ids are UUIDs in production; tests use short readable ids, so the grammar
-// only fences out separators and whitespace rather than demanding a UUID.
-const REF = /^(doc|ahead):([A-Za-z0-9_-]+)$/;
+const REF = /^(doc|ahead):(.*)$/s;
 
-/** Null for null, the empty string, and anything malformed (never throws). */
+/**
+ * Null for null, the empty string, and anything malformed (never throws).
+ * Document and ahead ids are Postgres UUIDs, so the id must be a canonical
+ * UUID (normalized to lowercase); this is the one boundary that keeps
+ * untrusted clipboard or wire refs from reaching a lookup.
+ */
 export function parseLinkRef(value: unknown): ParsedLinkRef | null {
   if (typeof value !== "string") return null;
   const match = REF.exec(value);
-  if (!match) return null;
-  const [, kind, id = ""] = match;
-  return kind === "doc" ? { kind: "doc", documentId: id } : { kind: "ahead", aheadId: id };
+  const id = match ? parseRequestId(match[2]) : null;
+  if (!match || !id) return null;
+  return match[1] === "doc" ? { kind: "doc", documentId: id } : { kind: "ahead", aheadId: id };
 }
 
 export function documentRef(documentId: string): DocumentRef {
-  const ref = `doc:${documentId}` as const;
-  if (!parseLinkRef(ref)) throw new RangeError(`Invalid document id for a ref: ${documentId}`);
-  return ref;
+  const parsed = parseLinkRef(`doc:${documentId}`);
+  if (parsed?.kind !== "doc") throw new RangeError(`Invalid document id for a ref: ${documentId}`);
+  return `doc:${parsed.documentId}`;
 }
 
 /** `ahead:` + crypto.randomUUID(). The only minting function, server and client. */
@@ -42,7 +46,8 @@ export function mintAheadRef(): AheadRef {
 
 /**
  * The address an ahead ref is minted for: canonical, absolute, suffix-free,
- * always with an extension. A link without one gets `.md` (the default the app
+ * decoded (a catalog/registry key, not a stored href; store it with
+ * `storedHref`), always with an extension. A link without one gets `.md` (the default the app
  * creates). Image and figure sources without an extension return null: an
  * upload always has one, so such a ref could never settle, and the caller
  * treats the source as a literal (no ref).
