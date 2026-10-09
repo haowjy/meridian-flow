@@ -441,8 +441,10 @@ export const linkAheadRefs = pgTable(
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
   (table) => [
+    // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
+    // exact path (Postgres B-tree tuples cap near 2.7 kB).
     index("link_ahead_refs_unsettled")
-      .on(table.projectId, table.scheme, table.workId, table.path)
+      .on(table.projectId, table.scheme, table.workId, sql`md5(${table.path})`)
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],
