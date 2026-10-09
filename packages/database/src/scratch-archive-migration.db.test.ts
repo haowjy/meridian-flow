@@ -6,6 +6,7 @@ import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 import type { ContextCatalog } from "../../../apps/server/server/domains/context/ports/context-catalog.js";
+import type { UploadIntakeRepository } from "../../../apps/server/server/domains/context/uploads/upload-intake.js";
 import { runMigrations } from "../../../tools/dev/lib/migration-runner.js";
 import {
   archiveNoteState,
@@ -90,12 +91,35 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       expect(await target`SELECT folder_id FROM documents WHERE id = ${id(16)}`).toEqual([
         { folder_id: id(13) },
       ]);
+      // Exercise the actual lifecycle reader, not just the migrated row shape.
+      const { createDrizzleUploadIntakeRepository } = (await import(
+        new URL(
+          "../../../apps/server/server/domains/context/uploads/drizzle-upload-intake.ts",
+          import.meta.url,
+        ).href
+      )) as { createDrizzleUploadIntakeRepository(db: Database): UploadIntakeRepository };
+      const intakeRepository = createDrizzleUploadIntakeRepository(db);
+      const reservation = await intakeRepository.transaction(() =>
+        intakeRepository.lockForFinalize(id(2), "reserved-intake"),
+      );
+      expect(reservation).toMatchObject({
+        state: "reserved",
+        owner: { kind: "work", workId: id(4), workSlug: null },
+        canonicalUri: "unfiled://Scratch (2)/map.png",
+        finalPath: "Scratch (2)/map.png",
+        objectKey: `uploads/${id(2)}/${id(21)}`,
+      });
+      expect(
+        await intakeRepository.transaction(() =>
+          intakeRepository.finalize(id(2), "reserved-intake"),
+        ),
+      ).toEqual({ ...reservation, state: "finalized" });
       expect(
         await target`SELECT context_source_id, work_id, final_path, canonical_uri, object_key, fingerprint FROM upload_intakes`,
       ).toEqual([
         {
           context_source_id: id(8),
-          work_id: null,
+          work_id: id(4),
           final_path: "Scratch (2)/map.png",
           canonical_uri: "unfiled://Scratch (2)/map.png",
           object_key: `uploads/${id(2)}/${id(21)}`,
