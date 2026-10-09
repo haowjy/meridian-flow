@@ -11,7 +11,6 @@ export type LinkTarget =
   | { kind: "external"; url: string };   // http, https, mailto
 
 classifyLinkTarget(href: string): LinkTarget | null
-documentLinkTarget(target: LinkTarget, baseUri: string): DocumentLinkTarget | null
 normalizeLinkHref(input: string): string | null
 linkTargetHref(target: LinkTarget): string
 linkTargetAddress(target: LinkTarget, baseUri: string | null): string | null
@@ -19,9 +18,8 @@ linkTargetAddress(target: LinkTarget, baseUri: string | null): string | null
 
 There are no wikilinks: `[[name]]` is text wherever it appears, and only a
 paste converts it ([Pasted `[[Name]]`](#pasted-name)). The two
-internal kinds line up one-for-one with `DocumentLinkTarget` in
-`@meridian/contracts/protocol`, which is what `POST /api/projects/:projectId/
-links/resolve` takes. `baseUri` is the URI of the document holding the link;
+internal kinds reach `POST /api/projects/:projectId/links/resolve` as
+`{ ref, href }`, the href spelled by `linkTargetHref`. `baseUri` is the URI of the document holding the link;
 only `relative` needs it and only the caller knows it. `linkTargetAddress`
 resolves either kind to its canonical Context URI through `resolveDocumentHref`
 (`@meridian/contracts`), the one href module both resolvers use;
@@ -123,14 +121,17 @@ type LinkQuestion = { ref: string | null; target: LinkTarget };
 type LocalLinkAnswer =
   | { kind: "answered"; answer: LinkAnswer }              // final; the server is not asked
   | { kind: "unasked" }                                   // cannot be asked here; cached as failed
-  | { kind: "ask"; provisional: ResolvedLinkAnswer | null }; // shown at once while asking
+  | { kind: "ask"; provisional: DocumentAnswer | null }; // shown at once while asking
 type InternalLinkResolver = {
+  index?: LinkBindingIndex | null;                        // what it answers from, and binds against
   local?: (question: LinkQuestion) => LocalLinkAnswer;    // synchronous, at ask time
   remote: (
     questions: readonly LinkQuestion[],                   // only what `local` sent on; at most 200
   ) => Promise<readonly (LinkAnswer | null)[]>;           // request order; null = failed
 };
-getLinkResolution(editor)?.registerResolver(resolve, { baseUri, projectId, index });
+getLinkAnswerCache(editor)?.registerResolver(resolve, { baseUri, projectId });
+linkKeyOfMark(attrs): LinkKey   // the only reading of a mark's ref and href ("" ref = none)
+linkCacheKey(key): string       // the only cache key
 ```
 
 The navigator is where a follow goes. The resolver is where every rendered
@@ -143,10 +144,11 @@ so its Close, Cancel, and Try again reach the follower through
 `dismissFollow()` and `retryFollow()`; only the follower knows which follow
 owns what is shown. With nothing registered, `dismissFollow()` just clears.
 
-`createLinkResolution` keys answers by the link's whole identity, its ref and
+`createLinkAnswerCache` (named apart from contracts' `LinkResolution`) keys answers by the link's whole identity, its ref and
 `linkTargetHref(target)` (the classifier's own spelling), so two links sharing
 an href but naming different documents never share an answer. Four states are
-answers (`pending`, `resolved`, `unresolved`, `gone`) and a fifth outcome is
+answers, named as the resolve API names them (`pending`, `document`,
+`missing`, `gone`; the API's `unresolvable` is no answer) and a fifth outcome is
 not: a request that THROWS caches nothing, and the link draws as a filled chip
 in its own family, because a link the editor could not ask about must never be
 drawn as a link that does not exist. `gone` is a ref whose document the reader
@@ -166,9 +168,9 @@ on a provisional link waits for that request, or asks again if it failed, so
 the server's `gone` or other document wins for a click as it does for the
 chip. Any change to a cached entry publishes, a failure included.
 
-The registration's options are also the editor's binding scope
-(`resolution.binding`): the holder's address, its project, and the local
-document index that `link-binding.ts` binds written links against.
+The registration's options and the port's own `index` are also the editor's
+binding scope (`resolution.binding`): the holder's address, its project, and
+the local document index that `link-binding.ts` binds written links against.
 
 ### A registration is a generation
 
@@ -282,9 +284,12 @@ reference: the link mark's view (`linkStateAttributes`) sets an
 `aria-description` of "No longer available" (a missing link's is "Doesn't
 exist yet") and, for gone, `aria-disabled`, which also drops the pointer
 cursor. The view reads the resolution from the extension's storage, not
-`getLinkResolution`, because a view built while the editor is constructing
+`getLinkAnswerCache`, because a view built while the editor is constructing
 sees the editor as destroyed. The hint, the menu and the form say the same words, and the menu
-offers no Open link.
+offers no Open link. A press on a link already known to be gone is the
+editor's: a click places the caret, and Enter and Alt+Enter fall through
+(`followUnlessGone`); a press before the answer arrives still follows, and
+that follow does nothing.
 
 A scheme URI knows its family from its prefix and a relative path from the
 holder's `baseUri`. The one link that cannot know it yet is a relative path

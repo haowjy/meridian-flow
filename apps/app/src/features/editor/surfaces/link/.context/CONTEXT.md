@@ -16,7 +16,7 @@ project documents use No Work. Route Work is never read for links. It calls `use
 
 - the scope `{ projectId, workId, baseUri }`, or null while the editor is not
   active or has no project;
-- `getLinkResolution(editor)`, the cache the decorations draw from;
+- `getLinkAnswerCache(editor)`, the cache the decorations draw from;
 - the link store's `reportFollow` and `clearFollow` as the reporter;
 - `useEditorLinkDestination()`: `useOpenProjectDocument` with the holder's link Work,
   `current` or `background` from the gesture.
