@@ -92,6 +92,7 @@ export function createProjectLinkResolver(
   const { projectId, workId, baseUri, holderDocumentId } = scope;
   const settlements = projectSettlements(projectId);
   return {
+    index,
     local({ ref, target }) {
       // A relative path with no base cannot be asked; the base arriving is a
       // new registration, which asks it again.

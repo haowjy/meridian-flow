@@ -38,12 +38,8 @@ function editor(content = "<p>Kael waits.</p>"): Editor {
   const created = new Editor({ extensions: createStandaloneEditorExtensions(), content });
   live.push(created);
   getLinkAnswerCache(created)?.registerResolver(
-    { remote: async (questions) => questions.map(() => null) },
-    {
-      baseUri: HOLDER,
-      projectId: "project-1",
-      index: { documents: DOCUMENTS },
-    },
+    { index: { documents: DOCUMENTS }, remote: async (questions) => questions.map(() => null) },
+    { baseUri: HOLDER, projectId: "project-1" },
   );
   return created;
 }
