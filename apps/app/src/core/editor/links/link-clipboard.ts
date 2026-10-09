@@ -32,15 +32,17 @@
  */
 
 import {
+  type LinkHolder,
+  type LinkResolution,
   parseContextUri,
   parseLinkRef,
   resolveDocumentHref,
-  spellDocumentHref,
+  spellStoredLink,
   splitDocumentHrefSuffix,
   storedHref,
 } from "@meridian/contracts";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { type DocumentLinkScope, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import type { DocumentLinkScope } from "@meridian/markup";
 import { DOMSerializer, type Mark, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
@@ -48,8 +50,8 @@ import { assignPastedSlice } from "./link-assignment";
 import {
   type LinkAnswerCache,
   type LinkKey,
+  type LinkResolutionEntry,
   linkKeyOfMark,
-  PICTURE_SOURCE_HOLDER,
   pictureKeyOfNode,
 } from "./link-resolution";
 import { classifyLinkTarget } from "./link-target";
@@ -195,17 +197,47 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
     spellSource: (attrs) => {
       const picture = pictureKeyOfNode(attrs);
       const entry = picture?.ref && resolution ? resolution.read(picture) : null;
-      if (!picture || entry?.state !== "document")
-        return UNSCOPED_DOCUMENT_LINKS.spellSource(attrs);
-      const { uri } = entry.document;
-      return {
-        href:
-          spellDocumentHref(PICTURE_SOURCE_HOLDER, uri) +
-          splitDocumentHrefSuffix(picture.href).suffix,
-        address: uri,
+      const holder: LinkHolder = {
+        uri: resolution?.baseUri ?? null,
+        projectId: resolution?.assignment?.projectId ?? "",
+        view: { kind: "live" },
       };
+      return spellStoredLink(
+        { ref: attrs.ref, href: attrs.src },
+        holder,
+        sourceResolution(entry, attrs.ref, holder.projectId),
+        "manuscript-root",
+      );
     },
   };
+}
+
+/**
+ * The cache's answer for a picture as the speller reads it. Anything not yet
+ * answered spells as stored, as it does with no tree loaded.
+ */
+function sourceResolution(
+  entry: LinkResolutionEntry | null,
+  ref: string | null,
+  projectId: string,
+): LinkResolution {
+  if (entry?.state === "document") {
+    const { documentId, uri, workId } = entry.document;
+    return {
+      kind: "document",
+      document: {
+        documentId,
+        projectId,
+        uri,
+        presence: workId ? "draft" : "live",
+        readable: true,
+        nameable: true,
+      },
+      inDraft: workId !== null,
+    };
+  }
+  if (entry?.state === "gone") return { kind: "gone" };
+  return ref === null ? { kind: "address" } : { kind: "unknown" };
 }
 
 /**
