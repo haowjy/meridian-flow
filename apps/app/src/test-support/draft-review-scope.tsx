@@ -49,6 +49,7 @@ export const listed = {
   documentId: "document-a",
   documentName: "Chapter 12",
   status: "active",
+  draftGeneration: 1,
   lastActorTurnId: "turn-1",
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
@@ -66,6 +67,7 @@ export const operation = (id: string) => ({
 export const preview = {
   status: "active",
   draftId: "draft-a",
+  draftGeneration: 1,
   inlineModelPresent: true,
   reviewRoomName: "review-room-a",
   liveRevisionToken: "live-1",

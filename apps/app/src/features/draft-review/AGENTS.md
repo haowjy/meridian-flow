@@ -215,8 +215,11 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   change beside an unclassified hunk predicts nothing. The review
   holds on "No changes left" with a Next draft button (or Back to live when no
   draft is left) and never jumps on its own, except to the same draft's next
-  proposal: the server reuses the id, and `useFinishedReviewReentry` re-enters the
-  review once a read made after the close lists changes. A success with `draftClosed: false`
+  proposal: the server reuses the id one generation up, and an open review follows its
+  draft's `draftGeneration` (`useReviewGeneration`, rows in `.context/draft-review.md`): a
+  later generation that lists changes re-enters in place over any completion, the close's own
+  empty reset changes nothing, an earlier one is ignored. A claim records the generation it
+  acted on (`draftRevisionToken` is only the request's stale fence). A success with `draftClosed: false`
   (another change arrived) withdraws `pending` and the review carries on. The
   draft leaves the Work's list when closed, so the hold is the review's own
   state, set from the answer before the list and preview re-reads; neither the

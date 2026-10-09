@@ -1,8 +1,8 @@
 /** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import {
   type Dispatch,
@@ -11,13 +11,11 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState,
   useSyncExternalStore,
 } from "react";
 import {
   answerDraftCommandClosed,
   clearDraftReviewLaunchFailure,
-  currentDraftCommandRecords,
   draftCommandPendingIn,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -48,13 +46,9 @@ import {
   inlineReviewFromState,
   type ReviewToast,
 } from "./draft-review-session";
-import type { ReviewFocus } from "./review-changes";
-import { useFinishedReviewReentry } from "./useFinishedReviewReentry";
-import {
-  commandCompletion,
-  draftReads,
-  useReviewCommandCompletion,
-} from "./useReviewCommandCompletion";
+import { type ReviewFocus, reviewChangesOfPreview } from "./review-changes";
+import { draftClaim, useReviewCommandCompletion } from "./useReviewCommandCompletion";
+import { useReviewGeneration } from "./useReviewGeneration";
 import {
   listedDocumentName,
   type SelectionCommand,
@@ -99,6 +93,7 @@ export type DraftReviewController = {
   /** Focused thread owning this review surface; threads Apply/Discard cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
+  /** The open review's room, once a read has resolved it (`inlineReview.roomName`). */
   reviewRoomName: string | null;
   reviewRoomError: boolean;
   isApplying: boolean;
@@ -149,6 +144,12 @@ export type DraftReviewController = {
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
   enterInlineReview: (documentId: string, draftId: string) => void;
+  /**
+   * The editor's room reports it is of a generation the server has closed
+   * (`branch-generation-stale`). The review asks for a fresh read and keeps its
+   * place; it neither exits nor guesses the new room.
+   */
+  reviewRoomStale: (documentId: string, draftId: string, roomName: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
   inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
@@ -208,19 +209,13 @@ export function useDraftReviewController({
     dispositionLock.getSnapshot,
     dispositionLock.getSnapshot,
   );
-  const [reviewRoomName, setReviewRoomName] = useState<string | null>(null);
-  const [reviewRoomError, setReviewRoomError] = useState(false);
   const stateRef = useRef(state);
   const activeRef = useRef(true);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
-  const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
-    null,
-  );
-  const nextReviewAttemptIdRef = useRef(0);
-  /** The review open when Apply all or Discard all began, as it was listed then. */
-  const batchReviewedRef = useRef<(DraftReviewSelection & { documentName: string | null }) | null>(
-    null,
-  );
+  /** The review open when Apply all or Discard all began: its generation, and its name as listed then. */
+  const batchReviewedRef = useRef<
+    (DraftReviewSelection & { draftGeneration: number; documentName: string | null }) | null
+  >(null);
   stateRef.current = state;
 
   useEffect(() => {
@@ -242,62 +237,62 @@ export function useDraftReviewController({
   const canApplyReviewedDraft =
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
 
-  // A review's room request ends with the review. The cleanup belongs to the
-  // review that is ending and releases only that review's request: a launch that
-  // closed this review and opened another in the same flush has already started
-  // the next request, and the next review's room must not be cancelled with it.
+  // The review's room is the preview's: found through the one fenced preview
+  // query, read fresh, so the read joins any in flight, commits to the shared
+  // cache only through the fence (a change handled meanwhile cannot come back),
+  // and what it reports is addressed to the draft, so a review that has moved on
+  // takes nothing from it. A review asks for a room by having none: entering,
+  // re-entering a generation, and a room reported stale all clear it.
   const reviewedDocumentId = inlineReview?.documentId;
   const reviewedDraftId = inlineReview?.draftId;
+  const reviewedGeneration = inlineReview?.draftGeneration;
+  const roomWanted = inlineReview !== null && !inlineReview.roomName && !inlineReview.roomError;
   useEffect(() => {
-    if (!reviewedDocumentId || !reviewedDraftId) return;
-    return () => {
-      const request = activeReviewRequestRef.current;
+    if (!roomWanted || !reviewedDocumentId || !reviewedDraftId) return;
+    const draft = { projectId, workId, documentId: reviewedDocumentId, draftId: reviewedDraftId };
+    const readFresh = () =>
+      queryClient.fetchQuery({ ...draftPreviewQueryOptions(draft), staleTime: 0 });
+    let owned = true;
+    void (async () => {
+      let preview = await readFresh();
+      // A read already in flight can predate the generation the review shows; it
+      // has settled, so one more read starts after it.
+      const shown = stateRef.current.surface;
       if (
-        request &&
-        (request.documentId !== reviewedDocumentId || request.draftId !== reviewedDraftId)
+        preview.status === "active" &&
+        shown.kind === "inline" &&
+        shown.draftId === reviewedDraftId &&
+        shown.draftGeneration !== undefined &&
+        preview.draftGeneration < shown.draftGeneration
       )
-        return;
-      activeReviewRequestRef.current = null;
-      setReviewRoomName(null);
-      setReviewRoomError(false);
+        preview = await readFresh();
+      if (!owned || preview.status !== "active") return;
+      dispatch({
+        type: "generationObserved",
+        documentId: reviewedDocumentId,
+        draftId: reviewedDraftId,
+        draftGeneration: preview.draftGeneration,
+        proposal: preview.inlineModelPresent && reviewChangesOfPreview(preview).length > 0,
+        claim: draftClaim(queryClient, draft),
+        roomName: preview.reviewRoomName,
+      });
+    })().catch(() => {
+      if (owned)
+        dispatch({ type: "roomFailed", documentId: reviewedDocumentId, draftId: reviewedDraftId });
+    });
+    return () => {
+      owned = false;
     };
-  }, [reviewedDocumentId, reviewedDraftId]);
-
-  const loadInlineReviewRoom = useCallback(
-    (documentId: string, draftId: string) => {
-      nextReviewAttemptIdRef.current += 1;
-      const attemptId = nextReviewAttemptIdRef.current;
-      activeReviewRequestRef.current = { documentId, draftId, attemptId };
-      setReviewRoomName(null);
-      setReviewRoomError(false);
-      const owned = () => {
-        const current = activeReviewRequestRef.current;
-        return (
-          current?.documentId === documentId &&
-          current.draftId === draftId &&
-          current.attemptId === attemptId
-        );
-      };
-      // The room is found through the one fenced preview query, read fresh, so
-      // the read joins any in flight, commits to the shared cache only through
-      // the fence (a change handled meanwhile cannot come back), and a review
-      // that has moved on commits nothing of its own.
-      void queryClient
-        .fetchQuery({
-          ...draftPreviewQueryOptions({ projectId, workId, documentId, draftId }),
-          staleTime: 0,
-        })
-        .then((preview) => {
-          if (owned() && preview.status === "active") setReviewRoomName(preview.reviewRoomName);
-        })
-        .catch(() => {
-          if (!owned()) return;
-          setReviewRoomName(null);
-          setReviewRoomError(true);
-        });
-    },
-    [projectId, queryClient, workId],
-  );
+  }, [
+    roomWanted,
+    reviewedDocumentId,
+    reviewedDraftId,
+    reviewedGeneration,
+    projectId,
+    workId,
+    queryClient,
+    dispatch,
+  ]);
 
   async function settleConfirmedApply(
     tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
@@ -333,7 +328,13 @@ export function useDraftReviewController({
     if (inline.kind !== "inline" || inline.documentId !== documentId || inline.draftId !== draftId)
       return false;
     if (!activeRef.current) return false;
-    dispatch({ type: "reviewClosed", documentId, draftId, documentName: reviewed.documentName });
+    dispatch({
+      type: "reviewClosed",
+      documentId,
+      draftId,
+      draftGeneration: reviewed.draftGeneration,
+      documentName: reviewed.documentName,
+    });
     return true;
   };
 
@@ -413,18 +414,21 @@ export function useDraftReviewController({
             .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
             ?.find((item) => item.draftId === inline.draftId)
         : undefined;
-      // A new document's review is promoted to the live document, not held.
-      if (inline && listedDraft?.isNewDocument !== true) {
+      // A new document's review is promoted to the live document, not held; so
+      // is one that has not yet learned which generation it shows.
+      if (inline && inline.draftGeneration !== undefined && listedDraft?.isNewDocument !== true) {
         const documentName = listedDraft?.documentName ?? null;
         batchReviewedRef.current = {
           documentId: inline.documentId,
           draftId: inline.draftId,
+          draftGeneration: inline.draftGeneration,
           documentName,
         };
         dispatch({
           type: "reviewCompleting",
           documentId: inline.documentId,
           draftId: inline.draftId,
+          draftGeneration: inline.draftGeneration,
           mode,
           documentName,
         });
@@ -442,6 +446,7 @@ export function useDraftReviewController({
           type: "reviewReopened",
           documentId: reviewed.documentId,
           draftId: reviewed.draftId,
+          draftGeneration: reviewed.draftGeneration,
         });
     },
     // The tab closes with the click; a refusal leaves it closed and the error
@@ -462,52 +467,25 @@ export function useDraftReviewController({
 
   const enterInlineReview = useCallback(
     (documentId: string, draftId: string) => {
-      clearDraftReviewLaunchFailure({ projectId, workId, documentId, draftId });
-      // A command already in flight on this draft (sent from the strip or the
-      // Work page) is this review's to show: adopt its completion now.
+      const draft = { projectId, workId, documentId, draftId };
+      clearDraftReviewLaunchFailure(draft);
+      // The review opens on the newest proposal the caches know of, and a command
+      // already in flight on this draft (sent from the strip or the Work page)
+      // is its to show: it adopts the claim if it acted on that generation.
       dispatch({
         type: "enterInline",
         documentId,
         draftId,
-        completion: commandCompletion(
-          currentDraftCommandRecords(),
-          { projectId, workId, documentId, draftId },
-          draftReads(queryClient, { projectId, workId, documentId, draftId }),
-        ),
+        draftGeneration: newestKnownProposal(queryClient, draft),
+        claim: draftClaim(queryClient, draft),
       });
-      loadInlineReviewRoom(documentId, draftId);
     },
-    [loadInlineReviewRoom, projectId, queryClient, workId],
+    [projectId, queryClient, workId],
   );
 
-  // The closed review's draft carries a new proposal: enter it again, the way
-  // entering does. Checked against the state, since the check that led here is async.
-  const reenterFinishedReview = useCallback(
-    (documentId: string, draftId: string) => {
-      const surface = stateRef.current.surface;
-      if (
-        !activeRef.current ||
-        surface.kind !== "inline" ||
-        surface.documentId !== documentId ||
-        surface.draftId !== draftId ||
-        surface.completion?.phase !== "closed"
-      )
-        return;
-      dispatch({
-        type: "reviewReentered",
-        documentId,
-        draftId,
-        completion: commandCompletion(
-          currentDraftCommandRecords(),
-          { projectId, workId, documentId, draftId },
-          draftReads(queryClient, { projectId, workId, documentId, draftId }),
-        ),
-      });
-      loadInlineReviewRoom(documentId, draftId);
-    },
-    [loadInlineReviewRoom, projectId, queryClient, workId],
-  );
-  useFinishedReviewReentry({ projectId, workId, inlineReview, reenter: reenterFinishedReview });
+  const reviewRoomStale = useCallback((documentId: string, draftId: string, roomName: string) => {
+    dispatch({ type: "roomStale", documentId, draftId, roomName });
+  }, []);
 
   const exitInlineReview = useCallback(() => {
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
@@ -521,16 +499,10 @@ export function useDraftReviewController({
         ),
       });
     }
-    activeReviewRequestRef.current = null;
-    setReviewRoomName(null);
-    setReviewRoomError(false);
     dispatch({ type: "exitInline" });
   }, [projectId, queryClient, workId]);
 
   const exitReview = useCallback(() => {
-    activeReviewRequestRef.current = null;
-    setReviewRoomName(null);
-    setReviewRoomError(false);
     dispatch({ type: "exitReview" });
   }, []);
 
@@ -601,6 +573,7 @@ export function useDraftReviewController({
   }, []);
 
   useReviewCommandCompletion({ projectId, workId, activeRef, dispatch });
+  useReviewGeneration({ projectId, workId, inlineReview, activeRef, dispatch });
 
   const { applyChanges, discardChanges } = useSelectionCommands({
     projectId,
@@ -637,8 +610,8 @@ export function useDraftReviewController({
       workId,
       threadId,
       inlineReview,
-      reviewRoomName,
-      reviewRoomError,
+      reviewRoomName: inlineReview?.roomName ?? null,
+      reviewRoomError: inlineReview?.roomError ?? false,
       isApplying,
       canApplyReviewedDraft,
       isDisposing,
@@ -653,6 +626,7 @@ export function useDraftReviewController({
       toast: state.toast,
       dismissToast,
       enterInlineReview,
+      reviewRoomStale,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
@@ -668,8 +642,6 @@ export function useDraftReviewController({
       workId,
       threadId,
       inlineReview,
-      reviewRoomName,
-      reviewRoomError,
       isApplying,
       canApplyReviewedDraft,
       isDisposing,
@@ -684,6 +656,7 @@ export function useDraftReviewController({
       state.toast,
       dismissToast,
       enterInlineReview,
+      reviewRoomStale,
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
@@ -695,4 +668,35 @@ export function useDraftReviewController({
       disposeDrafts,
     ],
   );
+}
+
+/**
+ * The newest proposal the caches know of for a draft being entered: the cached
+ * preview when it lists changes (a reset's empty preview is not one), and the
+ * draft's list row. Undefined when neither is there; the room read then says.
+ */
+function newestKnownProposal(
+  queryClient: QueryClient,
+  draft: { projectId: string; workId: string; documentId: string; draftId: string },
+): number | undefined {
+  const known: number[] = [];
+  const cached = queryClient.getQueryData<DraftPreviewResponse>(
+    projectQueryKeys.workDraftPreview(
+      draft.projectId,
+      draft.workId,
+      draft.documentId,
+      draft.draftId,
+    ),
+  );
+  if (
+    cached?.status === "active" &&
+    cached.inlineModelPresent &&
+    reviewChangesOfPreview(cached).length > 0
+  )
+    known.push(cached.draftGeneration);
+  const row = queryClient
+    .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(draft.projectId, draft.workId))
+    ?.find((item) => item.draftId === draft.draftId);
+  if (row) known.push(row.draftGeneration);
+  return known.length > 0 ? Math.max(...known) : undefined;
 }

@@ -19,7 +19,7 @@ const scope = { projectId: "p", workId: "w" };
 const selection = { documentId: "doc", draftId: "draft" };
 const draft = { ...scope, ...selection };
 const change = { classIds: ["closure:1+2"], operationIds: ["1", "2"] };
-const tokens = { liveRevisionToken: "live-1", draftRevisionToken: "draft-1" };
+const tokens = { liveRevisionToken: "live-1", draftRevisionToken: "draft-1", draftGeneration: 1 };
 
 type Answer = DraftApplyChangesResponse | "unknown" | Error;
 
@@ -69,7 +69,8 @@ describe("applying one change", () => {
     expect(outcome).toEqual({ kind: "change-settled", mode: "apply" });
     expect(ports.applyChanges).toHaveBeenCalledWith(selection, {
       operationIds: ["1", "2"],
-      ...tokens,
+      liveRevisionToken: tokens.liveRevisionToken,
+      draftRevisionToken: tokens.draftRevisionToken,
     });
     expect(ports.changeConfirmed).toHaveBeenCalledWith(selection, change, "apply");
   });
@@ -198,7 +199,8 @@ describe("discarding one change", () => {
     expect(outcome).toEqual({ kind: "change-settled", mode: "discard" });
     expect(ports.discardChanges).toHaveBeenCalledWith(selection, {
       operationIds: ["1", "2"],
-      ...tokens,
+      liveRevisionToken: tokens.liveRevisionToken,
+      draftRevisionToken: tokens.draftRevisionToken,
     });
     expect(ports.discard).not.toHaveBeenCalled();
     expect(ports.changeConfirmed).toHaveBeenCalledWith(selection, change, "discard");

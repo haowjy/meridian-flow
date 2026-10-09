@@ -68,8 +68,8 @@ changes (`ChangeSelection`: whole closure classes and every operation they
 hold; one change is a selection of one class). The controller exposes them as
 `applyChanges(draft, selection)` and `discardChanges(draft, selection)` for any
 draft of its Work (`useSelectionCommands`): they read that draft's cached preview
-for the two revision tokens (with no active preview the selection is refused
-`stale` without sending). Whether the command handles the draft's last changes
+for the two revision tokens and the draft's generation (with no active preview the
+selection is refused `stale` without sending). Whether the command handles the draft's last changes
 (`completesDraft`) and the server's `draftClosed` answer are recorded on the
 draft's command claim, so any review showing the draft follows them
 (`useReviewCommandCompletion`, synchronously from the record store): a review
@@ -85,10 +85,9 @@ claim is released, because the server reuses a closed draft's id for the next
 proposal and a retained answer would close that fresh generation. A review that
 opens on the draft after the claim ended therefore shows whatever the draft's
 list row and preview say now. A claim's completion applies to the generation it
-was sent against: the claim keeps the `draftRevisionToken` it was sent with, and
-while the draft's cached preview is active with another token (an agent proposed
-again on the reused id before the claim's reads finished) neither a review that
-opens nor one already open takes the claim's pending or closing completion.
+was sent against: the claim keeps the preview's `draftGeneration` (the tokens only
+fence the request), and every completion action carries it, so the reducer gives
+it to a review of that generation and to no other (rows C1-C5 below).
 The claim, not the sender, owns this (completion dispatched by the sending
 controller was lost when the writer opened the draft mid-command); a refused
 duplicate never begins it.
@@ -159,24 +158,46 @@ equals live; the review room is a closed generation and its reset would otherwis
 show doubled text); a last Apply keeps the review editor until `closed`. After a
 reload the draft is not listed and the address falls back to live.
 
-A `closed` review takes up its draft's next proposal in place
-(`useFinishedReviewReentry`, mounted by the controller). The server closes a draft
-by resetting its branch, and the same draft id carries what the AI writes next, in
-a new generation with a new review room; the closed review is joined to the dead
-room and nothing refreshes it (its room is silent, and `useDraftPreviews` leaves
-the open review to `useReviewRefresh`). The Work's list is the live signal, so the
-hook watches the draft's row while the review is closed. A row that differs from
-the one the review closed on is a hint, never the decision: a list read that began
-before the close can still list the draft. It makes the review read the draft's
-preview afresh, cancelling any read already in flight (which may predate the
-close), and only a read that began then, after the closing answer, decides. If it
-lists changes the review re-enters the way `enterInlineReview` does
-(`reviewReentered`: completion and focus cleared, marks shown, the room fetched
-again, a command already in flight on the new proposal adopted); if it lists none,
-or fails, "No changes left" stays until the row changes again. Nothing is read
-while the draft stays out of the list. The screen stays on the Editor review
-throughout, so the strip's and the Work page's Review for that draft find it
-already open.
+### An open review follows its draft's generation
+
+The server closes a draft by resetting its branch one generation up
+(`draftGeneration`, on the list row and the preview; it never decreases for a
+draft id), and the same id carries the next proposal. The reset and the next
+proposal share generation G+1 and its room, so the number cannot tell them apart;
+whether G+1 lists changes (a *proposal*) can. `draftRevisionToken` moves with every
+write and is only the server's stale-command fence, never an identity.
+
+The reducer (`draft-review-session`) owns the shown generation R
+(`inlineReview.draftGeneration`), the completion K, the room and its error. Every
+input arrives as an action addressed to the draft and compares its generation with R:
+
+| Row | Input | Result |
+|---|---|---|
+| E | Enter the draft | R is the newest proposal the caches know (a cached preview that lists changes, the list row, a claim); K is the claim's if it acted on R; none known leaves R unresolved |
+| C1, C2 | Claim at R begins covering the last changes, or is answered `draftClosed` | K is pending, or closed (a closed K never goes back) |
+| C3 | Claim at R ends without a close | A pending K is withdrawn; a closed one stays |
+| C4, C5 | Claim below R, or above it (or R unresolved) | Ignored, or re-enter the claim's generation |
+| O1, O2 | Preview or list read below R, or at R | Ignored, or content refresh only |
+| O3 | Read above R that lists changes (a list row always does) | Re-enter it, over any K (the writer's "Applying" included) |
+| O4 | Read above R that lists none (the close's reset) | Nothing: a pending K waits for its answer |
+| P | The room read resolves | Sets the room; R unresolved takes its generation; above R applies O3 or O4 |
+| S | The editor's room is `branch-generation-stale` | The room is cleared and read afresh; the review stays |
+| L | Leave, or enter another draft | The review ends; later inputs for the draft match nothing |
+| B | Whole-draft batch | Its pending and closed actions carry R at batch start |
+
+**Re-enter generation G'** is the one transition that moves R: R becomes G', K is
+the claim's if it acted on G' (else none), focus is cleared, marks show, the room
+is cleared and the controller reads it again. `useReviewGeneration` observes the
+draft's cached list row and preview and reports them; `useReviewCommandCompletion`
+reports claims; the controller's room read reports the room; `EditorView` hands a
+stale room to the controller (`onReviewRoomStale`) and leaves review only for
+`unauthorized`, `terminal`, a destroyed session or any other reset.
+Invariants: a generation never goes backwards (the preview query keeps a newer
+cached read, `keepNewerGeneration`); a completion belongs to one generation;
+`useReviewChanges` and `useInlineReviewSync` list and project only R's preview;
+arrival order does not change the outcome. The provider's "draft left the list"
+exit holds while the cached preview lists changes at R (the list can lag the
+preview) and asks for the preview afresh instead.
 
 Focus is review state too: `inlineReview.focus` holds the focused change's class
 id with the operations it held, one value for the whole review. When the server
@@ -306,8 +327,9 @@ peer-mark actions, browser Ctrl+Z, or a client mutation origin.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
 the TipTap inline-review extension and reports model availability identities. It
-pushes every refetched preview (compared by reference), not by revision tokens:
-`draftRevisionToken` is the branch generation and does not move on edits.
+pushes every refetched preview of the generation the review shows (compared by
+reference), not by revision tokens: a token moves with every write and
+disposition, so it cannot tell a refetch that changed nothing from one that did.
 The extension renders the net diff in the manuscript like suggestion mode:
 insertions as decorations over the draft text, removed live text as a read-only
 inline widget (struck, outside the document; AI crimson, writer gold; long ones

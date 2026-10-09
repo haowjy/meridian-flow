@@ -62,7 +62,14 @@ export function useOpenReviewChanges(
     },
   );
   const active = listablePreview(preview);
-  const changes = active ? reviewChangesOfPreview(active) : NO_CHANGES;
+  // The review lists the changes of the generation it shows. A preview of
+  // another one is the next proposal on its way in (the review re-enters it) or
+  // the close's own reset: it is not this review's to list.
+  const shown = inline?.draftGeneration;
+  const changes =
+    active && (shown === undefined || active.draftGeneration === shown)
+      ? reviewChangesOfPreview(active)
+      : NO_CHANGES;
   return { inline, documentId, draftId, preview, active, changes };
 }
 

@@ -75,15 +75,15 @@ describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
 
   it("claims the draft once: no second change, and no whole-draft command, beside it", () => {
-    expect(beginChangeCommand(draft, one, "apply", "draft-1")).toBe(true);
-    expect(beginChangeCommand(draft, one, "discard", "draft-1")).toBe(false);
-    expect(beginChangeCommand(draft, two, "apply", "draft-1")).toBe(false);
+    expect(beginChangeCommand(draft, one, "apply", 1)).toBe(true);
+    expect(beginChangeCommand(draft, one, "discard", 1)).toBe(false);
+    expect(beginChangeCommand(draft, two, "apply", 1)).toBe(false);
     expect(beginDraftCommand(draft)).toBe(false);
-    expect(beginChangeCommand({ ...draft, draftId: "y" }, two, "apply", "draft-1")).toBe(true);
+    expect(beginChangeCommand({ ...draft, draftId: "y" }, two, "apply", 1)).toBe(true);
   });
 
   it("a claim hides its operations and is the change's pending state", () => {
-    beginChangeCommand(draft, two, "discard", "draft-1");
+    beginChangeCommand(draft, two, "discard", 1);
     const records = currentChangeCommandRecords();
     expect([...hiddenOperationIds(records, draft)]).toEqual(["2", "3"]);
     expect(changeCommandState(records, draft, two)).toEqual({ phase: "pending", mode: "discard" });
@@ -100,7 +100,7 @@ describe("change command record", () => {
     // Another draft is untouched, and the queue blocks no command.
     expect(hiddenOperationIds(records, { ...draft, draftId: "y" }).size).toBe(0);
     expect(changeCommandState(records, draft, two)).toBeNull();
-    expect(beginChangeCommand(draft, one, "apply", "draft-1")).toBe(true);
+    expect(beginChangeCommand(draft, one, "apply", 1)).toBe(true);
     releaseDraftCommand(draft);
     retire();
     retire();
@@ -120,7 +120,7 @@ describe("change command record", () => {
       draft,
       () => new Promise<DraftPreviewResponse>((resolve) => (finish = resolve)),
     );
-    beginChangeCommand(draft, one, "apply", "draft-1");
+    beginChangeCommand(draft, one, "apply", 1);
     confirmChangeCommand(draft, one, "apply");
     finish(preview());
     expect(operationIds(await read)).toEqual(["2", "3"]);
@@ -184,7 +184,7 @@ describe("change command record", () => {
   });
 
   it("belongs to its draft: another draft's changes are untouched", () => {
-    beginChangeCommand(draft, one, "apply", "draft-1");
+    beginChangeCommand(draft, one, "apply", 1);
     const other = { ...draft, draftId: "y" };
     expect(changeCommandState(currentChangeCommandRecords(), other, one)).toBeNull();
   });
@@ -209,7 +209,7 @@ describe("change command record", () => {
 
     it("clears on the next action on one of its changes, and once a read lists none of them", async () => {
       failChangeCommand(draft, both, "discard", "stale");
-      beginChangeCommand(draft, one, "apply", "draft-1");
+      beginChangeCommand(draft, one, "apply", 1);
       expect(Object.keys(currentChangeCommandRecords().changes)).toEqual([]);
       releaseDraftCommand(draft);
 
@@ -223,7 +223,7 @@ describe("change command record", () => {
     });
 
     it("hides every operation of the selection while its claim is held, and a confirmation fences reads", async () => {
-      beginChangeCommand(draft, both, "apply", "draft-1");
+      beginChangeCommand(draft, both, "apply", 1);
       expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual([
         "1",
         "2",
@@ -248,13 +248,13 @@ describe("change command record", () => {
 
     it("retires the failure held under its old class when the writer acts again", () => {
       failChangeCommand(draft, a, "apply", "stale");
-      expect(beginChangeCommand(draft, b, "discard", "draft-1")).toBe(true);
+      expect(beginChangeCommand(draft, b, "discard", 1)).toBe(true);
       expect(Object.keys(currentChangeCommandRecords().changes)).toEqual([]);
     });
 
     it("shows the latest failure, however many times it was regrouped since", () => {
       failChangeCommand(draft, a, "apply", "stale");
-      beginChangeCommand(draft, b, "discard", "draft-1");
+      beginChangeCommand(draft, b, "discard", 1);
       failChangeCommand(draft, b, "discard", "refused", {
         serverCode: "work_archived",
         serverReason: "The server's reason",
@@ -284,7 +284,7 @@ describe("change command record", () => {
 
     it("leaves the failures of unrelated changes alone", () => {
       failChangeCommand(draft, { classIds: ["closure:9"], operationIds: ["9"] }, "apply", "stale");
-      beginChangeCommand(draft, b, "discard", "draft-1");
+      beginChangeCommand(draft, b, "discard", 1);
       expect(Object.keys(currentChangeCommandRecords().changes)).toHaveLength(1);
     });
   });

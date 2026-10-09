@@ -34,6 +34,12 @@ export interface UseInlineReviewSyncOptions {
   /** When true, actually connect the extension. Callers pass true when
    *  `reviewDraftId` is set on the editor view. */
   enabled: boolean;
+  /**
+   * The draft generation the review shows (`InlineDraftReview.draftGeneration`).
+   * A preview of another generation is not projected: its model describes a
+   * room this editor is not in. Undefined while the review has not learned it.
+   */
+  draftGeneration?: number;
   onInlineModelAvailable?: (identity: string, documentId: string, draftId: string) => void;
   /** Fatal review-session invariant: active preview exists, but no inline model can be built. */
   onReviewSessionUnavailable?: () => void;
@@ -47,6 +53,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     documentId,
     draftId,
     enabled,
+    draftGeneration,
     onInlineModelAvailable,
     onReviewSessionUnavailable,
   } = options;
@@ -56,10 +63,10 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
 
   // The last preview payload pushed into the plugin, so React re-renders around
   // unrelated state don't re-dispatch it. Compared by reference, not by the
-  // revision tokens: `draftRevisionToken` is the branch generation, which does
-  // not move when the writer or the AI edits the draft, so a token identity
-  // would drop every refetch after the first. Query structural sharing keeps
-  // the reference when a refetch changed nothing.
+  // revision tokens: `draftRevisionToken` moves with every write and
+  // disposition, and a token identity would not tell a refetch that changed
+  // nothing from one that did. Query structural sharing keeps the reference
+  // when a refetch changed nothing.
   const lastPushedPreviewRef = useRef<unknown>(null);
   const lastFatalIdentityRef = useRef<string | null>(null);
 
@@ -78,6 +85,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     }
 
     const reviewId = preview.draftId;
+    if (draftGeneration !== undefined && preview.draftGeneration !== draftGeneration) return;
 
     if (!preview.inlineModelPresent) {
       const fatalIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
@@ -115,5 +123,13 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     lastPushedPreviewRef.current = preview;
     lastFatalIdentityRef.current = null;
     onInlineModelAvailable?.(previewIdentity, documentId, reviewId);
-  }, [editor, enabled, preview, documentId, onInlineModelAvailable, onReviewSessionUnavailable]);
+  }, [
+    editor,
+    enabled,
+    preview,
+    draftGeneration,
+    documentId,
+    onInlineModelAvailable,
+    onReviewSessionUnavailable,
+  ]);
 }

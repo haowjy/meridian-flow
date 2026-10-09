@@ -97,6 +97,14 @@ export function setConnectionState(
   for (const listener of sessionListeners.get(roomKey) ?? []) listener(next);
 }
 
+export function setSessionStatus(roomKey: string, status: DocumentSessionSnapshot["status"]): void {
+  const snapshot = sessionSnapshots.get(roomKey);
+  if (!snapshot) return;
+  const next = { ...snapshot, status };
+  sessionSnapshots.set(roomKey, next);
+  for (const listener of sessionListeners.get(roomKey) ?? []) listener(next);
+}
+
 /** A fresh session for `roomKey`: the rebuild's result once the server state has synced. */
 export function finishRebuild(roomKey: string): void {
   refusedRooms.delete(roomKey);

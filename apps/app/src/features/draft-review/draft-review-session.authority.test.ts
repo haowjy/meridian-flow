@@ -22,7 +22,7 @@ const selection = { documentId: "doc", draftId: "draft" };
 const draft = { ...scope, ...selection };
 const change = { classIds: ["class"], operationIds: ["1", "2"] };
 const otherChange = { classIds: ["other"], operationIds: ["3"] };
-const tokens = { liveRevisionToken: "live-1", draftRevisionToken: "draft-1" };
+const tokens = { liveRevisionToken: "live-1", draftRevisionToken: "draft-1", draftGeneration: 1 };
 const applied: DraftApplyChangesResponse = {
   status: "applied",
   draftId: "draft",
@@ -109,7 +109,7 @@ describe("one command per draft, whichever session sends it", () => {
     expect(Object.values(held.drafts)).toEqual([
       {
         phase: "pending",
-        change: { ...change, mode: "apply", draftRevisionToken: tokens.draftRevisionToken },
+        change: { ...change, mode: "apply", draftGeneration: tokens.draftGeneration },
       },
     ]);
     answerChange();
