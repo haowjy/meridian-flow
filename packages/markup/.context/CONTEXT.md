@@ -99,7 +99,7 @@ explicit registry parameter.
 
 ## Link scope
 
-Stored links, images and figures may carry a `ref` (`doc:<id>`, `ahead:<id>`,
+Stored links, images and figures may carry a `ref` (`doc:<uuid>`, `ahead:<uuid>`,
 see `@meridian/contracts` `document-ref.ts`). The codec never reads or writes
 it: serialization asks the call's `DocumentLinkScope` for every destination
 (`spellLink` for link marks and HTML-table anchors, `spellSource` for `image`

@@ -5,6 +5,10 @@
  * (the server's prepared scope snapshot, the client's linkable-document
  * index); the rules themselves live only here, so server and client cannot
  * disagree about what a stored link names or how it is spelled.
+ *
+ * Two encodings meet here. An address (`CatalogDocument.uri`, a classified
+ * `uri`, `aheadAddress`, registry keys) is a decoded canonical Context URI. A
+ * stored `href`/`src` is an escaped wire spelling, built only by `storedHref`.
  */
 import { isProjectScopedScheme, parseContextUri } from "./context-uri.js";
 import {
@@ -28,7 +32,7 @@ export interface LinkHolder {
 export interface CatalogDocument {
   documentId: string;
   projectId: string;
-  /** Canonical absolute URI in the catalog's view, with extension. */
+  /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;
   /** live: in the live tree; draft: exists only in a Work draft (or is staged by this response). */
   presence: "live" | "draft" | "deleted";
@@ -102,8 +106,19 @@ function documentResolution(document: CatalogDocument): LinkResolution {
 export type WrittenLinkClass =
   | { kind: "external" }
   | { kind: "contextual" }
-  /** Canonical absolute address, suffix split off. */
+  /** Decoded canonical absolute address, and the still-escaped `?`/`#` suffix. */
   | { kind: "internal"; uri: string; suffix: string };
+
+/**
+ * The stored `href`/`src` for a ref-bearing link: the escaped full spelling of
+ * a decoded canonical address plus its suffix. The only way to build one, so
+ * `%`, a literal `%20` or a `#` in a filename round-trips through resolution.
+ */
+export function storedHref(uri: string, suffix: string): string {
+  if (suffix && !/^[?#]/.test(suffix))
+    throw new RangeError(`A stored href suffix starts with ? or #: ${suffix}`);
+  return spellDocumentHref(null, uri) + suffix;
+}
 
 /**
  * What a written href is, before any catalog is consulted. `holderUri` null =

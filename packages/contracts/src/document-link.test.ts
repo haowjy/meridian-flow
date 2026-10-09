@@ -8,8 +8,33 @@ import {
   type LinkHolder,
   resolveStoredLink,
   spellStoredLink,
+  storedHref,
 } from "./document-link.js";
 import { aheadAddress, parseLinkRef } from "./document-ref.js";
+
+// UUID-shaped ids: refs are UUID-backed, and anything else is malformed.
+const names = [
+  "sibling",
+  "cast",
+  "drafted",
+  "deleted",
+  "secret",
+  "foreign",
+  "picture",
+  "occupant",
+  "unknown",
+  "neverLoaded",
+  "settled",
+  "settledGone",
+  "open",
+  "unregistered",
+] as const;
+const U = Object.fromEntries(
+  names.map((name, index) => [
+    name,
+    `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  ]),
+) as Record<(typeof names)[number], string>;
 
 const doc = (documentId: string, uri: string, extra: Partial<CatalogDocument> = {}) => ({
   documentId,
@@ -21,24 +46,24 @@ const doc = (documentId: string, uri: string, extra: Partial<CatalogDocument> = 
   ...extra,
 });
 const documents: Record<string, CatalogDocument | null> = {
-  sibling: doc("sibling", "manuscript://book/ch2.md"),
-  cast: doc("cast", "kb://cast/Lin Feng.md"),
-  drafted: doc("drafted", "manuscript://book/new.md", { presence: "draft" }),
-  deleted: doc("deleted", "manuscript://book/old.md", { presence: "deleted" }),
-  secret: doc("secret", "manuscript://book/secret.md", { readable: false }),
-  foreign: doc("foreign", "manuscript://theirs.md", { projectId: "p2", nameable: false }),
-  picture: doc("picture", "manuscript://assets/gate.png"),
-  occupant: doc("occupant", "manuscript://book/arrived.md"),
-  unknown: null,
+  [U.sibling]: doc(U.sibling, "manuscript://book/ch2.md"),
+  [U.cast]: doc(U.cast, "kb://cast/Lin Feng.md"),
+  [U.drafted]: doc(U.drafted, "manuscript://book/new.md", { presence: "draft" }),
+  [U.deleted]: doc(U.deleted, "manuscript://book/old.md", { presence: "deleted" }),
+  [U.secret]: doc(U.secret, "manuscript://book/secret.md", { readable: false }),
+  [U.foreign]: doc(U.foreign, "manuscript://theirs.md", { projectId: "p2", nameable: false }),
+  [U.picture]: doc(U.picture, "manuscript://assets/gate.png"),
+  [U.occupant]: doc(U.occupant, "manuscript://book/arrived.md"),
+  [U.unknown]: null,
 };
 const settlements: Record<string, string | null> = {
-  settled: "cast",
-  settledGone: "deleted",
-  open: null,
+  [U.settled]: U.cast,
+  [U.settledGone]: U.deleted,
+  [U.open]: null,
 };
 const addresses: Record<string, CatalogDocument | null | undefined> = {
-  "manuscript://book/arrived.md": documents.occupant,
-  "manuscript://book/secret.md": documents.secret,
+  "manuscript://book/arrived.md": documents[U.occupant],
+  "manuscript://book/secret.md": documents[U.secret],
   "manuscript://book/unloaded.md": undefined,
 };
 const catalog: LinkCatalog = {
@@ -66,7 +91,7 @@ it("resolves and spells stored links by rule", () => {
   }[] = [
     {
       name: "live document spells relative with the stored suffix",
-      ref: "doc:sibling",
+      ref: `doc:${U.sibling}`,
       href: "manuscript://book/before-move.md#scene-2",
       kind: "document",
       inDraft: false,
@@ -75,7 +100,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "cross-area target spells the full URI",
-      ref: "doc:cast",
+      ref: `doc:${U.cast}`,
       href: "kb://cast/Lin Feng.md",
       kind: "document",
       spelled: "kb://cast/Lin Feng.md",
@@ -83,7 +108,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "chat (no holder) spells full URIs",
-      ref: "doc:sibling",
+      ref: `doc:${U.sibling}`,
       href: "manuscript://book/ch2.md",
       holderUri: null,
       kind: "document",
@@ -92,7 +117,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "a document only in a draft resolves in the draft",
-      ref: "doc:drafted",
+      ref: `doc:${U.drafted}`,
       href: "manuscript://book/new.md",
       kind: "document",
       inDraft: true,
@@ -101,7 +126,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "deleted target is gone and spells the stored href",
-      ref: "doc:deleted",
+      ref: `doc:${U.deleted}`,
       href: "manuscript://book/old.md?v=1",
       kind: "gone",
       spelled: "manuscript://book/old.md?v=1",
@@ -109,7 +134,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "unreadable target is gone without leaking its path",
-      ref: "doc:secret",
+      ref: `doc:${U.secret}`,
       href: "manuscript://book/where-it-was.md",
       kind: "gone",
       spelled: "manuscript://book/where-it-was.md",
@@ -117,7 +142,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "other-project target is gone",
-      ref: "doc:foreign",
+      ref: `doc:${U.foreign}`,
       href: "manuscript://theirs.md",
       kind: "gone",
       spelled: "manuscript://theirs.md",
@@ -125,7 +150,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "unknown document is gone, never the document at its address",
-      ref: "doc:unknown",
+      ref: `doc:${U.unknown}`,
       href: "manuscript://book/arrived.md",
       kind: "gone",
       spelled: "manuscript://book/arrived.md",
@@ -133,7 +158,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "snapshot miss is unknown and spells stored",
-      ref: "doc:never-loaded",
+      ref: `doc:${U.neverLoaded}`,
       href: "manuscript://book/ch2.md",
       kind: "unknown",
       spelled: "manuscript://book/ch2.md",
@@ -141,7 +166,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "settled ahead ref follows its document",
-      ref: "ahead:settled",
+      ref: `ahead:${U.settled}`,
       href: "manuscript://book/lin.md",
       kind: "document",
       spelled: "kb://cast/Lin Feng.md",
@@ -149,7 +174,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "ahead ref settled on a deleted document is gone",
-      ref: "ahead:settledGone",
+      ref: `ahead:${U.settledGone}`,
       href: "manuscript://book/old.md",
       kind: "gone",
       spelled: "manuscript://book/old.md",
@@ -157,7 +182,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "unsettled ahead ref resolves the document at its exact address",
-      ref: "ahead:open",
+      ref: `ahead:${U.open}`,
       href: "manuscript://book/arrived.md",
       kind: "document",
       spelled: "arrived.md",
@@ -165,7 +190,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "unsettled ahead ref with nothing there spells its canonical address",
-      ref: "ahead:open",
+      ref: `ahead:${U.open}`,
       href: "manuscript://book/ch12.md#top",
       kind: "ahead",
       spelled: "ch12.md#top",
@@ -173,7 +198,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "unsettled ahead ref does not reveal an unreadable occupant",
-      ref: "ahead:open",
+      ref: `ahead:${U.open}`,
       href: "manuscript://book/secret.md",
       kind: "ahead",
       spelled: "secret.md",
@@ -181,7 +206,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "unsettled ahead ref at an unloaded address is unknown",
-      ref: "ahead:open",
+      ref: `ahead:${U.open}`,
       href: "manuscript://book/unloaded.md",
       kind: "unknown",
       spelled: "manuscript://book/unloaded.md",
@@ -189,7 +214,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "unregistered ahead ref is unknown",
-      ref: "ahead:unregistered",
+      ref: `ahead:${U.unregistered}`,
       href: "manuscript://book/ch13.md",
       kind: "unknown",
       spelled: "manuscript://book/ch13.md",
@@ -212,8 +237,16 @@ it("resolves and spells stored links by rule", () => {
       address: "manuscript://book/ch2.md",
     },
     {
+      name: "short non-UUID ref is malformed, so gone",
+      ref: "doc:sibling",
+      href: "manuscript://book/ch2.md",
+      kind: "gone",
+      spelled: "manuscript://book/ch2.md",
+      address: "manuscript://book/ch2.md",
+    },
+    {
       name: "image source spells manuscript-root-relative",
-      ref: "doc:picture",
+      ref: `doc:${U.picture}`,
       href: "manuscript://assets/old-name.png",
       grammar: "manuscript-root",
       kind: "document",
@@ -222,7 +255,7 @@ it("resolves and spells stored links by rule", () => {
     },
     {
       name: "image source outside the manuscript spells the full URI",
-      ref: "doc:cast",
+      ref: `doc:${U.cast}`,
       href: "kb://cast/Lin Feng.md",
       grammar: "manuscript-root",
       kind: "document",
@@ -281,18 +314,129 @@ it("classifies written links and mints ahead addresses by grammar", () => {
   for (const [uri, kind, expected] of minted)
     expect.soft(aheadAddress(uri, kind), `ahead ${kind} ${uri}`).toBe(expected);
 
+  const uuid = "550E8400-E29B-41D4-A716-446655440000";
   const refs: [unknown, ReturnType<typeof parseLinkRef>][] = [
-    ["doc:6f1c-9", { kind: "doc", documentId: "6f1c-9" }],
-    ["ahead:opaque", { kind: "ahead", aheadId: "opaque" }],
+    [`doc:${uuid}`, { kind: "doc", documentId: uuid.toLowerCase() }],
+    [`ahead:${uuid}`, { kind: "ahead", aheadId: uuid.toLowerCase() }],
     [null, null],
     ["", null],
     ["doc:", null],
-    ["asset:abc", null],
-    ["doc:a b", null],
-    ["ahead:a:b", null],
+    ["doc:A", null],
+    ["ahead:opaque", null],
+    ["doc:a_b", null],
+    [`doc:{${uuid}}`, null],
+    [`doc:${uuid.replaceAll("-", "")}`, null],
+    [`doc:${uuid} `, null],
+    [`asset:${uuid}`, null],
+    ["doc:a' OR 1=1", null],
   ];
   for (const [value, expected] of refs)
     expect.soft(parseLinkRef(value), `ref ${String(value)}`).toEqual(expected);
+
+  // Classify -> mint and store -> resolve -> spell: an address is decoded, a
+  // stored href is escaped, and filename characters never become href syntax.
+  const roundTrips: {
+    written: string;
+    kind: "link" | "source";
+    address: string;
+    stored: string;
+    spelled: string;
+  }[] = [
+    {
+      written: "next%23part.md",
+      kind: "link",
+      address: "manuscript://book/next#part.md",
+      stored: "manuscript://book/next%23part.md",
+      spelled: "next%23part.md",
+    },
+    {
+      written: "100%25.md",
+      kind: "link",
+      address: "manuscript://book/100%.md",
+      stored: "manuscript://book/100%25.md",
+      spelled: "100%25.md",
+    },
+    {
+      written: "literal%2520.md",
+      kind: "link",
+      address: "manuscript://book/literal%20.md",
+      stored: "manuscript://book/literal%2520.md",
+      spelled: "literal%2520.md",
+    },
+    {
+      written: "next%3Fpart.md",
+      kind: "link",
+      address: "manuscript://book/next?part.md",
+      stored: "manuscript://book/next%3Fpart.md",
+      spelled: "next%3Fpart.md",
+    },
+    {
+      written: "next.md?q=a#part",
+      kind: "link",
+      address: "manuscript://book/next.md",
+      stored: "manuscript://book/next.md?q=a#part",
+      spelled: "next.md?q=a#part",
+    },
+    {
+      written: "100%25%23two?v=1#top",
+      kind: "link",
+      address: "manuscript://book/100%#two.md",
+      stored: "manuscript://book/100%25%23two.md?v=1#top",
+      spelled: "100%25%23two.md?v=1#top",
+    },
+    {
+      written: "assets/map%23one.png",
+      kind: "source",
+      address: "manuscript://assets/map#one.png",
+      stored: "manuscript://assets/map%23one.png",
+      spelled: "assets/map%23one.png",
+    },
+    {
+      written: "assets/100%25%2520.png?v=2#crop",
+      kind: "source",
+      address: "manuscript://assets/100%%20.png",
+      stored: "manuscript://assets/100%25%2520.png?v=2#crop",
+      spelled: "assets/100%25%2520.png?v=2#crop",
+    },
+  ];
+  for (const row of roundTrips) {
+    const grammar = row.kind === "link" ? "holder" : "manuscript-root";
+    const classified =
+      row.kind === "link"
+        ? classifyWrittenLink(row.written, holder.uri)
+        : classifyWrittenSource(row.written);
+    if (classified.kind !== "internal") {
+      expect.soft(classified.kind, row.written).toBe("internal");
+      continue;
+    }
+    const address = aheadAddress(classified.uri, row.kind);
+    expect.soft(address, `${row.written} address`).toBe(row.address);
+    const stored = storedHref(address ?? "", classified.suffix);
+    expect.soft(stored, `${row.written} stored`).toBe(row.stored);
+
+    const asked: string[] = [];
+    const empty: LinkCatalog = {
+      document: () => null,
+      settlement: () => null,
+      documentAt: (uri) => {
+        asked.push(uri);
+        return null;
+      },
+    };
+    const ahead = { ref: `ahead:${U.open}`, href: stored };
+    const unsettled = resolveStoredLink(ahead, holder, empty);
+    expect.soft(asked, `${row.written} looks up the exact address`).toEqual([row.address]);
+    expect
+      .soft(spellStoredLink(ahead, holder, unsettled, grammar), `${row.written} ahead spelling`)
+      .toEqual({ href: row.spelled, address: row.address });
+
+    const arrived = doc(U.sibling, row.address);
+    const atAddress: LinkCatalog = { ...empty, documentAt: () => arrived };
+    const resolved = resolveStoredLink(ahead, holder, atAddress);
+    expect
+      .soft(spellStoredLink(ahead, holder, resolved, grammar), `${row.written} arrived spelling`)
+      .toEqual({ href: row.spelled, address: row.address });
+  }
 });
 
 function internal(uri: string, suffix: string) {
