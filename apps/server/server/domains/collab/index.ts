@@ -1,20 +1,27 @@
 /** Public barrel for collab domain contracts and composition factories. */
 
-export { createUnscopedAssetPathObserver } from "./adapters/agent-edit-observability.js";
+export {
+  createLinkScopeObserver,
+  type LinkScopeObserver,
+} from "./adapters/agent-edit-observability.js";
 export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
-export type { DocumentLinkSubstitution } from "./domain/document-link-occurrences.js";
-export type {
-  AssetPathProject,
-  DocumentAssetPaths,
-} from "./domain/ports/document-asset-paths.js";
-export type {
-  DocumentLinkMover,
-  DocumentLinkRewriteClaim,
-  RewriteDocumentLinks,
-} from "./domain/ports/document-link-rewrite.js";
+export {
+  type BindHolder,
+  type BindMarkdownInput,
+  type BoundWrite,
+  type LinkBinder,
+  LinkBindingInsideTransactionError,
+} from "./domain/link-binding.js";
+export {
+  type DocumentLinkScopes,
+  type HolderLinkScope,
+  LIVE_VIEW,
+  type LinkScopeKey,
+  type ScopePrepareRequest,
+} from "./domain/ports/document-link-scope.js";
 export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,

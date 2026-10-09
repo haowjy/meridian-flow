@@ -3,7 +3,8 @@
  *
  * The orchestrator owns permission. This module runs the allowed call: live
  * output journal appends, spawn/returnResult callback wiring, interrupt
- * callback wiring, and durable tool_result persistence. Writer-facing
+ * callback wiring, and durable tool_result persistence, which is also where a
+ * result's shown-link candidates become evidence. Writer-facing
  * helper-result cards belong to spawn. return_result settlement (envelope,
  * tool_result + child-report, endTurn) is spawn-owned. The caller supplies
  * mutable turn/block state so interrupt callbacks can update the active turn
@@ -21,6 +22,7 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { readThreadActivity } from "../../threads/index.js";
+import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
 import { readModelThreadReport } from "../spawn/model-thread-report.js";
@@ -46,6 +48,7 @@ export interface ToolDispatchDeps {
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   runClaim: Pick<import("./ports.js").RunClaim, "readMany" | "setCurrentTool">;
+  shownLinks: Pick<ShownLinkStore, "record">;
 }
 
 export interface ToolDispatchContext {
@@ -298,6 +301,15 @@ export async function dispatchToolCall(
     deps.persistenceDeps,
     ctx.state.threadId,
     async () => {
+      // The model is shown exactly the result persisted here, so its evidence
+      // commits with it; a cancelled or timed-out call never reaches this point.
+      for (const showing of execResult.shown ?? []) {
+        await deps.shownLinks.record({
+          ...showing,
+          threadId: ctx.state.threadId,
+          turnId: ctx.state.currentTurn.id,
+        });
+      }
       const block = contentForBlockInput({
         turnId: ctx.state.currentTurn.id,
         ...(stagedWrite ? { responseId: ctx.responseId } : {}),

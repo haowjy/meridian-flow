@@ -25,6 +25,8 @@ const version = (major: number, minor: number, patch = 0): CollabSchemaVersion =
   patch,
 });
 const SENTINEL_SCHEMA_VERSION = version(0, 0, 0);
+/** A head stamped by another collab schema major than this server's. */
+const OTHER_MAJOR_HEAD = version(COLLAB_SCHEMA_VERSION.major + 1, 0);
 
 function versionGateServices(
   input: {
@@ -76,7 +78,7 @@ function connectContext(clientSchemaVersion: CollabSchemaVersion) {
 function staleSchemaError() {
   return new DocumentSchemaMajorMismatchError(
     liveDocumentName,
-    version(1, 0),
+    OTHER_MAJOR_HEAD,
     COLLAB_SCHEMA_VERSION,
   );
 }
@@ -253,7 +255,7 @@ describe("Yjs connect-time schema version gate", () => {
   });
 
   it("refuses major-mismatched live and branch heads per connection", async () => {
-    const majorMismatchHead = version(1, 0);
+    const majorMismatchHead = OTHER_MAJOR_HEAD;
     const services = versionGateServices({
       liveHead: majorMismatchHead,
       branchHead: majorMismatchHead,
@@ -278,7 +280,7 @@ describe("Yjs connect-time schema version gate", () => {
 
   it("prioritizes a server-stale head over an even older client", async () => {
     const hocuspocus = createHocuspocus(
-      versionGateServices({ liveHead: version(1, 0) }) as never,
+      versionGateServices({ liveHead: OTHER_MAJOR_HEAD }) as never,
       createYjsRoomAccessIndex(),
     );
     const context = connectContext(SENTINEL_SCHEMA_VERSION);

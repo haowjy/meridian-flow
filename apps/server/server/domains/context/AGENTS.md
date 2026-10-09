@@ -79,7 +79,7 @@ Composer reference removal never calls the separate upload-delete route.
 
 Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
 previous paths pointing directly to stable document IDs. Chat links use previous locations only when there is no current occupant;
-Editor links use exact holder/href redirects instead. Every successful namespace claim consumes the exact old
+editor links carry a stable ref and never consult them. Every successful namespace claim consumes the exact old
 alias in the same transaction; source provisioning and hidden manifests are not
 path claims.
 
@@ -103,22 +103,25 @@ cycles; KB, User, Unfiled, and Work catalogs keep their own visibility rules.
 Routes authenticate and translate transport only; catalog transaction and replay
 policy live in the context domain.
 
-Internal document links resolve through the same domain at
-`POST /api/projects/[projectId]/links/resolve`. The route accepts a scheme or
-relative target (a standard Markdown link's destination; there are no
-wikilinks), resolves it through `resolveDocumentHref`, and returns the one
-document at that address or `{ document: null }`. Pending holder/href redirects
-win over the address, including an unavailable target that must not fall through.
-Moves flush durable link derivation before namespace locking, then lock all mutated
-document rows (moved identities and any overwrite victim), sorted,
-`FOR NO KEY UPDATE` before redirect rows. Never use `FOR UPDATE`
-for those document locks: journal FK inserts must remain compatible.
+Stored links resolve in batches at `POST /api/projects/[projectId]/links/resolve`
+(`(ref, href)` pairs, answers in request order). A `doc:`/`ahead:` ref resolves
+through one prepared link scope keyed by (project, requesting account); a ref the
+reader cannot reach answers `gone` with no location, because a ref is not a
+capability. Ref-less links keep the address resolver; previous locations apply
+only when `baseUri` is null (chat).
 
-Move redirects are consumed by `links/link-update-worker.ts` through collab atomic
-maintenance. Post-commit kicks and the recovery sweep share one worker. It skips
-archived/deleted Work holders and defers the whole holder batch when any target
-is unavailable (without backoff). A target moved out of a project holder's reach
-has its redirect dropped without changing the old href or counting the holder in
-the move receipt. Moved holders always respell relative links; a holder moved into
-`user://` uses contextual full project URIs, not relative personal paths. It retries
-failures with backoff, and credits the newest consumed mover without holder permission checks.
+**A move writes nothing into any document.** Links name documents, so a rename
+re-spells on read. Moves flush durable link derivation (which also registers
+client-minted ahead refs) before namespace locking, then row-lock every mutated
+document (moved identities and any overwrite victim) with
+`lockMovedDocumentRows`, sorted, `FOR NO KEY UPDATE`. Never use `FOR UPDATE`
+there: journal FK inserts must remain compatible. After the DML a cross-project
+move carries live manifest membership to its destination project, then the move
+settles ahead refs waiting at its destinations (move-in arrival), then counts the
+note's `linkUpdate`: occurrences in the request project's live holders (live
+manifest members, for drafted sources) whose ref names a moved document
+(`links/move-link-count.ts`).
+
+Every arrival (tracked create, upload, move-in, Work restore, Apply) settles ahead
+refs once, against its final tree, through `DocumentArrivals`; see
+[`.context/CONTEXT.md`](.context/CONTEXT.md#ahead-refs-and-arrivals).

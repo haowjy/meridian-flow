@@ -3,6 +3,7 @@
 import { splitHashline } from "@meridian/agent-edit";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { testFileGrant } from "../../../test-support/file-grants.js";
@@ -61,7 +62,10 @@ function serializable(value: unknown): unknown {
 }
 
 function serializeMarkdown(fixture: CrossWorkProbeFixture, doc: Y.Doc): string {
-  return fixture.markupCodec.serialize(fixture.model.projectBlocks(toDocHandle(doc)));
+  return fixture.markupCodec.serialize(
+    fixture.model.projectBlocks(toDocHandle(doc)),
+    UNSCOPED_DOCUMENT_LINKS,
+  );
 }
 
 export async function runCrossWorkProbe(

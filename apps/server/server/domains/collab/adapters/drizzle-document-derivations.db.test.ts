@@ -8,8 +8,8 @@ import {
   documentLinks,
   documents,
   documentYjsCheckpoints,
-  documentYjsUpdates,
   folders,
+  linkAheadRefs,
   projects,
   users,
 } from "@meridian/database/schema";
@@ -20,8 +20,11 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
-import { resolveDocumentUri } from "../../context/document-uri-resolver.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
+import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
+import {
+  createDocumentLastAddress,
+  createDocumentUriResolver,
+} from "../../context/document-uri-resolver.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import {
@@ -36,7 +39,6 @@ import {
   replaceDocumentAuthorityHeadGeneration,
 } from "./drizzle-document-authority-head.js";
 import { createDrizzleDocumentDerivationStore } from "./drizzle-document-derivations.js";
-import { createDrizzleDocumentLinkRewrite } from "./drizzle-document-link-rewrite.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 
@@ -50,9 +52,7 @@ describe("durable document derivations", () => {
   const sourceId = randomUUID();
   const documentId = randomUUID();
   const persistence = createDrizzleCollabPersistence(db);
-  const store = createDrizzleDocumentDerivationStore(db, (tx, id) =>
-    resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-  );
+  const store = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db));
   let fail = false;
   const service = createDocumentDerivationService({
     deferred: () => {},
@@ -252,13 +252,14 @@ describe("durable document derivations", () => {
     return db.select().from(documentLinks).where(eq(documentLinks.sourceDocumentId, documentId));
   }
 
-  it("certifies projection and links atomically, rejects stale cuts, and re-keys a moved holder", async () => {
+  it("certifies projection and links atomically, rejects stale cuts, and keeps ref keys across a holder move", async () => {
     const doc = new Y.Doc({ gc: false });
     const paragraph = new Y.XmlElement("paragraph");
     doc.getXmlFragment("prosemirror").push([paragraph]);
     const text = new Y.XmlText();
     paragraph.push([text]);
-    text.insert(0, "next", { link: { href: "next.md" } });
+    const target = randomUUID();
+    text.insert(0, "next", { link: { href: "manuscript://next.md", ref: `doc:${target}` } });
     await append(doc, "old");
     const oldCut = await store.capture(documentId);
     if (!oldCut) throw new Error("Missing old cut");
@@ -267,9 +268,10 @@ describe("durable document derivations", () => {
     const expected = [
       {
         sourceDocumentId: documentId,
-        href: "next.md",
-        targetKey: "manuscript://next.md",
-        targetProjectId: projectId,
+        linkKey: `doc:${target}`,
+        targetDocumentId: target,
+        aheadId: null,
+        address: "manuscript://next.md",
         occurrences: 1,
       },
     ];
@@ -278,7 +280,9 @@ describe("durable document derivations", () => {
     expect(await links()).toEqual(expected);
     await expect(
       runInDrizzleTransaction(db, async () => {
-        text.format(0, text.length, { link: { href: "wrong.md" } });
+        text.format(0, text.length, {
+          link: { href: "manuscript://wrong.md", ref: `doc:${randomUUID()}` },
+        });
         await append(doc, " rolled back");
         await service.derive(documentId);
         throw new Error("rollback certification");
@@ -317,9 +321,10 @@ describe("durable document derivations", () => {
       .from(documentDerivations)
       .where(eq(documentDerivations.documentId, documentId));
     expect(await projection()).toBe("old new");
-    expect(await links()).toEqual([{ ...expected[0], targetKey: "manuscript://moved/next.md" }]);
+    // The holder moved; its ref-keyed rows did not change, and nothing was written into it.
+    expect(await links()).toEqual(expected);
     expect(watermark?.linksLocationVersion).toBe(1n);
-    expect(watermark?.linksExtractorVersion).toBe(2);
+    expect(watermark?.linksExtractorVersion).toBe(3);
     await db
       .update(documentDerivations)
       .set({ linksExtractorVersion: 1 })
@@ -327,58 +332,10 @@ describe("durable document derivations", () => {
     expect(await store.stale({ projectId })).toEqual([documentId]);
     await service.flush({ projectId });
     expect(await store.stale({ projectId })).toEqual([]);
-    doc.destroy();
-  });
-
-  it("rolls back rejected certification and failed consumption without publishing", async () => {
-    const doc = new Y.Doc({ gc: false });
-    const paragraph = new Y.XmlElement("paragraph");
-    doc.getXmlFragment("prosemirror").push([paragraph]);
-    const text = new Y.XmlText();
-    paragraph.push([text]);
-    text.insert(0, "next", { link: { href: "next.md" } });
-    await append(doc, "before");
-    await service.derive(documentId);
-    const beforeRows = await db.select().from(documentYjsUpdates);
-    const beforeLinks = await links();
-    const beforeWatermarks = await db.select().from(documentDerivations);
-    let publications = 0;
-    const rewrite = createDrizzleDocumentLinkRewrite({
-      db,
-      resolveUri: (tx, id) =>
-        resolveDocumentUri(tx, createDrizzleProjectWorkAuthorityResolver(db), id),
-      serializer: { serializeDocument: async () => "rewritten" },
-      publish: () => {
-        publications++;
-      },
-    });
-    for (const rejection of [false, true]) {
-      await expect(
-        rewrite({
-          documentId,
-          claim: async () => {
-            // Change the locked cut to force a real certification rejection.
-            if (rejection)
-              await currentDrizzleDb(db)
-                .update(documents)
-                .set({ locationVersion: 1n })
-                .where(eq(documents.id, documentId));
-            return {
-              substitutions: new Map([["next.md", { href: "renamed.md" }]]),
-              mover: { type: "user", actorUserId: userId },
-              consume: async () => {
-                throw new Error("consume failed");
-              },
-            };
-          },
-        }),
-      ).rejects.toThrow(rejection ? "certification rejected" : "consume failed");
-      expect(await db.select().from(documentYjsUpdates)).toEqual(beforeRows);
-      expect(await links()).toEqual(beforeLinks);
-      expect(await db.select().from(documentDerivations)).toEqual(beforeWatermarks);
-      expect(await projection()).toBe("before");
-      expect(publications).toBe(0);
-    }
+    // A live document under a deleted folder holds no address there (deleted-ancestor rule).
+    await db.update(folders).set({ deletedAt: new Date() }).where(eq(folders.id, folderId));
+    expect((await store.capture(documentId))?.holderUri).toBeNull();
+    expect(await createDocumentUriResolver(db)(documentId)).toBeNull();
     doc.destroy();
   });
 
@@ -578,6 +535,101 @@ describe("durable document derivations", () => {
     await service.derive(documentId);
     expect(await projection()).toBe("Before");
     room.destroy();
+  });
+
+  it("the sweep registers a client-minted ahead ref whose registration failed after certification", async () => {
+    const real = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+    let failRegistration = true;
+    const aheadStore = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), {
+      registry: {
+        async registerUnregistered(scope, page) {
+          if (failRegistration) throw new Error("registry unavailable");
+          return real.registerUnregistered(scope, page);
+        },
+      },
+    });
+    const aheadService = createDocumentDerivationService({
+      deferred: () => {},
+      store: aheadStore,
+      serializer: { serializeDocument: async (_id, doc) => doc.getText("prose").toString() },
+      outsideTransaction: (operation) => operation(),
+      failed: () => {},
+    });
+    const aheadId = randomUUID();
+    const doc = new Y.Doc({ gc: false });
+    const paragraph = new Y.XmlElement("paragraph");
+    doc.getXmlFragment("prosemirror").push([paragraph]);
+    const text = new Y.XmlText();
+    paragraph.push([text]);
+    text.insert(0, "later", { link: { href: "manuscript://later.md", ref: `ahead:${aheadId}` } });
+    await append(doc, "Linked");
+    const registered = () =>
+      db.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, aheadId));
+
+    expect(await aheadService.derive(documentId)).toMatchObject({ status: "derived" });
+    expect(await links()).toEqual([
+      expect.objectContaining({ aheadId, address: "manuscript://later.md" }),
+    ]);
+    expect(await registered()).toEqual([]);
+    // Certified and unchanged: only the anti-join recovery can still find the ref.
+    expect(await aheadStore.stale()).toEqual([]);
+    failRegistration = false;
+    await aheadService.sweep();
+    expect(await registered()).toEqual([
+      expect.objectContaining({ scheme: "manuscript", path: "later.md", settledDocumentId: null }),
+    ]);
+
+    // More refs than one page: the holder's registration drains them all before a move locks.
+    const backlog = Array.from(
+      { length: 150 },
+      (_, i) => `10000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+    );
+    for (const [i, id] of backlog.entries()) {
+      text.insert(text.length, ` bulk ${i}`, {
+        link: { href: `manuscript://bulk-${i}.md`, ref: `ahead:${id}` },
+      });
+    }
+    await append(doc, " More");
+    expect(await aheadService.derive(documentId)).toMatchObject({ status: "derived" });
+    const unregistered = async () => {
+      const [row] = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM document_links l
+        LEFT JOIN link_ahead_refs a ON a.ahead_id = l.ahead_id
+        WHERE l.ahead_id IS NOT NULL AND a.ahead_id IS NULL`);
+      return row?.n;
+    };
+    expect(await unregistered()).toBe(0);
+
+    // A full page of refs that can never register (no such Work) ahead of a valid one: the
+    // sweep advances past what it attempted, so the valid ref registers on the next pass.
+    const poison = Array.from({ length: 100 }, (_, i) => {
+      const id = `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
+      return {
+        sourceDocumentId: documentId,
+        linkKey: `ahead:${id}`,
+        aheadId: id,
+        address: "scratch://@missing/later.md",
+        occurrences: 1,
+      };
+    });
+    const valid = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    await db.insert(documentLinks).values([
+      ...poison,
+      {
+        sourceDocumentId: documentId,
+        linkKey: `ahead:${valid}`,
+        aheadId: valid,
+        address: "manuscript://recoverable.md",
+        occurrences: 1,
+      },
+    ]);
+    await aheadService.sweep();
+    await aheadService.sweep();
+    expect(
+      await db.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, valid)),
+    ).toHaveLength(1);
+    await aheadService.stop();
+    doc.destroy();
   });
 
   it("the recovery sweep retries a missed derive without a local hint", async () => {

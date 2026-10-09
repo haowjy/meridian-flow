@@ -16,16 +16,16 @@ export interface ResolveDocumentLinkInput {
   workId?: string | null;
   rootThreadId?: string | null;
   target: DocumentLinkTarget;
-  holder?: { documentId: string; href: string };
+  /** Chat only: a link with no holder may follow a vacated path to the document that left it. */
+  previousLocations?: boolean;
 }
 
 export interface DocumentLinkResolver {
   resolve(input: ResolveDocumentLinkInput): Promise<ResolvedDocumentLink | null>;
 }
 
-/** A present redirect suppresses address fallback even when its target is unavailable. */
+/** Chat-only previous-location fallback, filtered to documents the reader may name. */
 export interface DocumentLinkHistory {
-  redirect(input: ResolveDocumentLinkInput): Promise<{ uri: string | null } | null>;
   previous(
     input: ResolveDocumentLinkInput,
     address: {

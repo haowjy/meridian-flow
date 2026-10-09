@@ -26,6 +26,7 @@ import {
   isSkillsUri,
   readSkill,
   refuseSkillWrite,
+  type ShownLinkShowing,
   type ToolHandlerContext,
 } from "../../domains/runtime/index.js";
 import { threadContainerTarget } from "../file-targets.js";
@@ -49,6 +50,7 @@ import {
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
+import { showingOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
   documentRevisionMetadata,
@@ -175,7 +177,10 @@ async function writeUnderGrant(
   address: ResolvedDocumentAddress,
   copied: CopiedSource | undefined,
   ctx: ToolHandlerContext,
-): Promise<(WriteOutcome & { isError: false }) | WriteToolErrorOutput> {
+): Promise<
+  | (WriteOutcome & { isError: false; shown: ShownLinkShowing[] })
+  | (WriteToolErrorOutput & { shown?: ShownLinkShowing[] })
+> {
   const grant = await documentGrant(deps, principal, parsed.command, address, "edit");
   if (isToolError(grant)) return grant;
   let written: RoutedWriteOutcome;
@@ -190,18 +195,25 @@ async function writeUnderGrant(
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
         grant,
+        shownLinks: threadShownLinks(deps, ctx.threadId),
         ...(copied ? { copiedNodes: copied.nodes } : {}),
       });
   } catch (cause) {
     if (!(cause instanceof FileEditRefusedError)) throw cause;
     return fileAccessDeniedError(parsed.command, firstRefusal(cause), address.filePath);
   }
-  if (written.isError) return { isError: true, output: written.result };
+  // The echo, staged or immediate, and an undo or redo result were shown; so
+  // was a partial failure's echo. An error without echo text carries no facts.
+  const shown = showingOf(address.documentId, written);
+  if (written.isError) return { isError: true, output: written.result, shown };
+  // The showing is host-only evidence: it leaves here only as `shown`.
+  const { showing: _showing, ...outcome } = written;
   // Undo and redo go where history says, so only forward writes name a destination.
   const reversal = parsed.command === "undo" || parsed.command === "redo";
-  return (
-    reversal ? withRefusedWrites(written) : withDestination(written, grant.destination)
-  ) as WriteOutcome & { isError: false };
+  const routed = reversal
+    ? withRefusedWrites(outcome)
+    : withDestination(outcome, grant.destination);
+  return { ...routed, shown } as WriteOutcome & { isError: false; shown: ShownLinkShowing[] };
 }
 
 export function createReadHandler(deps: ToolWiringDeps) {
@@ -230,6 +242,7 @@ export function createReadHandler(deps: ToolWiringDeps) {
     return {
       output: outcome.result,
       metadata: documentRevisionMetadata(address, outcome.revision),
+      shown: showingOf(address.documentId, outcome),
     };
   };
 }
@@ -331,7 +344,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
       }
-      return { isError: true, output: outcome.output };
+      return { isError: true, output: outcome.output, shown: outcome.shown };
     }
     if (stagedCreate) {
       const responseId = ctx.responseId;
@@ -374,6 +387,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             }
           : {}),
       },
+      shown: outcome.shown,
     };
   };
 }

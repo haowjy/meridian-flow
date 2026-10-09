@@ -1,4 +1,4 @@
-import { createDrizzleDocumentAssetPaths } from "../context/adapters/asset-path-resolver.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
@@ -6,12 +6,13 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
-
+import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
   CREATED_DOC_ID,
   createWorkDraftFixture,
   DOC_ID,
   DRAFT_DESTINATION,
+  PROJECT_ID,
   SOURCE_ID,
   THREAD_ID,
   TURN_2_ID,
@@ -70,7 +71,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheReason: "facts_unavailable",
       });
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        holder: { projectId: PROJECT_ID },
+        links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),
@@ -114,57 +116,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("keeps an AI write undoable after retargeting and relabeling", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
-        documentId: DOC_ID as never,
-        markdown: "Base.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      const written = await collab.agentEdit().write(
-        {
-          command: "insert",
-          file: "chapter.md",
-          documentId: DOC_ID,
-          content: "AI paragraph [ch5](ch5.md) and [custom](ch6.md).",
-        },
-        {
-          sessionId: "links",
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          grant: testFileGrant(DRAFT_DESTINATION),
-        },
-      );
-      expect(written.status).toBe("success");
-      const [draft] = await activeWorkDraft();
-      await collab.pushToLive({ branchId: draft.id });
-      await expectMarkdown(collab, DOC_ID, "[ch5](ch5.md)");
-      await collab.rewriteDocumentLinks({
-        documentId: DOC_ID as never,
-        claim: async () => ({
-          substitutions: new Map([
-            ["ch5.md", { href: "ch6.md", oldFilename: "ch5.md", newFilename: "ch6.md" }],
-            ["ch6.md", { href: "ch7.md" }],
-          ]),
-          mover: { type: "user", actorUserId: USER_ID as never },
-          consume: async () => {},
-        }),
-      });
-      await expectMarkdown(collab, DOC_ID, "[ch6](ch6.md) and [custom](ch7.md)");
-      const reversed = await collab.reverseTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      });
-      // The rewrite edited the AI's own paragraph, so the undo merges with an
-      // edit it didn't make: reconciled, not refused.
-      expect(reversed.status).toBe("reconciled");
-      expect(await readMarkdown(collab, DOC_ID)).not.toContain("AI paragraph");
-    });
-
     it("undoes and redoes overlapping replace and delete writes as one turn", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
@@ -172,7 +123,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "The fountain wore a skin of ice, each dark stone mirroring the colorless winter sky.";
       const gate =
         "At the gate, Captain Ilyan waited in silence, his gloved hand closed around the iron latch.";
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: fountain,
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -229,7 +180,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [DOC_ID, "First base."],
         [CREATED_DOC_ID, "Second base."],
       ] as const) {
-        await collab.writeDocument({
+        await writeMarkdown(collab, {
           documentId: documentId as never,
           markdown,
           origin: { type: "user", actorUserId: USER_ID as never },
@@ -253,7 +204,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).resolves.toMatchObject({ status: "success" });
         await applyDraft(collab, documentId);
       }
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: CREATED_DOC_ID as never,
         markdown: "Writer invalidated only the second document.",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -286,7 +237,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("withdraws redo after a writer edit lands following undo", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -309,7 +260,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       });
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Writer changed the manuscript.",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -361,7 +312,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("degrades live turn undo when a later writer edit intersects the pushed paragraph", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -384,7 +335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const [workDraft] = await activeWorkDraft();
       await collab.pushToLive({ branchId: workDraft.id });
 
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         // A pure insertion anchored inside agent-born text: both the chip and the
         // real undo must treat it as dependent.
@@ -411,7 +362,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps live turn undo available when a later writer edit is elsewhere", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -460,7 +411,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("durably commits two same-response staged writes to one document", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -527,7 +478,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("durably commits distinct responses that reuse a provider-local tool id", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.",
         origin: { type: "user", actorUserId: USER_ID as never },

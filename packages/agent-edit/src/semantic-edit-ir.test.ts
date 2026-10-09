@@ -1,8 +1,17 @@
 // Certification rejection matrix for SemanticEditIRV1.
 
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { Fragment } from "prosemirror-model";
 import { describe, expect, it } from "vitest";
 import type { SemanticEditIRV1 } from "./semantic-edit-ir.js";
 import { validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
+
+const schema = buildDocumentSchema();
+
+/** Plain inline content standing in for a resolved text replacement. */
+function inlineText(text: string): Fragment {
+  return text.length === 0 ? Fragment.empty : Fragment.from(schema.text(text));
+}
 
 const root = { clientID: 1, clock: 10, length: 2 };
 const base = (payload = "😀"): SemanticEditIRV1 => ({
@@ -20,7 +29,7 @@ const base = (payload = "😀"): SemanticEditIRV1 => ({
           documentId: "doc-1",
           file: "chapter.md",
           block: {} as never,
-          replacements: [{ span: { start: 0, end: 2 }, newText: payload }],
+          replacements: [{ span: { start: 0, end: 2 }, content: inlineText(payload) }],
           output: payload,
         },
         outputRuns: [{ kind: "fresh", payload, output: { from: 0, to: payload.length } }],

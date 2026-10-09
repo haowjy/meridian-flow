@@ -476,8 +476,8 @@ function ActiveSessionEditorView({
   const atReferenceCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !sharedReferenceCatalog)
       return null;
-    return { ...sharedReferenceCatalog, holderUri, linkAhead: (name: string) => linkAhead(name) };
-  }, [effectiveEditable, holderUri, identity.schemaType, linkAhead, sharedReferenceCatalog]);
+    return { ...sharedReferenceCatalog, linkAhead: (name: string) => linkAhead(name) };
+  }, [effectiveEditable, identity.schemaType, linkAhead, sharedReferenceCatalog]);
   // What a pasted `[[Name]]` may name: the Editor's link index (the same one
   // its links resolve against and link-ahead checks), in Manuscript, KB, User,
   // Unfiled and this Work's Scratch. Uploads hold files rather than documents.
@@ -485,7 +485,9 @@ function ActiveSessionEditorView({
     () =>
       linkableDocuments.documents.flatMap((document) => {
         const parsed = parseContextUri(document.uri);
-        return parsed.ok && isLinkDocumentScheme(parsed.value.scheme) ? [document.uri] : [];
+        return parsed.ok && isLinkDocumentScheme(parsed.value.scheme)
+          ? [{ documentId: document.documentId, uri: document.uri }]
+          : [];
       }),
     [linkableDocuments],
   );

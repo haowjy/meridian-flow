@@ -13,7 +13,7 @@ import {
 
 import { signedUrlRefreshDelayMs } from "@/core/editor/images";
 
-import { errorMessageFromPayload, readResponsePayload } from "./http-client";
+import { errorMessageFromPayload, getJson } from "./http-client";
 
 type AssetRouteInput = {
   projectId: string;
@@ -127,13 +127,9 @@ export async function getFigureSignedUrl(
   if (pending) return pending;
 
   const request = (async () => {
-    const response = await fetch(signedUrlPath(input), { method: "GET" });
-    const payload = await readResponsePayload(response);
-    if (!response.ok) throw new Error(errorMessageFromPayload(payload, response.status));
-
-    const value = deserializeTransport<GetFigureSignedUrlResponse>(
-      payload as GetFigureSignedUrlResponse,
-    );
+    // A refusal keeps its status: a 404 is the route saying the document is
+    // gone (or unreadable, which it does not tell apart), not a failure.
+    const value = await getJson<GetFigureSignedUrlResponse>(signedUrlPath(input));
     cacheSignedUrl({ ...input, ...value });
     return value;
   })();

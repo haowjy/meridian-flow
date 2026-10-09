@@ -1,20 +1,42 @@
 /**
- * What an internal link addresses in one resolution scope: the local answer
- * from the scope's document index, then the server.
+ * What the internal links of one resolution scope name: the local answer the
+ * shared link rules give over the scope's catalog (`project-link-catalog.ts`),
+ * synchronously, then the server for the rest, in batches. This module holds
+ * only that split, the transport, and what a server answer teaches the
+ * settlement memo; the rules are `resolveStoredLink`'s.
  *
- * The local projection applies the server's address rule
- * (`matchDocumentPath`) to the documents the index holds, so a link the index
- * can answer costs no request. It only answers when the index is complete; an
- * incomplete one cannot prove which document is at an address.
+ * - A `doc:` ref, or an `ahead:` ref the memo knows settled on a document,
+ *   resolves locally when the complete index holds that document, wherever it
+ *   lives now. A settled ref never answers by its old address again, online
+ *   or off, so a renumber that puts another document there never answers
+ *   for it.
+ * - Any other `ahead:` ref asks the server, because settlement is server
+ *   state. Until it answers, a document the complete index holds at exactly
+ *   the ref's stored address is the answer, shown at once (a Follow-Create,
+ *   say, before the server has settled the ref). Only a server `document`
+ *   naming another document, or `gone`, replaces it; with nothing there, the
+ *   server's `missing` is "doesn't exist yet".
+ * - A link with no ref resolves by its address: the complete index first
+ *   (`matchDocumentPath`, through the catalog's `documentFor`), then the
+ *   server.
  */
 
-import { matchDocumentPath, resolveDocumentHref } from "@meridian/contracts";
+import { type DocumentLinkAnswer, parseLinkRef, resolveStoredLink } from "@meridian/contracts";
 import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
-import type { DocumentLinkTarget, ResolvedDocumentLink } from "@meridian/contracts/protocol";
+import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
-import { resolveDocumentLink } from "@/client/api/document-links-api";
-import { documentLinkTarget, type InternalLinkResolver, linkTargetHref } from "@/core/editor/links";
+import { resolveDocumentLinks } from "@/client/api/document-links-api";
+import {
+  type DocumentAnswer,
+  type InternalLinkResolver,
+  type LinkAnswer,
+  type LocalLinkAnswer,
+  linkTargetAddress,
+  linkTargetHref,
+} from "@/core/editor/links";
 
+import type { LinkSettlements } from "./link-settlements";
+import { createProjectLinkCatalog } from "./project-link-catalog";
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
 
 /**
@@ -35,88 +57,119 @@ export type LinkResolutionScope = {
   baseUri: string | null;
   /**
    * The document holding the links, when the scope is one document's text.
-   * A server fallback names it, so the server can answer a link the holder
-   * has not been rewritten for yet through its pending redirect. Chat holds no
-   * links, so it has none.
+   * Its server questions are asked from its address, so until that address
+   * arrives (a new registration) they are not asked at all: a question with
+   * no holder address is chat's, which may fall back to previous locations.
    */
   holderDocumentId?: string | null;
-  /**
-   * How many times the holder's text has changed in this editor. Local, never
-   * sent: it is only a reason to register again, so an answer cannot outlive
-   * the text it answered once a rewrite (or any edit) has landed.
-   */
-  documentRevision?: number;
 };
 
-/** The document at the address, or null when only the server can say. */
-function projectLinkAnswer(
-  index: LinkableDocumentIndex,
-  request: DocumentLinkTarget,
-): ResolvedDocumentLink | null {
-  if (!index.complete) return null;
-  const match = localMatch(index.documents, request);
-  return match ? resolvedLink(match) : null;
-}
+const GONE: LinkAnswer = Object.freeze({ state: "gone", document: null });
+const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
+const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
-/**
- * Local answer first, then `resolveDocumentLink`. Nothing local at the address
- * still asks the server: the index may not hold the scope the address names
- * (another Work's Scratch).
- */
+const answered = (answer: LinkAnswer): LocalLinkAnswer => ({ kind: "answered", answer });
+
 export function createProjectLinkResolver(
   scope: LinkResolutionScope,
   index: LinkableDocumentIndex,
+  settlements: LinkSettlements,
 ): InternalLinkResolver {
-  const { projectId, workId, rootThreadId, baseUri, holderDocumentId } = scope;
-  return async (target) => {
-    const request = documentLinkTarget(target, baseUri ?? "");
-    // A relative path is meaningless without the URI of the document holding
-    // it. Throwing rather than answering "nothing found" is deliberate: the
-    // question could not be asked, and an unasked question must not render as
-    // a missing document. The base arriving is a scope change, so this same
-    // link is asked again instead of staying failed.
-    if (!request) throw new Error("link target is not a document link");
-    if (request.kind === "relative" && !baseUri) {
-      throw new Error("relative link has no base document URI yet");
-    }
-    const local = projectLinkAnswer(index, request);
-    if (local) return local;
-    const holder = holderDocumentId
-      ? { documentId: holderDocumentId, href: linkTargetHref(target) }
-      : undefined;
-    const { document } = await resolveDocumentLink(projectId, {
-      ...(rootThreadId ? { rootThreadId } : { workId }),
-      ...(holder ? { holder } : {}),
-      target: request,
-    });
-    return document;
+  const { projectId, workId, baseUri, holderDocumentId } = scope;
+  const memo = settlements.forProject(projectId);
+  const catalog = createProjectLinkCatalog(projectId, index, memo);
+  const indexedAnswer = (documentId: string) => {
+    const document = catalog.indexed(documentId);
+    return document ? documentAnswer(document) : null;
+  };
+  return {
+    index,
+    local({ ref, target }) {
+      // A relative path with no base cannot be asked; the base arriving is a
+      // new registration, which asks it again.
+      if (target.kind === "external" || (target.kind === "relative" && !baseUri)) return UNASKED;
+      const resolution = resolveStoredLink({ ref, href: linkTargetHref(target) }, catalog);
+      let provisional: DocumentAnswer | null = null;
+      if (resolution.kind === "gone") return answered(GONE);
+      if (resolution.kind === "address") {
+        const uri = linkTargetAddress(target, baseUri);
+        const document = uri ? catalog.documentFor(uri) : null;
+        const answer = document ? indexedAnswer(document.documentId) : null;
+        if (answer) return answered(answer);
+      }
+      if (resolution.kind === "document") {
+        const answer = indexedAnswer(resolution.document.documentId);
+        // Rule 4 (an ahead ref not known settled, at its exact address) is
+        // the server's to confirm; see `LocalLinkAnswer`.
+        const confirmed = resolution.settled || parseLinkRef(ref)?.kind === "doc";
+        if (answer && confirmed) return answered(answer);
+        provisional = answer;
+      }
+      // A holder whose own address has not arrived asks the server nothing: a
+      // question with no holder address is chat's, which may fall back to
+      // previous locations.
+      if (holderDocumentId && !baseUri) return provisional ? answered(provisional) : UNASKED;
+      return { kind: "ask", provisional };
+    },
+
+    async remote(questions) {
+      const response = await resolveDocumentLinks(projectId, {
+        workId,
+        baseUri,
+        links: questions.map(({ ref, target }) => ({ ref, href: linkTargetHref(target) })),
+      });
+      if (response.answers.length !== questions.length)
+        throw new Error("link resolution answered out of shape");
+      return response.answers.map((answer, at) => {
+        if (!answer) return null;
+        const ahead = parseLinkRef(questions[at]?.ref);
+        const settledOn = settlementOf(answer);
+        if (ahead?.kind === "ahead" && settledOn !== undefined)
+          memo.learn(ahead.aheadId, settledOn);
+        return serverAnswer(answer);
+      });
+    },
   };
 }
 
-function localMatch(
-  documents: readonly LinkableDocument[],
-  target: DocumentLinkTarget,
-): LinkableDocument | null {
-  const resolved =
-    target.kind === "scheme"
-      ? resolveDocumentHref(target.uri, null)
-      : resolveDocumentHref(target.path, target.baseUri);
-  const requested = resolved ? parseContextUri(resolved.uri) : null;
-  if (!requested?.ok) return null;
-  const { scheme, path, authority } = requested.value;
-  const candidates = documents.flatMap((document) => {
-    const candidate = parseContextUri(document.uri);
-    if (!candidate.ok || candidate.value.scheme !== scheme) return [];
-    // A contextual address means the scope's own Work, which is the only Work
-    // whose Scratch and Uploads the index holds.
-    if (
-      authority.kind !== "contextual" &&
-      JSON.stringify(candidate.value.authority) !== JSON.stringify(authority)
-    )
-      return [];
-    return [{ document, path: candidate.value.path }];
-  });
-  return matchDocumentPath(candidates, path, (candidate) => candidate.path)?.document ?? null;
+/**
+ * The client's answer for the API's. `unresolvable` is no answer at all: the
+ * server could not ask the question, which is not "nothing there", so it never
+ * draws dashed or offers Create.
+ */
+function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
+  switch (answer.state) {
+    case "document": {
+      const { document } = answer;
+      return documentAnswer({
+        documentId: document.id,
+        title: document.title,
+        uri: document.uri,
+        workId: document.workId,
+      });
+    }
+    case "gone":
+      return GONE;
+    case "missing":
+      return MISSING;
+    case "unresolvable":
+      return null;
+  }
+}
+
+/**
+ * What a rule-3 answer says an ahead ref settled on: its document, null for
+ * settled gone (identity unknown), undefined for any other answer.
+ */
+function settlementOf(answer: DocumentLinkAnswer): string | null | undefined {
+  if (answer.state === "document") return answer.settled ? answer.document.id : undefined;
+  if (answer.state === "gone") return answer.settled ? null : undefined;
+  return undefined;
+}
+
+function documentAnswer(document: LinkableDocument): DocumentAnswer | null {
+  const link = resolvedLink(document);
+  return link ? { state: "document", document: link } : null;
 }
 
 function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {

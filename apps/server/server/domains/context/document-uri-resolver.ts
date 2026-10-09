@@ -1,95 +1,21 @@
-/** Resolve persisted document ids back to canonical context URIs. */
-import { isContextUriScheme } from "@meridian/contracts/context-uri";
+/** Document ids to canonical URIs, answered by the one document-address owner (L32). */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contentDocumentPredicate,
-  contextSources,
-  documents,
-  folders,
-  threads,
-  works,
-} from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
-import type { ProjectWorkAuthorityResolver } from "../projects/index.js";
-import { toCanonical } from "./context/uri.js";
-import type { ContextScheme } from "./ports/context-port.js";
+import { currentDocumentAddress, loadDocumentAddresses } from "./adapters/document-address.js";
 
+/** Where a document lives now; null when it is deleted there or unspellable. */
 export type DocumentUriResolver = (documentId: string) => Promise<string | null>;
 
-type DocumentUriDb = Pick<Database, "select">;
+/** The address a document last held, with whether it is deleted there; null when unspellable. */
+export type DocumentLastAddress = (
+  documentId: DocumentId,
+) => Promise<{ uri: string; deleted: boolean } | null>;
 
-function asContextScheme(slug: string): ContextScheme | null {
-  return isContextUriScheme(slug) ? slug : null;
+export function createDocumentUriResolver(db: Database): DocumentUriResolver {
+  return async (documentId) =>
+    (await currentDocumentAddress(db, documentId as DocumentId))?.uri ?? null;
 }
 
-export function createDocumentUriResolver(
-  db: DocumentUriDb,
-  workAuthorityResolver: ProjectWorkAuthorityResolver,
-): DocumentUriResolver {
-  return async (documentId) => resolveDocumentUri(db, workAuthorityResolver, documentId);
-}
-
-export async function resolveDocumentUri(
-  db: DocumentUriDb,
-  workAuthorityResolver: ProjectWorkAuthorityResolver,
-  documentId: string,
-): Promise<string | null> {
-  const [document] = await db
-    .select({
-      name: documents.name,
-      extension: documents.extension,
-      folderId: documents.folderId,
-      sourceSlug: contextSources.slug,
-      workId: works.id,
-      workProjectId: works.projectId,
-      rootThreadRef: threads.ref,
-    })
-    .from(documents)
-    .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-    .leftJoin(works, eq(works.id, contextSources.workId))
-    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
-    .where(
-      and(
-        eq(documents.id, documentId as DocumentId),
-        contentDocumentPredicate(),
-        isNull(documents.deletedAt),
-        isNull(contextSources.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!document) return null;
-
-  const scheme = asContextScheme(document.sourceSlug);
-  if (!scheme) return null;
-
-  const folderPath = await resolveFolderPath(db, document.folderId);
-  const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
-  const path = [...folderPath, filename].join("/");
-  if (scheme === "scratch" && document.rootThreadRef)
-    return toCanonical(scheme, path, { kind: "lineage", rootThreadRef: document.rootThreadRef });
-  const workAuthority =
-    scheme === "scratch" || scheme === "uploads"
-      ? document.workId && document.workProjectId
-        ? await workAuthorityResolver.byId(document.workProjectId, document.workId)
-        : null
-      : { kind: "contextual" as const };
-  if (!workAuthority) return null;
-  return toCanonical(scheme, path, workAuthority);
-}
-
-async function resolveFolderPath(db: DocumentUriDb, folderId: string | null): Promise<string[]> {
-  const names: string[] = [];
-  let current = folderId;
-  while (current !== null) {
-    const [folder] = await db
-      .select({ id: folders.id, parentId: folders.parentId, name: folders.name })
-      .from(folders)
-      .where(eq(folders.id, current as typeof folders.$inferSelect.id))
-      .limit(1);
-    if (!folder) break;
-    if (folder.name) names.unshift(folder.name);
-    current = folder.parentId;
-  }
-  return names;
+export function createDocumentLastAddress(db: Database): DocumentLastAddress {
+  return async (documentId) => (await loadDocumentAddresses(db, { ids: [documentId] }))[0] ?? null;
 }

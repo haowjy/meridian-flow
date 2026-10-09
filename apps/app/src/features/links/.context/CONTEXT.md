@@ -10,23 +10,59 @@ for what a link means before it reaches this module.
 cache (the Editor passes the per-editor cache its decorations draw from):
 
 ```ts
-resolution.registerResolver(createProjectLinkResolver(scope, index));
-// per question:
-const request = documentLinkTarget(target, baseUri);     // the projection, not a translation
-const local = projectLinkAnswer(index, request);         // complete index only
-if (local) return local;
-const { document } = await resolveDocumentLink(projectId, { workId, target: request });
-return document;                                         // null = nothing at that address
+resolution.registerResolver(
+  createProjectLinkResolver(scope, index, settlements), // settlements: the account's memo
+  { baseUri, projectId },
+);
+// local, synchronously, per question: `resolveStoredLink` over the scope's catalog
+// (`project-link-catalog.ts`: the complete index, the memo as `settlement()`):
+//   malformed ref                          -> gone (never the address)
+//   doc:<id> the complete index holds      -> that document, wherever it lives now
+//   no ref, address the complete index has -> that document (matchDocumentPath)
+//   relative with no base, or a holder before its own address -> not asked
+//   ahead ref the memo knows settled on D  -> exactly a doc ref to D
+//   ahead ref settled, identity unknown    -> ask, never the address
+//   other ahead ref, complete index holds exactly its stored address
+//                                          -> that document now (design rule 4), and ask
+//   everything else                        -> ask
+// remote, per batch of asked questions (at most 200):
+//   one POST of { workId, baseUri, links: [{ ref, href }] }; answers in request order:
+//   document -> document;  gone -> gone;  missing -> missing;  unresolvable -> no answer
+//   `settled: true` (rule 3) on an ahead ref's document or gone -> the memo learns it
+//   a provisional local answer stands unless the server says gone or another document
 ```
 
-Both answers apply one address rule (`matchDocumentPath` from
-`@meridian/contracts`, beside `resolveDocumentHref`): the exact path, or the
-path with its final extension omitted when exactly one document fits.
-Addresses are unique, so there is no "several documents" answer.
+The address answers apply one rule (`matchDocumentPath` from
+`@meridian/contracts`, beside `resolveDocumentHref`, through
+`indexedDocumentAt`): the exact path, or the path with its final extension
+omitted when exactly one document fits. Addresses are unique, so there is no
+"several documents" answer. An ahead ref not known to be settled asks the
+server, because settlement is server state; the local exact-address step turns it solid at
+once when a local-first arrival (a follow's Create) sits there, and a server
+`document` naming another document, or `gone`, replaces it. A failed request
+keeps it.
+
+**A settlement is a fact the client keeps.** The resolve endpoint marks an
+ahead ref's answer `settled: true` when it came through the ref's settlement
+(design rule 3). The resolver records it in the account's memo
+(`AccountFeatureLifetime.linkSettlements`, per project
+`aheadId -> documentId | null`), outside every generation and shared by every
+surface in the account; it is never cleared while the account lives. The memo
+is the catalog's `settlement()`, and reachability stays in `document()`, as on
+the server. Settled `gone` records only "settled, identity unknown": it may
+mean the document is unreachable in that scope (a deleted Work, an excluded
+view), so a later settled `document` answer teaches the id; an id once
+learned is never replaced. From then on the ref is answered exactly like
+`doc:<id>`, never by its address, so a renumber that puts another document at
+the old address never draws or opens it, online or off, and the chip does not
+flash on catalog changes.
 
 `baseUri` is the URI of the document holding the link. Only a `relative` target
-needs it, and without one the resolver THROWS rather than answering null: an
-unasked question must not render as a missing document.
+needs it, and without one the question is not asked (a null answer, cached as
+a failure) rather than answered: an unasked question must not render as a
+missing document. A holder scope (`holderDocumentId`) asks the server nothing
+until its own address arrives, because a request with a null `baseUri` is
+chat's, which alone may fall back to a document's previous locations.
 
 `workId` is the Work row id, including No Work. In the Editor it is the
 holder's projected resource location `workId` for Scratch/Uploads, and the
@@ -74,8 +110,8 @@ finds the newer registration and does nothing; on unmount it still runs.
 
 The cost of the catalog contract is that one rename re-asks every internal link
 in the open document. That is the price of never showing a door onto a document
-that moved, and it is bounded by the resolution cache's four-at-a-time queue and
-the batch endpoint in [`FUTURE`](FUTURE).
+that moved, and it is bounded by the batch endpoint: one scan of the document
+is one request of up to 200 links, four batches at most in flight.
 
 ## What a follow does
 
@@ -86,6 +122,7 @@ the batch endpoint in [`FUTURE`](FUTURE).
 |---|---|
 | resolved, already cached | the document opens, no surface at all |
 | resolved after a wait | the same, and the checking dialog closes if it appeared |
+| a ref whose document is gone | nothing: no dialog, no open; the chip already says "No longer available" |
 | nothing at the address, creatable | "“{name}” doesn't exist yet", with `Create “{name}”` |
 | nothing at the address, not creatable (Scratch in any Work, Uploads, Unfiled, a non-document extension) | "“{name}” can't be found", no Create |
 | the request failed | "That link could not be checked", with Try again |
@@ -169,8 +206,9 @@ opens through the host's `onOpen` at once,
 while the server's move (which creates any missing folders) catches up in the
 background. A local failure stays on the dialog ("The document could not be
 created"); a sync failure lands on the document. Nothing about the link
-changes on creation: the created document is a new catalog, which is a new
-resolution generation, so the resolver simply starts finding it.
+changes on creation: the arrival settles the link's ahead ref server-side, and
+the created document is a new catalog, which is a new resolution generation,
+so the resolver asks again and finds it at once at the ref's exact address.
 
 ## The document index
 

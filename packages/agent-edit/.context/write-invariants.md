@@ -31,6 +31,20 @@ The memory-only runtime replica is distinct from that host-owned branch.
     for this reason; figures move via cut/paste. Drag-to-place is a wanted feature,
     to be built as delete+insert — see issue #111 / `apps/app/src/core/editor/.context/TODO.md`.
 
+- **Written links are assigned before alignment and never round-trip.** Every door that
+  turns written Markdown into nodes runs ref assignment over the replaced span
+  before block alignment and no-op detection, and applies the assigned nodes as
+  they are. An unchanged link keeps its old attrs verbatim and emits no format
+  item; copies, undo, redo and reply save never assign. Ahead refs a write
+  mints are registered before it applies or locks anything
+  ([link identity](link-correspondence.md)). A host whose door runs inside its
+  own transaction binds the whole document first, outside it, and hands the
+  core the bound nodes as a `create`'s content (`WriteContext.boundNodes`);
+  the core applies them as an ordinary overwrite (or, bound fresh, a create
+  into an empty document) and never assigns again. A create without overwrite
+  checks emptiness again at the admission that journals it, before
+  journaling: a writer admitted after the first check refuses it.
+
 ### Destructive scope targeting and recovery
 
 `remove` is the structural block-removal command and takes exactly one of `in`
@@ -160,3 +174,7 @@ going blind to a concurrent human edit.
   All formatted, escaped, entity, and cross-block cases splice and parse the
   affected serialized range before `replaceScope(...)`; they must not use
   serialized-body→flat offset mapping.
+- **No serialize/reparse between resolution and application.** Resolved edits
+  carry ProseMirror nodes; apply and the model adapter mutate from those nodes
+  and never call the codec. Parse failures surface in the resolver, before any
+  transaction.
