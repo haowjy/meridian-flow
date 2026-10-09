@@ -35,6 +35,8 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- Discarding a draft on a phone keeps its prose and review header visible while the next document opens, instead of holding a loading message.
+
 - Keep renamed and moved documents visible in loaded sidebars and after reload; remove deleted targets without stale catalog entries.
 
 - Links name the document they point at. Renaming or moving a chapter no longer edits the chapters that link to it: their links follow it and show its new path on the next read, and "Updated N links" counts the links in this project that point at what moved. When the AI edits a link's words, rewrites the paragraph around it, or writes a path it read before the target moved, the link keeps its document; words it unlinks stay plain, and a link it points somewhere new goes there.

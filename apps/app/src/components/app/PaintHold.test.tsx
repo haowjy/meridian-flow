@@ -21,7 +21,7 @@ function Pane({ precursor = false }: { precursor?: boolean }) {
     <>
       <h1>{surface.name}</h1>
       <PaintScope active={surface.active}>
-        <PaintCapture surface={surface.name} />
+        <PaintCapture surface={surface.name} state={surface.pending ? "pending" : "painted"} />
         {surface.pending ? <Pending /> : <input id="unique" defaultValue={surface.name} />}
       </PaintScope>
     </>
@@ -124,4 +124,40 @@ it("ends at ten seconds without extending the bound for a second move", async ()
     act(() => vi.advanceTimersByTime(1000));
     expect(cover()).toBeNull();
   });
+});
+
+it("keeps D's painted prose and header when tokens retire before E registers", async () => {
+  let transition: (phase: number) => void = () => {};
+  function Handoff() {
+    const [phase, setPhase] = useState(0);
+    transition = setPhase;
+    usePaintPending(phase === 1 || phase === 3);
+    return (
+      <>
+        <PaintCapture surface={String(phase)} state={phase ? "pending" : "painted"} />
+        {phase < 2 ? (
+          <>
+            <h1>D review header</h1>
+            <p>D prose</p>
+          </>
+        ) : (
+          <p>Opening document…</p>
+        )}
+      </>
+    );
+  }
+  await withReactRoot(
+    <PaintHold status="Opening E">
+      <Handoff />
+    </PaintHold>,
+    async () => {
+      await act(async () => transition(1));
+      await act(async () => transition(2));
+      act(() => frame());
+      expect(cover()?.textContent).toBe("D review headerD prose");
+      await act(async () => transition(3));
+      expect(cover()?.textContent).toBe("D review headerD prose");
+      expect(cover()?.textContent).not.toContain("Opening document…");
+    },
+  );
 });

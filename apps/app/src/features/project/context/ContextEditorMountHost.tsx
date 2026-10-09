@@ -132,6 +132,7 @@ export function ContextEditorMountHost({
         ): ReactNode => {
           if (!isMounted) return null;
           const hosted = session !== null || branchOnly;
+          const surface = failed ? "failed" : hosted ? "painted" : "pending";
           let bindingKey: string | undefined;
           if (session) {
             bindingKey = bindingKeysRef.current.get(session);
@@ -142,7 +143,7 @@ export function ContextEditorMountHost({
           }
           return (
             <PaintScope active={isActive}>
-              <PaintCapture surface={failed ? "failed" : hosted ? "editor" : "acquiring"} />
+              <PaintCapture surface={surface} state={surface} />
               <div
                 data-context-editor-document-id={tab.documentId}
                 className={cn(

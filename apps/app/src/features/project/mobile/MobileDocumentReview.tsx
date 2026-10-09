@@ -17,7 +17,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
-import { PaintCapture, usePaintPending } from "@/components/app/PaintHold";
+import { PaintCapture } from "@/components/app/PaintHold";
 
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
@@ -118,10 +118,10 @@ function ReviewTop({
     // The switcher lists this Work's drafts; each opens through the one launcher.
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
-  usePaintPending(header.view.status === "loading");
+  const { status } = header.view;
   return (
     <>
-      <PaintCapture surface={header.view.status} />
+      <PaintCapture surface={status} state={status === "loading" ? "pending" : "painted"} />
       <MobileReviewHeader header={header} onOpenList={onOpenList} />
     </>
   );

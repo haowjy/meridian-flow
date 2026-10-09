@@ -90,6 +90,8 @@ both shells: same Work, manuscript scheme, same document. Admission does not
 wait for the draft list; the review's fresh entry read owns absence. The launch
 and address owners own no paint state. Pane continuity belongs to
 [`PaintHold`](../../../components/app/PaintHold.md); navigation stays outside it.
+Only finished paint replaces its snapshot; loading statuses and token handoff
+gaps retain it. Launch and command adapters do not manage the copy.
 
 A launch may name `focusOperationIds`. The claimant that enters the review
 mounts `FocusOpenedReview`, which focuses and scrolls to the change holding
