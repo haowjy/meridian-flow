@@ -18,7 +18,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
 
-import type { ChangeCommandState } from "@/client/query/change-command-record";
+import type { ChangeCommandState } from "@/client/query/draft-command-record";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";

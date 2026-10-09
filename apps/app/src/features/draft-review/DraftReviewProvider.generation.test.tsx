@@ -15,8 +15,8 @@
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import { currentChangeCommandRecords } from "@/client/query/change-command-record";
 import {
+  currentChangeCommandRecords,
   currentDraftCommandRecords,
   pendingChangeCommand,
   readDraftsAfterCommands,

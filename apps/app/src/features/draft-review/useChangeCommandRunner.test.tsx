@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   currentChangeCommandRecords,
   hiddenOperationIds,
-} from "@/client/query/change-command-record";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+  resetDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftReviewBoundary, type DraftReviewContextValue } from "./DraftReviewProvider";
 import { type ChangeCommandRunner, useChangeCommandRunner } from "./useChangeCommandRunner";

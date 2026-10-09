@@ -66,6 +66,7 @@ describe("draft command records", () => {
       await act(async () => {
         beginDraftCommand(draft, {
           ...closing,
+          target: "selection",
           draftGeneration: 1,
           completesDraft: true,
         });

@@ -13,7 +13,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 
-import type { ChangeCommandState } from "@/client/query/change-command-record";
+import type { ChangeCommandState } from "@/client/query/draft-command-record";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeFailureText, discardLabel } from "./ReviewChangeParts";

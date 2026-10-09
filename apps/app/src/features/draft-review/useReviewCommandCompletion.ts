@@ -1,6 +1,6 @@
 /**
  * useReviewCommandCompletion — keeps an open review's completion ("Applying",
- * "Discarding", "No changes left") in step with the selection command in
+ * "Discarding", "No changes left") in step with the draft command in
  * flight on its draft, whichever controller sent it.
  *
  * A command's identity, mode, coverage and the draft generation it acted on
@@ -28,9 +28,15 @@ import {
   currentDraftCommandRecords,
   type DraftCommandRecords,
   pendingChangeCommand,
+  pendingDraftCommand,
   subscribeDraftCommandRecords,
 } from "@/client/query/draft-command-record";
-import type { DraftReviewAction, DraftReviewSelection, ReviewClaim } from "./draft-review-session";
+import type {
+  DraftReviewAction,
+  DraftReviewSelection,
+  DraftReviewState,
+  ReviewClaim,
+} from "./draft-review-session";
 import { listedDocumentName } from "./useSelectionCommands";
 
 type Scope = { projectId: string; workId: string };
@@ -45,8 +51,8 @@ export function draftClaim(
   draft: Scope & DraftReviewSelection,
   records: DraftCommandRecords = currentDraftCommandRecords(),
 ): ReviewClaim | undefined {
-  const command = pendingChangeCommand(records, draft);
-  if (!command) return undefined;
+  const command = pendingDraftCommand(records, draft);
+  if (!command || command.draftGeneration === undefined) return undefined;
   if (command.draftClosed)
     return {
       draftGeneration: command.draftGeneration,
@@ -83,8 +89,16 @@ export function completionAction(
   queryClient: QueryClient,
 ): DraftReviewAction | null {
   const { documentId, draftId } = draft;
-  const claim = pendingChangeCommand(records, draft);
-  const before = pendingChangeCommand(previous, draft);
+  const current = pendingDraftCommand(records, draft);
+  const prior = pendingDraftCommand(previous, draft);
+  const claim =
+    current?.draftGeneration !== undefined
+      ? { ...current, draftGeneration: current.draftGeneration }
+      : null;
+  const before =
+    prior?.draftGeneration !== undefined
+      ? { ...prior, draftGeneration: prior.draftGeneration }
+      : null;
   if (claim?.draftClosed)
     return before?.draftClosed
       ? null
@@ -95,7 +109,7 @@ export function completionAction(
           draftGeneration: claim.draftGeneration,
           documentName: claim.draftClosed.documentName,
         };
-  if (claim === before) return null;
+  if (current === prior) return null;
   if (claim?.completesDraft)
     return {
       type: "reviewCompleting",
@@ -115,9 +129,11 @@ export function useReviewCommandCompletion({
   projectId,
   workId,
   activeRef,
+  stateRef,
   dispatch,
 }: Scope & {
   activeRef: { readonly current: boolean };
+  stateRef: { readonly current: DraftReviewState };
   dispatch: Dispatch<DraftReviewAction>;
 }): void {
   const queryClient = useQueryClient();
@@ -128,8 +144,24 @@ export function useReviewCommandCompletion({
         for (const draft of changedDrafts(records, previous, { projectId, workId })) {
           const action = completionAction(records, previous, draft, queryClient);
           if (action) dispatch(action);
+          const command = pendingChangeCommand(records, draft);
+          const before = pendingChangeCommand(previous, draft);
+          const review = stateRef.current.surface;
+          if (
+            command?.outcome &&
+            command.outcome !== before?.outcome &&
+            review.kind === "inline" &&
+            review.documentId === draft.documentId &&
+            review.draftId === draft.draftId &&
+            review.draftGeneration === command.draftGeneration
+          )
+            dispatch({
+              type: "toast",
+              code: command.outcome,
+              tone: command.outcome === "change-gone" ? "error" : "info",
+            });
         }
       }),
-    [projectId, workId, queryClient, activeRef, dispatch],
+    [projectId, workId, queryClient, activeRef, stateRef, dispatch],
   );
 }
