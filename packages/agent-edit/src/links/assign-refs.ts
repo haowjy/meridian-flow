@@ -14,7 +14,9 @@
 import {
   type AheadRef,
   aheadAddress,
+  documentRef,
   mintAheadRef,
+  parseLinkRef,
   resolveDocumentHref,
   splitDocumentHrefSuffix,
   storedHref,
@@ -194,16 +196,12 @@ function assignKind(input: {
       return (contextual[twin] as LinkOccurrence).attrs;
     }
     if (match.pass === 2) {
-      if (isAssetSrc(match.ref))
-        return { ref: null, href: match.ref, title: occurrence.attrs.title };
       // The match came from a showing, so a latest showing always exists.
       const shownAddress = latestShownAddress(input.shown, match.ref);
-      const address = currentUri(scope, { ref: match.ref, href: shownAddress }) ?? shownAddress;
-      return {
-        ref: match.ref,
+      return shownAttrs(grammar, scope, match.ref, shownAddress, {
         title: occurrence.attrs.title,
-        href: storedHref(address, writtenSuffix),
-      };
+        suffix: writtenSuffix,
+      });
     }
     return fresh(input, occurrence);
   });
@@ -236,6 +234,38 @@ function continued(
       ? storedHref(address, writtenSuffix)
       : splitDocumentHrefSuffix(old.href).path + writtenSuffix,
   };
+}
+
+/**
+ * Pass 2's stored form: the shown identity in the written occurrence's own
+ * representation. Either kind of occurrence may have shown an upload, as a
+ * picture's `asset:<id>` or a text link's `doc:<id>`; a picture stores an
+ * upload as `asset:<id>` and a text link as its document ref, at its current
+ * address (else the shown one) plus the written suffix.
+ */
+function shownAttrs(
+  grammar: Grammar,
+  scope: HolderLinkScope,
+  shownRef: string,
+  shownAddress: string,
+  written: { title: string | null; suffix: string },
+): OccurrenceAttrs {
+  const upload = isAssetSrc(shownRef)
+    ? shownRef.slice("asset:".length)
+    : uploadOf(scope, shownRef, grammar);
+  if (grammar.kind === "source" && upload !== null)
+    return { ref: null, href: `asset:${upload}`, title: written.title };
+  const ref = upload !== null ? documentRef(upload) : shownRef;
+  const address = currentUri(scope, { ref, href: shownAddress }) ?? shownAddress;
+  return { ref, title: written.title, href: storedHref(address, written.suffix) };
+}
+
+/** The upload a picture source would store as `asset:<id>` for a shown document ref, or null. */
+function uploadOf(scope: HolderLinkScope, ref: string, grammar: Grammar): string | null {
+  const parsed = parseLinkRef(ref);
+  if (grammar.kind !== "source" || parsed?.kind !== "doc") return null;
+  const asset = `asset:${parsed.documentId}`;
+  return scope.spellSource({ src: asset, ref: null }).address === null ? null : parsed.documentId;
 }
 
 /**
