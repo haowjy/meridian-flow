@@ -7,7 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
-import { createLinkResolution, type LinkResolution, type LinkTarget } from "@/core/editor/links";
+import { createLinkAnswerCache, type LinkAnswerCache, type LinkTarget } from "@/core/editor/links";
 
 import { CHECKING_DELAY_MS, type FollowReporter, type LinkDestination } from "./follow-link";
 import type { LinkResolutionScope } from "./project-link-resolver";
@@ -39,7 +39,7 @@ function doc(name: string): ResolvedDocumentLink {
 /** Server answers the test releases by name. */
 let pending: Map<string, (document: ResolvedDocumentLink | null) => void>;
 let events: string[];
-let resolution: LinkResolution;
+let resolution: LinkAnswerCache;
 let root: Root;
 let host: HTMLDivElement;
 let follower: LinkFollower;
@@ -99,7 +99,7 @@ beforeEach(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
   pending = new Map();
   events = [];
-  resolution = createLinkResolution();
+  resolution = createLinkAnswerCache();
   server.mockReset();
   // One link per batch here: each follow asks on its own.
   server.mockImplementation(

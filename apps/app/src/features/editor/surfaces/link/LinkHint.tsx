@@ -74,14 +74,14 @@ export function LinkHint({ editor, hint }: { editor: Editor; hint: LinkHintTarge
       style={position ?? { left: rect.left, top: rect.bottom + HINT_GAP_PX }}
     >
       <span className="meridian-link-hint__destination">
-        {resolution?.state === "resolved"
+        {resolution?.state === "document"
           ? resolution.document.title
           : linkTargetLabel(shown.target)}
       </span>
-      {resolution?.state === "resolved" ? (
+      {resolution?.state === "document" ? (
         <span className="meridian-link-hint__note">{resolution.document.path}</span>
       ) : null}
-      {resolution?.state === "unresolved" ? (
+      {resolution?.state === "missing" ? (
         <span className="meridian-link-hint__note">{t`Doesn't exist yet`}</span>
       ) : null}
       {resolution?.state === "gone" ? (

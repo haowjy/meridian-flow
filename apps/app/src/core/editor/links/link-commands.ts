@@ -25,7 +25,7 @@ import {
   resolveAnchorIn,
 } from "../anchors";
 import { bindWrittenHref } from "./link-binding";
-import { getLinkResolution } from "./link-storage";
+import { getLinkAnswerCache } from "./link-storage";
 import { normalizeLinkHref } from "./link-target";
 
 export type LinkSelection = {
@@ -286,7 +286,7 @@ function committedLinkAttrs(
     };
   }
   if (picked) return { href, title: null, ref: picked };
-  const scope = getLinkResolution(editor)?.binding;
+  const scope = getLinkAnswerCache(editor)?.binding;
   return { ...bindWrittenHref(href, scope?.holderUri ?? null, scope?.index ?? null), title: null };
 }
 

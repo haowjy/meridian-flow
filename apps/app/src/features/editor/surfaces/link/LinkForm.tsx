@@ -131,7 +131,7 @@ function LinkFields({
   const target = classifyLinkTarget(href);
   const destinationLabel =
     selectedDestination?.label ??
-    (resolution?.state === "resolved"
+    (resolution?.state === "document"
       ? resolution.document.title
       : target
         ? linkTargetLabel(target)
@@ -283,13 +283,13 @@ function LinkFields({
               }}
             >{t`Change`}</Button>
           </div>
-          {selectedDestination || resolution?.state === "resolved" ? (
+          {selectedDestination || resolution?.state === "document" ? (
             <span className="text-xs text-muted-foreground">
               {selectedDestination?.location ??
-                (resolution?.state === "resolved" ? resolution.document.path : "")}
+                (resolution?.state === "document" ? resolution.document.path : "")}
             </span>
           ) : null}
-          {resolution?.state === "unresolved" ? (
+          {resolution?.state === "missing" ? (
             <span className="text-xs text-muted-foreground">{t`Doesn't exist yet`}</span>
           ) : null}
           {resolution?.state === "gone" ? (

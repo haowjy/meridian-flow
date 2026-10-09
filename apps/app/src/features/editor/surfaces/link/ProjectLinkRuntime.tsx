@@ -25,7 +25,11 @@
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo } from "react";
 
-import { getLinkResolution, getLinkSurface, type InternalLinkNavigator } from "@/core/editor/links";
+import {
+  getLinkAnswerCache,
+  getLinkSurface,
+  type InternalLinkNavigator,
+} from "@/core/editor/links";
 import {
   type FollowReporter,
   type LinkableDocumentIndex,
@@ -76,7 +80,7 @@ export function ProjectLinkRuntime({
   active: boolean;
 }) {
   const { projectId, workId } = useEditorScope();
-  const resolution = useMemo(() => getLinkResolution(editor), [editor]);
+  const resolution = useMemo(() => getLinkAnswerCache(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
   const open = useEditorLinkDestination();
 

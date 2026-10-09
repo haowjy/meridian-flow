@@ -15,7 +15,7 @@ import {
   insertLinkAhead,
 } from "../extensions/at-reference/document-link-insertion";
 import { commitLinkDraft, resolveLinkDraft } from "./link-commands";
-import { getLinkResolution } from "./link-storage";
+import { getLinkAnswerCache } from "./link-storage";
 import { linkPastedWikilinks } from "./wikilink-paste";
 
 const HOLDER = "manuscript://volume-1/chapter-2.md";
@@ -37,7 +37,7 @@ afterEach(() => {
 function editor(content = "<p>Kael waits.</p>"): Editor {
   const created = new Editor({ extensions: createStandaloneEditorExtensions(), content });
   live.push(created);
-  getLinkResolution(created)?.registerResolver(
+  getLinkAnswerCache(created)?.registerResolver(
     { remote: async (questions) => questions.map(() => null) },
     {
       baseUri: HOLDER,
