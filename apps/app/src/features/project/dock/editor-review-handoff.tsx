@@ -20,7 +20,6 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { FocusOpenedReview, type ReviewFocusRequest } from "./FocusOpenedReview";
-import { ReviewHandoverContext, useReviewHandoverOwner } from "./review-handover";
 
 export type AiDraftLaunchTarget = {
   workId: string;
@@ -84,8 +83,6 @@ export function EditorReviewHandoffProvider({
 }) {
   const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
   const [routingDraftId, setRoutingDraftId] = useState<string | null>(null);
-  const handover = useReviewHandoverOwner();
-  const { begin: beginHandover, release: releaseHandover } = handover;
   const sequence = useRef(0);
   const latest = useRef<EditorReviewIntent | null>(null);
   const claimed = useRef<number | null>(null);
@@ -100,12 +97,6 @@ export function EditorReviewHandoffProvider({
       };
       // A new attempt retires the previous attempt's message.
       clearDraftReviewLaunchFailure(draft);
-      // Navigation happens first; what is painted stays until the review being opened has painted.
-      const held = beginHandover({
-        documentId: target.documentId,
-        draftId: target.draftId,
-        documentName: target.documentName,
-      });
       const staged = { ...target, sequence: ++sequence.current };
       latest.current = staged;
       claimed.current = null;
@@ -148,7 +139,6 @@ export function EditorReviewHandoffProvider({
               latest.current = null;
               setIntent(null);
             }
-            releaseHandover(held);
             return;
           }
           if (latest.current?.sequence !== staged.sequence) return;
@@ -160,7 +150,6 @@ export function EditorReviewHandoffProvider({
           setIntent(null);
         }
         // The failure belongs on the draft the writer tried to open.
-        releaseHandover(held);
         failDraftReviewLaunch(draft);
         throw error;
       } finally {
@@ -169,7 +158,7 @@ export function EditorReviewHandoffProvider({
         }
       }
     },
-    [beginHandover, openContextRoute, projectId, releaseHandover],
+    [openContextRoute, projectId],
   );
   const claim = useCallback((claimedSequence: number) => {
     if (latest.current?.sequence !== claimedSequence) return;
@@ -180,7 +169,7 @@ export function EditorReviewHandoffProvider({
   return (
     <EditorReviewCommandContext.Provider value={openEditorReview}>
       <EditorReviewIntentContext.Provider value={{ intent, routingDraftId, claim }}>
-        <ReviewHandoverContext.Provider value={handover}>{children}</ReviewHandoverContext.Provider>
+        {children}
       </EditorReviewIntentContext.Provider>
     </EditorReviewCommandContext.Provider>
   );
@@ -223,12 +212,11 @@ export function EditorReviewIntentClaimant({
   const focusDone = useCallback(() => setFocus(null), []);
 
   useEffect(() => {
-    if (!intent) return;
-    if (editorWorkId !== intent.workId) return;
-    if (activeScheme !== "manuscript") return;
-    if (review.activeEditorDocumentId !== intent.documentId) return;
-    const group = review.fileForDocument(intent.documentId);
-    if (group?.draft.draftId !== intent.draftId) return;
+    if (
+      !intent ||
+      !admissible(intent, { editorWorkId, activeScheme, documentId: review.activeEditorDocumentId })
+    )
+      return;
     review.controller.enterInlineReview(intent.documentId, intent.draftId);
     // The latest launch decides the focus: one without it clears an older request.
     setFocus(
@@ -247,4 +235,29 @@ export function EditorReviewIntentClaimant({
   return focus ? (
     <FocusOpenedReview key={focus.sequence} request={focus} onDone={focusDone} />
   ) : null;
+}
+
+/** The launch and its host agree on the destination before passive admission. */
+export function admissible(
+  intent: EditorReviewIntent,
+  host: { editorWorkId: string | null; activeScheme: string | null; documentId: string | null },
+) {
+  return (
+    intent.workId === host.editorWorkId &&
+    host.activeScheme === "manuscript" &&
+    intent.documentId === host.documentId
+  );
+}
+export function useRequestedReview(host: {
+  editorWorkId: string | null;
+  activeScheme: string | null;
+  documentId: string | null;
+}) {
+  const { controller } = useDraftReview();
+  const intent = useContext(EditorReviewIntentContext)?.intent;
+  return controller.inlineReview?.documentId === host.documentId
+    ? controller.inlineReview.draftId
+    : intent && admissible(intent, host)
+      ? intent.draftId
+      : null;
 }

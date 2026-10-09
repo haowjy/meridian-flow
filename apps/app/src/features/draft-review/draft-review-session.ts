@@ -726,7 +726,7 @@ function observeGeneration(
   }
   if (read.draftGeneration < shown) return review;
   if (read.draftGeneration === shown) return withRoom(review);
-  if (!read.proposal) return withRoom(review);
+  if (!adoptsGeneration(review, read)) return withRoom(review);
   const completion = completionAt(read.claim, read.draftGeneration);
   return reenter(review, read.draftGeneration, completion, read.roomName);
 }
@@ -783,4 +783,16 @@ function surfaceMatchesDraft(
 
 function selectionMatches(left: DraftReviewSelection | null, right: DraftReviewSelection): boolean {
   return left?.documentId === right.documentId && left.draftId === right.draftId;
+}
+
+/** A newer proposal, never an empty close-reset, re-enters the review. */
+export function adoptsGeneration(
+  review: InlineDraftReview,
+  read: { draftGeneration: number; proposal: boolean },
+) {
+  return (
+    review.draftGeneration !== undefined &&
+    read.draftGeneration > review.draftGeneration &&
+    read.proposal
+  );
 }

@@ -40,6 +40,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useWorks } from "@/client/query/useWorks";
+import { usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
@@ -514,6 +515,8 @@ function ActiveSessionEditorView({
     evidenceDegraded,
   });
 
+  usePaintPending(editor === null);
+
   // Claim the shared review-runtime slot ONLY while this editor is the one in
   // review. Editors that are not in review must not touch the slot at all: the
   // context host keeps warm hidden editors mounted, and an unconditional clear
@@ -650,6 +653,7 @@ function ActiveSessionEditorView({
 }
 
 function PendingEditorShell({ className, showToolbar = true }: EditorViewProps) {
+  usePaintPending();
   return (
     <section
       className={cn(

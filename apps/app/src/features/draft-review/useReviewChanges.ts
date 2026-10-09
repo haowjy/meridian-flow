@@ -17,7 +17,11 @@ import { useCallback, useMemo } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { selectionOf } from "./change-selection";
 import { type DraftChangesView, listablePreview, useChangeItems } from "./draft-changes";
-import type { DraftCommandOutcome, DraftReviewSelection } from "./draft-review-session";
+import {
+  adoptsGeneration,
+  type DraftCommandOutcome,
+  type DraftReviewSelection,
+} from "./draft-review-session";
 import { type ReviewChange, resolveFocusedChange, reviewChangesOfPreview } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
 
@@ -166,7 +170,13 @@ export function useReviewChanges(
   const status: ReviewChangesView["status"] = !inline
     ? "idle"
     : active
-      ? "ready"
+      ? !completion &&
+        adoptsGeneration(inline, {
+          draftGeneration: active.draftGeneration,
+          proposal: active.inlineModelPresent && reviewChangesOfPreview(active).length > 0,
+        })
+        ? "loading"
+        : "ready"
       : preview?.status === "gone"
         ? "gone"
         : "loading";

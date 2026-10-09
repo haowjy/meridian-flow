@@ -7,6 +7,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
+import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type {
   DocumentSession,
@@ -17,6 +18,7 @@ import type { ResourceContentHandle } from "@/core/resources/resource-content-ac
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
+import { useRequestedReview } from "../dock/editor-review-handoff";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
@@ -69,6 +71,12 @@ export function ContextEditorMountHost({
   readOnly = false,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const activeTab = trackedTabs.find((tab) => tab.documentId === activeTabId);
+  const requestedReview = useRequestedReview({
+    editorWorkId: controller.workId,
+    activeScheme: activeTab?.kind === "tracked" ? activeTab.scheme : null,
+    documentId: activeTabId,
+  });
   const { snapshot: resourceProjection } = useAccountResourceProjection(projectId);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
@@ -106,10 +114,7 @@ export function ContextEditorMountHost({
         );
         const isMounted = mounted.has(tab.documentId);
         const isActive = tab.documentId === activeTabId;
-        const selectedReviewDraftId =
-          isActive && controller.inlineReview?.documentId === tab.documentId
-            ? controller.inlineReview.draftId
-            : null;
+        const selectedReviewDraftId = isActive ? requestedReview : null;
         const reviewRoomName = selectedReviewDraftId
           ? reviewRoomNameForDraft(tab.documentId, selectedReviewDraftId)
           : null;
@@ -135,136 +140,141 @@ export function ContextEditorMountHost({
             }
           }
           return (
-            <div
-              data-context-editor-document-id={tab.documentId}
-              className={cn(
-                // Each editor fills the host's frame; only the active one is
-                // visible. `hidden` keeps DOM/state alive without painting.
-                "absolute inset-0 flex min-h-0 flex-col",
-                isActive ? "" : "hidden",
-              )}
-              // Defensive: aria-hidden hides background editors from AT.
-              aria-hidden={!isActive}
-              aria-busy={!failed && !hosted}
-            >
-              {failed ? (
-                <div className="grid h-full place-items-center">
-                  <div className="space-y-3 text-center">
-                    <p className="text-destructive text-sm">
-                      <Trans>Couldn't open this document.</Trans>
-                    </p>
-                    {retry ? (
-                      <Button type="button" size="sm" variant="secondary" onClick={retry}>
-                        <Trans>Retry</Trans>
-                      </Button>
-                    ) : null}
+            <PaintScope active={active && isActive}>
+              <PaintCapture surface={failed ? "failed" : hosted ? "editor" : "acquiring"} />
+              <div
+                data-context-editor-document-id={tab.documentId}
+                className={cn(
+                  // Each editor fills the host's frame; only the active one is
+                  // visible. `hidden` keeps DOM/state alive without painting.
+                  "absolute inset-0 flex min-h-0 flex-col",
+                  isActive ? "" : "hidden",
+                )}
+                // Defensive: aria-hidden hides background editors from AT.
+                aria-hidden={!isActive}
+                aria-busy={!failed && !hosted}
+              >
+                {failed ? (
+                  <div className="grid h-full place-items-center">
+                    <div className="space-y-3 text-center">
+                      <p className="text-destructive text-sm">
+                        <Trans>Couldn't open this document.</Trans>
+                      </p>
+                      {retry ? (
+                        <Button type="button" size="sm" variant="secondary" onClick={retry}>
+                          <Trans>Retry</Trans>
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ) : null}
-              {!failed && !hosted ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
-              {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
-                <UntitledInputObserver
-                  documentId={tab.documentId}
-                  session={session}
-                  onBecameNonEmpty={onUntitledBecameNonEmpty}
-                />
-              ) : null}
-              {/* Filename chrome is host-owned: the context tab strip names the
+                ) : null}
+                {!failed && !hosted ? (
+                  <DelayedContentSkeleton className="absolute inset-0" />
+                ) : null}
+                {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
+                  <UntitledInputObserver
+                    documentId={tab.documentId}
+                    session={session}
+                    onBecameNonEmpty={onUntitledBecameNonEmpty}
+                  />
+                ) : null}
+                {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-              {failed || !hosted ? null : waitingForReviewRoom && controller.reviewRoomError ? (
-                <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-                  <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
-                    <p className="font-medium text-foreground text-sm">
-                      <Trans>Couldn't open review mode.</Trans>
-                    </p>
-                    <p className="text-muted-foreground text-xs">
-                      {branchOnly ? (
-                        <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
-                      ) : (
-                        <Trans>Try again, or return to the live document.</Trans>
-                      )}
-                    </p>
-                    <div className="flex justify-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => {
-                          if (selectedReviewDraftId) {
-                            controller.enterInlineReview(tab.documentId, selectedReviewDraftId);
-                            return;
-                          }
-                          controller.exitInlineReview();
-                        }}
-                      >
-                        <Trans>Retry</Trans>
-                      </Button>
-                      {branchOnly ? null : (
+                {failed || !hosted ? null : waitingForReviewRoom && controller.reviewRoomError ? (
+                  <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+                    <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
+                      <p className="font-medium text-foreground text-sm">
+                        <Trans>Couldn't open review mode.</Trans>
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {branchOnly ? (
+                          <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
+                        ) : (
+                          <Trans>Try again, or return to the live document.</Trans>
+                        )}
+                      </p>
+                      <div className="flex justify-center gap-2">
                         <Button
                           type="button"
                           size="sm"
-                          variant="ghost"
-                          onClick={() => controller.exitInlineReview()}
+                          variant="secondary"
+                          onClick={() => {
+                            if (selectedReviewDraftId) {
+                              controller.enterInlineReview(tab.documentId, selectedReviewDraftId);
+                              return;
+                            }
+                            controller.exitInlineReview();
+                          }}
                         >
-                          <Trans>Back to live</Trans>
+                          <Trans>Retry</Trans>
                         </Button>
-                      )}
+                        {branchOnly ? null : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => controller.exitInlineReview()}
+                          >
+                            <Trans>Back to live</Trans>
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                // While the review room resolves, the live editor stays on
-                // screen (a draft-only tab has none, so its shell holds the place).
-                <>
-                  {active && isActive ? (
-                    <>
-                      <ActiveEditorProjection
-                        documentId={tab.documentId}
-                        session={session}
-                        inReview={Boolean(reviewDraftId)}
-                        setProjection={setActiveEditorDocumentId}
-                      />
-                      <RoomScopeCatalogCheck
-                        projectId={projectId}
-                        session={session}
-                        reviewRoomName={reviewRoomName}
-                        readOnly={readOnly}
-                      />
-                    </>
-                  ) : null}
-                  <PresenceSuspension
-                    session={session}
-                    enabled={Boolean(reviewDraftId && active)}
-                  />
-                  <EditorView
-                    projectId={projectId}
-                    documentId={tab.documentId}
-                    session={session ?? undefined}
-                    bindingKey={bindingKey}
-                    // A warm editor is hidden, not gone. Its chrome portals to
-                    // the body, where `hidden` on an ancestor means nothing.
-                    active={active && isActive}
-                    editable={!readOnly}
-                    showToolbar={!readOnly}
-                    detached={tab.kind === "new"}
-                    localContentReady={localContentReady}
-                    schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
-                    // The intent, not the resolved room: the live editor goes
-                    // read-only from the click, while the room is still resolving.
-                    reviewDraftId={selectedReviewDraftId}
-                    reviewRoomName={reviewRoomName}
-                    reviewWorkId={reviewDraftId ? controller.workId : null}
-                    // Leaving review would strand a draft-only tab on an empty
-                    // editor; the writer closes it from the tab bar instead.
-                    onReviewSessionUnavailable={
-                      branchOnly ? undefined : controller.exitInlineReview
-                    }
-                    // A room the server has moved past is not the end of the review,
-                    // a draft-only one included: the review reads the current room.
-                  />
-                </>
-              )}
-            </div>
+                ) : (
+                  // While the review room resolves, the live editor stays on
+                  // screen (a draft-only tab has none, so its shell holds the place).
+                  <>
+                    {active && isActive ? (
+                      <>
+                        <ActiveEditorProjection
+                          documentId={tab.documentId}
+                          session={session}
+                          inReview={Boolean(reviewDraftId)}
+                          setProjection={setActiveEditorDocumentId}
+                        />
+                        <RoomScopeCatalogCheck
+                          projectId={projectId}
+                          session={session}
+                          reviewRoomName={reviewRoomName}
+                          readOnly={readOnly}
+                        />
+                      </>
+                    ) : null}
+                    <PresenceSuspension
+                      session={session}
+                      enabled={Boolean(reviewDraftId && active)}
+                    />
+                    <EditorView
+                      projectId={projectId}
+                      documentId={tab.documentId}
+                      session={session ?? undefined}
+                      bindingKey={bindingKey}
+                      // A warm editor is hidden, not gone. Its chrome portals to
+                      // the body, where `hidden` on an ancestor means nothing.
+                      active={active && isActive}
+                      editable={!readOnly}
+                      showToolbar={!readOnly}
+                      detached={tab.kind === "new"}
+                      localContentReady={localContentReady}
+                      schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
+                      // The intent, not the resolved room: the live editor goes
+                      // read-only from the click, while the room is still resolving.
+                      reviewDraftId={selectedReviewDraftId}
+                      reviewRoomName={reviewRoomName}
+                      reviewWorkId={reviewDraftId ? controller.workId : null}
+                      // Leaving review would strand a draft-only tab on an empty
+                      // editor; the writer closes it from the tab bar instead.
+                      onReviewSessionUnavailable={
+                        branchOnly ? undefined : controller.exitInlineReview
+                      }
+                      // A room the server has moved past is not the end of the review,
+                      // a draft-only one included: the review reads the current room.
+                    />
+                  </>
+                )}
+              </div>
+            </PaintScope>
           );
         };
         return (

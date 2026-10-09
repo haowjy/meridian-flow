@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /** Cross-scope review commands retain identity until the matching Editor claims them. */
 
-import { act, useEffect, useState } from "react";
+import { act, useEffect, useLayoutEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PaintCapture, PaintHold, usePaintPending } from "@/components/app/PaintHold";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -15,6 +16,7 @@ import {
   EditorReviewHandoffProvider,
   EditorReviewIntentClaimant,
   useOpenEditorReview,
+  useRequestedReview,
 } from "./editor-review-handoff";
 
 const openTab = vi.fn();
@@ -210,4 +212,108 @@ describe("Editor review handoff", () => {
       expect(enterB).toHaveBeenCalledOnce();
     }, navigate);
   });
+});
+
+it("a warm destination requests review before passive admission, and an admitted review owns a failed route", async () => {
+  const route = deferred();
+  let selected: string | null = null;
+  let repaint!: () => void;
+  const exposed: string[] = [];
+  function Destination() {
+    const requested = useRequestedReview({
+      editorWorkId: "work-a",
+      activeScheme: "manuscript",
+      documentId: draftA.documentId,
+    });
+    usePaintPending(Boolean(requested));
+    useLayoutEffect(() => {
+      if (!requested && selected) exposed.push("live");
+    });
+    return (
+      <>
+        <PaintCapture surface={requested ?? "live"} />
+        <p>{requested ? "pending review" : "warm live"}</p>
+      </>
+    );
+  }
+  function Owner() {
+    const [, update] = useState(0);
+    repaint = () => update((n) => n + 1);
+    const value = reviewValue(
+      "work-a",
+      vi.fn((_doc, draft) => {
+        selected = draft;
+        repaint();
+      }),
+    );
+    value.controller.inlineReview = selected
+      ? ({ documentId: draftA.documentId, draftId: selected } as NonNullable<
+          typeof value.controller.inlineReview
+        >)
+      : null;
+    return (
+      <DraftReviewBoundary value={value}>
+        <PaintHold status="Opening">
+          <Destination />
+        </PaintHold>
+        <EditorReviewIntentClaimant editorWorkId="work-a" activeScheme="manuscript" />
+      </DraftReviewBoundary>
+    );
+  }
+  await withReactRoot(
+    <EditorReviewHandoffProvider projectId="project-1" openContextRoute={() => route.promise}>
+      <CommandCapture />
+      <Owner />
+    </EditorReviewHandoffProvider>,
+    async () => {
+      let done!: Promise<void>;
+      await act(async () => {
+        if (!openReview) throw new Error("Missing command");
+        done = openReview(draftA).catch(() => {});
+      });
+      expect(selected).toBe(draftA.draftId);
+      expect(document.querySelector("[data-paint-hold]")?.textContent).toBe("warm live");
+      await act(async () => {
+        route.reject(new Error("route failed"));
+        await done;
+      });
+      expect(document.querySelector("[data-paint-page]")?.textContent).toBe("pending review");
+      expect(exposed).toEqual([]);
+    },
+  );
+});
+
+it("clears a draft-only request when routing fails before admission", async () => {
+  const route = deferred();
+  let requested: string | null = null;
+  function Destination() {
+    requested = useRequestedReview({
+      editorWorkId: "work-a",
+      activeScheme: "manuscript",
+      documentId: draftA.documentId,
+    });
+    return null;
+  }
+  const value = reviewValue("work-a");
+  await withReactRoot(
+    <EditorReviewHandoffProvider projectId="project-1" openContextRoute={() => route.promise}>
+      <CommandCapture />
+      <DraftReviewBoundary value={value}>
+        <Destination />
+      </DraftReviewBoundary>
+    </EditorReviewHandoffProvider>,
+    async () => {
+      let done!: Promise<void>;
+      await act(async () => {
+        if (!openReview) throw new Error("Missing command");
+        done = openReview({ ...draftA, isNewDocument: true }).catch(() => {});
+      });
+      expect(requested).toBe(draftA.draftId);
+      await act(async () => {
+        route.reject(new Error("route failed"));
+        await done;
+      });
+      expect(requested).toBeNull();
+    },
+  );
 });

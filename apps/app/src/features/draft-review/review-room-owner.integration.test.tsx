@@ -194,3 +194,25 @@ it("a late paint receipt cannot revoke the current session's input", async () =>
     expect(probe().editor.roomOwner.inputEligible).toBe(true);
   });
 });
+
+it("lets the entry read answer before a stale empty list can exit review", async () => {
+  const read = deferredReviewAnswer<ReturnType<typeof proposal>>();
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [] });
+  fixture.network.getDraftPreview.mockReturnValue(read.promise);
+  await fixture.render(async (probe) => {
+    probe().queryClient.setQueryData(listKey, []);
+    await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+    expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-a");
+    await act(async () => read.resolve(proposal(1, "1")));
+    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
+  });
+});
+
+it("a gone entry read exits a live document instead of waiting forever", async () => {
+  fixture.network.listWorkDrafts.mockReturnValue(new Promise(() => {}));
+  fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
+  await fixture.render(async (probe) => {
+    await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+    await settled(() => expect(probe().editor.controller.inlineReview).toBeNull());
+  });
+});
