@@ -68,7 +68,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
     // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
     <div
-      className="flex shrink-0 flex-wrap items-center justify-end gap-[var(--chat-space-inline)]"
+      className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-[var(--chat-space-inline)]"
       onClick={(event) => event.stopPropagation()}
     >
       {confirming ? (
@@ -123,28 +123,31 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       <div
         onClick={multi ? () => setExpanded((value) => !value) : dock.reviewFirst}
         className={cn(
-          "flex min-h-7 items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] text-caption text-prose-foreground",
+          "flex min-h-7 flex-wrap items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] py-0.5 text-caption text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
         )}
       >
-        {multi ? (
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
-            onClick={(event) => {
-              event.stopPropagation();
-              setExpanded((value) => !value);
-            }}
-            className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle"
-          >
-            <ChevronRight
-              className={cn("size-3 transition-transform", expanded && "rotate-90")}
-              aria-hidden
-            />
-          </button>
-        ) : null}
-        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] overflow-hidden">
+        {/* The summary holds a floor (its basis) and the commands keep their
+            width, so a dock too narrow for both sends the commands to their
+            own right-aligned line instead of squeezing the name to nothing. */}
+        <div className="flex min-w-0 flex-1 basis-[13rem] items-center gap-[var(--chat-space-inline)]">
+          {multi ? (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpanded((value) => !value);
+              }}
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle"
+            >
+              <ChevronRight
+                className={cn("size-3 transition-transform", expanded && "rotate-90")}
+                aria-hidden
+              />
+            </button>
+          ) : null}
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
           {/* min() keeps the 12ch floor from padding short names with dead space */}
           <span className="min-w-[min(12ch,max-content)] shrink truncate">
