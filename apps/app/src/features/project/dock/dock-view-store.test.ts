@@ -70,16 +70,24 @@ describe("dock document slot", () => {
     expect(useDockViewStore.getState().occupant).toBeNull();
   });
 
-  it("bumps its revision on every change, so a slow open can tell it was overtaken", () => {
-    const revision = () => useDockViewStore.getState().revision;
-    const start = revision();
-    useDockViewStore.getState().open(document("first.md", "chat"));
-    useDockViewStore.getState().syncOccupantScope("project-a", "chat", null);
-    expect(revision()).toBe(start + 1);
+  it("lets only the latest intent finish a slow open", () => {
+    const store = () => useDockViewStore.getState();
+    const current = () => store().revision;
+    store().syncOccupantScope("project-a", "chat", null);
 
-    useDockViewStore.getState().open(document("second.md", "chat"));
-    useDockViewStore.getState().closeDocument();
-    useDockViewStore.getState().syncOccupantScope("project-b", "chat", null);
-    expect(revision()).toBe(start + 3);
+    const first = store().claim();
+    const second = store().claim();
+    expect(current()).not.toBe(first);
+    expect(current()).toBe(second);
+
+    // Re-syncing the same place is not a new intent; leaving it is.
+    store().syncOccupantScope("project-a", "chat", null);
+    expect(current()).toBe(second);
+    store().syncOccupantScope("project-a", "context", null);
+    expect(current()).not.toBe(second);
+
+    const third = store().claim();
+    store().setDockView("chat", "changes");
+    expect(current()).not.toBe(third);
   });
 });
