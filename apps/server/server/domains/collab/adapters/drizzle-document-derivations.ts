@@ -35,21 +35,16 @@ export async function captureDocumentDerivation(
   documentId: DocumentId,
   resolveUri: (tx: DrizzleDb, documentId: DocumentId) => Promise<string | null>,
 ): Promise<DocumentDerivationCut | null> {
-  const projectId = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
   const [row] = await tx
     .select({
       generation: documentYjsHeads.authorityGeneration,
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
       locationVersion: documents.locationVersion,
-      holderProjectId: projects.id,
       kind: documents.kind,
       deletedAt: documents.deletedAt,
     })
     .from(documents)
     .innerJoin(documentYjsHeads, eq(documents.id, documentYjsHeads.documentId))
-    .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-    .leftJoin(works, eq(works.id, contextSources.workId))
-    .innerJoin(projects, sql`${projects.id} = ${projectId}`)
     .where(eq(documents.id, documentId))
     .limit(1);
   // An already-staged push must still settle after a soft deletion.
@@ -71,7 +66,6 @@ export async function captureDocumentDerivation(
   return {
     documentId,
     holderUri,
-    holderProjectId: row.holderProjectId,
     kind: row.kind,
     state,
     watermark: {
