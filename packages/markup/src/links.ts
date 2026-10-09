@@ -5,7 +5,6 @@
  */
 export {
   assignFreshLink,
-  classifyWrittenHref,
   createHolderLinkScope,
   type FreshAssignment,
   type HolderCatalog,
