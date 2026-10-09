@@ -126,3 +126,59 @@ function rewrite(doc: Y.Doc, from: string, to: string, clientID: number) {
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(clone, Y.encodeStateVector(doc)));
   clone.destroy();
 }
+
+it.each([
+  false,
+  true,
+])("preserves concurrent manual retarget arbitration (relabel: %s)", (relabel) => {
+  const { doc } = seed([
+    [
+      ["Target", "Target.md"],
+      [" waits.", null],
+    ],
+  ]);
+  const manual = new Y.Doc({ gc: false });
+  manual.clientID = 3_000_000_000;
+  Y.applyUpdate(manual, Y.encodeStateAsUpdate(doc));
+  const maintenance = new Y.Doc({ gc: false });
+  maintenance.clientID = 2_000_000_000;
+  Y.applyUpdate(maintenance, Y.encodeStateAsUpdate(doc));
+  const schema = buildDocumentSchema();
+  updateYFragment(
+    manual,
+    manual.getXmlFragment("prosemirror").get(0) as Y.XmlFragment,
+    schema.nodes.paragraph.create(null, [
+      schema.text("Target", [schema.marks.link.create({ href: "Hand.md", title: "manual" })]),
+      schema.text(" waits."),
+    ]),
+    { mapping: new Map(), isOMark: new Map() },
+  );
+  links.applyDocumentLinkSubstitutions(
+    maintenance.getXmlFragment("prosemirror"),
+    new Map([
+      [
+        "Target.md",
+        {
+          href: "Moved.md",
+          ...(relabel ? { oldFilename: "Target.md", newFilename: "Moved.md" } : {}),
+        },
+      ],
+    ]),
+  );
+  const manualUpdate = Y.encodeStateAsUpdate(manual);
+  Y.applyUpdate(manual, Y.encodeStateAsUpdate(maintenance));
+  Y.applyUpdate(maintenance, manualUpdate);
+  for (const merged of [manual, maintenance]) {
+    const text = (merged.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    expect(text.toDelta()).toEqual([
+      {
+        insert: relabel ? "Moved" : "Target",
+        attributes: { link: { href: "Hand.md", title: "manual" } },
+      },
+      { insert: " waits." },
+    ]);
+  }
+  manual.destroy();
+  maintenance.destroy();
+  doc.destroy();
+});
