@@ -144,6 +144,8 @@ async function spelled(doc: Y.Doc): Promise<string> {
 
 interface MatrixRow {
   name: string;
+  /** The holder's first block before the edit (default: an untitled `Target` link). */
+  base?: Segment[];
   editor: Segment[];
   agentContent: string;
   expected: Stored;
@@ -159,7 +161,7 @@ async function runFourWays(row: MatrixRow, producer: Producer): Promise<void> {
     [HIGH, LOW],
   ] as const) {
     moveTarget = ch("old.md");
-    const origin = base();
+    const origin = base(row.base);
     const writer = clone(origin, writerId);
     const other = clone(origin, otherId);
     const baseVector = Y.encodeStateVector(origin);
@@ -260,6 +262,7 @@ it("A1-6: #729 label edits all follow the target in every merge order", async ()
 it("A1-7: #730 unlinks win, retargets win, plain prose never gains a link", async () => {
   const rows: MatrixRow[] = [
     {
+      // Also the red contract's unlink case (729-730-red-contract.patch).
       name: "whole unlink",
       editor: ["Target waits."],
       agentContent: "Target waits.",
@@ -322,6 +325,7 @@ it("A1-7: #730 unlinks win, retargets win, plain prose never gains a link", asyn
     // The red contract the redesign started from (729-730-red-contract.patch).
     {
       name: "red contract: replace label, title kept",
+      base: [dLink("Target", "keep"), " waits."],
       editor: [dLink("Renamed target", "keep"), " waits."],
       agentContent: '[Renamed target](old.md "keep") waits.',
       expected: [
@@ -329,13 +333,6 @@ it("A1-7: #730 unlinks win, retargets win, plain prose never gains a link", asyn
         [" waits.", null],
       ],
       markdown: '[Renamed target](new.md "keep") waits.',
-    },
-    {
-      name: "red contract: unlink",
-      editor: ["Target waits."],
-      agentContent: "Target waits.",
-      expected: [["Target waits.", null]],
-      markdown: "Target waits.",
     },
   ];
   for (const row of rows) for (const producer of [editor, agent]) await runFourWays(row, producer);
