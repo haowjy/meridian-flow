@@ -83,7 +83,11 @@ review the writer is in); every other draft runs in the caller's scope. A batch
 keeps the caller it began with, so a caller that moves to another Work mid-batch
 cannot redirect the remaining drafts (a session keeps its own Work's ports). A selection batch is
 one command per draft, each with its union and tokens; a refusal on one does not
-stop the next. Each claims
+stop the next. At the click every draft's selection is `queued` in the change
+record (hidden on every surface, claiming nothing); it is retired per draft as
+that draft's command begins (the claim hides the same operations from then on)
+or the batch ends, so a refused draft returns with its reason without waiting
+for the drafts after it. Each claims
 the draft's **command claim** (`beginDraftCommand` with the change and its
 operation set: one command per draft, whichever session sends it) and a **change
 command record** (`client/query/change-command-record`, keyed by the draft and
@@ -91,6 +95,8 @@ the selection's class ids, matched by shared operations; one failure per
 (draft, selection), shown on every overlapping change and on the sending file)
 for what outlives the claim:
 
+- `queued`: a selection of a batch that has not had its turn. Hidden like a
+  claim, but not one: it blocks no command.
 - `pending`: the draft's own claim. The change is already gone from the preview
   every surface reads (`useDraftPreview` hides it), so its marks and rows leave
   at once. The change record stores no pending state of its own.

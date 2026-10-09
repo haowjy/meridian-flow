@@ -39,16 +39,15 @@ export type DockFile = {
 const NO_CHANGES: readonly ReviewChange[] = [];
 
 /**
- * One candidate file as the strip shows it. `submitted` holds the operations
- * of a batch the writer has just sent: they leave the strip at the click, ahead
- * of the files the batch has not reached yet.
+ * One candidate file as the strip shows it. The entry's preview is already
+ * without the operations the command records hide (a batch's queued selections,
+ * a claim in flight), so a sent change has left the strip.
  */
 export function dockFile(
   row: ReviewFileTarget,
   name: string,
   entry: DraftPreviewEntry | undefined,
   threadId: string,
-  submitted: ReadonlySet<string>,
 ): DockFile {
   const base = {
     row,
@@ -69,9 +68,8 @@ export function dockFile(
   if (!active) return { ...base, status: "loading" };
 
   const newDocument = row.isNewDocument || active.isNewDocument === true;
-  const changes = reviewChangesOfPreview(active).filter(
-    (change) =>
-      change.threadIds.includes(threadId) && !change.operationIds.some((id) => submitted.has(id)),
+  const changes = reviewChangesOfPreview(active).filter((change) =>
+    change.threadIds.includes(threadId),
   );
   const actionable = newDocument ? NO_CHANGES : changes.filter((change) => change.actionable);
   const tiedChats = new Map<string, TiedChat>();

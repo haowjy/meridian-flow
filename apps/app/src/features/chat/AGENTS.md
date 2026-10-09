@@ -183,7 +183,9 @@ lists the Work's drafts whose `actorThreads` name the chat, reads each one's
 preview (`useDraftPreviews`) and keeps the changes whose `threadIds` include the
 chat. A chat with none shows no strip. Apply and Discard send one selection
 command per file (the union of this chat's actionable changes, never a whole
-draft) through `useChangeCommandRunner`; a refusal stays on its file. A new
+draft) through `useChangeCommandRunner`, which hides every file's selection at the
+click and returns each as its own command answers (the strip keeps no hide of
+its own); a refusal stays on its file. A new
 document is Review-only. The notes (a change tied to another chat's edit,
 changes only Apply draft or Discard draft handle, a new document) sit above the
 commands, collapsed or expanded. Work-wide lists and Apply all live on the Work

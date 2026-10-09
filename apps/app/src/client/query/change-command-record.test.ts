@@ -14,6 +14,7 @@ import {
   failChangeCommand,
   hiddenOperationIds,
   previewWithoutOperations,
+  queueChangeSelection,
   readPreviewAfterChangeCommands,
 } from "./change-command-record";
 import {
@@ -89,6 +90,27 @@ describe("change command record", () => {
     expect(
       changeCommandState(records, draft, { classIds: ["c9"], operationIds: ["3"] }),
     ).toMatchObject({ phase: "pending" });
+  });
+
+  it("a queued selection hides its operations without claiming the draft, until it is retired", () => {
+    const retire = queueChangeSelection(draft, two);
+    const records = currentChangeCommandRecords();
+    expect([...hiddenOperationIds(records, draft)]).toEqual(["2", "3"]);
+    // Another draft is untouched, and the queue blocks no command.
+    expect(hiddenOperationIds(records, { ...draft, draftId: "y" }).size).toBe(0);
+    expect(changeCommandState(records, draft, two)).toBeNull();
+    expect(beginChangeCommand(draft, one, "apply")).toBe(true);
+    releaseDraftCommand(draft);
+    retire();
+    retire();
+    expect(hiddenOperationIds(currentChangeCommandRecords(), draft).size).toBe(0);
+  });
+
+  it("retiring one queued selection leaves another of the same draft hidden", () => {
+    const retireOne = queueChangeSelection(draft, one);
+    queueChangeSelection(draft, two);
+    retireOne();
+    expect([...hiddenOperationIds(currentChangeCommandRecords(), draft)]).toEqual(["2", "3"]);
   });
 
   it("a read that started before a confirmation cannot bring the change back", async () => {

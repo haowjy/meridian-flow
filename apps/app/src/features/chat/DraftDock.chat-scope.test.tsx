@@ -297,6 +297,47 @@ describe("DraftDock chat scope", () => {
     });
   });
 
+  it("a refused file shows its reason as soon as its own answer lands, while a later file is still pending", async () => {
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [
+        draftItem("ch-12", "chapter-12", [pacing]),
+        draftItem("ch-14", "chapter-14", [pacing]),
+      ],
+    });
+    serverHolds("ch-12", [op("1", "pacing")]);
+    serverHolds("ch-14", [op("7", "pacing")]);
+    let answerSecond!: (value: unknown) => void;
+    mocks.applyDraftChanges.mockImplementation(
+      async (_p: string, _w: string, documentId: string, request: { draftId: string }) => {
+        if (documentId === "ch-12") return { status: "stale", draftId: request.draftId };
+        return new Promise((resolve) => {
+          answerSecond = resolve;
+        });
+      },
+    );
+    await render(async () => {
+      await stripShows("2 changes");
+      await click("Apply");
+      await vi.waitFor(() => expect(mocks.applyDraftChanges).toHaveBeenCalledTimes(2));
+      // The second file is in flight and stays off the strip; the first is back with its reason.
+      await stripShows(
+        "This chat's changes in chapter-12 were updated. Check them and apply again.",
+      );
+      expect(text()).not.toContain("chapter-14");
+      expect(text()).toContain("1 change");
+      await act(async () =>
+        answerSecond({
+          ...applied(true),
+          draftId: "draft-ch-14",
+          operationIds: ["7"],
+          closureClassIds: ["class-7"],
+        }),
+      );
+      expect(text()).toContain("chapter-12");
+      expect(text()).toContain("1 change");
+    });
+  });
+
   it("shows a preview that failed on its file with Retry, never as no changes", async () => {
     mocks.listWorkDrafts.mockResolvedValue({
       drafts: [draftItem("ch-12", "chapter-12", [pacing])],

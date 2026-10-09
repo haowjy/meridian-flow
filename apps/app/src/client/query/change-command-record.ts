@@ -10,6 +10,13 @@
  *   carrying the selection's operation set), so a whole-draft command, or a
  *   command from another session, cannot be sent beside it. The changes leave
  *   every surface at once (the writer sees the result of the click).
+ * - `queued`: a batch of selections (the chat strip's Apply) has been sent, and
+ *   this one has not had its turn yet. Not a claim: it blocks no command and
+ *   names no draft as busy. It only hides the selection from every surface at
+ *   the click, so the whole batch leaves together. It is retired per
+ *   selection, when that selection's own command begins (its claim takes over)
+ *   or the batch ends; a refused selection returns the moment its own answer
+ *   lands, whatever the files after it are doing.
  * - `failed`: the command did not land. The changes come back, showing why on
  *   their own bars and rows, and on the file whose selection it was. One
  *   failure is held per (draft, selection) and projected to every change whose
@@ -88,12 +95,23 @@ export type ChangeCommandState =
 type ChangeRecords = Readonly<Record<string, ChangeCommandRecord>>;
 
 /** Everything that says what is happening to a draft's changes: held outcomes and the draft's own claim. */
-export type ChangeCommandRecords = { changes: ChangeRecords; drafts: DraftCommandRecords };
+export type ChangeCommandRecords = {
+  changes: ChangeRecords;
+  queued: QueuedSelections;
+  drafts: DraftCommandRecords;
+};
 
-const useChangeCommandStore = create<{ records: ChangeRecords; clock: number }>(() => ({
-  records: {},
-  clock: 0,
-}));
+/** A selection sent in a batch that has not had its turn: hidden, not claimed. */
+type QueuedSelection = { prefix: string; operationIds: readonly string[] };
+type QueuedSelections = Readonly<Record<number, QueuedSelection>>;
+
+const useChangeCommandStore = create<{
+  records: ChangeRecords;
+  queued: QueuedSelections;
+  clock: number;
+}>(() => ({ records: {}, queued: {}, clock: 0 }));
+
+let nextQueued = 0;
 
 /** Preview reads that started and have not settled, by the clock they started at. */
 const readsInFlight = new Set<{ fence: number }>();
@@ -141,6 +159,24 @@ export function beginChangeCommand(
   // The claim is the next action on these changes: a failure they held is stale now.
   clearChangeFailure(draft, selection);
   return true;
+}
+
+/**
+ * Hide a selection that waits for its turn in a batch (`queued`). Returns its
+ * retirement, which is idempotent: call it when the selection's own command has
+ * begun (the claim hides the same operations from then on) or the batch is over.
+ */
+export function queueChangeSelection(draft: DraftRef, selection: ChangeSelection): () => void {
+  const id = nextQueued++;
+  const entry = { prefix: draftPrefix(draft), operationIds: selection.operationIds };
+  useChangeCommandStore.setState((state) => ({ queued: { ...state.queued, [id]: entry } }));
+  return () => {
+    if (!(id in useChangeCommandStore.getState().queued)) return;
+    useChangeCommandStore.setState((state) => {
+      const { [id]: _retired, ...rest } = state.queued;
+      return { queued: rest };
+    });
+  };
 }
 
 /** Give back a claim that ended without a confirmation or a held failure. */
@@ -330,14 +366,16 @@ function dropFailuresWithoutOperations(
 /** Every held record and claim; look changes up with `changeCommandState`. */
 export function useChangeCommandRecords(): ChangeCommandRecords {
   const changes = useChangeCommandStore((state) => state.records);
+  const queued = useChangeCommandStore((state) => state.queued);
   const drafts = useDraftCommandRecords();
-  return useMemo(() => ({ changes, drafts }), [changes, drafts]);
+  return useMemo(() => ({ changes, queued, drafts }), [changes, queued, drafts]);
 }
 
 /** The records right now, for code that is not a render (commands, tests). */
 export function currentChangeCommandRecords(): ChangeCommandRecords {
   return {
     changes: useChangeCommandStore.getState().records,
+    queued: useChangeCommandStore.getState().queued,
     drafts: currentDraftCommandRecords(),
   };
 }
@@ -349,7 +387,7 @@ function recordsOfDraft(records: ChangeRecords, draft: DraftRef): ChangeCommandR
     .map(([, record]) => record);
 }
 
-/** The operations hidden from this draft's preview: every change pending or confirmed. */
+/** The operations hidden from this draft's preview: every change queued, pending or confirmed. */
 export function hiddenOperationIds(
   records: ChangeCommandRecords,
   draft: DraftRef,
@@ -358,6 +396,10 @@ export function hiddenOperationIds(
   for (const record of recordsOfDraft(records.changes, draft)) {
     if (record.phase === "failed") continue;
     for (const id of record.operationIds) hidden.add(id);
+  }
+  const prefix = draftPrefix(draft);
+  for (const queued of Object.values(records.queued)) {
+    if (queued.prefix === prefix) for (const id of queued.operationIds) hidden.add(id);
   }
   for (const id of pendingChangeCommand(records.drafts, draft)?.operationIds ?? []) hidden.add(id);
   return hidden;
@@ -393,7 +435,7 @@ export function changeCommandState(
 }
 
 export function resetChangeCommandRecords(): void {
-  useChangeCommandStore.setState({ records: {} });
+  useChangeCommandStore.setState({ records: {}, queued: {} });
 }
 
 onDraftCommandRecordsReset(resetChangeCommandRecords);
