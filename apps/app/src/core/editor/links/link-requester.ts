@@ -14,7 +14,7 @@
  * double render throws away holds nothing.
  */
 
-import type { LinkAnswerCache, LinkKey } from "./link-resolution";
+import { type LinkAnswerCache, type LinkKey, linkCacheKey, linkKeyOfMark } from "./link-resolution";
 
 export type LinkRequester = {
   /** Ask about this link while it is shown; the return stops watching it. */
@@ -40,7 +40,7 @@ export function createLinkRequester(resolution: LinkAnswerCache): LinkRequester 
 
   return {
     watch(link) {
-      const key = `${link.ref ?? ""}\u0000${link.href}`;
+      const key = linkCacheKey(link);
       if (watched.size === 0) unsubscribe = resolution.subscribe(ask);
       const entry = watched.get(key);
       if (entry) entry.count += 1;

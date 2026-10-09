@@ -30,7 +30,13 @@ it("marks a gone link present at mount on its <a>, and hands its presses to the 
               text: "Kael",
               marks: [{ type: "link", attrs: { href: KAEL, ref: GONE_REF } }],
             },
-            { type: "text", text: "." },
+            { type: "text", text: ". " },
+            // An empty ref is no ref, on every surface that reads the mark.
+            {
+              type: "text",
+              text: "Nine",
+              marks: [{ type: "link", attrs: { href: "manuscript://Nine.md", ref: "" } }],
+            },
           ],
         },
       ],
@@ -39,13 +45,17 @@ it("marks a gone link present at mount on its <a>, and hands its presses to the 
   });
   try {
     editor.storage[LINK_SURFACE_NAME].resolution.registerResolver({
-      remote: async (questions) => questions.map(() => ({ state: "gone", document: null })),
+      remote: async (questions) =>
+        questions.map(({ ref }) => ({ state: ref === null ? "missing" : "gone", document: null })),
     });
     editor.storage[LINK_SURFACE_NAME].resolution.request([{ ref: GONE_REF, href: KAEL }]);
 
     const anchor = editor.view.dom.querySelector("a");
     await vi.waitFor(() => expect(anchor?.getAttribute("aria-disabled")).toBe("true"));
     expect(anchor?.getAttribute("aria-description")).toBe("No longer available");
+    const noRef = editor.view.dom.querySelectorAll("a")[1];
+    await vi.waitFor(() => expect(noRef?.hasAttribute("aria-description")).toBe(true));
+    expect.soft(noRef?.getAttribute("aria-description"), "empty ref").toBe("Doesn't exist yet");
     // The view's MutationObserver delivers asynchronously; let it run.
     await new Promise((settled) => setTimeout(settled, 0));
     expect(onUpdate).not.toHaveBeenCalled();

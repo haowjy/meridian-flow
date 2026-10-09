@@ -59,6 +59,21 @@ import {
 /** A stored link as resolution sees it: what it names and how it is spelled. */
 export type LinkKey = { ref: string | null; href: string };
 
+/**
+ * The stored link a link mark's attributes name. The only reading of a mark's
+ * `ref` and `href`, so no two surfaces can disagree about which answer a link
+ * has (an empty ref is no ref).
+ */
+export function linkKeyOfMark(attrs: { readonly [attribute: string]: unknown }): LinkKey {
+  const { ref, href } = attrs;
+  return { ref: typeof ref === "string" && ref ? ref : null, href: String(href ?? "") };
+}
+
+/** The one string a `LinkKey` is cached and deduplicated under. */
+export function linkCacheKey(key: LinkKey): string {
+  return `${key.ref ?? ""}\u0000${key.href}`;
+}
+
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
   | { state: "document"; document: ResolvedDocumentLink }
@@ -235,7 +250,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
     const target = classifyLinkTarget(link.href);
     if (!target || !isInternalLinkTarget(target)) return null;
     return {
-      key: `${link.ref ?? ""}\u0000${linkTargetHref(target)}`,
+      key: linkCacheKey({ ref: link.ref, href: linkTargetHref(target) }),
       question: { ref: link.ref, target },
     };
   };
