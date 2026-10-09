@@ -1,4 +1,4 @@
-/** PostgreSQL proof for ahead registration, namespace races, and settlement CAS. */
+/** PostgreSQL proof for ahead registration, the namespace race with arrival, and settlement CAS. */
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -8,8 +8,8 @@ import {
   projects,
   users,
 } from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { RegistrationInsideTransactionError } from "../ports/link-ahead-registry.js";
@@ -28,139 +28,122 @@ if (!RUN) {
     const PROJECT = "00000000-0000-4000-8000-000000000b02";
     const SOURCE = "00000000-0000-4000-8000-000000000b03";
     const DOCUMENT = "00000000-0000-4000-8000-000000000b04";
-    const AHEAD = "ahead:00000000-0000-4000-8000-000000000b05";
+    const AHEAD = "00000000-0000-4000-8000-000000000b05";
+    const registration = {
+      aheadId: AHEAD,
+      holderProjectId: PROJECT as never,
+      address: "manuscript://chapter.md",
+    };
+    const NAMESPACE = [{ projectId: PROJECT, userId: USER, scheme: "manuscript", workId: null }];
+    // Registration commits in its own root transaction, so no rollback fixture: reset by FK order.
     const database = createDb(DATABASE_URL, { max: 4 });
-    const second = createDb(DATABASE_URL, { max: 2 });
+    const arrivalConnection = createDb(DATABASE_URL, { max: 2 });
 
-    beforeAll(async () => {
-      await deleteDrizzleRows(database, [users]);
-    });
-    beforeEach(async () => {
+    async function seed() {
       await deleteDrizzleRows(database, [users]);
       await database.insert(users).values(conformanceUserValues(USER, "ahead-registry"));
-      await database.insert(projects).values({
-        id: PROJECT,
-        userId: USER,
-        name: "Ahead Project",
-        slug: "ahead-project",
-      });
-      await database.insert(contextSources).values({
-        id: SOURCE,
-        projectId: PROJECT,
-        name: "Manuscript",
-        slug: "manuscript",
-      });
-    });
-    afterAll(async () => {
-      await deleteDrizzleRows(database, [users]);
-      await second.close();
-      await database.close();
-    });
-
-    async function arrive(db: Database): Promise<number> {
-      return runInDrizzleTransaction(db, async () => {
-        await lockNamespaceKeys(db, [
-          { projectId: PROJECT, userId: USER, scheme: "manuscript", workId: null },
-        ]);
-        await db.insert(documents).values({
-          id: DOCUMENT,
-          contextSourceId: SOURCE,
-          name: "chapter",
-          extension: "md",
-        });
-        return createDrizzleLinkAheadRegistry(db).settleArrivals([DOCUMENT]);
-      });
-    }
-
-    it("registration racing arrival with two real connections settles exactly once in both orders", async () => {
-      const registration = {
-        aheadId: AHEAD,
-        holderProjectId: PROJECT,
-        address: "manuscript://chapter.md",
-      };
-      const first = createDrizzleLinkAheadRegistry(database);
-      const secondRegistry = createDrizzleLinkAheadRegistry(second);
-
-      // Arrival first: hold the namespace while registration waits, then settle in arrival tx.
-      let release!: () => void;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let ready!: () => void;
-      const started = new Promise<void>((resolve) => {
-        ready = resolve;
-      });
-      const arrival = runInDrizzleTransaction(second, async () => {
-        await lockNamespaceKeys(second, [
-          { projectId: PROJECT, userId: USER, scheme: "manuscript", workId: null },
-        ]);
-        await second
-          .insert(documents)
-          .values({ id: DOCUMENT, contextSourceId: SOURCE, name: "chapter", extension: "md" });
-        ready();
-        await held;
-        return createDrizzleLinkAheadRegistry(second).settleArrivals([DOCUMENT]);
-      });
-      await started;
-      const waitingRegistration = first.register([registration]);
-      release();
-      await Promise.all([arrival, waitingRegistration]);
-      await expect(secondRegistry.settleArrivals([DOCUMENT])).resolves.toBe(0);
-      await expect(
-        database.select({ settled: linkAheadRefs.settledDocumentId }).from(linkAheadRefs),
-      ).resolves.toEqual([{ settled: DOCUMENT }]);
-
-      // Registration first, then arrival: the registration sees no occupant and arrival CAS settles it.
-      await deleteDrizzleRows(database, [users]);
-      await database.insert(users).values(conformanceUserValues(USER, "ahead-registry-2"));
       await database
         .insert(projects)
         .values({ id: PROJECT, userId: USER, name: "Ahead Project", slug: "ahead-project" });
       await database
         .insert(contextSources)
         .values({ id: SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript" });
-      await first.register([
-        { ...registration, aheadId: "ahead:00000000-0000-4000-8000-000000000b06" },
-      ]);
-      await expect(arrive(second)).resolves.toBe(1);
-    });
-
-    it("settles occupied rows, keeps an orphan after caller rollback, rejects mismatched addresses, and guards transactions", async () => {
-      await database
+    }
+    const insertDocument = (db: Database) =>
+      db
         .insert(documents)
         .values({ id: DOCUMENT, contextSourceId: SOURCE, name: "chapter", extension: "md" });
+    const settledIds = async () =>
+      (await database.select({ id: linkAheadRefs.settledDocumentId }).from(linkAheadRefs)).map(
+        (row) => row.id,
+      );
+
+    /** Proves registration is queued behind the arrival's namespace key, not merely slow. */
+    async function waitForBlockedAdvisoryLock() {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const rows = await database.execute<{ waiting: number }>(
+          sql`SELECT count(*)::int AS waiting FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`,
+        );
+        if (rows[0]?.waiting) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error("registration never queued behind the namespace lock");
+    }
+
+    beforeEach(seed);
+    afterAll(async () => {
+      await deleteDrizzleRows(database, [users]);
+      await arrivalConnection.close();
+      await database.close();
+    });
+
+    it("registration racing arrival settles exactly once in both orders", async () => {
       const registry = createDrizzleLinkAheadRegistry(database);
-      await registry.register([
-        { aheadId: AHEAD, holderProjectId: PROJECT, address: "manuscript://chapter.md" },
-      ]);
+      const arrivalRegistry = createDrizzleLinkAheadRegistry(arrivalConnection);
+
+      // Arrival first: it holds the namespace while registration waits behind it.
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let locked!: () => void;
+      const lockTaken = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const arrival = runInDrizzleTransaction(arrivalConnection, async () => {
+        await lockNamespaceKeys(arrivalConnection, NAMESPACE);
+        await insertDocument(arrivalConnection);
+        locked();
+        await held;
+        return arrivalRegistry.settleArrivals([DOCUMENT as never]);
+      });
+      await lockTaken;
+      const registering = registry.register([registration]);
+      await waitForBlockedAdvisoryLock();
+      release();
+      const [arrivalSettled] = await Promise.all([arrival, registering]);
+      expect(arrivalSettled).toBe(0); // the row did not exist yet; registration saw the document
+      expect(await settledIds()).toEqual([DOCUMENT]);
+
+      // Registration first: it commits unsettled; the arrival's compare-and-set settles it.
+      await seed();
+      await registry.register([registration]);
+      expect(await settledIds()).toEqual([null]);
+      const arrived = await runInDrizzleTransaction(arrivalConnection, async () => {
+        await lockNamespaceKeys(arrivalConnection, NAMESPACE);
+        await insertDocument(arrivalConnection);
+        return arrivalRegistry.settleArrivals([DOCUMENT as never]);
+      });
+      expect(arrived).toBe(1);
+      expect(await settledIds()).toEqual([DOCUMENT]);
+    });
+
+    it("settles an occupied address at registration, keeps an orphan, rejects reuse, and guards transactions", async () => {
+      await insertDocument(database);
+      const registry = createDrizzleLinkAheadRegistry(database);
+      await registry.register([registration]);
+      expect(await settledIds()).toEqual([DOCUMENT]);
+
       await expect(
-        database
-          .select()
-          .from(linkAheadRefs)
-          .where(eq(linkAheadRefs.aheadId, AHEAD.slice(6))),
-      ).resolves.toHaveLength(1);
-      await expect(
-        registry.register([
-          { aheadId: AHEAD, holderProjectId: PROJECT, address: "manuscript://other.md" },
-        ]),
+        registry.register([{ ...registration, address: "manuscript://other.md" }]),
       ).rejects.toThrow(/another address/);
+
+      // Registration commits first, so a caller that then rolls back leaves a harmless orphan row.
+      const orphan = { ...registration, aheadId: "00000000-0000-4000-8000-000000000b06" };
+      await registry.register([orphan]);
       await expect(
-        runInDrizzleTransaction(database, () =>
-          registry.register([
-            {
-              aheadId: "ahead:00000000-0000-4000-8000-000000000b07",
-              holderProjectId: PROJECT,
-              address: "manuscript://orphan.md",
-            },
-          ]),
-        ),
+        runInDrizzleTransaction(database, async () => {
+          throw new Error("caller rolls back");
+        }),
+      ).rejects.toThrow("caller rolls back");
+      expect(await database.select().from(linkAheadRefs)).toHaveLength(2);
+
+      // Inside the caller's transaction the guard throws before anything is written.
+      const inside = { ...registration, aheadId: "00000000-0000-4000-8000-000000000b07" };
+      await expect(
+        runInDrizzleTransaction(database, () => registry.register([inside])),
       ).rejects.toBeInstanceOf(RegistrationInsideTransactionError);
-      await expect(
-        database
-          .select()
-          .from(linkAheadRefs)
-          .where(and(eq(linkAheadRefs.projectId, PROJECT), eq(linkAheadRefs.path, "orphan.md"))),
-      ).resolves.toHaveLength(0);
+      expect(await database.select().from(linkAheadRefs)).toHaveLength(2);
     });
   });
 }

@@ -6,10 +6,7 @@ export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-t
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
-export {
-  createDrizzleLinkAheadRegistry,
-  DrizzleLinkAheadRegistry,
-} from "./adapters/drizzle-link-ahead-registry.js";
+export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
