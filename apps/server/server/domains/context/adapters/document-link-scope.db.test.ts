@@ -187,6 +187,7 @@ if (!RUN) {
               `asset:${SEAL}`,
               `asset:${OLD_CREST}`,
               `asset:${MISSING_ASSET}`,
+              `asset:${FOREIGN}`,
             ]),
           ],
           addresses: [
@@ -223,17 +224,21 @@ if (!RUN) {
         const seal = scope.spellSource({ src: `asset:${SEAL}`, ref: null }).href;
         expect.soft(seal, "sole deleted image").toBe("seal.png");
         expect.soft(scope.assetFor(seal), "its path binds back").toBe(SEAL);
+        // Once another picture holds the path, the deleted one spells its own last
+        // address in full, as a gone link spells its stored address.
         expect
-          .soft(scope.spellSource({ src: `asset:${OLD_CREST}`, ref: null }).href, "path reused")
-          .toBe(`asset:${OLD_CREST}`);
+          .soft(scope.spellSource({ src: `asset:${OLD_CREST}`, ref: null }), "path reused")
+          .toEqual({ href: "manuscript://crest.png", address: "manuscript://crest.png" });
         expect.soft(scope.assetFor("crest.png"), "the live picture holds the path").toBe(CREST);
-        // A picture whose asset row is gone entirely is spelled as its ref, which reads back as itself.
-        expect
-          .soft(
-            scope.spellSource({ src: `asset:${MISSING_ASSET}`, ref: null }).href,
-            "missing asset",
-          )
-          .toBe(`asset:${MISSING_ASSET}`);
+        // No address this project knows (no row, another project's id): an empty
+        // destination, which names nothing and carries no id.
+        for (const [asset, what] of [
+          [MISSING_ASSET, "missing asset"],
+          [FOREIGN, "another project's id"],
+        ] as const)
+          expect
+            .soft(scope.spellSource({ src: `asset:${asset}`, ref: null }), what)
+            .toEqual({ href: "", address: null });
         // A written path outside assets/ binds to the picture there; an unknown one stays literal.
         expect.soft(scope.assetFor("part1/map.png"), "known path").toBe(MAP);
         expect.soft(scope.assetFor("part1/nowhere.png"), "unknown path").toBeNull();

@@ -48,7 +48,8 @@ composition root passes a required `DocumentLinkScopes` port
 (in-memory, tests) pass `createStaticDocumentLinkScopes()`. Every serialize call
 takes a holder-bound scope that spells stored links and sources: a ref-bearing
 link as its target's current path in the holder's view, an `asset:<documentId>`
-source as its manuscript-relative path, anything else as stored. Parse is pure
+source as its manuscript-relative path (else its last full address, else an
+empty destination: an id never reaches a reader), anything else as stored. Parse is pure
 syntax; ref assignment (agent-edit `assignLinkRefs`, which also turns a known
 manuscript image path into `asset:<id>`) gives what was written its stored refs.
 
@@ -147,10 +148,15 @@ thread core asked to spell without a routed view throws.
 
 A picture never fails its document. The `asset:` rule reads the snapshot's
 rows but, as the shipped image rule always has, not readability or
-membership. An id with no document spells as its `asset:` ref. A deleted image keeps its last path only while that path reads
-back to it alone (no live image and no other deleted image there); otherwise it
-spells as its ref, so a chapter saved while the image is gone reconnects on
-restore. Spelling outside every scope uses stored bytes and is reported
+membership. A deleted image keeps its last path only while that path reads
+back to it alone (no live image and no other deleted image there), so a chapter
+saved while the image is gone reconnects on restore. An upload with no path to
+spell (deleted with its path taken, or outside the project's own manuscript)
+spells its own row's last address in full, as a gone link spells its stored
+address, and the read records that showing, so a rewrite continues it. One with
+no address in this project (no row, another project's id, a snapshot miss)
+spells an empty destination, which names nothing; ref assignment keeps the
+stored picture when that empty destination is written back unchanged. Spelling outside every scope uses stored bytes and is reported
 (`serialize.link_unscoped`); a ref or address the snapshot never loaded is
 `serialize.link_snapshot_miss`, a throw under test only when no door prepared
 the snapshot.

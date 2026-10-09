@@ -48,6 +48,7 @@ import {
 } from "@meridian/contracts";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { DocumentLinkScope } from "@meridian/markup";
+import { UNSPELLED_UPLOAD } from "@meridian/markup/links";
 import { DOMSerializer, type Mark, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey } from "@tiptap/pm/state";
 
@@ -248,7 +249,8 @@ function keepPastedRefs(html: string, projectId: string | null): string {
  * the text means the same thing wherever it lands, holder or not. A picture
  * whose ref answers a document, or an upload the catalog holds, is spelled at
  * that document's current address under the manuscript-root grammar, as rich
- * copy records it; any other source (gone, missing, ref-less) as stored.
+ * copy records it; an upload the catalog does not hold has no source, since
+ * its id is never text; any other source (gone, missing, ref-less) as stored.
  */
 export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
   const resolution = linkClipboardPluginKey.getState(state) ?? null;
@@ -261,11 +263,11 @@ export function clipboardLinkScope(state: EditorState): DocumentLinkScope {
       };
     },
     spellSource: (attrs) => {
+      const upload = uploadDocument(attrs.src, resolution);
+      if (!upload && attrs.src.startsWith(UPLOAD_PREFIX)) return UNSPELLED_UPLOAD;
       const picture = pictureKeyOfNode(attrs);
       const entry = picture?.ref && resolution ? resolution.read(picture) : null;
-      const known =
-        uploadDocument(attrs.src, resolution) ??
-        (entry?.state === "document" ? entry.document : null);
+      const known = upload ?? (entry?.state === "document" ? entry.document : null);
       const holder: LinkHolder = {
         uri: resolution?.baseUri ?? null,
         projectId: resolution?.assignment?.projectId ?? "",

@@ -65,7 +65,7 @@ type Row = {
   stem: string | null;
   deleted: boolean;
   image: boolean;
-  /** In the project's own manuscript (not a Work's): the only images the `asset:` rule claims. */
+  /** In the project's own manuscript (not a Work's): the only images the `asset:` rule spells by path. */
   manuscript: boolean;
 };
 
@@ -424,7 +424,7 @@ const EMPTY_CATALOG: HolderCatalog = {
   settlement: () => null,
   documentAt: () => null,
   documentFor: () => null,
-  assetPath: () => null,
+  assetAddress: () => null,
   assetFor: () => null,
 };
 
@@ -506,13 +506,17 @@ function snapshotCatalog(
       );
       return matchDocumentPath(candidates, uri, (document) => document.uri);
     },
-    assetPath(id) {
+    assetAddress(id) {
       const row = snapshot.rows.get(id);
       if (row === undefined) return undefined;
-      if (!row?.image || !row.manuscript || row.projectId !== snapshot.projectId) return null;
-      if (!row.deleted) return row.path;
-      if (!snapshot.addresses.has(row.uri)) return undefined;
-      return soleDeletedImage(row.uri)?.id === row.id ? row.path : null;
+      // Never another project's address: its id names nothing this reader has.
+      if (!row?.image || row.projectId !== snapshot.projectId) return null;
+      if (row.manuscript && !row.deleted) return { kind: "path", path: row.path };
+      if (row.manuscript) {
+        if (!snapshot.addresses.has(row.uri)) return undefined;
+        if (soleDeletedImage(row.uri)?.id === row.id) return { kind: "path", path: row.path };
+      }
+      return { kind: "last", uri: row.uri };
     },
     assetFor(uri) {
       const live = liveImage(uri);

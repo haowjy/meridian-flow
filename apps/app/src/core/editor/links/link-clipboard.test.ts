@@ -177,8 +177,9 @@ it("carries what a copied link names across the clipboard", async () => {
     ]),
   );
   // A picture spells its source as rich copy records it: the answered
-  // document's current address (manuscript-root grammar, suffix kept), and the
-  // stored source for a gone or missing answer or an `asset:` upload.
+  // document's current address (manuscript-root grammar, suffix kept), the
+  // stored source for a gone or missing answer, and no source at all for an
+  // upload the catalog does not hold (its id is never text).
   const pictureTextRows: [label: string, src: string, ref: string | null, spelled: string][] = [
     [
       "a moved image spells its new address",
@@ -199,10 +200,10 @@ it("carries what a copied link names across the clipboard", async () => {
       "![](manuscript://art/later.png)",
     ],
     [
-      "an asset: image is unchanged",
+      "an upload the catalog does not hold spells an empty source",
       "asset:5f0c9a1e-2b3d-4c5e-8f9a-0b1c2d3e4f5a",
       null,
-      "![](asset:5f0c9a1e-2b3d-4c5e-8f9a-0b1c2d3e4f5a)",
+      "![]()",
     ],
   ];
   const pictures = documentSchema.nodes.paragraph.create(
@@ -228,7 +229,9 @@ it("carries what a copied link names across the clipboard", async () => {
   for (const [label, , , spelled] of [...textRows, ...pictureTextRows])
     expect.soft(text, label).toContain(spelled);
   expect.soft(text, "the figure fallback spells its new address").toContain('src="art/new.png"');
-  expect.soft(text, "no ref or id in plain text").not.toMatch(/doc:|ahead:|0000-4000/);
+  expect
+    .soft(text, "no ref or id in plain text")
+    .not.toMatch(/doc:|ahead:|asset:|0000-4000|5f0c9a1e/);
 
   // Pictures, through a real editor's whole copy and paste: the serializer,
   // the sanitizer, the ref transform, the TipTap mirrors and the one paste
