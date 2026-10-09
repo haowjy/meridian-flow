@@ -14,7 +14,10 @@ trashed included, never a fork. Only the AI creates lineage notes; writer create
 intake and moves into a lineage are refused. Lineage provisioning and
 trash/restore liveness belong to `adapters/lineage-scratch-lifecycle.ts`; reuse
 it rather than adding another guard. A hidden-to-live lineage transition settles
-waiting ahead refs under its namespace lock in the same transaction.
+waiting ahead refs under its namespace lock in the same transaction. A lineage
+root names Scratch ownership, never a reader: draft visibility for link answers
+comes from the selected Work's manifest (No Work when a request names a
+lineage), so never pass `rootThreadId` as the viewing thread.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is
 model-only, resolved by `runtime/loop/skill-files.ts` per thread binding, and
