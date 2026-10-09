@@ -5,6 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
+import type { LinkView } from "@meridian/contracts";
 import {
   classifyFiletype,
   type Filetype,
@@ -841,7 +842,7 @@ export class ContextFS implements ContextSchemeAdapter {
             documentId: row.document.id,
             revision: read.value.revision,
             ...match,
-            ...(shownLinks.length > 0 ? { shownLinks } : {}),
+            ...(shownLinks.length > 0 ? { shownLinks, shownView: this.searchView() } : {}),
           });
         }
         return Ok(hits);
@@ -864,6 +865,14 @@ export class ContextFS implements ContextSchemeAdapter {
       );
     }
     return out;
+  }
+
+  /** The view a search's passages spell their links in. */
+  private searchView(): LinkView {
+    const view = this.threadView();
+    return view?.version === "draft" && view.workId
+      ? { kind: "draft", workId: view.workId }
+      : { kind: "live" };
   }
 
   /** The thread reading this source and the version it reads, or null outside a thread. */

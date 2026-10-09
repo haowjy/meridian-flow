@@ -45,6 +45,7 @@ import type {
   WorkRepository,
 } from "../../domains/projects/index.js";
 import {
+  type ShownLinkStore,
   SKILLS_URI_ROOT,
   type SkillFilesDeps,
   type ToolHandlerContext,
@@ -82,6 +83,8 @@ export interface ToolWiringDeps {
   readAgentChain(threadId: ThreadId): Promise<AgentChain>;
   /** The chain's effective permission, for the action policy (D39). */
   readChainPermission(threadId: ThreadId): Promise<AgentPermission>;
+  /** Links shown to the model, per thread and document; writes bind to them (contract §7). */
+  shownLinks: ShownLinkStore;
 }
 
 export type ToolErrorOutput = { isError: true; output: MeridianError };

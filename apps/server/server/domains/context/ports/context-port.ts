@@ -3,6 +3,7 @@
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
+import type { LinkView } from "@meridian/contracts";
 import type {
   ContextUriScheme,
   ProjectScopedContextUriScheme,
@@ -207,6 +208,8 @@ export interface SearchResult {
    * only for hits the reader may see.
    */
   shownLinks?: readonly SpelledLinkFact[];
+  /** Host-only: the view `shownLinks` were spelled in. */
+  shownView?: LinkView;
 }
 
 export type WriteProvenance =

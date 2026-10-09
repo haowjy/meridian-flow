@@ -29,6 +29,7 @@ import {
   createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
+import { createInMemoryShownLinkStore } from "../../adapters/in-memory/shown-links.js";
 import { createWriterTurnProducer } from "../../admission/writer-turn-producer.js";
 import { createDetachedWorkTracker, type DetachedWorkTracker } from "../../detached-work.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
@@ -205,6 +206,7 @@ export function createRuntimeHarness(
       },
       async rollbackResponse() {},
     },
+    shownLinks: createInMemoryShownLinkStore({ threads: repos.threads, turns: repos.turns }),
     ...dependencies,
     backgroundTasks,
     shutdown,
