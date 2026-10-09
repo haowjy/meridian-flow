@@ -15,7 +15,7 @@ import { registerImageIngressHost } from "../images/image-ingress-runtime";
 import { insertImageFile } from "../images/image-uploads";
 import { markdownClipboardSerializer } from "../markdown-paste";
 import { sanitizePastedHTML } from "../sanitize-paste";
-import { LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
+import { clipboardLinkScope, LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
 import { createLinkAnswerCache, type LinkAnswer } from "./link-resolution";
 import { LINK_SURFACE_NAME } from "./link-storage";
 
@@ -65,6 +65,18 @@ it("carries what a copied link names across the clipboard", async () => {
       copied: { from: "scratch://@revision/notes/a.md", href: "scratch://plan.md", ref: null },
       into: { holder: "scratch://@other/b.md", project: "project-a" },
       pasted: { link: "scratch://@revision/plan.md", ref: null },
+    },
+    {
+      row: "a contextual Scratch link carries its lineage",
+      copied: { from: "scratch://@/c12/holder.md", href: "scratch://note.md#gate", ref: null },
+      into: { holder: "manuscript://chapter.md", project: "project-a" },
+      pasted: { link: "scratch://@/c12/note.md#gate", ref: null },
+    },
+    {
+      row: "Uploads in a lineage holder remain No Work owned",
+      copied: { from: "scratch://@/c12/holder.md", href: "uploads://seal.md", ref: null },
+      into: { holder: "manuscript://chapter.md", project: "project-a" },
+      pasted: { link: "uploads://@/seal.md", ref: null },
     },
     {
       row: "a same-project paste keeps the ref",
@@ -528,4 +540,15 @@ it.each([
       "manuscript://base.md",
     ),
   ).toBe('<a data-meridian-link="original.md">x</a>');
+});
+
+it("qualifies plain-text Scratch and Uploads without confusing their owners", () => {
+  const state = EditorState.create({ schema, plugins: [clipboard("scratch://@/c12/holder.md")] });
+  const scope = clipboardLinkScope(state);
+  expect(scope.spellLink({ ref: null, href: "scratch://note.md#gate" }).href).toBe(
+    "scratch://@/c12/note.md#gate",
+  );
+  expect(scope.spellLink({ ref: null, href: "uploads://seal.md" }).href).toBe(
+    "uploads://@/seal.md",
+  );
 });
