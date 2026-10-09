@@ -24,6 +24,7 @@ import {
 import { createCheckpointService } from "../checkpoints.js";
 import { createLinkBinder } from "./link-binding.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
+import { createSemanticProvenanceWriter } from "./provenance.js";
 
 const DOCUMENT_ID = "code-document" as DocumentId;
 const SYSTEM_ORIGIN = { type: "system" as const };
@@ -62,6 +63,7 @@ function setup(filetype = "typescript") {
     codec: mdxCodec({ schema }),
     schema,
     model,
+    semanticProvenance: createSemanticProvenanceWriter(),
     coordinator,
     links: createStaticDocumentLinkScopes(),
     registrar: UNSUPPORTED_AHEAD_REFS,

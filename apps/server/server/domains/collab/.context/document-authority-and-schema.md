@@ -64,9 +64,18 @@ host append keeps refs verbatim), and registers the ahead refs it minted.
 
 A prepared write is a mutation, not a desired state. Prepared against the
 current document, it keeps the base it read through the coordinator (its state
-vector) and carries the Yjs update that turns that base into the bound result,
-diffed with `updateYFragment` (`applyDocumentDiff`), so unchanged blocks keep
-their items. Append keeps the current document's own nodes for the blocks the
+vector) and carries the Yjs update that turns that base into the bound result:
+agent-edit's whole-document overwrite of the base (`lowerOverwrite`, the
+correspondence a `create` with overwrite resolves), so unchanged blocks keep
+their items and so does unchanged prose in a changed block. The write also
+carries that overwrite's semantic IR and the certified provenance facts it
+implies, as a separate update (`certified`): a write in a thread or by an agent
+admits both with the update, as agent-edit's own overwrite would, while a
+writer's save outside a thread applies the update alone, since fresh-authorship
+admission refuses the reserved provenance namespace. Do not lower prepared
+writes with a whole-fragment `updateYFragment` diff: it keeps only a common
+prefix and suffix, so a paragraph inserted above kept prose re-attributes that
+prose to the saver (A2-1's certified-save row). Append keeps the current document's own nodes for the blocks the
 appended text left alone, so it is an insertion after the base's last block.
 Applying merges the update into the live document: a writer's edit, unlink or
 retarget admitted between prepare and apply stays, in either order. A

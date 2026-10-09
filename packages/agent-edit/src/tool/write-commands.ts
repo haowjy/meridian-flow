@@ -2,6 +2,7 @@
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
+import { resolveOverwrite } from "../apply/overwrite.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
@@ -9,7 +10,7 @@ import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign
 import { renderedItems, shownEvidence } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
-import { planWrite, resolveWrite } from "../resolver/resolve.js";
+import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
@@ -267,31 +268,18 @@ export function createWriteCommands(deps: {
         `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
       );
     }
-    let overwrite: Extract<ReturnType<typeof resolveWrite>, { ok: true }> | undefined;
+    let overwrite: Extract<ResolveWriteResult, { ok: true }> | undefined;
     if (overwriting && existingBlocks.length > 0 && !prepared) {
-      const empty = given ? given.length === 0 : content.length === 0;
-      // Overwrite is whole-document correspondence: resolve binds against every old block.
-      const resolved = resolveWrite(
+      const resolved = resolveOverwrite(
         {
           doc: toDocHandle(runtime.doc),
           model: options.model,
           codec: links.codec,
           links: assigner,
         },
-        empty
-          ? {
-              command: "remove",
-              documentAddress: address,
-              in: [1, existingBlocks.length],
-            }
-          : {
-              command: "replace",
-              documentAddress: address,
-              ...(copiedNodes
-                ? { blocks: copiedNodes }
-                : { content, parsedContent: parsed.parsed }),
-              in: [1, existingBlocks.length],
-            },
+        address,
+        copiedNodes ? { blocks: copiedNodes } : { content, parsedContent: parsed.parsed },
+        given ? given.length === 0 : content.length === 0,
       );
       if (!resolved.ok) {
         return errorResponse(
@@ -301,7 +289,6 @@ export function createWriteCommands(deps: {
           documentBlocksDetail(resolved.error.details),
         );
       }
-      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
       if (resolved.edits.length === 0) return formatUnchangedSuccess();
       overwrite = resolved;
     }
@@ -325,7 +312,13 @@ export function createWriteCommands(deps: {
     let insertedHashes: string[] = [];
     let semanticEditIr: SemanticEditIRV1 | undefined;
     if (prepared) {
+      // The host lowered the overwrite and wrote its certified provenance against the base;
+      // both merge here, and the IR is admitted with them.
       Y.applyUpdate(runtime.doc, prepared.update, origin);
+      if (prepared.certified) {
+        Y.applyUpdate(runtime.doc, prepared.certified.provenance, origin);
+        semanticEditIr = prepared.certified.ir;
+      }
       if (runtime.doc.store.pendingStructs !== null || runtime.doc.store.pendingDs !== null) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return status(
@@ -857,14 +850,8 @@ export function createWriteCommands(deps: {
   ): void {
     validateSemanticEditIRV1(ir, {
       expectedDocumentId: documentId,
-      expectedInputRevision: inputStateVectorOf(doc),
+      expectedInputRevision: documentRevision({ model: options.model, doc: toDocHandle(doc) }),
     });
-  }
-
-  function inputStateVectorOf(doc: Y.Doc): string {
-    return [...options.model.encodeStateVector(toDocHandle(doc))]
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
   }
 
   async function nextWriteIdentity(

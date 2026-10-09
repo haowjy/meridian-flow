@@ -788,7 +788,8 @@ function semanticIrForResolvedEdits(
   return {
     version: 1,
     documentId: params.documentAddress.documentId,
-    inputRevision: (ctx.inputRevision ?? revisionOf(ctx)) as SemanticEditIRV1["inputRevision"],
+    inputRevision: (ctx.inputRevision ??
+      documentRevision(ctx)) as SemanticEditIRV1["inputRevision"],
     scope: normalizedScope,
     intent: isTotalFreshReplacement
       ? { kind: "fullScopeFreshReplacement", payload: params.content }
@@ -860,7 +861,8 @@ function sliceLineage(lineage: readonly LineageRange[], from: number, to: number
   return slices;
 }
 
-function revisionOf(ctx: ConcreteResolveContext): string {
+/** The revision a semantic IR names: the document's state vector, in hex. */
+export function documentRevision(ctx: { model: AgentEditModel; doc: DocHandle }): string {
   return [...ctx.model.encodeStateVector(ctx.doc)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
