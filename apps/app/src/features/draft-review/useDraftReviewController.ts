@@ -49,6 +49,7 @@ import {
   type ReviewToast,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-changes";
+import { useFinishedReviewReentry } from "./useFinishedReviewReentry";
 import {
   commandCompletion,
   draftReads,
@@ -478,6 +479,35 @@ export function useDraftReviewController({
     },
     [loadInlineReviewRoom, projectId, queryClient, workId],
   );
+
+  // The closed review's draft carries a new proposal: enter it again, the way
+  // entering does. Checked against the state, since the check that led here is async.
+  const reenterFinishedReview = useCallback(
+    (documentId: string, draftId: string) => {
+      const surface = stateRef.current.surface;
+      if (
+        !activeRef.current ||
+        surface.kind !== "inline" ||
+        surface.documentId !== documentId ||
+        surface.draftId !== draftId ||
+        surface.completion?.phase !== "closed"
+      )
+        return;
+      dispatch({
+        type: "reviewReentered",
+        documentId,
+        draftId,
+        completion: commandCompletion(
+          currentDraftCommandRecords(),
+          { projectId, workId, documentId, draftId },
+          draftReads(queryClient, { projectId, workId, documentId, draftId }),
+        ),
+      });
+      loadInlineReviewRoom(documentId, draftId);
+    },
+    [loadInlineReviewRoom, projectId, queryClient, workId],
+  );
+  useFinishedReviewReentry({ projectId, workId, inlineReview, reenter: reenterFinishedReview });
 
   const exitInlineReview = useCallback(() => {
     const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;

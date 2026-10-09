@@ -159,6 +159,25 @@ equals live; the review room is a closed generation and its reset would otherwis
 show doubled text); a last Apply keeps the review editor until `closed`. After a
 reload the draft is not listed and the address falls back to live.
 
+A `closed` review takes up its draft's next proposal in place
+(`useFinishedReviewReentry`, mounted by the controller). The server closes a draft
+by resetting its branch, and the same draft id carries what the AI writes next, in
+a new generation with a new review room; the closed review is joined to the dead
+room and nothing refreshes it (its room is silent, and `useDraftPreviews` leaves
+the open review to `useReviewRefresh`). The Work's list is the live signal, so the
+hook watches the draft's row while the review is closed. A row that differs from
+the one the review closed on is a hint, never the decision: a list read that began
+before the close can still list the draft. It makes the review read the draft's
+preview afresh, cancelling any read already in flight (which may predate the
+close), and only a read that began then, after the closing answer, decides. If it
+lists changes the review re-enters the way `enterInlineReview` does
+(`reviewReentered`: completion and focus cleared, marks shown, the room fetched
+again, a command already in flight on the new proposal adopted); if it lists none,
+or fails, "No changes left" stays until the row changes again. Nothing is read
+while the draft stays out of the list. The screen stays on the Editor review
+throughout, so the strip's and the Work page's Review for that draft find it
+already open.
+
 Focus is review state too: `inlineReview.focus` holds the focused change's class
 id with the operations it held, one value for the whole review. When the server
 regroups a class, `useReconcileReviewFocus` (mounted once, by the scope owner)
