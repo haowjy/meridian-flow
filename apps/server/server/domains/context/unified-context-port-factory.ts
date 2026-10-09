@@ -49,6 +49,7 @@ import type {
   ThreadContextView,
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
+import type { DocumentArrivals } from "./ports/document-arrivals.js";
 import {
   createInMemoryUnifiedContextStoreRegistry,
   getInMemoryContextTreeMutationStore,
@@ -358,6 +359,7 @@ function createProductionStoreResolvers(
   catalogMutations: ContextCatalogMutationPort,
   eventSink?: EventSink,
   kickLinkUpdates?: () => void,
+  arrivals?: DocumentArrivals,
 ): ContextStoreResolvers {
   const membershipObserverFor = (
     manifestView: ManifestView,
@@ -382,6 +384,7 @@ function createProductionStoreResolvers(
         userId,
         membershipObserverFor(manifestView ?? { projectId }),
         catalogMutations,
+        arrivals,
       );
     },
     resolveWorkStore(workId, scheme, projectId) {
@@ -391,6 +394,7 @@ function createProductionStoreResolvers(
         scheme,
         projectId ? membershipObserverFor({ projectId }) : undefined,
         catalogMutations,
+        arrivals,
       );
     },
     resolveNoWorkStore(projectId, scheme) {
@@ -400,6 +404,7 @@ function createProductionStoreResolvers(
         scheme,
         membershipObserverFor({ projectId }),
         catalogMutations,
+        arrivals,
       );
     },
     async resolveNoWorkId(projectId) {
@@ -414,6 +419,7 @@ function createProductionStoreResolvers(
         catalogMutations,
         eventSink,
         kickLinkUpdates,
+        arrivals,
       );
     },
   };
@@ -458,6 +464,8 @@ export function createProductionUnifiedContextPortFactory(options: {
   kickLinkUpdates?: () => void;
   catalogMutations?: ContextCatalogMutationPort;
   eventSink?: EventSink;
+  /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
+  arrivals?: DocumentArrivals;
 }): UnifiedContextPortFactory {
   const catalogMutations =
     options.catalogMutations ??
@@ -470,6 +478,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     catalogMutations,
     options.eventSink,
     options.kickLinkUpdates,
+    options.arrivals,
   );
 
   function moveLinks(projectId: string, userId: string, responseId?: string | null) {

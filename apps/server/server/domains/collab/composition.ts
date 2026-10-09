@@ -16,6 +16,7 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../shared/work-lifecycle-lock.js";
 import { createDocumentUriResolver, resolveDocumentUri } from "../context/document-uri-resolver.js";
+import type { DocumentArrivals } from "../context/ports/document-arrivals.js";
 import type { FileAccess } from "../file-policy/index.js";
 import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
@@ -137,6 +138,8 @@ type CollabDomainDeps = {
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
+  /** Ahead-ref settlement at tracked creates and Apply completions (contract §9.3–9.4). */
+  arrivals?: DocumentArrivals;
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
@@ -144,6 +147,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     ensureDocument: persistence.lifecycle.ensureDocument,
+    onArrival: (id) => deps.arrivals?.settle([id]) ?? Promise.resolve(0),
   });
   const hocuspocusBinding = createHocuspocusBinding(deps.eventSink);
   const liveCoordinator = createHocuspocusCoordinator({
@@ -270,6 +274,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     derivationStore,
     deps.notices,
     deps.eventSink,
+    deps.arrivals,
   );
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const pushCommits = createDrizzlePushCommitStore(

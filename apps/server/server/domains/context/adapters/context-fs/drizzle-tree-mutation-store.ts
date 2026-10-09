@@ -1,5 +1,6 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
 import type { DocumentFileType } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contentDocumentKindSql,
@@ -30,10 +31,12 @@ import {
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
+import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import {
   claimDocumentLocation,
   hasOppositeContextEntry,
   lockContextSources,
+  type NamespaceLocation,
   readTreeLocations,
   recordDocumentMove,
 } from "./document-locations.js";
@@ -103,6 +106,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly eventSink?: EventSink,
     private readonly kickLinkUpdates: () => void | Promise<void> = () => {},
+    private readonly arrivals?: Pick<DocumentArrivals, "settle">,
   ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
@@ -112,6 +116,17 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
   private async runBeforeDestructiveWrite(): Promise<void> {
     await this.beforeDestructiveWrite?.();
+  }
+
+  /**
+   * Move-in arrival (contract §9.3): once per move, after all DML and history, so a folder
+   * move settles against its final tree. Every participating namespace is already locked.
+   */
+  private async settleMovedIn(previous: readonly NamespaceLocation[]): Promise<void> {
+    const moved = previous.flatMap((entry) =>
+      entry.kind === "file" ? [entry.id as DocumentId] : [],
+    );
+    if (moved.length > 0) await this.arrivals?.settle(moved);
   }
 
   private async withMutationTransaction<T>(
@@ -418,6 +433,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           input.source.path,
           destinationPath,
         );
+        await this.settleMovedIn(previousLocations);
         await this.catalogMutations?.refreshSources(
           [input.source.sourceId, input.destinationSourceId],
           [input.source.nodeId],
@@ -451,6 +467,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           input.source.path,
           destinationPath,
         );
+        await this.settleMovedIn(previousLocations);
         await this.catalogMutations?.refreshSources([input.source.sourceId], [input.source.nodeId]);
         return Ok({ movedNodeId: input.source.nodeId, linkUpdate });
       }
@@ -518,6 +535,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         input.source.path,
         destinationPath,
       );
+      await this.settleMovedIn(previousLocations);
       await this.catalogMutations?.refreshSources(
         [input.source.sourceId, input.destinationSourceId],
         [input.source.nodeId],
