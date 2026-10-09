@@ -1,14 +1,8 @@
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { Fragment, type Node as PMNode } from "prosemirror-model";
+import type { Node as PMNode } from "prosemirror-model";
 import { expect } from "vitest";
 
-import {
-  type ComponentRegistry,
-  type DocumentLinkScope,
-  type MarkupCodec,
-  type mdxCodec,
-  UNSCOPED_DOCUMENT_LINKS,
-} from "./index.js";
+import { type ComponentRegistry, type mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "./index.js";
 
 export const schema = buildDocumentSchema();
 export const components = {
@@ -77,54 +71,4 @@ export function expectStable(codec: ReturnType<typeof mdxCodec>, input: string):
   const second = codec.parse(serialized).blocks;
   expect(docFrom(second).toJSON()).toEqual(docFrom(first).toJSON());
   expect(codec.serialize(second, UNSCOPED_DOCUMENT_LINKS)).toBe(serialized);
-}
-
-/**
- * A fixed id ↔ path table, for codec fixtures: a serialize scope that spells
- * known `asset:` refs as their paths, and the binding pass hosts run after
- * the (pure) parse, which claims known paths as `asset:` refs.
- */
-export function createAssetFixture(entries: Iterable<readonly [string, string]>): {
-  links: DocumentLinkScope;
-  bind(blocks: readonly PMNode[]): PMNode[];
-  /** The codec as a host runs it: parse, then bind. */
-  withBinding(codec: MarkupCodec): MarkupCodec;
-} {
-  const pathById = new Map(entries);
-  const idByPath = new Map(Array.from(pathById, ([id, path]) => [path, id]));
-  const bindNode = (node: PMNode): PMNode => {
-    if (node.type.name === "image" || node.type.name === "figure") {
-      const id = idByPath.get(String(node.attrs.src ?? ""));
-      return id
-        ? node.type.create({ ...node.attrs, src: `asset:${id}` }, node.content, node.marks)
-        : node;
-    }
-    if (node.isLeaf) return node;
-    const children: PMNode[] = [];
-    node.forEach((child) => {
-      children.push(bindNode(child));
-    });
-    return node.copy(Fragment.fromArray(children));
-  };
-  const bind = (blocks: readonly PMNode[]) => blocks.map(bindNode);
-  return {
-    links: {
-      spellLink: UNSCOPED_DOCUMENT_LINKS.spellLink,
-      spellSource(attrs) {
-        const path = attrs.src.startsWith("asset:")
-          ? pathById.get(attrs.src.slice("asset:".length))
-          : undefined;
-        return path ? { href: path, address: null } : UNSCOPED_DOCUMENT_LINKS.spellSource(attrs);
-      },
-    },
-    bind,
-    withBinding: (codec) => ({
-      ...codec,
-      parse: (content) => ({ blocks: bind(codec.parse(content).blocks) }),
-      parseWithSpans: (content) => {
-        const parsed = codec.parseWithSpans(content);
-        return { ...parsed, blocks: bind(parsed.blocks) };
-      },
-    }),
-  };
 }

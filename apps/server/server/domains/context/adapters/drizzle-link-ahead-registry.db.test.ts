@@ -190,21 +190,36 @@ if (!RUN) {
         locked();
         await held;
       });
+      // The arrival stops after its insert, before settling, so the unsettled row is observable.
+      let settle!: () => void;
+      const settling = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      let inserted!: () => void;
+      const arrivalInserted = new Promise<void>((resolve) => {
+        inserted = resolve;
+      });
       let registering: Promise<void> | undefined;
       let arrival: Promise<number> | undefined;
       try {
         await gateTaken;
         registering = newRegistry(database).register([registrationFor(scheme)]);
         await waitForWaiters(arrivalKey(scheme), 1);
-        arrival = arrive(scheme);
+        arrival = arrive(scheme, DOCUMENT, async () => {
+          inserted();
+          await settling;
+        });
         await waitForWaiters(arrivalKey(scheme), 2);
         release();
         await registering;
+        await arrivalInserted;
         expect(await settledIds()).toEqual([null]); // committed before the document existed
+        settle();
         expect(await arrival).toBe(1);
         expect(await settledIds()).toEqual([DOCUMENT]);
       } finally {
         release();
+        settle();
         await Promise.allSettled([gate, registering, arrival]);
       }
     }
