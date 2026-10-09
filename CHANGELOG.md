@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Writer file creation cannot bypass the AI-only policy of a chat’s Scratch.
+
 - Restoring a chat or Work reconnects waiting links to its returning Scratch notes.
 
 - Links in a No Work fork keep reading its draft after the first chat moves to another Work.

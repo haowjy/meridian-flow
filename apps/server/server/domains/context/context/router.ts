@@ -362,13 +362,11 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       path: string,
     ) => Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
-    const r = await resolveMutation(uri);
+    const r = await resolveMutation(uri, options?.origin);
     if (!r.ok) return r;
+    const permission = r.value.requireCreation(options?.documentId ? "intake" : "entry");
+    if (!permission.ok) return permission;
     const { adapter, path, canonical } = r.value;
-    if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-    if (!adapter.capabilities.creatable && !options?.documentId) {
-      return entryCreationDenied(canonical);
-    }
     return callAdapter(canonical, () => create(adapter, path));
   }
 
@@ -440,8 +438,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
-      // Binding prepares syntax and refs; creation policy belongs to the later
-      // createBoundDocument call, which carries the upload reservation identity.
+      // Binding only prepares syntax and refs. The shared creation door checks
+      // the eventual origin and reservation identity, including intake policy.
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
       return callAdapter(canonical, () => adapter.bindTrackedDocument(path, content));
     },
