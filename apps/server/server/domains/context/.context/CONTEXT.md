@@ -430,8 +430,3 @@ Writer routes can read, edit, rename or move notes out, but cannot create notes
 or move files into a lineage. Canonical AI writes use the normal edit policy.
 Rebinding selects a different bare Scratch owner; it never moves notes. The
 durable Work-switch Notice names the previous canonical Scratch root.
-
-The lineage-Scratch rollout archives historical No Work notes under Unfiled.
-Catalog scope dispatch, Work snapshots and availability identity reads ignore
-stray No Work work-scoped Scratch sources recreated by an old binary. See the
-[database rollout contract](../../../../../../packages/database/.context/CONTEXT.md).
