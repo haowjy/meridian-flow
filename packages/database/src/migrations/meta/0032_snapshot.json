@@ -1,5 +1,5 @@
 {
-  "id": "da9cd263-547b-401e-8d1f-ab93825071fa",
+  "id": "2e16024a-70f7-46d2-8a88-4e313e03e640",
   "prevId": "7087b9f2-1541-4a6d-a776-3b6125f008e8",
   "version": "7",
   "dialect": "postgresql",
@@ -2253,6 +2253,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "showing_digest": {
+          "name": "showing_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "turn_id": {
           "name": "turn_id",
           "type": "uuid",
@@ -2301,17 +2307,19 @@
           "columns": [
             "thread_id",
             "document_id",
-            "ref",
-            "address",
-            "holder_uri",
-            "view",
+            "showing_digest",
             "turn_id"
           ]
         }
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "thread_shown_links_digest_valid": {
+          "name": "thread_shown_links_digest_valid",
+          "value": "\"thread_shown_links\".\"showing_digest\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.thread_user_state": {
@@ -5158,9 +5166,9 @@
               "nulls": "last"
             },
             {
-              "expression": "path",
-              "isExpression": false,
+              "expression": "md5(\"path\")",
               "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],

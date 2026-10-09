@@ -384,6 +384,8 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
       address.workId === null
         ? isNull(linkAheadRefs.workId)
         : eq(linkAheadRefs.workId, address.workId),
+      // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
+      sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
       eq(linkAheadRefs.path, address.path),
     );
   }
