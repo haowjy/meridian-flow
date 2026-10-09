@@ -188,8 +188,8 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    `pnpm db:apply-functions` only when the guarded standalone function sync is
    needed.
 
-A row-transform migration MUST ship with a populated upgrade fixture in
-`fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration
+A row-transform migration MUST ship with a populated upgrade fixture beside
+the database migration contract tests. Apply the committed prefix, seed the pre-migration
 shape, and prove the fixture fails before the transform (pre-fix red) and passes
 after the remaining chain runs. The upgrade fixture may be culled once a later
 frozen migration supersedes the transform. The original migration file itself
@@ -336,3 +336,28 @@ Agent package installations retain account/system current and upstream source he
 `project_agent_removals` is a Project/catalog-entry exclusion relation. Cascading
 FKs clean up deleted Projects and catalog entries; publication and definition
 revision changes preserve exclusions. It is not another definition owner.
+
+### No Work Scratch archival rollout (0032–0034)
+
+Migrate first, then swap to the lineage-Scratch app. 0032 installs NOT VALID
+scope checks and a temporary `root_thread_id IS NULL` write fence. 0033 moves
+every No Work Scratch source (including trashed content) into a fresh Unfiled
+root, taking `Scratch`, `Scratch (2)`, etc., never merging existing entries.
+0034 builds/switches indexes concurrently, validates the checks, then removes
+the fence. Until then no lineage row may be admitted. This makes the old and
+new project-index predicates identical during the swap. Retry the complete
+0034 file after failure; do not launch the new app until migration completes.
+
+The old binary may recreate a work-scoped Scratch source in the rollout window.
+The new catalog and availability readers ignore No Work Scratch rows instead
+of spelling invalid URIs. Notes written there after the archival transaction
+are not moved automatically: quiesce old writers before migration, or arrange
+a repeat archival operation before completing the app swap.
+
+Document/folder IDs, content, Yjs state and storage object keys survive the
+move. Upload intake source, work ownership, path/URI and location token change.
+Catalog heads for both scopes are deleted (cascading replay/entries), so the
+next snapshot rebuilds from authoritative rows with a fresh generation. Old
+Scratch previous-location aliases cascade away with their source. Stored
+legacy hrefs and link tables are deliberately untouched pending the owner's
+link-identity decision / PR #737; these links are not promised to resolve.
