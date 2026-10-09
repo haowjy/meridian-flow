@@ -17,9 +17,10 @@ assigned nodes with no Markdown round trip ([design][design]).
    A written link with no extension compares as its default-extension address
    (the `.md` ahead minting stores), so `[x](ch12)` written after a showing of
    `ch12.md` continues that ref after the document moved.
-3. Pass 3 for the rest: classify (external and contextual keep `ref: null`),
-   resolve in the command's view (`scope.documentFor`), else mint an ahead ref
-   whose address always carries an extension.
+3. Pass 3 for the rest, markup's `assignFreshLink` (the client assigns with
+   it too): classify (external and contextual keep `ref: null`), resolve in
+   the command's view (`scope.documentFor`), else mint an ahead ref whose
+   address always carries an extension.
 
 Attribute policy, per written occurrence:
 

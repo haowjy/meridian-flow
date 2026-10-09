@@ -1,7 +1,7 @@
 /** Derives live outputs from durable cuts; timers are hints, database staleness is authority. */
 
-import { extractStoredLinks } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { extractStoredLinks } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { deriveDocumentLinkRows } from "./document-link-rows.js";

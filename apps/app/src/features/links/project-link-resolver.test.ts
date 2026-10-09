@@ -15,6 +15,7 @@ import {
 } from "@/core/editor/links";
 
 import { followProjectLink } from "./follow-link";
+import { createLinkSettlements } from "./link-settlements";
 import { createProjectLinkResolver, type LinkResolutionScope } from "./project-link-resolver";
 import type { LinkableDocument } from "./useLinkableDocuments";
 
@@ -71,10 +72,16 @@ type Row = {
   /** What a click right after asking waits for, as `resolve()` answers it. */
   clicked?: string | null;
   /**
-   * A later catalog, registered after the first answers landed, with the
-   * server unreachable: what the same links read before and after it fails.
+   * Later catalogs, each registered after the previous answers landed: what
+   * the same links read before and after the server answers (no `server`:
+   * unreachable).
    */
-  offline?: { documents: LinkableDocument[]; before: (string | null)[]; after: (string | null)[] };
+  later?: {
+    documents: LinkableDocument[];
+    server?: Record<string, DocumentLinkAnswer>;
+    before: (string | null)[];
+    after: (string | null)[];
+  }[];
 };
 
 const ROWS: Row[] = [
@@ -139,11 +146,13 @@ const ROWS: Row[] = [
     before: ["document:Nine"],
     after: ["document:Kael"],
     asked: [AHEAD],
-    offline: {
-      documents: [document(KAEL, "Ten"), document(NINE, "Nine")],
-      before: ["document:Ten"],
-      after: ["document:Ten"],
-    },
+    later: [
+      {
+        documents: [document(KAEL, "Ten"), document(NINE, "Nine")],
+        before: ["document:Ten"],
+        after: ["document:Ten"],
+      },
+    ],
   },
   {
     rule: "an ahead ref settled gone asks like a doc ref, never shows its address",
@@ -152,7 +161,28 @@ const ROWS: Row[] = [
     before: ["document:Nine"],
     after: ["gone"],
     asked: [AHEAD],
-    offline: { documents: DOCUMENTS, before: ["pending"], after: [null] },
+    later: [{ documents: DOCUMENTS, before: ["pending"], after: [null] }],
+  },
+  {
+    rule: "a ref settled gone, later answered as its document, keeps that document offline",
+    links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
+    server: { [AHEAD]: settled({ state: "gone" }) },
+    before: ["document:Nine"],
+    after: ["gone"],
+    asked: [AHEAD],
+    later: [
+      {
+        documents: DOCUMENTS,
+        server: { [AHEAD]: settled(found(KAEL, "Kael")) },
+        before: ["pending"],
+        after: ["document:Kael"],
+      },
+      {
+        documents: [document(KAEL, "Ten"), document(NINE, "Nine")],
+        before: ["document:Ten"],
+        after: ["document:Ten"],
+      },
+    ],
   },
   {
     rule: "the server's gone replaces the local answer",
@@ -220,27 +250,30 @@ function show(entry: LinkResolutionEntry | null): string | null {
 it("routes each link to the local index or the server", async () => {
   for (const row of ROWS) {
     const asked: string[] = [];
+    const answering = (answers: Row["server"]) =>
+      server.mockImplementation(async (_projectId, { links }) => {
+        const keys = links.map(({ ref, href }) => ref ?? href);
+        asked.push(...keys);
+        if (keys.some((key) => answers?.[key] === "fail")) throw new Error("offline");
+        return {
+          answers: keys.map((key) => {
+            const answer = answers?.[key];
+            return answer && answer !== "fail" ? answer : { state: "unresolvable" };
+          }),
+        };
+      });
     server.mockReset();
-    server.mockImplementation(async (_projectId, { links }) => {
-      const keys = links.map(({ ref, href }) => ref ?? href);
-      asked.push(...keys);
-      if (keys.some((key) => row.server?.[key] === "fail")) throw new Error("offline");
-      return {
-        answers: keys.map((key) => {
-          const answer = row.server?.[key];
-          return answer && answer !== "fail" ? answer : { state: "unresolvable" };
-        }),
-      };
-    });
+    answering(row.server);
     const resolution = createLinkAnswerCache();
-    // Settlements are project-wide facts; each row is its own project.
-    const scope = { projectId: row.rule, workId: "w", baseUri: HOLDER, ...row.scope };
+    // Settlements are what the account learned; each row is its own account.
+    const settlements = createLinkSettlements();
+    const scope = { projectId: "p", workId: "w", baseUri: HOLDER, ...row.scope };
     resolution.registerResolver(
-      createProjectLinkResolver(scope, {
-        documents: DOCUMENTS,
-        revision: "r",
-        complete: row.complete ?? true,
-      }),
+      createProjectLinkResolver(
+        scope,
+        { documents: DOCUMENTS, revision: "r", complete: row.complete ?? true },
+        settlements,
+      ),
       { baseUri: scope.baseUri },
     );
 
@@ -289,22 +322,24 @@ it("routes each link to the local index or the server", async () => {
       expect.soft(events, row.rule).toEqual(["clear"]);
     }
 
-    // The renumber case: the catalog moves, then the server cannot be reached.
-    if (row.offline) {
-      server.mockRejectedValue(new Error("offline"));
+    // Later catalogs: the documents move, and the server answers again or cannot be reached.
+    for (const [at, later] of (row.later ?? []).entries()) {
+      if (later.server) answering(later.server);
+      else server.mockRejectedValue(new Error("offline"));
       resolution.registerResolver(
-        createProjectLinkResolver(scope, {
-          documents: row.offline.documents,
-          revision: "r2",
-          complete: true,
-        }),
+        createProjectLinkResolver(
+          scope,
+          { documents: later.documents, revision: `r${at + 2}`, complete: true },
+          settlements,
+        ),
         { baseUri: scope.baseUri },
       );
       resolution.request(row.links);
       const read = () => row.links.map((link) => show(resolution.read(link)));
-      expect.soft(read(), `${row.rule} (offline)`).toEqual(row.offline.before);
+      const label = `${row.rule} (catalog ${at + 2})`;
+      expect.soft(read(), label).toEqual(later.before);
       await new Promise((landed) => setTimeout(landed, 0));
-      expect.soft(read(), `${row.rule} (offline)`).toEqual(row.offline.after);
+      expect.soft(read(), label).toEqual(later.after);
     }
   }
 });

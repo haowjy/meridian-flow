@@ -4,8 +4,9 @@
  * Context URI as it stands now. Every surface spells it for its reader from
  * there; the `href` is only where the link pointed when it was written.
  *
- * Both producers bind without parsing and without the network: a document row
- * knows its id, and the link-ahead row mints an ahead ref for its address.
+ * Both producers assign refs without parsing and without the network: a
+ * document row knows its id, and the link-ahead row mints an ahead ref for
+ * its address.
  */
 
 import {

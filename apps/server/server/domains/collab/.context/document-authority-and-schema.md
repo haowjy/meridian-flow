@@ -103,7 +103,7 @@ door names, else its thread's account, else the project owner; and the thread
 it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each operation then calls
 `prepare({ holders, docs, stored, refs, addresses, written })` with what its next
 synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
-(agent-edit `links/stored-links.ts`), and one batch loads settlements, rows by
+(markup `storedLinkKeys`), and one batch loads settlements, rows by
 id and rows at exact or extension-omitted addresses, readability through the
 file policy's list path, and manifest membership only when a row needs it.
 Membership is the same authority ContextFS lists through and is required (DB

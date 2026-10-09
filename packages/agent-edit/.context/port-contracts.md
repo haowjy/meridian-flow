@@ -110,15 +110,16 @@ routes between versions names the view on every command it routes
 `ReverseInput`): reversals open their links in the view of the history they
 reverse. A reply's save prepares each document's before sides (`preOwnSnapshot`) with its
 runtime, since receipts spell links the reply removed.
-`createHolderLinkScope(holder, catalog)` applies the contracts' resolution and
-spelling rules over any `HolderCatalog`, so hosts cannot disagree;
+Markup's `createHolderLinkScope(holder, catalog)` applies the contracts'
+resolution and spelling rules over any `HolderCatalog` (the client resolves
+through the same rules over its own catalog), so hosts cannot disagree;
 `createStaticDocumentLinks(catalog)` is the in-memory adapter over a fixed
 catalog. It loads keys on `prepare` the way the server's batched loader does
 and answers an unprepared id, settlement or address as a snapshot miss
 (recorded in `misses`), so tests catch a door that forgot to prepare; the
 server's in-memory composition passes `{ preloaded: true }`.
-`storedLinkKeys` (`links/stored-links.ts`, beside the Yjs walk
-`extractStoredLinks`) is what both adapters
+Markup's `storedLinkKeys` (beside the Yjs walk `extractStoredLinks`) is what
+both adapters
 load for stored occurrences (docs and `stored` nodes such as copies).
 After parse, `links/assign-refs.ts` `assignSources` applies the shipped image
 rule (a known manuscript path becomes `asset:<id>`); the write path's ref assigner runs it

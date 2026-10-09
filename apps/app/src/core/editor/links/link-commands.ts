@@ -24,7 +24,7 @@ import {
   resolveAnchor,
   resolveAnchorIn,
 } from "../anchors";
-import { bindWrittenHref } from "./link-binding";
+import { assignWrittenHref } from "./link-assignment";
 import { linkKeyOfMark } from "./link-resolution";
 import { getLinkAnswerCache } from "./link-storage";
 import { normalizeLinkHref } from "./link-target";
@@ -102,8 +102,8 @@ export type LinkCommit = {
   href: string;
   /**
    * The document the writer picked, when they picked one (the form's document
-   * search): bound by its id, never by parsing `href`. Omitted, the href is
-   * bound like any written link.
+   * search): assigned by its id, never by parsing `href`. Omitted, the href is
+   * assigned like any written link.
    */
   ref?: DocumentRef;
 };
@@ -257,8 +257,8 @@ export function commitLinkDraft(
 /**
  * The attrs a committed link stores. Submitting an existing link's own
  * destination unchanged keeps its attrs, ref included: relabelling a link is
- * not retargeting it. Any other destination is a retarget and binds fresh,
- * from the picked document or through `bindWrittenHref` against the holder
+ * not retargeting it. Any other destination is a retarget and is assigned fresh,
+ * from the picked document or through `assignWrittenHref` against the holder
  * and the editor's local index; nothing waits on the network.
  */
 function committedLinkAttrs(
@@ -277,8 +277,11 @@ function committedLinkAttrs(
     };
   }
   if (picked) return { href, title: null, ref: picked };
-  const scope = getLinkAnswerCache(editor)?.binding;
-  return { ...bindWrittenHref(href, scope?.holderUri ?? null, scope?.index ?? null), title: null };
+  const scope = getLinkAnswerCache(editor)?.assignment;
+  return {
+    ...assignWrittenHref(href, scope?.holderUri ?? null, scope?.index ?? null),
+    title: null,
+  };
 }
 
 /**

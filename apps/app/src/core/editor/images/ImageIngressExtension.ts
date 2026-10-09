@@ -41,7 +41,7 @@ import {
 import { createImageIngressStore } from "./image-ingress-store";
 import { insertImageFile, pasteImageFile } from "./image-uploads";
 import {
-  createEditorAssetPathResolver,
+  createAssetClipboardIndex,
   draggingFiles,
   fileDropIntent,
   imageFileFromClipboard,
@@ -85,7 +85,7 @@ export const ImageIngressExtension = Extension.create({
 
   addStorage(): ImageIngressStorage {
     return {
-      assetIndex: createEditorAssetPathResolver(),
+      assetIndex: createAssetClipboardIndex(),
       status: createImageIngressStore(),
       host: null,
     };

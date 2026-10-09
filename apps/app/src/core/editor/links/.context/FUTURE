@@ -18,6 +18,6 @@
 - Every catalog revision starts a new resolution generation whose first read
   of a server-only key (a gone `doc:` ref, an unsettled ahead ref) is pending,
   which draws filled for one round trip before the dashed answer returns.
-  Settled ahead refs no longer do (the settlement memo). Read the previous
+  Settled ahead refs no longer do (the account's settlement memo). Read the previous
   generation's answer while revalidating to remove the rest
   (`link-resolution.ts` generations, `features/links/project-link-resolver.ts`).

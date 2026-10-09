@@ -49,7 +49,7 @@
 import { storedLinkRef } from "@meridian/contracts";
 import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
-import type { LinkBindingIndex, LinkBindingScope } from "./link-binding";
+import type { LinkAssignmentIndex, LinkAssignmentScope } from "./link-assignment";
 import {
   classifyLinkTarget,
   isInternalLinkTarget,
@@ -115,9 +115,9 @@ export type DocumentAnswer = Extract<LinkAnswer, { state: "document" }>;
 export type InternalLinkResolver = {
   /**
    * The local document index the port answers from, which is also what a
-   * link written into the holder binds against. Absent for a port with none.
+   * link written into the holder is assigned against. Absent for a port with none.
    */
-  index?: LinkBindingIndex | null;
+  index?: LinkAssignmentIndex | null;
   local?: (question: LinkQuestion) => LocalLinkAnswer;
   remote: (questions: readonly LinkQuestion[]) => Promise<readonly (LinkAnswer | null)[]>;
 };
@@ -133,11 +133,11 @@ export type LinkAnswerCache = {
    */
   readonly baseUri: string | null;
   /**
-   * What a link written into the holder binds against (`link-binding.ts`):
+   * What a link written into the holder is assigned against (`link-assignment.ts`):
    * its address, its project, and the local document index the live
    * registration was made with. Null with no registration.
    */
-  readonly binding: LinkBindingScope | null;
+  readonly assignment: LinkAssignmentScope | null;
   /**
    * The answer for this link as it stands, or null when there is nothing to
    * say: an external link, an unclassifiable one, a failed request, or no port
@@ -161,7 +161,7 @@ export type LinkAnswerCache = {
    * makes this the app's only invalidation: register again and the last
    * generation's answers are unreachable. `baseUri` is part of what the
    * generation is true of, so a base arriving is a new registration; so is
-   * the binding context (project, and the port's own index).
+   * the assignment context (project, and the port's own index).
    */
   registerResolver: (
     resolve: InternalLinkResolver,
@@ -221,7 +221,7 @@ type Request = {
 type Generation = {
   readonly resolver: InternalLinkResolver;
   readonly baseUri: string | null;
-  readonly binding: LinkBindingScope;
+  readonly assignment: LinkAssignmentScope;
   /** Answers, keyed by the link's ref and the classifier's spelling of its href. */
   readonly answers: Map<string, LinkResolutionEntry>;
   /**
@@ -390,8 +390,8 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       return current?.baseUri ?? null;
     },
 
-    get binding() {
-      return current?.binding ?? null;
+    get assignment() {
+      return current?.assignment ?? null;
     },
 
     read(link) {
@@ -441,7 +441,7 @@ export function createLinkAnswerCache(): LinkAnswerCache {
       current = {
         resolver: resolve,
         baseUri,
-        binding: {
+        assignment: {
           holderUri: baseUri,
           projectId: options?.projectId ?? null,
           index: resolve.index ?? null,
