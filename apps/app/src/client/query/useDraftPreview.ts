@@ -54,9 +54,9 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
       draft.documentId,
       draft.draftId,
     ),
-    queryFn: () =>
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
       readPreviewAfterChangeCommands(draft, () =>
-        getDraftPreview(draft.projectId, draft.workId, draft.documentId, draft.draftId),
+        getDraftPreview(draft.projectId, draft.workId, draft.documentId, draft.draftId, signal),
       ),
     staleTime: 15_000,
     structuralSharing: keepNewerGeneration,

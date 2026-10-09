@@ -50,13 +50,36 @@ export function useReviewRefresh({
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let firstPendingAt = 0;
+    let active = true;
+    let refreshing = false;
+    let trailing = false;
     const refresh = () => {
+      if (timer !== null) clearTimeout(timer);
       timer = null;
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDrafts(projectId, workId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+      if (refreshing) {
+        trailing = true;
+        return;
+      }
+      refreshing = true;
+      void Promise.all([
+        queryClient.invalidateQueries(
+          {
+            queryKey: projectQueryKeys.workDrafts(projectId, workId),
+          },
+          { cancelRefetch: false },
+        ),
+        queryClient.invalidateQueries(
+          {
+            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+          },
+          { cancelRefetch: false },
+        ),
+      ]).finally(() => {
+        refreshing = false;
+        if (active && trailing) {
+          trailing = false;
+          refresh();
+        }
       });
     };
     const schedule = () => {
@@ -70,6 +93,7 @@ export function useReviewRefresh({
     };
     for (const source of sources) source.document.on("update", schedule);
     return () => {
+      active = false;
       if (timer !== null) clearTimeout(timer);
       for (const source of sources) source.document.off("update", schedule);
     };
