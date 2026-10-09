@@ -19,8 +19,8 @@ const assets = createAssetFixture([
   ["asset-named", "assets/café©.png"],
 ]);
 const dialects = [
-  { name: "markdown", codec: markdownCodec({ schema, assetForPath: assets.assetForPath }) },
-  { name: "mdx", codec: mdxCodec({ schema, assetForPath: assets.assetForPath, components }) },
+  { name: "markdown", codec: assets.withBinding(markdownCodec({ schema })) },
+  { name: "mdx", codec: assets.withBinding(mdxCodec({ schema, components })) },
 ] as const;
 
 const PLAIN = "![World map](assets/map.png)";
@@ -143,7 +143,7 @@ describe.each(dialects)("$name image sizes", ({ codec }) => {
 // the document never said. Both dialects hand their attributes to one shared
 // reader, so the refusals run once, through the Markdown raw-HTML parser.
 describe("image attribute refusals", () => {
-  const codec = markdownCodec({ schema, assetForPath: assets.assetForPath });
+  const codec = assets.withBinding(markdownCodec({ schema }));
   it.each([
     'width="12.5"',
     'width="0"',

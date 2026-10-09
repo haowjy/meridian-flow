@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from "vitest";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
@@ -24,7 +25,6 @@ import { createDrizzleWorkRepository } from "../../projects/adapters/work-reposi
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
 import { createProjectContextDocumentStore } from "../context-source-provisioning.js";
 import { createDocumentAddressResolver } from "../document-address.js";
-import { createDrizzleDocumentAssetPaths } from "./asset-path-resolver.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { ContextFS } from "./context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "./context-fs/drizzle-store.js";
@@ -487,7 +487,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: failingCatalog,
       });
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
         scheme: "manuscript",
@@ -530,7 +530,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         failingCatalog,
       );
       const context = new ContextFS({
-        assetPaths: createDrizzleDocumentAssetPaths(db),
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
         scheme: "kb",

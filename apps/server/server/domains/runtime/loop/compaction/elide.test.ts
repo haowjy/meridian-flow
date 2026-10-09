@@ -155,7 +155,7 @@ describe("document text elisions", () => {
       documentId: "00000000-0000-4000-8000-000000000001",
       uri: evidence.uri,
       text: "Chapter",
-      read: { result: "OLD DOCUMENT", revision: "y1:old" },
+      read: { result: "OLD DOCUMENT", revision: "y2:old" },
     };
     const blocks = [
       block("ref1", "text", reference),
@@ -171,7 +171,7 @@ describe("document text elisions", () => {
       uri: evidence.uri,
       text: "Chapter",
       read: {
-        revision: "y1:old",
+        revision: "y2:old",
       },
     });
     expect(JSON.stringify(elisions)).not.toContain("OLD DOCUMENT");
@@ -193,7 +193,7 @@ describe("document text elisions", () => {
       {
         documentId: reference.documentId,
         uri: reference.uri,
-        revision: "y1:old",
+        revision: "y2:old",
       },
     ]);
   });

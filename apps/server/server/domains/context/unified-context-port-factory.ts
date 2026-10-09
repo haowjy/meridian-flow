@@ -122,7 +122,7 @@ export interface ManifestMembershipPort {
 
 /** What every adapter of one port shares: storage, collab, and the reading thread. */
 interface AdapterAssembly {
-  assetPaths: ContextFSDeps["assetPaths"];
+  links: ContextFSDeps["links"];
   storeResolvers: ContextStoreResolvers;
   documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
@@ -140,7 +140,7 @@ function contextFsAdapter(
   return new ContextFS({
     ...deps,
     documentSync: assembly.documentSync,
-    assetPaths: assembly.assetPaths,
+    links: assembly.links,
     documentCreation: assembly.documentCreation,
     ...(assembly.thread ? { threadView: assembly.thread } : {}),
   });
@@ -258,7 +258,7 @@ type ContextPortBuildScope =
 
 function buildUnifiedContextPort(input: {
   scope: ContextPortBuildScope;
-  assetPaths: ContextFSDeps["assetPaths"];
+  links: ContextFSDeps["links"];
   storeResolvers: ContextStoreResolvers;
   documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
@@ -272,7 +272,7 @@ function buildUnifiedContextPort(input: {
   const assembly: AdapterAssembly = {
     storeResolvers,
     documentSync: input.documentSync,
-    assetPaths: input.assetPaths,
+    links: input.links,
     documentCreation: input.documentCreation,
     commandTransaction: input.commandTransaction,
     ...(scope.kind === "work" && scope.thread ? { thread: scope.thread } : {}),
@@ -439,7 +439,7 @@ export function createInMemoryUnifiedContextPortFactory(
         scope: { kind: "project", projectId, userId, workAuthorities },
         storeResolvers,
         documentSync,
-        assetPaths: { within: (_project, operation) => operation() },
+        links: { within: (_key, operation) => operation() },
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -447,14 +447,14 @@ export function createInMemoryUnifiedContextPortFactory(
         scope: { kind: "work", authority, projectId, userId, workAuthorities, thread },
         storeResolvers,
         documentSync,
-        assetPaths: { within: (_project, operation) => operation() },
+        links: { within: (_key, operation) => operation() },
       });
     },
   };
 }
 
 export function createProductionUnifiedContextPortFactory(options: {
-  assetPaths: ContextFSDeps["assetPaths"];
+  links: ContextFSDeps["links"];
   db: Database;
   documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
   manifestMembership: ManifestMembershipPort;
@@ -500,7 +500,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         scope: { kind: "project", projectId, userId, workAuthorities },
         storeResolvers,
         documentSync: options.documentSync,
-        assetPaths: options.assetPaths,
+        links: options.links,
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         operationReceipts: new ContextOperationReceipts(
@@ -520,7 +520,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         scope: { kind: "work", authority, projectId, userId, workAuthorities, thread },
         storeResolvers,
         documentSync: options.documentSync,
-        assetPaths: options.assetPaths,
+        links: options.links,
         documentCreation: options.documentSync,
         moveLinks: moveLinks(projectId, userId),
         operationReceipts: new ContextOperationReceipts(

@@ -1,7 +1,8 @@
 /** Schema-aware read and restore contracts for the collab document engine. */
+
 import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import {
   buildDocumentSchema,
   COLLAB_SCHEMA_VERSION,
@@ -16,6 +17,7 @@ import {
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
 } from "../adapters/in-memory/agent-edit.js";
+import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createMarkdownDocumentEngine } from "./markdown-document.js";
 
@@ -30,7 +32,7 @@ function setup(filetype = "typescript") {
   const coordinator = createInMemoryCoordinator(journal);
   const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
-    links: UNSCOPED_DOCUMENT_LINKS,
+    links: createStaticDocumentLinkScopes(),
     schema,
     codec: mdxCodec({ schema }),
     model,

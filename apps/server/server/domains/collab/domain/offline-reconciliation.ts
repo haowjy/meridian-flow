@@ -1,6 +1,7 @@
 /** Reconciles offline live updates with journal-attributed agent deletions. */
 import {
   type AgentEditCodec,
+  type AgentEditCodecFactory,
   getBlockItemId,
   snapshotBlocks,
   toDocHandle,
@@ -11,6 +12,7 @@ import {
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { ChangeTrailPersistence } from "./ports/change-trail-persistence.js";
+import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 import {
   type CanonicalBlockIdentityV1,
   canonicalBlockKey,
@@ -40,7 +42,9 @@ export function createOfflineReconciliation(deps: {
   journal: UpdateJournal;
   changeTrails: Pick<ChangeTrailPersistence, "record">;
   model: YProsemirrorDocumentModel;
-  codec: AgentEditCodec;
+  codec: AgentEditCodecFactory;
+  /** The trail text the writer reads back spells through the operation's scope. */
+  links: DocumentLinkScopes;
   identifyUpdate(update: Uint8Array): string;
   resolveThreadId(turnId: string): Promise<string | null>;
   resolveDocumentTitle(documentId: string): Promise<string>;
@@ -60,6 +64,8 @@ export function createOfflineReconciliation(deps: {
     try {
       if (journal.checkpoint) Y.applyUpdate(replay, journal.checkpoint);
       Y.applyUpdate(converged, input.convergedState);
+      const codec = await bindReplay(input.documentId, journal, converged);
+      const snapshot = (doc: Y.Doc) => snapshotWith(doc, codec);
       for (const row of journal.updates) {
         const beforeState = Y.encodeStateAsUpdate(replay);
         const before = snapshot(replay);
@@ -170,12 +176,30 @@ export function createOfflineReconciliation(deps: {
     });
   }
 
-  function snapshot(doc: Y.Doc): SnapshotBlock[] {
+  /** Prepare what the journal's head and the converged state name; history beyond them warns. */
+  async function bindReplay(
+    documentId: string,
+    journal: Awaited<ReturnType<UpdateJournal["read"]>>,
+    converged: Y.Doc,
+  ): Promise<AgentEditCodec> {
+    const head = createCollabYDoc({ gc: false });
+    try {
+      if (journal.checkpoint) Y.applyUpdate(head, journal.checkpoint);
+      for (const row of journal.updates) Y.applyUpdate(head, row.update);
+      const holder = { documentId, view: LIVE_VIEW };
+      await deps.links.prepare({ holders: [holder], docs: [head, converged] });
+      return deps.codec.bind(deps.links.holder(holder));
+    } finally {
+      head.destroy();
+    }
+  }
+
+  function snapshotWith(doc: Y.Doc, codec: AgentEditCodec): SnapshotBlock[] {
     const handle = toDocHandle(doc);
     const blocks = deps.model.getBlocks(handle);
     const hashes = deps.model.getDocumentBlockIds(handle);
-    const serialized = deps.model.serializeBlockLines(handle, deps.codec);
-    const canonical = snapshotBlocks(handle, deps.model, deps.codec);
+    const serialized = deps.model.serializeBlockLines(handle, codec);
+    const canonical = snapshotBlocks(handle, deps.model, codec);
     return blocks.map((blockRef, index) => {
       const block = unwrapBlock(blockRef);
       const id = getBlockItemId(block);

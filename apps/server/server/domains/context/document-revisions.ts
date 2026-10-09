@@ -59,7 +59,12 @@ export function createDocumentRevisions(deps: {
             if (visible)
               revision = await deps.documents.readEffectiveRevision(
                 drafted
-                  ? { documentId: documentId as DocumentId, threadId, destination: "draft" }
+                  ? {
+                      documentId: documentId as DocumentId,
+                      threadId,
+                      destination: "draft",
+                      workId: draftWork?.id ?? null,
+                    }
                   : { documentId: documentId as DocumentId, threadId: null, destination: "live" },
               );
           }
