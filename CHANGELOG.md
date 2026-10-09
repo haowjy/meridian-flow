@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Development: trim duplicate maintenance-attribution cases; retain four focused risks and one suite-owned PostgreSQL convergence witness.
 - Draft saves no longer credit automatic link rewrites or reconciliation to the writer; authored block credit survives maintenance.
 
 - Development: fold six split lifecycle tests into the scenarios they continue: one run lease from acquire through stale release, Agent catalog removal then restore, Retry then the superseded original, fork-ID replay after source trash, and nested presence suspension. Outcome checks stay beside each transition.

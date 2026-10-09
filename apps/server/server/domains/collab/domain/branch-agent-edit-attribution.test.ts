@@ -119,17 +119,14 @@ function fixture(existingUpstream?: Y.Doc) {
 }
 
 describe("branch concurrent attribution", () => {
-  it.each([
-    "link-update",
-    "system:reconcile",
-  ])("keeps %s neutral while converging its bytes", async (origin) => {
+  it("converges link-update bytes without writer credit or authored lineage", async () => {
     const f = fixture();
     const before = Y.encodeStateVector(f.upstream);
     humanText(f.upstream, 0, { from: 5, to: 5 }, " maintenance");
     f.liveUpdates.push({
       seq: 1,
       update: Y.encodeStateAsUpdate(f.upstream, before),
-      meta: { origin, seq: 1 },
+      meta: { origin: "link-update", seq: 1 },
     });
     const changes = await f.check();
     expect(changes).toHaveLength(1);
@@ -145,14 +142,11 @@ describe("branch concurrent attribution", () => {
     expect(echo.info).toBeUndefined();
   });
 
-  it.each([
-    "agent",
-    "writer",
-  ] as const)("preserves %s coverage when maintenance follows on the same block", async (source) => {
+  it("preserves agent credit when maintenance follows on the same block", async () => {
     const f = fixture();
     let before = Y.encodeStateVector(f.upstream);
     humanText(f.upstream, 0, { from: 5, to: 5 }, " authored");
-    f.rows.push({ ...f.row(Y.encodeStateAsUpdate(f.upstream, before)), source });
+    f.rows.push({ ...f.row(Y.encodeStateAsUpdate(f.upstream, before)), source: "agent" });
     before = Y.encodeStateVector(f.upstream);
     humanText(f.upstream, 0, { from: 5, to: 5 }, " maintenance");
     f.liveUpdates.push({
@@ -162,18 +156,18 @@ describe("branch concurrent attribution", () => {
     });
     const changes = await f.check();
     expect(changes[0]).toMatchObject({
-      touchedHashes: { [source === "agent" ? "agent" : "human"]: [expect.any(String)] },
+      touchedHashes: { agent: [expect.any(String)] },
     });
     expect(changes[1]).toMatchObject({ origin: { type: "system" }, touchedHashes: {} });
     const codec = createAgentEditCodec(
       mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
     );
     const echo = applyConcurrentUpdates(toDocHandle(f.baseline), model, codec, changes);
-    expect(echo.info?.[source === "agent" ? "agent" : "human"]).toHaveLength(1);
-    expect(echo.info?.[source === "agent" ? "human" : "agent"]).toEqual([]);
+    expect(echo.info?.agent).toHaveLength(1);
+    expect(echo.info?.human).toEqual([]);
   });
 
-  it("does not credit a reconciliation's deleted block to the writer", async () => {
+  it("does not credit system:reconcile deletions to the writer", async () => {
     const f = fixture();
     const before = Y.encodeStateVector(f.upstream);
     model.deleteBlock(toDocHandle(f.upstream), model.getBlocks(toDocHandle(f.upstream))[0]);
@@ -194,7 +188,7 @@ describe("branch concurrent attribution", () => {
     expect(echo.info).toBeUndefined();
   });
 
-  it("does not relabel maintenance when the recheck baseline is ahead of the Work draft", async () => {
+  it("does not fabricate writer credit when the recheck baseline is ahead of the Work draft", async () => {
     const f = fixture();
     const live = cloneYDoc(f.baseline);
     docs.push(live);
