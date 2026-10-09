@@ -63,8 +63,8 @@ link that stays corresponds to itself and keeps its ref, so an overwrite or a
 host append keeps refs verbatim), and registers the ahead refs it minted.
 
 A prepared write is a mutation, not a desired state. Prepared against the
-current document, it keeps the base it read through the coordinator (its state
-vector) and carries the Yjs update that turns that base into the bound result:
+current document, it keeps the base it read through the coordinator (its
+authority identity and generation, and its state vector) and carries the Yjs update that turns that base into the bound result:
 agent-edit's whole-document overwrite of the base (`lowerOverwrite`, the
 correspondence a `create` with overwrite resolves), so unchanged blocks keep
 their items and so does unchanged prose in a changed block. The write also
@@ -78,10 +78,19 @@ prefix and suffix, so a paragraph inserted above kept prose re-attributes that
 prose to the saver (A2-1's certified-save row). Append keeps the current document's own nodes for the blocks the
 appended text left alone, so it is an insertion after the base's last block.
 Applying merges the update into the live document: a writer's edit, unlink or
-retarget admitted between prepare and apply stays, in either order. A
-document that no longer holds the base (`containsBase`, or unresolved
-dependencies after applying) is `stale_generation`, for the caller to prepare
-again. Fresh writes (seed, import, create, upload) have no base and need a
+retarget admitted between prepare and apply stays, in either order. Two
+separate checks guard applying it. The base's authority generation is a
+certificate (`sameAuthority`), checked where the update is admitted, under
+the document's lock: in `mergePrepared` for a writer's save, and in
+agent-edit's commit (`WriteContext.prepared.authority`, which also fences the
+journal append) for a write in a thread, including against the deferred
+coordinator's in-transaction copy, which reports the committed generation.
+Clock containment (`containsBase`, and no unresolved dependencies after
+applying) is the update's dependency check only: a restore whose checkpoint
+keeps every base clock still replaces the generation, and a state vector does
+not prove the base's items are still live. Either failure is
+`stale_generation`, for the caller to prepare again; `writeDocument`'s check
+before calling agent-edit is only an early answer. Fresh writes (seed, import, create, upload) have no base and need a
 document with no blocks. A prepared write also certifies its holder (`document`
 by id, `new` by the canonical address it will have, or `static`): the engine
 refuses to apply it to any other document, and ContextFS checks the path's
