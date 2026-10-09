@@ -351,7 +351,10 @@ export type ProductionAppPorts = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
-  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
+  /**
+   * Per-(project, reader) link snapshots: every serializing door spells
+   * through them and the resolver endpoint answers ref links from one.
+   */
   linkScopes: DocumentLinkScopes;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
@@ -998,6 +1001,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
     documentRevisions: createDocumentRevisions({
+      links: ports.linkScopes,
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,

@@ -24,6 +24,7 @@ import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
+import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -77,6 +78,7 @@ const {
   createReversalNoticeDiagnostics,
 } = await import("../adapters/agent-edit-observability.js");
 const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
+const { scopeAgentEdit } = await import("../domain/document-link-scope-doors.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
@@ -238,6 +240,8 @@ export function markdownFromUpdate(update: Uint8Array): string {
 }
 export type ChangeTrailHarnessOptions = {
   ids?: ChangeTrailScenarioIds;
+  /** Default: a static scope, whose tokens ignore the tree. */
+  links?: DocumentLinkScopes;
   afterDurableCommit?: (input: {
     documentIds: readonly DocumentId[];
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
@@ -263,7 +267,7 @@ export type MatrixDraftStep = {
 
 export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
   // One link scope for every door the harness assembles, as composition shares one.
-  const links = createStaticDocumentLinkScopes();
+  const links = options.links ?? createStaticDocumentLinkScopes();
   const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
   const DRAFT_DESTINATION = {
     kind: "draft",
@@ -534,38 +538,42 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     observability,
   });
   const projections = { refresh: runDocumentWriteHook };
-  const agentEdit = createBranchThreadPeerAgentEditCore({
-    fileAccess: createAllowAllFileAccess(),
-    lockWorks: async () => {},
-    lockLiveDocuments: async () => {},
-    liveUtilityCore: runtime.liveUtilityCore,
-    journal: persistence.journal,
-    liveCoordinator,
-    lifecycle: persistence.lifecycle,
-    branches: branchStore,
-    branchCoordinator,
-    branchPulls,
-    branchJournal: durableBranchJournalReadStore,
-    concurrentJournalWatermarks: watermarks,
-    diagnostics: createBranchAgentEditDiagnostics(eventSink),
-    afterCommit: runAfterDrizzleCommit,
-    enlistResponseParticipant,
-    model: runtime.model,
-    codec: runtime.codec,
+  // Scoped as composition scopes it, so a real link scope sees every model call.
+  const agentEdit = scopeAgentEdit(
+    createBranchThreadPeerAgentEditCore({
+      fileAccess: createAllowAllFileAccess(),
+      lockWorks: async () => {},
+      lockLiveDocuments: async () => {},
+      liveUtilityCore: runtime.liveUtilityCore,
+      journal: persistence.journal,
+      liveCoordinator,
+      lifecycle: persistence.lifecycle,
+      branches: branchStore,
+      branchCoordinator,
+      branchPulls,
+      branchJournal: durableBranchJournalReadStore,
+      concurrentJournalWatermarks: watermarks,
+      diagnostics: createBranchAgentEditDiagnostics(eventSink),
+      afterCommit: runAfterDrizzleCommit,
+      enlistResponseParticipant,
+      model: runtime.model,
+      codec: runtime.codec,
+      links,
+      aheadRefs: UNSUPPORTED_AHEAD_REFS,
+      semanticProvenance: runtime.semanticProvenance,
+      observability,
+      commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
+      responseTransactionSettlement: {
+        deferUntilCommit: deferUntilDrizzleCommit,
+        deferUntilRollback: deferUntilDrizzleRollback,
+      },
+      responseTransactions: {
+        enlist: enlistResponseParticipant,
+        run: runResponseTransaction,
+      },
+    }),
     links,
-    aheadRefs: UNSUPPORTED_AHEAD_REFS,
-    semanticProvenance: runtime.semanticProvenance,
-    observability,
-    commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(db, operation),
-    responseTransactionSettlement: {
-      deferUntilCommit: deferUntilDrizzleCommit,
-      deferUntilRollback: deferUntilDrizzleRollback,
-    },
-    responseTransactions: {
-      enlist: enlistResponseParticipant,
-      run: runResponseTransaction,
-    },
-  });
+  );
   const noLiveDependents = async () => ({
     hasDependents: false,
     blockingActorTypes: [] as Array<"agent" | "human" | "unknown">,

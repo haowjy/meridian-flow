@@ -41,7 +41,6 @@ export function scopeMarkdownEngine(
     readAsMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readAsMarkdown(documentId)),
     setMarkdown: (input) => scopes.within(by(input.documentId), () => engine.setMarkdown(input)),
-    editMarkdown: (input) => scopes.within(by(input.documentId), () => engine.editMarkdown(input)),
     seedFromMarkdown: (documentId, markdown, origin) =>
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, markdown, origin)),
     writeDocument: (input) =>
@@ -53,7 +52,7 @@ export function scopeMarkdownEngine(
 /**
  * A model call is scoped by its grant's project, which exists even for a
  * chapter the call is creating, and read as the account it acts for; a
- * reversal by the document it reverses.
+ * reversal by the document it reverses, read in its thread.
  */
 export function scopeAgentEdit(
   core: ThreadPeerAgentEditCore,
@@ -85,10 +84,13 @@ export function scopeAgentEdit(
     write: (command, context) =>
       scopes.within(byGrant(context), () => core.write(command, context)),
     undo: (docId, threadId) =>
-      scopes.within({ documentId: docId }, () => core.undo(docId, threadId)),
+      scopes.within({ documentId: docId, viewer: { threadId } }, () => core.undo(docId, threadId)),
     redo: (docId, threadId) =>
-      scopes.within({ documentId: docId }, () => core.redo(docId, threadId)),
-    reverse: (input) => scopes.within({ documentId: input.docId }, () => core.reverse(input)),
+      scopes.within({ documentId: docId, viewer: { threadId } }, () => core.redo(docId, threadId)),
+    reverse: (input) =>
+      scopes.within({ documentId: input.docId, viewer: { threadId: input.threadId } }, () =>
+        core.reverse(input),
+      ),
   });
 }
 
@@ -130,30 +132,32 @@ export function scopeOfflineReconciliation(
   };
 }
 
-/** Draft-aware reads; the revision now depends on the tree, so it is scoped like the text. */
+/**
+ * Draft-aware reads, in the reader's thread: its manifest peer and reply's
+ * staged creates decide what a draft view holds. The revision depends on the
+ * tree, so it is scoped like the text.
+ */
 export function scopeBranchPeer(
   access: BranchPeerShadowAccess,
   scopes: DocumentLinkScopes,
 ): BranchPeerShadowAccess {
+  const by = (command: { documentId: string; threadId?: string | null }) => ({
+    documentId: command.documentId,
+    ...(command.threadId ? { viewer: { threadId: command.threadId } } : {}),
+  });
   return {
     readEffectiveRevision: (command) =>
-      scopes.within({ documentId: command.documentId }, () =>
-        access.readEffectiveRevision(command),
-      ),
+      scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
     pullThreadPeer: access.pullThreadPeer,
     flushBranchLivePull: access.flushBranchLivePull,
     readEffectiveMarkdown: (command) =>
-      scopes.within({ documentId: command.documentId }, () =>
-        access.readEffectiveMarkdown(command),
-      ),
+      scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     resolveManifestMembership: access.resolveManifestMembership,
     reconcileProjectManifest: access.reconcileProjectManifest,
     recordManifestDocumentCreated: access.recordManifestDocumentCreated,
     recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
     readEffectiveHashlines: (command) =>
-      scopes.within({ documentId: command.documentId }, () =>
-        access.readEffectiveHashlines(command),
-      ),
+      scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };
 }

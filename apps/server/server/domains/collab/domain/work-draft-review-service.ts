@@ -18,7 +18,7 @@ import type { ReviewableDraft } from "./branch-review.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore, WorkDraftDiscard } from "./ports/application-branch-store.js";
-import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
+import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
@@ -105,7 +105,7 @@ export function createWorkDraftReviewService(input: {
         command.documentId,
         async (liveDoc) => ({
           state: Y.encodeStateAsUpdate(liveDoc),
-          markdown: await input.documents.serializeDocument(command.documentId, liveDoc),
+          markdown: await input.documents.serializeDocument(command.documentId, liveDoc, LIVE_VIEW),
         }),
       );
       const liveDoc = createCollabYDoc({ gc: false });

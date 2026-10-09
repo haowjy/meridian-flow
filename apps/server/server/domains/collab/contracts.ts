@@ -347,39 +347,43 @@ export type BranchPushAccess = {
   }): Promise<unknown>;
 };
 
+/**
+ * The version an effective read reads, and so the view its links spell in:
+ * the version the caller's writes change. `live` never touches a draft (D40);
+ * a draft read names its Work.
+ */
+export type EffectiveReadVersion =
+  | { destination: "live"; workId?: never }
+  | { destination: "draft"; workId: WorkId };
+
 export type BranchPeerShadowAccess = {
-  readEffectiveRevision(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-    /** The version the caller's writes change; `live` never touches a draft (D40). */
-    destination: "live" | "draft";
-    /** The draft's Work, whose view a draft read's links spell in. */
-    workId?: WorkId | null;
-  }): Promise<string | null>;
+  readEffectiveRevision(
+    input: {
+      documentId: DocumentId;
+      /** The reading thread: its peer, manifest peer and reply's staged creates count. */
+      threadId?: ThreadId | null;
+    } & EffectiveReadVersion,
+  ): Promise<string | null>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
-  readEffectiveMarkdown(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-    responseId?: string | null;
-    /** The version the caller's writes change; `live` never touches a draft (D40). */
-    destination: "live" | "draft";
-    /** The draft's Work, whose view a draft read's links spell in. */
-    workId?: WorkId | null;
-  }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
+  readEffectiveMarkdown(
+    input: {
+      documentId: DocumentId;
+      threadId?: ThreadId | null;
+      responseId?: string | null;
+    } & EffectiveReadVersion,
+  ): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   /**
    * One hashline per block, and per block the ref-bearing links it spells
    * (`spelledLinks`), computed with the same scope in the same synchronous block.
    */
-  readEffectiveHashlines(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-    responseId?: string | null;
-    /** The version the caller's writes change; `live` never touches a draft (D40). */
-    destination: "live" | "draft";
-    /** The draft's Work, whose view a draft read's links spell in. */
-    workId?: WorkId | null;
-  }): Promise<Result<HashlineRead, SyncError>>;
+  readEffectiveHashlines(
+    input: {
+      documentId: DocumentId;
+      threadId?: ThreadId | null;
+      responseId?: string | null;
+    } & EffectiveReadVersion,
+  ): Promise<Result<HashlineRead, SyncError>>;
   resolveManifestMembership(input: {
     projectId: ProjectId;
     workId?: WorkId | null;
