@@ -28,22 +28,22 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   journal indexes must be contiguous, timestamps strictly increasing, and tags
   and timestamps unique. `db:migrate` refuses divergent applied history rather
   than skipping it.
-- Write migrations as if production data exists. Never delete writer data; move
-  it. No skips may rely on empty tables. Add CHECKs and FKs `NOT VALID`, then
-  `VALIDATE CONSTRAINT` in a later migration. Build and drop indexes
-  `CONCURRENTLY` with first-line `-- migration: no-transaction` (BOM and CRLF
-  tolerated). Each concurrent statement is alone in its breakpoint chunk.
-  Builds use IF NOT EXISTS; the runner pre-drops only invalid indexes they name,
-  never valid guards. Use a new permanent replacement name, then drop the old
-  guard last. Every statement must be re-runnable. Short lock_timeout settings
-  surround only ACCESS EXCLUSIVE statements, not online DDL or validation.
-  Reapply these hand-edits to
-  generated SQL whenever merging the base requires branch regeneration.
+- **Write migrations as if production data exists.** A migration must be
+  correct on populated tables and lose no writer data: move it, never delete
+  it. No `migration-lint: skip` may rely on empty tables. Use online-safe DDL:
+  CHECKs and FKs `NOT VALID`, then `VALIDATE CONSTRAINT`; indexes built and
+  dropped `CONCURRENTLY` in a `-- migration: no-transaction` file whose
+  statements are all re-runnable. Authoring rules and runner semantics are in
+  `.context/CONTEXT.md`. Regenerating after a base merge drops these hand
+  edits; reapply them.
+- **Until launch, a migration need not keep the previous server version
+  working.** Do not split a change into expand/contract releases or add
+  old-binary tolerance code; a broken deploy is reset instead, with explicit
+  owner authorization.
 - Existing dev databases from the old chain must be reset with `pnpm db:reset`
   (destroys local data); the new baseline is not an incremental upgrade. Reset
-  only the current checkout's own dev database. Shared or deployed resets need
-  explicit owner authorization; until launch, a broken deploy may be reset.
-  Never reset another developer's database. Legacy imports are a separate ETL.
+  only the current checkout's own dev database. Never reset another
+  developer's database. Legacy imports are a separate ETL.
 - `document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK, not custom
   SQL. Yjs checkpoints are append-only and disappear only with their parent
   document cascade.

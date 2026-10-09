@@ -232,6 +232,12 @@ A caller that creates inside its own transaction binds first:
 `ContextPort.bindTrackedDocument`, then `createBoundDocument` with the
 bound write. Upload intake does this (`UploadContentPort.bind` runs
 before finalize's transaction, `persist` applies under its locks).
+Binding is preparation, not creation: it checks only that the scheme is
+writable. Both tracked-create doors (`createTrackedDocument`,
+`createBoundDocument`) pass the caller's origin and ask the source's one
+`requireCreation` policy (`intake` when a document id is supplied, else
+`entry`); that is what refuses writer creation into a lineage. Never move the
+creation check to bind time or add a second lineage-creation guard downstream.
 
 Repair (`repairTrackedDocument`) restores membership and, if the document has
 no Yjs state, an empty one; it never reparses the stored projection, whose
