@@ -127,3 +127,10 @@ exact content database. Refused or superseded filing history ends provisional
 naming at the accepted location; it never authorizes automatic deletion. An
 explicit delete command can still retire an accepted document. Never-submitted
 reservations can still be deleted locally.
+
+Catalog `invalidate-subtree` is atomic replacement, not a persistent freshness
+flag: discard the root and its cached descendants, then apply the same commit’s
+authoritative upserts. Entries absent after replay are absent from that scope.
+The server republishes all surviving affected identities, even if another
+repair already published them. Checkpoints contain only the resulting complete
+tree; there is no hidden-entry set or subtree-refetch lifecycle.

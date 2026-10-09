@@ -286,6 +286,60 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
+    it("republishes a moved subtree even when an earlier repair already published its new location", async () => {
+      const db = database.current;
+      await seedProject(db, "catalog-invalidation");
+      const folderId = "00000000-0000-4000-8000-000000000805";
+      await db.insert(folders).values({ id: folderId, contextSourceId: SOURCE_ID, name: "Arc" });
+      await db.insert(documents).values({
+        id: DOCUMENT_ID,
+        contextSourceId: SOURCE_ID,
+        folderId,
+        name: "a",
+        extension: "md",
+      });
+      const catalog = createDrizzleContextCatalog(db);
+      const scope = { kind: "project", projectId: PROJECT_ID } as const;
+      await catalog.snapshot(scope);
+      await db.update(documents).set({ name: "b" }).where(eq(documents.id, DOCUMENT_ID));
+      await db.update(folders).set({ name: "Moved" }).where(eq(folders.id, folderId));
+      // One repair can publish the move before its deferred root invalidation.
+      await catalog.refreshSources([SOURCE_ID]);
+      const moved = await catalog.snapshot(scope);
+      await catalog.refreshSources([SOURCE_ID], [folderId]);
+      const replay = await catalog.changes(scope, moved.cursor);
+      expect(replay.kind).toBe("delta");
+      if (replay.kind !== "delta") throw new Error("Expected retained move commit");
+      expect(replay.commits).toHaveLength(1);
+      expect(replay.commits[0]?.changes).toEqual([
+        { operation: "invalidate-subtree", ordinal: 0, rootEntryId: folderId },
+        ...moved.entries
+          .filter((entry) => entry.entryId === folderId || entry.entryId === DOCUMENT_ID)
+          .map((entry, index) => ({ operation: "upsert", ordinal: index + 1, entry })),
+      ]);
+      expect(moved.entries.find((entry) => entry.entryId === DOCUMENT_ID)).toMatchObject({
+        uri: "manuscript://Moved/b.md",
+      });
+      await db
+        .update(documents)
+        .set({ deletedAt: new Date() })
+        .where(eq(documents.id, DOCUMENT_ID));
+      await catalog.refreshSources([SOURCE_ID], [DOCUMENT_ID]);
+      const removed = await catalog.changes(scope, replay.nextCursor);
+      expect(removed).toMatchObject({
+        kind: "delta",
+        commits: [
+          {
+            changes: [
+              { operation: "invalidate-subtree", rootEntryId: DOCUMENT_ID },
+              { operation: "upsert", entry: { entryId: folderId, hasChildren: false } },
+              { operation: "delete", entryId: DOCUMENT_ID },
+            ],
+          },
+        ],
+      });
+    });
+
     it("does not expose a reserved generation when deferred Manuscript repair fails", async () => {
       const db = database.current;
       await seedProject(db, "catalog-deferred-failure");

@@ -45,8 +45,8 @@ reads the one F1 `CatalogCacheView` and delegates explicit cold-Work acquisition
 to its owner. The browser never stores a second tree, enumerates availability,
 or turns wake hints into rows. Root merges only project, user, and current Work
 or no-Work warm views. Other Works remain authority rows until activated.
-Known-empty sources, folders, and acquired authorities are omitted; cold or
-invalidated metadata cannot prove emptiness. Explicit source and folder URI
+Known-empty sources, folders, and acquired authorities are omitted; cold metadata
+cannot prove emptiness. Explicit source and folder URI
 queries retain an empty-state surface, and Back clears that search. No
 placeholder row may become a terminal reference.
 
