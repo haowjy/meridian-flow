@@ -540,8 +540,10 @@ export async function createProductionAppPorts(input: {
     membership: manifestMembership,
     observer: createLinkScopeObserver(eventSink),
   });
+  const shownLinks = createDrizzleShownLinkStore(db);
   const documentSync = createCollabDomain({
     db,
+    shownLinks: (threadId, documentId) => shownLinks.forDocument(threadId, documentId),
     arrivals,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
@@ -712,7 +714,7 @@ export async function createProductionAppPorts(input: {
     activeDocuments,
     readAgentChain: readChain,
     readChainPermission: (threadId: ThreadId) => readChainPermission(chainDeps, threadId),
-    shownLinks: createDrizzleShownLinkStore(db),
+    shownLinks,
   };
 }
 

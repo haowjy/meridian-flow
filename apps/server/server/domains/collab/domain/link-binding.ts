@@ -103,7 +103,7 @@ export interface LinkBinderDeps {
   registrar: AheadRefRegistrar;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
   inTransaction(): boolean;
-  /** Showings for an agent write's thread; lane E wires the store, none until then. */
+  /** Showings for an agent write's thread (production: the runtime shown-link store). */
   shownLinks?(threadId: ThreadId, documentId: DocumentId): Promise<readonly ShownLink[]>;
 }
 
