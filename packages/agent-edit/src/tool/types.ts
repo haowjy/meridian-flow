@@ -1,7 +1,9 @@
 // Engine-facing read and write contract types for the agent editing core.
 
+import type { SpelledLinkFact } from "@meridian/markup";
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
+import type { ShownLink } from "../links/correspondence.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCommandName, ReadCommand, WriteCommand } from "./command-schema.js";
 import type {
@@ -44,6 +46,12 @@ interface WriteOutcomeBase {
   result: AgentEditResultV1;
   /** Host-only: the blocks a read selected, when the read asked for `includeNodes`. */
   nodes?: readonly Block[];
+  /**
+   * Host-only showing evidence: each link the rendered result showed the
+   * model, with the address shown (truncated blocks count only links ending
+   * inside the shown prefix). Never copied into `result`.
+   */
+  shownLinks?: readonly SpelledLinkFact[];
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
@@ -195,6 +203,13 @@ export interface WriteContext {
    * source (D23, D24). They become the command's content as nodes.
    */
   copiedNodes?: readonly Block[];
+  /**
+   * Host-only showing evidence for this thread: every link the model was
+   * shown in a document, with the address shown. Ref assignment reads it;
+   * agent-edit never reads thread history itself. Absent for utility, seed
+   * and import writes (fresh binding by design).
+   */
+  shownLinks?: (documentId: string) => Promise<readonly ShownLink[]>;
 }
 
 export type MutationActor =
@@ -228,6 +243,8 @@ export interface ResponseCommitWriteReceipt {
   writeId: string;
   settlementId: string;
   result: AgentEditResultV1;
+  /** Host-only: the links the settled receipt's echo showed the model. */
+  shownLinks?: readonly SpelledLinkFact[];
 }
 
 export interface ResponseStagedCreateOutcome {

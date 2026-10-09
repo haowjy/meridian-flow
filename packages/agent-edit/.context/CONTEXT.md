@@ -15,8 +15,8 @@ Read the page that owns the seam you are changing:
   semantic certification, edit application, and cold reversal.
 - [Write invariants](write-invariants.md) — block identity, destructive-edit
   safety, synchronization, and resolver constraints.
-- [Link correspondence](link-correspondence.md) — standalone pure identity
-  assignment and exact additive tuple matching.
+- [Link identity](link-correspondence.md) — ref assignment at every write
+  door, find-splice restoration, shown-link facts, and exact correspondence.
 - [Write tool surface](write-tool-surface.md) — lifecycle behavior, outcomes,
   simplifications, and test coverage.
 
