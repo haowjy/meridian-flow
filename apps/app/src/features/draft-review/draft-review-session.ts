@@ -2,79 +2,24 @@
 
 import type { DraftApplyChangesResponse, DraftDiscardResponse } from "@meridian/contracts/drafts";
 import {
+  answerDraftSelection,
   beginChangeCommand,
+  beginDraftBatch,
   beginDraftCommand,
   type ChangeFailureCode,
   type ChangeSelection,
+  currentDraftCommandRecords,
   type DraftCommandFailure,
   failChangeCommand,
   failDraftCommand,
+  type PendingDraftCommand,
+  pendingDraftCommand,
+  queueChangeSelection,
   releaseChangeCommand,
   releaseDraftCommand,
 } from "@/client/query/draft-command-record";
 import { classifyDraftCommandRejection } from "@/client/query/draft-command-rejection";
 import type { ReviewFocus } from "./review-changes";
-
-export type DraftDispositionTarget =
-  | { kind: "apply-draft"; documentId: string; draftId: string }
-  | { kind: "discard-draft"; documentId: string; draftId: string }
-  | {
-      kind: "apply-change" | "discard-change";
-      documentId: string;
-      draftId: string;
-      classIds: readonly string[];
-    }
-  | { kind: "batch"; mode: "apply" | "discard"; count: number };
-
-export type DraftDispositionState =
-  | { busy: false }
-  | { busy: true; target: DraftDispositionTarget };
-
-export type DraftDispositionReservation = symbol;
-
-/**
- * The session's synchronous disposition authority. Reservation happens before
- * any mutation promise is created, so every command observes the same lock
- * even before React can render its pending state.
- */
-export class DraftDispositionLock {
-  private state: DraftDispositionState = { busy: false };
-  private owner: DraftDispositionReservation | null = null;
-  private readonly listeners = new Set<() => void>();
-
-  getSnapshot = (): DraftDispositionState => this.state;
-
-  subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-
-  reserve(target: DraftDispositionTarget): DraftDispositionReservation | null {
-    if (this.state.busy) return null;
-    const reservation = Symbol(target.kind);
-    this.owner = reservation;
-    this.publish({ busy: true, target });
-    return reservation;
-  }
-
-  retarget(reservation: DraftDispositionReservation, target: DraftDispositionTarget): boolean {
-    if (this.owner !== reservation) return false;
-    this.publish({ busy: true, target });
-    return true;
-  }
-
-  release(reservation: DraftDispositionReservation): boolean {
-    if (this.owner !== reservation) return false;
-    this.owner = null;
-    this.publish({ busy: false });
-    return true;
-  }
-
-  private publish(state: DraftDispositionState): void {
-    this.state = state;
-    for (const listener of this.listeners) listener();
-  }
-}
 
 export type DraftCommandOutcome =
   | { kind: "blocked" }
@@ -134,8 +79,11 @@ export type DraftReviewCommandPorts = {
     changes: ChangeSelection,
     mode: "apply" | "discard",
   ) => void;
-  batchStarted: (mode: "apply" | "discard") => void;
-  batchSettled: () => void;
+  describeDraft: (
+    selection: DraftReviewSelection,
+    mode: "apply" | "discard",
+    batch: boolean,
+  ) => PendingDraftCommand;
   draftDiscardStarted: (selection: DraftReviewSelection) => void;
   draftApplied: (selection: DraftReviewSelection) => void;
   draftDiscarded: (selection: DraftReviewSelection) => void;
@@ -143,25 +91,21 @@ export type DraftReviewCommandPorts = {
 
 /**
  * The complete disposition command facade. React supplies I/O ports; this
- * session owns reservation timing, mutation sequencing, batches, and terminal
+ * session owns command sequencing, batches, and explicit navigation
  * callbacks.
  */
 export class DraftReviewSession {
-  readonly disposition = new DraftDispositionLock();
-
   constructor(private readonly ports: () => DraftReviewCommandPorts) {}
 
-  applyReviewedDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
-    return this.withReservation({ kind: "apply-draft", ...selection }, (reservation, ports) =>
-      this.applyDraft(selection, reservation, ports),
-    );
+  async applyReviewedDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
+    return this.wholeCommand("apply", selection, this.ports());
   }
 
   /**
    * Apply a selection of changes (complete server closure classes) of one draft
    * to live. The changes leave every surface at once; a refusal or a lost
    * request brings them back with the reason held on them
-   * (`change-command-record`).
+   * (`draft-command-record`).
    */
   applySelection(
     draft: DraftReviewSelection,
@@ -191,39 +135,22 @@ export class DraftReviewSession {
     );
   }
 
-  discardDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
-    return this.withReservation({ kind: "discard-draft", ...selection }, (reservation, ports) =>
-      this.discardDraftWithReservation(selection, reservation, ports),
-    );
+  async discardDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
+    return this.wholeCommand("discard", selection, this.ports());
   }
 
   async disposeDrafts(
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
   ): Promise<DraftCommandOutcome[]> {
-    if (drafts.length === 0) return [];
-    const reservation = this.disposition.reserve({ kind: "batch", mode, count: drafts.length });
-    if (!reservation) return [{ kind: "blocked" }];
-    const outcomes: DraftCommandOutcome[] = [];
-    let ports: DraftReviewCommandPorts | undefined;
-    try {
-      ports = this.ports();
-      ports.batchStarted(mode);
-      for (const draft of drafts) {
-        const outcome = await (mode === "apply"
-          ? this.applyDraft(draft, reservation, ports)
-          : this.discardDraftWithReservation(draft, reservation, ports));
-        // A refusal belongs to the draft it was sent for and is held there
-        // (`failDraftCommand`); the drafts after it are independent documents
-        // and still get their turn, so the batch never ends half-done unannounced.
-        // Nothing here moves the writer: where they are is theirs to choose.
-        outcomes.push(outcome);
-      }
-    } finally {
-      this.disposition.release(reservation);
-      ports?.batchSettled();
-    }
-    return outcomes;
+    const ports = this.ports();
+    return (
+      await runDraftBatch(
+        ports.scope,
+        drafts.map((draft) => ({ draft, command: ports.describeDraft(draft, mode, true) })),
+        ({ draft }) => this.wholeCommand(mode, draft, ports, true),
+      )
+    ).map(({ outcome }) => outcome);
   }
 
   /**
@@ -233,7 +160,7 @@ export class DraftReviewSession {
    * answer is held as `unknown` for both: it may have landed, so it is never
    * read as a refusal and never inferred from the list.
    */
-  private changeCommand(
+  private async changeCommand(
     mode: "apply" | "discard",
     selection: DraftReviewSelection,
     change: ChangeSelection,
@@ -244,75 +171,73 @@ export class DraftReviewSession {
       request: ChangeApplyRequest,
     ) => Promise<{ status: string } | "unknown">,
   ): Promise<DraftCommandOutcome> {
-    return this.withReservation(
-      { kind: `${mode}-change`, ...selection, classIds: change.classIds },
-      async (_reservation, ports) => {
-        const draft = { ...ports.scope, ...selection };
-        if (!beginChangeCommand(draft, change, mode, basis.draftGeneration, completesDraft))
-          return { kind: "blocked" };
-        try {
-          let response: { status: string } | "unknown";
-          try {
-            response = await send(ports, {
-              operationIds: [...change.operationIds],
-              liveRevisionToken: basis.liveRevisionToken,
-              draftRevisionToken: basis.draftRevisionToken,
-            });
-          } catch (error) {
-            const rejection = classifyDraftCommandRejection(error);
-            const code = rejection.kind === "refused" ? "refused" : rejection.kind;
-            failChangeCommand(
-              draft,
-              change,
-              mode,
-              code,
-              rejection.kind === "refused"
-                ? { serverCode: rejection.serverCode, serverReason: rejection.serverReason }
-                : undefined,
-            );
-            return { kind: "change-refused", mode, code };
-          }
-          if (response === "unknown") {
-            failChangeCommand(draft, change, mode, "unknown");
-            return { kind: "change-refused", mode, code: "unknown" };
-          }
-          if (response.status === (mode === "apply" ? "applied" : "discarded")) {
-            ports.changeConfirmed(selection, change, mode);
-            return { kind: "change-settled", mode };
-          }
-          if (response.status === "gone") {
-            // Nothing left to handle: the change leaves, with a word about it.
-            ports.changeConfirmed(selection, change, mode);
-            return { kind: "change-refused", mode, code: "gone" };
-          }
-          const code = response.status === "draft_only" ? "draft-only" : "stale";
-          failChangeCommand(draft, change, mode, code);
-          return { kind: "change-refused", mode, code };
-        } finally {
-          releaseChangeCommand(draft);
-        }
-      },
-    );
+    const ports = this.ports();
+    const draft = { ...ports.scope, ...selection };
+    if (!beginChangeCommand(draft, change, mode, basis.draftGeneration, completesDraft, basis))
+      return { kind: "blocked" };
+    try {
+      let response: { status: string } | "unknown";
+      try {
+        response = await send(ports, {
+          operationIds: [...change.operationIds],
+          liveRevisionToken: basis.liveRevisionToken,
+          draftRevisionToken: basis.draftRevisionToken,
+        });
+      } catch (error) {
+        const rejection = classifyDraftCommandRejection(error);
+        const code = rejection.kind === "refused" ? "refused" : rejection.kind;
+        failChangeCommand(
+          draft,
+          change,
+          mode,
+          code,
+          rejection.kind === "refused"
+            ? { serverCode: rejection.serverCode, serverReason: rejection.serverReason }
+            : undefined,
+        );
+        return { kind: "change-refused", mode, code };
+      }
+      if (response === "unknown") {
+        failChangeCommand(draft, change, mode, "unknown");
+        return { kind: "change-refused", mode, code: "unknown" };
+      }
+      if (response.status === (mode === "apply" ? "applied" : "discarded")) {
+        answerDraftSelection(draft, mode === "apply" ? "applied" : "discarded");
+        ports.changeConfirmed(selection, change, mode);
+        return { kind: "change-settled", mode };
+      }
+      if (response.status === "gone") {
+        // Nothing left to handle: the change leaves, with a word about it.
+        answerDraftSelection(draft, "change-gone");
+        ports.changeConfirmed(selection, change, mode);
+        return { kind: "change-refused", mode, code: "gone" };
+      }
+      const code = response.status === "draft_only" ? "draft-only" : "stale";
+      failChangeCommand(draft, change, mode, code);
+      return { kind: "change-refused", mode, code };
+    } finally {
+      releaseChangeCommand(draft);
+    }
   }
 
-  private async applyDraft(
+  private async wholeCommand(
+    mode: "apply" | "discard",
     selection: DraftReviewSelection,
-    reservation: DraftDispositionReservation,
     ports: DraftReviewCommandPorts,
+    batch = false,
   ): Promise<DraftCommandOutcome> {
     const draft = { ...ports.scope, ...selection };
-    if (!beginDraftCommand(draft)) return { kind: "blocked" };
-    // Whatever throws after the claim, the finally gives it back unless the
-    // command already turned it into a confirmation or a held failure.
+    if (!batch && !beginDraftCommand(draft, ports.describeDraft(selection, mode, false)))
+      return { kind: "blocked" };
     try {
-      this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
-      let result: "applied" | "unknown";
+      // Navigation is explicit and optimistic, not inferred from settlement.
+      if (mode === "discard") ports.draftDiscardStarted(selection);
+      let result: "applied" | "unknown" | undefined;
       try {
-        result = await ports.apply(selection);
+        if (mode === "apply") result = await ports.apply(selection);
+        else await ports.discard(selection);
       } catch (error) {
-        // Held on the draft, not on the review: the writer may have moved on
-        // to the next draft, and this one's row still has to say it was refused.
-        const failure = commandFailure("apply", error);
+        const failure = commandFailure(mode, error);
         failDraftCommand(draft, failure);
         return { kind: "failed", failure };
       }
@@ -320,54 +245,64 @@ export class DraftReviewSession {
         failDraftCommand(draft, { code: "apply-unknown" });
         return { kind: "apply-outcome-unknown" };
       }
-      ports.draftApplied(selection);
-      return { kind: "applied" };
-    } finally {
-      releaseDraftCommand(draft);
-    }
-  }
-
-  private async discardDraftWithReservation(
-    selection: DraftReviewSelection,
-    reservation: DraftDispositionReservation,
-    ports: DraftReviewCommandPorts,
-  ): Promise<DraftCommandOutcome> {
-    const draft = { ...ports.scope, ...selection };
-    if (!beginDraftCommand(draft)) return { kind: "blocked" };
-    try {
-      this.disposition.retarget(reservation, { kind: "discard-draft", ...selection });
-      // The optimistic callback runs under the claim: if it throws, nothing was
-      // dispatched and the claim must not outlive the call.
-      ports.draftDiscardStarted(selection);
-      try {
-        await ports.discard(selection);
-      } catch (error) {
-        const failure = commandFailure("discard", error);
-        failDraftCommand(draft, failure);
-        return { kind: "failed", failure };
+      if (!batch) {
+        if (mode === "apply") ports.draftApplied(selection);
+        else ports.draftDiscarded(selection);
       }
-      releaseDraftCommand(draft);
-      ports.draftDiscarded(selection);
-      return { kind: "discarded" };
+      return { kind: mode === "apply" ? "applied" : "discarded" };
     } finally {
       releaseDraftCommand(draft);
     }
   }
+}
 
-  private async withReservation(
-    target: DraftDispositionTarget,
-    command: (
-      reservation: DraftDispositionReservation,
-      ports: DraftReviewCommandPorts,
-    ) => Promise<DraftCommandOutcome>,
-  ): Promise<DraftCommandOutcome> {
-    const reservation = this.disposition.reserve(target);
-    if (!reservation) return { kind: "blocked" };
-    try {
-      return await command(reservation, this.ports());
-    } finally {
-      this.disposition.release(reservation);
+export type DraftBatchItem = { draft: DraftReviewSelection } & (
+  | { selection: ChangeSelection; command?: never }
+  | { command: PendingDraftCommand; selection?: never }
+);
+export type DraftBatchOutcome = { draft: DraftReviewSelection; outcome: DraftCommandOutcome };
+
+/** Both whole and selective batches pin their starting Work and expose one busy lifetime. */
+export async function runDraftBatch<T extends DraftBatchItem>(
+  scope: DraftReviewCommandPorts["scope"],
+  items: readonly T[],
+  send: (item: T) => Promise<DraftCommandOutcome>,
+): Promise<DraftBatchOutcome[]> {
+  if (!items.length) return [];
+  const release = beginDraftBatch(scope);
+  if (!release) return items.map(({ draft }) => ({ draft, outcome: { kind: "blocked" } }));
+  const retires: (() => void)[] = [];
+  const outcomes: DraftBatchOutcome[] = [];
+  const blocked = new Set<number>();
+  try {
+    for (const [index, { draft, selection, command }] of items.entries()) {
+      if (command) {
+        if (beginDraftCommand({ ...scope, ...draft }, command))
+          retires.push(() => {
+            const target = { ...scope, ...draft };
+            if (pendingDraftCommand(currentDraftCommandRecords(), target) === command)
+              releaseDraftCommand(target);
+          });
+        else {
+          blocked.add(index);
+          retires.push(() => {});
+        }
+      } else
+        retires.push(
+          selection ? queueChangeSelection({ ...scope, ...draft }, selection) : () => {},
+        );
     }
+    for (const [index, item] of items.entries()) {
+      const outcome = blocked.has(index)
+        ? Promise.resolve<DraftCommandOutcome>({ kind: "blocked" })
+        : send(item);
+      if (item.selection) retires[index]?.();
+      outcomes.push({ draft: item.draft, outcome: await outcome });
+    }
+    return outcomes;
+  } finally {
+    for (const retire of retires) retire();
+    release();
   }
 }
 
