@@ -7,9 +7,11 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ArrowUpRight } from "lucide-react";
-
-import type { ChangeCommandMode, ChangeFailureCode } from "@/client/query/change-command-record";
-import type { ServerRefusal } from "@/client/query/draft-command-record";
+import type {
+  ChangeCommandMode,
+  ChangeFailureCode,
+  ServerRefusal,
+} from "@/client/query/draft-command-record";
 import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";

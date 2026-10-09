@@ -13,8 +13,8 @@ change leaves every surface at once and a refusal brings it back with its reason
 (see "Per-change commands" below). There is no per-change Undo.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, and inline
-messages. The synchronous disposition lock and the shared draft
-command record (below) are the pending-command sources. Use controller transitions instead of pairing
+messages. The shared draft-command record is the sole pending-command source,
+including its Work-wide batch lease. Use controller transitions instead of pairing
 local `close` calls; `exitReview` is the single clear-all path.
 `DraftReviewProvider` is the convenience boundary for one Project + Work owner.
 The project shell uses its lower-level split directly: it creates one persistent
@@ -29,8 +29,7 @@ own local state owner, it lists and runs commands and never enters a review.
 `useWorkReviewScope(workId)` picks Editor, then chat, then the third. The command
 record stays the one authority across all three; there is no Work-page lock.
 
-Every disposition is serialized by the session's synchronous lock and, for the
-draft itself, by its one command record (`client/query/draft-command-record`,
+Every draft has one synchronous command claim (`client/query/draft-command-record`,
 below): while a whole-draft Apply or Discard, or a per-change Apply or Discard,
 is in flight, all mutating controls disable (`controller.isDisposing` reads the
 Work's records, so the Editor's and the Chat's scopes see each other's commands)
@@ -38,7 +37,7 @@ and a second command is refused rather than clearing the in-flight state. A
 per-change Discard routes to the server discard mutation with the change's
 `operationIds` and the preview's revision tokens; the server performs
 reversal-peer sync. Whole-draft Discard sends neither. The mutation awaits the
-draft-list and preview refreshes before the session releases its lock, so no
+draft-list and preview refreshes before the session releases its claim, so no
 second preview-settlement timer or local pending copy is needed.
 
 ### Change row text is DOM-only
@@ -91,25 +90,19 @@ it to a review of that generation and to no other (rows C1-C5 below).
 The claim, not the sender, owns this (completion dispatched by the sending
 controller was lost when the writer opened the draft mid-command); a refused
 duplicate never begins it.
-`useChangeCommandRunner` is the transport surfaces use: the Editor's controller
-runs a draft it has open in the caller's Work (the toast and focus belong to the
-review the writer is in); every other draft runs in the caller's scope. A batch
-keeps the caller it began with, so a caller that moves to another Work mid-batch
-cannot redirect the remaining drafts (a session is bound to its Work's ports from
-its creation, `useDraftReviewController`, whether or not it has sent before, and
-releases its disposition reservation on every path). A selection batch is
-one command per draft, each with its union and tokens; a refusal on one does not
-stop the next. At the click every draft's selection is `queued` in the change
-record (hidden on every surface, claiming nothing); it is retired per draft as
-that draft's command begins (the claim hides the same operations from then on)
-or the batch ends, so a refused draft returns with its reason without waiting
-for the drafts after it. Each claims
-the draft's **command claim** (`beginDraftCommand` with the change and its
-operation set: one command per draft, whichever session sends it) and a **change
-command record** (`client/query/change-command-record`, keyed by the draft and
-the selection's class ids, matched by shared operations; one failure per
-(draft, selection), shown on every overlapping change and on the sending file)
-for what outlives the claim:
+`useChangeCommandRunner` sends through the caller's creation-bound Work ports.
+The open review observes addressed completion and toast outcomes, whoever sent
+them; no command routes to the Editor solely to make its answer visible.
+`runDraftBatch` owns selective and whole-draft batches. It captures the starting
+Work, aggregates per-draft outcomes, and holds that Work's busy lease across the
+entire sequence, including gaps between requests. Every independent draft gets
+its turn after a refusal. Whole-draft batches preclaim their targets; selection
+batches queue visibility until each target's claim begins. A refused selection
+returns immediately, without waiting for later files. The one draft record
+(`client/query/draft-command-record`) carries the command's all-versus-selection
+target, mode, generation and preview basis, with held selection outcomes matched
+by class or operation overlap:
+
 
 - `queued`: a selection of a batch that has not had its turn. Hidden like a
   claim, but not one: it blocks no command.
@@ -240,10 +233,10 @@ are session outcomes rendered by the review header rather than ignored
 promises. A batch runs every draft it was given: a refusal or lost answer is held on its draft
 (`failDraftCommand`), shown by the review header's `failedElsewhere` notice and
 the draft's rows, and nowhere else. It never navigates (no answer moves
-the writer). The review the writer is in is part of the batch: `batchStarted` sets its completion to
-`pending` (the header says "Applying"/"Discarding"), its own answer closes it (`completion: closed`,
-"No changes left") instead of clearing it, and a batch that ends without closing it withdraws the
-pending state (`reviewReopened`).
+the writer). A review observes its own addressed whole-draft batch claim:
+pending at the click, closed on its answer, reopened on refusal or unknown.
+There is no batch-specific completion state beside the draft command.
+A new document's review is promoted to live rather than held.
 
 Cross-cutting server policy:
 [whole-branch Apply](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/apply/draft-apply-whole-current-branch.md)

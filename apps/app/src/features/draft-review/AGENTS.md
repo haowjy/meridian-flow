@@ -53,11 +53,11 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   them (`useReviewCommandCompletion`; a review that opens mid-command adopts the
   pending completion), whoever sent it. Nothing of the answer outlives the claim:
   the server reuses a closed draft's id for its next proposal. Surfaces send through
-  `useChangeCommandRunner(callerController)`, which routes a draft that is the
-  Editor's open review (in the caller's project and Work) to the Editor's
-  controller and any other to the caller's, and runs a batch as one command per
-  draft (every draft gets its turn, in the Work the batch began in). That is not `disposeDrafts`, the whole-draft Apply all and
-  Discard all with their batch lifecycle.
+  `useChangeCommandRunner(callerController)` using the caller's Work-bound ports.
+  Reviews observe addressed completion and toast outcomes; no sender selects the
+  Editor as executor. `runDraftBatch` owns selection batches and whole-draft
+  `disposeDrafts`, pins their starting Work, and keeps that Work busy until every
+  independent draft has had its turn.
 - **A refusal's words are chosen when shown.** A typed refusal is stored as the
   server's code and text (`serverCode`, `serverReason`); `RefusalReason` words the
   known codes in the language shown at that moment, and keeps the server's text
@@ -67,7 +67,7 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   retiring it.
 - **Optimistic by record.** A change with an Apply or Discard queued in a
   batch, in flight, or confirmed, is already gone from the preview these read
-  (`client/query/change-command-record`). A failure brings it back with its
+  (`client/query/draft-command-record`). A failure brings it back with its
   reason, shown on its bar and row. A read that started before a confirmation
   cannot bring a change back. No surface keeps an optimistic hide of its own (a
   strip-local one held a refused file hidden until its whole batch ended).
@@ -77,8 +77,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   synchronously before anything is sent, so a second command for the same
   draft is refused whichever surface or session (Editor, Chat) sends it, and
   every surface's busy state (`controller.isDisposing`,
-  `dispositionLocked`) is read from it. The change record never keeps its own
-  pending state: a change's pending is the draft's claim. Never add a
+  `dispositionLocked`) reads it and the shared Work batch lease. The same store
+  retains selection outcomes, queues, and distinct list/preview read fences. Never add a
   surface-specific guard or lock beside it.
 - **There is no review header row on the desktop.** The review's controls live in
   the document's identity row (`DocumentIdentityBar`): the Draft chip with its
@@ -279,10 +279,8 @@ consume them; none of it is chat rendering. Lifecycle contracts:
   **A batch never navigates**: the writer stays where they are (nothing is
   decided from an answer, which can arrive after they went elsewhere), and Open
   on a refused draft's notice is the only way to it. The review the writer is in
-  is part of the batch: `batchStarted` sets its completion to `pending` (the
-  header says "Applying" or "Discarding", and every "the draft left the list"
-  exit reads it as the writer's own), its own answer closes it (`reviewClosed`,
-  "No changes left", the same state a last change leaves, so the refusal notices
-  stay in front of the writer), and a batch that ends without closing it
-  (refused, lost) withdraws the pending state. A new document's review is not
-  held: it is promoted to the live document as before.
+  follows its addressed command: whole-draft batch claims publish pending
+  completion at the click, their own closing answers show "No changes left",
+  and refusal or unknown outcomes withdraw the prediction. No controller keeps
+  a second batch-completion mirror. A new document's review is not held: it is
+  promoted to the live document as before.
