@@ -1,5 +1,10 @@
-/** In-memory `ShownLinkStore`: the same per-turn rows, dedup and fork lineage as the Drizzle adapter. */
+/**
+ * In-memory `ShownLinkStore`: the same per-turn rows, dedup and fork lineage
+ * as the Drizzle adapter. Its rows join the repositories' transaction owner,
+ * so evidence recorded with a result that fails to persist rolls back with it.
+ */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import type { ThreadRepository, TurnRepository } from "../../../threads/index.js";
 import {
   latestShowings,
@@ -16,10 +21,12 @@ interface Row extends ShownLink {
 }
 
 export function createInMemoryShownLinkStore(deps: {
+  /** The owner the thread repositories commit through. */
+  transactionOwner: InMemoryTransactionOwner;
   threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
   turns: Pick<TurnRepository, "findById">;
 }): ShownLinkStore {
-  const rows = new Map<string, Row>();
+  const rows = deps.transactionOwner.map<string, Row>();
   let seq = 0;
   const lookup = {
     async thread(threadId: ThreadId) {

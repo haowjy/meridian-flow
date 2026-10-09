@@ -1,14 +1,18 @@
 /**
  * E-2: shown-link capture records only what the model was actually shown
- * (contract §7.2), through the real runtime loop, tool registrations and
- * executor. A copy's private source read, a search match past the passage
- * cap, an unauthorized search hit, a `thread_history` item quoting an earlier
- * write, and a read whose result never came back (cancelled or timed out)
- * never become evidence; the shown read, echo and returned passages do, in the
- * view their facts were spelled in.
+ * (contract §7.2), through the real runtime loop, tool registrations,
+ * executor and reference reader. A copy's private source read, a search match
+ * past the passage cap, an unauthorized search hit, a `thread_history` item
+ * quoting an earlier write, a read whose result never came back (cancelled or
+ * timed out), a result whose persistence failed, and a reference read from a
+ * preparation that failed, was cancelled or was retried never become
+ * evidence; the shown read, echo, returned passages and accepted reference
+ * reads do, in the view their facts were spelled in, under the turn that
+ * shows them.
  */
 import type { WriteOutcome } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
+import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup";
 import { describe, expect, it, vi } from "vitest";
@@ -27,9 +31,12 @@ import {
 } from "../../domains/runtime/index.js";
 import { runtimeScenario } from "../../domains/runtime/loop/__tests__/runtime-harness.js";
 import { scriptedGateway } from "../../domains/runtime/loop/__tests__/test-gateway.js";
+import type { ReferenceReader } from "../../domains/runtime/loop/reference-context.js";
+import { dispatchToolCall } from "../../domains/runtime/loop/tool-dispatch.js";
 import { readThreadHistory } from "../../domains/runtime/spawn/thread-history.js";
 import { createInMemoryRepositories } from "../../domains/threads/adapters/in-memory/index.js";
-import { createModelToolRegistrations } from "./index.js";
+import { InMemoryTransactionOwner } from "../../shared/in-memory-transaction.js";
+import { createModelToolRegistrations, createReferenceReader } from "./index.js";
 import type { ResolvedModelContextPort, ToolWiringDeps } from "./tool-context.js";
 
 const PROJECT = crypto.randomUUID() as ProjectId;
@@ -113,14 +120,31 @@ function pausedRead() {
   const pending = new Promise<void>((resolve) => {
     started = resolve;
   });
-  return { release, pending, wait: () => (started(), released) };
+  const wait = () => {
+    started();
+    return released;
+  };
+  return { release, pending, wait };
 }
 
 async function harness(options: { read?: () => Promise<void>; readTimeoutMs?: number } = {}) {
-  const store = createInMemoryShownLinkStore({
+  const transactionOwner = new InMemoryTransactionOwner();
+  const inner = createInMemoryShownLinkStore({
+    transactionOwner,
     threads: { findByIdIncludingDeleted: async () => null },
     turns: { findById: async () => null },
   });
+  // Which turn each showing was recorded under, by document.
+  const recordedTurns: Array<{ documentId: string; turnId: string }> = [];
+  const store: ShownLinkStore = {
+    forDocument: inner.forDocument,
+    async record(input) {
+      await inner.record(input);
+      recordedTurns.push({ documentId: input.documentId, turnId: input.turnId });
+    },
+  };
+  // Each plain read shows a fact of its own, so a retried read is told apart.
+  let plainReads = 0;
   const documentSync = {
     ensureDocument: async () => {},
     readEffectiveHashlines: async () => ({
@@ -133,8 +157,9 @@ async function harness(options: { read?: () => Promise<void>; readTimeoutMs?: nu
       // in a reply's pinned draft, not the live grant it was routed with.
       read: async (_command: unknown, context: { includeNodes?: boolean }) => {
         if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
+        const n = plainReads++;
         await options.read?.();
-        return success("read", [fact(91)], DRAFT);
+        return success("read", [fact(91 + 10 * n)], DRAFT);
       },
       write: async () => success("insert", [fact(92)]),
     }),
@@ -155,7 +180,7 @@ async function harness(options: { read?: () => Promise<void>; readTimeoutMs?: nu
       filetype: "markdown",
     });
   }
-  const repos = createInMemoryRepositories();
+  const repos = createInMemoryRepositories({ transactionOwner });
   const deps = {
     threads: repos.threads,
     documentSync,
@@ -182,41 +207,100 @@ async function harness(options: { read?: () => Promise<void>; readTimeoutMs?: nu
         ? { ...registration, timeoutMs: options.readTimeoutMs }
         : registration,
   );
-  return { deps, store, repos, registrations };
+  return {
+    deps,
+    store,
+    repos,
+    registrations,
+    transactionOwner,
+    recordedTurns,
+    referenceReader: createReferenceReader(deps),
+  };
 }
 
 type Harness = Awaited<ReturnType<typeof harness>>;
 
-/** Runs one model turn that makes `calls`, returning every tool result it persisted. */
+type Rig = Awaited<ReturnType<typeof runtimeScenario>>;
+
+/** An `@` reference to one of the harness documents. */
+const reference = (documentId: string, name: string) => ({
+  type: "reference" as const,
+  text: `@${name}`,
+  documentId,
+  uri: `user://${name}.md`,
+});
+
+/**
+ * Runs one model turn that makes `calls`, returning every tool result it
+ * persisted. `during` runs once `pending` resolves, while the run prepares or
+ * executes.
+ */
 async function runTurn(
   h: Harness,
   calls: GenerateResult[],
-  control: { signal?: AbortSignal; pending?: Promise<void>; abort?: () => void } = {},
+  control: {
+    signal?: AbortSignal;
+    pending?: Promise<void>;
+    during?: (rig: Rig) => Promise<void>;
+    userBlocks?: UserMessageBlock[];
+    referenceReader?: ReferenceReader;
+  } = {},
 ) {
   const toolRegistry = createToolRegistry({ registrations: h.registrations });
+  const gateway = scriptedGateway({ results: [...calls, done] });
   const rig = await runtimeScenario({
-    gateway: scriptedGateway({ results: [...calls, done] }),
+    gateway,
     toolRegistry,
     toolExecutor: createToolExecutor(toolRegistry),
     shownLinks: h.store,
+    transactionOwner: h.transactionOwner,
+    referenceReader: control.referenceReader ?? h.referenceReader,
   });
-  const run = await rig.orchestrator.prepare({
-    threadId: rig.thread.id,
-    userText: "Go.",
-    ...(control.signal ? { signal: control.signal } : {}),
-  });
-  const executed = run.execute();
+  let turnId: string | undefined;
+  const executed = (async () => {
+    const run = await rig.orchestrator.prepare({
+      threadId: rig.thread.id,
+      userText: "Go.",
+      ...(control.userBlocks ? { userBlocks: control.userBlocks } : {}),
+      ...(control.signal ? { signal: control.signal } : {}),
+    });
+    turnId = run.executionTurnId;
+    return run.execute();
+  })().catch((error: unknown) => ({ status: "threw" as const, error }));
   if (control.pending) {
     await control.pending;
-    control.abort?.();
+    await control.during?.(rig);
   }
-  await executed;
+  const outcome = await executed;
   const results = rig.journal
     .getEvents(rig.thread.id)
     .map((entry) => entry.event)
     .filter((event) => event.type === "tool.result");
-  return { threadId: rig.thread.id, results };
+  const blocks = await rig.repos.blocks.listByThread(rig.thread.id as ThreadId);
+  const turns = await rig.repos.turns.listByThread(rig.thread.id as ThreadId);
+  return {
+    threadId: rig.thread.id,
+    results,
+    outcome,
+    turnId,
+    turns,
+    requests: gateway.requests.length,
+    referenceBlocks: blocks.filter(
+      (block) => (block.content as { type?: string } | null)?.type === "reference",
+    ),
+  };
 }
+
+/** A reader whose read of `uri` fails, as a reference that can't be loaded does; `read` lists what it read. */
+const failingAt = (h: Harness, uri: string) => {
+  const reads: string[] = [];
+  const read: ReferenceReader["read"] = async (occurrence, ctx) => {
+    if (occurrence.uri === uri) throw new Error("reference read failed");
+    reads.push(occurrence.uri);
+    return h.referenceReader.read(occurrence, ctx);
+  };
+  return { read, reads };
+};
 
 async function shown(store: ShownLinkStore, threadId: string, documentId: string) {
   return (await store.forDocument(threadId, documentId))
@@ -338,7 +422,11 @@ const rows: Array<{
       const { threadId, results } = await runTurn(
         h,
         [toolCall("read", { path: "user://source.md" })],
-        { signal: controller.signal, pending: paused.pending, abort: () => controller.abort() },
+        {
+          signal: controller.signal,
+          pending: paused.pending,
+          during: async () => controller.abort(),
+        },
       );
       paused.release();
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -361,6 +449,198 @@ const rows: Array<{
         "the model got the timeout",
       ).toEqual([expect.stringContaining("timed out")]);
       return { store: h.store, threadId, shown: { [SOURCE]: [] } };
+    },
+  },
+  {
+    name: "a result whose persistence fails leaves no evidence",
+    async act(check) {
+      const h = await harness();
+      const thread = await h.repos.threads.create({ projectId: PROJECT, userId: USER });
+      const turn = await h.repos.turns.create({
+        threadId: thread.id,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+        metadata: null,
+      });
+      const dispatched = await dispatchToolCall(
+        {
+          toolExecutor: {
+            executeTool: async (toolCall: { id: string }) => ({
+              toolCallId: toolCall.id,
+              output: "read",
+              result: {},
+              shown: [
+                {
+                  documentId: SOURCE,
+                  holderUri: "user://source.md",
+                  view: { kind: "live" },
+                  links: [fact(93)],
+                },
+              ],
+            }),
+          },
+          eventSink: { emit() {} },
+          shownLinks: h.store,
+          persistenceDeps: {
+            repos: h.repos,
+            eventWriter: {
+              async appendEvent(_threadId: string, event: { type: string }) {
+                if (event.type === "tool.result") throw new Error("journal append failed");
+              },
+            },
+          },
+        } as never,
+        { id: "call-failed", name: "read", arguments: {} },
+        {
+          thread,
+          responseId: crypto.randomUUID(),
+          state: { threadId: thread.id, currentTurn: turn, allBlocks: [] },
+          lease: {},
+          interruptSession: {},
+          interruptAutoResume: {},
+          treeBudget: {},
+          blockSeqRef: { value: 0 },
+          allTurns: [],
+        } as never,
+      ).catch((error: Error) => error.message);
+      check(dispatched, "dispatch failed").toBe("journal append failed");
+      check(await h.repos.blocks.listByThread(thread.id), "no result persisted").toEqual([]);
+      return { store: h.store, threadId: thread.id, shown: { [SOURCE]: [] } };
+    },
+  },
+  {
+    name: "an accepted reference read records under the turn whose request shows it",
+    async act(check) {
+      const h = await harness();
+      const run = await runTurn(h, [], {
+        userBlocks: [{ type: "text", text: "Go " }, reference(SOURCE, "source")],
+      });
+      check(run.outcome.status, "the run completed").toBe("complete");
+      check(h.recordedTurns, "recorded under the run's turn").toEqual([
+        { documentId: SOURCE, turnId: run.turnId },
+      ]);
+      check(JSON.stringify(run.referenceBlocks), "the read is saved").toContain("success");
+      check(JSON.stringify(run.referenceBlocks), "no host facts in the block").not.toContain(
+        "doc:",
+      );
+      return {
+        store: h.store,
+        threadId: run.threadId,
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`) },
+      };
+    },
+  },
+  {
+    name: "a later reference failing keeps the earlier reference's read from becoming evidence",
+    async act(check) {
+      const h = await harness();
+      const reader = failingAt(h, "user://target.md");
+      const run = await runTurn(h, [], {
+        userBlocks: [reference(SOURCE, "source"), reference(TARGET, "target")],
+        referenceReader: reader,
+      });
+      check(reader.reads, "the first reference was read").toEqual(["user://source.md"]);
+      check(run.outcome.status, "the run failed").toBe("error");
+      check(run.requests, "the model was never asked").toBe(0);
+      check(JSON.stringify(run.referenceBlocks), "no read saved").not.toContain("success");
+      return { store: h.store, threadId: run.threadId, shown: { [SOURCE]: [], [TARGET]: [] } };
+    },
+  },
+  {
+    name: "a reference read cancelled during preparation is never recorded, even when it finishes",
+    async act(check) {
+      const paused = pausedRead();
+      const h = await harness({ read: paused.wait });
+      const controller = new AbortController();
+      const run = await runTurn(h, [], {
+        userBlocks: [reference(SOURCE, "source")],
+        signal: controller.signal,
+        pending: paused.pending,
+        during: async () => {
+          controller.abort();
+          paused.release();
+        },
+      });
+      check(run.requests, "the model was never asked").toBe(0);
+      return { store: h.store, threadId: run.threadId, shown: { [SOURCE]: [] } };
+    },
+  },
+  {
+    name: "a preparation retried after its selection changed records only the attempt it commits",
+    async act(check) {
+      const paused = pausedRead();
+      const h = await harness({ read: paused.wait });
+      let reads = 0;
+      const run = await runTurn(h, [], {
+        userBlocks: [reference(SOURCE, "source")],
+        pending: paused.pending,
+        // A message arriving during the first attempt's read retries it.
+        referenceReader: {
+          read: (occurrence, ctx) => {
+            reads++;
+            return h.referenceReader.read(occurrence, ctx);
+          },
+        },
+        during: async (rig) => {
+          await rig.send(rig.thread.id, "One more thing.");
+          paused.release();
+        },
+      });
+      // The retry answers the newer message, so the discarded read is all there was.
+      check(run.outcome.status, "the run completed").toBe("complete");
+      check(reads, "the first attempt read the reference").toBe(1);
+      check(JSON.stringify(run.referenceBlocks), "its read was discarded").not.toContain("success");
+      return { store: h.store, threadId: run.threadId, shown: { [SOURCE]: [] } };
+    },
+  },
+  {
+    name: "a reference adopted mid-run records under the successor turn that shows it",
+    async act(check) {
+      const paused = pausedRead();
+      const h = await harness({ read: paused.wait });
+      const run = await runTurn(h, [toolCall("read", { path: "user://source.md" })], {
+        pending: paused.pending,
+        during: async (rig) => {
+          await rig.send(rig.thread.id, "Also this", {
+            blocks: [{ type: "text", text: "Also " }, reference(TARGET, "target")],
+          });
+          paused.release();
+        },
+      });
+      check(run.outcome.status, "the run completed").toBe("complete");
+      const successor = run.turns.filter((turn) => turn.role === "assistant").at(-1);
+      check(
+        h.recordedTurns.filter((row) => row.documentId === TARGET),
+        "recorded under the successor",
+      ).toEqual([{ documentId: TARGET, turnId: successor?.id }]);
+      check(successor?.id, "a successor was reserved").not.toBe(run.turnId);
+      return {
+        store: h.store,
+        threadId: run.threadId,
+        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT.workId}`) },
+      };
+    },
+  },
+  {
+    name: "a mid-run adoption whose reference fails records none of its reads",
+    async act(check) {
+      const paused = pausedRead();
+      const h = await harness({ read: paused.wait });
+      const reader = failingAt(h, "user://hidden.md");
+      const run = await runTurn(h, [toolCall("read", { path: "user://source.md" })], {
+        pending: paused.pending,
+        referenceReader: reader,
+        during: async (rig) => {
+          await rig.send(rig.thread.id, "Also these", {
+            blocks: [reference(TARGET, "target"), reference(HIDDEN, "hidden")],
+          });
+          paused.release();
+        },
+      });
+      check(reader.reads, "the first adopted reference was read").toEqual(["user://target.md"]);
+      check(JSON.stringify(run.referenceBlocks), "no adopted read saved").not.toContain("success");
+      return { store: h.store, threadId: run.threadId, shown: { [TARGET]: [] } };
     },
   },
 ];
