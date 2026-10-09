@@ -28,7 +28,7 @@ flowchart LR
 | [tools.md](tools.md) | Tool registry and executor, per-turn permissions, and cost. |
 | [spawn.md](spawn.md) | Child runs, `thread_message`, invocation cards, activity, and reports. |
 | [history-tools.md](history-tools.md) | `thread_ls`, `thread_history`, `thread_report`, lineage scope, `spawn.from`, and bake-gated history guidance. |
-| [document-text.md](document-text.md) | Document revision evidence and how compaction and `thread_history` replace stale document copies. |
+| [document-text.md](document-text.md) | Document revision evidence, shown-link evidence, and how compaction and `thread_history` replace stale document copies. |
 | [compaction.md](compaction.md) | The compaction protocol: transitions, decisions and refusals, the one projection authority, trigger and estimate, failure, cancellation, overflow, images. |
 | [controls.md](controls.md) | Queued writer controls, run-start queue order, Stop behavior, withdrawal, and one-command-per-run consumption. |
 | [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, and release wake. |

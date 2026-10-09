@@ -4,6 +4,7 @@ import type { ReferenceReader } from "../../domains/runtime/index.js";
 import { resolveDocumentAddress } from "./document-tools.js";
 import { documentGrant } from "./file-access.js";
 import { readDocument } from "./read-document.js";
+import { readView, recordShown } from "./shown-link-capture.js";
 import {
   isToolError,
   recordTouchInBackground,
@@ -39,7 +40,16 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
       const grant = await documentGrant(deps, call.principal, "read", address, "read");
       if (isToolError(grant)) return { result: asJson(grant.output), revision: null };
       const outcome = await readDocument(deps, grant, address, {}, ctx);
-      if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
+      if (!outcome.isError) {
+        // The attachment's read text goes to the model as the reference block.
+        await recordShown(deps, ctx, {
+          documentId: address.documentId,
+          holderUri: address.uri,
+          view: readView(outcome, grant.destination),
+          links: outcome.shownLinks,
+        });
+        recordTouchInBackground(deps, address.documentId, ctx);
+      }
       return { result: asJson(outcome.result), revision: outcome.revision };
     },
   };

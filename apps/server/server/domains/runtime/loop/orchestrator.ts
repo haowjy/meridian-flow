@@ -54,6 +54,7 @@ import {
   type ResponseCommitWriteReceipt,
   renderAgentEditResult,
 } from "@meridian/agent-edit/integration";
+import type { LinkView } from "@meridian/contracts";
 import {
   type MeridianError,
   meridianErrorFromGateway,
@@ -76,6 +77,7 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { SpelledLinkFact } from "@meridian/markup";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { DocumentRevisions } from "../../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -104,6 +106,7 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ConversationSummarizer } from "../ports/conversation-summarizer.js";
 import type { HandoffBriefStopper } from "../ports/handoff-briefs.js";
 import { type ImageAssetPort, ImageAssetResolutionError } from "../ports/image-asset.js";
+import type { ShownLinkStore } from "../ports/shown-links.js";
 import { appendSubagentActivityForToolChangeBestEffort } from "../spawn/activity-event.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { parentRetaskCorrelation } from "../spawn/retask-correlation.js";
@@ -256,6 +259,8 @@ export interface OrchestratorDeps {
   imageAssets: ImageAssetPort;
   /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
   concurrentRenderBudgetBytes?(request: GenerateRequest): number;
+  /** Shown-link evidence: settled receipts and backfilled concurrent runs record here. */
+  shownLinks: Pick<ShownLinkStore, "record">;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -1391,8 +1396,30 @@ function createResponseScope(input: {
   const { deps, threadId, turnId, allBlocks } = input;
   const writes = new Map<
     string,
-    Array<{ block: Block; writeId: string; settlementId: string; uri: string | null }>
+    Array<{
+      block: Block;
+      writeId: string;
+      settlementId: string;
+      uri: string | null;
+      view: LinkView;
+    }>
   >();
+  /** Records what a settled receipt or a backfilled concurrent run showed the model. */
+  const recordShown = async (
+    documentId: string,
+    write: { uri: string | null; view: LinkView },
+    links: readonly SpelledLinkFact[] | undefined,
+  ) => {
+    if (!write.uri || !links || links.length === 0) return;
+    await deps.shownLinks.record({
+      threadId,
+      turnId,
+      documentId,
+      holderUri: write.uri,
+      view: write.view,
+      links,
+    });
+  };
   let id = input.responseId;
   let active = true;
   return {
@@ -1420,6 +1447,7 @@ function createResponseScope(input: {
       const blocks = writes.get(metadata.documentId) ?? [];
       blocks.push({
         uri,
+        view: (metadata.linkView as LinkView | undefined) ?? { kind: "live" },
         block: dispatched.block,
         writeId: metadata.writeId,
         settlementId: metadata.settlementId,
@@ -1427,6 +1455,21 @@ function createResponseScope(input: {
       writes.set(metadata.documentId, blocks);
     },
     async commit() {
+      const persistSettledReceipt = async (
+        documentId: string,
+        write: { block: Block; uri: string | null; view: LinkView },
+        receipt: ResponseCommitWriteReceipt,
+      ) => {
+        // The settled receipt replaces the staged echo; both were shown.
+        await recordShown(documentId, write, receipt.shownLinks);
+        return persistCommittedWriteResult({
+          deps,
+          threadId,
+          block: write.block,
+          documentRevision: { documentId, uri: write.uri, revision: receipt.revision },
+          result: receipt.result,
+        });
+      };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
       const outcome = await deps.responseWrites.commitResponse(
         id,
@@ -1448,19 +1491,11 @@ function createResponseScope(input: {
                     text: refusal.message,
                   })
                 : settled.status === "committed"
-                  ? await persistCommittedWriteResult({
-                      deps,
-                      threadId,
-                      block: write.block,
-                      documentRevision: {
-                        documentId,
-                        uri: write.uri,
-                        revision: settledReceipt(settled.receipts, documentId, write.settlementId)
-                          .revision,
-                      },
-                      result: settledReceipt(settled.receipts, documentId, write.settlementId)
-                        .result,
-                    })
+                  ? await persistSettledReceipt(
+                      documentId,
+                      write,
+                      settledReceipt(settled.receipts, documentId, write.settlementId),
+                    )
                   : await persistUncommittedWriteResult({
                       deps,
                       threadId,
@@ -1491,8 +1526,9 @@ function createResponseScope(input: {
       // Backfill body-complete concurrent runs into the last write result per document.
       for (const { documentId, concurrentEdits: edits } of editsByDocument) {
         const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-        const block = writes.get(documentId)?.at(-1)?.block;
-        if (!block) continue;
+        const last = writes.get(documentId)?.at(-1);
+        if (!last) continue;
+        const block = last.block;
         const content = block.content as JsonObject | null;
         const staged = stagedWriteResult(block);
         if (!content || !staged) continue;
@@ -1517,6 +1553,12 @@ function createResponseScope(input: {
         }));
         const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
         if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
+        // Only runs that fit the render budget were shown.
+        await recordShown(
+          documentId,
+          last,
+          boundedEdits.runs.flatMap((run) => run.shownLinks ?? []),
+        );
       }
     },
     async rollback() {
