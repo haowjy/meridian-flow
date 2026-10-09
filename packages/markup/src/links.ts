@@ -4,11 +4,13 @@
  * Loads neither the codecs nor Yjs, so the client's assignment path stays small.
  */
 export {
+  type AssetAddress,
   assignFreshLink,
   createHolderLinkScope,
   type FreshAssignment,
   type HolderCatalog,
   type HolderLinkScope,
+  UNSPELLED_UPLOAD,
   type WrittenGrammar,
   writtenAddresses,
   writtenSourceUri,

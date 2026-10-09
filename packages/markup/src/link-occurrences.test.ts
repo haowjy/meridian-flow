@@ -180,25 +180,39 @@ it("aligns parse spans with walk order for links, images, figures and table anch
     ]);
 
   // An uploaded picture carries its identity in `src`: the reader is shown its
-  // path, and the fact records `asset:<id>` there; an unspellable one shows nothing.
+  // path, else its last address in full, and the fact records `asset:<id>` there;
+  // one with no known address shows an empty destination and records nothing.
   const assets = createHolderLinkScope(holder, {
     ...catalog,
     documentFor: () => null,
-    assetPath: (asset) => (asset === id.map ? "assets/map.png" : null),
+    assetAddress: (asset) =>
+      asset === id.map
+        ? { kind: "path", path: "assets/map.png" }
+        : asset === id.ch2
+          ? { kind: "last", uri: "manuscript://assets/old map.png" }
+          : null,
     assetFor: () => null,
   });
-  const uploads = [paragraph(image(`asset:${id.map}`, null), image(`asset:${id.fig}`, null))];
+  const uploads = [
+    paragraph(
+      image(`asset:${id.map}`, null),
+      t(", "),
+      image(`asset:${id.ch2}`, null),
+      t(" and "),
+      image(`asset:${id.fig}`, null),
+    ),
+  ];
+  const uploadText = mdxCodec({ schema, components }).serializeBlock(uploads[0], assets).trim();
   expect
-    .soft(
-      mdxCodec({ schema, components })
-        .serializeBlock(paragraph(image(`asset:${id.map}`, null)), assets)
-        .trim(),
-      "the model sees the path, never the id",
-    )
-    .toBe("![Map](assets/map.png)");
+    .soft(uploadText, "the model sees addresses, never the id")
+    .toBe("![Map](assets/map.png), ![Map](<manuscript://assets/old map.png>) and ![Map]()");
+  expect.soft(uploadText, "no upload id on the wire").not.toMatch(/asset:/);
   expect
-    .soft(spelledLinks(uploads, assets), "an upload shows its identity at its path")
-    .toEqual([{ ref: `asset:${id.map}`, address: "manuscript://assets/map.png" }]);
+    .soft(spelledLinks(uploads, assets), "an upload shows its identity where it is spelled")
+    .toEqual([
+      { ref: `asset:${id.map}`, address: "manuscript://assets/map.png" },
+      { ref: `asset:${id.ch2}`, address: "manuscript://assets/old map.png" },
+    ]);
 
   // Fresh assignment and address preloading read the one source classifier
   // and register only at an address with a real extension.
