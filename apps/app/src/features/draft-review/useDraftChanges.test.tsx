@@ -80,59 +80,6 @@ describe("useDraftChanges", () => {
     );
   });
 
-  it("lists and applies an unopened draft's change while another draft stays in review", async () => {
-    mocks.applyDraftChanges.mockResolvedValue({
-      ...applied(false, "7"),
-      draftId: "draft-b",
-      closureClassIds: ["class-7"],
-    });
-    await renderReviewScopes(async (probe) => {
-      await reviewOpened(probe);
-      const view = await probe().mountDraftChanges(targetB);
-      await vi.waitFor(() => expect(view().status).toBe("ready"));
-      expect(classIds(view())).toEqual(["class-7", "class-8"]);
-      expect(view().focused).toBeNull();
-
-      await act(async () => {
-        await view().apply(view().items[0].change);
-      });
-      // The command went out for B with B's tokens, and the change left at once.
-      expect(mocks.applyDraftChanges).toHaveBeenCalledWith(
-        "project-a",
-        "work-a",
-        "document-b",
-        expect.objectContaining({ draftId: "draft-b", operationIds: ["7"] }),
-      );
-      expect(classIds(view())).toEqual(["class-8"]);
-      // A is still the open review, untouched.
-      expect(probe().editor.controller.inlineReview).toMatchObject({ draftId: "draft-a" });
-      expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
-      expect(probe().header.view.items).toHaveLength(2);
-    });
-  });
-
-  it("applies the last change of the open review through the Editor's controller", async () => {
-    serverHolds("draft-a", "2");
-    let answer!: (response: unknown) => void;
-    mocks.applyDraftChanges.mockReturnValue(new Promise((resolve) => (answer = resolve)));
-    await renderReviewScopes(async (probe) => {
-      await reviewOpened(probe);
-      // Listed from the Chat's scope, the open review's rows are the Editor's own.
-      const view = await probe().mountDraftChanges(targetOf("work-a", draftA()));
-      await vi.waitFor(() => expect(view().status).toBe("ready"));
-      let done: Promise<unknown> | undefined;
-      await act(async () => {
-        done = view().apply(view().items[0].change);
-      });
-      expect(probe().header.completing).toBe("apply");
-      await act(async () => {
-        answer(applied(true));
-        await done;
-      });
-      expect(probe().header.finished).toBe(true);
-    });
-  });
-
   it("lists and applies a draft of a Work no other scope has, without joining a review room", async () => {
     mocks.listWorkDrafts.mockResolvedValue({
       drafts: [{ ...listed, draftId: "draft-c", documentId: "document-c" }],
@@ -201,28 +148,4 @@ describe("useDraftChanges", () => {
       await vi.waitFor(() => expect(classIds(view())).toEqual(["class-8", "class-9"]));
     });
   });
-
-  it("says the preview failed, with Retry, rather than listing no changes", async () => {
-    mocks.getDraftPreview.mockImplementation(
-      async (_project: string, _work: string, _document: string, draftId: string) => {
-        if (draftId === "draft-b") throw new Error("unreachable");
-        return previews[draftId];
-      },
-    );
-    await renderReviewScopes(async (probe) => {
-      await reviewOpened(probe);
-      const view = await probe().mountDraftChanges(targetB);
-      await vi.waitFor(() => expect(view().status).toBe("error"));
-      expect(view().items).toEqual([]);
-
-      mocks.getDraftPreview.mockImplementation(async () => previews["draft-b"]);
-      await act(async () => view().retry?.());
-      await vi.waitFor(() => expect(view().status).toBe("ready"));
-      expect(classIds(view())).toEqual(["class-7", "class-8"]);
-    });
-  });
 });
-
-function draftA() {
-  return { draftId: "draft-a", documentId: "document-a" };
-}

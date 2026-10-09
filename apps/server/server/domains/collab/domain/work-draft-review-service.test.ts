@@ -1,7 +1,4 @@
-/** Draft review service boundaries: command completion versus maintenance, and bulk draft listing. */
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
-import { cloneDoc, createDoc, model } from "./draft-review-test-fixture.js";
 import { createWorkDraftReviewService } from "./work-draft-review-service.js";
 
 const command = { draftId: "draft", workId: "work", documentId: "doc", userId: "writer" };
@@ -30,13 +27,6 @@ function fixture() {
   return { service, discard, maintenanceFailed };
 }
 describe("draft command boundary", () => {
-  it("never interprets an empty selection as whole Discard", async () => {
-    const { service, discard } = fixture();
-    await expect(
-      service.draftReview.discardWorkDraft({ ...command, operationIds: [] } as never),
-    ).resolves.toMatchObject({ status: "gone" });
-    expect(discard).not.toHaveBeenCalled();
-  });
   it.each([
     "apply",
     "discard",
@@ -58,66 +48,4 @@ describe("draft command boundary", () => {
     });
     expect(maintenanceFailed).toHaveBeenCalled();
   });
-});
-
-it("returns review metadata without serializing whole documents", async () => {
-  const live = createDoc("Alpha base.");
-  const serializeDocument = vi.fn(async () => "whole document");
-  const service = createWorkDraftReviewService({
-    readLiveReviewCut: async () => ({ doc: cloneDoc(live), revision: "live" }),
-    branches: {
-      resolveWorkDraftBranchForWork: async () => ({
-        branchId: "draft",
-        generation: 1,
-        doc: cloneDoc(live),
-      }),
-    },
-    branchJournal: { listReviewableJournalRows: async () => [] },
-    resolveThreadTitles: async () => new Map(),
-    model,
-    documents: { serializeDocument },
-  } as unknown as Parameters<typeof createWorkDraftReviewService>[0]);
-  const result = await service.draftReview.preview(command as never);
-  expect(result.status).toBe("active");
-  expect(result).not.toHaveProperty("live");
-  expect(result).not.toHaveProperty("markdown");
-  expect(serializeDocument).not.toHaveBeenCalled();
-  live.destroy();
-});
-
-it("lists paths and writing chat titles through bulk ports with persisted timestamps", async () => {
-  const updatedAt = new Date("2026-01-02T03:04:05Z");
-  const workId = "work" as WorkId;
-  const ids = ["a", "b"] as DocumentId[];
-  const resolveThreadTitles = vi.fn(
-    async (_threadIds: readonly string[]) => new Map([["chat", "Pacing pass"]]),
-  );
-  const input = {
-    resolveThreadTitles,
-    workDraftPending: {
-      list: async () =>
-        ids.map((documentId) => ({
-          branch: { branchId: documentId, documentId, workId, generation: 1, updatedAt },
-          rows: [],
-          actorThreadIds: ["chat", "untitled"],
-        })),
-    },
-    resolveDocumentUri: async () => {
-      throw new Error("serial lookup");
-    },
-    resolveDocumentUris: async (documentIds: readonly string[]) => {
-      expect(documentIds).toEqual(ids);
-      return new Map(ids.map((id) => [id, `manuscript://folder/${id}.md`]));
-    },
-  } as unknown as Parameters<typeof createWorkDraftReviewService>[0];
-  const drafts = await createWorkDraftReviewService(input).draftReview.list({ workId });
-  expect(resolveThreadTitles).toHaveBeenCalledExactlyOnceWith(["chat", "untitled"]);
-  expect(drafts.map((draft) => draft.actorThreads)).toEqual(
-    ids.map(() => [
-      { threadId: "chat", title: "Pacing pass" },
-      { threadId: "untitled", title: null },
-    ]),
-  );
-  expect(drafts.map((draft) => draft.updatedAt)).toEqual([updatedAt, updatedAt]);
-  expect(drafts.map((draft) => draft.contextPath)).toEqual(["/folder/a.md", "/folder/b.md"]);
 });

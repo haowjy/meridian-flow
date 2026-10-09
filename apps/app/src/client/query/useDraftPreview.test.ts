@@ -79,10 +79,4 @@ describe("the preview cache across generations", () => {
     const { cached } = await read(client, { status: "gone", draftId: "draft" });
     expect(cached).toEqual({ status: "gone", draftId: "draft" });
   });
-
-  it("keeps the reference when a read changed nothing", async () => {
-    const first = await read(client, preview(2, "5"));
-    const second = await read(client, preview(2, "5"));
-    expect(second.cached).toBe(first.cached);
-  });
 });

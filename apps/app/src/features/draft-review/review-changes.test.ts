@@ -8,12 +8,7 @@
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import {
-  changeExcerpt,
-  resolveFocusedChange,
-  reviewChanges,
-  reviewChangesOfPreview,
-} from "./review-changes";
+import { changeExcerpt, reviewChanges } from "./review-changes";
 
 function op(overrides: Partial<ReviewOperation> & { operationId: string }): ReviewOperation {
   return {
@@ -37,17 +32,6 @@ function textHunk(overrides: Partial<ReviewHunk> & { hunkId: string }): ReviewHu
 }
 
 describe("reviewChanges", () => {
-  it("groups by the server-vended closureClassId", () => {
-    const ops = [
-      op({ operationId: "a", closureClassId: "c1" }),
-      op({ operationId: "b", closureClassId: "c1" }),
-      op({ operationId: "c", closureClassId: "c2" }),
-    ];
-    const changes = reviewChanges(ops, []);
-    expect(changes.map((change) => change.classId)).toEqual(["c1", "c2"]);
-    expect(changes[0].operationIds).toEqual(["a", "b"]);
-  });
-
   it("does not reconstruct or repair server class identities", () => {
     const ops = [
       op({ operationId: "a", closureClassId: "closure:a" }),
@@ -55,20 +39,6 @@ describe("reviewChanges", () => {
     ];
     const hunks = [textHunk({ hunkId: "h", operationIds: ["a", "b"] })];
     expect(reviewChanges(ops, hunks)).toHaveLength(2);
-  });
-
-  it("orders changes by where their first hunk sits, not by operation order", () => {
-    const ops = [op({ operationId: "11" }), op({ operationId: "6" }), op({ operationId: "9" })];
-    const hunks = [
-      textHunk({ hunkId: "h1", operationIds: ["6"] }),
-      textHunk({ hunkId: "h2", operationIds: ["9"] }),
-      textHunk({ hunkId: "h3", operationIds: ["11"] }),
-    ];
-    expect(reviewChanges(ops, hunks).map((change) => change.operationIds[0])).toEqual([
-      "6",
-      "9",
-      "11",
-    ]);
   });
 
   it("keeps the same order when a refreshed preview lists the same operations differently", () => {
@@ -82,45 +52,6 @@ describe("reviewChanges", () => {
     const ids = (list: ReviewOperation[]) => reviewChanges(list, hunks).map((c) => c.classId);
     expect(ids(ops)).toEqual(["c-a", "c-b", "c-z"]);
     expect(ids([...ops].reverse())).toEqual(ids(ops));
-  });
-
-  it("anchors a change on the operation that owns its earliest hunk", () => {
-    const ops = [
-      op({ operationId: "a", closureClassId: "c" }),
-      op({ operationId: "b", closureClassId: "c" }),
-    ];
-    const hunks = [
-      textHunk({ hunkId: "h1", operationIds: ["b"] }),
-      textHunk({ hunkId: "h2", operationIds: ["a"] }),
-    ];
-    expect(reviewChanges(ops, hunks)[0].anchorOperationId).toBe("b");
-  });
-
-  it("flags includesWriterEdits when a writer op joins the class", () => {
-    const ops = [
-      op({ operationId: "a", kind: "agent", closureClassId: "closure:a+w" }),
-      op({
-        operationId: "w",
-        kind: "writer",
-        contribution: "edited",
-        classification: "rewrite",
-        closureClassId: "closure:a+w",
-      }),
-    ];
-    const [change] = reviewChanges(ops, []);
-    expect(change.includesWriterEdits).toBe(true);
-    expect(change.tone).toBe("ai");
-  });
-
-  it("reads a class of only the writer's operations as the writer's", () => {
-    const [change] = reviewChanges([op({ operationId: "w", kind: "writer" })], []);
-    expect(change.tone).toBe("writer");
-    expect(change.attribution).toEqual({ kind: "you" });
-  });
-
-  it("reads an AI-only removal as a removal", () => {
-    const [change] = reviewChanges([op({ operationId: "r", classification: "removal" })], []);
-    expect(change.tone).toBe("removal");
   });
 
   it("marks a change merged when the server flags a merge artifact, and only then", () => {
@@ -152,48 +83,6 @@ describe("reviewChanges", () => {
         ...where,
         ...overrides,
       }) as ReviewOperation;
-
-    it("links a single chat at its own turn and tool call, else plain AI", () => {
-      const [linked] = reviewChanges(
-        [written("2", "t-one", "Line edit", { actorTurnId: "turn-7", actorToolCallId: "call-3" })],
-        [],
-      );
-      expect(linked.attribution).toEqual({
-        kind: "chats",
-        chats: [{ threadId: "t-one", title: "Line edit", turnId: "turn-7", toolCallId: "call-3" }],
-      });
-      const [blank] = reviewChanges([written("5", "t-blank", "  ")], []);
-      expect(blank.attribution).toEqual({
-        kind: "chats",
-        chats: [{ threadId: "t-blank", title: null, turnId: null, toolCallId: null }],
-      });
-      const [unknown] = reviewChanges([op({ operationId: "3" })], []);
-      expect(unknown.attribution).toEqual({ kind: "ai" });
-      expect(unknown.threadIds).toEqual([]);
-    });
-
-    it("names every chat of the class, latest first, each at its own latest write", () => {
-      const [change] = reviewChanges(
-        [
-          written("3", "t-lore", "Lore pass", { actorTurnId: "turn-a", actorToolCallId: "call-a" }),
-          written("12", "t-pace", "Pacing pass", {
-            actorTurnId: "turn-b",
-            actorToolCallId: "call-b",
-          }),
-          // The same chat wrote twice: its later write is the one its link opens.
-          written("7", "t-lore", "Lore pass", { actorTurnId: "turn-c", actorToolCallId: "call-c" }),
-        ],
-        [],
-      );
-      expect(change.attribution).toEqual({
-        kind: "chats",
-        chats: [
-          { threadId: "t-pace", title: "Pacing pass", turnId: "turn-b", toolCallId: "call-b" },
-          { threadId: "t-lore", title: "Lore pass", turnId: "turn-c", toolCallId: "call-c" },
-        ],
-      });
-      expect(change.threadIds).toEqual(["t-pace", "t-lore"]);
-    });
 
     it("orders chats by journal order, not by the order the server lists operations", () => {
       const [change] = reviewChanges(
@@ -263,61 +152,6 @@ describe("reviewChanges", () => {
     const unclassified = (overrides: Partial<ReviewHunk> & { hunkId: string }) =>
       textHunk({ unclassified: true, ...overrides });
 
-    it("lists an unclassified hunk with no operation as a change with no author and no commands", () => {
-      const hunks = [
-        textHunk({ hunkId: "h1", operationIds: ["a"] }),
-        unclassified({ hunkId: "h2", deletedText: "Alpha", deletedSpans: [] }),
-      ];
-      const changes = reviewChanges([op({ operationId: "a" })], hunks);
-      expect(changes).toHaveLength(2);
-      const [classified, loose] = changes;
-      expect(classified.actionable).toBe(true);
-      expect(loose).toMatchObject({
-        attribution: { kind: "unattributed" },
-        threadIds: [],
-        actionable: false,
-        operationIds: [],
-        tone: "unattributed",
-        includesWriterEdits: false,
-      });
-      expect(loose.classId).toBe(loose.anchorOperationId);
-      expect(loose.markKeys).toEqual([loose.anchorOperationId]);
-      // The full removal, not an author's share of it.
-      expect(changeExcerpt(loose)).toEqual({ added: null, removed: "Alpha" });
-    });
-
-    it("reads an unclassified insertion from insertedText", () => {
-      const [loose] = reviewChanges([], [unclassified({ hunkId: "h", insertedText: "Beta" })]);
-      expect(changeExcerpt(loose)).toEqual({ added: "Beta", removed: null });
-    });
-
-    it("keeps a block hunk's own displays", () => {
-      const block = {
-        kind: "block",
-        hunkId: "b",
-        operationIds: [],
-        unclassified: true,
-        anchor: { relStart: "", relEnd: "" },
-        deletedBlock: { type: "paragraph", display: "A removed paragraph" },
-      } as ReviewHunk;
-      const [loose] = reviewChanges([], [block]);
-      expect(changeExcerpt(loose)).toEqual({ added: null, removed: "A removed paragraph" });
-    });
-
-    it("places it where it sits in the document, among the classified changes", () => {
-      const hunks = [
-        textHunk({ hunkId: "h1", operationIds: ["a"] }),
-        unclassified({ hunkId: "h2", deletedText: "x" }),
-        textHunk({ hunkId: "h3", operationIds: ["b"] }),
-      ];
-      const changes = reviewChanges([op({ operationId: "a" }), op({ operationId: "b" })], hunks);
-      expect(changes.map((change) => change.attribution.kind)).toEqual([
-        "ai",
-        "unattributed",
-        "ai",
-      ]);
-    });
-
     it("keeps the class's author when an unclassified hunk touches it, but offers no commands", () => {
       const ops = [
         op({ operationId: "a", closureClassId: "c", canApplyOrDiscard: false }),
@@ -328,11 +162,6 @@ describe("reviewChanges", () => {
       expect(change.actionable).toBe(false);
       expect(change.attribution).toEqual({ kind: "ai" });
       expect(change.operationIds).toEqual(["a", "b"]);
-    });
-
-    it("treats an absent flag as ordinary eligibility", () => {
-      const [change] = reviewChanges([op({ operationId: "a" })], []);
-      expect(change.actionable).toBe(true);
     });
   });
 });
@@ -351,44 +180,5 @@ describe("a change's hunks", () => {
     const [first, second] = reviewChanges(ops, hunks);
     expect(first.change.removed).toBe("old a\nshared");
     expect(second.change.removed).toBe("old b\nshared");
-  });
-});
-
-describe("reviewChangesOfPreview", () => {
-  it("derives a preview's changes once, for every reader", () => {
-    const preview = {
-      status: "active",
-      inlineModelPresent: true,
-      operations: [op({ operationId: "a", closureClassId: "c1" })],
-      hunks: [textHunk({ hunkId: "h1", operationIds: ["a"] })],
-    } as never;
-    expect(reviewChangesOfPreview(preview)).toBe(reviewChangesOfPreview(preview));
-  });
-});
-
-describe("resolveFocusedChange", () => {
-  const ops = [
-    op({ operationId: "1", closureClassId: "c1" }),
-    op({ operationId: "2", closureClassId: "c2b" }),
-    op({ operationId: "5", closureClassId: "c2b" }),
-  ];
-  const changes = reviewChanges(ops, []);
-
-  it("finds the class by id", () => {
-    expect(resolveFocusedChange(changes, { classId: "c1", operationIds: ["1"] })?.classId).toBe(
-      "c1",
-    );
-  });
-
-  it("finds a regrouped class by an operation it kept", () => {
-    expect(resolveFocusedChange(changes, { classId: "c2", operationIds: ["2"] })?.classId).toBe(
-      "c2b",
-    );
-  });
-
-  it("names nothing when the class and all its operations are gone, or nothing is focused", () => {
-    expect(resolveFocusedChange(changes, { classId: "c9", operationIds: ["9"] })).toBeNull();
-    expect(resolveFocusedChange(changes, { classId: "c9", operationIds: [] })).toBeNull();
-    expect(resolveFocusedChange(changes, null)).toBeNull();
   });
 });

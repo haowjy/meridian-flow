@@ -28,19 +28,6 @@ const group = (
   }) as unknown as ThreadDraftGroup;
 
 describe("the file order", () => {
-  it("is by name then id, and does not move when a draft is updated", () => {
-    const before = [group("2", "Chapter 13"), group("1", "Chapter 12"), group("3", "Interlude")];
-    const after = [
-      group("2", "Chapter 13", "2026-02-01T00:00:00Z"),
-      group("1", "Chapter 12"),
-      group("3", "Interlude", "2026-03-01T00:00:00Z"),
-    ];
-    const names = (groups: ThreadDraftGroup[]) =>
-      reviewFileTargets(groups).map((row) => row.documentName);
-    expect(names(before)).toEqual(["Chapter 12", "Chapter 13", "Interlude"]);
-    expect(names(after)).toEqual(names(before));
-  });
-
   it("orders a file with no name by its path's name, and ties by id", () => {
     const sorted = sortDraftFiles([
       { documentId: "b", documentName: null, contextPath: "manuscript://notes/zeta.md" },

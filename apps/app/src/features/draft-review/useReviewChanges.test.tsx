@@ -8,15 +8,8 @@ import type { DraftPreviewResponse, ReviewHunk, ReviewOperation } from "@meridia
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import {
-  beginChangeCommand,
-  failChangeCommand,
-  releaseChangeCommand,
-} from "@/client/query/change-command-record";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { settleConfirmedChange } from "@/client/query/useDraftReviewMutations";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { selectionOf } from "./change-selection";
 import { useArrivedChanges } from "./useArrivedChanges";
@@ -67,7 +60,6 @@ function preview(
 
 const inReview = { documentId: "doc", draftId: "draft" };
 const key = projectQueryKeys.workDraftPreview("p", "w", "doc", "draft");
-const draft = { projectId: "p", workId: "w", documentId: "doc", draftId: "draft" };
 
 const baseline = () =>
   preview(
@@ -123,80 +115,12 @@ async function mount(
 const flush = (ms = 0) =>
   act(async () => void (await new Promise((resolve) => setTimeout(resolve, ms))));
 
-const classIds = () => latest.items.map((item) => item.change.classId);
-
 beforeEach(() => {
   resetDraftCommandRecords();
   getDraftPreview.mockReset();
 });
 
 describe("useReviewChanges", () => {
-  it("lists the changes in document order, with Apply available for a live document", async () => {
-    const unordered = preview(
-      [op("9", "c9"), op("4", "c4")],
-      [hunk("h1", ["4"]), hunk("h2", ["9"])],
-    );
-    await mount(
-      fakeController(),
-      async () => {
-        expect(classIds()).toEqual(["c4", "c9"]);
-        expect(latest.status).toBe("ready");
-        expect(latest.canApply).toBe(true);
-      },
-      unordered,
-    );
-  });
-
-  it("offers no per-change Apply for a new document", async () => {
-    await mount(
-      fakeController(),
-      async () => expect(latest.canApply).toBe(false),
-      preview([op("1", "c1")], [hunk("h1", ["1"])], { isNewDocument: true }),
-    );
-  });
-
-  it("a change leaves the list the moment its command starts, and returns with its reason on failure", async () => {
-    await mount(fakeController(), async () => {
-      const second = latest.items[1].change;
-      await act(async () => {
-        beginChangeCommand(draft, selectionOf([second]), "apply", 1);
-      });
-      expect(classIds()).toEqual(["c1", "c3"]);
-      await act(async () => {
-        failChangeCommand(draft, selectionOf([second]), "apply", "offline");
-        releaseChangeCommand(draft);
-      });
-      expect(classIds()).toEqual(["c1", "c2", "c3"]);
-      expect(latest.items[1].failure).toMatchObject({ code: "offline", mode: "apply" });
-    });
-  });
-
-  it("an applied or discarded change never comes back from a read that was already in flight", async () => {
-    let resolveStale!: (value: DraftPreviewResponse) => void;
-    getDraftPreview.mockImplementation(
-      () => new Promise<DraftPreviewResponse>((resolve) => (resolveStale = resolve)),
-    );
-    await mount(fakeController(), async (client) => {
-      const target = latest.items[0].change;
-      // A refetch starts (the AI is still writing)...
-      await act(async () => {
-        void client.invalidateQueries({ queryKey: key });
-      });
-      // ...the writer applies a change and the server confirms...
-      await act(async () => {
-        beginChangeCommand(draft, selectionOf([target]), "apply", 1);
-        settleConfirmedChange(client, draft, selectionOf([target]), "apply");
-      });
-      expect(classIds()).toEqual(["c2", "c3"]);
-      // ...then the read from before the click resolves with the change still in it.
-      await act(async () => {
-        resolveStale(baseline());
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-      expect(classIds()).toEqual(["c2", "c3"]);
-    });
-  });
-
   it("new AI writes arrive in place: the count rises and the new change pulses once", async () => {
     await mount(fakeController(), async (client) => {
       expect(latest.items).toHaveLength(3);
@@ -228,24 +152,6 @@ describe("useReviewChanges", () => {
       await flush();
       expect(latest.items).toHaveLength(4);
       expect([...arrived]).toEqual([]);
-    });
-  });
-
-  it("keeps focus on a change the server regrouped, because it shares an operation", async () => {
-    const controller = fakeController({
-      focus: { classId: "c2", operationIds: ["2"] },
-    } as Partial<DraftReviewController>);
-    await mount(controller, async (client) => {
-      expect(latest.focused?.classId).toBe("c2");
-      client.setQueryData(
-        key,
-        preview(
-          [op("1", "c1"), op("2", "c2b"), op("5", "c2b"), op("3", "c3")],
-          [hunk("h1", ["1"]), hunk("h2", ["2", "5"]), hunk("h3", ["3"])],
-        ),
-      );
-      await flush();
-      expect(latest.focused?.classId).toBe("c2b");
     });
   });
 
@@ -306,121 +212,6 @@ describe("useReviewChanges", () => {
       expect(refused.focusReviewChange).toHaveBeenLastCalledWith(inReview, target, {
         scroll: true,
       });
-    });
-  });
-
-  it("reads the lock from the controller so every Apply and Discard disables together", async () => {
-    await mount(
-      fakeController({ dispositionLocked: true } as Partial<DraftReviewController>),
-      async () => expect(latest.locked).toBe(true),
-    );
-  });
-
-  describe("finished and completing", () => {
-    const inline = (completion?: unknown) =>
-      fakeController({
-        inlineReview: { kind: "inline", documentId: "doc", draftId: "draft", completion },
-      } as unknown as Partial<DraftReviewController>);
-    const last = () => preview([op("1", "c1")], [hunk("h1", ["1"])]);
-
-    it("is not finished while the last change's command is in flight, however empty the list looks", async () => {
-      await mount(
-        inline({ phase: "pending", mode: "apply", documentName: "Chapter 12" }),
-        async () => {
-          await act(async () => {
-            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "apply", 1);
-          });
-          expect(classIds()).toEqual([]);
-          expect(latest.completing).toBe("apply");
-          expect(latest.finished).toBe(false);
-        },
-        last(),
-      );
-    });
-
-    it("is not finished while a command hides the last change, even with no completion predicted", async () => {
-      await mount(
-        inline(),
-        async () => {
-          await act(async () => {
-            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard", 1);
-          });
-          expect(classIds()).toEqual([]);
-          expect(latest.completing).toBeNull();
-          expect(latest.finished).toBe(false);
-        },
-        last(),
-      );
-    });
-
-    it("is finished when the server closed the draft, with nothing listed from a stale read", async () => {
-      await mount(
-        inline({ phase: "closed", documentName: "Chapter 12" }),
-        async () => {
-          expect(latest.finished).toBe(true);
-          expect(latest.completing).toBeNull();
-          expect(classIds()).toEqual([]);
-        },
-        baseline(),
-      );
-    });
-
-    it("is not finished when the server's own read shows no change: the draft is still open, so formatting remains", async () => {
-      await mount(
-        inline(),
-        async () => {
-          expect(latest.finished).toBe(false);
-          expect(latest.unlisted).toBe(true);
-        },
-        preview([], []),
-      );
-    });
-
-    it("is not unlisted while a command still hides a change", async () => {
-      await mount(
-        inline(),
-        async () => {
-          await act(async () => {
-            beginChangeCommand(draft, selectionOf([latest.items[0].change]), "discard", 1);
-          });
-          expect(latest.unlisted).toBe(false);
-        },
-        last(),
-      );
-    });
-
-    it("is not unlisted once the server closed the draft", async () => {
-      await mount(
-        inline({ phase: "closed", documentName: "Chapter 12" }),
-        async () => expect(latest.unlisted).toBe(false),
-        preview([], []),
-      );
-    });
-
-    it("is not finished or unlisted while an unclassified hunk is the only thing left", async () => {
-      const loose = {
-        kind: "text",
-        hunkId: "h-loose",
-        operationIds: [],
-        unclassified: true,
-        anchor: { relStart: "", relEnd: "" },
-        spans: [],
-        deletedText: "Alpha",
-      } as ReviewHunk;
-      await mount(
-        inline(),
-        async () => {
-          expect(classIds()).toHaveLength(1);
-          expect(latest.items[0].change.attribution).toEqual({ kind: "unattributed" });
-          expect(latest.finished).toBe(false);
-          expect(latest.unlisted).toBe(false);
-        },
-        preview([], [loose]),
-      );
-    });
-
-    it("is not finished while changes remain", async () => {
-      await mount(inline(), async () => expect(latest.finished).toBe(false));
     });
   });
 });

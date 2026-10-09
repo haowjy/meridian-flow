@@ -204,6 +204,90 @@ and inspect the surfaces.
    same destination. Repeat in No Work: its own chat strip and document list
    still work, but neither offers a Work-wide footer or list.
 
+## Probe H — the document list on both shells
+
+Use Probe G's run-scoped Work and two-document, two-chat fixture. This is a
+visual probe: run at desktop 1280×900 and phone 393×852; do not infer layout
+from CLI success. Record screenshots and the fresh API reads per action.
+
+1. Open Chapter A live. Open its identity-row change-list button (phone sheet).
+   PASS: only this document's changes appear, no Chapter B, no Work-wide bulk
+   commands. Expand the version menu: only live and this Work's version, never
+   another file. Review opens the first relevant change; it is read-only until
+   the review room paints. Repeat with a new document: no live version is offered.
+2. Open its review, then hide marks. PASS: the list remains reachable by keyboard
+   (Tab and Enter); focus a row and it closes, focusing that change. Step both
+   ways, including wrap. On desktop shrink the pane until the bar moves below
+   the text, then widen; commands stay keyboard reachable and do not cover prose.
+   On phone open the keyboard: the bar clears it and the home indicator. Measure
+   44px command/stepper touch targets. Check shared-chat excerpt width and names;
+   untitled chats still have a usable link. Do not use separator glyphs as copy.
+3. Apply one row, recreate and Discard one row. PASS: the list stays open, the
+   chosen class disappears immediately, live changes only on Apply; both preview
+   tokens and all operation IDs of that class go in the request. Refusal restores
+   that row with the server reason, not a false connection warning. Switch offline
+   and click: it returns with a connection refusal, never dispatching on reconnect.
+4. Keep the list open while its last change completes. PASS: pending says Applying
+   or Discarding, never prematurely No changes left; confirmed close holds the
+   finished state. A formatting-only draft says formatting remains, not finished.
+   Next draft preserves sorted-file position; Back to live is offered when alone.
+5. Click "All changes in <Work>" at the foot. PASS: one navigation opens that Work's
+   Files tab and closes the list. Repeat in No Work: no Work-page link exists.
+   On phone whole-draft Discard's confirmation is inside the sheet, not under its
+   scrim. The list button remains usable while review enters/leaves and marks hide.
+
+## Probe I — Work page commands and held failures
+
+Continue with Probe G's fixture (recreate affected proposals between actions).
+
+1. Open the named Work's Files tab. PASS: Changes to review lists files in stable
+   name/id order; journal recency does not reorder them. Expand Chapter A: only
+   its preview loads, a failure shows Retry on that file, never an empty-success
+   list. With a new-document-only proposal, the row offers Review, not selective
+   Apply. Formatting-only rows explain why whole-document commands remain.
+2. Apply a change from an unopened Chapter B while Chapter A remains in review.
+   PASS: no review room/navigation is opened for B, the command acts on B alone,
+   A stays where it was. Repeat for a Work owned by neither current chat nor Editor:
+   it acts in that Work, with no cross-Work preview or command. Inspect fresh live
+   and draft reads through `./mf`; cached DOM alone cannot certify persistence.
+3. Filter search so one file is hidden; Apply all still counts and handles every
+   draft of that Work. Recreate, Discard all: inline confirmation lets Keep cancel
+   without requests, then confirming handles all, with no navigation.
+4. While a batch waits, navigate to another Work, then archive the original Work
+   through its ordinary menu. PASS: requests already owned by the original batch
+   finish in the original Work, controls lock; no new Work gets an old request and
+   no answer navigates back. Make one file refuse: later files still run and its
+   error remains on that file's row until an explicit next action/dismissal.
+5. From a finished review, send a fresh proposal to the same document. PASS: review
+   re-enters in place with the new generation and room, no old completion, even if
+   the previous answer/list read lands late. Leave for another document and repeat:
+   a late answer cannot reopen the previous review. Capture request/response order.
+
+## Probe J — chat links from Work rows and cold history
+
+Use a change with two writing chats and retained tool calls. Capture its preview's
+chat, turn and tool-call IDs before clicking. Run both shells.
+
+1. From the Work page's expanded row click each chat link. PASS: the chat opens
+   beside the Work screen (phone's chat sheet), the correct turn lands, no review
+   opens and no change command runs. Repeat from the document list and strip review.
+2. For an open Process fold, the exact writing tool row is the landing target.
+   Close the fold after opening it once: hidden retained ToolRows must not become
+   targets; the fold itself lands and stays closed. A missing tool-call ID falls
+   back to its turn, not another tool or another chat. Capture fold state/target.
+3. Start in a fresh browser profile or reload without loading that chat first.
+   Click the Work row's link while history is still loading. PASS: the request is
+   held until its turns reach the transcript store, then lands on the same turn;
+   it never concludes "absent" from a settled-but-empty transcript. Repeat warm.
+4. Rename one writing chat and refresh. PASS: shared-change links name each current
+   chat and each goes to its own latest contributing turn; writer-only edits name
+   no chat. Inspect the preview and transcript with `./mf` for attribution.
+
+Evidence: record commit, provider, viewport, Work/doc/chat/turn IDs, screenshots,
+network outcomes and fresh live/draft reads in the work directory. Cleanup only
+run-created fixtures using the ordinary UI/API; never reset the shared dev DB or
+clear another run's mock queue. These recipes are not a claim of execution.
+
 ## History
 
 - 2026-07-07 — #151 combined quality-fixes probe (disposition lock, bulk pump

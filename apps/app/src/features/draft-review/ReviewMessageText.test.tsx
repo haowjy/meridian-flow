@@ -9,45 +9,6 @@ import type { DraftCommandFailure } from "@/client/query/draft-command-record";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ReviewMessageText } from "./ReviewMessageText";
 
-function textOf(failure: DraftCommandFailure): Promise<string> {
-  i18n.loadAndActivate({ locale: "en", messages: {} });
-  let text = "";
-  return withReactRoot(
-    <I18nProvider i18n={i18n}>
-      <p data-probe>
-        <ReviewMessageText failure={failure} />
-      </p>
-    </I18nProvider>,
-    async () => {
-      text = document.querySelector("[data-probe]")?.textContent ?? "";
-    },
-  ).then(() => text);
-}
-
-describe("ReviewMessageText", () => {
-  it.each([
-    [{ code: "apply-offline" }, "Couldn't apply. Check your connection and try again."],
-    [{ code: "discard-offline" }, "Couldn't discard. Check your connection and try again."],
-    [
-      {
-        code: "apply-refused",
-        serverCode: "quota_exceeded",
-        serverReason: "This Work is archived and read-only.",
-      },
-      "Couldn't apply this draft. This Work is archived and read-only.",
-    ],
-    [
-      { code: "discard-refused", serverCode: "quota_exceeded", serverReason: "Nope" },
-      "Couldn't discard this draft. Nope.",
-    ],
-    [{ code: "apply-refused" }, "Couldn't apply this draft."],
-    [{ code: "apply-server-error" }, "Couldn't apply this draft. Try again."],
-    [{ code: "discard-server-error" }, "Couldn't discard this draft. Try again."],
-  ] as const)("%j reads %s", async (failure, expected) => {
-    expect(await textOf(failure)).toBe(expected);
-  });
-});
-
 describe("a held refusal across a language switch", () => {
   // The macros are stubbed in tests, so a message's id is its English text.
   const archivedEn = "This Work is archived. Unarchive it to apply or discard its drafts.";

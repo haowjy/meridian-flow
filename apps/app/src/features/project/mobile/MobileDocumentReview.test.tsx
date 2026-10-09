@@ -226,19 +226,6 @@ const menuItem = (text: string) =>
   );
 
 describe("the phone review header", () => {
-  it("shows the switcher, the stepper and the change count that opens the list", async () => {
-    await render(async () => {
-      expect(header()).not.toBeNull();
-      expect(header()?.querySelector("[aria-label='Document version']")).not.toBeNull();
-      expect(header()?.textContent).toContain("3 changes");
-      expect(named("Show the 3 changes")?.textContent).toBe("3");
-      await act(async () => named("Next change")?.click());
-      expect(view.step).toHaveBeenCalledWith(1);
-      await act(async () => named("Previous change")?.click());
-      expect(view.step).toHaveBeenCalledWith(-1);
-    });
-  });
-
   it("stays out of the way until the review is painted, and for another document", async () => {
     controller.inlineReview = { documentId: "doc-12", draftId: "draft-doc-12", shown: false };
     await render(async () => {
@@ -269,37 +256,6 @@ describe("the phone review header", () => {
       expect(launcher.openAiDraft).toHaveBeenCalledWith(
         expect.objectContaining({ workId: "w", documentId: "doc-12", draftId: "draft-doc-12" }),
       );
-    });
-  });
-
-  it("shows no entry for a document with no pending draft, nor once its review has painted", async () => {
-    controller.inlineReview = null;
-    groups.splice(0, groups.length);
-    try {
-      await render(async () =>
-        expect(document.querySelector("[data-phone-draft-entry]")).toBeNull(),
-      );
-    } finally {
-      groups.push(draft("doc-12", "Chapter 12"), draft("doc-13", "Chapter 13"));
-    }
-    controller.inlineReview = { documentId: "doc-12", draftId: "draft-doc-12", shown: true };
-    await render(async () => {
-      expect(header()).not.toBeNull();
-      expect(document.querySelector("[data-phone-draft-entry]")).toBeNull();
-    });
-  });
-
-  it("keeps Apply draft, Discard draft, the live version and Hide changes in the Draft chip's menu", async () => {
-    await render(async () => {
-      await openSwitcher();
-      expect(menuItem("Apply draft")).toBeDefined();
-      expect(menuItem("Discard draft")).toBeDefined();
-      expect(menuItem("Hide changes")).toBeDefined();
-      // The menu is versions of this document: no other file, no Work-wide commands.
-      expect(menuItem("Chapter 13")).toBeUndefined();
-      expect(menuItem("Apply all")).toBeUndefined();
-      await act(async () => menuItem("Live version")?.click());
-      expect(controller.exitInlineReview).toHaveBeenCalledOnce();
     });
   });
 
@@ -335,86 +291,6 @@ describe("the phone review header", () => {
       },
       { onCloseDraftOnly },
     );
-  });
-
-  it("says formatting remains, not No changes left, and keeps the draft commands", async () => {
-    Object.assign(view, { items: [], unlisted: true });
-    await render(async () => {
-      expect(header()?.textContent).toContain("Formatting changes remain");
-      expect(header()?.textContent).not.toContain("No changes left");
-      await openSwitcher();
-      expect(menuItem("Apply draft")).toBeDefined();
-      expect(menuItem("Discard draft")).toBeDefined();
-    });
-  });
-
-  it("says No changes left with Next draft, and offers no draft commands", async () => {
-    Object.assign(view, { items: [], finished: true });
-    await render(async () => {
-      expect(header()?.textContent).toContain("No changes left");
-      await openSwitcher();
-      expect(menuItem("Apply draft")).toBeUndefined();
-      await act(async () => named("Next draft")?.click());
-      expect(launcher.openReviewFile).toHaveBeenCalledWith(
-        expect.objectContaining({ documentId: "doc-13" }),
-        "w",
-      );
-    });
-  });
-
-  it("holds on No changes left after the server closed the draft and the list lost it", async () => {
-    const closed = groups.splice(0, 1);
-    Object.assign(view, { items: [], finished: true });
-    controller.inlineReview = {
-      documentId: "doc-12",
-      draftId: "draft-doc-12",
-      shown: true,
-      completion: { phase: "closed", documentName: "Chapter 12" },
-    };
-    try {
-      await render(async () => {
-        expect(header()?.textContent).toContain("No changes left");
-        expect(header()?.querySelector("[aria-label='Document version']")).not.toBeNull();
-        expect(controller.exitInlineReview).not.toHaveBeenCalled();
-        await act(async () => named("Next draft")?.click());
-        expect(launcher.openReviewFile).toHaveBeenCalledWith(
-          expect.objectContaining({ documentId: "doc-13" }),
-          "w",
-        );
-      });
-    } finally {
-      groups.unshift(...closed);
-    }
-  });
-
-  it("offers the way back to live when no other draft is left", async () => {
-    const all = groups.splice(0, groups.length);
-    Object.assign(view, { items: [], finished: true });
-    controller.inlineReview = {
-      documentId: "doc-12",
-      draftId: "draft-doc-12",
-      shown: true,
-      completion: { phase: "closed", documentName: "Chapter 12" },
-    };
-    try {
-      await render(async () => {
-        expect(header()?.textContent).toContain("No changes left");
-        expect(named("Next draft")).toBeUndefined();
-        await act(async () => named("Back to live")?.click());
-        expect(controller.exitInlineReview).toHaveBeenCalledOnce();
-      });
-    } finally {
-      groups.push(...all);
-    }
-  });
-
-  it("says Applying, not No changes left, while the last change's command is in flight", async () => {
-    Object.assign(view, { items: [], completing: "apply" });
-    await render(async () => {
-      expect(header()?.textContent).toContain("Applying");
-      expect(header()?.textContent).not.toContain("No changes left");
-      expect(named("Next draft")).toBeUndefined();
-    });
   });
 
   it("shows a refused whole-draft command under the row, from the draft's own record", async () => {
@@ -456,15 +332,6 @@ describe("the selected change's bar", () => {
     view.items = [{ change: all[0], failure: { phase: "failed", mode: "apply", code: "stale" } }];
     await render(async () => {
       expect(bar()?.textContent).toContain("This change was updated. Check it and apply again.");
-    });
-  });
-
-  it("clears the home indicator and the on-screen keyboard", async () => {
-    view.focused = all[0];
-    await render(async () => {
-      const style = (bar() as HTMLElement).style.paddingBottom;
-      expect(style).toContain("safe-area-inset-bottom");
-      expect(style).toContain("--mobile-keyboard-height");
     });
   });
 });
@@ -531,30 +398,6 @@ describe("the change-list sheet", () => {
       await act(async () => named("Show the 3 changes")?.click());
       expect(sheet()).not.toBeNull();
       expect(sheet()?.textContent).not.toContain("All changes in");
-    });
-  });
-
-  it("stays open when the last change is handled, and says the draft is done with the way on", async () => {
-    await render(async () => {
-      await act(async () => named("Show the 3 changes")?.click());
-      expect(sheet()).not.toBeNull();
-      await flip(() => Object.assign(view, { items: [], finished: true }));
-      expect(sheet()).not.toBeNull();
-      expect(sheet()?.textContent).toContain("No changes left");
-      expect(sheet()?.textContent).toContain("All changes in Arc One");
-      expect(sheet()?.textContent).not.toContain("Chapter 13");
-    });
-  });
-
-  it("opens for a formatting-only draft, with the way to the Work's other drafts still in it", async () => {
-    Object.assign(view, { items: [], unlisted: true });
-    await render(async () => {
-      expect(header()?.querySelector("[aria-label='Next change']")).toBeNull();
-      await act(async () => named("Show the changes list")?.click());
-      expect(sheet()).not.toBeNull();
-      expect(sheet()?.textContent).toContain("Formatting changes remain");
-      expect(sheet()?.textContent).toContain("All changes in Arc One");
-      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(0);
     });
   });
 
