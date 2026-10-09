@@ -140,7 +140,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 event.stopPropagation();
                 setExpanded((value) => !value);
               }}
-              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle"
+              className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
             >
               <ChevronRight
                 className={cn("size-3 transition-transform", expanded && "rotate-90")}
@@ -314,7 +314,7 @@ function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boo
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2 text-caption font-semibold text-primary-foreground disabled:opacity-50"
+      className="focus-ring inline-flex h-5 shrink-0 items-center justify-center rounded-sm bg-primary px-2 text-caption font-semibold text-primary-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
     >
       <Trans>Review draft</Trans>
     </button>
@@ -336,7 +336,7 @@ function QuietButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 text-ink-muted hover:text-foreground disabled:opacity-50"
+      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 text-ink-muted hover:text-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
     >
       {children}
     </button>
