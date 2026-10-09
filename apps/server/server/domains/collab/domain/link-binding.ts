@@ -171,7 +171,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
     const prepare = async (written: readonly PMNode[]) => {
       await deps.links.prepare({
         holders: documentId ? [{ documentId, view }] : [],
-        nodes: previous,
+        stored: previous,
         written,
         ...(documentId ? {} : { addresses: writtenAddresses(written, holderUri), views: [view] }),
         refs: shown.map((showing) => showing.ref),

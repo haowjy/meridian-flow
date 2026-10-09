@@ -2,114 +2,124 @@
  * Shown-link facts (contract §7.1): for each link the model was shown, its
  * ref and the absolute address shown. Host-only; never in model text.
  *
- * Facts come from what was actually rendered. A whole block counts all its
- * ref-bearing occurrences; a truncated block counts only those whose source
- * span ends inside the shown prefix. A claimed showing that was cut off could
- * bind a later link wrongly, while a missed one only weakens binding toward a
- * fresh resolve, so every doubt answers "not shown".
+ * Facts come from the render itself. A bound codec keeps a ledger of every
+ * hashline it rendered: the immutable node, the hash and body it emitted, and
+ * the address each ref-bearing occurrence spelled in that same scope. A
+ * result's items are then looked up by the hash they carry, never by the
+ * document's current state. A whole item counts all its ref-bearing
+ * occurrences; a truncated one counts only those whose source span ends
+ * inside the shown prefix. A claimed showing that was cut off could bind a
+ * later link wrongly, while a missed one only weakens binding toward a fresh
+ * resolve, so every doubt answers "not shown".
  */
 import {
-  type LinkOccurrence,
+  type DocumentLinkScope,
   type ParsedContentWithSpans,
   type PMNode,
   type SpelledLinkFact,
   walkLinkOccurrences,
 } from "@meridian/markup";
 import type { ConcurrentEditInfo } from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
-import type { DocHandle } from "../handles.js";
-import type { HolderLinkScope } from "../ports/document-links.js";
-import type { AgentEditModel } from "../ports/model.js";
 import type { AgentEditBlockItem, AgentEditModelPayload } from "../tool/model-result.js";
 import { modelBlockItem } from "../tool/model-result.js";
 
 export type { SpelledLinkFact };
 
-/** Facts for one rendered block: all of them when shown whole, or those ending inside a prefix. */
-export function shownLinkFacts(input: {
-  block: PMNode;
-  /** The block's full serialized body (no hashline prefix). */
+/** What one bound codec rendered, and the links each rendered item showed. */
+export interface ShownLinkLedger {
+  /** Record a hashline render: `hashes[i]` and `bodies[i]` are what `blocks[i]` emitted. */
+  record(blocks: readonly PMNode[], hashes: readonly string[], bodies: readonly string[]): void;
+  /** Facts for items this codec rendered (whole or as a prefix); anything else records nothing. */
+  shownLinks(items: readonly AgentEditBlockItem[]): SpelledLinkFact[];
+}
+
+interface Rendered {
   body: string;
-  /** `body.length` when shown whole. */
-  shownLength: number;
-  scope: HolderLinkScope;
-  codec: { parseWithSpans(text: string): ParsedContentWithSpans };
-}): SpelledLinkFact[] {
-  const occurrences = walkLinkOccurrences([input.block]);
-  if (!occurrences.some((occurrence) => occurrence.attrs.ref !== null)) return [];
-  if (input.shownLength >= input.body.length) return spell(occurrences, input.scope);
-  let spans: ParsedContentWithSpans["spans"];
-  try {
-    spans = input.codec.parseWithSpans(input.body).spans;
-  } catch {
-    return [];
-  }
-  // A reparse that disagrees with the block names no occurrence reliably.
-  if (spans.length !== occurrences.length) return [];
-  return spell(
-    occurrences.filter((_, index) => (spans[index]?.end ?? Infinity) <= input.shownLength),
-    input.scope,
-  );
+  /** Index-aligned with the block's link occurrences; null when no ref or no address. */
+  facts: (SpelledLinkFact | null)[];
+  /** Source spans of the occurrences in `body`, parsed only when a prefix needs them. */
+  spans?: ParsedContentWithSpans["spans"] | null;
 }
 
-function spell(occurrences: readonly LinkOccurrence[], scope: HolderLinkScope): SpelledLinkFact[] {
-  const facts: SpelledLinkFact[] = [];
-  for (const { kind, attrs } of occurrences) {
-    if (attrs.ref === null) continue;
-    const { address } =
-      kind === "link"
-        ? scope.spellLink({ href: attrs.href, ref: attrs.ref })
-        : scope.spellSource({ src: attrs.href, ref: attrs.ref });
-    if (address !== null) facts.push({ ref: attrs.ref, address });
-  }
-  return facts;
-}
+export function createShownLinkLedger(
+  scope: DocumentLinkScope,
+  parser: { parseWithSpans(text: string): ParsedContentWithSpans },
+): ShownLinkLedger {
+  const byHash = new Map<string, Rendered[]>();
 
-/** The document a render came from, and the binding it was spelled with. */
-export interface ShownRenderSource {
-  doc: DocHandle;
-  model: AgentEditModel;
-  codec: AgentEditCodec;
-  scope: HolderLinkScope;
-  parser: { parseWithSpans(text: string): ParsedContentWithSpans };
-}
-
-/**
- * Facts for rendered `hash|body` items, each matched to its block in `doc`
- * by hash. An item whose block is gone, or whose text is neither the block's
- * whole body nor a prefix of it (a concurrent render of another state, a
- * swept deletion), records nothing.
- */
-export function shownLinksForItems(
-  items: readonly AgentEditBlockItem[],
-  source: ShownRenderSource,
-): SpelledLinkFact[] {
-  if (items.length === 0) return [];
-  const blocks = source.model.getBlocks(source.doc);
-  const nodes = source.model.projectBlocks(source.doc);
-  const byHash = new Map<string, PMNode>();
-  blocks.forEach((block, index) => {
-    const node = nodes[index];
-    if (node) byHash.set(source.model.getBlockId(block), node);
-  });
-  const facts = new Map<string, SpelledLinkFact>();
-  for (const item of items) {
-    const block = byHash.get(item.hash);
-    if (!block) continue;
-    const body = source.codec.serializeBlockBodies([block])[0] ?? "";
-    const shown = item.body.replace(/^\n/, "");
-    if (!body.startsWith(shown)) continue;
-    for (const fact of shownLinkFacts({
-      block,
-      body,
-      shownLength: shown.length,
-      scope: source.scope,
-      codec: source.parser,
-    })) {
-      facts.set(`${fact.ref}\u0000${fact.address}`, fact);
+  const spansOf = (rendered: Rendered) => {
+    if (rendered.spans === undefined) {
+      try {
+        const spans = parser.parseWithSpans(rendered.body).spans;
+        // A reparse that disagrees with the block names no occurrence reliably.
+        rendered.spans = spans.length === rendered.facts.length ? spans : null;
+      } catch {
+        rendered.spans = null;
+      }
     }
-  }
-  return [...facts.values()];
+    return rendered.spans;
+  };
+
+  const factsOf = (rendered: Rendered, shownLength: number): SpelledLinkFact[] => {
+    const present = (fact: SpelledLinkFact | null): fact is SpelledLinkFact => fact !== null;
+    if (shownLength >= rendered.body.length) return rendered.facts.filter(present);
+    const spans = spansOf(rendered);
+    if (!spans) return [];
+    return rendered.facts.filter(
+      (fact, index): fact is SpelledLinkFact =>
+        fact !== null && (spans[index]?.end ?? Infinity) <= shownLength,
+    );
+  };
+
+  return {
+    record(blocks, hashes, bodies) {
+      blocks.forEach((block, index) => {
+        const hash = hashes[index];
+        const body = bodies[index];
+        if (hash === undefined || body === undefined) return;
+        const occurrences = walkLinkOccurrences([block]);
+        if (!occurrences.some((occurrence) => occurrence.attrs.ref !== null)) return;
+        const facts = occurrences.map(({ kind, attrs }): SpelledLinkFact | null => {
+          if (attrs.ref === null) return null;
+          const { address } =
+            kind === "link"
+              ? scope.spellLink({ href: attrs.href, ref: attrs.ref })
+              : scope.spellSource({ src: attrs.href, ref: attrs.ref });
+          return address === null ? null : { ref: attrs.ref, address };
+        });
+        const entries = byHash.get(hash) ?? [];
+        if (!entries.some((entry) => entry.body === body && sameFacts(entry.facts, facts)))
+          entries.push({ body, facts });
+        byHash.set(hash, entries);
+      });
+    },
+    shownLinks(items) {
+      const facts = new Map<string, SpelledLinkFact>();
+      for (const item of items) {
+        const shown = item.body.replace(/^\n/, "");
+        const renders = (byHash.get(item.hash) ?? []).filter((entry) =>
+          entry.body.startsWith(shown),
+        );
+        // The same text rendered from different states: only what every render showed counts.
+        let common: Map<string, SpelledLinkFact> | undefined;
+        for (const rendered of renders) {
+          const keyed = new Map(factsOf(rendered, shown.length).map((fact) => [key(fact), fact]));
+          common = common ? new Map([...common].filter(([factKey]) => keyed.has(factKey))) : keyed;
+        }
+        for (const [factKey, fact] of common ?? []) facts.set(factKey, fact);
+      }
+      return [...facts.values()];
+    },
+  };
+}
+
+function key(fact: SpelledLinkFact): string {
+  return `${fact.ref}\u0000${fact.address}`;
+}
+
+function sameFacts(left: readonly (SpelledLinkFact | null)[], right: typeof left): boolean {
+  const spell = (facts: typeof left) => facts.map((fact) => (fact ? key(fact) : "")).join("\u0001");
+  return spell(left) === spell(right);
 }
 
 /** Every block item a model payload renders: block groups and concurrent runs. */
@@ -127,13 +137,13 @@ export function renderedItems(payload: AgentEditModelPayload | undefined): Agent
  */
 export function withRunShownLinks(
   info: ConcurrentEditInfo | undefined,
-  source: ShownRenderSource,
+  ledger: Pick<ShownLinkLedger, "shownLinks">,
 ): ConcurrentEditInfo | undefined {
   if (!info) return info;
   return {
     ...info,
     runs: info.runs.map((run) => {
-      const shownLinks = shownLinksForItems(run.blocks.map(modelBlockItem), source);
+      const shownLinks = ledger.shownLinks(run.blocks.map(modelBlockItem));
       return shownLinks.length > 0 ? { ...run, shownLinks } : run;
     }),
   };

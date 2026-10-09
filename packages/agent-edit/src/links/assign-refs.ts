@@ -21,7 +21,6 @@ import {
 } from "@meridian/contracts";
 import { type LinkOccurrence, type PMNode, walkLinkOccurrences } from "@meridian/markup";
 import { Fragment } from "prosemirror-model";
-import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import { type AheadMint, type HolderLinkScope, writtenSourceUri } from "../ports/document-links.js";
 import { type Binding, correspondLinks, type ShownLink } from "./correspondence.js";
 import {
@@ -108,6 +107,13 @@ export function bindOccurrences(input: BindOccurrencesInput): {
 interface Grammar {
   /** Written href → decoded canonical address, ignoring classification; null if none. */
   address(href: string, holderUri: string | null): { uri: string; suffix: string } | null;
+  /**
+   * The address passes 1 and 2 compare a written href by. A written link with
+   * no extension names the default-extension address, the spelling ahead
+   * minting stores, so `ch12` still continues a link shown as `ch12.md` after
+   * that document moved. Pass 3 keeps its exact-then-unique-extension resolve.
+   */
+  correspondenceKey(href: string, holderUri: string | null): string | null;
   /** Pass 3's classification. */
   classify(href: string, holderUri: string | null): ReturnType<typeof classifyWrittenLink>;
   spell(scope: HolderLinkScope, attrs: OccurrenceAttrs): string | null;
@@ -117,6 +123,10 @@ interface Grammar {
 const GRAMMARS: Record<"link" | "source", Grammar> = {
   link: {
     address: (href, holderUri) => resolveDocumentHref(href, holderUri),
+    correspondenceKey(href, holderUri) {
+      const uri = resolveDocumentHref(href, holderUri)?.uri;
+      return uri ? (aheadAddress(uri, "link") ?? uri) : null;
+    },
     classify: classifyWrittenLink,
     spell: (scope, attrs) => scope.spellLink({ href: attrs.href, ref: attrs.ref }).address,
     aheadKind: "link",
@@ -126,6 +136,7 @@ const GRAMMARS: Record<"link" | "source", Grammar> = {
       const uri = writtenSourceUri(href);
       return uri ? { uri, suffix: splitDocumentHrefSuffix(href).suffix } : null;
     },
+    correspondenceKey: (href) => writtenSourceUri(href),
     classify: (href) => classifyWrittenSource(href),
     spell: (scope, attrs) => scope.spellSource({ src: attrs.href, ref: attrs.ref }).address,
     aheadKind: "source",
@@ -163,7 +174,7 @@ function bindKind(input: {
     })),
     shown: input.shown,
     holderUri: holderUri ?? "",
-    normalize: (href, base) => grammar.address(href, base || null)?.uri ?? null,
+    normalize: (href, base) => grammar.correspondenceKey(href, base || null),
     isLive: (ref) => scope.isLive(ref),
   });
   const contextualTaken = new Set<number>();
@@ -331,11 +342,10 @@ export interface WriteLinkAssigner {
   /** Bind the nodes written over `old` (empty for an insert or a create). */
   bindSpan(old: readonly PMNode[], written: readonly PMNode[]): PMNode[];
   /**
-   * Parse and bind a formatted find's spliced group: occurrences outside the
+   * Bind a formatted find's parsed spliced group: occurrences outside the
    * splice keep their old attrs, only the inside ones are assigned (§5.4).
-   * Throws the codec's parse error, like `parse`.
    */
-  bindSplice(input: Omit<SpliceRestoreInput, "parseWithSpans" | "prepare" | "bind">): PMNode[];
+  bindSplice(input: Omit<SpliceRestoreInput, "prepare" | "bind">): PMNode[];
   /** Every ahead ref minted so far; the handler registers them before applying. */
   readonly minted: readonly AheadMint[];
 }
@@ -344,7 +354,6 @@ export function createWriteLinkAssigner(input: {
   scope: HolderLinkScope;
   holderDocumentId: string;
   shown: readonly ShownLink[];
-  codec: Pick<AgentEditCodecFactory, "parse" | "parseWithSpans">;
   mint?: () => AheadRef;
   /** Hears each splice that fell back to whole-group binding (possible format churn there). */
   onSpliceFallback?: (reason: SpliceFallback) => void;
@@ -367,7 +376,6 @@ export function createWriteLinkAssigner(input: {
     bindSplice(splice) {
       const restored = restoreOutsideSplice({
         ...splice,
-        parseWithSpans: (text) => input.codec.parseWithSpans(text),
         prepare: (blocks) => bindSources(blocks, input.scope),
         bind(old, written) {
           const result = bindOccurrences({ ...common, old, written });
@@ -377,7 +385,7 @@ export function createWriteLinkAssigner(input: {
       });
       if ("nodes" in restored) return restored.nodes;
       input.onSpliceFallback?.(restored.fallback);
-      return bindSpan(splice.oldGroup, input.codec.parse(splice.newText).blocks);
+      return bindSpan(splice.oldGroup, splice.parsed.blocks);
     },
   };
 }

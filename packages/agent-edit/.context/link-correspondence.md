@@ -14,6 +14,9 @@ bound nodes with no Markdown round trip ([design][design]).
 2. Correspondence (passes 1 and 2, below) over ref-bearing old occurrences in
    the replaced span. Links and sources correspond separately, each under its
    own address grammar (holder-relative for links, manuscript-root for sources).
+   A written link with no extension compares as its default-extension address
+   (the `.md` ahead minting stores), so `[x](ch12)` written after a showing of
+   `ch12.md` continues that ref after the document moved.
 3. Pass 3 for the rest: classify (external and contextual keep `ref: null`),
    resolve in the command's view (`scope.documentFor`), else mint an ahead ref
    whose address always carries an extension.
@@ -34,8 +37,8 @@ reused, so an unchanged block stays `.eq` and block alignment keeps it.
 ## Doors
 
 `createWriteLinkAssigner` is the per-command binder the handler builds after
-`prepare` and hands the resolver as `ResolveWriteContext.links`. It collects
-the ahead refs it mints.
+`prepare` and hands the resolver's plan to bind. It collects the ahead refs
+it mints.
 
 | Door | Old occurrences | Notes |
 |---|---|---|
@@ -47,16 +50,22 @@ the ahead refs it mints.
 | copies (`from`, `copy`) | skipped | copied nodes carry refs structurally |
 | undo, redo, cold reversal, reply save | never | bytes carry recorded refs |
 
-Handler order: parse, load `context.shownLinks`, `links.prepare` (with
-`written` and `shown`), `scopeFor`, synchronous resolve with binding, then
+Handler order: load `context.shownLinks`, `links.prepare` (docs, `shown`, and
+`stored` for copies), `scopeFor`, then `planWrite` (`resolver/resolve.ts`):
+scope, matches, splices and every node binding will see, a find's
+reconstructed groups included, parsed with spans. The planned nodes load in a
+second, incremental `prepare` (`written`), then `plan.bind` assigns and
+aligns synchronously. A create parses up front and prepares once. Then
 `links.registerAhead(minted)` before the write reserves an ordinal, applies,
 stages or takes any lock. A registration failure fails the write before
-anything is applied; the minted refs were never published.
+anything is applied; the minted refs were never published. Registration may
+settle a ref at once, so the handler then prepares the minted refs and their
+addresses (`refs`, `addresses`) before the echo spells them.
 
 ## Find splice (`src/links/find-splice.ts`)
 
 The formatted find path splices written Markdown into the serialized group
-and reparses it. `spliceFindMatches` (`resolver/find.ts`) returns the
+and the plan reparses it with spans. `spliceFindMatches` (`resolver/find.ts`) returns the
 pre-splice text and one union splice over every match. Occurrences whose
 source span ends before the splice, or starts after it, keep their old
 twin's attrs verbatim; only inside occurrences are assigned. When the
@@ -68,12 +77,14 @@ unchanged links in that group may churn their formatting.
 ## Shown-link facts (`src/links/shown.ts`)
 
 Host-only evidence of what the model saw: `{ ref, address }` per ref-bearing
-occurrence actually rendered, spelled with the command's scope in the same
-synchronous block. Facts are computed from the rendered `hash|body` items,
-matched to blocks by hash: a whole block counts all its links, a prefix
-counts only links whose `parseWithSpans` span ends inside it, and anything
-else (another state's render, a swept deletion, a reparse that disagrees)
-counts nothing. They ride on `WriteOutcome.shownLinks` (reads, echoes, undo
+occurrence actually rendered. The bound codec keeps a ledger of every
+hashline it renders (the immutable node, the hash and body it emitted, and
+each occurrence's address spelled in that scope), and `codec.shownLinks(items)`
+reads a result's items back by the hash they carry, never the document's
+current state. A whole item counts all its links; a prefix counts only links
+whose `parseWithSpans` span ends inside it. Equal text rendered from
+different states counts only what every such render showed; an item this
+codec never rendered, or a reparse that disagrees, counts nothing. They ride on `WriteOutcome.shownLinks` (reads, echoes, undo
 and redo), `ResponseCommitWriteReceipt.shownLinks`, and each
 `ConcurrentEditRun.shownLinks` (per run, because the request budget may drop
 runs). None of them reaches `result`. `WriteContext.shownLinks(documentId)`
