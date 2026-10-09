@@ -10,7 +10,10 @@ import {
 } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { handleDocumentLinkResolveRequest } from "../../lib/document-link-route.js";
+import {
+  type DocumentLinkRouteDeps,
+  handleDocumentLinkResolveRequest,
+} from "../../lib/document-link-route.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { createLinkScopeObserver } from "../collab/index.js";
 import { createNoopEventSink } from "../observability/index.js";
@@ -242,47 +245,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       // A discarded draft creation keeps its row but no manifest lists it.
       const liveMembers = [live, deleted, secret];
-      const response = await handleDocumentLinkResolveRequest(
-        {
-          projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
-          documentLinks: resolver(),
-          linkScopes: createDrizzleDocumentLinkScopes({
-            db,
-            fileAccess: {
-              async listAccess(_principal, ids) {
-                return new Map(ids.filter((id) => id !== secret).map((id) => [id, {} as never]));
-              },
-            },
-            membership: async () => ({ members: liveMembers }),
-            observer: createLinkScopeObserver(createNoopEventSink()),
-          }),
-          workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+      const provisioned: unknown[] = [];
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: resolver(),
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
           fileAccess: {
             async listAccess(_principal, ids) {
-              return new Map(ids.map((id) => [id, {} as never]));
+              return new Map(ids.filter((id) => id !== secret).map((id) => [id, {} as never]));
             },
           },
-        },
-        {
-          projectId: p,
-          userId: u as never,
-          request: {
-            baseUri: "manuscript://holder.md",
-            links: [
-              { ref: `doc:${live}`, href: "manuscript://old-live.md" },
-              { ref: `doc:${deleted}`, href: "manuscript://deleted.md" },
-              { ref: `doc:${discarded}`, href: "manuscript://discarded.md" },
-              { ref: `doc:${secret}`, href: "manuscript://secret.md" },
-              { ref: `doc:${foreign}`, href: "manuscript://foreign.md" },
-              { ref: `ahead:${settled}`, href: "manuscript://elsewhere.md" },
-              { ref: `ahead:${unsettled}`, href: "manuscript://later.md#scene" },
-              { ref: "doc:not-a-uuid", href: "manuscript://live.md" },
-              { ref: null, href: "live.md" },
-              { ref: null, href: "https://example.com" },
-            ],
+          membership: async (view) => {
+            provisioned.push(view);
+            return { members: liveMembers };
+          },
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        fileAccess: {
+          async listAccess(_principal, ids) {
+            return new Map(ids.map((id) => [id, {} as never]));
           },
         },
-      );
+      };
+      const response = await handleDocumentLinkResolveRequest(deps, {
+        projectId: p,
+        userId: u as never,
+        request: {
+          baseUri: "manuscript://holder.md",
+          links: [
+            { ref: `doc:${live}`, href: "manuscript://old-live.md" },
+            { ref: `doc:${deleted}`, href: "manuscript://deleted.md" },
+            { ref: `doc:${discarded}`, href: "manuscript://discarded.md" },
+            { ref: `doc:${secret}`, href: "manuscript://secret.md" },
+            { ref: `doc:${foreign}`, href: "manuscript://foreign.md" },
+            { ref: `ahead:${settled}`, href: "manuscript://elsewhere.md" },
+            { ref: `ahead:${unsettled}`, href: "manuscript://later.md#scene" },
+            { ref: "doc:not-a-uuid", href: "manuscript://live.md" },
+            { ref: null, href: "live.md" },
+            { ref: null, href: "https://example.com" },
+          ],
+        },
+      });
       const liveDocument = {
         state: "document",
         document: { id: live, title: "live", scheme: "manuscript", path: "live.md" },
@@ -302,6 +307,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       for (const answer of response.answers)
         if (answer.state === "gone") expect(Object.keys(answer)).toEqual(["state"]);
+      // A Work of another project never reaches draft membership provisioning.
+      const foreignWork = crypto.randomUUID();
+      await db.insert(works).values({
+        id: foreignWork,
+        projectId: otherProject,
+        createdByUserId: u,
+        name: "Foreign",
+        slug: "foreign",
+      });
+      provisioned.length = 0;
+      await expect
+        .soft(
+          handleDocumentLinkResolveRequest(deps, {
+            projectId: p,
+            userId: u as never,
+            request: {
+              baseUri: null,
+              workId: foreignWork,
+              links: [{ ref: `doc:${live}`, href: "manuscript://live.md" }],
+            },
+          }),
+        )
+        .rejects.toMatchObject({ statusCode: 404 });
+      expect.soft(provisioned).toEqual([]);
     });
   });
 }
