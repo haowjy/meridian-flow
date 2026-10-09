@@ -1,7 +1,8 @@
 /**
  * The session registry's generation-fenced branch (review) rooms: retained per
  * owner, torn down after a grace period once no owner holds them, retired when
- * they reset, and rebuilt on request. Branch rooms hold no lease.
+ * they reset, and rebuilt on request. Branch rooms hold no lease. Retaining and
+ * releasing only record ownership; a room opens on `get` or `rebuild`.
  */
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 
@@ -34,6 +35,7 @@ export class BranchRoomPool {
       }
     }
     this.retainedByOwner.set(ownerId, keys);
+    for (const roomKey of keys) this.cancelTeardown(roomKey);
     this.reconcile();
   }
 
@@ -85,7 +87,8 @@ export class BranchRoomPool {
     for (const retained of this.retainedByOwner.values()) {
       for (const roomKey of retained) keep.add(roomKey);
     }
-    for (const roomKey of keep) this.get(roomKey);
+    // Only `get` and `rebuild` open a room. A release must not: another owner may still retain a
+    // room that was just reset, and reopening it would hit the retirement quarantine.
     for (const roomKey of this.rooms.keys()) {
       if (!keep.has(roomKey)) this.scheduleTeardown(roomKey);
     }
