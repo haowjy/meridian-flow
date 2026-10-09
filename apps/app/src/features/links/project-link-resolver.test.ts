@@ -9,7 +9,7 @@ import { expect, it, vi } from "vitest";
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import {
   classifyLinkTarget,
-  createLinkResolution,
+  createLinkAnswerCache,
   type LinkKey,
   type LinkResolutionEntry,
 } from "@/core/editor/links";
@@ -69,8 +69,8 @@ const ROWS: Row[] = [
   {
     rule: "a doc ref the complete index holds resolves locally, wherever it lives now",
     links: [{ ref: `doc:${KAEL}`, href: "manuscript://Old Kael.md" }],
-    before: ["resolved:Kael"],
-    after: ["resolved:Kael"],
+    before: ["document:Kael"],
+    after: ["document:Kael"],
     asked: [],
   },
   {
@@ -85,8 +85,8 @@ const ROWS: Row[] = [
   {
     rule: "a no-ref link the index holds at its address resolves locally",
     links: [{ ref: null, href: "Kael.md" }],
-    before: ["resolved:Kael"],
-    after: ["resolved:Kael"],
+    before: ["document:Kael"],
+    after: ["document:Kael"],
     asked: [],
   },
   {
@@ -101,30 +101,30 @@ const ROWS: Row[] = [
     links: [{ ref: AHEAD, href: "manuscript://Ten.md" }],
     server: { [AHEAD]: { state: "missing", uri: "manuscript://Ten.md" } },
     before: ["pending"],
-    after: ["unresolved"],
+    after: ["missing"],
     asked: [AHEAD],
   },
   {
     rule: "an ahead ref at an indexed address resolves at once, and missing keeps it",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: { state: "missing", uri: "manuscript://Nine.md" } },
-    before: ["resolved:Nine"],
-    after: ["resolved:Nine"],
+    before: ["document:Nine"],
+    after: ["document:Nine"],
     asked: [AHEAD],
   },
   {
     rule: "the server naming another document replaces the local answer",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: found(KAEL, "Kael") },
-    before: ["resolved:Nine"],
-    after: ["resolved:Kael"],
+    before: ["document:Nine"],
+    after: ["document:Kael"],
     asked: [AHEAD],
   },
   {
     rule: "the server's gone replaces the local answer",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: { state: "gone" } },
-    before: ["resolved:Nine"],
+    before: ["document:Nine"],
     after: ["gone"],
     asked: [AHEAD],
     heard: true,
@@ -134,8 +134,8 @@ const ROWS: Row[] = [
     rule: "a server failure keeps the local answer",
     links: [{ ref: AHEAD, href: "manuscript://Nine.md" }],
     server: { [AHEAD]: "fail" },
-    before: ["resolved:Nine"],
-    after: ["resolved:Nine"],
+    before: ["document:Nine"],
+    after: ["document:Nine"],
     asked: [AHEAD],
   },
   {
@@ -145,8 +145,8 @@ const ROWS: Row[] = [
       { ref: AHEAD, href: "manuscript://Ten.md" },
     ],
     server: { [AHEAD]: "fail" },
-    before: ["resolved:Kael", "pending"],
-    after: ["resolved:Kael", null],
+    before: ["document:Kael", "pending"],
+    after: ["document:Kael", null],
     asked: [AHEAD],
   },
   {
@@ -157,6 +157,14 @@ const ROWS: Row[] = [
     after: [null],
     asked: [AHEAD],
     heard: true,
+  },
+  {
+    rule: "unresolvable is no answer: drawn filled, never doesn't exist yet",
+    links: [{ ref: null, href: "Ten.md" }],
+    server: { "Ten.md": { state: "unresolvable" } },
+    before: ["pending"],
+    after: [null],
+    asked: ["Ten.md"],
   },
   {
     rule: "a holder whose address has not arrived asks the server nothing",
@@ -172,7 +180,7 @@ const ROWS: Row[] = [
 ];
 
 function show(entry: LinkResolutionEntry | null): string | null {
-  return entry?.state === "resolved" ? `resolved:${entry.document.title}` : (entry?.state ?? null);
+  return entry?.state === "document" ? `document:${entry.document.title}` : (entry?.state ?? null);
 }
 
 it("routes each link to the local index or the server", async () => {
@@ -190,7 +198,7 @@ it("routes each link to the local index or the server", async () => {
         }),
       };
     });
-    const resolution = createLinkResolution();
+    const resolution = createLinkAnswerCache();
     const scope = { projectId: "p", workId: "w", baseUri: HOLDER, ...row.scope };
     resolution.registerResolver(
       createProjectLinkResolver(scope, {

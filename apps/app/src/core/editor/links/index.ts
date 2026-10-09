@@ -60,17 +60,17 @@ export {
 } from "./link-navigation";
 export { createLinkRequester, type LinkRequester } from "./link-requester";
 export {
-  createLinkResolution,
+  createLinkAnswerCache,
+  type DocumentAnswer,
   type InternalLinkResolver,
   type LinkAnswer,
+  type LinkAnswerCache,
   type LinkKey,
   type LinkQuestion,
-  type LinkResolution,
   type LinkResolutionEntry,
   type LocalLinkAnswer,
-  type ResolvedLinkAnswer,
 } from "./link-resolution";
-export { getLinkResolution, getLinkSurface } from "./link-storage";
+export { getLinkAnswerCache, getLinkSurface } from "./link-storage";
 export {
   type LinkFollowOutcome,
   type LinkFormRequest,

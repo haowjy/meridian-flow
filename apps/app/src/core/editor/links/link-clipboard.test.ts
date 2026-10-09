@@ -6,7 +6,7 @@
 import { Schema } from "@tiptap/pm/model";
 import { expect, it } from "vitest";
 import { LINK_KEPT_REF_ATTRIBUTE, linkClipboardPlugin } from "./link-clipboard";
-import { createLinkResolution } from "./link-resolution";
+import { createLinkAnswerCache } from "./link-resolution";
 
 const schema = new Schema({
   nodes: { doc: { content: "text*" }, text: {} },
@@ -21,7 +21,7 @@ const schema = new Schema({
 const KAEL_REF = "doc:00000000-0000-4000-8000-00000000000a";
 
 function clipboard(holder: string | null, projectId = "project-a") {
-  const resolution = createLinkResolution();
+  const resolution = createLinkAnswerCache();
   resolution.registerResolver(
     { remote: async (questions) => questions.map(() => null) },
     {

@@ -14,14 +14,14 @@
  * double render throws away holds nothing.
  */
 
-import type { LinkKey, LinkResolution } from "./link-resolution";
+import type { LinkAnswerCache, LinkKey } from "./link-resolution";
 
 export type LinkRequester = {
   /** Ask about this link while it is shown; the return stops watching it. */
   watch(link: LinkKey): () => void;
 };
 
-export function createLinkRequester(resolution: LinkResolution): LinkRequester {
+export function createLinkRequester(resolution: LinkAnswerCache): LinkRequester {
   /** Watched links by ref and href, counted: two chips can show one link. */
   const watched = new Map<string, { link: LinkKey; count: number }>();
   let unsubscribe: (() => void) | null = null;

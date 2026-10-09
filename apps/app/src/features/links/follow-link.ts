@@ -9,9 +9,9 @@
  */
 
 import {
+  type LinkAnswerCache,
   type LinkFollowDisposition,
   type LinkFollowOutcome,
-  type LinkResolution,
   type LinkTarget,
   linkTargetAddress,
   linkTargetHref,
@@ -69,7 +69,7 @@ export async function followProjectLink({
   /** The stored link's ref; null for a link with none (chat's syntax links). */
   ref?: string | null;
   gesture: LinkFollowDisposition;
-  resolution: LinkResolution;
+  resolution: LinkAnswerCache;
   open: LinkDestination;
   reporter: FollowReporter;
   signal: AbortSignal;
@@ -98,7 +98,7 @@ export async function followProjectLink({
   // The common case: the link was resolved to draw it, so following is
   // instant and nothing is ever shown.
   const known = resolution.read(link);
-  if (known?.state === "resolved") {
+  if (known?.state === "document") {
     settle();
     reporter.clear();
     await open(documentRef(known.document), gesture);
@@ -113,12 +113,12 @@ export async function followProjectLink({
     reporter.clear();
     return;
   }
-  if (entry?.state === "resolved") {
+  if (entry?.state === "document") {
     reporter.clear();
     await open(documentRef(entry.document), gesture);
     return;
   }
-  if (entry?.state !== "unresolved") {
+  if (entry?.state !== "missing") {
     reporter.report(outcome("failed"));
     return;
   }

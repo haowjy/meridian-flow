@@ -28,7 +28,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 import { isRemoteDocumentRebuild } from "../anchors";
 import { linkChip, linkChipPartAttributes } from "./link-chip";
-import type { LinkKey, LinkResolution } from "./link-resolution";
+import type { LinkAnswerCache, LinkKey } from "./link-resolution";
 import { classifyLinkTarget, isInternalLinkTarget, linkTargetHref } from "./link-target";
 
 const linkResolutionPluginKey = new PluginKey<LinkResolutionPluginState>("linkResolution");
@@ -47,7 +47,7 @@ const EMPTY: LinkResolutionPluginState = {
   links: [],
 };
 
-export function linkResolutionPlugin(resolution: LinkResolution): Plugin {
+export function linkResolutionPlugin(resolution: LinkAnswerCache): Plugin {
   return new Plugin<LinkResolutionPluginState>({
     key: linkResolutionPluginKey,
 
@@ -161,7 +161,7 @@ function linkAround(doc: PMNode, linkType: MarkType, from: number, to: number): 
   return doc.rangeHasMark(Math.max(0, from - 1), Math.min(doc.content.size, to + 1), linkType);
 }
 
-function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginState {
+function read(doc: PMNode, resolution: LinkAnswerCache): LinkResolutionPluginState {
   // Nothing to draw and nothing to ask: an editor with no project behind it
   // pays for no scan.
   if (!resolution.available) return EMPTY;
@@ -206,7 +206,7 @@ function read(doc: PMNode, resolution: LinkResolution): LinkResolutionPluginStat
 export function linkStateAttributes(
   element: HTMLElement,
   link: { readonly [attribute: string]: unknown },
-  resolution: LinkResolution | null,
+  resolution: LinkAnswerCache | null,
 ): () => void {
   const target = classifyLinkTarget(String(link.href ?? ""));
   if (!resolution || !target || !isInternalLinkTarget(target)) return () => {};
@@ -219,7 +219,7 @@ export function linkStateAttributes(
     const description =
       entry?.state === "gone"
         ? t`No longer available`
-        : entry?.state === "unresolved"
+        : entry?.state === "missing"
           ? t`Doesn't exist yet`
           : null;
     if (description) element.setAttribute("aria-description", description);

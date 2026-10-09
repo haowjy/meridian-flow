@@ -40,7 +40,7 @@ import {
   relocateLink,
 } from "./link-commands";
 import { followLink, linkClickIntent, MIDDLE_BUTTON } from "./link-navigation";
-import { createLinkResolution, type LinkKey } from "./link-resolution";
+import { createLinkAnswerCache, type LinkKey } from "./link-resolution";
 import { linkResolutionPlugin } from "./link-resolution-decorations";
 import { getLinkSurface, LINK_SURFACE_NAME, type LinkSurfaceStorage } from "./link-storage";
 import { createLinkSurface, type LinkMenuTarget, type LinkPoint } from "./link-surface";
@@ -85,7 +85,7 @@ export const LinkSurfaceExtension = Extension.create({
   name: LINK_SURFACE_NAME,
 
   addStorage(): LinkSurfaceStorage {
-    return { surface: createLinkSurface(), resolution: createLinkResolution() };
+    return { surface: createLinkSurface(), resolution: createLinkAnswerCache() };
   },
 
   onDestroy() {

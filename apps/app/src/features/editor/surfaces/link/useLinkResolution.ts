@@ -9,7 +9,7 @@
 import type { Editor } from "@tiptap/core";
 import { useMemo, useSyncExternalStore } from "react";
 
-import { getLinkResolution, type LinkKey, type LinkResolutionEntry } from "@/core/editor/links";
+import { getLinkAnswerCache, type LinkKey, type LinkResolutionEntry } from "@/core/editor/links";
 
 const NO_SUBSCRIPTION = () => () => {};
 const NOTHING = () => null;
@@ -18,7 +18,7 @@ export function useLinkResolution(
   editor: Editor | null,
   link: LinkKey | null,
 ): LinkResolutionEntry | null {
-  const resolution = useMemo(() => getLinkResolution(editor), [editor]);
+  const resolution = useMemo(() => getLinkAnswerCache(editor), [editor]);
   const ref = link?.ref ?? null;
   const href = link?.href ?? null;
   return useSyncExternalStore(

@@ -74,7 +74,7 @@ export function LinkMenu({
   const close = () => surface.closeMenu();
   const resolution = useLinkResolution(editor, { ref: menu.ref, href: menu.href });
   const label =
-    resolution?.state === "resolved"
+    resolution?.state === "document"
       ? resolution.document.title
       : menu.target
         ? linkTargetLabel(menu.target)
@@ -102,12 +102,12 @@ export function LinkMenu({
       }}
     >
       <EditorMenuLabel>{label}</EditorMenuLabel>
-      {resolution?.state === "resolved" ? (
+      {resolution?.state === "document" ? (
         <EditorMenuLabel className="font-normal text-muted-foreground">
           {resolution.document.path}
         </EditorMenuLabel>
       ) : null}
-      {resolution?.state === "unresolved" ? (
+      {resolution?.state === "missing" ? (
         <EditorMenuLabel>{t`Doesn't exist yet`}</EditorMenuLabel>
       ) : null}
       {resolution?.state === "gone" ? (

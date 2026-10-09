@@ -14,7 +14,7 @@
  * no longer readable. It is not "nothing at this address yet", and it never
  * falls back to the address.
  *
- * Unresolved is a normal, rendered state, not an error: serial writers link
+ * Missing is a normal, rendered state, not an error: serial writers link
  * chapters and characters before they exist. A FAILED request is a different thing
  * entirely and caches nothing, because a link the editor could not ask about
  * must never be drawn as a link that does not exist.
@@ -61,8 +61,8 @@ export type LinkKey = { ref: string | null; href: string };
 
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
-  | { state: "resolved"; document: ResolvedDocumentLink }
-  | { state: "unresolved"; document: null }
+  | { state: "document"; document: ResolvedDocumentLink }
+  | { state: "missing"; document: null }
   /** A ref whose document the reader can no longer reach. Never followable. */
   | { state: "gone"; document: null };
 
@@ -85,9 +85,9 @@ export type LinkQuestion = { ref: string | null; target: LinkTarget };
 export type LocalLinkAnswer =
   | { kind: "answered"; answer: LinkAnswer }
   | { kind: "unasked" }
-  | { kind: "ask"; provisional: ResolvedLinkAnswer | null };
+  | { kind: "ask"; provisional: DocumentAnswer | null };
 
-export type ResolvedLinkAnswer = Extract<LinkAnswer, { state: "resolved" }>;
+export type DocumentAnswer = Extract<LinkAnswer, { state: "document" }>;
 
 /**
  * The port. `local` runs synchronously when a question is asked, so local
@@ -102,7 +102,7 @@ export type InternalLinkResolver = {
   remote: (questions: readonly LinkQuestion[]) => Promise<readonly (LinkAnswer | null)[]>;
 };
 
-export type LinkResolution = {
+export type LinkAnswerCache = {
   subscribe: (listener: () => void) => () => void;
   /** False while no port is registered, which is a real state and not a bug. */
   readonly available: boolean;
@@ -165,12 +165,12 @@ const ASK: LocalLinkAnswer = Object.freeze({ kind: "ask", provisional: null });
  * answer the writer is already looking at.
  */
 function settledOver(
-  provisional: ResolvedLinkAnswer | null,
+  provisional: DocumentAnswer | null,
   entry: LinkResolutionEntry | null,
 ): LinkResolutionEntry | null {
   if (!provisional) return entry;
   if (entry?.state === "gone") return entry;
-  if (entry?.state === "resolved" && entry.document.documentId !== provisional.document.documentId)
+  if (entry?.state === "document" && entry.document.documentId !== provisional.document.documentId)
     return entry;
   return provisional;
 }
@@ -197,7 +197,7 @@ type Request = {
   readonly promise: Promise<LinkResolutionEntry | null>;
   readonly settle: (entry: LinkResolutionEntry | null) => void;
   /** The local answer shown while the server is asked; see `settledOver`. */
-  readonly provisional: ResolvedLinkAnswer | null;
+  readonly provisional: DocumentAnswer | null;
   /** Someone is waiting through `resolve()`, so retirement carries it forward. */
   awaited: boolean;
 };
@@ -221,7 +221,7 @@ type Generation = {
   running: number;
 };
 
-export function createLinkResolution(): LinkResolution {
+export function createLinkAnswerCache(): LinkAnswerCache {
   const listeners = new Set<() => void>();
   /** The only generation anyone can read. Null until a port registers. */
   let current: Generation | null = null;

@@ -25,6 +25,7 @@ import type { ResolvedDocumentLink } from "@meridian/contracts/protocol";
 
 import { resolveDocumentLinks } from "@/client/api/document-links-api";
 import {
+  type DocumentAnswer,
   type InternalLinkResolver,
   indexedDocumentAt,
   indexedDocumentAtExactly,
@@ -32,7 +33,6 @@ import {
   type LinkTarget,
   type LocalLinkAnswer,
   linkTargetHref,
-  type ResolvedLinkAnswer,
 } from "@/core/editor/links";
 
 import type { LinkableDocument, LinkableDocumentIndex } from "./useLinkableDocuments";
@@ -57,7 +57,7 @@ export type LinkResolutionScope = {
 };
 
 const GONE: LinkAnswer = Object.freeze({ state: "gone", document: null });
-const UNRESOLVED: LinkAnswer = Object.freeze({ state: "unresolved", document: null });
+const MISSING: LinkAnswer = Object.freeze({ state: "missing", document: null });
 const UNASKED: LocalLinkAnswer = Object.freeze({ kind: "unasked" });
 
 const answered = (answer: LinkAnswer): LocalLinkAnswer => ({ kind: "answered", answer });
@@ -80,7 +80,8 @@ export function createProjectLinkResolver(
           parsed?.kind === "doc"
             ? index.documents.find((document) => document.documentId === parsed.documentId)
             : addressedDocument(index.documents, target, baseUri);
-        if (local) return answered(resolvedAnswer(local));
+        const answer = local ? documentAnswer(local) : null;
+        if (answer) return answered(answer);
       }
       // Rule 4 on the client, at once: an ahead ref that may still be
       // unsettled names whatever the complete index holds at exactly its
@@ -89,7 +90,7 @@ export function createProjectLinkResolver(
         parsed?.kind === "ahead" && index.complete
           ? indexedDocumentAtExactly(index.documents, linkTargetHref(target))
           : null;
-      const provisional = atAddress ? resolvedEntry(atAddress) : null;
+      const provisional = atAddress ? documentAnswer(atAddress) : null;
       // A holder whose own address has not arrived asks the server nothing: a
       // question with no holder address is chat's, which may fall back to
       // previous locations.
@@ -125,11 +126,16 @@ function addressedDocument(
   return resolved ? indexedDocumentAt(documents, resolved.uri) : null;
 }
 
-function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer {
+/**
+ * The client's answer for the API's. `unresolvable` is no answer at all: the
+ * server could not ask the question, which is not "nothing there", so it never
+ * draws dashed or offers Create.
+ */
+function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   switch (answer.state) {
     case "document": {
       const { document } = answer;
-      return resolvedAnswer({
+      return documentAnswer({
         documentId: document.id,
         title: document.title,
         uri: document.uri,
@@ -139,18 +145,15 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer {
     case "gone":
       return GONE;
     case "missing":
+      return MISSING;
     case "unresolvable":
-      return UNRESOLVED;
+      return null;
   }
 }
 
-function resolvedAnswer(document: LinkableDocument): LinkAnswer {
-  return resolvedEntry(document) ?? UNRESOLVED;
-}
-
-function resolvedEntry(document: LinkableDocument): ResolvedLinkAnswer | null {
+function documentAnswer(document: LinkableDocument): DocumentAnswer | null {
   const link = resolvedLink(document);
-  return link ? { state: "resolved", document: link } : null;
+  return link ? { state: "document", document: link } : null;
 }
 
 function resolvedLink(document: LinkableDocument): ResolvedDocumentLink | null {

@@ -43,7 +43,7 @@ import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState 
 
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { useWorks } from "@/client/query/useWorks";
-import { createLinkRequester, createLinkResolution } from "@/core/editor/links";
+import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
 import {
   type LinkDestination,
   type LinkFollowDialog,
@@ -120,7 +120,7 @@ export function useChatLinkFollowing({
   );
 
   const { outcome, reporter } = useFollowOutcomeState();
-  const [resolution] = useState(createLinkResolution);
+  const [resolution] = useState(createLinkAnswerCache);
   const [requester] = useState(() => createLinkRequester(resolution));
   const follower = useLinkFollower({ scope, index, resolution, active, open, reporter });
 
