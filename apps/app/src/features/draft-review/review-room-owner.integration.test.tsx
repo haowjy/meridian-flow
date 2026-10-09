@@ -91,8 +91,14 @@ it.each([
   await fixture.render(async (probe) => {
     const controller = horizon === "Work" ? probe().chat.controller : probe().editor.controller;
     await act(async () => controller.enterInlineReview("document-a", "draft-a"));
-    if (horizon === "Work") await probe().moveChatToWork(workC);
-    else await act(async () => controller.exitInlineReview());
+    if (horizon === "Work") {
+      await probe().moveChatToWork(workC);
+      expect(
+        fixture.network.getDraftPreview.mock.calls.some(
+          ([, requestedWork]) => requestedWork === workC.id,
+        ),
+      ).toBe(false);
+    } else await act(async () => controller.exitInlineReview());
     if (horizon === "account") {
       // Closing the account destroys its query cache and retires its claims.
       probe().queryClient.clear();
