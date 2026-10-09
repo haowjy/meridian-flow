@@ -16,6 +16,13 @@ Y.XmlElement CRDT item ID (`clientID`, `clock`); the displayed prefix is unique
 within the current sibling set and is not durable identity. Kernel callers see
 only the neutral `BlockRef`.
 
+### Link binding (`src/links/`)
+Parse is pure syntax: every parsed link, `image` and `figure` has `ref: null`.
+The handler prepares the host's link scope, then the resolver binds written
+nodes through the command's `WriteLinkAssigner` (ref assignment) before block
+alignment, so bound nodes are the resolver→apply currency. Serialization
+spells through the bound codec. See [link identity](link-correspondence.md).
+
 ### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/apply-edits.ts`)
 The resolver emits `SemanticEditIRV1` bound to the exact input Yjs revision. It
 declares scope and deletion ranges plus a disjoint, exhaustive partition of

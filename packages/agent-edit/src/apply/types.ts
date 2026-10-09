@@ -1,3 +1,4 @@
+import type { SpelledLinkFact } from "@meridian/markup";
 import type { Fragment } from "prosemirror-model";
 import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
@@ -110,6 +111,8 @@ export interface ConcurrentEditRun {
   blocks: string[];
   /** Explicit deletion evidence. A tombstone is never emitted without its captured body. */
   tombstones: Array<{ hash: string; capturedBody: string }>;
+  /** Host-only: the links this run's rendered blocks showed the model (never in model text). */
+  shownLinks?: readonly SpelledLinkFact[];
 }
 
 export type ApplyResult =

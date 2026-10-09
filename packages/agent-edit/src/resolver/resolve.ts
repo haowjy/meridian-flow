@@ -1,4 +1,4 @@
-import { CodecParseError, type ParsedContent, type PMNode } from "@meridian/markup";
+import { CodecParseError, type ParsedContent, walkLinkOccurrences } from "@meridian/markup";
 import { Fragment } from "prosemirror-model";
 import {
   type EditResolutionErrorCode,
@@ -12,13 +12,16 @@ import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { LineageRange } from "../lineage/range-set.js";
 import { normalizeLineageRanges } from "../lineage/range-set.js";
+import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
   findTextMatches,
+  type SplicedGroup,
   serializeBlockBody,
   serializePmBlockBody,
+  spliceFindMatches,
   type TextFindMatch,
 } from "./find.js";
 import { locateBlockByHash } from "./hash-locator.js";
@@ -50,11 +53,12 @@ export interface ResolveWriteContext {
   model: AgentEditModel;
   codec: AgentEditCodec;
   /**
-   * Binds freshly parsed nodes against the command's prepared link scope
-   * (`bindSources` today); parse itself is pure syntax. Copies never pass
-   * through it: their nodes already carry what they name.
+   * Ref assignment over the command's prepared link scope; parse itself is
+   * pure syntax. Every door that turns written Markdown into nodes binds
+   * through it before block alignment and no-op detection. Copies never do:
+   * their nodes already carry what they name. Absent, nodes stay as parsed.
    */
-  bindWritten?: (blocks: readonly PMNode[]) => PMNode[];
+  links?: WriteLinkAssigner;
   /** Exact revision whose live block handles and source ranges the resolver inspects. */
   inputRevision?: string;
 }
@@ -148,7 +152,8 @@ function resolveInsert(
 
   const lowered = lowerInsertPosition(ctx, params);
   if (!lowered.ok) return lowered;
-  return { ok: true, edits: [insertEdit(params, lowered.after, parsed.blocks)] };
+  const blocks = params.blocks ? parsed.blocks : bindSpan(ctx, [], parsed.blocks);
+  return { ok: true, edits: [insertEdit(params, lowered.after, blocks)] };
 }
 
 const COPY_WITH_FIND_MESSAGE = "from copies whole blocks, so it can't be combined with find";
@@ -251,11 +256,12 @@ function normalizeParams(
   return { ...params, content };
 }
 
-function bound(
-  ctx: Pick<ResolveWriteContext, "bindWritten">,
-  parsed: ParsedContent,
-): ParsedContent {
-  return ctx.bindWritten ? { ...parsed, blocks: ctx.bindWritten(parsed.blocks) } : parsed;
+function bindSpan(
+  ctx: Pick<ResolveWriteContext, "links">,
+  old: readonly Block[],
+  written: readonly Block[],
+): Block[] {
+  return ctx.links ? ctx.links.bindSpan(old, written) : [...written];
 }
 
 function validateContent(
@@ -267,9 +273,9 @@ function validateContent(
     return { ok: true, parsed: { blocks: [] } };
   }
   if (params.command === "remove") return { ok: true, parsed: { blocks: [] } };
-  if (params.parsedContent) return { ok: true, parsed: bound(ctx, params.parsedContent) };
+  if (params.parsedContent) return { ok: true, parsed: params.parsedContent };
   try {
-    return { ok: true, parsed: bound(ctx, ctx.codec.parse(params.content)) };
+    return { ok: true, parsed: ctx.codec.parse(params.content) };
   } catch (cause) {
     if (cause instanceof CodecParseError) {
       return error("invalid_write", cause.message, { line: cause.line, column: cause.column });
@@ -358,26 +364,22 @@ function lowerFindMatches(
     const groupSource = group.elements
       .map((element) => serializeBlockBody(ctx, element))
       .join("\n\n");
-    const replacedSource = spliceFindMatches(
+    const spliced = spliceFindMatches(
       groupSource,
       group.matches,
       group.rangeStart,
       params.content,
       command,
     );
-    const reconstructed = parseReplacementRange(ctx, replacedSource);
+    const scope: BlockScope = {
+      kind: "range",
+      blocks: group.elements,
+      startIndex: group.startIndex,
+      endIndex: group.endIndex,
+    };
+    const reconstructed = parseReplacementRange(ctx, scope, groupSource, spliced);
     if (!reconstructed.ok) return reconstructed;
-    const lowered = replaceScope(
-      ctx,
-      params,
-      {
-        kind: "range",
-        blocks: group.elements,
-        startIndex: group.startIndex,
-        endIndex: group.endIndex,
-      },
-      reconstructed.parsed,
-    );
+    const lowered = replaceScope(ctx, params, scope, reconstructed.parsed, { bound: true });
     if (!lowered.ok) return lowered;
     edits.push(...lowered.edits);
   }
@@ -398,6 +400,10 @@ function lowerPlainTextFindMatches(
     if (match.elements.length !== 1) return null;
     const [element] = match.elements;
     if (match.rangeSource !== ctx.model.getText(element)) return null;
+    // A block holding a link goes through binding, so a ref- or title-only
+    // change is never filtered out as equal text.
+    const node = ctx.projectedBlocks()[match.startIndex];
+    if (!node || walkLinkOccurrences([node]).length > 0) return null;
     const existing = byBlock.get(element);
     if (existing) existing.push(match);
     else byBlock.set(element, [match]);
@@ -489,30 +495,26 @@ function groupFindMatches(matches: readonly TextFindMatch[]): FindMatchGroup[] {
   return groups;
 }
 
-function spliceFindMatches(
-  source: string,
-  matches: readonly TextFindMatch[],
-  rangeStart: number,
-  content: string,
-  command: WriteCommandName,
-): string {
-  let result = source;
-  for (const match of [...matches].reverse()) {
-    const start = match.rangeStart + match.matchStart - rangeStart;
-    const end = match.rangeStart + match.matchEnd - rangeStart;
-    const spliceStart = command === "insert" ? end : start;
-    result = result.slice(0, spliceStart) + content + result.slice(end);
-  }
-  return result;
-}
-
 function parseReplacementRange(
   ctx: ConcreteResolveContext,
-  source: string,
+  scope: BlockScope,
+  oldText: string,
+  spliced: SplicedGroup,
 ): ResolveWriteFailure | { ok: true; parsed: ParsedContent } {
+  const source = spliced.text;
   if (source.length === 0) return { ok: true, parsed: { blocks: [] } };
   try {
-    return { ok: true, parsed: bound(ctx, ctx.codec.parse(source)) };
+    if (!ctx.links) return { ok: true, parsed: ctx.codec.parse(source) };
+    const oldGroup = ctx
+      .projectedBlocks()
+      .slice(scope.startIndex, scope.startIndex + scope.blocks.length);
+    const blocks = ctx.links.bindSplice({
+      oldGroup,
+      oldText,
+      newText: source,
+      splice: spliced.splice,
+    });
+    return { ok: true, parsed: { blocks } };
   } catch (cause) {
     if (cause instanceof CodecParseError) {
       return error("invalid_write", cause.message, { line: cause.line, column: cause.column });
@@ -532,14 +534,16 @@ function replaceScope(
   params: NormalizedParams,
   scope: BlockScope,
   parsed: ParsedContent,
+  options: { bound?: true } = {},
 ): ResolveWriteResultWithoutIr {
   const edits: ResolvedEdit[] = [];
   const oldBlocks = scope.blocks;
-  const newBlocks = parsed.blocks;
   // A scope is always a contiguous run of top-level blocks.
   const oldNodes = ctx
     .projectedBlocks()
     .slice(scope.startIndex, scope.startIndex + oldBlocks.length);
+  // Bound before alignment, so an unchanged block stays `.eq` and is kept.
+  const newBlocks = options.bound ? parsed.blocks : bindSpan(ctx, oldNodes, parsed.blocks);
   let anchor: BlockRef | undefined =
     scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   let pendingInsert: Block[] = [];

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- When the AI edits a link's words, rewrites the paragraph around it, or writes a link with a path it read before the target moved, the link keeps pointing at the same document. Words it unlinks stay plain, and a link it points somewhere new goes there.
+- Development: agent-edit binds every written link, image and figure to a stored ref at each write door before block alignment (correspondence, latest showing, then classify, resolve or mint), restores links outside a find splice verbatim, registers minted ahead refs before applying, and reports host-only shown-link facts on outcomes, receipts and concurrent runs. A real two-client Yjs merge matrix covers #729, #730, #728 and undo after a move in both client orders and both merge directions.
 - Downloading a chapter whose live text can't be read right now fails with a retryable error (503) instead of serving a stored copy that could show a link or image at a path it has since moved from.
 - Development: document revision tokens move from `y1:` to `y2:` and now cover where each linked document and image sits, so moving a linked chapter changes the revision of the chapters that link to it.
 
