@@ -79,10 +79,12 @@ re-read, and the claim ending any other way withdraws the prediction. Every chan
 to a claim of the Work is dispatched whichever review is rendered; the reducer
 orders it with `enterInline` and ignores it when it names another draft, so a draft
 entered and answered in one flush still settles (nothing reads the last rendered
-identity). The closing answer outlives the claim as a confirmation
-(`closedByCommand`, with the document's name read when it landed): it is adopted by
-a review that opens on the draft afterwards and expires with the list reads that
-started before it, like any confirmation.
+identity). The closing answer (`closedByCommand`, with the document's name read
+when it landed) lives only as long as the claim: nothing of it is kept once the
+claim is released, because the server reuses a closed draft's id for the next
+proposal and a retained answer would close that fresh generation. A review that
+opens on the draft after the claim ended therefore shows whatever the draft's
+list row and preview say now.
 The claim, not the sender, owns this; a refused duplicate never begins it.
 `useChangeCommandRunner` is the transport surfaces use: the Editor's controller
 runs a draft it has open in the caller's Work (the toast and focus belong to the

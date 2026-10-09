@@ -10,8 +10,10 @@
 
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import {
+  readDraftsAfterCommands,
+  resetDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import {
   applied,
   change,
@@ -62,6 +64,21 @@ function twoDrafts() {
   mocks.getDraftPreview.mockImplementation(async (_p, _w, _d, id: string) =>
     id === "draft-b" ? { ...previewOf("3"), draftId: "draft-b" } : previewOf("1", "2"),
   );
+}
+
+/** A draft-list read of another Work that stays out until settled, holding the global read fence. */
+function deferredRead(scope: { projectId: string; workId: string }) {
+  let finish!: (rows: []) => void;
+  const read = readDraftsAfterCommands(
+    scope,
+    () => new Promise<[]>((resolve) => (finish = resolve)),
+  );
+  return {
+    settle: async () => {
+      finish([]);
+      await read;
+    },
+  };
 }
 
 /** A command whose answer the test releases. */
@@ -236,43 +253,73 @@ describe("a draft entered in the same flush as its closing answer", () => {
   });
 });
 
-describe("a draft entered after its closing answer, while an earlier list read is still in flight", () => {
-  it("opens on No changes left, not on a draft the answer already closed", async () => {
-    const answer = heldCommand(mocks.discardDraft);
+describe("a draft the server reuses for the next proposal after a closing answer", () => {
+  /**
+   * The Chat's last change on unopened B closes it while an unrelated list read
+   * (another Work's) is still out; an agent then proposes anew on B's same id,
+   * and the writer opens B. The closing answer belongs to the generation it closed.
+   */
+  it.each([
+    [
+      "apply",
+      () => mocks.applyDraftChanges,
+      (r: ScopeProbe["chatRunner"]) => r.applyChanges(draftB, change("3")),
+      () => applied(true),
+    ],
+    [
+      "discard",
+      () => mocks.discardDraft,
+      (r: ScopeProbe["chatRunner"]) => r.discardChanges(draftB, change("3")),
+      () => discarded(true),
+    ],
+  ] as const)("%s: opens on the new proposal, not on No changes left, before and after the old read settles", async (_mode, command, send, closing) => {
+    const answer = heldCommand(command());
     await renderReviewScopes(async (probe) => {
       await groupsListed(probe);
       await open(probe, draftA);
       const view = await probe().mountDraftChanges(target(draftB));
       await vi.waitFor(() => expect(view().status).toBe("ready"));
-      let done!: Promise<unknown>;
-      await act(async () => {
-        done = probe().chatRunner.discardChanges(draftB, change("3"));
-      });
-
-      // A read of the Work's list started before the answer and is still out: it lists B.
-      let earlierRead!: (response: unknown) => void;
-      mocks.listWorkDrafts.mockReturnValueOnce(new Promise((resolve) => (earlierRead = resolve)));
-      mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
-      mocks.getDraftPreview.mockImplementation(async (_p, _w, _d, id: string) =>
-        id === "draft-b" ? { status: "gone" } : previewOf("1", "2"),
-      );
-      await act(async () => {
-        void probe().queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+      const otherWorkRead = deferredRead({ projectId: "project-a", workId: "work-unrelated" });
+      try {
+        let done!: Promise<unknown>;
+        await act(async () => {
+          done = send(probe().chatRunner);
         });
-      });
-      await act(async () => {
-        answer(answeredFor(draftB, discarded(true)));
-        await done;
-      });
+        mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+        mocks.getDraftPreview.mockImplementation(async (_p, _w, _d, id: string) =>
+          id === "draft-b" ? { status: "gone" } : previewOf("1", "2"),
+        );
+        await act(async () => {
+          answer(answeredFor(draftB, closing()));
+          await done;
+        });
 
-      // The claim is gone but the answer stands for the writer who opens B from the stale list.
-      await open(probe, draftB);
-      expect(probe().editor.controller.inlineReview).toMatchObject({
-        draftId: "draft-b",
-        completion: { phase: "closed", documentName: "Chapter 13" },
-      });
-      await act(async () => earlierRead({ drafts: [listed, listedB] }));
+        // The agent proposes again on the same draft id.
+        mocks.listWorkDrafts.mockResolvedValue({
+          drafts: [listed, { ...listedB, updatedAt: "2026-10-09T04:00:00.000Z" }],
+        });
+        mocks.getDraftPreview.mockImplementation(async (_p, _w, _d, id: string) =>
+          id === "draft-b" ? { ...previewOf("4"), draftId: "draft-b" } : previewOf("1", "2"),
+        );
+        await act(async () => {
+          await probe().queryClient.invalidateQueries();
+        });
+        await vi.waitFor(() =>
+          expect(view().items.map((item) => item.change.classId)).toEqual(["class-4"]),
+        );
+
+        await probe().openDraft(draftB);
+        await open(probe, draftB);
+        expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+        expect(probe().header.view.finished).toBe(false);
+        expect(probe().header.view.items.map((item) => item.change.classId)).toEqual(["class-4"]);
+
+        await act(async () => otherWorkRead.settle());
+        expect(probe().editor.controller.inlineReview?.completion).toBeUndefined();
+        expect(probe().header.view.items.map((item) => item.change.classId)).toEqual(["class-4"]);
+      } finally {
+        await act(async () => otherWorkRead.settle());
+      }
     });
   });
 });
