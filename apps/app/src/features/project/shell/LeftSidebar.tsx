@@ -13,8 +13,10 @@ import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
-import { useOpenChatDocument, useOpensBesideChat } from "../context/open-chat-document";
+import { serverTabFromFile } from "../context/context-tab-from-file";
+import { useOpenProjectDocument } from "../context/open-project-document";
 import { useDockViewStore } from "../dock/dock-view-store";
+import { useDockPlacement } from "../dock/use-dock-placement";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
@@ -60,13 +62,20 @@ export function LeftSidebar({
   onSelectContextPath,
   onCollapse,
 }: LeftSidebarProps) {
-  // A tree click is a document door like the chat's: beside the chat on the Chat screen,
-  // an Editor tab elsewhere (the screen rule lives in `useOpenChatDocument`).
-  const openDocument = useOpenChatDocument(projectId);
-  const besideChat = useOpensBesideChat();
+  // A tree click is a known file, so it enters at the dock's commit boundary: beside the
+  // chat on the Chat screen (the dock hosts images, PDFs and binaries in its viewer too),
+  // and the Editor path everywhere else (see `use-dock-placement`).
+  const placement = useDockPlacement();
+  const openDocument = useOpenProjectDocument(projectId);
   const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
-    // The dock hosts images, PDFs and binaries in its viewer; elsewhere they keep the route.
-    if (!file.editable && !besideChat) {
+    if (placement.besideChat) {
+      const tab = serverTabFromFile(scheme, file, {});
+      if (tab) {
+        placement.commit(tab);
+        return;
+      }
+    }
+    if (!file.editable) {
       onSelectContextPath(file.path, scheme);
       return;
     }

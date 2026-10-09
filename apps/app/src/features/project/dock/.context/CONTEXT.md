@@ -50,43 +50,48 @@ replaces the first. `setDockView` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the writer's last explicit view.
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped
 when the project or the screen changes, and a Work's note when the Work changes; a
-Chat-screen occupant stays on the Chat screen. Every change bumps `revision`; a slow open
-(`use-open-document-id-in-dock.ts`) reads it first and stands down if it moved, which is
-the only race handling the slot has. Nothing is persisted across reloads.
+Chat-screen occupant stays on the Chat screen (the sync also records the Work on the Work
+screen, which the title menu browses). Every intent bumps `revision`: an async attempt calls
+`claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
+came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
+handling the slot has. Nothing is persisted across reloads.
 
-`useOpenDocumentInDock()` is the way in for a Work Files note. It opens the dock
-document and `revealDock("document")`; on the Editor screen and on the phone it opens
-an Editor route instead, so those never hold a dock document. `DockReveal` is
-`"chat" | "document"`: a document reveal only opens the dock, the slot already holds
-the document.
+Where a document opens is decided once, in `use-dock-placement.ts`, which also owns the one commit
+into the dock (`useDockPlacement().commit`, with `revealDock("document")`). Two rules differ on
+purpose: a chat or Scratch pick goes *beside the chat* (`opensBesideChat`: the Chat screen, wide), and
+Work Files plus the dock's own title menu may also replace the dock document on the Work screen
+(`dockHoldsDocument`). The Editor screen and the phone never hold a dock document, so those picks open
+an Editor tab or route (`useOpenDocumentInDock`, `useOpenScratchNote`). `DockReveal` is
+`"chat" | "document"`: a document reveal only opens the dock, the slot already holds the document.
 
-`useOpenDocumentIdInDock(projectId)` is the way in for a Recent row on the Chat
-screen's context rail. A row carries only a document id, so
-`useLocateProjectDocument` resolves it to its scheme, owner (Work, lineage or project
-area) and file from the resource replica, then the server
-(`ProjectDocumentNavigationAdapter.locate`; nothing navigates and no live session is
-admitted), and `useOpenDocumentInDock` opens the resulting tab. Images, PDFs and
-binaries open as viewer tabs through the viewer host. A store revision (see above) keeps a
-slow lookup from replacing a newer pick; an unresolvable document announces an error.
-The phone has no context rail, so a phone never opens a Recent row here.
+An id-keyed door (a Recent row, a chat door) resolves through the navigation adapter's `open`, the
+one resolution operation (replica first, then the server); images, PDFs and binaries open as viewer
+tabs through the viewer host, and an unresolvable id announces an error. A known catalog file (a title
+menu pick, a left-tree click, a Scratch row) enters at the commit boundary directly. The phone has no
+context rail, so a phone never opens a Recent row here.
 
 With no document open, the Chat screen's rail header shows the same chip, "Open document", through `DockTitleMenu` (one component for both states): it opens at the root list with the project title and
 no actions, and a pick opens in the dock like any other. On that screen the left project tree's
-file clicks are chat doors too (`LeftSidebar` opens through `useOpenChatDocument`, images, PDFs and
+file clicks are chat doors too (`LeftSidebar` commits the known file to the dock, images, PDFs and
 binaries included since the dock's viewer host shows them) and the tree's highlighted row follows the
 dock document; on the Editor and Work screens and the phone a tree click is unchanged.
 
 Chat doors (link chips, receipt rows, passage and tool-result doors, `@` references) open
 through `useOpenChatDocument` (`../context/open-chat-document.ts`), the one wrapper they share
-over `useOpenProjectDocument`. It offers the resolved tab to `BesideChatContext`, which
-`ChatDocumentsBesideProvider` fills only when the chat is in the middle (`opensBesideChat`:
-Chat screen, not phone): the tab then opens in the dock slot and the address stays on the chat.
+over `useOpenProjectDocument`. It claims the dock at the start of the intent and offers the resolved
+tab to `BesideChatContext`, which `ChatDocumentsBesideProvider` fills only when the chat is in the
+middle (`opensBesideChat`: Chat screen, not phone): the tab then opens in the dock slot and the
+address stays on the chat.
 The adapter's `beside` request hook does this before any route change, so the same open
 result (and its session admission for passage and change-trail landing) is returned. On the
 Editor and Work screens (the chat is the dock) and on the phone nothing is registered and doors
 open Editor tabs and routes as before; a new-tab gesture keeps its background tab. The route-request
 door (`ProjectChatContextNavigationProvider`) resolves its document in the catalog first, spelling a
-bare `scratch://x` with the chat's handle, and falls back to the route when nothing is found.
+bare `scratch://x` with the chat's owner handle, claims the dock before that lookup, hands the
+resolved file straight to passage handling (no second lookup) and falls back to the route only when
+the document is actually absent. The title menu's root Scratch is the one on screen
+(`use-dock-browse-scratch.ts`: the displayed chat's, resolved by `useDisplayedThread` so a subagent
+keeps its Scratch, or the Work-screen route's Work), separate from the open document's own area.
 
 `useOpenScratchNote()` is the way in for a note picked from the rail's Scratch section
 (`../chat/ChatScratch.tsx`): the dock document on the Chat screen only, where

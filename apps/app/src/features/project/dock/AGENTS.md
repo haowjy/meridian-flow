@@ -9,7 +9,7 @@ segmented switch. It can also hold **one document** on Work and Chat, shown in
 the standard editor and replacing the views (and their switch) until closed. Work
 Files notes open there on the Work screen; a note picked from the rail's Scratch section
 opens there on the Chat screen only (`use-open-scratch-note.ts`), as does a Recent
-row of the context rail (`use-open-document-id-in-dock.ts`).
+row of the context rail (an id-keyed door through the navigation adapter).
 The **Changes** view is the work-scoped settle surface: every document with
 pending AI changes, grouped into server-vended Discard-class cards carrying
 selective Discard. Document-level Apply all stays in the review header. It works on every

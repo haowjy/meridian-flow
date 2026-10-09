@@ -757,7 +757,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
   return (
     <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
-      <ChatDocumentsBesideProvider projectId={props.projectId}>
+      <ChatDocumentsBesideProvider>
         <ProjectShell
           layout={layout}
           surfaces={stableSurfaces}

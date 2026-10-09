@@ -6,13 +6,13 @@
  */
 import { t } from "@lingui/core/macro";
 import { Clock } from "lucide-react";
-
 import type { ListQueryStatus } from "@/client/query/list-query";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
+import { announceError } from "@/client/stores";
 import { fileKindIcon } from "../context/context-file-icon";
+import { useOpenChatDocument } from "../context/open-chat-document";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import { useOpenDocumentIdInDock } from "../dock/use-open-document-id-in-dock";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
 
 /** Thread-context rail (Chat destination, right edge). */
@@ -28,7 +28,12 @@ export type ContextSidebarProps = {
 
 export function ContextSidebar({ threadId, projectId, visible, onClose }: ContextSidebarProps) {
   const recent = useThreadRecentDocuments(threadId);
-  const openDocumentId = useOpenDocumentIdInDock(projectId ?? "");
+  const openDocument = useOpenChatDocument(projectId ?? undefined);
+  const openRecent = async (documentId: string) => {
+    // On the Chat screen this opens beside the chat; an unreachable document says so.
+    const result = await openDocument({ documentId });
+    if (result.kind === "unavailable") announceError(t`Couldn’t open this document.`);
+  };
 
   return (
     <aside aria-label={t`Chat context`} className="flex h-full min-h-0 w-full flex-col">
@@ -45,7 +50,7 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
             icon={Clock}
             status={recent}
             rows={recent.documents}
-            onOpen={(document) => void openDocumentId(document.documentId)}
+            onOpen={(document) => void openRecent(document.documentId)}
             messages={{
               disabled: t`Open a chat to see what the AI referenced.`,
               loading: t`Loading recent documents…`,

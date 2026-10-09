@@ -1,38 +1,22 @@
 /**
- * Opens a note picked from the rail's Scratch section next to that chat.
- *
- * The chat is in the middle on the Chat screen, so the note opens in the
- * dock's document, covering the context rail until closed. Everywhere else the
- * chat is docked beside the middle pane or is a phone sheet, so the note opens
- * where the middle pane is: an Editor tab, or the phone's full-screen
- * document. Work Files notes do not use this: they open in the dock on the
- * Work screen (`useOpenDocumentInDock`).
+ * Opens a note picked from the rail's Scratch section next to that chat: beside
+ * it in the dock when the chat is in the middle, and otherwise where the middle
+ * pane is (an Editor tab, or the phone's full-screen document). Work Files notes
+ * use `useOpenDocumentInDock`. See `use-dock-placement` for the rules.
  */
 import { useCallback } from "react";
 import type { ServerContextTab } from "@/client/stores";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
-import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
-import { useChatNavigation } from "../routing/chat-navigation";
-import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
-import { useDockViewStore } from "./dock-view-store";
+import { useDockPlacement } from "./use-dock-placement";
 
 export function useOpenScratchNote() {
-  const screen = useProjectScreen();
-  const phone = usePhoneShell();
-  const projectId = useProjectDocumentNavigationProjectId();
-  const open = useDockViewStore((state) => state.open);
+  const placement = useDockPlacement();
   const openInEditor = useOpenDocumentInEditor();
-  const { revealDock } = useChatNavigation();
   return useCallback(
     (tab: ServerContextTab) => {
-      if (screen === "chat" && !phone && projectId) {
-        open({ projectId, screen, tab });
-        revealDock("document");
-        return;
-      }
-      openInEditor(tab);
+      if (placement.besideChat) placement.commit(tab);
+      else openInEditor(tab);
     },
-    [open, openInEditor, phone, projectId, revealDock, screen],
+    [openInEditor, placement],
   );
 }

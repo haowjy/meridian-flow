@@ -48,11 +48,16 @@ type DockViewState = {
   revision: number;
   /** Where the writer is, as last synced; only a real change counts as an intent. */
   scope: string | null;
+  /** The Work on the Work screen (null elsewhere): the Work whose Scratch the dock menu browses. */
+  workId: string | null;
   /** The writer picks a view: it replaces an occupant the dock was showing on that screen. */
   setDockView: (screen: ScreenKey, view: DockView) => void;
-  open: (document: DockDocument) => void;
-  /** Start a slow open: bumps the revision and returns it. */
+  /** Start an open: bumps the revision and returns it. Every async dock attempt claims first. */
   claim: () => number;
+  /** Whether `claim` is still the latest intent. */
+  isCurrent: (claim: number) => boolean;
+  /** Show the document if `claim` is still the latest intent; false means it was superseded. */
+  commit: (claim: number, document: DockDocument) => boolean;
   closeDocument: () => void;
   /** Drop an occupant that does not belong to where the writer now is. */
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
@@ -66,13 +71,19 @@ export const useDockViewStore = create<DockViewState>((set, get) => {
     occupant: null,
     revision: 0,
     scope: null,
+    workId: null,
     setDockView: (screen, view) =>
       set((state) => ({
         byScreen: { ...state.byScreen, [screen]: view },
         occupant: state.occupant?.screen === screen ? null : state.occupant,
         revision: state.revision + 1,
       })),
-    open: setOccupant,
+    isCurrent: (claim) => get().revision === claim,
+    commit: (claim, document) => {
+      if (get().revision !== claim) return false;
+      setOccupant(document);
+      return true;
+    },
     claim: () => {
       set((state) => ({ revision: state.revision + 1 }));
       return get().revision;
@@ -89,7 +100,12 @@ export const useDockViewStore = create<DockViewState>((set, get) => {
           occupant.projectId === projectId &&
           occupant.screen === screen &&
           (screen !== "work" || occupant.tab.workId === workId);
-        return { scope, occupant: stays ? occupant : null, revision: state.revision + 1 };
+        return {
+          scope,
+          workId: screen === "work" ? workId : null,
+          occupant: stays ? occupant : null,
+          revision: state.revision + 1,
+        };
       }),
   };
 });

@@ -26,7 +26,6 @@ import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session
  */
 
 import {
-  type ContextOwner,
   isProjectContextTreeScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -77,10 +76,6 @@ export type ProjectDocumentLiveOpenResult =
       reason: "deleted" | "authority-unavailable" | "not-visible" | "indeterminate" | "failed";
     };
 
-export type ProjectDocumentLocateResult =
-  | { kind: "located"; document: CatalogFileEntry }
-  | Extract<ProjectDocumentLiveOpenResult, { kind: "cancelled" | "unavailable" }>;
-
 export type ProjectDocumentLiveOpenRequest = {
   source: "server";
   projectId: ProjectId;
@@ -105,18 +100,7 @@ export class ProjectDocumentLiveOpener {
     },
   ) {}
 
-  /** Finds where a document lives on the server, without admitting a live session. */
-  async locate(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLocateResult> {
-    const resolved = await this.resolve(input);
-    return resolved.kind === "available" ? { kind: "located", document: resolved.entry } : resolved;
-  }
-
-  private async resolve(
-    input: ProjectDocumentLiveOpenRequest,
-  ): Promise<
-    | { kind: "available"; entry: CatalogFileEntry; generation: AvailabilityGeneration }
-    | Extract<ProjectDocumentLiveOpenResult, { kind: "cancelled" | "unavailable" }>
-  > {
+  async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
     let resolution: ExactOpenResolution;
@@ -141,12 +125,6 @@ export class ProjectDocumentLiveOpener {
     }
     if (resolution.documentId !== input.documentId)
       return { kind: "unavailable", reason: "failed" };
-    return { kind: "available", entry: resolution.entry, generation: resolution.generation };
-  }
-
-  async open(input: ProjectDocumentLiveOpenRequest): Promise<ProjectDocumentLiveOpenResult> {
-    const resolution = await this.resolve(input);
-    if (resolution.kind !== "available") return resolution;
     if (!resolution.entry.editable) return { kind: "not-editable", document: resolution.entry };
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };
@@ -219,30 +197,20 @@ export type OpenProjectDocumentRequest = {
   disposition?: "current" | "background";
   /**
    * Offered the resolved tab before the route changes: a surface that shows
-   * documents beside the writer's place (the Chat screen's dock) takes it and
-   * returns true, so the open finishes without leaving. False falls through to
-   * the ordinary open.
+   * documents beside the writer's place (the Chat screen's dock) takes it, so
+   * the open finishes without leaving. `cancelled` means a newer intent won.
    */
-  beside?: (tab: ServerContextTab) => boolean;
+  beside?: (tab: ServerContextTab) => "opened" | "cancelled";
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
-
-export type LocatedProjectDocument =
-  | {
-      kind: "located";
-      scheme: ProjectContextTreeScheme;
-      file: CatalogFile;
-      owner: ContextOwner;
-    }
-  | Extract<ProjectDocumentLiveOpenResult, { kind: "cancelled" | "unavailable" }>;
 
 export type OpenProjectDocument = (
   request: OpenProjectDocumentRequest,
 ) => Promise<ProjectDocumentLiveOpenResult>;
 
 type NavigationAdapterDependencies = {
-  opener: Pick<ProjectDocumentLiveOpener, "open" | "locate">;
+  opener: Pick<ProjectDocumentLiveOpener, "open">;
   openTab(
     projectId: string,
     tab: ReturnType<typeof contextTabFromFile>,
@@ -436,71 +404,6 @@ export class ProjectDocumentNavigationAdapter {
     }
   }
 
-  /**
-   * Where a document lives, for a door that opens it somewhere other than the
-   * Editor (the dock): the replica first, then the server. Nothing navigates
-   * and no live session is admitted.
-   */
-  async locate(
-    projectId: string,
-    documentId: string,
-    signal?: AbortSignal,
-  ): Promise<LocatedProjectDocument> {
-    const local = this.dependencies.resources
-      ? await this.dependencies.resources.openKnownDocument(
-          projectId,
-          documentId,
-          `locate:${crypto.randomUUID()}`,
-          signal,
-        )
-      : ({ kind: "missing" } as const);
-    if (local.kind === "cancelled") return { kind: "cancelled" };
-    if (local.kind === "opened") {
-      try {
-        const resolved = localFileForRecord(projectId, local.record);
-        if (resolved)
-          return {
-            kind: "located",
-            scheme: resolved.scheme,
-            file: resolved.file,
-            owner: resolved.rootThreadId
-              ? { rootThreadId: resolved.rootThreadId }
-              : { workId: resolved.workId },
-          };
-      } finally {
-        local.handle.release();
-      }
-    } else if (
-      local.kind === "unavailable" &&
-      (local.record.resource.lifecycle.kind !== "acknowledged" ||
-        !projectResourceLocation(projectId, local.record))
-    ) {
-      return {
-        kind: "unavailable",
-        reason: local.reason === "deleted" || local.reason === "terminal" ? "deleted" : "failed",
-      };
-    }
-    const result = await this.dependencies.opener.locate({
-      source: "server",
-      projectId,
-      documentId,
-      signal,
-    });
-    if (result.kind !== "located") return result;
-    const scheme = schemeForEntry(result.document);
-    if (!scheme) return { kind: "unavailable", reason: "failed" };
-    const { scope } = result.document;
-    return {
-      kind: "located",
-      scheme,
-      file: projectCatalogFile(result.document),
-      owner:
-        scope.kind === "lineage"
-          ? { rootThreadId: scope.rootThreadId }
-          : { workId: scope.kind === "work" ? scope.workId : null },
-    };
-  }
-
   private async commitFile(input: {
     projectId: string;
     scheme: ProjectContextTreeScheme;
@@ -509,7 +412,7 @@ export class ProjectDocumentNavigationAdapter {
     /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
     rootThreadId?: string;
     disposition: "current" | "background";
-    beside?: (tab: ServerContextTab) => boolean;
+    beside?: (tab: ServerContextTab) => "opened" | "cancelled";
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
@@ -537,9 +440,10 @@ export class ProjectDocumentNavigationAdapter {
       } catch {
         besideTab = null;
       }
-      if (besideTab && input.beside(besideTab)) {
+      if (besideTab) {
+        const placed = input.beside(besideTab);
         this.current = null;
-        return "applied";
+        return placed === "opened" ? "applied" : "cancelled";
       }
     }
     if (input.disposition === "current") {
@@ -624,21 +528,6 @@ export function useOpenProjectDocument(projectId: string | undefined): OpenProje
       if (!projectId || owner?.projectId !== projectId)
         return { kind: "unavailable", reason: "failed" };
       return owner.adapter.open(projectId, request);
-    },
-    [owner, projectId],
-  );
-}
-
-/** Resolves a document id to its scheme, owner and file without opening it anywhere. */
-export function useLocateProjectDocument(
-  projectId: string | undefined,
-): (documentId: string, signal?: AbortSignal) => Promise<LocatedProjectDocument> {
-  const owner = useContext(ProjectDocumentNavigationContext);
-  return useCallback(
-    async (documentId, signal) => {
-      if (!projectId || owner?.projectId !== projectId)
-        return { kind: "unavailable", reason: "failed" };
-      return owner.adapter.locate(projectId, documentId, signal);
     },
     [owner, projectId],
   );

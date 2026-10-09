@@ -1,41 +1,33 @@
 /**
- * Opens a document where the writer is: in the dock on Work and Chat, and in
- * the Editor where the dock holds no document (the Editor screen, which opens
- * tabs, and the phone, whose documents open full-screen).
+ * Opens a known file from Work Files or the dock's own title menu: in the dock
+ * where it holds a document (Chat and Work), and in the Editor where it does not
+ * (the Editor screen, which opens tabs, and the phone, whose documents open
+ * full-screen). See `use-dock-placement` for the placement rules.
  */
 import { useCallback } from "react";
 import type { ServerContextTab } from "@/client/stores";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
-import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
-import { useChatNavigation } from "../routing/chat-navigation";
-import { useOpenContextRoute, useProjectScreen } from "../routing/ProjectNavigationContext";
-import { useDockViewStore } from "./dock-view-store";
+import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
+import { useDockPlacement } from "./use-dock-placement";
 
 export function useOpenDocumentInDock() {
-  const screen = useProjectScreen();
-  const phone = usePhoneShell();
-  const projectId = useProjectDocumentNavigationProjectId();
-  const open = useDockViewStore((state) => state.open);
+  const placement = useDockPlacement();
   const openContextRoute = useOpenContextRoute();
-  const { revealDock } = useChatNavigation();
   return useCallback(
     (tab: ServerContextTab) => {
-      if (screen === "context" || phone) {
-        void openContextRoute?.(
-          {
-            scheme: tab.scheme,
-            path: tab.path,
-            workId: tab.workId,
-            ...(tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : {}),
-          },
-          { replace: false },
-        );
+      if (placement.holdsDocument) {
+        placement.commit(tab);
         return;
       }
-      if (!projectId) return;
-      open({ projectId, screen, tab });
-      revealDock("document");
+      void openContextRoute?.(
+        {
+          scheme: tab.scheme,
+          path: tab.path,
+          workId: tab.workId,
+          ...(tab.rootThreadId ? { rootThreadId: tab.rootThreadId } : {}),
+        },
+        { replace: false },
+      );
     },
-    [openContextRoute, open, phone, projectId, revealDock, screen],
+    [openContextRoute, placement],
   );
 }

@@ -7,7 +7,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { useMemo } from "react";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks } from "@/client/query/useWorks";
 import { workFromSnapshot } from "@/client/query/works-projection-acquisition";
 import { chatScratchOwner } from "@/features/chat/chat-scratch-owner";
@@ -17,11 +17,8 @@ export function useChatScratchSource(
   projectId: string,
   threadId: string | null,
 ): ScratchSource | null {
-  const { threads } = useProjectThreads(projectId);
   const { works, noWork } = useWorks(projectId);
-  const thread = threadId
-    ? (threads?.find((candidate) => candidate.id === threadId) ?? null)
-    : null;
+  const thread = useDisplayedThread(projectId, threadId);
   const work =
     thread?.workId && noWork
       ? workFromSnapshot({ works: works ?? [], noWork }, thread.workId)

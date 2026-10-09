@@ -209,7 +209,7 @@ The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with 
 parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), rows are
 `RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its
 file name only (no size). The rail is Recent only. A Recent row opens in the dock's document slot
-(`dock/use-open-document-id-in-dock.ts`); the rail stays mounted under the slot, so no "current
+(an id-keyed door, see `dock/.context/CONTEXT.md`); the rail stays mounted under the slot, so no "current
 row" mark is shown. The phone has no such rail, and no Results surface (the app has none; the
 server still records `project_results`).
 

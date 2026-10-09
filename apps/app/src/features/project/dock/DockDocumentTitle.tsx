@@ -21,18 +21,16 @@ import { useWorks } from "@/client/query/useWorks";
 import { type ServerContextTab, type TabOwner, tabContextOwner } from "@/client/stores";
 import { type DrillAction, DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { cn } from "@/lib/utils";
-import { useChatScratchSource } from "../chat/use-chat-scratch-source";
 import { fileKindIcon } from "../context/context-file-icon";
 import { schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
-import { type ScratchSource, useProjectMenuSource } from "../context/use-catalog-menu-source";
+import { useProjectMenuSource } from "../context/use-catalog-menu-source";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { PaneTitle } from "../PaneTitle";
-import { displayedChatThreadId, useChatNavigation } from "../routing/chat-navigation";
-import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import { titleChipClass } from "../shell/title-chip";
 import { catalogSiblingNames } from "../work/work-files-model";
 import type { DockDocument } from "./dock-view-store";
+import { useDockBrowseScratch } from "./use-dock-browse-scratch";
 import { useDockDocumentTab } from "./use-dock-document-tab";
 import { useOpenDocumentInDock } from "./use-open-document-in-dock";
 
@@ -84,31 +82,13 @@ export function DockTitleMenu({
       ? t`${schemeLabel(tab.scheme)} for ${ownerName}`
       : schemeLabel(tab.scheme);
 
-  // The Scratch at the menu's root is the one in view: the chat on screen on the
-  // Chat screen, the Work whose Files are open on the Work screen.
-  const screen = useProjectScreen();
-  const { display } = useChatNavigation();
-  const chatScratch = useChatScratchSource(
-    projectId,
-    screen === "chat" ? displayedChatThreadId(display) : null,
-  );
-  const workScratchId = screen === "work" ? (tab?.workId ?? null) : null;
-  const workScratchName = screen === "work" ? work?.name : undefined;
-  const workScratch = useMemo<ScratchSource | null>(
-    () =>
-      workScratchId
-        ? {
-            owner: { workId: workScratchId },
-            heading: workScratchName ? t`Scratch for ${workScratchName}` : schemeLabel("scratch"),
-          }
-        : null,
-    [workScratchId, workScratchName],
-  );
+  // The Scratch at the menu's root is the one on screen; the document's own area is separate.
+  const scratch = useDockBrowseScratch(projectId);
   const project = useProject(projectId);
   const source = useProjectMenuSource({
     projectId,
     title: project?.title ?? "",
-    scratch: chatScratch ?? workScratch,
+    scratch,
     document: tab
       ? { scheme: tab.scheme, owner: tabContextOwner(tab), heading: documentHeading }
       : null,
