@@ -6,6 +6,7 @@ export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-t
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
+export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
@@ -93,6 +94,11 @@ export type {
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
+export {
+  type AheadRegistration,
+  type LinkAheadRegistry,
+  RegistrationInsideTransactionError,
+} from "./ports/link-ahead-registry.js";
 export type {
   ProjectContextAvailabilityMutationPort,
   ProjectContextAvailabilityPort,
