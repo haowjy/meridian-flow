@@ -18,9 +18,9 @@ export function useOpenDocumentIdInDock(projectId: string) {
   const openInDock = useOpenDocumentInDock();
   return useCallback(
     async (documentId: string) => {
-      // A slow lookup must not replace what the writer chose since: any change
-      // to the dock's occupant while it ran means it stands down.
-      const { revision } = useDockViewStore.getState();
+      // A slow lookup must not replace what the writer chose since: a newer
+      // open, a close, a view choice or leaving the screen means it stands down.
+      const revision = useDockViewStore.getState().claim();
       const located = await locate(documentId);
       if (useDockViewStore.getState().revision !== revision || located.kind === "cancelled") return;
       const tab =

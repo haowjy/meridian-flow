@@ -41,45 +41,55 @@ type DockViewState = {
   byScreen: Partial<Record<ScreenKey, DockView>>;
   occupant: DockDocument | null;
   /**
-   * Bumps on every occupant change (open, replace, close, scope clear). A slow
-   * open reads it before it starts and commits only if it is unchanged.
+   * Bumps on every new intent: an open requested or made, a close, a view
+   * choice, and a move to another project, screen or Work. A slow open claims
+   * a revision when it starts and commits only if it is still the latest.
    */
   revision: number;
+  /** Where the writer is, as last synced; only a real change counts as an intent. */
+  scope: string | null;
   /** The writer picks a view: it replaces an occupant the dock was showing on that screen. */
   setDockView: (screen: ScreenKey, view: DockView) => void;
   open: (document: DockDocument) => void;
+  /** Start a slow open: bumps the revision and returns it. */
+  claim: () => number;
   closeDocument: () => void;
   /** Drop an occupant that does not belong to where the writer now is. */
   syncOccupantScope: (projectId: string, screen: ScreenKey, workId: string | null) => void;
 };
 
-export const useDockViewStore = create<DockViewState>((set) => {
+export const useDockViewStore = create<DockViewState>((set, get) => {
   const setOccupant = (occupant: DockDocument | null) =>
     set((state) => ({ occupant, revision: state.revision + 1 }));
   return {
     byScreen: {},
     occupant: null,
     revision: 0,
+    scope: null,
     setDockView: (screen, view) =>
-      set((state) => {
-        const cleared = state.occupant?.screen === screen;
-        return {
-          byScreen: { ...state.byScreen, [screen]: view },
-          ...(cleared ? { occupant: null, revision: state.revision + 1 } : {}),
-        };
-      }),
+      set((state) => ({
+        byScreen: { ...state.byScreen, [screen]: view },
+        occupant: state.occupant?.screen === screen ? null : state.occupant,
+        revision: state.revision + 1,
+      })),
     open: setOccupant,
+    claim: () => {
+      set((state) => ({ revision: state.revision + 1 }));
+      return get().revision;
+    },
     closeDocument: () => setOccupant(null),
     syncOccupantScope: (projectId, screen, workId) =>
       set((state) => {
+        const scope = `${projectId}\u0000${screen}\u0000${workId ?? ""}`;
+        if (scope === state.scope) return state;
         const { occupant } = state;
-        if (!occupant) return state;
         // A Work's note belongs to that Work's screen.
         const stays =
+          occupant != null &&
           occupant.projectId === projectId &&
           occupant.screen === screen &&
           (screen !== "work" || occupant.tab.workId === workId);
-        return stays ? state : { occupant: null, revision: state.revision + 1 };
+        return { scope, occupant: stays ? occupant : null, revision: state.revision + 1 };
       }),
   };
 });
