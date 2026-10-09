@@ -170,18 +170,19 @@ function assignKind(input: {
       spelled: grammar.spell(scope, occurrence.attrs),
     }),
   );
-  // Occurrences without an identity (contextual, external) never enter correspondence.
-  const referenced = old.filter(({ identity }) => identity !== null);
+  // Occurrences without an identity (contextual, external) never enter correspondence,
+  // except a literal empty picture: it occupies its place among the empty sources an
+  // upload shown as `![alt]()` also matches, so that upload cannot take its slot.
+  const corresponding = old.filter(
+    ({ identity, occurrence }) => identity !== null || occurrence.attrs.href === "",
+  );
   const matches: LinkMatch[] = correspondLinks({
-    old: referenced.map(({ occurrence, identity, spelled }) => {
-      const ref = identity as string;
-      return {
-        label: occurrence.label,
-        ref,
-        current: spelled.address ?? "",
-        live: scope.isLive({ ref, href: occurrence.attrs.href }),
-      };
-    }),
+    old: corresponding.map(({ occurrence, identity, spelled }) => ({
+      label: occurrence.label,
+      ref: identity,
+      current: spelled.address ?? "",
+      live: identity !== null && scope.isLive({ ref: identity, href: occurrence.attrs.href }),
+    })),
     written: input.written.map((occurrence) => ({
       label: occurrence.label,
       href: occurrence.attrs.href,
@@ -194,7 +195,7 @@ function assignKind(input: {
   // Old occurrences no address names: contextual ones, and an upload this reader is
   // shown no address for. Each continues only as written exactly as it spelled.
   const continuedByPass1 = new Set(
-    matches.flatMap((match) => (match.pass === 1 ? [referenced[match.occurrence]] : [])),
+    matches.flatMap((match) => (match.pass === 1 ? [corresponding[match.occurrence]] : [])),
   );
   const unaddressed = old.filter(
     (each) =>
@@ -205,7 +206,7 @@ function assignKind(input: {
     const match = matches[index] ?? { pass: 3 };
     const writtenSuffix = suffixOf(grammar, occurrence.attrs.href, holderUri);
     if (match.pass === 1) {
-      const continues = (referenced[match.occurrence] as SpelledOld).occurrence;
+      const continues = (corresponding[match.occurrence] as SpelledOld).occurrence;
       return continued(grammar, scope, continues.attrs, occurrence.attrs, writtenSuffix);
     }
     // A written occurrence equal to an unaddressed old one keeps its attrs (no churn).
