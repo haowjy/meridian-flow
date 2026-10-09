@@ -80,9 +80,7 @@ export function branchHandoffHarness() {
   const pool = new BranchRoomPool({
     teardownGraceMs: 10,
     teardownOwner: teardown,
-    retired: (retirement) => {
-      if (retirement.kind === "carried") handoff.carry(retirement);
-    },
+    carry: (carry) => handoff.carry(carry),
     openSession: (roomKey) =>
       new DocumentSession({
         roomKey,

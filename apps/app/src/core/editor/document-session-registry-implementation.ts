@@ -121,9 +121,7 @@ export class DocumentSessionRegistry
       },
       teardownOwner: this.teardownOwner,
       teardownGraceMs,
-      retired: (retirement) => {
-        if (retirement.kind === "carried") this.writerHandoff.carry(retirement);
-      },
+      carry: (carry) => this.writerHandoff.carry(carry),
     });
     this.writerHandoff = new BranchWriterHandoff({
       pool: this.branchRooms,

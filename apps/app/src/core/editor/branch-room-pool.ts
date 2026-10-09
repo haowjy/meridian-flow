@@ -14,20 +14,11 @@ export type BranchRoomRef = Readonly<{
   currentRoom(): Promise<string | null>;
   changed(): void;
 }>;
-export type BranchRoomRetirement = Readonly<
-  | {
-      kind: "carried";
-      ref: BranchRoomRef;
-      disposition: "superseded" | "rebuild";
-      source: { roomKey: string; generation: number };
-      carry: Uint8Array;
-    }
-  | {
-      kind: "retired";
-      roomKey: string;
-      cause: "released" | "superseded" | "rebuild" | "refused" | "schema" | "closed";
-    }
->;
+export type BranchRoomCarry = Readonly<{
+  ref: BranchRoomRef;
+  source: { roomKey: string; generation: number };
+  carry: Uint8Array;
+}>;
 
 export class BranchRoomPool {
   private readonly refs = new Map<string, BranchRoomRef>();
@@ -42,7 +33,7 @@ export class BranchRoomPool {
       openSession(roomKey: string): DocumentSession;
       teardownOwner: DocumentSessionTeardownOwner;
       teardownGraceMs: number;
-      retired?(retirement: BranchRoomRetirement): void;
+      carry?(carry: BranchRoomCarry): void;
     },
   ) {}
 
@@ -116,7 +107,7 @@ export class BranchRoomPool {
     for (const timer of this.teardownTimers.values()) clearTimeout(timer);
     this.teardownTimers.clear();
     const rooms = [...this.rooms];
-    for (const [roomKey, session] of rooms) this.retire(roomKey, session, "closed");
+    for (const [roomKey, session] of rooms) this.retire(roomKey, session, true);
     this.refs.clear();
   }
 
@@ -162,36 +153,19 @@ export class BranchRoomPool {
     return false;
   }
 
-  private retire(roomKey: string, session: DocumentSession, forced?: "closed"): void {
+  private retire(roomKey: string, session: DocumentSession, closing = false): void {
     if (this.rooms.get(roomKey) !== session) return;
     const disposition = session.resetDisposition;
     const ref = this.refs.get(roomKey);
-    const carry = forced ? null : session.unacknowledgedUpdates();
+    const carry = closing ? null : session.unacknowledgedUpdates();
     const room = parseYjsRoomName(roomKey);
-    const retirement: BranchRoomRetirement =
+    const retirement: BranchRoomCarry | null =
       carry &&
       ref &&
       room?.kind === "branch" &&
       (disposition === "superseded" || disposition === "rebuild")
-        ? {
-            kind: "carried",
-            ref,
-            disposition,
-            source: { roomKey, generation: room.generation },
-            carry,
-          }
-        : {
-            kind: "retired",
-            roomKey,
-            cause:
-              forced ??
-              disposition ??
-              (["unauthorized", "terminal"].includes(
-                session.getSnapshot().connectionState?.kind ?? "",
-              ) || session.getSnapshot().status === "destroyed"
-                ? "closed"
-                : "released"),
-          };
+        ? { ref, source: { roomKey, generation: room.generation }, carry }
+        : null;
     this.rooms.delete(roomKey);
     this.refs.delete(roomKey);
     this.cancelTeardown(roomKey);
@@ -199,6 +173,6 @@ export class BranchRoomPool {
     void this.deps.teardownOwner
       .retire({ kind: "branch", roomKey }, session)
       .catch(() => undefined);
-    this.deps.retired?.(retirement);
+    if (retirement) this.deps.carry?.(retirement);
   }
 }
