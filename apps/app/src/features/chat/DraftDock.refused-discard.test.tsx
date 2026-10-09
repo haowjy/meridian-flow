@@ -1,114 +1,149 @@
 // @vitest-environment jsdom
-/** A refused Discard shows on the draft in the composer strip: under it for one document, on its row for several. */
+/**
+ * A refused Apply or Discard of this chat's changes shows on the file it was
+ * sent for: under the strip for one document, on its row for several. The
+ * changes come back with the reason; the other files still run. Real provider,
+ * scopes, controllers and query cache; the network is the only fake.
+ */
+import { onlineManager } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
+import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import {
+  click,
+  draftItem,
+  op,
+  pacing,
+  readPreview,
+  renderStrip,
+  resetServer,
+  serverHolds,
+  strip,
+  stripShows,
+  text,
+} from "@/test-support/draft-dock-strip";
 
-import { i18n } from "@lingui/core";
-import { I18nProvider } from "@lingui/react";
-import { act, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
-import type { DraftCommandFailureCode } from "@/client/query/draft-command-record";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
-import { withReactRoot } from "@/test-support/react-dom-harness";
-import { DraftDock, type DraftDockModel } from "./DraftDock";
+const mocks = vi.hoisted(() => ({
+  listWorkDrafts: vi.fn(),
+  getDraftPreview: vi.fn(),
+  applyDraftChanges: vi.fn(),
+  discardDraft: vi.fn(),
+  retainBranchRooms: vi.fn(),
+}));
 
-function row(documentId: string): ReviewFileTarget {
-  return {
-    documentId,
-    documentName: `${documentId}.md`,
-    contextPath: `/${documentId}.md`,
-    draft: { draftId: `draft-${documentId}` } as ReviewFileTarget["draft"],
-    isNewDocument: true,
-  };
-}
+vi.mock("@/client/api/drafts-api", () => mocks);
+vi.mock("@/features/project/dock/useAiDraftLauncher", () => ({
+  useAiDraftLauncher: () => ({ openAiDraft: vi.fn() }),
+}));
+vi.mock("@/client/query/useContextCatalog", () => ({
+  contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
+  useContextCatalogView: () => ({ catalog: null }),
+  projectCatalogView: () => ({ findDocument: () => null }),
+}));
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useContextRemovalCoordinator: () => ({ promoteAppliedDraft: vi.fn(), discardDraft: vi.fn() }),
+  useOptionalAccountResourceReplica: () => null,
+  useLiveDocumentSessionRegistry: () => ({
+    retainBranchRooms: mocks.retainBranchRooms,
+    releaseBranchRooms: vi.fn(),
+    getBranchRoom: () => ({ document: { on: vi.fn(), off: vi.fn() } }),
+  }),
+}));
 
-function dockWith(rows: ReviewFileTarget[], refused: Record<string, DraftCommandFailureCode>) {
-  return {
-    generating: false,
-    rows,
-    serverActiveCount: rows.length,
-    aggregateStats: null,
-    dispositionRows: [],
-    dispositionSnapshot: { items: [] },
-    recovery: {},
-    mounted: true,
-    isBusy: false,
-    dispositionError: null,
-    rowError: (candidate: ReviewFileTarget) => {
-      const code = refused[candidate.documentId];
-      return code ? { code } : null;
-    },
-    reviewRow: vi.fn(),
-    openRow: vi.fn(),
-    reviewFirst: vi.fn(),
-    applyRow: vi.fn(),
-    discardRow: vi.fn(),
-    startApplyAll: vi.fn(),
-    startDiscardAll: vi.fn(),
-  } as unknown as DraftDockModel;
-}
-
-function renderDock(dock: DraftDockModel, check: (host: HTMLElement) => void) {
-  i18n.loadAndActivate({ locale: "en", messages: {} });
-  return withReactRoot(
-    <I18nProvider i18n={i18n}>
-      <DraftDock dock={dock} />
-    </I18nProvider>,
-    () => check(document.body),
+const render = (run: () => Promise<void>) => renderStrip(mocks.listWorkDrafts, run);
+const rowOf = (name: string) =>
+  [...document.querySelectorAll<HTMLElement>("[data-draft-dock-file]")].find((row) =>
+    row.textContent?.includes(name),
   );
-}
 
-describe("DraftDock refused Discard", () => {
-  it("shows the error under the strip for one document", async () => {
-    await renderDock(dockWith([row("a")], { a: "discard-offline" }), (host) => {
-      expect(host.querySelector("[data-draft-dock-disposition-error]")?.textContent).toBe(
-        "Couldn't discard. Check your connection and try again.",
+describe("DraftDock refused commands", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetDraftCommandRecords();
+    resetServer();
+    mocks.getDraftPreview.mockImplementation(readPreview);
+  });
+  afterEach(() => onlineManager.setOnline(true));
+
+  it("shows a refused Discard under the strip for one document, with its changes back", async () => {
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [draftItem("ch-12", "chapter-12", [pacing])],
+    });
+    serverHolds("ch-12", [op("1", "pacing"), op("2", "pacing")]);
+    mocks.discardDraft.mockRejectedValue(new HttpResponseError("injected", 500, null));
+    await render(async () => {
+      await stripShows("2 changes");
+      await click("Discard");
+      await vi.waitFor(() =>
+        expect(strip()?.querySelector("[data-draft-dock-strip-error]")?.textContent).toBe(
+          "Couldn't discard this chat's changes. Try again.",
+        ),
+      );
+      expect(text()).toContain("2 changes");
+    });
+  });
+
+  it("opens the strip and shows the refusal on the refused document's row for several", async () => {
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [
+        draftItem("ch-12", "chapter-12", [pacing]),
+        draftItem("ch-14", "chapter-14", [pacing]),
+      ],
+    });
+    serverHolds("ch-12", [op("1", "pacing")]);
+    serverHolds("ch-14", [op("7", "pacing")]);
+    // Both are refused, each its own way: every file gets its turn, and each keeps its own reason.
+    mocks.discardDraft.mockImplementation(async (_p: string, _w: string, documentId: string) => {
+      if (documentId === "ch-12") throw new HttpResponseError("injected", 500, null);
+      throw new TypeError("Failed to fetch");
+    });
+    await render(async () => {
+      await stripShows("2 changes");
+      await click("Discard");
+      await click("Discard");
+      await vi.waitFor(() =>
+        expect(document.querySelectorAll("[data-draft-dock-row-error]")).toHaveLength(2),
+      );
+      expect(mocks.discardDraft).toHaveBeenCalledTimes(2);
+      expect(rowOf("chapter-12")?.querySelector("[data-draft-dock-row-error]")?.textContent).toBe(
+        "Couldn't discard this chat's changes. Try again.",
+      );
+      expect(rowOf("chapter-14")?.querySelector("[data-draft-dock-row-error]")?.textContent).toBe(
+        "Couldn't confirm whether these were discarded. Check what is left before you try again.",
       );
     });
   });
 
-  it("opens the strip and shows the error on the refused document's row for several", async () => {
-    await renderDock(dockWith([row("a"), row("b")], { b: "discard-offline" }), (host) => {
-      const rowError = host.querySelector("[data-draft-dock-row-error]");
-      expect(rowError?.textContent).toBe("Couldn't discard. Check your connection and try again.");
-      expect(rowError?.previousElementSibling?.textContent).toContain("b.md");
-      expect(host.querySelectorAll("[data-draft-dock-row-error]")).toHaveLength(1);
+  it("brings the strip back with a refused Apply on its file, though every change had left at the click", async () => {
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [draftItem("ch-12", "chapter-12", [pacing])],
     });
-  });
-
-  it("shows a rejected Apply on its draft's row, whichever draft the review moved on to", async () => {
-    await renderDock(dockWith([row("a"), row("b")], { a: "apply-offline" }), (host) => {
-      const rowError = host.querySelector("[data-draft-dock-row-error]");
-      expect(rowError?.textContent).toBe("Couldn't apply. Check your connection and try again.");
-      expect(rowError?.previousElementSibling?.textContent).toContain("a.md");
-    });
-  });
-
-  it("mounts after rendering empty, with a refusal already held", async () => {
-    const hidden = { ...dockWith([row("a"), row("b")], { b: "discard-offline" }), mounted: false };
-    const shown = dockWith([row("a"), row("b")], { b: "discard-offline" });
-    function Toggle() {
-      const [dock, setDock] = useState<DraftDockModel>(hidden as DraftDockModel);
-      return (
-        <>
-          <button type="button" data-show onClick={() => setDock(shown)} />
-          <DraftDock dock={dock} />
-        </>
+    serverHolds("ch-12", [op("1", "pacing")]);
+    await render(async () => {
+      await stripShows("1 change");
+      onlineManager.setOnline(false);
+      await click("Apply");
+      await vi.waitFor(() =>
+        expect(strip()?.querySelector("[data-draft-dock-strip-error]")?.textContent).toBe(
+          "Couldn't apply. Check your connection and try again.",
+        ),
       );
-    }
-    i18n.loadAndActivate({ locale: "en", messages: {} });
-    await withReactRoot(
-      <I18nProvider i18n={i18n}>
-        <Toggle />
-      </I18nProvider>,
-      async () => {
-        await act(async () => document.querySelector<HTMLButtonElement>("[data-show]")?.click());
-        expect(document.querySelector("[data-draft-dock-row-error]")).not.toBeNull();
-      },
-    );
+      expect(mocks.applyDraftChanges).not.toHaveBeenCalled();
+    });
   });
 
-  it("shows nothing when no Discard was refused", async () => {
-    await renderDock(dockWith([row("a"), row("b")], {}), (host) => {
-      expect(host.querySelector("[role=alert]")).toBeNull();
+  it("shows nothing when no command was refused", async () => {
+    mocks.listWorkDrafts.mockResolvedValue({
+      drafts: [
+        draftItem("ch-12", "chapter-12", [pacing]),
+        draftItem("ch-14", "chapter-14", [pacing]),
+      ],
+    });
+    serverHolds("ch-12", [op("1", "pacing")]);
+    serverHolds("ch-14", [op("7", "pacing")]);
+    await render(async () => {
+      await stripShows("2 changes");
+      expect(document.querySelector("[role=alert]")).toBeNull();
     });
   });
 });

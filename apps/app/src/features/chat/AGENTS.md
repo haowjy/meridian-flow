@@ -178,6 +178,17 @@ review-prose focus). See
 [`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md)
 for the lifecycle, session, preview, and projection contracts.
 
+**The strip is this chat's changes, not the Work's.** `useDraftDock(threadId)`
+lists the Work's drafts whose `actorThreads` name the chat, reads each one's
+preview (`useDraftPreviews`) and keeps the changes whose `threadIds` include the
+chat. A chat with none shows no strip. Apply and Discard send one selection
+command per file (the union of this chat's actionable changes, never a whole
+draft) through `useChangeCommandRunner`; a refusal stays on its file. A new
+document is Review-only. The notes (a change tied to another chat's edit,
+changes only Apply draft or Discard draft handle, a new document) sit above the
+commands, collapsed or expanded. Work-wide lists and Apply all live on the Work
+page; the strip's last line opens it.
+
 ## Transcript viewport (TurnList)
 
 `TurnList.tsx` is the **single scroll owner** for the conversation. There is no

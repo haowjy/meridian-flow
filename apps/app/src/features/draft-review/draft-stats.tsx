@@ -24,29 +24,6 @@ export function draftStats(draft: ThreadDraftListItem): DraftStats {
   return null;
 }
 
-/** Net stats across a changeset's representative drafts (one per document). */
-export function aggregateDraftStats(drafts: ThreadDraftListItem[]): DraftStats {
-  const per = drafts.map(draftStats);
-  if (per.length > 0 && per.every((stat) => stat?.kind === "words")) {
-    return per.reduce<DraftStats>(
-      (acc, stat) => {
-        if (acc?.kind !== "words" || stat?.kind !== "words") return acc;
-        return {
-          kind: "words",
-          added: acc.added + stat.added,
-          removed: acc.removed + stat.removed,
-        };
-      },
-      { kind: "words", added: 0, removed: 0 },
-    );
-  }
-  if (per.length > 0 && per.every((stat) => stat?.kind === "edits")) {
-    const count = per.reduce((sum, stat) => sum + (stat?.kind === "edits" ? stat.count : 0), 0);
-    return { kind: "edits", count };
-  }
-  return null;
-}
-
 /**
  * Renders a stats label. `wordsSuffix` gates the trailing " words" so the strip
  * can drop it first via a container query when space is tight.
