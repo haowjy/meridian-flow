@@ -164,9 +164,28 @@ export const IMAGE_SOURCE_BASE = "manuscript://";
 // root itself. Only its directory is ever read.
 const MANUSCRIPT_ROOT_HOLDER = `${IMAGE_SOURCE_BASE}_`;
 
-/** `classifyWrittenLink` for an `image`/`figure` source, under the manuscript-root grammar. */
+/**
+ * `classifyWrittenLink` for an `image`/`figure` source, under the
+ * manuscript-root grammar: the whole source grammar, which every reader of a
+ * written source (fresh assignment, address preloading, the editor's picture
+ * key, link rows) takes as is. A source whose path does not decode (a raw `%`)
+ * is a literal path, as the shipped image rule always read it. A
+ * protocol-relative `//host/x.png` is the web.
+ */
 export function classifyWrittenSource(src: string): WrittenLinkClass {
-  return classifyWrittenLink(src, MANUSCRIPT_ROOT_HOLDER);
+  const classified = classifyWrittenLink(src, MANUSCRIPT_ROOT_HOLDER);
+  const { path, suffix } = splitDocumentHrefSuffix(src);
+  if (classified.kind !== "external" || decodes(path)) return classified;
+  return classifyWrittenLink(path.replaceAll("%", "%25") + suffix, MANUSCRIPT_ROOT_HOLDER);
+}
+
+function decodes(path: string): boolean {
+  try {
+    decodeURIComponent(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface SpelledHref {
