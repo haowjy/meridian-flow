@@ -2,11 +2,11 @@
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import { httpErrorStatus } from "@/client/api/http-client";
-import type { BranchRoomPool, BranchRoomRetirement } from "./branch-room-pool";
+import type { BranchRoomCarry, BranchRoomPool } from "./branch-room-pool";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
 import { rotateWriterClient } from "./writer-client";
 
-type Carry = Extract<BranchRoomRetirement, { kind: "carried" }>;
+type Carry = BranchRoomCarry;
 type Entry = { retirement: Carry; revision: number; attempt: AbortController; delivered: boolean };
 type Outcome = "ready" | "retry" | "refused";
 export const WRITER_HANDOFF_ORIGIN = Symbol("writer-handoff");
