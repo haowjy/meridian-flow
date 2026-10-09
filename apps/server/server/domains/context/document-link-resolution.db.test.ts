@@ -1,13 +1,24 @@
 /** Real catalog/Work-authority integration for canonical document-link navigation. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
-import { contextSources, documents, projects, users, works } from "@meridian/database/schema";
+import {
+  contextSources,
+  documents,
+  linkAheadRefs,
+  projects,
+  users,
+  works,
+} from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { handleDocumentLinkResolveRequest } from "../../lib/document-link-route.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
+import { createLinkScopeObserver } from "../collab/index.js";
+import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleProjectWorkAuthorityResolver } from "../projects/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
+import { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
 import { createDocumentLinkResolver } from "./document-link-resolution.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -183,6 +194,114 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await r.resolve(chat)).toMatchObject({ documentId: occupant });
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
+    });
+
+    it("answers ref links through the route core: gone never carries a location", async () => {
+      const db = database.current;
+      const live = await add("manuscript", "live");
+      const [{ contextSourceId } = { contextSourceId: "" }] = await db
+        .select({ contextSourceId: documents.contextSourceId })
+        .from(documents)
+        .where(eq(documents.id, live));
+      const sibling = async (name: string) => {
+        const id = crypto.randomUUID();
+        await db.insert(documents).values({ id, contextSourceId, name, extension: "md" });
+        return id;
+      };
+      const deleted = await sibling("deleted");
+      const discarded = await sibling("discarded");
+      const secret = await sibling("secret");
+      await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, deleted));
+      const otherProject = crypto.randomUUID();
+      const otherSource = crypto.randomUUID();
+      const foreign = crypto.randomUUID();
+      await db
+        .insert(projects)
+        .values({ id: otherProject, userId: u, name: "Other", slug: "other-project" });
+      await db.insert(contextSources).values({
+        id: otherSource,
+        projectId: otherProject,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+      });
+      await db
+        .insert(documents)
+        .values({ id: foreign, contextSourceId: otherSource, name: "foreign", extension: "md" });
+      const settled = crypto.randomUUID();
+      const unsettled = crypto.randomUUID();
+      await db.insert(linkAheadRefs).values([
+        {
+          aheadId: settled,
+          projectId: p,
+          scheme: "manuscript",
+          path: "live.md",
+          settledDocumentId: live,
+        },
+        { aheadId: unsettled, projectId: p, scheme: "manuscript", path: "later.md" },
+      ]);
+      // A discarded draft creation keeps its row but no manifest lists it.
+      const liveMembers = [live, deleted, secret];
+      const response = await handleDocumentLinkResolveRequest(
+        {
+          projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+          documentLinks: resolver(),
+          linkScopes: createDrizzleDocumentLinkScopes({
+            db,
+            fileAccess: {
+              async listAccess(_principal, ids) {
+                return new Map(ids.filter((id) => id !== secret).map((id) => [id, {} as never]));
+              },
+            },
+            membership: async () => ({ members: liveMembers }),
+            observer: createLinkScopeObserver(createNoopEventSink()),
+          }),
+          workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+          fileAccess: {
+            async listAccess(_principal, ids) {
+              return new Map(ids.map((id) => [id, {} as never]));
+            },
+          },
+        },
+        {
+          projectId: p,
+          userId: u as never,
+          request: {
+            baseUri: "manuscript://holder.md",
+            links: [
+              { ref: `doc:${live}`, href: "manuscript://old-live.md" },
+              { ref: `doc:${deleted}`, href: "manuscript://deleted.md" },
+              { ref: `doc:${discarded}`, href: "manuscript://discarded.md" },
+              { ref: `doc:${secret}`, href: "manuscript://secret.md" },
+              { ref: `doc:${foreign}`, href: "manuscript://foreign.md" },
+              { ref: `ahead:${settled}`, href: "manuscript://elsewhere.md" },
+              { ref: `ahead:${unsettled}`, href: "manuscript://later.md#scene" },
+              { ref: "doc:not-a-uuid", href: "manuscript://live.md" },
+              { ref: null, href: "live.md" },
+              { ref: null, href: "https://example.com" },
+            ],
+          },
+        },
+      );
+      const liveDocument = {
+        state: "document",
+        document: { id: live, title: "live", scheme: "manuscript", path: "live.md" },
+        inDraft: false,
+      };
+      expect(response.answers).toMatchObject([
+        liveDocument,
+        { state: "gone" },
+        { state: "gone" },
+        { state: "gone" },
+        { state: "gone" },
+        liveDocument,
+        { state: "missing", uri: "manuscript://later.md" },
+        { state: "gone" },
+        liveDocument,
+        { state: "unresolvable" },
+      ]);
+      for (const answer of response.answers)
+        if (answer.state === "gone") expect(Object.keys(answer)).toEqual(["state"]);
     });
   });
 }
