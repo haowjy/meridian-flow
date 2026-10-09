@@ -41,7 +41,8 @@ export {
   normalizeLineageRanges,
   subtractLineageRanges,
 } from "./lineage/range-set.js";
-export { bindSources } from "./links/assign-refs.js";
+export type { AssignInput, AssignResult } from "./links/assign-refs.js";
+export { assignLinkRefs, bindSources } from "./links/assign-refs.js";
 export type { ShownLink } from "./links/correspondence.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
@@ -122,6 +123,7 @@ export type {
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
+export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
 export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
 export { commandSelection } from "./tool/write-reversal-endpoints.js";
 export type { UndoAvailability } from "./undo/availability.js";
