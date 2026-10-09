@@ -213,3 +213,14 @@ and navigation contracts.
 → [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag
 → [`links/AGENTS.md`](links/AGENTS.md) — the link system
 → [`images/AGENTS.md`](images/AGENTS.md) — how a picture gets into a document
+
+- `DocumentSession.resetDisposition` describes terminal resets: `superseded`
+  and `rebuild` keep unacknowledged updates available for retirement; `refused`
+  rejects pending edits and `schema` fences the room. The transport owns the
+  outbox; the session exposes it without reconstructing a document diff.
+- `BranchRoomPool` retains draft refs per owner without opening rooms. A released
+  room with an outbox drains before teardown; terminal retirement takes its
+  carry before destruction and installs the teardown quarantine before delivery.
+  `BranchWriterHandoff` belongs to the account epoch, not the review UI. Its
+  attempt owns its own retention, waits for first sync, filters missing anchors
+  before a synchronous writer apply, and invalidates draft reads only after ack.

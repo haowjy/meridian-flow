@@ -2,6 +2,7 @@
 /** Writer edits, undo history, and read-only fencing survive editor surface changes. */
 
 import type { Work } from "@meridian/contracts/works";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -121,6 +122,7 @@ vi.mock("@/features/links", async () => ({
 // registry keeps every lane's own dependencies out of this suite.
 vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
 
+const queryClient = new QueryClient();
 const { EditorView } = await import("./EditorView");
 
 /** The mounted instance, read the way the browser probe reads it. */
@@ -130,16 +132,25 @@ function mountedEditor(): Editor {
   return dom.editor;
 }
 
-let applyProps: (next: Partial<EditorViewProps>) => void = () => {};
+type LiveProps = Omit<EditorViewProps, "reviewDraftId" | "onReviewRoomStale">;
+let applyProps: (next: Partial<LiveProps>) => void = () => {};
 
-function Harness({ initial }: { initial: EditorViewProps }) {
+function Harness({ initial }: { initial: LiveProps }) {
   const [props, setProps] = useState(initial);
   applyProps = (next) => setProps((previous) => ({ ...previous, ...next }));
-  return <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />
+    </QueryClientProvider>
+  );
 }
 
-function ExactLiveEditor(props: EditorViewProps) {
-  return <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />;
+function ExactLiveEditor(props: LiveProps) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />
+    </QueryClientProvider>
+  );
 }
 
 describe("editor lifetime", () => {

@@ -20,6 +20,8 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 
+import { reviewRoomRef } from "./review-room-ref";
+
 const SETTLE_MS = 500;
 const MAX_WAIT_MS = 2_000;
 
@@ -51,7 +53,9 @@ export function useReviewRefresh({
     if (!projectId || !workId || !documentId || !draftId) return;
     const sources: DocumentSession[] = [];
     if (roomName) {
-      registry.retainBranchRooms(owner.current, [roomName]);
+      registry.retainBranchRooms(owner.current, [
+        reviewRoomRef(queryClient, { projectId, workId, documentId, draftId }, roomName),
+      ]);
       try {
         sources.push(registry.getBranchRoom(roomName));
       } catch (error) {

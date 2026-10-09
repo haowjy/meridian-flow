@@ -70,6 +70,7 @@ function createHarness() {
     document,
     transport,
     values,
+    serverDocument,
     connect,
     drop,
     edit,
@@ -78,6 +79,7 @@ function createHarness() {
     },
     destroy() {
       transport.destroy();
+      awareness.destroy();
       document.destroy();
       serverDocument.destroy();
     },
@@ -96,6 +98,48 @@ describe("document transport server acknowledgement", () => {
   afterEach(() => {
     harness.destroy();
     vi.useRealTimers();
+  });
+
+  it("keeps only unacknowledged local updates across reconnect and freezes them at terminal", async () => {
+    const first = await harness.connect();
+    acknowledge(first);
+    expect(harness.transport.unacknowledgedUpdates()).toBeNull();
+
+    harness.serverDocument.getText("body").insert(0, "remote");
+    first.syncStep2(ROOM, harness.serverDocument, Y.encodeStateVector(harness.document));
+    expect(harness.transport.unacknowledgedUpdates()).toBeNull();
+    harness.edit("sent");
+    expect(harness.transport.unacknowledgedUpdates()).not.toBeNull();
+    acknowledge(first);
+    expect(harness.transport.unacknowledgedUpdates()).toBeNull();
+
+    Y.applyUpdate(harness.serverDocument, Y.encodeStateAsUpdate(harness.document));
+    harness.drop(first);
+    harness.edit("one");
+    harness.edit("two");
+    const carry = harness.transport.unacknowledgedUpdates();
+    expect(carry).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = await harness.connect();
+    acknowledge(second);
+    acknowledge(second);
+    expect(harness.transport.unacknowledgedUpdates()).toEqual(carry);
+    acknowledge(second);
+    expect(harness.transport.unacknowledgedUpdates()).toBeNull();
+
+    harness.edit("frozen");
+    const frozen = harness.transport.unacknowledgedUpdates();
+    second.deliverClose(4403, "permission-denied");
+    harness.edit("after terminal");
+    expect(harness.transport.unacknowledgedUpdates()).toEqual(frozen);
+    const replay = new Y.Doc();
+    try {
+      Y.applyUpdate(replay, Y.encodeStateAsUpdate(harness.serverDocument));
+      if (carry) Y.applyUpdate(replay, carry);
+      expect(replay.getText("body").toString()).toBe("twoonesentremote");
+    } finally {
+      replay.destroy();
+    }
   });
 
   it("counts updates replayed by a peer or IndexedDB (remote-origin transactions)", async () => {

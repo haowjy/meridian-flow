@@ -8,13 +8,14 @@
  * through the real provider.
  */
 
+import { WS_CLOSE } from "@meridian/contracts/protocol";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   failRebuild,
   finishRebuild,
-  refusedRooms,
   registry,
   sessionFor,
   sessionHorizons,
@@ -84,6 +85,7 @@ vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
 
+const queryClient = new QueryClient();
 const { EditorView } = await import("./EditorView");
 
 /** The mounted instance, read the way the browser probe reads it. */
@@ -93,9 +95,9 @@ function mountedEditor(): Editor {
   return dom.editor;
 }
 
-let applyProps: (next: Partial<EditorViewProps>) => void = () => {};
+let applyProps: (next: Partial<Omit<EditorViewProps, "onReviewRoomStale">>) => void = () => {};
 
-function Harness({ initial }: { initial: EditorViewProps }) {
+function Harness({ initial }: { initial: Omit<EditorViewProps, "onReviewRoomStale"> }) {
   const [props, setProps] = useState(initial);
   applyProps = (next) => setProps((previous) => ({ ...previous, ...next }));
   controller.inlineReview = props.reviewDraftId
@@ -109,7 +111,17 @@ function Harness({ initial }: { initial: EditorViewProps }) {
   const session = props.reviewDraftId
     ? props.session
     : (props.session ?? sessionFor(props.documentId));
-  return <EditorView {...props} session={session} />;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <EditorView
+        projectId="project-a"
+        reviewWorkId="work-a"
+        onReviewRoomStale={() => {}}
+        {...props}
+        session={session}
+      />
+    </QueryClientProvider>
+  );
 }
 
 describe("review transitions", () => {
@@ -311,7 +323,13 @@ describe("review transitions", () => {
       firstServerSync: new Promise(() => undefined),
     });
     await withReactRoot(
-      <EditorView documentId="draft-only" reviewDraftId="draft-only-1" reviewRoomName={roomName} />,
+      <Harness
+        initial={{
+          documentId: "draft-only",
+          reviewDraftId: "draft-only-1",
+          reviewRoomName: roomName,
+        }}
+      />,
       async () => {
         const shells = [...document.querySelectorAll(".meridian-editor-shell")];
         expect(shells).toHaveLength(1);
@@ -355,11 +373,15 @@ describe("review transitions", () => {
     }
 
     it.each([
-      "branch-generation-stale",
-      "branch-stale-doc",
+      WS_CLOSE.BRANCH_GENERATION_STALE.reason,
     ] as const)("hands %s to the review's owner and does not leave review", async (reason) => {
       const { documentId, roomName } = await drivenBy((room) =>
-        setConnectionState(room, { kind: "reset", reason, code: 4205 }),
+        setConnectionState(room, {
+          kind: "reset",
+          reason,
+          disposition: "superseded",
+          code: 4205,
+        }),
       );
       expect(roomStale).toHaveBeenCalledWith(documentId, "draft-moved", roomName);
       expect(unavailable).not.toHaveBeenCalled();
@@ -372,23 +394,20 @@ describe("review transitions", () => {
       ],
       ["terminal", (room: string) => setConnectionState(room, { kind: "terminal", reason: "x" })],
       [
-        "a reset for any other reason",
+        "a schema reset",
         (room: string) =>
-          setConnectionState(room, { kind: "reset", reason: "access-changed", code: 4409 }),
+          setConnectionState(room, {
+            kind: "reset",
+            reason: WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason,
+            disposition: "schema",
+            code: WS_CLOSE.DOCUMENT_SCHEMA_STALE.code,
+          }),
       ],
       ["a destroyed session", (room: string) => setSessionStatus(room, "destroyed")],
     ] as const)("still leaves review on %s", async (_state, drive) => {
       await drivenBy(drive);
       expect(unavailable).toHaveBeenCalled();
       expect(roomStale).not.toHaveBeenCalled();
-    });
-
-    it("leaves review as before when nobody can take the signal", async () => {
-      await drivenBy(
-        (room) => setConnectionState(room, { kind: "reset", reason: "branch-generation-stale" }),
-        null,
-      );
-      expect(unavailable).toHaveBeenCalled();
     });
   });
 
@@ -402,9 +421,13 @@ describe("review transitions", () => {
         .filter((shell) => !shell.closest(".hidden"))
         .map((shell) => shell.textContent);
     async function refuse(roomName: string) {
-      refusedRooms.add(roomName);
       await act(async () => {
-        setConnectionState(roomName, { kind: "reset", reason: "access-changed", code: 4409 });
+        setConnectionState(roomName, {
+          kind: "reset",
+          reason: "access-changed",
+          disposition: "refused",
+          code: 4409,
+        });
       });
     }
 

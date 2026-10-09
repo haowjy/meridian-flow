@@ -37,7 +37,8 @@ describe("DocumentSession persistence cleanup", () => {
       roomKey: "doc-cleanup",
       persistence: { kind: "indexeddb", key: "test:document-session" },
     });
-    if (attached) session.attachTransport(() => ({ destroy: vi.fn() }));
+    if (attached)
+      session.attachTransport(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
     await session.destroy({ clearPersistence });
     expect(persistence.clearData).toHaveBeenCalledTimes(clearPersistence ? 1 : 0);
     expect(persistence.destroy).toHaveBeenCalledTimes(clearPersistence ? 0 : 1);
@@ -49,7 +50,7 @@ describe("DocumentSession persistence cleanup", () => {
     const session = new DocumentSession({
       roomKey: "doc-retry-clear",
       persistence: { kind: "indexeddb", key: "test:document-session" },
-      transportFactory: () => ({ destroy: transportDestroy }),
+      transportFactory: () => ({ unacknowledgedUpdates: () => null, destroy: transportDestroy }),
     });
     await session.whenLocalPersistenceSynced();
     await Promise.resolve();
@@ -94,7 +95,7 @@ describe("DocumentSession persistence cleanup", () => {
         resolveLocalSync = resolve;
       }),
     );
-    const transportFactory = vi.fn(() => ({ destroy: vi.fn() }));
+    const transportFactory = vi.fn(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
 
     const session = new DocumentSession({
       roomKey: "doc-local-replay",
@@ -114,7 +115,7 @@ describe("DocumentSession persistence cleanup", () => {
   it("attaches transport after one second when IndexedDB never becomes ready", async () => {
     vi.useFakeTimers();
     persistence.createWhenSynced.mockReturnValue(new Promise(() => {}));
-    const transportFactory = vi.fn(() => ({ destroy: vi.fn() }));
+    const transportFactory = vi.fn(() => ({ unacknowledgedUpdates: () => null, destroy: vi.fn() }));
     const session = new DocumentSession({
       roomKey: "doc-local-blocked",
       persistence: { kind: "indexeddb", key: "test:document-session" },
