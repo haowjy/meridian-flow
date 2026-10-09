@@ -503,12 +503,13 @@ const doors: DoorCase[] = [
       // An upload no path spells reads as its last address in this project, else as an
       // empty destination; a rewrite of the paragraph as read keeps each picture, even
       // once it became addressable after the read, and a fresh empty source binds none.
+      // A null id is a literal empty picture (`src: ""`), which keeps its own place.
       const E = uuid(47);
       const elsewhere = uuid(46);
       const unspellable: {
         kind: string;
         documents: StaticCatalogDocument[];
-        pictures: [id: string, alt: string, spelled: string][];
+        pictures: [id: string | null, alt: string, spelled: string][];
         after?: StaticCatalogDocument[];
         missAtRead?: boolean;
       }[] = [
@@ -547,6 +548,37 @@ const doors: DoorCase[] = [
           missAtRead: true,
           pictures: [[D, "Map", ""]],
         },
+        ...(["Map", ""] as const).flatMap((alt) => [
+          {
+            kind: `no document after a literal empty picture, alt "${alt}"`,
+            documents: [],
+            pictures: [
+              [null, alt, ""],
+              [D, alt, ""],
+            ] as [string | null, string, string][],
+          },
+          {
+            kind: `another project's moved in after a literal empty picture, alt "${alt}"`,
+            documents: [
+              catalogDocument(D, "user://map.png", { image: true, projectId: elsewhere }),
+            ],
+            after: [catalogDocument(D, map, { image: true })],
+            pictures: [
+              [null, alt, ""],
+              [D, alt, ""],
+            ] as [string | null, string, string][],
+          },
+        ]),
+        {
+          kind: "no document, three of them after a literal empty picture",
+          documents: [],
+          pictures: [
+            [null, "", ""],
+            [D, "", ""],
+            [E, "", ""],
+            [B, "", ""],
+          ],
+        },
       ];
       for (const row of unspellable) {
         const label = `${this.name}: upload with ${row.kind}`;
@@ -559,7 +591,7 @@ const doors: DoorCase[] = [
               schema.text("See "),
               ...row.pictures.flatMap(([id, alt], index) => [
                 ...(index > 0 ? [schema.text(" and ")] : []),
-                schema.node("image", { src: `asset:${id}`, alt }),
+                schema.node("image", { src: id ? `asset:${id}` : "", alt }),
               ]),
               schema.text(" here."),
             ]),
@@ -593,7 +625,7 @@ const doors: DoorCase[] = [
           ...row.pictures.map(([id, alt]) => ({
             label: alt,
             ref: null,
-            href: `asset:${id}`,
+            href: id ? `asset:${id}` : "",
             title: null,
           })),
           { label: "New", ref: null, href: "", title: null },
