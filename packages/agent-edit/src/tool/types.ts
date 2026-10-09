@@ -149,17 +149,7 @@ export interface ResponseCommitterTransitionDetail {
   droppedUpdateCount?: number;
 }
 
-/**
- * A host-bound write (`AgentEditCore.applyBound`) refused under the
- * document's lock; the host binds it again against the document as it is now.
- */
-export interface BoundBaseExpiredDetail {
-  type: "bound_base";
-  code: import("./bound-update.js").BoundRefusal;
-  documentId: string;
-}
-
-export type WriteErrorDetail = ResponseLifecycleErrorDetail | BoundBaseExpiredDetail;
+export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
   /** Durable peer state captured before the host pulls concurrent upstream changes. */
@@ -216,6 +206,13 @@ export interface WriteContext {
    */
   copiedNodes?: readonly Block[];
   /**
+   * A host's whole-document write, bound outside its transaction (§6.2): the
+   * `create` command's content as nodes whose refs are assigned and whose
+   * ahead refs are registered. Nothing is parsed or assigned again; an
+   * overwrite aligns them against the document as it is when applied.
+   */
+  boundNodes?: readonly Block[];
+  /**
    * Host-only showing evidence for this thread: every link the model was
    * shown in a document, with the address shown. Ref assignment reads it;
    * agent-edit never reads thread history itself. Absent for utility, seed
@@ -229,11 +226,6 @@ export interface WriteContext {
    */
   linkView?: LinkView;
 }
-
-/** Who a host-bound write is recorded for (`WriteTool.applyBound`). */
-export type BoundWriteContext = Pick<WriteContext, "sessionId" | "threadId"> & {
-  actor: MutationActor;
-};
 
 export type MutationActor =
   | { kind: "agent"; turnId: string; threadId: string; responseId?: string }

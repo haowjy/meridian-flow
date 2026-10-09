@@ -40,8 +40,7 @@ export function fakeBoundWrite({ holder, markdown }: BindMarkdownInput): BoundWr
       "documentId" in holder
         ? { kind: "document", documentId: holder.documentId }
         : { kind: "new", uri: holder.uri },
-    base: null,
-    update: new Uint8Array(),
+    fresh: true,
     blocks: [],
     markdown,
     schemaType: "document",

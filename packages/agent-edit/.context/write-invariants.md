@@ -39,8 +39,9 @@ The memory-only runtime replica is distinct from that host-owned branch.
   mints are registered before it applies or locks anything
   ([link identity](link-correspondence.md)). A host whose door runs inside its
   own transaction binds the whole document first, outside it, and hands the
-  core the resulting `BoundUpdate` through `applyBound`; the core admits it
-  under the document's lock and never assigns again.
+  core the bound nodes as a `create`'s content (`WriteContext.boundNodes`);
+  the core applies them as an ordinary overwrite (or, bound fresh, a create
+  into an empty document) and never assigns again.
 
 ### Destructive scope targeting and recovery
 

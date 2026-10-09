@@ -5,9 +5,7 @@
  *
  * Content arrives bound (`BoundWrite`): ContextFS binds it before
  * opening its command transaction, and this runs inside that transaction. A
- * write whose base's authority generation was replaced, or whose base clocks
- * the document lacks, is `stale_target`, which ContextFS answers by binding
- * again.
+ * fresh write that finds the document already holds content is `stale_target`.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import {

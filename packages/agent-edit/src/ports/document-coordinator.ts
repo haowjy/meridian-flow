@@ -20,11 +20,8 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
  * Mutations through other transports require the host's separate concurrency fence.
  */
 export interface DocumentCoordinator {
-  /**
-   * Immutable host generation bound to this canonical document, when
-   * supported; undefined for a document the host has no generation for.
-   */
-  documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority | undefined;
+  /** Immutable host generation bound to this canonical document, when supported. */
+  documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority;
   /**
    * Acquire coordinator access to a document's canonical Y.Doc for the duration of fn.
    * Serializes concurrent callers for the same docId; different documents run concurrently.

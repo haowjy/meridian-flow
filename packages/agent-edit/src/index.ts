@@ -6,7 +6,6 @@ export type AgentEditCoreOptions = CreateWriteToolOptions;
 export interface AgentEditCore {
   read: ReturnType<typeof createWriteTool>["read"];
   write: ReturnType<typeof createWriteTool>["write"];
-  applyBound: ReturnType<typeof createWriteTool>["applyBound"];
   recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
@@ -25,7 +24,6 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   return {
     read: tool.read,
     write: tool.write,
-    applyBound: tool.applyBound,
     recover: tool.recover,
     commitResponse: tool.commitResponse,
     rollbackResponse: tool.rollbackResponse,
@@ -96,7 +94,6 @@ export {
   renderAgentEditResult,
 } from "./tool/result-text.js";
 export type {
-  BoundWriteContext,
   MutationActor,
   ReadFunction,
   RedoResult,
