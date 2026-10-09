@@ -22,8 +22,7 @@ import { Plugin } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 
 import { resolveAnchorIn } from "../anchors";
-import { getLinkAnswerCache, wikilinkPasteParsePlugins } from "../links";
-import { assignWrittenSource } from "../links/link-assignment";
+import { wikilinkPasteParsePlugins } from "../links";
 import { markdownClipboardParser, markdownClipboardSerializer } from "../markdown-paste";
 import { tableDropDecision } from "../table-drop";
 import { startImageImport } from "./image-imports";
@@ -42,14 +41,12 @@ import {
 import { createImageIngressStore } from "./image-ingress-store";
 import { insertImageFile, pasteImageFile } from "./image-uploads";
 import {
-  createAssetClipboardIndex,
   draggingFiles,
   fileDropIntent,
   imageFileFromClipboard,
+  linkExternalPastedImages,
   type PastedImageImport,
   pastedContentRange,
-  resolveAssetRefsForClipboard,
-  resolveImagesFromClipboard,
 } from "./image-workflow";
 import {
   carryPendingImages,
@@ -86,7 +83,6 @@ export const ImageIngressExtension = Extension.create({
 
   addStorage(): ImageIngressStorage {
     return {
-      assetIndex: createAssetClipboardIndex(),
       status: createImageIngressStore(),
       host: null,
     };
@@ -109,7 +105,7 @@ export const ImageIngressExtension = Extension.create({
 
   addProseMirrorPlugins() {
     const editor = this.editor;
-    const { assetIndex, status } = this.storage;
+    const { status } = this.storage;
     /** Imports a paste asked for, between the transform and its transaction. */
     let pasted: readonly PastedImageImport[] | null = null;
     let settleScheduled = false;
@@ -206,29 +202,19 @@ export const ImageIngressExtension = Extension.create({
             return true;
           },
 
-          // Assets travel as stable refs inside the editor and as
-          // project-relative paths on the clipboard, so an id never escapes
-          // into another surface.
           clipboardTextParser: markdownClipboardParser(undefined, () =>
             wikilinkPasteParsePlugins(editor),
           ),
           clipboardTextSerializer: markdownClipboardSerializer,
-          transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetIndex),
           transformPasted: (slice, view) => {
             // A drag moves pictures the editor already holds, as stored.
             if (view.dragging) {
               pasted = null;
               return slice;
             }
-            const index = getLinkAnswerCache(editor)?.assignment?.index ?? null;
-            const resolved = resolveImagesFromClipboard(
-              slice,
-              view.state.schema,
-              assetIndex,
-              (src) => assignWrittenSource(src, index),
-            );
-            pasted = resolved.imports.length > 0 ? resolved.imports : null;
-            return resolved.slice;
+            const linked = linkExternalPastedImages(slice, view.state.schema);
+            pasted = linked.imports.length > 0 ? linked.imports : null;
+            return linked.slice;
           },
 
           handleDOMEvents: {

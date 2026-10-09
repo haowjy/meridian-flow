@@ -1,8 +1,11 @@
 # core/editor/images — how a picture gets into a document, and what it looks like on the way
 
 This directory owns image ingress end to end: the picker, the drop, the pasted
-file, the pasted address, the asset index the clipboard translates through, and
-the pending lifecycle the writer sees. It does not own project asset storage,
+file, the pasted web address, and the pending lifecycle the writer sees. What a
+pasted picture NAMES is the link lane's: an `asset:` upload travels on the
+clipboard as its ref at the project catalog's current address for it, and a
+pasted source is assigned with the links in one pass
+(`../links/link-clipboard.ts`, `../links/link-assignment.ts`). It does not own project asset storage,
 the figure endpoint, or signed-URL rendering policy (`asset-image-render-state.ts`,
 which draws an `asset:` source and a document-address one alike: the address
 (and its ref, if any) is answered by the link lane's cache, and its document
@@ -35,7 +38,7 @@ Four homes, and nothing lives in two of them:
 | A drag in the air, a refusal | `image-ingress-store.ts` | Neither produced a document change, and law 5 still wants the reason in view |
 
 The app's half is `features/editor/surfaces/images/` — it registers the two
-ports (upload, fetch-bytes) and feeds the asset index. Until a host registers,
+ports (upload, fetch-bytes). Until a host registers,
 every door refuses out loud rather than opening onto nothing.
 
 ## Layout
@@ -48,7 +51,7 @@ every door refuses out loud rather than opening onto nothing.
 | `image-uploads.ts` | A picture from this machine: picker, insert, Replace, upload, land, Retry, Remove |
 | `image-imports.ts` | A picture the clipboard pointed at: fetch, upload, replace the link |
 | `pending-images.ts` | What the document knows about a picture in flight, and how it is drawn |
-| `image-workflow.ts` | Pure answers: what a drop means, what a paste carries, asset paths |
+| `image-workflow.ts` | Pure answers: what a drop means, which pasted pictures are web imports |
 | `ImageNodeView.tsx` | An inline picture at every point in its life |
 | `image-drag-preview.ts` | The ghost a picture drags with |
 | `measure-image.ts` | The picture's own size, read from the local file |
@@ -212,9 +215,9 @@ every door refuses out loud rather than opening onto nothing.
   condemned shape: a single scalar beside the manuscript, synchronized to an
   insertion that had not happened yet.
 - Awaiting an upload before inserting anything.
-- A second asset index. One per mounted editor lives in this extension's
-  storage, because a project-relative path only means something inside one
-  project's namespace.
+- An asset index of its own. Which document is at an address is the project
+  catalog's answer, the one links are assigned from; a second, append-only map
+  of paths to uploads outlives every move and names the wrong picture.
 - A local awareness field written straight onto `Awareness`. The write is a
   silent no-op whenever presence is suspended, and this lane learned that the
   hard way: the port is the only door (`../local-presence.ts`).

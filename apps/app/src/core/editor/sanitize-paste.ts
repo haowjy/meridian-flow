@@ -5,6 +5,7 @@ import {
   clipboardLinkAddress,
   clipboardLinkProject,
   clipboardLinkRef,
+  clipboardPictureRef,
   internalClipboardTarget,
   LINK_ADDRESS_ATTRIBUTE,
   LINK_PROJECT_ATTRIBUTE,
@@ -99,7 +100,7 @@ function copyLinkHref(source: Element, target: Element): void {
   const internal = internalClipboardTarget(source.getAttribute("data-meridian-link"));
   if (internal) {
     target.setAttribute("data-meridian-link", internal);
-    copyRecordedTarget(source, target);
+    copyRecordedTarget(source, target, clipboardLinkRef);
     return;
   }
   const rawHref = source.getAttribute("href");
@@ -110,14 +111,19 @@ function copyLinkHref(source: Element, target: Element): void {
 
 /**
  * What an internal link or picture named where it was copied: its address,
- * and its ref and project, each only in the shape the copy writes. The link
- * transform after this decides whether the ref is kept (same project) or the
- * address is bound fresh. Returns the address.
+ * and its ref and project, each only in the shape the copy writes (a picture's
+ * ref may be an upload's `asset:<id>`). The link transform after this decides
+ * whether the ref is kept (same project) or the address is bound fresh.
+ * Returns the address.
  */
-function copyRecordedTarget(source: Element, target: Element): string | null {
+function copyRecordedTarget(
+  source: Element,
+  target: Element,
+  readRef: (value: string | null) => string | null,
+): string | null {
   const address = clipboardLinkAddress(source.getAttribute(LINK_ADDRESS_ATTRIBUTE));
   if (address) target.setAttribute(LINK_ADDRESS_ATTRIBUTE, address);
-  const ref = clipboardLinkRef(source.getAttribute(LINK_REF_ATTRIBUTE));
+  const ref = readRef(source.getAttribute(LINK_REF_ATTRIBUTE));
   const project = clipboardLinkProject(source.getAttribute(LINK_PROJECT_ATTRIBUTE));
   if (address && ref && project) {
     target.setAttribute(LINK_REF_ATTRIBUTE, ref);
@@ -129,7 +135,7 @@ function copyRecordedTarget(source: Element, target: Element): string | null {
 function copyImageAttributes(source: Element, target: Element): boolean {
   // A picture copied from a Meridian document names a document address,
   // which is its source here; nothing a browser would fetch on its own.
-  const address = copyRecordedTarget(source, target);
+  const address = copyRecordedTarget(source, target, clipboardPictureRef);
   const rawSrc = source.getAttribute("src");
   if (!address && rawSrc === null) return false;
   const src = address ?? rawSrc?.trim() ?? "";

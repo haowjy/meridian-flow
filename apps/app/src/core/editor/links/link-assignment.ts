@@ -6,9 +6,9 @@
  * Every client producer that turns written text into a link comes through
  * here (Ctrl+K and the link form, a Markdown or HTML paste, a rich paste from
  * another project), and so does a pasted picture whose source is a manuscript
- * address (`assignWrittenSource`); here goes through markup's `assignFreshLink`, the pass
- * 3 agent-edit assigns with, so there is one answer to "which document did the
- * writer mean". It is synchronous and reads only the editor's local document
+ * address (`assignWrittenSource`). Both go through markup's `assignFreshLink`,
+ * the pass 3 agent-edit assigns with, so there is one answer to "which
+ * document did the writer mean". It is synchronous and reads only the editor's local document
  * index: assignment never waits on the network. An internal address the index
  * has no document at gets an ahead ref, which settles on whatever document
  * arrives there first; an index that is incomplete or missing is therefore
@@ -23,7 +23,6 @@ import {
   type LinkRef,
   matchDocumentPath,
   parseContextUri,
-  resolveDocumentHref,
   storedLinkRef,
 } from "@meridian/contracts";
 import { assignFreshLink } from "@meridian/markup/links";
@@ -114,69 +113,69 @@ export function indexedDocumentAt<T extends LinkAssignmentDocument>(
 }
 
 /**
- * The indexed document at exactly an ahead ref's stored address (design rule
- * 4: exact address, never the extension-omitted match), or null.
- */
-export function indexedDocumentAtExactly<T extends LinkAssignmentDocument>(
-  documents: readonly T[],
-  href: string,
-): T | null {
-  const stored = resolveDocumentHref(href, null);
-  if (!stored) return null;
-  return documents.find((document) => document.uri === stored.uri) ?? null;
-}
-
-/**
- * Pasted nodes with every ref-less link assigned (the client's pass 3). A
- * link that already carries a ref came from a same-project rich paste or a
- * producer that knew its document, and keeps it. Images and figures are the
- * image paste door's (`images/image-workflow.ts`), which knows the uploads
- * a pasted path came from and assigns the rest with `assignWrittenSource`. Each distinct written href is assigned once per paste, so one
- * address pasted twice shares an assignment.
+ * A pasted slice with every ref-less link and picture assigned (the client's
+ * pass 3), each under its own grammar: a link mark's href against the holder
+ * (`assignWrittenHref`), an `image`/`figure` source from the manuscript root
+ * (`assignWrittenSource`). A link or picture that already carries a ref came
+ * from a same-project rich paste or a producer that knew its document, and
+ * keeps it; so does an `asset:` upload, which a same-project paste restores
+ * (`link-clipboard.ts`). Each distinct written address is assigned once per
+ * paste per grammar, so one address pasted twice shares an assignment.
  *
- * A mark walk rather than `walkLinkOccurrences`: a pasted slice can hold bare
+ * A node walk rather than `walkLinkOccurrences`: a pasted slice can hold bare
  * inline text at its top level, which the block walk does not visit, and an
- * assignment is a function of the mark alone, so runs need not be found.
+ * assignment is a function of the mark or picture alone, so runs need not be
+ * found.
  */
-export function assignPastedNodes(
-  nodes: readonly PMNode[],
-  holderUri: string | null,
-  index: LinkAssignmentIndex | null,
-): readonly PMNode[] {
+export function assignPastedSlice(slice: Slice, scope: LinkAssignmentScope): Slice {
+  const { holderUri, index } = scope;
   const assignments = new Map<string, AssignedLink>();
+  const assigned = (grammar: "link" | "source", written: string): AssignedLink => {
+    const key = `${grammar}\u0000${written}`;
+    let assignment = assignments.get(key);
+    if (!assignment) {
+      assignment =
+        grammar === "link"
+          ? assignWrittenHref(written, holderUri, index)
+          : assignWrittenSource(written, index);
+      assignments.set(key, assignment);
+    }
+    return assignment;
+  };
   let changed = false;
-  const assign = (mark: Mark): Mark => {
+  const assignMark = (mark: Mark): Mark => {
     if (mark.type.name !== "link" || storedLinkRef(mark.attrs.ref) !== null) return mark;
     const href = String(mark.attrs.href ?? "");
-    let assigned = assignments.get(href);
-    if (!assigned) {
-      assigned = assignWrittenHref(href, holderUri, index);
-      assignments.set(href, assigned);
-    }
-    if (assigned.ref === null && assigned.href === href) return mark;
+    const assignment = assigned("link", href);
+    if (assignment.ref === null && assignment.href === href) return mark;
     changed = true;
-    return mark.type.create({ ...mark.attrs, ...assigned });
+    return mark.type.create({ ...mark.attrs, ...assignment });
   };
   const mapNode = (node: PMNode): PMNode => {
-    if (node.isText) return node.mark(node.marks.map(assign));
+    if (node.isText) return node.mark(node.marks.map(assignMark));
+    const marks = node.marks.map(assignMark);
+    if (node.type.name === "image" || node.type.name === "figure") {
+      const src = String(node.attrs.src ?? "");
+      if (!src || src.startsWith("asset:") || storedLinkRef(node.attrs.ref) !== null)
+        return node.mark(marks);
+      const assignment = assigned("source", src);
+      if (!assignment.ref) return node.mark(marks);
+      changed = true;
+      return node.type.create(
+        { ...node.attrs, src: assignment.href, ref: assignment.ref },
+        node.content,
+        marks,
+      );
+    }
     const children: PMNode[] = [];
     node.content.forEach((child) => {
       children.push(mapNode(child));
     });
-    return node.copy(Fragment.fromArray(children));
+    return node.type.create(node.attrs, Fragment.fromArray(children), marks);
   };
-  const mapped = nodes.map(mapNode);
-  return changed ? mapped : nodes;
-}
-
-/** `assignPastedNodes` over a pasted slice, keeping its open depths. */
-export function assignPastedSlice(slice: Slice, scope: LinkAssignmentScope): Slice {
   const nodes: PMNode[] = [];
   slice.content.forEach((node) => {
-    nodes.push(node);
+    nodes.push(mapNode(node));
   });
-  const assigned = assignPastedNodes(nodes, scope.holderUri, scope.index);
-  return assigned === nodes
-    ? slice
-    : new Slice(Fragment.fromArray([...assigned]), slice.openStart, slice.openEnd);
+  return changed ? new Slice(Fragment.fromArray(nodes), slice.openStart, slice.openEnd) : slice;
 }

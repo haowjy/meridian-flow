@@ -55,9 +55,8 @@ export function markdownPasteAddsStructure(blocks: readonly PMNode[]): boolean {
 
 /**
  * Parsing is pure syntax: every link comes out unbound. The editor's
- * `transformPasted` binds them for every paste, text or HTML
- * (`links/link-clipboard.ts`), and maps a known project image path back to
- * its `asset:` ref (`images/image-workflow.ts` `resolveImagesFromClipboard`).
+ * `transformPasted` binds them, and every picture source, for every paste,
+ * text or HTML (`links/link-clipboard.ts`).
  */
 export function markdownClipboardParser(
   schema?: Schema,
