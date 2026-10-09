@@ -20,11 +20,13 @@ import {
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
+import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
   createCollabDomain,
   createInMemoryCollabDomain,
   createLinkScopeObserver,
+  type DocumentLinkScopes,
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
@@ -259,6 +261,8 @@ export type AppServices = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
+  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
+  linkScopes: DocumentLinkScopes;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -347,6 +351,8 @@ export type ProductionAppPorts = {
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
+  /** Per-(project, reader) link snapshots; the resolver endpoint answers ref links from one. */
+  linkScopes: DocumentLinkScopes;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -670,6 +676,7 @@ export async function createProductionAppPorts(input: {
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
     }),
+    linkScopes: documentLinks,
     projects,
     works: workRepo,
     projectRepo,
@@ -1073,6 +1080,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
+    linkScopes: ports.linkScopes,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
@@ -1384,6 +1392,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    linkScopes: createStaticDocumentLinkScopes(),
     projects: {
       async ensureDefaultBootstrapReady() {
         return false;
