@@ -14,16 +14,13 @@
  * The editor keeps one place in this tree whether or not a review is open, so
  * entering and leaving review never remounts it.
  */
-import { type ReactNode, useEffect, useMemo, useState } from "react";
 
-import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
+import { type ReactNode, useEffect, useState } from "react";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
-import {
-  nextReviewFile,
-  type ReviewFileTarget,
-  reviewFileTargets,
-} from "@/features/draft-review/review-files";
+import { nextReviewFile } from "@/features/draft-review/review-files";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
@@ -83,9 +80,9 @@ export function MobileDocumentReview({
  * reviewing one will be. Nothing is drawn for a document with no pending draft.
  */
 function LiveDraftEntry({ documentId }: { documentId: string }) {
-  const { groupForDocument } = useDraftReview();
-  const group = groupForDocument(documentId);
-  if (!group || !pendingReviewDraft(group)) return null;
+  const { fileForDocument } = useDraftReview();
+  const group = fileForDocument(documentId);
+  if (!group) return null;
   return (
     <div
       data-phone-draft-entry
@@ -132,10 +129,10 @@ function ReviewBottom({
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
 }) {
-  const { controller, groups } = useDraftReview();
+  const { controller, files } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
   const view = useReviewChanges(controller);
-  const rows = useMemo(() => reviewFileTargets(groups), [groups]);
+  const rows = files;
 
   return (
     <>

@@ -8,10 +8,11 @@
  * no chat's strip. A file stays a candidate until its preview lands: only then
  * is it known whether the chat still has a change in it.
  */
+
 import type { DraftPreviewEntry } from "@/client/query/useDraftPreview";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { listablePreview } from "@/features/draft-review/draft-changes";
 import { type ReviewChange, reviewChangesOfPreview } from "@/features/draft-review/review-changes";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 
 /** Another chat that wrote into one of this chat's changes. */
 export type TiedChat = { threadId: string; title: string | null };

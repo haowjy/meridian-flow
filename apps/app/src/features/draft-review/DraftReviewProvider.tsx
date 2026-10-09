@@ -15,11 +15,8 @@ import {
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
-import {
-  type ThreadDraftGroup,
-  type ThreadDraftsStatus,
-  useWorkDrafts,
-} from "@/client/query/useWorkDrafts";
+import { type ThreadDraftsStatus, useWorkDrafts } from "@/client/query/useWorkDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { type ContextTab, getContextTabs } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
 import {
@@ -37,9 +34,9 @@ import { useReviewRefresh } from "./useReviewRefresh";
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
-  groups: ThreadDraftGroup[];
+  files: ReviewFileTarget[];
   drafts: ThreadDraftsStatus;
-  groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
+  fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
   activeEditorDocumentId: string | null;
   setActiveEditorDocumentId: (
@@ -117,7 +114,7 @@ export function useDraftReviewScopeValue({
   // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
-  const groups = drafts.groups ?? [];
+  const files = drafts.files ?? [];
   const controller = useDraftReviewController({
     projectId: effectiveProjectId,
     work,
@@ -155,13 +152,7 @@ export function useDraftReviewScopeValue({
     controller.exitReview();
   }, [effectiveProjectId, effectiveWorkId, controller.exitReview]);
 
-  const groupForDocument = useCallback(
-    (documentId: string | null | undefined) => {
-      if (!documentId) return null;
-      return groups.find((group) => group.documentId === documentId) ?? null;
-    },
-    [groups],
-  );
+  const fileForDocument = drafts.fileForDocument;
 
   const reviewRoomNameForDraft = useCallback(
     (documentId: string, draftId: string) =>
@@ -192,7 +183,7 @@ export function useDraftReviewScopeValue({
   useEffect(() => {
     if (!reviewedDraftId || reviewHandled || controller.isDisposing) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const stillActive = (drafts.drafts ?? groups.map((group) => group.draft)).some(
+    const stillActive = (drafts.drafts ?? []).some(
       (draft) => draft.documentId === reviewedDocumentId && draft.draftId === reviewedDraftId,
     );
     if (stillActive) return;
@@ -215,7 +206,6 @@ export function useDraftReviewScopeValue({
     controller.isDisposing,
     drafts.drafts,
     drafts.status,
-    groups,
     cachedProposal,
     effectiveProjectId,
     effectiveWorkId,
@@ -233,7 +223,7 @@ export function useDraftReviewScopeValue({
       tab.draftOnly &&
       tab.reviewWorkId === workId &&
       !activeDrafts.some((draft) => draft.draftId === tab.reviewDraftId);
-    const activeDrafts = drafts.drafts ?? groups.map((group) => group.draft);
+    const activeDrafts = drafts.drafts ?? [];
     if (!getContextTabs(projectId).tabs.some((tab) => isOrphan(tab, activeDrafts))) return;
 
     const scope = contextCatalogScope(projectId, "manuscript", null) ?? {
@@ -280,7 +270,6 @@ export function useDraftReviewScopeValue({
     controller.isDisposing,
     drafts.drafts,
     drafts.status,
-    groups,
     projectId,
     queryClient,
     resources,
@@ -320,14 +309,14 @@ export function useDraftReviewScopeValue({
   const value = useMemo<DraftReviewContextValue>(
     () => ({
       controller,
-      groups,
+      files,
       drafts,
-      groupForDocument,
+      fileForDocument,
       reviewRoomNameForDraft,
       activeEditorDocumentId,
       setActiveEditorDocumentId,
     }),
-    [controller, groups, drafts, groupForDocument, reviewRoomNameForDraft, activeEditorDocumentId],
+    [controller, files, drafts, fileForDocument, reviewRoomNameForDraft, activeEditorDocumentId],
   );
 
   return value;

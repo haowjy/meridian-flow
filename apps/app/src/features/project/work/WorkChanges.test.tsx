@@ -130,7 +130,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
   }));
   await fixture.render(
     async (probe) => {
-      await settled(() => expect(probe().third.groups).toHaveLength(2));
+      await settled(() => expect(probe().third.files).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
       await settled(() => expect(probe().header.view.items).toHaveLength(2));
       const editorReview = probe().editor.controller.inlineReview;

@@ -10,7 +10,6 @@
  * the document has no pending draft.
  */
 import { draftCommandFailure, useDraftCommandRecords } from "@/client/query/draft-command-record";
-import { pendingReviewDraft } from "@/client/query/useWorkDrafts";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -22,14 +21,13 @@ export type DraftReviewChipProps = {
 };
 
 export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipProps) {
-  const { controller, groupForDocument } = useDraftReview();
+  const { controller, fileForDocument } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
   const commandRecords = useDraftCommandRecords();
 
-  const group = groupForDocument(documentId);
+  const group = fileForDocument(documentId);
   if (!group) return null;
-  const draft = pendingReviewDraft(group);
-  if (!draft) return null;
+  const draft = group.draft;
   // A launch that failed shows on the chip itself; clicking it again retries.
   const failed =
     draftCommandFailure(commandRecords, {

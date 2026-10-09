@@ -67,7 +67,7 @@ function Harness({
           exitInlineReview: exitInlineReview ?? vi.fn(),
         },
         drafts: { status: "ready" },
-        groups: [
+        files: [
           {
             documentId: draft.documentId,
             documentName: "A",
@@ -82,7 +82,7 @@ function Harness({
             },
           },
         ],
-        groupForDocument: (documentId: string | null | undefined) =>
+        fileForDocument: (documentId: string | null | undefined) =>
           listed && documentId === draft.documentId
             ? {
                 documentId: draft.documentId,

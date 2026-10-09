@@ -7,7 +7,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import { pendingReviewDraft, type ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextRouteSelection } from "../context/context-removal-protocol";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import type { ProjectAddress, ProjectDestination } from "./project-address";
@@ -204,7 +204,7 @@ export function mergeLocalResourceState(
  * already open live (an Apply promoted it) is never second-guessed by a lagging catalog.
  */
 export type GatedLiveView =
-  | { outcome: "ready"; result: DocumentAddressResult | undefined; draftOnly?: ThreadDraftGroup }
+  | { outcome: "ready"; result: DocumentAddressResult | undefined; draftOnly?: ReviewFileTarget }
   | { outcome: "pending" | "failed"; result: undefined };
 
 export function gateLiveView(
@@ -216,7 +216,7 @@ export function gateLiveView(
     isFetching: boolean;
     isError: boolean;
   },
-  drafts: { status: string; groups: ThreadDraftGroup[] | null },
+  drafts: { status: string; files: ReviewFileTarget[] | null },
   hasLiveTab: (documentId: string) => boolean,
 ): GatedLiveView {
   if (scheme !== "manuscript" || !result || result.kind === "unavailable")
@@ -228,8 +228,7 @@ export function gateLiveView(
     return { outcome: "failed", result: undefined };
   const settled = manifest.isComplete && !manifest.isFetching;
   if (!settled || drafts.status === "loading") return { outcome: "pending", result: undefined };
-  const group = drafts.groups?.find((candidate) => candidate.documentId === documentId);
-  if (group && pendingReviewDraft(group)?.isNewDocument)
-    return { outcome: "ready", result, draftOnly: group };
+  const group = drafts.files?.find((candidate) => candidate.documentId === documentId);
+  if (group?.isNewDocument) return { outcome: "ready", result, draftOnly: group };
   return { outcome: "ready", result: { kind: "unavailable" } };
 }

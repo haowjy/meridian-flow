@@ -2,95 +2,28 @@
  * useWorkDrafts — reviewable AI draft list for one Work, and the Work's AI
  * write mode, whose change re-reads those drafts.
  *
- * Groups the active list by document because review launchers and navigation
- * operate at document scope.
+ * Projects one catalog-labelled file per active document draft, in stable order.
  */
-import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { UpdateWorkWriteModeRequest } from "@meridian/contracts/protocol";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { listWorkDrafts } from "@/client/api/drafts-api";
 import { updateWorkWriteMode } from "@/client/api/projects-api";
-import type { CatalogContextView } from "./context-catalog-projection";
 import { readDraftsAfterCommands } from "./draft-command-record";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { useContextCatalogView } from "./useContextCatalog";
+import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
 
-export type ThreadDraftGroup = {
-  documentId: string;
-  documentName: string | null;
-  contextPath: string | null;
-  /** The server permits one active Work-draft branch per (document, Work). */
-  draft: ThreadDraftListItem;
-};
-
-/** The newest active draft with reviewable content for one document. */
-export function pendingReviewDraft(
-  group: ThreadDraftGroup | null | undefined,
-): ThreadDraftListItem | null {
-  if (group?.draft.status !== "active") return null;
-  return group.draft;
-}
-
-/** Document groups that still carry an active, reviewable draft, in the order the server listed them. */
-export function activeWorkDraftGroups(
-  groups: ThreadDraftGroup[] | null | undefined,
-): ThreadDraftGroup[] {
-  if (!groups?.length) return [];
-  return groups.filter((group) => pendingReviewDraft(group) !== null);
-}
-
-export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {
-  const groups = new Map<string, ThreadDraftListItem>();
-  const seenDraftIds = new Set<string>();
-  for (const draft of drafts) {
-    if (seenDraftIds.has(draft.draftId)) continue;
-    seenDraftIds.add(draft.draftId);
-    const current = groups.get(draft.documentId);
-    if (!current || compareDraftRecency(draft, current) < 0) groups.set(draft.documentId, draft);
-  }
-
-  return Array.from(groups, ([documentId, draft]) => ({
-    documentId,
-    documentName: draft.documentName,
-    contextPath: draft.contextPath,
-    draft,
-  }));
-}
-
-/**
- * Re-label groups from the document's live identity. The draft record keeps the
- * name it had when the list was read; a rename (optimistic included) lands in the
- * catalog first, and the catalog is the one owner of a document's current name
- * and path. A draft-only document has no live entry and keeps its recorded label.
- */
-export function withLiveDocumentLabels(
-  groups: ThreadDraftGroup[],
-  catalog: Pick<CatalogContextView, "findDocument"> | null,
-): ThreadDraftGroup[] {
-  if (!catalog) return groups;
-  return groups.map((group) => {
-    const file = catalog.findDocument(group.documentId);
-    if (!file) return group;
-    const documentName = documentTitleFromUri(file.uri) ?? group.documentName;
-    if (documentName === group.documentName && file.path === group.contextPath) return group;
-    return { ...group, documentName, contextPath: file.path };
-  });
-}
-
-function compareDraftRecency(left: ThreadDraftListItem, right: ThreadDraftListItem): number {
-  const updated = (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0);
-  return updated || left.draftId.localeCompare(right.draftId);
-}
-
 export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
+  /** Raw query rows for generation evidence and command fences. */
   drafts: ThreadDraftListItem[] | null;
-  groups: ThreadDraftGroup[] | null;
+  files: ReviewFileTarget[] | null;
+  fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
 };
 
 /** The one Work draft-list query, shared by every reader so the list is fetched once. */
@@ -119,22 +52,19 @@ export function useWorkDrafts(
     }),
   );
 
-  // Memoize on the query data identity so downstream consumers (chat
-  // anchoring, memoized turn rows) only see a new groups array when the
-  // underlying drafts list actually changes — otherwise the grouping would
-  // allocate a fresh array on every render and bust memoization for every
-  // streaming tick.
-  const grouped = useMemo(
-    () => (result.data ? groupDraftsByDocument(result.data) : null),
-    [result.data],
-  );
   const { catalog } = useContextCatalogView(projectId ?? "", "manuscript", {
-    enabled: enabled && grouped !== null && grouped.length > 0,
+    enabled: enabled && Boolean(result.data?.length),
     workId: null,
   });
-  const groups = useMemo(
-    () => (grouped ? withLiveDocumentLabels(grouped, catalog) : null),
-    [grouped, catalog],
+  const files = useMemo(
+    () => (enabled && result.data ? projectWorkDraftFiles(result.data, catalog) : null),
+    [enabled, result.data, catalog],
+  );
+  const byDocument = useMemo(() => new Map(files?.map((file) => [file.documentId, file])), [files]);
+  const fileForDocument = useCallback(
+    (documentId: string | null | undefined) =>
+      documentId ? (byDocument.get(documentId) ?? null) : null,
+    [byDocument],
   );
 
   if (!enabled) {
@@ -143,14 +73,16 @@ export function useWorkDrafts(
       data: null,
       status: "disabled",
       drafts: null,
-      groups: null,
+      files: null,
+      fileForDocument,
     };
   }
 
   return {
     ...result,
     drafts: result.data,
-    groups,
+    files,
+    fileForDocument,
   };
 }
 

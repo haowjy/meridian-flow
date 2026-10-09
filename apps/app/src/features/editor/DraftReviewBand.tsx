@@ -27,10 +27,12 @@
  * Refusals the review holds are not here: they need a line of their own and
  * sit under the row (`DraftReviewFailureNotices`).
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Eye, EyeOff, List, Loader2 } from "lucide-react";
 import { useState } from "react";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -43,7 +45,6 @@ import {
   ReviewStateInline,
 } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import {
   type ReviewHeaderModel,
   useReviewFailures,

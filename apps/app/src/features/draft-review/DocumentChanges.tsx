@@ -7,10 +7,11 @@
  * themselves are `DocumentChangeRows`. A row focuses its change in the
  * manuscript. `touch` raises the rows and buttons to 44px.
  */
+
 import { t } from "@lingui/core/macro";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DocumentChangeRows } from "./DocumentChangeRows";
 import { ReviewNextAction, ReviewStatusContent } from "./ReviewCompletion";
-import type { ReviewFileTarget } from "./review-files";
 import type { DraftReviewController } from "./useDraftReviewController";
 import type { ReviewChangesView } from "./useReviewChanges";
 

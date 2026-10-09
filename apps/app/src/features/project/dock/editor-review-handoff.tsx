@@ -227,7 +227,7 @@ export function EditorReviewIntentClaimant({
     if (editorWorkId !== intent.workId) return;
     if (activeScheme !== "manuscript") return;
     if (review.activeEditorDocumentId !== intent.documentId) return;
-    const group = review.groupForDocument(intent.documentId);
+    const group = review.fileForDocument(intent.documentId);
     if (group?.draft.draftId !== intent.draftId) return;
     review.controller.enterInlineReview(intent.documentId, intent.draftId);
     // The latest launch decides the focus: one without it clears an older request.

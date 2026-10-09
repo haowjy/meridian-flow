@@ -15,7 +15,7 @@ const workId = "00000000-0000-4000-8000-000000000031";
 const state = vi.hoisted(() => ({
   history: null as unknown as ReturnType<typeof createMemoryHistory>,
   router: null as unknown,
-  drafts: { status: "loading", groups: null, refetch: vi.fn() } as unknown,
+  drafts: { status: "loading", files: null, refetch: vi.fn() } as unknown,
   catalogRefetch: vi.fn(),
   lookupRefetch: vi.fn(),
   issue: undefined as ProjectRouteIssue | undefined,
@@ -137,7 +137,7 @@ it("ends the wait with a failure, keeping the address, when the Work's drafts fa
   const refetch = vi.fn();
   state.catalogRefetch.mockClear();
   state.lookupRefetch.mockClear();
-  await coldOpen({ status: "error", groups: [], refetch });
+  await coldOpen({ status: "error", files: [], refetch });
   expect(state.issue).toBe("error");
   expect(state.history.location.search).toContain("draft=draft-n");
   expect(state.history.location.pathname).toContain("new-draft.md");

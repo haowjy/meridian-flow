@@ -1,11 +1,12 @@
 /** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
+
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { DraftReviewBand, DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";

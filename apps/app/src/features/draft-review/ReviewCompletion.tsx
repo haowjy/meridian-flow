@@ -1,8 +1,9 @@
 /** Completion text and the writer's next/exit action, shared by review shells. */
+
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { Button } from "@/components/ui/button";
-import type { ReviewFileTarget } from "./review-files";
 
 export type ReviewStateProps = {
   finished: boolean;

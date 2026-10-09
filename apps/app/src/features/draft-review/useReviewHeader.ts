@@ -8,17 +8,18 @@
  * cannot drift between them. Work-wide Apply all and Discard all belong to the
  * Work page's Changes to review (`WorkChanges`), not here.
  */
-import { onlineManager, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
 
+import { onlineManager, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import {
   type DraftCommandFailure,
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { useDraftReview } from "./DraftReviewProvider";
-import { nextReviewFile, type ReviewFileTarget, reviewFileTargets } from "./review-files";
+import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 export type ReviewHeaderOptions = {
@@ -66,12 +67,14 @@ export type ReviewHeaderModel = {
  * the other drafts' separately. Pure reads of the command records, so the
  * identity row's notices can read them beside the header model.
  */
-export function useReviewFailures(
-  { documentId, draftId }: { documentId: string; draftId: string },
-  listed?: readonly ReviewFileTarget[],
-) {
-  const { controller, groups } = useDraftReview();
-  const rows = useMemo(() => listed ?? reviewFileTargets(groups), [listed, groups]);
+export function useReviewFailures({
+  documentId,
+  draftId,
+}: {
+  documentId: string;
+  draftId: string;
+}) {
+  const { controller, files } = useDraftReview();
   const commandRecords = useDraftCommandRecords();
   const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
     projectId: controller.projectId,
@@ -86,7 +89,7 @@ export function useReviewFailures(
     draftId,
   });
   const failedElsewhere: { row: ReviewFileTarget; failure: DraftCommandFailure }[] = [];
-  for (const row of rows) {
+  for (const row of files) {
     const failure = draftCommandFailure(commandRecords, draftOf(row));
     if (!failure) continue;
     if (row.documentId !== documentId) failedElsewhere.push({ row, failure });
@@ -100,12 +103,11 @@ export function useReviewHeader({
   onCloseDraftOnly,
   onOpenDraft,
 }: ReviewHeaderOptions): ReviewHeaderModel {
-  const { controller, groups } = useDraftReview();
+  const { controller, files } = useDraftReview();
   const view = useReviewChanges(controller);
-  const rows = useMemo(() => reviewFileTargets(groups), [groups]);
 
   const next = nextReviewFile(
-    rows,
+    files,
     documentId,
     controller.inlineReview?.completion?.documentName ?? null,
   );
@@ -129,7 +131,7 @@ export function useReviewHeader({
   }, [ready, nextDocumentId, nextDraftId, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
   const { finished, completing, unlisted } = view;
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId }, rows);
+  const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId });
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
   /**

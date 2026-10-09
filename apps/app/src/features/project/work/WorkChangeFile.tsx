@@ -10,6 +10,7 @@
  * file's review focused on that change; Apply, Discard and the chat link act
  * where they are and never change the screen.
  */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
@@ -19,11 +20,11 @@ import {
   draftCommandFailure,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { NewBadge } from "@/components/app/NewBadge";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
 import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
 import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
 import { cn } from "@/lib/utils";

@@ -9,9 +9,10 @@
  * A failed launch is held on the draft's command record (by the handoff), where
  * each surface's row shows it; this hook only logs it for diagnostics.
  */
-import { useCallback } from "react";
 
-import type { ReviewFileTarget } from "@/features/draft-review/review-files";
+import { useCallback } from "react";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+
 import { type AiDraftLaunchTarget, useOpenEditorReview } from "./editor-review-handoff";
 
 export function useAiDraftLauncher() {

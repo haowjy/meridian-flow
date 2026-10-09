@@ -75,7 +75,7 @@ it("focuses this document, then applies and discards its classes without closing
   const navigate = vi.fn();
   await fixture.render(
     async (probe) => {
-      await settled(() => expect(probe().editor.groups).toHaveLength(2));
+      await settled(() => expect(probe().editor.files).toHaveLength(2));
       await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
       await settled(() => expect(probe().header.view.items).toHaveLength(2));
       await open();

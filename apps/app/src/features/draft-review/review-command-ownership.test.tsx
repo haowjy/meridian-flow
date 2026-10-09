@@ -169,7 +169,7 @@ it.each([
   if (mode === "apply") fixture.network.applyDraftChanges.mockReturnValueOnce(applyAnswer.promise);
   else fixture.network.discardDraft.mockReturnValueOnce(discardAnswer.promise);
   await fixture.render(async (p) => {
-    await vi.waitFor(() => expect(p().chat.groups).toHaveLength(2));
+    await vi.waitFor(() => expect(p().chat.files).toHaveLength(2));
     if (editorFirst) await open(p);
     const viewA = await p().mountDraftChanges(target(draftA));
     const viewB = await p().mountDraftChanges(target(draftB));

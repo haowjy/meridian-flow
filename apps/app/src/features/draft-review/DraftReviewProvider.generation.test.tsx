@@ -173,7 +173,7 @@ async function reviewClosed(probe: () => ScopeProbe, mode: Mode = "apply") {
     await sendInEditor(probe(), "2");
   });
   await vi.waitFor(() => expect(probe().header.finished).toBe(true));
-  await vi.waitFor(() => expect(probe().editor.groups).toEqual([]));
+  await vi.waitFor(() => expect(probe().editor.files).toEqual([]));
 }
 
 /** Draft A holds changes 1 and 2, draft B only change 3, both at generation 1. */
@@ -186,7 +186,7 @@ function twoDrafts() {
 
 async function groupsListed(probe: () => ScopeProbe) {
   await vi.waitFor(() => expect(mocks.listWorkDrafts).toHaveBeenCalled());
-  await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(2));
+  await vi.waitFor(() => expect(probe().editor.files).toHaveLength(2));
 }
 
 beforeEach(() => {
@@ -236,7 +236,7 @@ describe("E, C1, C2: a review opened on a draft whose last change another scope 
         release(answeredFor(draftB, answer(true, "3")));
         await done;
       });
-      await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(1));
+      await vi.waitFor(() => expect(probe().editor.files).toHaveLength(1));
       expect(probe().editor.controller.inlineReview?.draftId).toBe("draft-b");
       expect(probe().editor.controller.inlineReview?.completion).toEqual({
         phase: "closed",
@@ -310,7 +310,7 @@ describe("E, C1, C2: a review opened on a draft whose last change another scope 
         release(answeredFor(draftB, answer(true, "3")));
         await done;
       });
-      await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(1));
+      await vi.waitFor(() => expect(probe().editor.files).toHaveLength(1));
       expect(probe().editor.controller.inlineReview).toMatchObject({
         draftId: "draft-b",
         completion: { phase: "closed", documentName: "Chapter 13" },
@@ -476,7 +476,7 @@ describe("E (unresolved), P, O4: a draft the server no longer has", () => {
       expect(
         pendingChangeCommand(currentDraftCommandRecords(), target(draftB))?.draftClosed,
       ).toBeUndefined();
-      await vi.waitFor(() => expect(probe().editor.groups).toHaveLength(1));
+      await vi.waitFor(() => expect(probe().editor.files).toHaveLength(1));
       await probe().openDraft(draftB);
       await open(probe, draftB);
       await vi.waitFor(() => expect(probe().editor.controller.inlineReview).toBeNull());
