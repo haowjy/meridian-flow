@@ -34,6 +34,46 @@ document text; absent evidence, null tokens, and failed lookups fail closed.
 Known-null evidence is never resolved against current documents, including
 failed edits with only a historical path.
 
+## Shown links
+
+Each tool result that shows the model a document's links also records them as
+shown-link evidence ([`ports/shown-links.ts`](../ports/shown-links.ts), table
+`thread_shown_links`). A row holds the link's ref, the absolute address shown,
+the holder URI, the view (`live` or `draft:<workId>`) and the turn. When a
+write rewrites links, ref assignment binds them to these rows. The model
+never sees them: agent-edit's facts stay host-only on `WriteOutcome`, receipts,
+concurrent runs and search hits, and handlers send only `result` or the
+stripped hit.
+
+Who records, all through the one store:
+
+| Showing | Recorded in |
+|---|---|
+| successful read, narrowed or outline | `read` handler (`lib/model-tools/document-tools.ts`) |
+| returned, authorized search passages | `search` handler (`listing-tools.ts`) |
+| write echoes, staged or immediate, undo/redo, a partial failure's echo | `writeUnderGrant` |
+| settled receipts | the response scope's commit (`loop/orchestrator.ts`), inside the save transaction |
+| concurrent runs that fit the render budget | the response scope's backfill |
+| `@` reference reads | `lib/model-tools/reference-reader.ts` |
+
+Nothing else records evidence. Capture lives in the handlers, never in
+`readDocument`, so a copy's private source read records nothing. Matches past
+the passage cap, `thread_history` items, compaction summaries and handoff briefs
+record nothing either. Never derive evidence from `documentRevisions` metadata:
+that is revision evidence, and history copies carry it with null revisions.
+
+The rows are independent of transcript blocks, so compaction and restart
+lose none of them. A response that rolls back keeps its rows, since the model
+saw the echo. Dedup keeps the latest showing per key, ordered by one global
+`seq`. A fork reads its own rows plus its source's rows at turns up to its
+cutoff position, recursively; nothing is copied at fork time. Handoffs and
+spawned children inherit nothing, because they start from a brief.
+
+Delivery: `writeUnderGrant` binds `WriteContext.shownLinks` to
+`ShownLinkStore.forDocument(threadId, ·)`. The pool spreads the context
+through, so the field survives. Utility, seed and import writes pass none, so
+their links bind fresh.
+
 ## Tool-owned policy
 
 `ToolRegistration.documentText` (`tools/document-text.ts`) owns each tool's
