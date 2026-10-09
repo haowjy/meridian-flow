@@ -10,21 +10,25 @@ for what a link means before it reaches this module.
 cache (the Editor passes the per-editor cache its decorations draw from):
 
 ```ts
-resolution.registerResolver(createProjectLinkResolver(scope, index), { baseUri, projectId });
-// local, synchronously, per question:
+resolution.registerResolver(
+  createProjectLinkResolver(scope, index, settlements), // settlements: the account's memo
+  { baseUri, projectId },
+);
+// local, synchronously, per question: `resolveStoredLink` over the scope's catalog
+// (`project-link-catalog.ts`: the complete index, the memo as `settlement()`):
 //   malformed ref                          -> gone (never the address)
 //   doc:<id> the complete index holds      -> that document, wherever it lives now
 //   no ref, address the complete index has -> that document (matchDocumentPath)
 //   relative with no base, or a holder before its own address -> not asked
-//   ahead ref the settlement memo holds    -> exactly a doc ref to what it settled on
-//                                             (settled gone: ask, never the address)
+//   ahead ref the memo knows settled on D  -> exactly a doc ref to D
+//   ahead ref settled, identity unknown    -> ask, never the address
 //   other ahead ref, complete index holds exactly its stored address
 //                                          -> that document now (design rule 4), and ask
 //   everything else                        -> ask
 // remote, per batch of asked questions (at most 200):
 //   one POST of { workId, baseUri, links: [{ ref, href }] }; answers in request order:
 //   document -> document;  gone -> gone;  missing -> missing;  unresolvable -> no answer
-//   `settled: true` (rule 3) on an ahead ref's document or gone -> the settlement memo
+//   `settled: true` (rule 3) on an ahead ref's document or gone -> the memo learns it
 //   a provisional local answer stands unless the server says gone or another document
 ```
 
@@ -40,12 +44,18 @@ keeps it.
 
 **A settlement is a fact the client keeps.** The resolve endpoint marks an
 ahead ref's answer `settled: true` when it came through the ref's settlement
-(design rule 3). The resolver records it in a project-scoped memo
-(`aheadId -> documentId | "gone"`), set once and never unset, outside every
-generation and shared by every surface in the project. From then on the ref is
-answered exactly like `doc:<id>`, never by its address, so a renumber that
-puts another document at the old address never draws or opens it, online or
-off, and the chip does not flash on catalog changes.
+(design rule 3). The resolver records it in the account's memo
+(`AccountFeatureLifetime.linkSettlements`, per project
+`aheadId -> documentId | null`), outside every generation and shared by every
+surface in the account; it is never cleared while the account lives. The memo
+is the catalog's `settlement()`, and reachability stays in `document()`, as on
+the server. Settled `gone` records only "settled, identity unknown": it may
+mean the document is unreachable in that scope (a deleted Work, an excluded
+view), so a later settled `document` answer teaches the id; an id once
+learned is never replaced. From then on the ref is answered exactly like
+`doc:<id>`, never by its address, so a renumber that puts another document at
+the old address never draws or opens it, online or off, and the chip does not
+flash on catalog changes.
 
 `baseUri` is the URI of the document holding the link. Only a `relative` target
 needs it, and without one the question is not asked (a null answer, cached as

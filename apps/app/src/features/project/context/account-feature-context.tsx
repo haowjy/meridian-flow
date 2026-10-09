@@ -17,6 +17,7 @@ import {
 import { scopeCreationRegistry } from "@/client/creation/creation-registry";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import { LinkSettlementsProvider } from "@/features/links/link-settlements";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import type { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
@@ -165,7 +166,9 @@ function AccountFeatureProviders({
             <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
               <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
                 <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-                  {children}
+                  <LinkSettlementsProvider value={lifetime.linkSettlements}>
+                    {children}
+                  </LinkSettlementsProvider>
                 </ProjectDocumentLiveOpenerContext.Provider>
               </LiveDocumentRegistryAccountContext.Provider>
             </ResourceReplicaAccountContext.Provider>

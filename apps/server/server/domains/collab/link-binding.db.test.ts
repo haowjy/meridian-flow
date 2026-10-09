@@ -5,7 +5,6 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
-import { extractStoredLinks } from "@meridian/agent-edit/integration";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -18,6 +17,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { extractStoredLinks } from "@meridian/markup";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";

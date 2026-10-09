@@ -1,7 +1,8 @@
 # @meridian/markup
 
-Composable text ↔ ProseMirror codec package. MDX is the canonical Meridian wire
-format; pure markdown is the supported subset. This is a leaf package: it must
+Composable text ↔ ProseMirror codec package, and the one home of the link
+rules server and client share (holder scope, pass 3, stored-link walks). MDX
+is the canonical Meridian wire format; pure markdown is the supported subset. This is a leaf package: it must
 not import from `@meridian/agent-edit` or any app/server shell.
 
 ## Mental model
