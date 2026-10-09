@@ -10,12 +10,11 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../projects/index.js";
-import { resolveDocumentUri } from "../document-uri-resolver.js";
+import { createDocumentUriResolver } from "../document-uri-resolver.js";
 import type { DocumentLinkHistory } from "../ports/document-link-resolver.js";
 
 export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHistory {
-  const authorities = createDrizzleProjectWorkAuthorityResolver(db);
+  const currentUri = createDocumentUriResolver(db);
   async function authorizedUri(documentId: string, input: { projectId: string; userId: string }) {
     const tx = currentDrizzleDb(db);
     const [row] = await tx
@@ -35,7 +34,7 @@ export function createDrizzleDocumentLinkHistory(db: Database): DocumentLinkHist
           or(eq(projects.id, input.projectId), eq(projects.isPersonal, true)),
         ),
       );
-    return row ? resolveDocumentUri(tx, authorities, documentId) : null;
+    return row ? currentUri(documentId) : null;
   }
   return {
     async previous(input, address) {

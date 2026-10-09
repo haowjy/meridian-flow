@@ -22,7 +22,6 @@ else
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleProjectWorkAuthorityResolver } = await import("./index.js");
     const { createProjectContextDocumentStore } = await import(
       "../context/context-source-provisioning.js"
     );
@@ -42,7 +41,6 @@ else
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       domain.bindHocuspocus(
         new Hocuspocus({
@@ -59,7 +57,6 @@ else
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
