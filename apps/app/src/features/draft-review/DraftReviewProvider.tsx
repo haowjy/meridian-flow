@@ -9,7 +9,9 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -23,6 +25,7 @@ import {
   useContextRemovalCoordinator,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
+import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
   type DraftReviewController,
   type DraftReviewStateOwner,
@@ -119,11 +122,16 @@ export function useDraftReviewScopeValue({
   const files = drafts.files ?? [];
   const localStateOwner = useDraftReviewStateOwner();
   const reviewState = stateOwner ?? localStateOwner;
+  const scope = useRef({ projectId: effectiveProjectId, workId: effectiveWorkId, queryClient });
+  const scopeChanged =
+    scope.current.projectId !== effectiveProjectId ||
+    scope.current.workId !== effectiveWorkId ||
+    scope.current.queryClient !== queryClient;
   const controller = useDraftReviewController({
     projectId: effectiveProjectId,
     work,
     threadId,
-    stateOwner: reviewState,
+    stateOwner: scopeChanged ? { ...reviewState, state: EMPTY_DRAFT_REVIEW_STATE } : reviewState,
   });
   const roomOwner = useReviewRoomOwner({
     projectId: effectiveProjectId,
@@ -167,9 +175,10 @@ export function useDraftReviewScopeValue({
     [],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    scope.current = { projectId: effectiveProjectId, workId: effectiveWorkId, queryClient };
     controller.exitReview();
-  }, [effectiveProjectId, effectiveWorkId, controller.exitReview]);
+  }, [effectiveProjectId, effectiveWorkId, queryClient, controller.exitReview]);
 
   const fileForDocument = drafts.fileForDocument;
 

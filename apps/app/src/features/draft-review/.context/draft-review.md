@@ -28,6 +28,9 @@ Work when neither the Editor nor the chat has it (`work: null` otherwise): its
 own local state owner, it lists and runs commands and never enters a review.
 `useWorkReviewScope(workId)` picks Editor, then chat, then the third. The command
 record stays the one authority across all three; there is no Work-page lock.
+A Work/project/account-query scope change hides the departed selection in the
+render before layout clears it. No focus reader or room acquisition can attach
+the old draft to the new scope in the interval before effects run.
 
 Every draft has one synchronous command claim (`client/query/draft-command-record`,
 below): while a whole-draft Apply or Discard, or a per-change Apply or Discard,

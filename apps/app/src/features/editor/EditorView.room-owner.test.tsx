@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { BranchRoomPool } from "@/core/editor/branch-room-pool";
 import {
   DocumentSession,
@@ -80,6 +81,7 @@ const { EditorView } = await import("./EditorView");
 const documentId = "document-a";
 const transportStatus = new Map<string, (state: DocumentSessionConnectionState) => void>();
 const syncs = new Map<string, ReturnType<typeof deferredReviewAnswer<void>>>();
+const teardowns = new Map<string, ReturnType<typeof deferredReviewAnswer<void>>>();
 const pool = new BranchRoomPool({
   teardownGraceMs: 1,
   teardownOwner: new DocumentSessionTeardownOwner(() => new Error("room is retiring")),
@@ -104,7 +106,7 @@ const pool = new BranchRoomPool({
           listener(false);
           return () => {};
         },
-        destroy: () => {},
+        destroy: () => teardowns.get(roomKey)?.promise,
       }),
     }),
 });
@@ -159,6 +161,7 @@ const surfaces = () =>
 beforeEach(() => {
   vi.useFakeTimers();
   syncs.clear();
+  teardowns.clear();
   draftOnly = false;
   vi.clearAllMocks();
   resetDraftCommandRecords();
@@ -344,5 +347,42 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     expect(live.isEditable).toBe(true);
     await act(async () => live.commands.undo());
     expect(live.getText()).not.toContain("Warm live edit.");
+  });
+});
+
+it("a retired rebuild answer cannot replace a later review", async () => {
+  await run(async (client, oldRoom) => {
+    const release = deferredReviewAnswer<void>();
+    teardowns.set(oldRoom, release);
+    const old = review?.roomOwner.session;
+    await act(async () =>
+      transportStatus.get(oldRoom)?.({
+        kind: "reset",
+        disposition: "rebuild",
+        reason: WS_CLOSE.BRANCH_STALE.reason,
+      }),
+    );
+    expect(review?.roomOwner.session).toBeNull();
+    const nextRoom = branchRoomName("later-review", 1);
+    mocks.getDraftPreview.mockResolvedValue({
+      ...previewOf("9"),
+      draftId: "draft-b",
+      reviewRoomName: nextRoom,
+    });
+    const rows = [{ ...listed, draftId: "draft-b" }];
+    mocks.listWorkDrafts.mockResolvedValue({ drafts: rows });
+    await act(async () => {
+      client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), rows);
+      review?.controller.enterInlineReview(documentId, "draft-b");
+    });
+    await settled(() => expect(review?.roomOwner.session?.roomKey).toBe(nextRoom));
+    await settled(() => expect(surfaces()).toEqual(["review"]));
+    const currentEditor = mounted();
+    await act(async () => release.resolve());
+    await settled(() => expect(old?.getSnapshot().status).toBe("destroyed"));
+    expect(review?.controller.inlineReview?.draftId).toBe("draft-b");
+    expect(review?.roomOwner.session?.roomKey).toBe(nextRoom);
+    expect(mounted()).toBe(currentEditor);
+    expect(review?.roomOwner.inputEligible).toBe(true);
   });
 });
