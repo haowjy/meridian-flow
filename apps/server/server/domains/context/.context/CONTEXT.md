@@ -202,6 +202,21 @@ from live content holders in the request project. A moved holder's own links to
 unmoved documents are not counted; personal and other-project holders are not
 counted. The receipt shape stays `linkUpdate: { links, documents }`.
 
+## Whole-document writes
+
+`ContextFS.write`, `edit` (append) and `createTrackedDocument` with content
+bind their Markdown (`documentSync.bindMarkdown`) **before**
+`commandExecutor.run`, then apply the `BoundContent` inside the namespace-locked
+transaction (collab `document-authority-and-schema.md`). The existing document
+is looked up outside the transaction for that; the transaction looks it up
+again, and a concurrent create or edit in between merges by the overwrite's
+alignment. An actor's overwrite and every append bind against the current
+document; import and system writes bind fresh. A new document binds as the
+canonical URI it will have (`ContextFSDeps.holder`: the port's project and the
+source's Work authority). Repair (`repairTrackedDocument`) restores membership
+and, if the document has no Yjs state, an empty one; it never reparses the
+stored projection, whose links spell pre-move paths.
+
 ## Ahead refs and arrivals
 
 `link_ahead_refs` records each `ahead:` ref with the decoded address it was

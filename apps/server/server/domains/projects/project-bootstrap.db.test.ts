@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAllowAllFileAccess } from "../../domains/file-policy/index.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { writeMarkdown } from "../collab/test-support/bound-writes.js";
 import { testLinkDeps } from "../collab/test-support/document-link-scopes.js";
 import { createProjectBootstrapRepositoryForTest as createDrizzleProjectBootstrapRepository } from "./test-support/project-repository.js";
 
@@ -199,7 +200,7 @@ else
       const documents = collab();
       const repository = createDrizzleProjectBootstrapRepository({ db, documents });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
-      await documents.writeDocument({
+      await writeMarkdown(documents, {
         documentId: first.documentId,
         markdown: "Durable writer draft\n",
         origin: { type: "user", actorUserId: USER_ID as never },

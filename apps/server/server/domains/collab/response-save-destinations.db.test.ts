@@ -21,6 +21,7 @@ import {
   isFileAccessDenied,
   type Principal,
 } from "../file-policy/index.js";
+import { writeMarkdown } from "./test-support/bound-writes.js";
 import { testLinkDeps } from "./test-support/document-link-scopes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -218,7 +219,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [KB_ID, "Lore base."],
         [SCRATCH_ID, "Notes base."],
       ] as const) {
-        await collab.writeDocument({
+        await writeMarkdown(collab, {
           documentId: documentId as never,
           markdown,
           origin: { type: "user", actorUserId: USER_ID as never },
@@ -434,7 +435,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "image",
         mimeType: "image/png",
       });
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: KB_ID as never,
         markdown: "![Map](assets/map.png)",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -471,7 +472,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const collab = createTestCollab();
       await addSecondWorkAndThread();
       await seed(collab);
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: SCRATCH_B_ID as never,
         markdown: "B notes base.",
         origin: { type: "user", actorUserId: USER_ID as never },

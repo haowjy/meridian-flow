@@ -9,6 +9,7 @@ import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
 import type { LinkScopeKey } from "./domain/ports/document-link-scope.js";
+import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
   createWorkDraftFixture,
@@ -60,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "image",
         mimeType: "image/png",
       });
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: DOC_ID as never,
         markdown: "Base.\n\n![Map](assets/map.png)",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -101,7 +102,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
         fileType: "markdown",
       });
-      await collab.writeDocument({
+      await writeMarkdown(collab, {
         documentId: secondDocumentId as never,
         markdown: "![Map](assets/map.png)",
         origin: { type: "user", actorUserId: USER_ID as never },
@@ -113,6 +114,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
       }
       const context = new ContextFS({
+        holder: { projectId: PROJECT_ID },
         scheme: "manuscript",
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
