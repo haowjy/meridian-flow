@@ -1,5 +1,6 @@
 /** Work-draft listing, repair, preview, Apply, and Discard orchestration. */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import type { DraftId } from "@meridian/contracts";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -11,7 +12,6 @@ import type {
   BranchJournalReadStore,
   BranchPushService,
   BranchReviewService,
-  PushToLiveResult,
 } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
@@ -21,6 +21,15 @@ import type { ApplicationBranchStore, WorkDraftDiscard } from "./ports/applicati
 import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
+
+/** The review service's view of a draft's tree, until lanes E and D replace the bridges. */
+export interface DraftTreeReviewBridge {
+  /** Documents the Work's active draft created that are still hidden. */
+  createdHidden(workId: WorkId): Promise<ReadonlySet<DocumentId>>;
+  activeDraftId(workId: WorkId): Promise<DraftId | null>;
+  /** Reveal a created document at the draft's location, in its own transaction. */
+  revealCreated(input: { workId: WorkId; documentId: DocumentId }): Promise<void>;
+}
 
 export function createWorkDraftReviewService(input: {
   /** Both sides of a preview spell from one snapshot: live in the live view, the draft in its own. */
@@ -40,32 +49,18 @@ export function createWorkDraftReviewService(input: {
   agentEdit: ThreadPeerAgentEditCore;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   latestUpdateSeq(documentId: string): Promise<number>;
+  draftTree: DraftTreeReviewBridge;
 }): CollabDrafts {
-  async function resolveDraftOnlyDocumentIds(command: {
-    projectId?: ProjectId;
-    workId: WorkId;
-  }): Promise<Set<DocumentId>> {
-    if (!command.projectId) return new Set();
-    // Resolve live first: both adapter calls ensure the project manifest,
-    // and racing them on a project without one violates its unique identity.
-    const liveMembership = await input.branches.resolveManifestMembership({
-      projectId: command.projectId,
-    });
-    const draftMembership = await input.branches.resolveManifestMembership({
-      projectId: command.projectId,
-      workId: command.workId,
-    });
-    const liveDocumentIds = new Set(liveMembership.members);
-    return new Set(
-      draftMembership.members.filter((documentId) => !liveDocumentIds.has(documentId)),
-    );
+  /** Documents the Work's active draft created that are still hidden: "new" in review. */
+  async function createdDocumentIds(workId: WorkId): Promise<ReadonlySet<DocumentId>> {
+    return input.draftTree.createdHidden(workId);
   }
 
   async function listReviewableWorkDraftBranches(
     workId: WorkId,
-    projectId?: ProjectId,
+    _projectId?: ProjectId,
   ): Promise<ReviewableDraft[]> {
-    const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
+    const draftOnlyDocumentIds = await createdDocumentIds(workId);
     const drafts: ReviewableDraft[] = [];
     for (const { branch, rows } of await input.workDraftPending.list(workId)) {
       const uri = await input.resolveDocumentUri(branch.documentId);
@@ -86,12 +81,11 @@ export function createWorkDraftReviewService(input: {
     return drafts;
   }
 
-  async function isDraftOnlyManifestDocument(command: {
-    projectId?: ProjectId;
+  async function isCreatedDocument(command: {
     workId: WorkId;
     documentId: DocumentId;
   }): Promise<boolean> {
-    return (await resolveDraftOnlyDocumentIds(command)).has(command.documentId);
+    return (await createdDocumentIds(command.workId)).has(command.documentId);
   }
 
   async function previewWorkDraftBranch(command: {
@@ -161,7 +155,7 @@ export function createWorkDraftReviewService(input: {
               kind: "draft",
               workId: command.workId,
             }),
-            isNewDocument: await isDraftOnlyManifestDocument(command),
+            isNewDocument: await isCreatedDocument(command),
             liveRevisionToken: await input.latestUpdateSeq(command.documentId),
             draftRevisionToken: branch.generation,
             inlineModelPresent: true as const,
@@ -176,37 +170,6 @@ export function createWorkDraftReviewService(input: {
         liveDoc.destroy();
       }
     });
-  }
-
-  async function pushNewDocumentToLiveWithManifest(command: {
-    projectId: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    branchId: string;
-    userId: UserId;
-    signal?: AbortSignal;
-  }): Promise<PushToLiveResult> {
-    const manifest = await input.branches.ensureProjectManifest({ projectId: command.projectId });
-    try {
-      const manifestBranch = await input.branches.resolveWorkDraftBranchForWork({
-        documentId: manifest.documentId,
-        workId: command.workId,
-        liveDoc: manifest.doc,
-      });
-      try {
-        return await input.branchPush.pushToLiveWithManifestEntry({
-          branchId: command.branchId,
-          manifestBranchId: manifestBranch.branchId,
-          manifestEntryDocumentId: command.documentId,
-          pushedByUserId: command.userId,
-          signal: command.signal,
-        });
-      } finally {
-        manifestBranch.doc.destroy();
-      }
-    } finally {
-      manifest.doc.destroy();
-    }
   }
 
   async function resolveActiveWorkDraft(command: {
@@ -234,29 +197,19 @@ export function createWorkDraftReviewService(input: {
     const branch = await resolveActiveWorkDraft(command);
     if (!branch) return { status: "not_found" as const, draftId: command.draftId };
 
-    if (
-      command.projectId &&
-      (await isDraftOnlyManifestDocument({
-        projectId: command.projectId,
+    // Bridge until lane E's one publication: a created document is revealed at the
+    // draft's location in its own transaction, then its text is pushed.
+    if (await isCreatedDocument(command)) {
+      await input.draftTree.revealCreated({
         workId: command.workId,
         documentId: command.documentId,
-      }))
-    ) {
-      await pushNewDocumentToLiveWithManifest({
-        projectId: command.projectId,
-        workId: command.workId,
-        documentId: command.documentId,
-        branchId: branch.branchId,
-        userId: command.userId,
-        signal: command.signal,
-      });
-    } else {
-      await input.branchPush.pushToLive({
-        branchId: branch.branchId,
-        pushedByUserId: command.userId,
-        signal: command.signal,
       });
     }
+    await input.branchPush.pushToLive({
+      branchId: branch.branchId,
+      pushedByUserId: command.userId,
+      signal: command.signal,
+    });
     return { status: "applied" as const, draftId: command.draftId };
   }
 
@@ -269,7 +222,7 @@ export function createWorkDraftReviewService(input: {
     threadId?: string;
     operationIds?: string[];
   }) {
-    const projectId = command.projectId;
+    const _projectId = command.projectId;
     const branch = await resolveActiveWorkDraft(command);
     if (!branch) return { status: "discarded" as const, draftId: command.draftId };
 
@@ -291,15 +244,12 @@ export function createWorkDraftReviewService(input: {
         reviewedByUserId: command.userId,
       });
     } else {
-      const draftOnly =
-        projectId &&
-        (await isDraftOnlyManifestDocument({
-          projectId,
-          workId: command.workId,
-          documentId: command.documentId,
-        }));
+      // Bridge until lane D's discardItems: a created document ends the draft's use.
+      const createdBy = (await isCreatedDocument(command))
+        ? await input.draftTree.activeDraftId(command.workId)
+        : null;
       await input.discardWorkDraft({
-        draftOnlyProjectId: draftOnly ? projectId : undefined,
+        ...(createdBy ? { createdBy } : {}),
         workId: command.workId,
         documentId: command.documentId,
         contentBranchId: branch.branchId,

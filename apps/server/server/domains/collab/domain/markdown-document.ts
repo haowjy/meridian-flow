@@ -32,6 +32,9 @@ import type {
   DocumentSeedOrigin,
   DocumentWriteOrigin,
   DocumentWriteResult,
+  HeldLiveDocument,
+  HeldWriteExpectation,
+  HeldWriteStaged,
   PersistedUpdate,
   SyncError,
   UpdateOrigin,
@@ -151,6 +154,17 @@ export type MarkdownDocumentEngine = {
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
+  withLiveDocument<T>(
+    documentId: string,
+    operation: (held: HeldLiveDocument) => Promise<T>,
+  ): Promise<T>;
+  writeDocumentHeld(input: {
+    held: HeldLiveDocument;
+    content: BoundWrite;
+    expected: HeldWriteExpectation;
+    origin: DocumentWriteOrigin | DocumentSeedOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<HeldWriteStaged, SyncError>>;
 };
 
 export function createMarkdownDocumentEngine(
@@ -495,8 +509,94 @@ export function createMarkdownDocumentEngine(
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
+
+    async withLiveDocument(documentId, operation) {
+      await deps.lifecycle.ensureDocument(documentId);
+      return deps.coordinator.withDocument(documentId, (doc) =>
+        operation({ documentId: documentId as DocumentId, doc }),
+      );
+    },
+
+    writeDocumentHeld,
   };
   return engine;
+
+  /**
+   * Creation-bound content becomes a revealed document's first content only for the
+   * `new` holder of exactly the expected address on exactly the held document; every
+   * other holder check stays as `assertHolder` has it. The change is staged on a clone
+   * and journaled inside the caller's transaction; the warm document takes it only after
+   * that transaction commits, so an abort leaves warm state untouched.
+   */
+  async function writeDocumentHeld(input: {
+    held: HeldLiveDocument;
+    content: BoundWrite;
+    expected: HeldWriteExpectation;
+    origin: DocumentWriteOrigin | DocumentSeedOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<HeldWriteStaged, SyncError>> {
+    const { held, content, expected } = input;
+    const documentId = held.documentId;
+    if (documentId !== expected.documentId) {
+      throw new Error(`Held document ${documentId} is not the expected ${expected.documentId}`);
+    }
+    if (content.holder.kind !== "new" || content.holder.uri !== expected.uri) {
+      throw new Error(`Content bound for another holder cannot become ${expected.uri}`);
+    }
+    const format = await documentFormat(documentId);
+    if (!format.ok) return format;
+    if (content.schemaType !== format.value.schemaType) {
+      return Err({
+        code: "corrupt_state",
+        documentId,
+        message: `Content bound as ${content.schemaType} for a ${format.value.schemaType} document`,
+      });
+    }
+    const draft = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(draft, Y.encodeStateAsUpdate(held.doc));
+      const beforeVector = Y.encodeStateVector(draft);
+      const yjsOrigin = yjsTransactionOrigin(input.origin);
+      const written = await overwriteDraft(documentId, draft, content, yjsOrigin);
+      if (!written.ok) return written;
+      const update = Y.encodeStateAsUpdate(draft, beforeVector);
+      const markdown = serializeForSchema(
+        documentId,
+        draft,
+        format.value.schemaType,
+        await spelling(documentId, [draft]),
+      );
+      const meta = deps.metaForOrigin(input.origin);
+      let seq = 0;
+      await admitFreshAuthorship(
+        {
+          readMutationTarget: () => ({
+            documentId,
+            generation: documentAuthority(held.doc).generation,
+            doc: held.doc,
+          }),
+          admitImmediate: async ({ update: admitted }) => {
+            seq = await deps.journal.append(
+              documentId,
+              admitted,
+              meta,
+              documentAuthority(held.doc),
+            );
+            const warm = async () => {
+              Y.applyUpdate(held.doc, admitted, yjsOrigin);
+              await deps.afterWrite?.({ documentId, threadId: input.threadId, markdown });
+            };
+            if (!deps.deferUntilCommit?.(warm)) await warm();
+            return { sequence: BigInt(seq), joined: 0 };
+          },
+        },
+        { source: authorshipSource(input.origin), update },
+      );
+      return Ok({ markdown, updateSeq: seq });
+    } finally {
+      draft.destroy();
+    }
+  }
 
   async function identityPreservingSet(input: {
     documentId: DocumentId;

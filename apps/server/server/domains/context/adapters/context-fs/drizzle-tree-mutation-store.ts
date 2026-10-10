@@ -1,5 +1,6 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
-import type { DocumentFileType } from "@meridian/contracts/protocol";
+
+import type { ContextSourceId } from "@meridian/contracts";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -19,7 +20,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
+import { parseFilename } from "../../context/paths.js";
 import { countIncomingLinks } from "../../links/move-link-count.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -35,9 +36,10 @@ import {
 } from "../../ports/context-tree-mutation-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import type { LiveMembership } from "../../ports/live-membership.js";
+import { ensureLiveFolderPath } from "../../tree/hidden-nodes.js";
+import { createTreeReader, LIVE_TREE } from "../../tree/tree-view.js";
+import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
-  claimDocumentLocation,
-  hasOppositeContextEntry,
   lockContextSources,
   lockMovedDocumentRows,
   type NamespaceLocation,
@@ -50,9 +52,6 @@ import {
   createMembershipCommandId,
   dispatchMembershipEvents,
 } from "./membership-event-dispatcher.js";
-
-type FolderRow = typeof folders.$inferSelect;
-const BINARY_FILE_TYPES = new Set<DocumentFileType>(["docx", "image", "pdf", "binary"]);
 
 function normalizeTreePath(path: string): string {
   return path.split("/").filter(Boolean).join("/");
@@ -196,124 +195,17 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return result;
   }
 
-  private async findDirectFolder(
-    sourceId: string,
-    parentId: string | null,
-    name: string,
-  ): Promise<FolderRow | null> {
-    const [row] = await currentDrizzleDb(this.db)
-      .select()
-      .from(folders)
-      .where(
-        and(
-          eq(folders.contextSourceId, sourceId),
-          parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          eq(folders.name, name),
-          isNull(folders.deletedAt),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  }
-
-  private async findFolderId(
-    sourceId: string,
-    dir: readonly string[],
-  ): Promise<string | null | undefined> {
-    let parentId: string | null = null;
-    for (const name of dir) {
-      const row = await this.findDirectFolder(sourceId, parentId, name);
-      if (!row) return undefined;
-      parentId = row.id;
-    }
-    return parentId;
-  }
-
+  /** Destination folders through the live tree: a hidden folder at a path is revealed, never twinned. */
   private async ensureFolderPath(sourceId: string, dir: readonly string[]): Promise<string | null> {
-    let parentId: string | null = null;
-    for (const name of dir) {
-      const existing = await this.findDirectFolder(sourceId, parentId, name);
-      if (existing) {
-        parentId = existing.id;
-        continue;
-      }
-      if (await hasOppositeContextEntry(this.db, sourceId, parentId, name, "folder"))
-        rollback("conflict");
-      const createdRows: Array<{ id: string }> = await currentDrizzleDb(this.db)
-        .insert(folders)
-        .values({ contextSourceId: sourceId, parentId, name })
-        .returning({ id: folders.id });
-      const createdFolderId = createdRows[0]?.id;
-      if (!createdFolderId) rollback("conflict");
-      await claimDocumentLocation(this.db, sourceId, parentId, name);
-      parentId = createdFolderId;
-    }
-    return parentId;
+    const ensured = await ensureLiveFolderPath(this.db, {
+      contextSourceId: sourceId as ContextSourceId,
+      dir,
+    });
+    if (!ensured.ok) rollback("conflict");
+    return ensured.value.folderId;
   }
 
-  private async findFolderAtPath(
-    sourceId: string,
-    path: string,
-  ): Promise<{ id: string; updatedAt: string } | null> {
-    const segments = treePathSegments(path);
-    if (segments.length === 0) return null;
-    const folderId = await this.findFolderId(sourceId, segments);
-    if (folderId === undefined || folderId === null) return null;
-    const [row] = await currentDrizzleDb(this.db)
-      .select({
-        id: folders.id,
-        updatedAt: sql<string>`${folders.updatedAt}::text`,
-      })
-      .from(folders)
-      .where(
-        and(
-          eq(folders.id, folderId),
-          eq(folders.contextSourceId, sourceId),
-          isNull(folders.deletedAt),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  }
-
-  private async findDocumentAtPath(
-    sourceId: string,
-    path: string,
-  ): Promise<{ id: string; updatedAt: string; filetype: string | null } | null> {
-    const { dir, filename } = splitPath(normalizeTreePath(path));
-    if (!filename) return null;
-    const folderId = await this.findFolderId(sourceId, dir);
-    if (folderId === undefined) return null;
-    const { name, extension } = parseFilename(filename);
-    const [row] = await currentDrizzleDb(this.db)
-      .select({
-        id: documents.id,
-        updatedAt: sql<string>`${documents.updatedAt}::text`,
-        storedType: documents.fileType,
-        storageUrl: documents.storageUrl,
-      })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.contextSourceId, sourceId),
-          contentDocumentPredicate(),
-          folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
-          eq(documents.name, name),
-          eq(documents.extension, extension),
-          isNull(documents.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!row) return null;
-    const isStorageBacked =
-      row.storageUrl !== null || BINARY_FILE_TYPES.has(row.storedType as DocumentFileType);
-    return {
-      id: row.id,
-      updatedAt: row.updatedAt,
-      filetype: isStorageBacked ? null : row.storedType,
-    };
-  }
-
+  /** The live node at `path`: a hidden node is never moved or deleted live. */
   async inspect(sourceId: string, path: string): Promise<ContextLocationToken | null> {
     const normalized = normalizeTreePath(path);
     if (!normalized) {
@@ -324,26 +216,22 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         path: "",
       };
     }
-    const doc = await this.findDocumentAtPath(sourceId, normalized);
-    if (doc) {
-      return {
-        kind: "file",
-        nodeId: doc.id,
-        sourceId,
-        path: normalized,
-        filetype: doc.filetype,
-      };
+    const found = await createTreeReader(this.db).resolvePath(LIVE_TREE, {
+      contextSourceId: sourceId as ContextSourceId,
+      path: normalized,
+    });
+    if (found.kind !== "found") return null;
+    if (found.node.kind === "folder") {
+      return { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
     }
-    const folder = await this.findFolderAtPath(sourceId, normalized);
-    if (folder) {
-      return {
-        kind: "directory",
-        nodeId: folder.id,
-        sourceId,
-        path: normalized,
-      };
-    }
-    return null;
+    const document = found.node.document;
+    return {
+      kind: "file",
+      nodeId: document.id,
+      sourceId,
+      path: normalized,
+      filetype: isStorageBackedDocument(document) ? null : document.fileType,
+    };
   }
 
   private async expectationStillMatches(

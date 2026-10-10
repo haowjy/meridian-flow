@@ -155,6 +155,14 @@ export interface ContextSchemeAdapter {
     path: string,
     options?: ContextWriteOptions,
   ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
+  /**
+   * Reverse this adapter's create of `documentId` (contract §12.5): a draft placement
+   * retracts the draft's use itself; `live` asks the caller to delete the document.
+   */
+  retractCreate?(
+    path: string,
+    documentId: string,
+  ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>>;
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,

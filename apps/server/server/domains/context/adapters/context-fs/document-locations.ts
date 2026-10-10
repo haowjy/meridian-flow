@@ -2,11 +2,9 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  contentDocumentPredicate,
   contextSources,
   documentPreviousLocations,
   documents,
-  folders,
   projects,
   works,
 } from "@meridian/database/schema";
@@ -14,6 +12,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
+import { LIVE_TREE, visibleDocuments, visibleFolders } from "../../tree/tree-view.js";
 
 export type ContextNamespace = {
   projectId: string;
@@ -39,18 +38,36 @@ export async function lockNamespaceKeys(
 /**
  * Seam C (file-access §5): Work rows in id order, the bound edit grants'
  * confirmation, then every advisory lock sorted by key, before provisioning
- * or publishing any source.
+ * or publishing any source. A draft write's Work joins the Work locks, and
+ * `afterWorkLocks` (the draft row, contract §14) runs before any namespace key.
  */
 export async function lockContextNamespaces(
   db: Database,
   owner: { projectId: string; userId: string },
   scopes: readonly ContextCommandScope[],
+  options: {
+    workIds?: readonly string[];
+    sourceIds?: readonly string[];
+    afterWorkLocks?: () => Promise<void>;
+  } = {},
 ): Promise<void> {
-  const workIds = [...new Set(scopes.flatMap((scope) => (scope.workId ? [scope.workId] : [])))];
+  const sources = await sourceNamespaces(db, options.sourceIds ?? []);
+  const workIds = [
+    ...new Set([
+      ...scopes.flatMap((scope) => (scope.workId ? [scope.workId] : [])),
+      ...(options.workIds ?? []),
+      ...sources.flatMap((source) => (source.workId ? [source.workId] : [])),
+    ]),
+  ];
   await requireLockedActiveWorks(db, workIds);
+  await options.afterWorkLocks?.();
   await lockAdvisoryKeys(db, [
     ...(scopes.some((scope) => scope.scheme === "user") ? [owner.userId] : []),
     ...scopes.map((scope) => contextNamespaceKey({ ...owner, ...scope })),
+    ...sources.flatMap((source) =>
+      source.scheme === "user" && source.userId ? [source.userId] : [],
+    ),
+    ...sources.map(contextNamespaceKey),
   ]);
 }
 
@@ -253,7 +270,10 @@ export async function recordDocumentMove(
   }
 }
 
-/** Caller holds the logical namespace lock; files and folders share rendered names. */
+/**
+ * Caller holds the logical namespace lock; files and folders share rendered names. Only
+ * the live tree occupies a path: a hidden node never blocks a live entry.
+ */
 export async function hasOppositeContextEntry(
   db: Database,
   sourceId: string,
@@ -263,30 +283,29 @@ export async function hasOppositeContextEntry(
 ): Promise<boolean> {
   const tx = currentDrizzleDb(db);
   if (kind === "file") {
+    const vf = visibleFolders(LIVE_TREE);
     const [row] = await tx
-      .select({ id: folders.id })
-      .from(folders)
+      .select({ id: vf.id })
+      .from(vf)
       .where(
         and(
-          eq(folders.contextSourceId, sourceId),
-          parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          eq(folders.name, filename),
-          isNull(folders.deletedAt),
+          eq(vf.contextSourceId, sourceId as never),
+          parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as never),
+          eq(vf.name, filename),
         ),
       )
       .limit(1);
     return !!row;
   }
+  const vd = visibleDocuments(LIVE_TREE);
   const [row] = await tx
-    .select({ id: documents.id })
-    .from(documents)
+    .select({ id: vd.id })
+    .from(vd)
     .where(
       and(
-        eq(documents.contextSourceId, sourceId),
-        contentDocumentPredicate(),
-        parentId === null ? isNull(documents.folderId) : eq(documents.folderId, parentId),
-        sql`CASE WHEN ${documents.extension} = '' THEN ${documents.name} ELSE ${documents.name} || '.' || ${documents.extension} END = ${filename}`,
-        isNull(documents.deletedAt),
+        eq(vd.contextSourceId, sourceId as never),
+        parentId === null ? isNull(vd.folderId) : eq(vd.folderId, parentId as never),
+        sql`CASE WHEN ${vd.extension} = '' THEN ${vd.name} ELSE ${vd.name} || '.' || ${vd.extension} END = ${filename}`,
       ),
     )
     .limit(1);

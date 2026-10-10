@@ -2,7 +2,9 @@
  * Whole-document copy of a binary file (D24): the one place a copy depends on
  * how a document is stored. It duplicates the storage object, so deleting
  * either file never removes the other's bytes, and creates the destination
- * with `metadata.copiedFrom`. Tracked documents copy through agent-edit instead.
+ * with `metadata.copiedFrom` through the copier's own port: in a draft-mode Work
+ * that is a hidden row holding the draft's object, never shared (12b-Q2).
+ * Tracked documents copy through agent-edit instead.
  */
 
 import { Err, type Result } from "../../shared/result.js";
@@ -18,10 +20,8 @@ import type {
 } from "./ports/context-port.js";
 
 interface BinaryCopyInput {
-  /** The copier's own view, where the destination path must be free. */
+  /** The copier's own port: where the destination path must be free and the file is created. */
   port: ContextPort;
-  /** Where the file is created. Binary copies are never drafted (D24). */
-  livePort: ContextPort;
   objectStore: ObjectStorePort;
   source: BinaryFileRef;
   /** Proof the copier may read the source (file-access §2); a copy can't skip it. */
@@ -59,7 +59,7 @@ export async function copyBinaryDocument(
   const put = await input.objectStore.put(key, object.value.bytes, mimeType);
   if (!put.ok) return ioError(input.destinationUri, put.error.message);
 
-  const written = await input.livePort.writeBinary(input.destinationUri, {
+  const written = await input.port.writeBinary(input.destinationUri, {
     fileType: input.source.fileType,
     storageUrl: put.value.storageUrl,
     mimeType,

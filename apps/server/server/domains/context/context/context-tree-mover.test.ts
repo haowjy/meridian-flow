@@ -81,11 +81,11 @@ describe("ContextTreeMover result-aware command ownership", () => {
     });
     let entries = 0;
     const transaction: ContextCommandTransaction = {
-      async run<T>(operation: () => Promise<T>): Promise<T> {
+      async run<T>(operation: (command: { draft: null }) => Promise<T>): Promise<T> {
         entries += 1;
         const current = entries;
         try {
-          return await operation();
+          return await operation({ draft: null });
         } catch (error) {
           if (current === 1) await firstSettled;
           throw error;

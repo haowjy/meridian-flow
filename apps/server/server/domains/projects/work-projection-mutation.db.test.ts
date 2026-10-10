@@ -31,7 +31,6 @@ import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
 import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
-import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -410,12 +409,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { availabilityMutations: availability },
       );
       const projection = createWorkProjectionMutation({ db, availability, catalog });
-      const branches = createDrizzleBranchStore(
-        db,
-        undefined,
-        createBranchCriticalSections(),
-        projection,
-      );
+      const branches = createDrizzleBranchStore(db, undefined, projection);
       for (const branchId of [BRANCH_ID, OTHER_BRANCH_ID, SECOND_BRANCH_ID]) {
         await branches.appendJournal?.({
           branchId,

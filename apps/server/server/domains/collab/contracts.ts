@@ -77,6 +77,12 @@ export type DocumentWriteOrigin =
   | { type: "agent"; actorTurnId: TurnId }
   | { type: "user"; actorUserId: UserId };
 
+/** A live document under the coordinator lease its caller holds (contract §6.3 B3). */
+export type HeldLiveDocument = { documentId: DocumentId; doc: Y.Doc };
+/** The creation-bound content is admitted only for this document at this address. */
+export type HeldWriteExpectation = { documentId: DocumentId; uri: string };
+export type HeldWriteStaged = { markdown: string; updateSeq: number };
+
 export type DocumentWriteResult = {
   documentId: DocumentId;
   markdown: string;
@@ -235,6 +241,26 @@ export type MarkdownDocumentStore = LinkBinder & {
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<DocumentWriteResult>;
+  /**
+   * The live coordinator's lease on a document, taken outside any transaction (contract
+   * §6.3 B3): a revealed document's first content is admitted under it.
+   */
+  withLiveDocument<T>(
+    documentId: string,
+    operation: (held: HeldLiveDocument) => Promise<T>,
+  ): Promise<T>;
+  /**
+   * A revealed document's first content, under a lease the caller holds and inside its
+   * transaction: verifies identity and address, stages on a clone, journals durably, and
+   * applies to the warm document only after commit.
+   */
+  writeDocumentHeld(input: {
+    held: HeldLiveDocument;
+    content: BoundWrite;
+    expected: HeldWriteExpectation;
+    origin: DocumentWriteOrigin | DocumentSeedOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<HeldWriteStaged, SyncError>>;
 };
 
 export type DocumentProjectionRefresher = {
@@ -392,18 +418,9 @@ export type BranchPeerShadowAccess = {
       responseId?: string | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
-  /**
-   * A view's manifest members. With `responseId` and `threadId`, that reply's
-   * staged creates count too, but only those staged for `destination` when it
-   * is given. `destination: "live"` reads the live manifest even in a thread:
-   * thread and response then only name whose staged creates count.
-   */
+  /** The live manifest's members, for its remaining live readers until lane M retires it. */
   resolveManifestMembership(input: {
     projectId: ProjectId;
-    workId?: WorkId | null;
-    threadId?: ThreadId | null;
-    responseId?: string | null;
-    destination?: "live" | "draft";
   }): Promise<{ documentId: DocumentId; members: string[] }>;
   reconcileProjectManifest(projectId: ProjectId): Promise<void>;
   /** A cross-project move's live membership, inside the move transaction. */
@@ -413,13 +430,19 @@ export type BranchPeerShadowAccess = {
   ): Promise<void>;
   recordManifestDocumentCreated(
     documentId: DocumentId,
-    view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    view?: { projectId: ProjectId },
   ): Promise<void>;
   /** The documents.deleted_at transaction must commit before this notification. */
   recordManifestDocumentDeleted(
     documentId: DocumentId,
-    view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    view?: { projectId: ProjectId },
   ): Promise<void>;
+  /**
+   * The Work's draft branch on a document a draft just created or joined, seeded from its
+   * live document (empty: a draft create never seeds live Yjs), in the caller's
+   * transaction; idempotent against a racing peer ensure (contract §6.2 step 5).
+   */
+  ensureCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<void>;
 };
 
 export type DocumentAttribution = {

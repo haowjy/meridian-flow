@@ -3,9 +3,7 @@
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  contextAvailabilityHeads,
   contextCatalogCommits,
-  contextCatalogEntries,
   contextSources,
   documentMarkdownProjections,
   documents,
@@ -23,7 +21,6 @@ import type { BindMarkdownInput } from "../../collab/index.js";
 import { fakeBoundWrite } from "../../collab/test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
-import { createInMemoryEventSink } from "../../observability/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleWorkRepository } from "../../projects/adapters/work-repository/drizzle.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "../../projects/test-support/project-repository.js";
@@ -73,7 +70,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (rows.length) await db.insert(contextSources).values(rows);
     }
 
-    it("publishes only live manuscript membership while leaving other project sources unchanged", async () => {
+    it("publishes only live manuscript rows while leaving other project sources unchanged", async () => {
       const db = database.current;
       const LIVE_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
       const DRAFT_DOCUMENT_ID = "00000000-0000-4000-8000-000000000806";
@@ -95,6 +92,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           contextSourceId: SOURCE_ID,
           name: "draft-only",
           extension: "md",
+          hidden: true,
         },
         {
           id: KB_DOCUMENT_ID,
@@ -103,28 +101,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           extension: "md",
         },
       ]);
-      const members = new Set([LIVE_DOCUMENT_ID]);
-      let membershipFailure = false;
-      const eventSink = createInMemoryEventSink();
-      const delay = vi.fn(async (_ms: number) => {});
       const publish = vi.fn();
-      const catalog = createDrizzleContextCatalog(
-        db,
-        { publish },
-        {
-          delay,
-          eventSink,
-          manifestMembership: {
-            async resolveManifestMembership() {
-              if (membershipFailure) throw new Error("membership unavailable");
-              return {
-                documentId: "00000000-0000-4000-8000-000000000809" as never,
-                members: [...members],
-              };
-            },
-          },
-        },
-      );
+      const catalog = createDrizzleContextCatalog(db, { publish });
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const initial = await catalog.snapshot(scope);
       const initialFileIds = initial.entries.flatMap((entry) =>
@@ -133,7 +111,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(initialFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
       expect(initialFileIds).not.toContain(DRAFT_DOCUMENT_ID);
 
-      members.add(DRAFT_DOCUMENT_ID);
+      // Apply reveals the draft's document: it joins the live tree.
+      await db.update(documents).set({ hidden: false }).where(eq(documents.id, DRAFT_DOCUMENT_ID));
       await catalog.refreshProject(PROJECT_ID);
       await expect(catalog.changes(scope, initial.cursor)).resolves.toMatchObject({
         kind: "delta",
@@ -151,7 +130,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(publish).toHaveBeenCalledTimes(1);
 
       const applied = await catalog.snapshot(scope);
-      members.delete(DRAFT_DOCUMENT_ID);
+      await db
+        .update(documents)
+        .set({ deletedAt: new Date() })
+        .where(eq(documents.id, DRAFT_DOCUMENT_ID));
       await catalog.refreshProject(PROJECT_ID);
       await expect(catalog.changes(scope, applied.cursor)).resolves.toMatchObject({
         kind: "delta",
@@ -170,50 +152,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(discardedFileIds).toEqual(expect.arrayContaining([LIVE_DOCUMENT_ID, KB_DOCUMENT_ID]));
       expect(discardedFileIds).not.toContain(DRAFT_DOCUMENT_ID);
       expect(publish).toHaveBeenCalledTimes(2);
-
-      const persistedBeforeFailure = await db
-        .select()
-        .from(contextCatalogEntries)
-        .where(eq(contextCatalogEntries.scopeKey, `project:${PROJECT_ID}`));
-      const availabilityBeforeFailure = await db
-        .select()
-        .from(contextAvailabilityHeads)
-        .where(eq(contextAvailabilityHeads.authorityKey, `project:${PROJECT_ID}`));
-      membershipFailure = true;
-      await expect(catalog.refreshProjectDocuments(PROJECT_ID)).resolves.toBeUndefined();
-      expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
-      expect(eventSink.events).toContainEqual(
-        expect.objectContaining({ name: "DeferredRefreshFailure", level: "error" }),
-      );
-      await expect(
-        db
-          .select()
-          .from(contextCatalogEntries)
-          .where(eq(contextCatalogEntries.scopeKey, `project:${PROJECT_ID}`)),
-      ).resolves.toEqual(persistedBeforeFailure);
-      await expect(
-        db
-          .select()
-          .from(contextAvailabilityHeads)
-          .where(eq(contextAvailabilityHeads.authorityKey, `project:${PROJECT_ID}`)),
-      ).resolves.toEqual(availabilityBeforeFailure);
     });
 
     it("retries a post-Apply document refresh after the availability lock timeout", async () => {
       const db = database.current;
       const NEW_DOCUMENT_ID = "00000000-0000-4000-8000-000000000805";
       await seedProject(db, "catalog-apply-retry");
-      const members = new Set<string>();
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        manifestMembership: {
-          async resolveManifestMembership() {
-            return {
-              documentId: "00000000-0000-4000-8000-000000000809" as never,
-              members: [...members],
-            };
-          },
-        },
-      });
+      const catalog = createDrizzleContextCatalog(db);
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       await catalog.snapshot(scope);
       await db.insert(documents).values({
@@ -222,7 +167,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "new-chapter",
         extension: "md",
       });
-      members.add(NEW_DOCUMENT_ID);
 
       const lockDb = createDb(DATABASE_URL, { max: 1 });
       let releaseLock!: () => void;
@@ -341,69 +285,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         ],
       });
-    });
-
-    it("does not expose a reserved generation when deferred Manuscript repair fails", async () => {
-      const db = database.current;
-      await seedProject(db, "catalog-deferred-failure");
-      await db.insert(documents).values({
-        id: DOCUMENT_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter",
-        extension: "md",
-      });
-      let failMembership = false;
-      let resolveFailed!: () => void;
-      const failed = new Promise<void>((resolve) => {
-        resolveFailed = resolve;
-      });
-      const delay = vi.fn(async (_ms: number) => {});
-      const eventSink = createInMemoryEventSink();
-      const emit = eventSink.emit.bind(eventSink);
-      eventSink.emit = (event) => {
-        emit(event);
-        if (event.name === "DeferredRefreshFailure") resolveFailed();
-      };
-      const availability = createDrizzleProjectContextAvailability(db, eventSink);
-      const catalog = createDrizzleContextCatalog(db, undefined, {
-        availabilityMutations: availability,
-        eventSink,
-        delay,
-        manifestMembership: {
-          async resolveManifestMembership() {
-            if (failMembership) throw new Error("manifest offline");
-            return {
-              documentId: "00000000-0000-4000-8000-000000000809" as never,
-              members: [DOCUMENT_ID],
-            };
-          },
-        },
-      });
-      await catalog.refreshProjectDocuments(PROJECT_ID);
-      const beforeEntries = await db.select().from(contextCatalogEntries);
-      const beforeHeads = await db.select().from(contextAvailabilityHeads);
-
-      delay.mockClear();
-      failMembership = true;
-      await runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .update(documents)
-          .set({ name: "renamed" })
-          .where(eq(documents.id, DOCUMENT_ID));
-        await catalog.refreshSources([SOURCE_ID]);
-      });
-
-      await failed;
-      expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
-      await expect(db.select().from(contextCatalogEntries)).resolves.toEqual(beforeEntries);
-      await expect(db.select().from(contextAvailabilityHeads)).resolves.toEqual(beforeHeads);
-      expect(eventSink.events).toContainEqual(
-        expect.objectContaining({
-          source: "context-catalog",
-          name: "DeferredRefreshFailure",
-          level: "error",
-        }),
-      );
     });
 
     it("rolls catalog state back and excludes manifests and content-only changes", async () => {

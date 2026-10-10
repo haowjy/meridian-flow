@@ -1,12 +1,15 @@
 import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
+import { isUuid } from "../../../../../../shared/uuid.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 
 interface CreateContextEntryBody {
   type: "file" | "folder";
   path: string;
   content?: string;
+  /** Link Create on an "in a draft" link: reveal that draft's document here (contract §6.4). */
+  documentId?: string;
 }
 export function parseCreateContextEntryBody(raw: unknown): CreateContextEntryBody {
   if (!raw || typeof raw !== "object")
@@ -16,10 +19,16 @@ export function parseCreateContextEntryBody(raw: unknown): CreateContextEntryBod
     throw createError({ statusCode: 400, message: "`type` must be 'file' or 'folder'" });
   if (body.content !== undefined && typeof body.content !== "string")
     throw createError({ statusCode: 400, message: "`content` must be a string" });
+  if (
+    body.documentId !== undefined &&
+    (typeof body.documentId !== "string" || !isUuid(body.documentId))
+  )
+    throw createError({ statusCode: 400, message: "`documentId` must be a UUID" });
   return {
     type: body.type,
     path: parseContextMutationPath(body.path, "path"),
     content: body.content,
+    ...(body.documentId ? { documentId: body.documentId } : {}),
   };
 }
 
@@ -43,6 +52,7 @@ export async function createContextEntry(input: {
 
   const result = await input.port.createTrackedDocument(uri, input.body.content ?? "", {
     origin: { type: "human", userId: input.userId },
+    ...(input.body.documentId ? { documentId: input.body.documentId } : {}),
   });
   if (!result.ok) {
     if (result.error.code === "conflict") return { status: "conflict" as const, uri };

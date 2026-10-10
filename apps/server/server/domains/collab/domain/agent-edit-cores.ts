@@ -56,7 +56,11 @@ export type LiveAgentEditCore = AgentEditCore & {
   readonly [liveAgentEditCoreBrand]: "live-agent-edit-core";
 };
 
-export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "commitResponse"> & {
+// A reply's created set isn't asked of the pool: a create is a row in the tree view.
+export type ThreadPeerAgentEditCore = Omit<
+  AgentEditCore,
+  "read" | "write" | "commitResponse" | "responseDocuments"
+> & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /** Where this reply's writes to a document go, once it has written there. */

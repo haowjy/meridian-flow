@@ -109,6 +109,7 @@ if (!RUN) {
             links: createTestDocumentLinkScopes(db),
             db,
             documentSync: collab,
+            drafts: collab.drafts,
             manifestMembership: collab,
             catalogMutations: catalog,
           });
@@ -285,6 +286,7 @@ if (!RUN) {
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
         documentSync: collab,
+        drafts: collab.drafts,
         manifestMembership: collab,
         catalogMutations: catalog,
       });

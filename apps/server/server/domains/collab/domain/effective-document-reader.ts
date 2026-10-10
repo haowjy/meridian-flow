@@ -1,4 +1,4 @@
-/** Effective branch reads with staged-response overlays and manifest projection. */
+/** Effective branch reads with staged-response overlays. */
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -9,7 +9,7 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -111,16 +111,6 @@ export function createEffectiveDocumentReader(input: {
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, SyncError>> {
     const fallback = () => readLive(command, read);
-    const isStagedOnlyCreatedDocument = Boolean(
-      command.responseId &&
-        input.agentEdit
-          .responseDocuments(command.responseId, command.threadId ?? undefined)
-          .created.includes(command.documentId),
-    );
-    if (isStagedOnlyCreatedDocument) {
-      const stagedOnly = readStagedResponseOnly(command, read);
-      if (stagedOnly !== null) return Ok(await stagedOnly);
-    }
     if (command.destination === "live") {
       // Live reads ignore any Work draft, kept or not (D40), but still see this
       // reply's own staged writes.
@@ -248,40 +238,8 @@ export function createEffectiveDocumentReader(input: {
         return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
       });
     },
-    async resolveManifestMembership(command) {
-      const { destination, ...view } = command;
-      // A live view's manifest is the live one; its thread only names whose creates count.
-      const manifestView = destination === "live" ? { projectId: view.projectId } : view;
-      if (manifestView.threadId || manifestView.workId) {
-        const manifest = await input.branches.ensureProjectManifest({
-          projectId: command.projectId,
-        });
-        try {
-          if (manifestView.threadId) {
-            await input.branchPulls.pullThreadPeer({
-              documentId: manifest.documentId,
-              threadId: manifestView.threadId,
-            });
-          } else if (manifestView.workId) {
-            await input.branchPulls.flushLivePull(manifest.documentId);
-          }
-        } finally {
-          manifest.doc.destroy();
-        }
-      }
-      const membership = await input.branches.resolveManifestMembership(manifestView);
-      const { responseId, threadId } = view;
-      if (!responseId || !threadId) return membership;
-      // A create staged for the other destination is not this view's.
-      const created = input.agentEdit
-        .responseDocuments(responseId, threadId)
-        .created.filter(
-          (documentId) =>
-            !destination ||
-            (input.agentEdit.responseDestination(responseId, documentId)?.kind ?? destination) ===
-              destination,
-        );
-      return { ...membership, members: [...new Set([...membership.members, ...created])] };
+    resolveManifestMembership(command) {
+      return input.branches.resolveManifestMembership({ projectId: command.projectId });
     },
     reconcileProjectManifest(projectId: ProjectId) {
       return input.branches.reconcileProjectManifest(projectId);
@@ -289,17 +247,14 @@ export function createEffectiveDocumentReader(input: {
     transferLiveManifestMembership(documentIds, projects) {
       return input.branches.transferLiveManifestMembership(documentIds, projects);
     },
-    async recordManifestDocumentCreated(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ) {
+    async recordManifestDocumentCreated(documentId: DocumentId, view?: { projectId: ProjectId }) {
       await input.branches.recordManifestDocumentCreated(documentId, view);
     },
-    async recordManifestDocumentDeleted(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ) {
+    async recordManifestDocumentDeleted(documentId: DocumentId, view?: { projectId: ProjectId }) {
       await input.branches.recordManifestDocumentDeleted(documentId, view);
+    },
+    ensureCreatedDraftBranch(command) {
+      return input.branches.ensureCreatedDraftBranch(command);
     },
   };
 }

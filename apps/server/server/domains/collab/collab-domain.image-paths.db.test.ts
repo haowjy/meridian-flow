@@ -376,12 +376,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links,
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
         mutationStore: new DrizzleContextTreeMutationStore(db),
-        manifestView: {
-          projectId: PROJECT_ID,
-          workId: WORK_ID,
-          threadId: THREAD_ID,
-          responseId: RESPONSE_ID,
-        },
         threadView: {
           threadId: THREAD_ID,
           responseId: RESPONSE_ID,
@@ -411,8 +405,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await collab.recordManifestDocumentCreated(CREATED_ID as never, {
         projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        threadId: THREAD_ID as never,
       });
       await expect(
         core.write(

@@ -101,10 +101,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         filetype: "markdown",
         markdown: "original",
       });
-      await expect(store.createFolder(null, "file.md")).rejects.toThrow(
+      await expect(store.ensureFolderPath(["file.md"])).rejects.toThrow(
         "Context entry already exists",
       );
-      await store.createFolder(null, "folder.md");
+      await store.ensureFolderPath(["folder.md"]);
       await expect(
         store.createDocumentRecordIfAbsent({
           folderId: null,
@@ -189,7 +189,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(documents)
         .set({ deletedAt: new Date() })
         .where(eq(documents.id, DOC_AMBIENT_DELETE_ID));
-      await store.createFolder(null, "beta.md");
+      await store.ensureFolderPath(["beta.md"]);
       expect(await history()).toEqual([]);
       expect(await resolver.resolve(address)).toEqual({ kind: "unavailable" });
       await db
@@ -209,11 +209,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("records descendants of folder moves and rolls history and path claims back together", async () => {
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      const parent = await store.createFolder(null, "before");
-      const nested = await store.createFolder(parent.id, "nested");
+      const nestedId = await store.ensureFolderPath(["before", "nested"]);
       await store.createDocumentRecordIfAbsent({
         id: DOC_DELETE_ID,
-        folderId: nested.id,
+        folderId: nestedId,
         name: "chapter",
         extension: "md",
         filetype: "markdown",
@@ -236,11 +235,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toEqual([{ path: "before/nested/chapter.md" }]);
       await expect(
         runInDrizzleTransaction(db, async () => {
-          const restoredParent = await store.createFolder(null, "before");
-          const restoredNested = await store.createFolder(restoredParent.id, "nested");
+          const restoredNestedId = await store.ensureFolderPath(["before", "nested"]);
           await store.createDocumentRecordIfAbsent({
             id: DOC_AMBIENT_DELETE_ID,
-            folderId: restoredNested.id,
+            folderId: restoredNestedId,
             name: "chapter",
             extension: "md",
             filetype: "markdown",

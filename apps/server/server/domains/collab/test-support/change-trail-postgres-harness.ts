@@ -19,11 +19,17 @@ import { grantedJournal, testFileGrant } from "../../../test-support/file-grants
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftTreeReviewBridge } from "../adapters/drizzle-draft-tree-review-bridge.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "../adapters/drizzle-drafts.js";
 import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
+import { createDrafts } from "../domain/drafts.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
 import { writeMarkdown } from "./bound-writes.js";
@@ -311,15 +317,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journal: persistence.journal,
   });
   const branchCriticalSections = createBranchCriticalSections();
-  const realBranchStore = createDrizzleBranchStore(
-    db,
-    {
-      journal: persistence.journal,
-      lifecycle: persistence.lifecycle,
-      coordinator: liveCoordinator,
-    },
-    branchCriticalSections,
-  );
+  const realBranchStore = createDrizzleBranchStore(db, {
+    journal: persistence.journal,
+    lifecycle: persistence.lifecycle,
+    coordinator: liveCoordinator,
+  });
   let journalInsertCount = 0;
   // Which branch journal insert of the next save fails, counting from 1.
   const state = { failJournalInsertAt: null as number | null };
@@ -656,6 +658,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branches: branchStore,
     resolveDocumentUri,
   });
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
   const drafts = createWorkDraftReviewService({
     links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
@@ -664,7 +670,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       branchCoordinator,
       branchCriticalSections,
       liveCoordinator,
+      workDrafts,
     ),
+    draftTree: createDrizzleDraftTreeReviewBridge(db, {
+      drafts: workDrafts,
+      recordLiveMembership: (documentId) => branchStore.recordManifestDocumentCreated(documentId),
+    }),
     branches: branchStore,
     branchCoordinator,
     branchJournal: durableBranchJournalReadStore,

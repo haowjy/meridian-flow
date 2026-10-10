@@ -211,6 +211,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      withLiveDocument: runtime.markdownDocuments.withLiveDocument,
+      writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },
@@ -322,6 +324,9 @@ function createInMemoryBranchPeerStub(
     async transferLiveManifestMembership() {},
     async recordManifestDocumentCreated() {},
     async recordManifestDocumentDeleted() {},
+    async ensureCreatedDraftBranch() {
+      throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
+    },
   };
 }
 

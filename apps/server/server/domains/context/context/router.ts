@@ -611,6 +611,34 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       );
     },
 
+    async retractCreate(uri, options): Promise<Result<void, ContextError>> {
+      const r = await resolveMutation(uri);
+      if (!r.ok) return r;
+      const { adapter, canonical } = r.value;
+      const retracted = adapter.retractCreate
+        ? await callAdapter(
+            canonical,
+            () =>
+              adapter.retractCreate?.(r.value.path, options.documentId) ??
+              Promise.resolve(Ok({ placement: "live" as const })),
+          )
+        : Ok({ placement: "live" as const });
+      if (!retracted.ok) return retracted;
+      if (retracted.value.placement === "draft") return Ok(undefined);
+      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
+      const deleted = await treeMover.delete(r.value, {
+        expected: { kind: "file", documentId: options.documentId },
+      });
+      if (
+        !deleted.ok &&
+        deleted.error.code !== "not_found" &&
+        deleted.error.code !== "stale_target"
+      ) {
+        return deleted;
+      }
+      return Ok(undefined);
+    },
+
     async delete(
       uri: string,
       options: ContextDeleteOptions,

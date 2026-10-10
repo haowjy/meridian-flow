@@ -97,10 +97,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     it("creates a distinct binary asset without changing the host document", async () => {
+      const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({
         links: createTestDocumentLinkScopes(db),
         db,
-        documentSync: createInMemoryCollabDomain(),
+        documentSync: collab,
+        drafts: collab.drafts,
         manifestMembership: {
           async recordManifestDocumentCreated() {},
           async recordManifestDocumentDeleted() {},

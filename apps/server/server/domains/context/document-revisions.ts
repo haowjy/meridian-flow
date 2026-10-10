@@ -14,7 +14,7 @@ import type { DocumentRevisions } from "./ports/document-revisions.js";
 import type { ProjectContextAvailabilityPort } from "./ports/project-context-availability.js";
 
 export function createDocumentRevisions(deps: {
-  documents: Pick<BranchPeerShadowAccess, "readEffectiveRevision" | "resolveManifestMembership">;
+  documents: Pick<BranchPeerShadowAccess, "readEffectiveRevision">;
   /** One snapshot serves every document asked about together: membership loads once. */
   links: Pick<DocumentLinkScopes, "within">;
   threads: Pick<ThreadRepository, "findById">;
@@ -39,7 +39,6 @@ export function createDocumentRevisions(deps: {
     const valid = thread && !thread.deletedAt && work && !work.deletedAt;
     const draftOwner = work ? threadExecutionContext(work).draftOwner : null;
     const draftWork = draftOwner && work ? { id: draftOwner.workId, slug: work.slug } : null;
-    let membership: Set<string> | undefined;
     for (const documentId of new Set(documentIds)) {
       let revision: string | null = null;
       if (valid) {
@@ -53,29 +52,16 @@ export function createDocumentRevisions(deps: {
         if (parsed?.ok) {
           // The revision of the version this thread's writes change, per document (D14, D20).
           const drafted = sourceDestination(parsed.value.scheme, draftWork).kind === "draft";
-          let visible = true;
-          if (drafted) {
-            membership ??= new Set(
-              (
-                await deps.documents.resolveManifestMembership({
-                  projectId: thread.projectId,
+          revision = await deps.documents.readEffectiveRevision(
+            drafted && draftWork
+              ? {
+                  documentId: documentId as DocumentId,
                   threadId,
-                })
-              ).members,
-            );
-            visible = membership.has(documentId);
-          }
-          if (visible)
-            revision = await deps.documents.readEffectiveRevision(
-              drafted && draftWork
-                ? {
-                    documentId: documentId as DocumentId,
-                    threadId,
-                    destination: "draft",
-                    workId: draftWork.id,
-                  }
-                : { documentId: documentId as DocumentId, threadId: null, destination: "live" },
-            );
+                  destination: "draft",
+                  workId: draftWork.id,
+                }
+              : { documentId: documentId as DocumentId, threadId: null, destination: "live" },
+          );
         }
       }
       revisions.set(documentId, revision);

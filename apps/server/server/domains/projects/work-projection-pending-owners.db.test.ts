@@ -26,7 +26,6 @@ import {
   createDrizzlePendingSettlementStore,
   stageSettlementBatchWithinTx,
 } from "../collab/adapters/drizzle-pending-settlement.js";
-import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
 import { trailContributionReplacement } from "../collab/domain/branch-trail-projection.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -128,12 +127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("drives real discard, redo, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
-      const branches = createDrizzleBranchStore(
-        db,
-        undefined,
-        createBranchCriticalSections(),
-        projection,
-      );
+      const branches = createDrizzleBranchStore(db, undefined, projection);
       const appendJournal = (updateMeta: unknown) =>
         branches.appendJournal?.({
           branchId: BRANCH_ID,

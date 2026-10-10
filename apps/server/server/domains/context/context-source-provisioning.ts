@@ -30,10 +30,13 @@ import type {
   ContextDocumentStore,
   CreateBinaryDocumentInput,
   CreateDocumentInput,
+  DraftCreateInput,
+  LiveCreateExpectation,
   UpsertBinaryDocumentInput,
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import type { TreeView } from "./tree/tree-view.js";
 
 const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
   manuscript: "Manuscript",
@@ -285,24 +288,24 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return existing ? this.storeForSource(existing) : null;
   }
 
-  async findFolder(parentId: string | null, name: string) {
-    return (await this.readableSourceStore())?.findFolder(parentId, name) ?? null;
+  async findFolder(view: TreeView, parentId: string | null, name: string) {
+    return (await this.readableSourceStore())?.findFolder(view, parentId, name) ?? null;
   }
 
-  async createFolder(parentId: string | null, name: string) {
-    return this.mutate((store) => store.createFolder(parentId, name));
+  async findDocument(view: TreeView, folderId: string | null, name: string, extension: string) {
+    return (
+      (await this.readableSourceStore())?.findDocument(view, folderId, name, extension) ?? null
+    );
   }
 
-  async findDocument(folderId: string | null, name: string, extension: string) {
-    return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
+  async findDocumentById(view: TreeView, documentId: string) {
+    return (await this.readableSourceStore())?.findDocumentById(view, documentId) ?? null;
   }
 
-  async findDocumentById(documentId: string) {
-    return (await this.readableSourceStore())?.findDocumentById(documentId) ?? null;
-  }
-
-  async recordDocumentMembership(documentId: string) {
-    return this.mutate((store) => store.recordDocumentMembership(documentId));
+  async liveIdentity(documentId: string) {
+    return (
+      (await this.readableSourceStore())?.liveIdentity(documentId) ?? { kind: "other" as const }
+    );
   }
 
   async readProjections(ids: string[]): Promise<Map<string, string>> {
@@ -310,11 +313,23 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return store ? store.readProjections(ids) : new Map();
   }
 
+  async ensureFolderPath(dir: readonly string[]) {
+    return this.mutate((store) => store.ensureFolderPath(dir));
+  }
+
+  async findLiveCreateCandidate(dir: readonly string[], filename: string) {
+    return (
+      (await this.readableSourceStore())?.findLiveCreateCandidate(dir, filename) ?? {
+        none: true as const,
+      }
+    );
+  }
+
   async createDocument(input: CreateDocumentInput) {
     return this.mutate((store) => store.createDocument(input));
   }
 
-  async createDocumentRecordIfAbsent(input: CreateDocumentInput) {
+  async createDocumentRecordIfAbsent(input: CreateDocumentInput & LiveCreateExpectation) {
     return this.mutate((store) => store.createDocumentRecordIfAbsent(input));
   }
 
@@ -324,6 +339,14 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput) {
     return this.mutate((store) => store.upsertBinaryDocument(input));
+  }
+
+  async createInDraft(input: DraftCreateInput) {
+    return this.mutate((store) => store.createInDraft(input));
+  }
+
+  async retractDraftCreate(input: Parameters<ContextDocumentStore["retractDraftCreate"]>[0]) {
+    return this.mutate((store) => store.retractDraftCreate(input));
   }
 
   async contextSourceId() {
@@ -362,12 +385,12 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  async listFolders(parentId: string | null) {
-    return (await this.readableSourceStore())?.listFolders(parentId) ?? [];
+  async listFolders(view: TreeView, parentId: string | null) {
+    return (await this.readableSourceStore())?.listFolders(view, parentId) ?? [];
   }
 
-  async listDocuments(folderId: string | null) {
-    return (await this.readableSourceStore())?.listDocuments(folderId) ?? [];
+  async listDocuments(view: TreeView, folderId: string | null) {
+    return (await this.readableSourceStore())?.listDocuments(view, folderId) ?? [];
   }
 }
 

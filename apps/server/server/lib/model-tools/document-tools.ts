@@ -45,11 +45,10 @@ import {
   firstRefusal,
   inContainer,
   keptDraftReader,
-  withDraftWork,
   withRefusedWrites,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
-import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
+import { retractCreatedTrackedDocument } from "./response-write-lifecycle.js";
 import { showingOf, threadShownLinks } from "./shown-link-capture.js";
 import {
   contextErrorMessage,
@@ -70,7 +69,6 @@ export async function resolveDocumentAddress(
   command: DocumentCommandName,
   path: string,
   options: {
-    deferTrackedDocumentSync?: boolean;
     metadata?: DocumentCreationMetadata;
     origin?: import("../../domains/context/index.js").WriteProvenance;
   } = {},
@@ -81,7 +79,6 @@ export async function resolveDocumentAddress(
     if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
     const ensureOptions = {
       ...(options.origin ? { origin: options.origin } : {}),
-      ...(options.deferTrackedDocumentSync ? { deferDocumentSync: true } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
     };
     const ensured = await port.ensureTrackedDocument(
@@ -287,8 +284,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             fromMessage(parsed.from, sourceGrant.output.message ?? ""),
           );
         }
-        // A binary copy always lands live (D24), so its folder is judged live.
-        return inContainer(deps, withDraftWork(principal, null), parsed.command, target, () =>
+        // A binary copy lands where a create would: in a draft-mode Work, a hidden row
+        // holding the draft's own object (12b-Q2).
+        return inContainer(deps, principal, parsed.command, target, () =>
           copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
         );
       }
@@ -316,7 +314,6 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           threadId: ctx.threadId,
           turnId: ctx.turnId,
         },
-        deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
         ...(parsed.command === "copy" && copied
           ? { metadata: { copiedFrom: copied.copiedFrom } }
           : {}),
@@ -329,7 +326,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     if (outcome.isError) {
       if (stagedCreate) {
         try {
-          await deleteCreatedTrackedDocument({
+          await retractCreatedTrackedDocument({
             port: context.port,
             path: parsed.path,
             documentId: address.documentId,

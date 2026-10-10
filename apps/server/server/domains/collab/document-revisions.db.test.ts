@@ -234,13 +234,8 @@ describe("document revisions (postgres and collab)", () => {
     expect(moved).not.toBe(shown);
     expect((await f.read()).revision).toBe(moved);
 
-    // Alpha stays untouched in its Work, whose manifest drops the link's target:
-    // every effective door renders that view from the live content, none live.
-    await f.effective.recordManifestDocumentDeleted(BETA_ID, {
-      projectId: PROJECT_ID,
-      workId: WORK_ID,
-      threadId: THREAD_ID,
-    });
+    // Alpha stays untouched in its Work: every effective door renders that view from
+    // the live content, none live.
     const view = {
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
@@ -453,34 +448,6 @@ describe("document revisions (postgres and collab)", () => {
     expect(broadcasts).toEqual(expect.arrayContaining([peer.branchId, draft.branchId]));
     peer.doc.destroy();
     draft.doc.destroy();
-  });
-
-  it("a live manifest re-read observes its caller's uncommitted membership edit", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    await runInDrizzleTransaction(db, async () => {
-      await f.branchStore.recordManifestDocumentDeleted(ALPHA_ID);
-      const membership = await bounded(() =>
-        f.effective.resolveManifestMembership({ projectId: PROJECT_ID }),
-      );
-      expect(membership.members).not.toContain(ALPHA_ID);
-    });
-  });
-
-  it("returns null when a document is removed from the Work manifest", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    const before = await f.read();
-    await f.effective.recordManifestDocumentDeleted(ALPHA_ID, {
-      projectId: PROJECT_ID,
-      threadId: THREAD_ID,
-      workId: WORK_ID,
-    });
-    const membership = await f.effective.resolveManifestMembership({
-      projectId: PROJECT_ID,
-      threadId: THREAD_ID,
-    });
-    expect(membership.members).not.toContain(ALPHA_ID);
-    expect(before.revision).toMatch(/^y2:/);
-    expect(await f.current()).toBeNull();
   });
 });
 
