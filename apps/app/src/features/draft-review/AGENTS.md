@@ -4,7 +4,8 @@ The pieces every surface shows a review's changes with: the change list's rows,
 the focused change's bar, the stepper, the Draft chip and its menu, the document's change list, the toast. One change
 is one server closure class. The feature also owns the review's state and commands:
 `DraftReviewProvider` (the scope owner), `useReviewRoomOwner` (room/session lifetime), `useDraftReviewController` and
-`draft-review-session` (the command session), `ReviewMessageText` (refusal and
+`draft-review-session` (the reducer), `client/query/draft-command-executor`
+(the typed command lifecycle), `ReviewMessageText` (refusal and
 failure copy) and `review-files` (file navigation via `nextReviewFile`).
 `client/query/useWorkDrafts` exposes the catalog-labelled, stably ordered
 `ReviewFileTarget` files and document lookup; `work-draft-files` owns that

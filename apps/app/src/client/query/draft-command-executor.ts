@@ -391,12 +391,13 @@ export async function runDraftBatch<T extends DraftBatchItem>(
   const outcomes: DraftBatchOutcome[] = [];
   const blocked = new Set<number>();
   try {
-    const online = canSendDraftCommand();
+    // An offline batch refuses every click in this admission turn. Reconnect
+    // cannot admit a later file from a batch that was never sent.
+    if (!canSendDraftCommand())
+      return await Promise.all(
+        items.map(async (item) => ({ draft: item.draft, outcome: await send(item) })),
+      );
     for (const [index, { draft, selection, command }] of items.entries()) {
-      if (!online) {
-        retires.push(() => {});
-        continue;
-      }
       if (command) {
         if (beginDraftCommand({ ...scope, ...draft }, command))
           retires.push(() => {
