@@ -1,94 +1,34 @@
-/**
- * UI-theme preference — local, pre-paint palette selection for the whole app.
- *
- * Device-local like text size: writers may want different palettes on
- * different screens. The default Ink & Jade light palette is represented by
- * the ABSENCE of the DOM attribute so the plain token path stays the default;
- * every other theme (currently Dark) is a `:root[data-ui-theme]` override
- * block in `@meridian/design-tokens/themes.css`. Components' Tailwind `dark:`
- * variants key off the same attribute (see globals.css).
- */
-const UI_THEME_STORAGE_KEY = "meridian:ui-theme";
-const UI_THEME_ATTRIBUTE = "data-ui-theme";
-
-export const UI_THEMES = ["ink-jade", "dark"] as const;
-export type UiTheme = (typeof UI_THEMES)[number];
-
+/** Palette projection with an account-stamped, pre-paint cache. */
+import { ACCOUNT_THEMES, type AccountTheme } from "@meridian/contracts/preferences";
+import {
+  ACCOUNT_SETTINGS_ACTIVE_KEY,
+  ACCOUNT_SETTINGS_CACHE_PREFIX,
+  readAccountSettingsCache,
+} from "./account-settings-cache";
+export const UI_THEMES = ACCOUNT_THEMES;
+export type UiTheme = AccountTheme;
 export const DEFAULT_UI_THEME: UiTheme = "ink-jade";
-
 const listeners = new Set<() => void>();
-
-function isUiTheme(value: string): value is UiTheme {
-  return (UI_THEMES as readonly string[]).includes(value);
-}
-
-function normalizeUiTheme(value: string | null | undefined): UiTheme {
-  return value && isUiTheme(value) ? value : DEFAULT_UI_THEME;
-}
-
+let current: UiTheme | null = null;
 export function resolveUiTheme(): UiTheme {
   if (typeof window === "undefined") return DEFAULT_UI_THEME;
-  try {
-    return normalizeUiTheme(localStorage.getItem(UI_THEME_STORAGE_KEY));
-  } catch {
-    return DEFAULT_UI_THEME;
-  }
+  return current ?? readAccountSettingsCache()?.theme ?? DEFAULT_UI_THEME;
 }
-
-function notifyUiThemeListeners(): void {
+export function changeUiTheme(theme: UiTheme): void {
+  current = theme;
+  if (typeof document !== "undefined") {
+    if (theme === DEFAULT_UI_THEME) document.documentElement.removeAttribute("data-ui-theme");
+    else document.documentElement.setAttribute("data-ui-theme", theme);
+  }
   for (const listener of listeners) listener();
 }
-
-function applyUiTheme(theme: UiTheme): void {
-  if (typeof document === "undefined") return;
-  if (theme === DEFAULT_UI_THEME) {
-    document.documentElement.removeAttribute(UI_THEME_ATTRIBUTE);
-    return;
-  }
-  document.documentElement.setAttribute(UI_THEME_ATTRIBUTE, theme);
-}
-
-function applyStoredUiTheme(): void {
-  applyUiTheme(resolveUiTheme());
-}
-
-export function changeUiTheme(theme: UiTheme): void {
-  applyUiTheme(theme);
-  try {
-    localStorage.setItem(UI_THEME_STORAGE_KEY, theme);
-  } catch {
-    // localStorage unavailable
-  }
-  notifyUiThemeListeners();
-}
-
 export function subscribeUiTheme(listener: () => void): () => void {
   listeners.add(listener);
-
-  function onStorage(event: StorageEvent): void {
-    if (event.key !== UI_THEME_STORAGE_KEY) return;
-    applyStoredUiTheme();
-    notifyUiThemeListeners();
-  }
-
-  if (typeof window !== "undefined") {
-    window.addEventListener("storage", onStorage);
-  }
-
   return () => {
     listeners.delete(listener);
-    if (typeof window !== "undefined") {
-      window.removeEventListener("storage", onStorage);
-    }
   };
 }
-
-/* The non-default theme names, serialized for the boot script's validity
-   check — the script must not trust arbitrary localStorage strings. */
-const BOOT_THEMES = JSON.stringify(UI_THEMES.filter((theme) => theme !== DEFAULT_UI_THEME));
-
-export const UI_THEME_BOOT_SCRIPT = `(() => { try { const key = ${JSON.stringify(
-  UI_THEME_STORAGE_KEY,
-)}; const attr = ${JSON.stringify(
-  UI_THEME_ATTRIBUTE,
-)}; const themes = ${BOOT_THEMES}; const value = localStorage.getItem(key); const root = document.documentElement; if (value && themes.includes(value)) root.setAttribute(attr, value); else root.removeAttribute(attr); } catch {} })();`;
+export function createUiThemeBootScript(seed?: { accountId: string; theme?: UiTheme }): string {
+  return `(() => { try { const seed = ${JSON.stringify(seed ?? null)}; const id = seed?.accountId || localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_ACTIVE_KEY)}); const cache = JSON.parse(localStorage.getItem(${JSON.stringify(ACCOUNT_SETTINGS_CACHE_PREFIX)} + id) || "null"); const theme = id && cache?.accountId === id ? cache?.settings?.theme : seed?.theme; const root = document.documentElement; if (theme === "dark") root.setAttribute("data-ui-theme", "dark"); else root.removeAttribute("data-ui-theme"); } catch { ${seed?.theme === "dark" ? 'document.documentElement.setAttribute("data-ui-theme", "dark");' : ""} } })();`;
+}
+export const UI_THEME_BOOT_SCRIPT = createUiThemeBootScript();

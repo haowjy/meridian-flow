@@ -1,32 +1,24 @@
-/**
- * Account-lifetime owner for the cross-device working-set preference.
- *
- * The command lifecycle in `useWorkingSetSyncPreference` runs once per account,
- * not once per settings-row mount, because the working-set driver has to follow
- * the same revision-and-epoch-confirmed value the settings switch shows. Both
- * the driver and the row consume this context, so a stale or `null` loader echo
- * cannot move the driver or hide the switch once a local confirm exists.
- */
-import { createContext, useContext, useEffect, useState } from "react";
+/** One account-lifetime owner for settings and the confirmed working-set driver. */
+import type { AccountSettings } from "@meridian/contracts/protocol";
+import { createContext, useContext, useEffect, useLayoutEffect, useState } from "react";
 import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
-
 import { bindWorkingSetSyncLifetime, configureWorkingSetSync } from "@/client/working-set";
 import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import {
-  useWorkingSetSyncPreference,
-  type WorkingSetSyncPreference,
-} from "./useWorkingSetSyncPreference";
+import { changeLocale, resolveQueryLocale } from "@/lib/i18n";
+import { changeStatsForNerds } from "@/lib/stats-for-nerds";
+import { changeUiTheme } from "@/lib/ui-theme";
+import { useAccountSettings } from "./useAccountSettings";
 
-const WorkingSetSyncPreferenceContext = createContext<WorkingSetSyncPreference | null>(null);
+const AccountSettingsContext = createContext<ReturnType<typeof useAccountSettings> | null>(null);
 
-export function WorkingSetSyncPreferenceProvider({
+export function AccountSettingsProvider({
   serverValue,
   children,
 }: {
-  serverValue: boolean | null;
+  serverValue: AccountSettings | null;
   children: React.ReactNode;
 }) {
   const accountId = useAccountId();
@@ -42,22 +34,28 @@ export function WorkingSetSyncPreferenceProvider({
     setGeneration(generation + 1);
   }
   return (
-    <WorkingSetSyncPreferenceOwner key={generation} accountId={accountId} serverValue={serverValue}>
+    <AccountSettingsOwner key={generation} accountId={accountId} serverValue={serverValue}>
       {children}
-    </WorkingSetSyncPreferenceOwner>
+    </AccountSettingsOwner>
   );
 }
 
-function WorkingSetSyncPreferenceOwner({
+function AccountSettingsOwner({
   accountId,
   serverValue,
   children,
 }: {
   accountId: string;
-  serverValue: boolean | null;
+  serverValue: AccountSettings | null;
   children: React.ReactNode;
 }) {
-  const preference = useWorkingSetSyncPreference(serverValue);
+  const settings = useAccountSettings(serverValue);
+  const preference = settings.preference("workingSetSyncEnabled");
+  useLayoutEffect(() => {
+    changeUiTheme(settings.value.theme);
+    changeLocale(resolveQueryLocale() ?? settings.value.language);
+    changeStatsForNerds(settings.value.statsForNerds);
+  }, [settings.value]);
   const connectivityHints = useConnectivityHints();
   const accountEpoch = useAccountEpochSignal();
   useEffect(
@@ -69,16 +67,14 @@ function WorkingSetSyncPreferenceOwner({
   // `configure` is idempotent for an unchanged account/value pair.
   configureWorkingSetSync(accountId, preference.confirmed && !accountEpoch.aborted);
   return (
-    <WorkingSetSyncPreferenceContext.Provider value={preference}>
-      {children}
-    </WorkingSetSyncPreferenceContext.Provider>
+    <AccountSettingsContext.Provider value={settings}>{children}</AccountSettingsContext.Provider>
   );
 }
 
-export function useSharedWorkingSetSyncPreference(): WorkingSetSyncPreference {
-  const preference = useContext(WorkingSetSyncPreferenceContext);
+export function useSharedAccountSettings(): ReturnType<typeof useAccountSettings> {
+  const preference = useContext(AccountSettingsContext);
   if (!preference) {
-    throw new Error("WorkingSetSyncPreferenceProvider is required");
+    throw new Error("AccountSettingsProvider is required");
   }
   return preference;
 }
