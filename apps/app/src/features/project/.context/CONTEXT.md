@@ -283,13 +283,19 @@ membership is unchanged. No feed owns read/unread state. Lifecycle projection up
 threads are only refreshed by ordinary query reads, not a background signal.
 
 Draft review follows the persistent-shell rule. The hydrated project owns one
-Editor review value (Editor Work, no thread authority) above desktop/phone
-selection. Editor boundaries re-provide it; `EditorReviewScope` offers its
-presentation to outside lists. Chat and Work lists compose the existing Work
+review value (no thread authority) above desktop/phone selection, fed by the
+presented document (`presented-document.ts`): the Editor address on Context,
+the dock document on desktop Chat/Work, regardless of collapse. Its Work is the
+presented review's Work, falling back to the Editor route Work.
+`EditorReviewScope` provides it to Editor and dock hosts and offers its
+presentation to outside lists. `ReviewAddressOwner` writes and restores the
+address through the presenting container's port: the Editor route, or dock
+admission without navigation. Chat and Work lists compose the existing Work
 drafts query with creation-bound `useWorkDraftCommands`, without review state
 or executor arbitration. Commands publish addressed records for the open
 review to observe. `DraftOnlySettlement` is the project lifecycle owner
-for remote settlement across the Works represented by draft-only tabs.
+for remote settlement across the Works represented by draft-only Editor tabs
+and the dock document.
 An explicit latest-wins route handoff carries review launches into
 the matching Editor. A matching committed Editor may claim immediately; other
 destinations claim after navigation. Claims require Work, manuscript path,
@@ -534,7 +540,7 @@ row or chip the writer clicked shows it ([draft review](../../draft-review/.cont
 A path never refutes identity. Renaming or moving a document with its review
 open keeps the review: once the address has resolved, identity decides whether
 it still names the reviewed document, and while it resolves a different path is
-`pending`, not a different document (`EditorReviewAddressOwner`). A committed
+`pending`, not a different document (`ReviewAddressOwner`). A committed
 rename or move through the identity bar or the tree replaces the current entry
 with the new path in the same history entry, and `?draft=` is never dropped on
 the way. The removal coordinator's route repair carries the address's review, a

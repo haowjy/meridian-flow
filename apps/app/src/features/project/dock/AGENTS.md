@@ -19,8 +19,9 @@ in the composer, identity row, phone sheet and Work page, not a Changes view.
   on accepted navigation, install the Editor tab before consuming the panel.
   Browser history and phone navigation never hand off. Peeks create no tabs
   and stay outside the URL; Close returns to the native occupant.
-- The document shares the single presented-document review scope. Do not recreate a
-  third controller or any deleted review props.
+- The document shares the project's one presented-document review. Its review
+  address lives on the occupant and persists with it. Draft-only settlement and
+  address writes never bump the revision, so a writer's open in flight wins.
 - The dock slot owns its material. Keep document shells transparent. Do not
   stack custom `border-border-subtle` with another border-color class in `cn`.
 

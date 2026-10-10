@@ -254,6 +254,11 @@ Never touch a migration already present on the target branch
    names them.
 5. A handwritten `--custom` migration cannot be regenerated. Recreate it with
    `drizzle-kit generate --custom` at the new ordinal and copy its body.
+6. Read the target's highest ordinal from its journal rather than trusting a
+   brief: the base may have gained several migrations, and the regenerated one
+   lands after all of them.
+7. This checkout's dev database applied the old ordinal; `db:migrate` now refuses
+   it as out of order. Run `pnpm db:reset` from this checkout only.
 
 Why: two lanes that each recreate the same CHECK constraint can each list only
 their own value. Renumbering one by hand keeps that SQL, so whichever runs last

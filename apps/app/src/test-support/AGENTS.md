@@ -64,6 +64,13 @@ visible is a browser question and belongs in a probe.
   inline-review extension, for claims about marks, removal widgets, folds, focus
   and the bar slot.
 
+## Order independence
+
+Shuffle before calling a fixture isolated: run the touched suites with
+`--sequence.shuffle --sequence.seed=<n>` for more than one seed. Module-level mock
+histories reset in one `describe` leak into the next; give each mount its own
+fixture instead.
+
 ## Green tests are quiet
 
 A warning on a passing run trains readers to ignore stderr. If a fixture makes
