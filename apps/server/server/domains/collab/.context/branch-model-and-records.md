@@ -5,8 +5,10 @@
 Branches are real Y.Docs. A thread peer starts from the Work draft, receives live
 pulls by CRDT sync, and stages agent writes. The Work draft is the writer review
 branch. There is at most one active Work-draft branch per
-`(documentId, workId)`; every thread peer for that document and Work shares it
-as upstream. Pushing computes a Yjs update from branch to live, records push
+`(documentId, draftId)`; every thread peer for that document and draft shares it
+as upstream and carries the same `draft_id`. A branch's Work is its draft's
+origin Work, read only through `draftBranchWorks`/`branchDraftWork`
+(`shared/work-draft-lifecycle.ts`); a draft with no origin Work is frozen. Pushing computes a Yjs update from branch to live, records push
 lineage, marks source journal rows reviewed, and resets/advances branch
 generation where needed.
 
@@ -22,8 +24,13 @@ resets its content branch in one Work-locked transaction. Branch reset
 notifications publish after commit; rolled-back resets never advance a room.
 
 Thread-peer resolution is primary-Work-aware. After conversation reassignment,
-the old peer is no longer resolvable; provisioning closes it and seeds a new
-peer from the new primary Work draft while holding the conversation row lock.
+the old peer is no longer resolvable; a pull in the new Work's draft closes it
+and seeds a new peer while holding the conversation row lock. Peers are made
+only by pulls in an existing draft: a reply's save resolves exactly the peer
+each document was pinned to (`InteractionContext.branchId`), under the leases
+the pool took before the save's transaction, and refuses that document stale
+when the pin no longer holds (closed peer, reset or closed draft branch, closed
+draft). Closing a draft closes both kinds of its branches.
 
 The review list therefore emits one active item per document and folds all
 contributing journal rows into that item. `lastActorTurnId` is representative

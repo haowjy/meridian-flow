@@ -81,8 +81,9 @@ translate those to `title` and `description` in `ProjectDto`.
   exact: ID resolution never falls back to slug resolution or vice versa.
 - Work deletion never blocks on children. Under the Work lifecycle lock and in
   one transaction, it soft-deletes each primary chat and its live descendant
-  threads, plus live Work context sources/documents/folders, closes active Work
-  draft branches, and marks each child with `deletedByWorkId`. That marker is
+  threads, plus live Work context sources/documents/folders, and marks each child
+  with `deletedByWorkId`. The Work's drafts and their branches are untouched, so
+  restore returns them as they were (decision 3: origin is provenance). That marker is
   the exact restore set; separately
   trashed children remain trashed. Document and folder cascade delete/restore increment `location_version`.
   Existing child read paths exclude the cascade
@@ -94,6 +95,8 @@ translate those to `title` and `description` in `ProjectDto`.
   not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
   it commits expired Work and owned-row deletion before best-effort upload/result
   blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
+  Purge deletes the drafts the Work originated (F10); their branches, tree rows and
+  settlements cascade.
   Purge defers only `threads_origin_turn_id_turns_id_fk` within that transaction,
   deletes turns before threads, and lets owner cascades remove prompt bakes and
   image decisions. Provenance deletion stays forbidden outside purge.

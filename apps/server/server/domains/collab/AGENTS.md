@@ -34,8 +34,12 @@ editor UI or transport-shell policy.
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
 - Model reads and writes go through the thread-peer pool with a caller-computed
   destination; nothing in collab decides live versus draft from a thread's
-  mode. Scratch and uploads are never drafted, and `ensureWorkDraftBranch`
+  mode. Scratch and uploads are never drafted, and `ensureDraftBranch`
   throws if asked to.
+- A draft (`drafts` row) is made only at the write boundary: the pool's
+  `write()` and the ContextFS draft-create transaction. A read, a peer ensure
+  and a reply's save never make one; a save takes its pinned branches' leases
+  before its transaction and refuses a stale pin.
 - A reply saves once: every document it wrote, live or drafted, in one
   transaction. Live text reaches open editors only after commit.
 - Derive live read models from a journal-locked durable cut, never a warm room
