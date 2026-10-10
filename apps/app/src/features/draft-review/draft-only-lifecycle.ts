@@ -1,5 +1,5 @@
 /** One draft-only lifecycle across Editor membership and the dock slot. */
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
 import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
@@ -109,14 +109,4 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       },
     };
   }, [removal, projectId]);
-}
-
-/** A primitive snapshot avoids manufacturing a new useSyncExternalStore value on each read. */
-export function useDraftOnlyPresentations(lifecycle: DraftOnlyContainer, projectId: string) {
-  useSyncExternalStore(
-    lifecycle.subscribe,
-    () => JSON.stringify(lifecycle.presentations(projectId)),
-    () => "",
-  );
-  return lifecycle.presentations(projectId);
 }

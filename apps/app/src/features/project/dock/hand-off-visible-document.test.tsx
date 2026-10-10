@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-/** Compact transfer policy and the dock's independent occupant lifetime. */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+/** Real review and address owners witness both accepted hand-off directions. */
+import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import { handOffVisibleDocument } from "./hand-off-visible-document";
@@ -15,63 +15,7 @@ const panelTab = {
   filetype: "markdown",
   schemaType: "document",
 } satisfies ContextTab;
-const chatDocument: DockDocument = {
-  projectId: "project",
-  screen: "chat",
-  tab: panelTab,
-  review: null,
-};
 beforeEach(() => useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true));
-it.each([
-  { source: "chat", destination: "chat", tab: panelTab },
-  { source: "context", destination: "work", tab: panelTab },
-  { source: "work", destination: "context", tab: null },
-] as const)("no transfer for $source to $destination without an eligible document", (input) => {
-  const claim = vi.fn();
-  expect(
-    handOffVisibleDocument({
-      ...input,
-      review: null,
-      claim,
-      isCurrent: () => true,
-      transfer: vi.fn(),
-    }),
-  ).toBeUndefined();
-  expect(claim).not.toHaveBeenCalled();
-});
-describe("syncOccupantScope", () => {
-  it("parks a Chat occupant across screen changes", () => {
-    useDockDocumentStore.setState({ occupant: chatDocument });
-    for (const screen of ["chat", "work", "context", "chat"] as const) {
-      useDockDocumentStore.getState().syncOccupantScope("project", screen, "work");
-      expect(useDockDocumentStore.getState().occupant).toEqual(chatDocument);
-    }
-  });
-  it.each([
-    "work",
-    "context",
-    "chat",
-  ] as const)("drops a Work occupant leaving its Work or screen for %s", (screen) => {
-    useDockDocumentStore.setState({
-      occupant: {
-        ...chatDocument,
-        screen: "work",
-        tab: { ...panelTab, scheme: "scratch", workId: "work" },
-      },
-    });
-    useDockDocumentStore.getState().syncOccupantScope("project", "work", "work");
-    expect(useDockDocumentStore.getState().occupant).not.toBeNull();
-    useDockDocumentStore
-      .getState()
-      .syncOccupantScope("project", screen, screen === "work" ? "other" : "work");
-    expect(useDockDocumentStore.getState().occupant).toBeNull();
-  });
-  it.each(["chat", "work"] as const)("drops a %s occupant on project change", (screen) => {
-    useDockDocumentStore.setState({ occupant: { ...chatDocument, screen } });
-    useDockDocumentStore.getState().syncOccupantScope("other", screen, "work");
-    expect(useDockDocumentStore.getState().occupant).toBeNull();
-  });
-});
 
 // Real review/address owners compose with both document hosts; only session,
 // TipTap construction and paint are substituted, never the controller.

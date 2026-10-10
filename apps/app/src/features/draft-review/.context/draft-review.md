@@ -248,7 +248,9 @@ delegates exact-instance removal, promotion and route repair to
 claiming a revision. Hidden restore candidates are not lifecycle presentations:
 
 - Confirmed Apply promotes through `promoteAppliedDraft`, drops the marker and
-  opens ordinary live hosting. Promotion/route failures never undo server success.
+  opens ordinary live hosting. The presented overlay’s removal is catalog/Apply
+  proof, so the room owner stops retaining branch-only absence. Promotion/route
+  failures never undo server success.
 - Admitted whole Discard removes through `discardDraft` before dispatch. Later
   refusal stays on the draft row and never restores its tab or navigates back.
   Not-sent admission refusal does not remove it.

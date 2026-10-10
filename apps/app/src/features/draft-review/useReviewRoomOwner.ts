@@ -60,12 +60,16 @@ export function useReviewRoomOwner({
   const pendingWriterGeneration = pendingGenerations.length
     ? Math.max(...pendingGenerations)
     : null;
-  const kind = useRef({ target, queryClient, draftOnly });
+  const kind = useRef({ target, queryClient, draftOnly, presentedDraftOnly: draftOnly });
   if (kind.current.target !== target || kind.current.queryClient !== queryClient)
-    kind.current = { target, queryClient, draftOnly };
+    kind.current = { target, queryClient, draftOnly, presentedDraftOnly: draftOnly };
   const row = rows?.find((row) => row.draftId === draftId && row.documentId === documentId);
   // List omission after a close must not erase the draft-only destination's intent.
   if (draftOnly || row) kind.current.draftOnly = draftOnly || row?.isNewDocument === true;
+  // A presentation loses its overlay only after confirmed Apply/catalog membership.
+  // That proof ends branch-only absence retention; list omission alone never does.
+  if (kind.current.presentedDraftOnly && !draftOnly) kind.current.draftOnly = false;
+  kind.current.presentedDraftOnly = draftOnly;
   const selected = useRef({ review, pendingWriterGeneration });
   selected.current = { review, pendingWriterGeneration };
   const observeAbsence = (terminal = false, absenceGeneration = generation) => {
@@ -121,6 +125,7 @@ export function useReviewRoomOwner({
     target,
     rows,
     preview,
+    draftOnly,
     pendingWriterGeneration,
     projectId,
     workId,

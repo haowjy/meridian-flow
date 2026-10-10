@@ -532,12 +532,14 @@ function HydratedReviewControllers({
       ),
     },
   });
-  const { works } = useWorks(props.projectId);
+  const { works, noWork } = useWorks(props.projectId);
   const reviewWorkId = presented?.review?.workId ?? props.editorWorkId;
   const reviewWork =
     reviewWorkId === props.editorWork?.id
       ? props.editorWork
-      : (works?.find((work) => work.id === reviewWorkId) ?? null);
+      : reviewWorkId === noWork?.id
+        ? noWork
+        : (works?.find((work) => work.id === reviewWorkId) ?? null);
   const editorReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     work: reviewWork,
