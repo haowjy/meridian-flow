@@ -10,6 +10,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
   it("merges a create the writer also made live, names a live rename back, and refuses the model's later create usefully (E-1)", async () => {
@@ -82,6 +83,34 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(text, "the draft's text").toContain("Kael guards the gate.");
     expect.soft(text, "the writer's live edit").toContain("The writer's second line.");
     expect.soft(await s.draftStatuses(ascension), "nothing pending: D closed").toEqual(["closed"]);
+
+    // A rename that lands after a tokenless Apply read the draft is named back, and the
+    // receipt says so: notes come from what completion did (E-R5).
+    const notes = await s.model(ascension).create("notes/original.md", "Notes, drafted.");
+    await s.writer.create("notes/original.md", { content: "Writer's notes." });
+    const renameLate = setCollabHook("applyItems.afterLinkCut", async () => {
+      renameLate();
+      await s.writer.move("notes/original.md", "notes/renamed.md");
+    });
+    const [raced] = await s.apply(ascension, [notes], { tokens: "none" });
+    renameLate();
+    expect.soft(raced, "the raced rename is named back").toMatchObject({
+      httpStatus: 200,
+      body: {
+        item: {
+          status: "applied",
+          notes: [
+            {
+              code: "rename_replaced",
+              replacedPath: "manuscript://notes/renamed.md",
+              path: "manuscript://notes/original.md",
+            },
+          ],
+        },
+      },
+    });
+    expect.soft(await live.idAt("notes/original.md")).toBe(notes);
+    expect.soft(await live.idAt("notes/renamed.md")).toBeNull();
   });
 
   it("shows a second draft only its own part after the first applies their shared create (E-2)", async () => {

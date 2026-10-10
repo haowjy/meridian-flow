@@ -4,7 +4,11 @@ import type { DraftId } from "@meridian/contracts";
 import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
-import type { ApplyResult, DraftPublication } from "./draft-publication.js";
+import {
+  type ApplyResult,
+  DraftApplyStaleError,
+  type DraftPublication,
+} from "./draft-publication.js";
 import type { DraftReviewItem } from "./draft-review-items.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
@@ -67,7 +71,7 @@ describe("work push policy", () => {
     });
   });
 
-  it("does not enable auto policy when the confirmed Apply fails", async () => {
+  it("does not enable auto policy when the confirmed Apply fails or stays stale", async () => {
     const harness = createHarness();
     harness.list.mockResolvedValue(pendingItems(1));
     harness.applyItems.mockRejectedValue(new Error("apply failed"));
@@ -75,6 +79,11 @@ describe("work push policy", () => {
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", pending: "apply" }),
     ).rejects.toThrow("apply failed");
+    // A draft that stays stale after Apply reads it again doesn't switch either.
+    harness.applyItems.mockResolvedValue({ status: "stale", draftId: DRAFT_ID, staleItemKeys: [] });
+    await expect(
+      harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", pending: "apply" }),
+    ).rejects.toBeInstanceOf(DraftApplyStaleError);
     expect(harness.workPushPolicyStore.setWorkWriteMode).not.toHaveBeenCalled();
   });
 });

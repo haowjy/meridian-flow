@@ -31,7 +31,11 @@ import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore, SettlementCut } from "./ports/pending-settlement-store.js";
-import type { PublicationItemHold, PublicationRefusal } from "./ports/settlement-publication.js";
+import type {
+  PublicationItemHold,
+  PublicationItemOutcome,
+  PublicationRefusal,
+} from "./ports/settlement-publication.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
@@ -65,12 +69,18 @@ export type PublicationOutcome =
       pushes: readonly PushLineageRow[];
       /** Every held item, at the check or in completion, branchless ones included. */
       held: readonly PublicationItemHold[];
+      /** What the steps did per published item, decided in completion. */
+      outcomes: readonly PublicationItemOutcome[];
     }
   | { kind: "refused"; reason: PublicationRefusal };
 
 /** What one settlement attempt sequence ended with. */
 type SettleResult =
-  | { kind: "completed"; held: readonly PublicationItemHold[] }
+  | {
+      kind: "completed";
+      held: readonly PublicationItemHold[];
+      outcomes: readonly PublicationItemOutcome[];
+    }
   | { kind: "refused"; reason: PublicationRefusal }
   | { kind: "rediscover"; branchIds: readonly string[] };
 
@@ -151,7 +161,7 @@ export function createBranchPushTransition(input: {
         const staging = pushes.length > 0 || check.payloads.size > 0;
         if (!staging) {
           return prepared.finish({
-            outcome: { kind: "settled", pushes: [], held: check.hold },
+            outcome: { kind: "settled", pushes: [], held: check.hold, outcomes: [] },
             docs,
           });
         }
@@ -189,6 +199,7 @@ export function createBranchPushTransition(input: {
             kind: "settled",
             pushes: committed.pushes.filter((push) => !heldDocuments.has(push.documentId)),
             held: settled.held,
+            outcomes: settled.outcomes,
           },
           docs,
         });
@@ -353,7 +364,7 @@ export function createBranchPushTransition(input: {
             // and the trail must never be reported as failed because it missed.
           }
         }
-        return { kind: "completed", held: completion.held };
+        return { kind: "completed", held: completion.held, outcomes: completion.outcomes };
       }
     }
     await input.settlementStore.recordFailure({

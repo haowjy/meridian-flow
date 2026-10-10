@@ -3,6 +3,7 @@ import { meridianErrorFromSystem, type PendingChangesChoice } from "@meridian/co
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
+import { DraftApplyStaleError } from "../domains/collab/domain/draft-publication.js";
 import type { SetWorkPushPolicyInput, SetWorkPushPolicyResult } from "../domains/collab/index.js";
 import {
   type WorkContextNotices,
@@ -82,6 +83,9 @@ export async function handleWorkWriteModeRequest(
       // An archived Work's drafts are frozen: Apply's push refuses under the Work lock.
       if (cause instanceof WorkLifecycleUnavailableError && cause.state === "archived") {
         throwArchivedApply();
+      }
+      if (cause instanceof DraftApplyStaleError) {
+        throwHttpInterrupt(meridianErrorFromSystem("draft_changed", cause.message, true), 409);
       }
       throw cause;
     });
