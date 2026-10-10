@@ -365,6 +365,7 @@ export function ChatView({
         acceptedRevision: envelope.acceptedRevision,
       };
     }
+    draft.handoffSubmitted(envelope.draft);
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, envelope.blocks);
     // Register the live row before the POST awaits admission: a thread remount
@@ -485,8 +486,14 @@ export function ChatView({
       onRetry: () => {
         void submissionRecovery.retry(entry.optimisticTurnId);
       },
-      // Settlement already returned the structured words; Edit only focuses them.
-      ...(draftIsRecoverable ? { onEdit: () => focusRejectedMessage() } : {}),
+      // Edit transfers durable rejected words before focusing the composer.
+      ...(draftIsRecoverable
+        ? {
+            onEdit: () => {
+              if (submissionRecovery.edit(entry.submissionId)) focusRejectedMessage();
+            },
+          }
+        : {}),
     });
   }
 

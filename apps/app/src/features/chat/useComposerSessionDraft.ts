@@ -2,8 +2,6 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
 
-export { ComposerSessionDraft } from "@/client/composer-drafts";
-
 export function useComposerSessionDraft(accountId: string, scope: ComposerDraftScope) {
   const owner = useMemo(
     () => composerSessionDraft(accountId, scope),
@@ -23,5 +21,6 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
     initialDraft: owner.initialDraft,
     updateDraft: owner.updateDraft,
     handoff: owner.handoff,
+    handoffSubmitted: owner.handoffSubmitted,
   };
 }
