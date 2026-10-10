@@ -64,3 +64,17 @@ it("storage failure never blocks preferences or the server first-paint fallback"
 function runBootScript(script: string) {
   runInNewContext(script, { localStorage, document });
 }
+
+it("falls back to the account theme when the cache theme is invalid", () => {
+  localStorage.setItem(
+    `${ACCOUNT_SETTINGS_CACHE_PREFIX}a`,
+    JSON.stringify({ accountId: "a", settings: { ...settings, theme: "unsupported" } }),
+  );
+  runBootScript(createUiThemeBootScript({ accountId: "a", theme: "dark" }));
+  expect(document.documentElement.getAttribute("data-ui-theme")).toBe("dark");
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    throw new Error("disabled");
+  });
+  runBootScript(createUiThemeBootScript({ accountId: "a", theme: "ink-jade" }));
+  expect(document.documentElement.hasAttribute("data-ui-theme")).toBe(false);
+});
