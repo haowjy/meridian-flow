@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Development: catch quoted and schema-qualified tree tables in raw SQL checks without confusing longer relation names with documents or folders.
+
 - Development: enforce the tree query boundary in `pnpm check` with a self-testing TypeScript AST guard, explicit read/write allowlist and a non-overridable hidden-column rule.
 
 - Development: run CI quality checks in parallel with two unit-test shards; keep the required quality gate red when any group fails.

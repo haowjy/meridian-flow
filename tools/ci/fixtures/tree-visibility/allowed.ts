@@ -33,3 +33,12 @@ function hoistedLocal() {
   db.select().from(table);
 }
 hoistedLocal();
+
+// Prefixes and quoted identifiers containing table names are different relations.
+sql`SELECT hidden FROM "documents_archive"`;
+sql`SELECT hidden FROM public.documents_view`;
+sql`SELECT hidden FROM "public"."folders_archive"`;
+sql`SELECT hidden FROM "documents-archive"`;
+sql`UPDATE public.folders_view SET hidden = false`;
+sql`INSERT INTO "folders_archive" (hidden) VALUES (false)`;
+sql`DELETE FROM "public"."documents_archive" WHERE hidden = true`;
