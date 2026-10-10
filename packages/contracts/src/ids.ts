@@ -8,6 +8,10 @@ export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
+/** A `drafts` row: one Work draft, the unit Apply all and Discard act on (D68). */
+export type DraftId = string;
+/** One document's `work_draft` branch inside a draft (D68). */
+export type DraftBranchId = string;
 export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
 export type TurnId = string;

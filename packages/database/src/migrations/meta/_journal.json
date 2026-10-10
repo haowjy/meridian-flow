@@ -239,6 +239,13 @@
       "when": 1791600212759,
       "tag": "0033_mature_morph",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791602003454,
+      "tag": "0034_tree_visibility",
+      "breakpoints": true
     }
   ]
 }

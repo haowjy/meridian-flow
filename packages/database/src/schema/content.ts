@@ -206,6 +206,9 @@ export const folders = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
+    /** A draft's new folder: in no live view until placed (read only through the tree view). */
+    hidden: boolean("hidden").notNull().default(false),
+    locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
     index("folders_deleted_by_work_idx")
@@ -214,12 +217,17 @@ export const folders = pgTable(
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("folders_context_parent_name_active")
+    // Hidden folders occupy no live path; nothing makes them unique.
+    uniqueIndex("folders_context_parent_name_live")
       .on(table.contextSourceId, table.parentId, table.name)
-      .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("folders_context_root_name_active")
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    uniqueIndex("folders_context_root_name_live")
       .on(table.contextSourceId, table.name)
-      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL`),
+      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    // Joining a hidden folder by path, and absorb.
+    index("folders_hidden_location")
+      .on(table.contextSourceId, table.parentId, table.name)
+      .where(sql`${table.hidden} AND ${table.deletedAt} IS NULL`),
     // Image path lookups walk deleted folders too, so the active-only indexes miss them.
     index("folders_context_root").on(table.contextSourceId).where(sql`${table.parentId} IS NULL`),
     index("folders_parent").on(table.parentId),
@@ -256,21 +264,29 @@ export const documents = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
+    /** A draft's new document: in no live view until placed (read only through the tree view). */
+    hidden: boolean("hidden").notNull().default(false),
   },
   (table) => [
     index("documents_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    index("documents_context_folder_active")
-      .on(table.contextSourceId, table.folderId)
-      .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("documents_context_folder_name_active")
+    // Not limited to live rows: hidden-document matching by row location, the review's
+    // tree-state query, and listing by folder.
+    index("documents_context_location").on(
+      table.contextSourceId,
+      table.folderId,
+      table.name,
+      table.extension,
+    ),
+    // Hidden documents occupy no live path; nothing makes them unique.
+    uniqueIndex("documents_context_folder_name_live")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'content'`),
-    uniqueIndex("documents_context_root_name_active")
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.kind} = 'content'`),
+    uniqueIndex("documents_context_root_name_live")
       .on(table.contextSourceId, table.name, table.extension)
       .where(
-        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND ${table.kind} = 'content'`,
+        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.kind} = 'content'`,
       ),
     uniqueIndex("documents_manifest_context_active")
       .on(table.contextSourceId)
@@ -458,5 +474,29 @@ export const linkAheadRefs = pgTable(
       .on(table.projectId, table.scheme, table.workId, sql`md5(${table.path})`)
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
+  ],
+);
+
+/** What one published holder's ahead ref means; written by Apply, read only for that holder. */
+export const linkAheadHolderBindings = pgTable(
+  "link_ahead_holder_bindings",
+  {
+    aheadId: uuid("ahead_id")
+      .notNull()
+      .references(() => linkAheadRefs.aheadId, { onDelete: "cascade" }),
+    holderDocumentId: uuid("holder_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    boundAt: timestamp("bound_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // One binding per (ref, holder): a later Apply's binding wins.
+    primaryKey({ columns: [table.aheadId, table.holderDocumentId] }),
+    index("link_ahead_holder_bindings_document").on(table.documentId),
   ],
 );
