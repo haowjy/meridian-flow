@@ -43,7 +43,7 @@ placement once (`placementFor`); ContextFS delegates to that strategy
 (`adapters/context-fs/create-placement.ts`). A draft placement's
 `ensureTrackedDocument` and `writeBinary` make (or, for text, join) a hidden row
 through the `DraftCreatePort` (`drizzle-draft-creates.ts` over
-`tree/hidden-nodes.ts`, with collab's branch half injected) in a command
+`tree/creates.ts` and `tree/end-use.ts`, with collab's branch half injected) in a command
 transaction that locks the drafting Work, ensures and locks its draft
 (`runInDraft`), then takes namespace keys. Whole-file writes, creates with text,
 untitled creates and `mkdir` refuse in a draft placement: a draft never seeds
@@ -467,7 +467,8 @@ currently available to the request owner in the requested project.
   and installs an empty Yjs authority in one
   transaction. The client owns initial CRDT content; this path must never seed
   non-empty markdown. Router-level retries locate the ID
-  across every project scheme and authorized Work authority and return
+  (`ContextPort.locate`, the same scan) across every project scheme and authorized
+  Work authority and return
   `already-materialized` with the actual canonical scheme/path/Work. This is
   distinct from a true allocation conflict. Response `name` is always the full
   basename including extension. A successful basename change clears the flag in

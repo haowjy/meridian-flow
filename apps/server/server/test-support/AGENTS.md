@@ -34,3 +34,10 @@ The Scratch archival upgrade contract owns an isolated historical schema and
 fixed pre-upgrade Yjs inputs (`scratch-archive-fixture.ts`). It applies the
 committed migration chain through the real runner, then exercises typed server
 consumers. Do not regenerate historical fixture bytes with current writers.
+
+Draft-tree suites build one world per case: `draft-tree-seeds.ts` writes rows the
+way the product leaves them (no runtime); `draft-tree-commands.ts` drives the
+composed runtime (model replies, the writer's route cores, readers' ports,
+review commands); `draft-tree-scenario.ts` joins the two. Seed only states the
+product can't reach yet. Lock races go through `lock-interleave.ts`: `race`
+names each run, so an order table reads the same outcome whichever ran first.
