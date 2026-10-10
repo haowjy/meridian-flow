@@ -91,13 +91,12 @@ const memberKey = (key: LinkScopeKey) =>
       ? `thread:${key.threadId}`
       : `document:${key.documentId}`;
 
-/** Legacy LinkView keys; draftId-based input and keying arrive with the link lane. */
-const viewKey = (view: LinkView) =>
-  view.kind === "live"
-    ? view.responseId
-      ? `live:${view.responseId}`
-      : "live"
-    : `draft:${view.workId}:${view.responseId ?? ""}`;
+/**
+ * One key per tree view: a reply sees what its view sees, so its response id plays no
+ * part (a create is a row, live or hidden, not a reply's in-memory set). draftId keying
+ * arrives with the link lane.
+ */
+const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `draft:${view.workId}`);
 
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;

@@ -193,7 +193,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           recordManifestDocumentDeleted: (documentId, view) =>
             collab.recordManifestDocumentDeleted(documentId, view),
-          resolveManifestMembership: (input) => collab.resolveManifestMembership(input),
           transferLiveManifestMembership: (ids, projects) =>
             collab.transferLiveManifestMembership(ids, projects),
         },
