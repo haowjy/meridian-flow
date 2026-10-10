@@ -13,12 +13,13 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
   branchPushSettlementBatches,
+  branchPushSettlementHolds,
   branchPushSettlementOutbox,
   branchPushSettlementPayloads,
   documentBranches,
   pushLineage,
 } from "@meridian/database/schema";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
@@ -49,13 +50,12 @@ import type { DurableProjectionSerializer } from "../domain/ports/durable-projec
 import type {
   BatchCompletion,
   BatchCompletionMember,
-  HeldMember,
   PendingSettlementStore,
 } from "../domain/ports/pending-settlement-store.js";
 import type {
-  PublicationHold,
+  PublicationItemHold,
   PublicationRefusal,
-  SettlementBatchScope,
+  StagedPublicationMember,
 } from "../domain/ports/settlement-publication.js";
 import {
   admitSettlementMemberWithinTx,
@@ -68,8 +68,10 @@ import {
 } from "./drizzle-settlement-member.js";
 import {
   decideAdmission,
+  decideCheck,
   type PlannedStep,
   planAndLock,
+  requiredBranchLeases,
   type SettlementPublication,
 } from "./drizzle-settlement-publication.js";
 
@@ -96,6 +98,7 @@ export async function stageSettlementBatchWithinTx(
   settlement: SettlementBatchIdentity,
   staged: readonly { prepared: PreparedPushCommit; push: PushLineageRow }[],
   payloads: PublicationPayloads = {},
+  holds: readonly PublicationItemHold[] = [],
 ): Promise<void> {
   const lease = await databaseLease(db);
   await db.insert(branchPushSettlementBatches).values({
@@ -115,9 +118,45 @@ export async function stageSettlementBatchWithinTx(
         steps.map(([stepKind, payload]) => ({ batchId: settlement.batchId, stepKind, payload })),
       );
   }
+  await writeHolds(db, settlement.batchId, holds, "check");
   for (const { prepared, push } of staged) {
     await stageSettlementMemberWithinTx(db, settlement.batchId, prepared, push);
   }
+}
+
+async function writeHolds(
+  db: DrizzleDb,
+  batchId: string,
+  holds: readonly PublicationItemHold[],
+  decidedIn: "check" | "completion",
+): Promise<void> {
+  if (holds.length === 0) return;
+  await db
+    .insert(branchPushSettlementHolds)
+    .values(
+      holds.map((hold) => ({
+        batchId,
+        itemKey: hold.itemKey,
+        documentId: hold.documentId ?? null,
+        reason: hold.reason,
+        decidedIn,
+      })),
+    )
+    // An item held at the check stays held as decided there.
+    .onConflictDoNothing();
+}
+
+async function readHolds(db: DrizzleDb, batchId: string): Promise<PublicationItemHold[]> {
+  const rows = await db
+    .select()
+    .from(branchPushSettlementHolds)
+    .where(eq(branchPushSettlementHolds.batchId, batchId))
+    .orderBy(asc(branchPushSettlementHolds.itemKey));
+  return rows.map((row) => ({
+    itemKey: row.itemKey,
+    ...(row.documentId ? { documentId: row.documentId } : {}),
+    reason: row.reason as PublicationRefusal,
+  }));
 }
 
 export type StageSettlementBatchWithinTx = typeof stageSettlementBatchWithinTx;
@@ -201,21 +240,39 @@ export function createDrizzlePendingSettlementStore(
           super(`Publication refused: ${reason.code}`);
         }
       }
+      class CompletionRediscover extends Error {
+        constructor(readonly branchIds: readonly string[]) {
+          super("Publication needs branch leases its caller doesn't hold");
+        }
+      }
       let plans: PlannedStep[] = [];
-      let held: HeldMember[] = [];
+      let held: PublicationItemHold[] = [];
       let admitted: DocumentId[] = [];
       let projections: CommittedChangeTrailProjection[];
       try {
         projections = await runInDrizzleTransaction(db, async () => {
           const txDb = currentDrizzleDb(db);
           const members = sortedMembers(input.members);
-          plans = await planAndLock(txDb, publication, completionScope(input, members), {
-            workIds: await pushWorkIds(
-              txDb,
-              members.map(({ push }) => push.id),
-            ),
-            documentIds: members.map(({ push }) => push.documentId),
-          });
+          // Immutable inputs, read before any lock: the members reconstructed from their
+          // pushes and the items the check already held.
+          const descriptors = await stagedMembers(txDb, members);
+          const checkHolds = await readHolds(txDb, input.batchId);
+          plans = await planAndLock(
+            txDb,
+            publication,
+            {
+              stage: "completion",
+              batchId: input.batchId,
+              members: descriptors,
+              held: checkHolds,
+              payloads: input.payloads,
+              liveStateVectors: input.liveStateVectors,
+            },
+            {
+              workIds: descriptors.flatMap(({ workId }) => (workId ? [workId] : [])),
+              documentIds: descriptors.map(({ documentId }) => documentId),
+            },
+          );
 
           const [owned] = await txDb
             .select({ id: branchPushSettlementBatches.id })
@@ -224,6 +281,12 @@ export function createDrizzlePendingSettlementStore(
             .for("update")
             .limit(1);
           if (!owned) throw new CompletionRetry();
+          // The outer leases, asked again under the locks: a set that grew means discovery again.
+          const leased = new Set(input.leasedBranchIds);
+          const unleased = (await requiredBranchLeases(publication, input.payloads)).filter(
+            (branchId) => !leased.has(branchId),
+          );
+          if (unleased.length > 0) throw new CompletionRediscover(unleased);
           // Read once, inside the transaction, under every document lock: no admission
           // can join a member between this read and commit.
           const locked = await readSettlementMembers(txDb, input.batchId);
@@ -240,17 +303,17 @@ export function createDrizzlePendingSettlementStore(
 
           const admission = await decideAdmission(plans, (plan) => plan.beforeAdmission?.());
           if (admission.kind === "refuse") throw new CompletionRefusal(admission.reason);
-          const holds = new Map((admission.hold ?? []).map((hold) => [hold.documentId, hold]));
-          const heldMembers = members.filter(({ push }) => holds.has(push.documentId));
-          const admittedMembers = members.filter(({ push }) => !holds.has(push.documentId));
-          held = heldMembers.map(({ push }) => ({
-            ...(holds.get(push.documentId) as PublicationHold),
-            pushId: push.id,
-          }));
+          const completionHolds = admission.hold ?? [];
+          const heldDocuments = new Set(
+            completionHolds.flatMap(({ documentId }) => documentId ?? []),
+          );
+          const heldMembers = members.filter(({ push }) => heldDocuments.has(push.documentId));
+          const admittedMembers = members.filter(({ push }) => !heldDocuments.has(push.documentId));
+          await writeHolds(txDb, input.batchId, completionHolds, "completion");
           admitted = admittedMembers.map(({ push }) => push.documentId);
           const cuts = await readSettlementCuts(
             txDb,
-            locked.filter(({ push }) => !holds.has(push.documentId as DocumentId)),
+            locked.filter(({ push }) => !heldDocuments.has(push.documentId as DocumentId)),
           );
 
           // A member classified at its current join version refines the trail version its
@@ -325,12 +388,16 @@ export function createDrizzlePendingSettlementStore(
             .where(batchOwnerPredicate(input.batchId, input.claim))
             .returning({ id: branchPushSettlementBatches.id });
           if (!completed) throw new CompletionRetry();
+          held = await readHolds(txDb, input.batchId);
           return latestProjections(committed).filter((projection) =>
             admitted.includes(projection.documentId as DocumentId),
           );
         });
       } catch (cause) {
         if (cause instanceof CompletionRetry) return { status: "retry" as const };
+        if (cause instanceof CompletionRediscover) {
+          return { status: "rediscover" as const, branchIds: cause.branchIds };
+        }
         if (cause instanceof CompletionRefusal) {
           return (await abandonBatch(input, cause.reason))
             ? { status: "refused" as const, reason: cause.reason }
@@ -357,7 +424,9 @@ export function createDrizzlePendingSettlementStore(
 
     async checkPublication(input) {
       assertRootOwnedSettlement("Publication check");
-      if (publication.steps.length === 0) return { kind: "proceed" as const, hold: [] };
+      if (publication.steps.length === 0) {
+        return { kind: "proceed" as const, hold: [], payloads: input.payloads };
+      }
       return runInDrizzleTransaction(db, async () => {
         const txDb = currentDrizzleDb(db);
         const members = [...input.members].sort((left, right) =>
@@ -367,13 +436,9 @@ export function createDrizzlePendingSettlementStore(
           txDb,
           publication,
           {
+            stage: "check",
             batchId: input.batchId,
-            pushes: members.map((member) => ({
-              pushId: null,
-              branchId: member.branchId,
-              documentId: member.documentId,
-              journalIds: member.journalIds,
-            })),
+            members,
             payloads: input.payloads,
             liveStateVectors: input.liveStateVectors,
           },
@@ -382,8 +447,33 @@ export function createDrizzlePendingSettlementStore(
             documentIds: members.map(({ documentId }) => documentId),
           },
         );
-        return decideAdmission(plans, (plan) => plan.check?.());
+        return decideCheck(plans, input.payloads);
       });
+    },
+
+    prepareBranchLeases(payloads) {
+      return requiredBranchLeases(publication, payloads);
+    },
+
+    async loadRecoveryScope(batchId) {
+      const payloads = await db
+        .select({
+          stepKind: branchPushSettlementPayloads.stepKind,
+          payload: branchPushSettlementPayloads.payload,
+        })
+        .from(branchPushSettlementPayloads)
+        .where(eq(branchPushSettlementPayloads.batchId, batchId));
+      const members = await db
+        .select({ branchId: pushLineage.branchId })
+        .from(branchPushSettlementOutbox)
+        .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
+        .where(eq(branchPushSettlementOutbox.batchId, batchId));
+      return {
+        payloads: new Map(
+          payloads.map(({ stepKind, payload }) => [stepKind, payload as JsonValue] as const),
+        ),
+        memberBranchIds: members.flatMap(({ branchId }) => (branchId ? [branchId] : [])),
+      };
     },
 
     async listRecoverableBatchIds() {
@@ -536,21 +626,27 @@ function sortedMembers(members: readonly BatchCompletionMember[]): BatchCompleti
   );
 }
 
-function completionScope(
-  input: BatchCompletion,
+/** Each staged member as a publication step sees it: its push and its branch's Work. */
+async function stagedMembers(
+  db: DrizzleDb,
   members: readonly BatchCompletionMember[],
-): SettlementBatchScope {
-  return {
-    batchId: input.batchId,
-    pushes: members.map(({ push }) => ({
-      pushId: push.id,
-      branchId: push.branchId,
-      documentId: push.documentId,
-      journalIds: push.journalIds,
-    })),
-    payloads: input.payloads,
-    liveStateVectors: input.liveStateVectors,
-  };
+): Promise<StagedPublicationMember[]> {
+  const branchIds = members.flatMap(({ push }) => (push.branchId ? [push.branchId] : []));
+  const works =
+    branchIds.length === 0
+      ? []
+      : await db
+          .select({ branchId: documentBranches.id, workId: documentBranches.workId })
+          .from(documentBranches)
+          .where(inArray(documentBranches.id, branchIds));
+  const workByBranch = new Map(works.map(({ branchId, workId }) => [branchId, workId]));
+  return members.map(({ push }) => ({
+    pushId: push.id,
+    documentId: push.documentId,
+    branchId: push.branchId,
+    workId: (push.branchId ? (workByBranch.get(push.branchId) ?? null) : null) as WorkId | null,
+    journalIds: push.journalIds,
+  }));
 }
 
 function contribution(member: BatchCompletionMember) {

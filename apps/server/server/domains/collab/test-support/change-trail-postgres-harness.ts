@@ -1796,6 +1796,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     stageCertifiedReplace,
     seedCheckpointRestoredExplicitDelete,
     seedDiscardedDependencyPush,
+    /** The process's branch critical sections, for lease probes. */
+    criticalSections: branchCriticalSections,
     crossWorkProbeFixture: () => ({
       runtime,
       links,
@@ -1921,6 +1923,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           replacement: trailContributionReplacement(member.trail, member.push),
         })),
         payloads: batch.payloads,
+        leasedBranchIds: [],
         liveStateVectors: new Map(),
         recheck() {
           completionCallbackRan = true;

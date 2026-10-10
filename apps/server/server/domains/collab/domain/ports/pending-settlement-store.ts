@@ -1,5 +1,5 @@
 /** Persistence authority for pending branch-push settlement batches and their recovery. */
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   PendingSettlementBatch,
@@ -12,8 +12,8 @@ import type {
   DurableTrailRecord,
 } from "./change-trail-persistence.js";
 import type {
-  PublicationAdmission,
-  PublicationHold,
+  PublicationItemHold,
+  PublicationMember,
   PublicationRefusal,
 } from "./settlement-publication.js";
 
@@ -55,6 +55,12 @@ export type BatchCompletion = PublicationInputs & {
   claim: SettlementClaim;
   members: readonly BatchCompletionMember[];
   /**
+   * The branch critical-section leases the caller holds. Completion asks every
+   * step's `prepare` again under its locks; a branch outside this set answers
+   * `rediscover`.
+   */
+  leasedBranchIds: readonly string[];
+  /**
    * Synchronous and non-mutating: compares warm state with every admitted
    * member's in-transaction cut after all writes, just before commit. `retry`
    * rolls the whole batch back.
@@ -67,28 +73,39 @@ export type BatchCompletion = PublicationInputs & {
   afterCommit(admitted: readonly DocumentId[]): void;
 };
 
-/** A member a publication step kept out of live: its push is gone and its rows are reviewable. */
-export type HeldMember = PublicationHold & { pushId: number };
-
 export type BatchCompletionResult =
   | {
       status: "completed";
       projections: readonly CommittedChangeTrailProjection[];
-      held: readonly HeldMember[];
+      /** Every item held for the batch, at the check or in completion, as staged durably. */
+      held: readonly PublicationItemHold[];
     }
   /** A step refused: the staged batch is abandoned and its journal rows are reviewable again. */
   | { status: "refused"; reason: PublicationRefusal }
+  /** A step needs a branch lease the caller doesn't hold: release and discover again. */
+  | { status: "rediscover"; branchIds: readonly string[] }
   | { status: "retry" };
 
-/** The pre-staging check: prepared members before any push or batch row exists. */
+/** The pre-staging check: members before any push or batch row exists. */
 export type PublicationCheck = PublicationInputs & {
   batchId: string;
-  members: readonly {
-    documentId: DocumentId;
-    branchId: string;
-    workId: WorkId | null;
-    journalIds: readonly number[];
-  }[];
+  members: readonly PublicationMember[];
+};
+
+/** What the check decided, and what to stage. */
+export type PublicationCheckResult =
+  | {
+      kind: "proceed";
+      hold: readonly PublicationItemHold[];
+      /** The payloads to stage: each step's refined payload where it held items. */
+      payloads: ReadonlyMap<string, JsonValue>;
+    }
+  | { kind: "refuse"; reason: PublicationRefusal };
+
+/** What recovery reads before it takes any lease or claim. */
+export type RecoveryScope = {
+  payloads: ReadonlyMap<string, JsonValue>;
+  memberBranchIds: readonly string[];
 };
 
 export type PendingSettlementStore = {
@@ -135,6 +152,13 @@ export type PendingSettlementStore = {
    * Runs every step's plan and `check()` under the completion's lock order in one
    * short, write-free transaction before staging. Root-owned, like completion.
    */
-  checkPublication(input: PublicationCheck): Promise<PublicationAdmission>;
+  checkPublication(input: PublicationCheck): Promise<PublicationCheckResult>;
+  /**
+   * The outer preparation: every step's `prepare` over its payload, unioned.
+   * Called before any coordinator lease or database transaction.
+   */
+  prepareBranchLeases(payloads: ReadonlyMap<string, JsonValue>): Promise<readonly string[]>;
+  /** The staged payloads and member branches of a batch, read before recovery leases or claims it. */
+  loadRecoveryScope(batchId: string): Promise<RecoveryScope>;
   listRecoverableBatchIds(): Promise<string[]>;
 };

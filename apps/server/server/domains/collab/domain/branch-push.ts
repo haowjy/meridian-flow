@@ -25,7 +25,7 @@ import {
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import { createBranchPushTransition } from "./branch-push-transition.js";
 import { buildDurablePushTrail } from "./branch-trail-projection.js";
-import type { PublicationRefusal } from "./ports/settlement-publication.js";
+import type { PublicationItemHold, PublicationRefusal } from "./ports/settlement-publication.js";
 import { createWorkDraftPending } from "./work-draft-pending.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
@@ -45,6 +45,8 @@ type BatchPipelineResult =
       pushes: readonly PushLineageRow[];
       /** Candidates a publication step kept out of live, and why. */
       held: ReadonlyMap<DocumentId, PublicationRefusal>;
+      /** Every held item, branchless ones included. */
+      heldItems: readonly PublicationItemHold[];
       phases: readonly ComputedCandidate[];
       liveAfterPush: ReadonlyMap<DocumentId, Uint8Array>;
       /** One entry per drained branch the auto reset rebased onto live. */
@@ -64,6 +66,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     changeEventDelivery: input.changeEventDelivery,
     writerIngressBarrier: input.writerIngressBarrier,
     sweepProjectionDiagnostics: input.sweepProjectionDiagnostics,
+    criticalSections,
   });
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
@@ -147,6 +150,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     batch: CandidateBatch,
     branches: ReadonlyMap<string, BranchSnapshot>,
     lease: BranchLockLease,
+    leasedBranchIds: readonly string[],
     signal?: AbortSignal,
   ): Promise<BatchPipelineResult> {
     if (batch.candidates.length === 0 && Object.keys(batch.payloads ?? {}).length === 0) {
@@ -196,6 +200,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           kind: "push" as const,
           pushes,
           ...(batch.payloads ? { payloads: batch.payloads } : {}),
+          leasedBranchIds,
           afterDurableCommit: input.hooks?.afterDurableCommit,
           onConflict: (push: PushLineageRow) => ({
             kind: "conflict" as const,
@@ -208,7 +213,12 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
               : {
                   kind: "committed",
                   pushes: outcome.pushes,
-                  held: new Map(outcome.held.map((held) => [held.documentId, held.reason])),
+                  held: new Map(
+                    outcome.held.flatMap((held) =>
+                      held.documentId ? [[held.documentId, held.reason] as const] : [],
+                    ),
+                  ),
+                  heldItems: outcome.held,
                   phases,
                   liveAfterPush: new Map(
                     phases.map((phase) => [
@@ -239,13 +249,28 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     return { ...locked, branchResets };
   }
 
+  /**
+   * Leases the drafts being pushed and any branches publication steps declared
+   * (`extraBranchIds`, from their payloads), then revalidates the drafts under it.
+   */
   async function withActiveWorkDraftBranchLock<T>(
     branchIds: readonly string[],
-    run: (branches: readonly BranchSnapshot[], lease: BranchLockLease) => Promise<T>,
+    run: (
+      branches: readonly BranchSnapshot[],
+      lease: BranchLockLease,
+      leasedBranchIds: readonly string[],
+    ) => Promise<T>,
+    extraBranchIds: readonly string[] = [],
   ): Promise<T> {
+    const leasedBranchIds = [...new Set([...branchIds, ...extraBranchIds])].sort();
     const retryBranchId = branchIds[0];
-    // A branchless publication (payloads only) leases no branch and opens no document scope.
-    if (!retryBranchId) return criticalSections.withBranches([], (lease) => run([], lease));
+    // A branchless publication (payloads only) leases what its steps declared and opens no
+    // document scope.
+    if (!retryBranchId) {
+      return criticalSections.withBranches(leasedBranchIds, (lease) =>
+        run([], lease, leasedBranchIds),
+      );
+    }
     const documentIds = await Promise.all(
       branchIds.map(
         async (branchId) =>
@@ -258,13 +283,13 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     return input.links.within({ documentId: documentIds[0] as string, documentIds }, async () => {
       for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
         try {
-          return await criticalSections.withBranches(branchIds, async (lease) => {
+          return await criticalSections.withBranches(leasedBranchIds, async (lease) => {
             const branches = await Promise.all(
               branchIds.map(async (branchId) =>
                 assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId),
               ),
             );
-            return run(branches, lease);
+            return run(branches, lease, leasedBranchIds);
           });
         } catch (cause) {
           if (cause instanceof BranchPushCommitConflictError) {
@@ -372,45 +397,56 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     }));
   }
 
-  const pushBranchesToLive: BranchPushService["pushBranchesToLive"] = (pushInput) =>
-    withActiveWorkDraftBranchLock(pushInput.branchIds, async (branches, lease) => {
-      const sources = await Promise.all(branches.map(sourceFor));
-      const drafted = sources.filter((source) => source.rows.length > 0);
-      const items = new Map<string, PushToLiveResult>();
-      let refused: PublicationRefusal | undefined;
-      for (const source of sources) {
-        if (source.rows.length > 0) continue;
-        items.set(source.branch.branchId, mapNoActiveRows(await noActiveRows(source.branch)));
-      }
-      if (drafted.length > 0 || Object.keys(pushInput.payloads ?? {}).length > 0) {
-        const batch = buildWholeBranchCandidates({
-          sources: drafted,
-          ...(pushInput.payloads ? { payloads: pushInput.payloads } : {}),
-          ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
-          ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-        });
-        const result = await executeCandidateBatch(
-          batch,
-          branchMap(drafted.map((source) => source.branch)),
-          lease,
-          pushInput.signal,
-        );
-        // The retry rereads every branch; the pushed one then reports already_pushed.
-        if (result.kind === "conflict") {
-          throw new BranchPushCommitConflictError(result.push.branchId ?? "");
+  const pushBranchesToLive: BranchPushService["pushBranchesToLive"] = async (pushInput) =>
+    withActiveWorkDraftBranchLock(
+      pushInput.branchIds,
+      async (branches, lease, leasedBranchIds) => {
+        const sources = await Promise.all(branches.map(sourceFor));
+        const drafted = sources.filter((source) => source.rows.length > 0);
+        const items = new Map<string, PushToLiveResult>();
+        let refused: PublicationRefusal | undefined;
+        let heldItems: readonly PublicationItemHold[] = [];
+        for (const source of sources) {
+          if (source.rows.length > 0) continue;
+          items.set(source.branch.branchId, mapNoActiveRows(await noActiveRows(source.branch)));
         }
-        if (result.kind === "refused") {
-          refused = result.reason;
-          for (const item of mapRefused(result)) items.set(item.branchId, item);
-        } else {
-          for (const [branchId, item] of mapCommitted(result)) items.set(branchId, item);
+        if (drafted.length > 0 || Object.keys(pushInput.payloads ?? {}).length > 0) {
+          const batch = buildWholeBranchCandidates({
+            sources: drafted,
+            ...(pushInput.payloads ? { payloads: pushInput.payloads } : {}),
+            ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
+            ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+          });
+          const result = await executeCandidateBatch(
+            batch,
+            branchMap(drafted.map((source) => source.branch)),
+            lease,
+            leasedBranchIds,
+            pushInput.signal,
+          );
+          // The retry rereads every branch; the pushed one then reports already_pushed.
+          if (result.kind === "conflict") {
+            throw new BranchPushCommitConflictError(result.push.branchId ?? "");
+          }
+          if (result.kind === "refused") {
+            refused = result.reason;
+            for (const item of mapRefused(result)) items.set(item.branchId, item);
+          } else {
+            heldItems = result.heldItems;
+            for (const [branchId, item] of mapCommitted(result)) items.set(branchId, item);
+          }
         }
-      }
-      return {
-        items: sources.map((source) => items.get(source.branch.branchId) as PushToLiveResult),
-        ...(refused ? { refused } : {}),
-      };
-    });
+        return {
+          items: sources.map((source) => items.get(source.branch.branchId) as PushToLiveResult),
+          heldItems,
+          ...(refused ? { refused } : {}),
+        };
+      },
+      // The outer preparation: branches the publication steps declare from their payloads.
+      await input.settlementStore.prepareBranchLeases(
+        new Map(Object.entries(pushInput.payloads ?? {})),
+      ),
+    );
 
   const pushToLive: BranchPushService["pushToLive"] = async (pushInput) => {
     const { items } = await pushBranchesToLive({ ...pushInput, branchIds: [pushInput.branchId] });
@@ -422,7 +458,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ) =>
     withActiveWorkDraftBranchLock(
       [pushInput.branchId, pushInput.manifestBranchId],
-      async ([contentBranch, manifestBranch], lease) => {
+      async ([contentBranch, manifestBranch], lease, leasedBranchIds) => {
         const content = await sourceFor(contentBranch as BranchSnapshot);
         if (content.rows.length === 0) return mapNoActiveRows(await noActiveRows(content.branch));
         const manifest = await sourceFor(manifestBranch as BranchSnapshot);
@@ -437,6 +473,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           built,
           branchMap([content.branch, manifest.branch]),
           lease,
+          leasedBranchIds,
           pushInput.signal,
         );
         if (result.kind === "conflict") {

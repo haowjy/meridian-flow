@@ -258,6 +258,32 @@ export const branchPushSettlementPayloads = pgTable(
   (table) => [primaryKey({ columns: [table.batchId, table.stepKind] })],
 );
 
+/**
+ * An item a publication step kept out of a batch, and why: staged with the batch
+ * when the pre-staging check decided it, written in completion otherwise.
+ */
+export const branchPushSettlementHolds = pgTable(
+  "branch_push_settlement_holds",
+  {
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
+    itemKey: text("item_key").notNull(),
+    /** The text member held with the item; null for a branchless item. */
+    documentId: uuid("document_id").$type<DocumentId>(),
+    reason: jsonb("reason").$type<unknown>().notNull(),
+    decidedIn: text("decided_in").$type<"check" | "completion">().notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.batchId, table.itemKey] }),
+    check(
+      "branch_push_settlement_holds_decided_in_valid",
+      sql`${table.decidedIn} IN ('check', 'completion')`,
+    ),
+  ],
+);
+
 /** One staged push of a settlement batch: its lock cut, update, trail and joins. */
 export const branchPushSettlementOutbox = pgTable(
   "branch_push_settlement_outbox",
