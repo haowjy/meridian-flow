@@ -1,0 +1,8 @@
+# Reload layout follow-ups (dock audit)
+
+- `../shell/RailSection.tsx`: Recent expansion currently resets to defaultOpen
+  after reload. Consider browser-tab-local restoration of this writer choice;
+  panel collapse already persists separately.
+- `DockChangesView.tsx`: the selected discard-class card resets on reload.
+  Decide whether to restore it when its model identity still exists. Do not
+  persist open document menus, rename inputs, or discard confirmations.

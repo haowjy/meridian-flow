@@ -40,7 +40,7 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 
 ### Dock document slot
 
-`occupant` in the same session-only store is the one document the dock shows on Work or
+`occupant` in the same browser-tab-local store is the one document the dock shows on Work or
 Chat: `{ projectId, screen, tab }`. `useDockView(screen, projectId)` returns
 it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
@@ -54,7 +54,29 @@ Chat-screen occupant survives screen and chat changes, but is only shown on Chat
 screen, which the title menu browses); a sync to the same place is not an intent. Every intent bumps `revision`: an async attempt calls
 `claim()` when it starts and `commit(claim, document)` shows the document only if no newer intent
 came since, otherwise the commit is `cancelled`. That one incrementing claim is the only race
-handling the slot has. Nothing is persisted across reloads.
+handling opens have. `dock-persistence.ts` stores `{ accountId, byScreen, occupant }` under
+`meridian:dock:v1` in sessionStorage, reusing the Editor tab codec. Reads, parsing
+and writes degrade silently if storage is unavailable. The dock-owned restoration
+hook binds the authenticated account before admitting a snapshot; missing or
+foreign account stamps drop the entire layout. Account switches also clear live
+state and invalidate prior claims. Version 1 remains unchanged because this shape
+has no released data. `dock-views.ts` owns the shared view policy used by rendering
+and snapshot validation. A fresh store puts the saved document in `restoring`,
+never directly in the visible slot. The pure `dockDocumentFitsScope` predicate
+fences both scope sync and restored installation, including a Work owner changed
+during validation. `ProjectView` supplies `_workspaceHydrated` (the Editor signal)
+to the dock-owned `useDockDocumentRestoration` hook; `restoreDockDocument` then
+waits for the replica projection. It projects resource identity, rejects terminal/removed resources and missing local Untitleds, and
+resolves server-backed documents by stable ID with the Editor availability
+validator. Acquiring the resolved catalog before a final projection keeps a
+rename/move and optimistic namespace intents coherent. Validation failure leaves
+only a hidden candidate, never an error-flashing document. `restore(expected, tab)`
+only installs the still-current candidate and never changes the claim revision;
+a writer intent clears it immediately. Persisting an intermediate scope sync
+retains the hidden candidate until validation or cancellation finishes.
+
+Empty/loading Changes uses `withoutEmptyChanges` only: it must not call
+`setDockView`, overwrite the saved choice, or cancel a pending reload restore.
 
 Desktop rail switches belong to `DesktopProjectController`, beside `DesktopProject`.
 It resolves the retained Editor presentation once through the Editor identity resolver
@@ -181,8 +203,9 @@ recreate the removed project query grammar to choose a dock view.
 
 `useDockViewStore` is a Zustand store keyed by `ScreenKey`:
 
-- **Session-only, no `persist`.** A fresh reload starts from each screen's
-  default. A stale view choice across reloads is worse than a fresh start.
+- **Browser-tab-local persistence.** `dock-persistence.ts` is the only
+  sessionStorage boundary. Reload retains explicit choices and the document;
+  a separate browser tab starts with its own layout, like Editor tabs.
 - **No placement data.** Width, collapse, and grid placement are owned by the
   surface-prefs store (`layout/surface-prefs-store.ts`), not here.
 - **Explicit choice only.** The store only records writer-initiated view switches;
@@ -194,7 +217,8 @@ recreate the removed project query grammar to choose a dock view.
 projection. `DockShell` uses its `hasDockChanges` wrapper for segment
 visibility, while `DockChangesView` renders those rows and owns its empty
 branch. When the final row disappears, `DockShell` immediately renders the
-native view and updates the session choice.
+native view without updating the saved choice. A catalog still loading must
+not erase Changes or cancel document restoration.
 
 ### Slot material contract
 
@@ -323,12 +347,13 @@ Unmounting would lose chat state. `display: none` would cause a layout reflow
 (tab order, scroll position). The `opacity-0 + inert` approach keeps the DOM
 stable and the browser from wasting layout work on hidden content.
 
-### Session-only view store
+### Reload retains the writer's layout
 
-Persisting the view choice means a writer who opens the app in a fresh session
-gets a stale view. The default (occupant's native view) is the right starting
-point every time. The writer's explicit choice is remembered within a session
-so switching screens and coming back restores it.
+The writer should return to what was open, not rebuild the side panel after
+reload. SessionStorage follows the Editor workspace's browser-tab boundary:
+reload retains the layout without sharing another tab's choices. Dock peeks
+remain outside the URL and history. Validation, not a fresh-start default,
+prevents missing or terminal documents from flashing on screen.
 
 ### Combined region unit = card unit
 

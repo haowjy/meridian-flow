@@ -14,9 +14,9 @@ Run `pnpm dev` in the owned worktree and discover its HTTPS app route with
    chapter's URL in a new browser tab. Expect the remembered place. Warm tabs
    retain their DOM instead of rereading device memory.
 3. Switch to Chat, carrying the chapter into the side panel. Expect the same
-   text despite its narrower width. Move the caret and scroll there, reload,
-   and open the chapter from the tree again. Expect the side panel's latest
-   place. Dock document arrangement is a separate persistence contract.
+   text despite its narrower width. Move the caret and scroll there, then reload. Expect the restored
+   side-panel document at its latest place. Also close and reopen it from the
+   tree. Dock arrangement and reading memory have separate persistence owners.
 4. From another tab/peer, insert paragraphs above the remembered text.
    Close and reopen the chapter. Expect the same text and caret, not the
    former paragraph number. Change pane width or device text size and repeat.
