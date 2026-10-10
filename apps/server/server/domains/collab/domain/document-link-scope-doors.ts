@@ -161,6 +161,7 @@ export function scopeBranchPeer(
     recordManifestDocumentCreated: access.recordManifestDocumentCreated,
     recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
     ensureCreatedDraftBranch: access.ensureCreatedDraftBranch,
+    retractCreatedDraftBranch: access.retractCreatedDraftBranch,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

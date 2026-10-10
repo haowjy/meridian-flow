@@ -443,6 +443,16 @@ export type BranchPeerShadowAccess = {
    * transaction; idempotent against a racing peer ensure (contract §6.2 step 5).
    */
   ensureCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<void>;
+  /**
+   * Reverse a draft create's branch (contract §12.5, O-11), in the caller's transaction:
+   * `stands` when the Work's draft branch on the document (or a thread peer of it) holds
+   * a contribution; otherwise the branches go and, once the transaction commits, their
+   * pooled cores, caches and rooms are retired.
+   */
+  retractCreatedDraftBranch(input: {
+    documentId: DocumentId;
+    workId: WorkId;
+  }): Promise<"retracted" | "stands">;
 };
 
 export type DocumentAttribution = {

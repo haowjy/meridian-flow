@@ -316,6 +316,60 @@ export function createDrizzleBranchStore(
   }
 
   /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
+  /**
+   * §12.5, O-11: a contribution is any journal row of the branch's current generation that
+   * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
+   */
+  async function retractCreatedDraftBranch(input: {
+    documentId: DocumentId;
+    workId: WorkId;
+  }): Promise<{ outcome: "retracted" | "stands"; branchIds: readonly string[] }> {
+    const tx = currentDrizzleDb(db);
+    const drafted = await tx
+      .select({ id: documentBranches.id, generation: documentBranches.generation })
+      .from(documentBranches)
+      .where(
+        and(
+          eq(documentBranches.documentId, input.documentId),
+          eq(documentBranches.kind, "work_draft"),
+          eq(documentBranches.status, "active"),
+          eq(documentBranches.workId, input.workId),
+        ),
+      );
+    const peers =
+      drafted.length === 0
+        ? []
+        : await tx
+            .select({ id: documentBranches.id, generation: documentBranches.generation })
+            .from(documentBranches)
+            .where(
+              inArray(
+                documentBranches.upstreamBranchId,
+                drafted.map((branch) => branch.id),
+              ),
+            );
+    const branches = [...peers, ...drafted];
+    for (const branch of branches) {
+      const [contribution] = await tx
+        .select({ id: branchWriteJournal.id })
+        .from(branchWriteJournal)
+        .where(
+          and(
+            eq(branchWriteJournal.branchId, branch.id),
+            eq(branchWriteJournal.generation, branch.generation),
+            sql`${branchWriteJournal.status} <> 'discarded'`,
+          ),
+        )
+        .limit(1);
+      if (contribution) return { outcome: "stands", branchIds: [] };
+    }
+    const branchIds = branches.map((branch) => branch.id);
+    if (branchIds.length > 0) {
+      await tx.delete(documentBranches).where(inArray(documentBranches.id, branchIds));
+    }
+    return { outcome: "retracted", branchIds };
+  }
+
   async function ensureCreatedDraftBranch(input: {
     documentId: DocumentId;
     workId: WorkId;
@@ -846,6 +900,7 @@ export function createDrizzleBranchStore(
     },
 
     ensureCreatedDraftBranch,
+    retractCreatedDraftBranch,
 
     ensureThreadPeerBranch(input) {
       return ensureThreadPeerBranch(input);

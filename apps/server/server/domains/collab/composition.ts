@@ -489,6 +489,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       model: runtime.model,
       codec: runtime.codec,
       links: deps.links,
+      closeBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
+      deferUntilCommit: deferUntilDrizzleCommit,
     }),
     deps.links,
   );
