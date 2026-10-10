@@ -1,8 +1,9 @@
 /**
  * Hidden-node lifecycle through the real commands (contract §6, §7, §12): a draft's create
  * is an empty hidden row its drafts share (C-2); a live create at a hidden path reveals it,
- * by path or by id, and an aborted held write leaves live state alone (C-3); and the fences
- * between a join, a reveal and a last use hold in both orders (I-1, I-2, I-3).
+ * by path or by id, and an aborted held write leaves live state alone (C-3); the fences
+ * between a join, a reveal and a last use hold in both orders (I-1, I-2, I-3); and a
+ * reveal by id never lands from a source a split or move just changed (I-6).
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, WorkId } from "@meridian/contracts";
@@ -467,6 +468,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect
           .soft(drafted.ok && drafted.value, `${order}: the draft writes that document`)
           .toBe(rows[0]?.id);
+      }
+    });
+    it("reveals by id only at a revalidated source when a split or move races it (I-6)", async () => {
+      for (const operation of ["split", "move"] as const) {
+        for (const order of ["reveal first", "live operation first"] as const) {
+          const label = `${operation}, ${order}`;
+          const { scenario } = await start();
+          const drafting = await scenario.work(`Drafting ${label}`, "draft");
+          await scenario.seedLive("kb://atlas/coast.md");
+          const isle = await scenario.model(drafting).create("kb://atlas/isle.md", "Isle.");
+          const reveal = () => scenario.writer.create("isle.md", { documentId: isle });
+          const live = () =>
+            operation === "split"
+              ? scenario.writer.delete("kb://atlas")
+              : scenario.writer.move("kb://atlas", "unfiled://atlas");
+          const settled =
+            order === "reveal first"
+              ? await scenario.interleave(reveal, "revealById.afterDiscovery", live)
+              : await scenario.interleave(
+                  live,
+                  operation === "split" ? "split.beforeRepoint" : "moves.beforeInstall",
+                  reveal,
+                );
+          if (order === "live operation first") {
+            expect.soft(settled.bWaited, `${label}: the reveal waits for the sources`).toBe(true);
+          }
+          const [revealed, operated] =
+            order === "reveal first" ? [settled.a, settled.b] : [settled.b, settled.a];
+          expect
+            .soft(operated.ok && operated.value, `${label}: live op`)
+            .toMatchObject({ ok: true });
+          expect
+            .soft(revealed.ok && revealed.value, `${label}: revealed that document`)
+            .toEqual({ status: "created", documentId: isle });
+          expect.soft(await row(isle), `${label}: where the writer asked`).toMatchObject({
+            hidden: false,
+            deletedAt: null,
+            contextSourceId: scenario.project.sources.manuscript,
+            folderId: null,
+            name: "isle",
+          });
+          expect.soft(await rowsNamed(scenario, "isle"), `${label}: no twin`).toHaveLength(1);
+        }
       }
     });
   });

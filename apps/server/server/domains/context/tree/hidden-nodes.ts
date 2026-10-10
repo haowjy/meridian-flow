@@ -29,6 +29,7 @@ import { claimDocumentLocation } from "../adapters/context-fs/document-locations
 import { renderFilename } from "../context/paths.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import { dropDocumentRows, recordCreated } from "./draft-tree-store.js";
+import { absorbAt, absorbHiddenFolder } from "./folder-normalization.js";
 import type {
   BinaryNode,
   CreateFault,
@@ -39,6 +40,7 @@ import type {
   RevealIdentity,
   TrackedNode,
 } from "./hidden-node-types.js";
+import { treeHook } from "./test-hooks.js";
 import { loadFolderChains, spellNodeAddresses } from "./tree-addresses.js";
 import {
   createTreeReader,
@@ -57,33 +59,6 @@ import {
   loadHiddenDocumentCandidates,
   loadRevealIdentityRow,
 } from "./tree-view-sql.js";
-
-/**
- * Test-only injection points on this module's production code (contract §16.1), wired
- * like the mover's `setBeforeDestructiveWrite`. Production never sets them.
- */
-export type HiddenNodeHookPoint =
-  | "createInDraft.afterCandidateLock"
-  | "createLive.afterCandidateLock"
-  | "endUse.afterRevalidate"
-  | "place.afterRevalidate";
-const hooks = new Map<HiddenNodeHookPoint, () => Promise<void>>();
-
-/** Installs a hook; the returned function removes it. */
-export function setHiddenNodeHook(
-  point: HiddenNodeHookPoint,
-  hook: () => Promise<void>,
-): () => void {
-  hooks.set(point, hook);
-  return () => {
-    if (hooks.get(point) === hook) hooks.delete(point);
-  };
-}
-
-/** Runs the hook installed at `point`, if any (a no-op in production). */
-async function hiddenNodeHook(point: HiddenNodeHookPoint): Promise<void> {
-  await hooks.get(point)?.();
-}
 
 function filePath(dir: readonly string[], name: string, extension: string): string {
   return [...dir, renderFilename(name, extension)].join("/");
@@ -219,7 +194,7 @@ async function joinHiddenDocument(
   const candidates = await loadHiddenDocumentCandidates(db, slot, { excludeDraftId: draftId });
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
-  await hiddenNodeHook("createInDraft.afterCandidateLock");
+  await treeHook("createInDraft.afterCandidateLock");
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { excludeDraftId: draftId, ids });
   await tombstoneDocuments(
@@ -403,8 +378,12 @@ export async function ensureLiveFolderPath(
     const hidden = await findHiddenFolder(db, { contextSourceId, parentId, name });
     const folderId: FolderId =
       hidden ?? (await insertFolder(db, { contextSourceId, parentId, name }, false));
-    if (hidden) await updatePlacedFolder(db, hidden, { parentId, clear: "hidden" });
     await claimDocumentLocation(db, contextSourceId, parentId, name);
+    if (hidden) {
+      await updatePlacedFolder(db, hidden, { parentId, clear: "hidden" });
+      // Another draft's hidden folder at the same path folds into the revealed one.
+      await absorbAt(db, hidden);
+    }
     parentId = folderId;
     created.push(folderId);
   }
@@ -489,7 +468,7 @@ async function chooseLiveCandidate(
   const candidates = await loadHiddenDocumentCandidates(db, slot);
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
-  await hiddenNodeHook("createLive.afterCandidateLock");
+  await treeHook("createLive.afterCandidateLock");
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ids });
   await tombstoneDocuments(
@@ -546,7 +525,7 @@ export type PlaceTarget = {
 export type PlaceResult = {
   /** Targets plus revealed or restored ancestors. */
   placed: readonly NodeRef[];
-  /** Hidden ancestors a visible folder already held the path of; the target went under it. */
+  /** Hidden ancestors folded into the visible folder that already held their path. */
   absorbed: readonly FolderId[];
   restored: readonly NodeRef[];
   /** For the catalog refresh. */
@@ -575,7 +554,7 @@ export async function place(
   for (const target of input.targets) {
     const stale = await revalidatePlacement(db, target);
     if (stale) return Err(stale);
-    await hiddenNodeHook("place.afterRevalidate");
+    await treeHook("place.afterRevalidate");
     const ancestors = await placeAncestors(db, tree, target);
     if (!ancestors.ok) return ancestors;
     placed.push(...ancestors.value.placed);
@@ -628,6 +607,7 @@ export async function place(
       });
     }
     await claimDocumentLocation(db, target.at.contextSourceId, parentId, filename);
+    if (target.node.kind === "folder") await absorbAt(db, target.node.id);
     placed.push(target.node);
     if (target.mode === "restore") restored.push(target.node);
     sourceIds.add(target.at.contextSourceId);
@@ -654,8 +634,9 @@ async function revalidatePlacement(
 /**
  * The final location's folder chain, root down (TM invariant 2, decision 9): a visible
  * folder is kept; a hidden one is revealed, or, when a visible folder already holds its
- * path, the walk continues under that one; a soft-deleted one (restore) is restored, or
- * the walk continues under the folder that now holds its path, unless a document does.
+ * path, absorbed into that one (§8.2); a soft-deleted one (restore) is restored and absorbs
+ * any hidden twin a split left there, or the walk continues under the folder that now
+ * holds its path, unless a document does.
  * Each placed folder takes the walk's current parent, so a repointed chain stays whole.
  */
 async function placeAncestors(
@@ -701,7 +682,12 @@ async function placeAncestors(
     }
     const holder = await tree.resolvePath(LIVE_TREE, { contextSourceId, path: path.join("/") });
     if (holder.kind === "found" && holder.node.kind === "folder") {
-      if (row.hidden) absorbed.push(row.id);
+      // One folder per path (decision 10): a hidden one folds into the visible holder; a
+      // deleted one stays deleted and the walk continues under the holder.
+      if (row.hidden && !row.deleted) {
+        await absorbHiddenFolder(db, { hidden: row.id, into: holder.node.folder.id });
+        absorbed.push(row.id);
+      }
       parentId = holder.node.folder.id;
       continue;
     }
@@ -726,6 +712,8 @@ async function placeAncestors(
       contextSourceId,
     });
     await claimDocumentLocation(db, contextSourceId, parentId, row.name);
+    // A split may have left a hidden twin at a restored folder's path (§8.3).
+    if (row.deleted) await absorbAt(db, row.id);
     placed.push({ kind: "folder", id: row.id });
     if (row.deleted) restored.push({ kind: "folder", id: row.id });
     parentId = row.id;
@@ -793,7 +781,7 @@ export async function endUse(
   const rows = await loadDocumentIdentityRows(tx, ids);
   const used = new Set((await loadActiveDraftUses(tx, ids)).map((use) => use.documentId));
   const ending = rows.filter((row) => row.hidden && !row.deleted && !used.has(row.id));
-  await hiddenNodeHook("endUse.afterRevalidate");
+  await treeHook("endUse.afterRevalidate");
   const tombstoned: NodeRef[] = [];
   if (ending.length === 0) return { tombstoned, releasedObjects: [] };
   await tombstoneDocuments(

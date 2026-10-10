@@ -26,6 +26,7 @@ import {
 } from "../../ports/context-document-store.js";
 import type { ContextWriteOptions } from "../../ports/context-port.js";
 import type { LiveClaim, RevealExpectation } from "../../tree/hidden-node-types.js";
+import { treeHook } from "../../tree/test-hooks.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
 import { type BoundWrites, binaryTrackedWriteFault } from "./bound-writes.js";
 import { type CreateTarget, resolveCreateTarget } from "./create-target.js";
@@ -141,6 +142,10 @@ export class LiveCreate {
       );
       if (found.kind === "conflict") return Err({ code: "conflict" });
       if (found.kind === "existing") return Ok({ documentId: found.documentId });
+      // Holding nothing: a split or move may change the candidate before its sources lock.
+      if (found.kind === "reveal" && options?.revealDocumentId) {
+        await treeHook("revealById.afterDiscovery");
+      }
       const sourceIds = found.kind === "reveal" ? [found.reveal.sourceId] : [];
       const run = (plan: LiveCreatePlan) =>
         this.deps.executor.run(
