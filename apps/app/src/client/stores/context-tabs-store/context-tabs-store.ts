@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
+import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
   isEditorContextTab,
@@ -567,42 +568,32 @@ export function getContextTabs(projectId: string): ProjectTabsSlice {
 
 let workspaceAccountId: string | null = null;
 
+function workspaceRecord(accountId: string) {
+  return browserRecord(
+    "session",
+    { key: EDITOR_WORKSPACE_STORAGE_KEY, version: 1, accountId },
+    parseEditorWorkspace,
+    (error) => useContextTabsStore.setState({ _layoutPersistenceError: error }),
+  );
+}
+
 function persistWorkspace(): void {
-  if (typeof window === "undefined" || !workspaceAccountId) return;
-  try {
-    sessionStorage.setItem(
-      EDITOR_WORKSPACE_STORAGE_KEY,
-      JSON.stringify({
-        version: 1,
-        accountId: workspaceAccountId,
-        projects: useContextTabsStore.getState().byProject,
-      }),
-    );
-    if (useContextTabsStore.getState()._layoutPersistenceError !== null)
-      useContextTabsStore.setState({ _layoutPersistenceError: null });
-  } catch (error) {
-    // Layout failure must not roll back live membership or block document persistence.
-    useContextTabsStore.setState({ _layoutPersistenceError: error });
-  }
+  if (!workspaceAccountId) return;
+  if (workspaceRecord(workspaceAccountId).write(useContextTabsStore.getState().byProject))
+    useContextTabsStore.setState({ _layoutPersistenceError: null });
 }
 
 /** Restore this browser context once per account, never project another window's layout. */
 export async function rehydrateEditorWorkspace(userId: string): Promise<void> {
   if (typeof window === "undefined") return;
   if (workspaceAccountId === userId && useContextTabsStore.getState()._workspaceHydrated) return;
-  let snapshot: ReturnType<typeof parseEditorWorkspace> = null;
-  let error: unknown = null;
-  try {
-    snapshot = parseEditorWorkspace(sessionStorage.getItem(EDITOR_WORKSPACE_STORAGE_KEY));
-  } catch (cause) {
-    error = cause;
-  }
+  useContextTabsStore.setState({ _layoutPersistenceError: null });
+  const snapshot = workspaceRecord(userId).read();
   workspaceAccountId = userId;
   useContextTabsStore.setState({
-    byProject: snapshot?.accountId === userId ? { ...snapshot.projects } : {},
+    byProject: snapshot ? { ...snapshot } : {},
     _reviewOverlayByProject: {},
     _workspaceHydrated: true,
-    _layoutPersistenceError: error,
   });
 }
 

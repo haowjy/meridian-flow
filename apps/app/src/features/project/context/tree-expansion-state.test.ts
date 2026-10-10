@@ -19,28 +19,28 @@ it("restores only this tab's account, project, and tree, including explicit coll
   });
   const key = treeExpansionKey("account", "project", "manuscript");
   const state = { expanded: true, entries: { folder: true, closed: false } };
-  writeTreeExpansion(key, state);
-  expect(readTreeExpansion(key)).toEqual(state);
+  writeTreeExpansion(key, "account", state);
+  expect(readTreeExpansion(key, "account")).toEqual(state);
   for (const other of [
     treeExpansionKey("other", "project", "manuscript"),
     treeExpansionKey("account", "other", "manuscript"),
     treeExpansionKey("account", "project", "scratch"),
   ]) {
-    expect(readTreeExpansion(other)).toEqual(EMPTY_TREE_EXPANSION);
+    expect(readTreeExpansion(other, "account")).toEqual(EMPTY_TREE_EXPANSION);
     values.set(other, values.get(key) ?? "");
-    expect(readTreeExpansion(other)).toEqual(EMPTY_TREE_EXPANSION);
+    expect(readTreeExpansion(other, "account")).toEqual(EMPTY_TREE_EXPANSION);
   }
   values.clear(); // a fresh tab has no expansion seed
-  expect(readTreeExpansion(key)).toEqual(EMPTY_TREE_EXPANSION);
+  expect(readTreeExpansion(key, "account")).toEqual(EMPTY_TREE_EXPANSION);
 });
 
 it.each([
   "broken",
   '{"version":2}',
-  '{"version":1,"key":"tree","expanded":true,"entries":{"folder":"true"}}',
+  '{"version":1,"accountId":"account","scope":"tree","payload":{"expanded":true,"entries":{"folder":"true"}}}',
 ])("rejects malformed tree data: %s", (raw) => {
   vi.stubGlobal("window", { sessionStorage: { getItem: () => raw } });
-  expect(readTreeExpansion("tree")).toEqual(EMPTY_TREE_EXPANSION);
+  expect(readTreeExpansion("tree", "account")).toEqual(EMPTY_TREE_EXPANSION);
 });
 
 it("drops missing folders and keeps explicit closed folders", () => {
@@ -55,6 +55,8 @@ it("tolerates blocked storage", () => {
       throw Error("blocked");
     },
   });
-  expect(readTreeExpansion("tree")).toEqual(EMPTY_TREE_EXPANSION);
-  expect(() => writeTreeExpansion("tree", { expanded: true, entries: {} })).not.toThrow();
+  expect(readTreeExpansion("tree", "account")).toEqual(EMPTY_TREE_EXPANSION);
+  expect(() =>
+    writeTreeExpansion("tree", "account", { expanded: true, entries: {} }),
+  ).not.toThrow();
 });

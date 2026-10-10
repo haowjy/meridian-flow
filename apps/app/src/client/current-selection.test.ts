@@ -92,3 +92,35 @@ it("tolerates entirely unavailable storage", () => {
   expect(() => writeCurrentWork("account", "project", "x")).not.toThrow();
   expect(readCurrentWork("account", "project")).toBeNull();
 });
+
+// Present valid foreign payloads at the target key, not merely at a foreign key.
+describe.each(["chat", "work"] as const)("transplanted %s", (kind) => {
+  it.each([
+    "sessionStorage",
+    "localStorage",
+  ] as const)("rejects foreign ownership in %s and preserves explicit empty", async (tier) => {
+    const { rememberedIdKey, readRememberedId, writeRememberedId } = await import(
+      "./tab-first-remembered-id"
+    );
+    for (const [sourceKind, sourceAccount, sourceProject] of [
+      [kind, "foreign", "project"],
+      [kind, "account", "foreign"],
+      [kind === "chat" ? "work" : "chat", "account", "project"],
+    ] as const) {
+      const stores = { sessionStorage: storage(), localStorage: storage() };
+      vi.stubGlobal("window", stores);
+      writeRememberedId(sourceKind, sourceAccount, sourceProject, "foreign-selection");
+      const raw = stores[tier].getItem(rememberedIdKey(sourceKind, sourceAccount, sourceProject));
+      stores[tier].setItem(rememberedIdKey(kind, "account", "project"), raw ?? "");
+      expect(readRememberedId(kind, "account", "project")).toBeNull();
+    }
+    const stores = { sessionStorage: storage(), localStorage: storage() };
+    vi.stubGlobal("window", stores);
+    writeRememberedId(kind, "account", "project", null);
+    if (tier === "localStorage")
+      stores.sessionStorage.removeItem(rememberedIdKey(kind, "account", "project"));
+    expect(readRememberedId(kind, "account", "project")).toBeNull();
+    stores.localStorage.setItem(rememberedIdKey(kind, "account", "project"), '"old-unstamped"');
+    expect(readRememberedId(kind, "account", "project")).toBeNull();
+  });
+});
