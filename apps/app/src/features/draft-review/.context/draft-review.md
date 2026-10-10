@@ -222,9 +222,10 @@ Unacknowledged writer edits survive retirement through the session layer's
 The pool drains released outboxes and carries reset outboxes; the handoff filters
 against the synchronized successor before replay. The room owner observes its outbox
 and pending carry as generation-tagged changes evidence, not as a proposal or
-permission to adopt an empty reset. A local outbox write publishes a session
-observation after the bytes are stored, even if acknowledgement was already false;
-wire-send bookkeeping alone can run before those bytes exist. A generation reset
+permission to adopt an empty reset. An empty-to-pending outbox edge publishes a session
+observation after the bytes are stored, before the provider sends; further typing
+while pending emits nothing. Session deduplication includes outbox presence,
+including when acknowledgement was already false. A generation reset
 is a handoff, never terminal absence. The carry remains evidence through the
 post-acknowledgement list/preview refresh; dropping it withdraws that evidence.
 Callbacks are fenced by selection and account, so delivery never reopens a
