@@ -396,7 +396,7 @@ function createInMemoryStoreResolvers(
     resolveProjectStore(projectId, userId, scheme) {
       return getInMemoryProjectContextStore(registry, projectId, userId, scheme);
     },
-    resolveWorkStore(workId, scheme, _projectId) {
+    resolveWorkStore(workId, scheme) {
       return getInMemoryWorkContextStore(registry, workId, scheme);
     },
     resolveNoWorkStore(projectId, scheme) {
@@ -437,7 +437,7 @@ function createProductionStoreResolvers(
         arrivals,
       );
     },
-    resolveWorkStore(workId, scheme, _projectId) {
+    resolveWorkStore(workId, scheme) {
       return createWorkContextDocumentStore(db, workId, scheme, catalogMutations, arrivals);
     },
     resolveNoWorkStore(projectId, scheme) {
@@ -448,7 +448,7 @@ function createProductionStoreResolvers(
       if (!workId) throw new Error(`No Work missing for project ${projectId}`);
       return workId;
     },
-    resolveMutationStore(_projectId) {
+    resolveMutationStore() {
       return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals);
     },
   };
