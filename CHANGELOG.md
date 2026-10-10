@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Passage jumps stay visible when you return to an already-open Editor tab.
+
 - Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
 - Reloading keeps the document and view you had open in the side panel.
 - Each browser tab remembers its own chat and Work across reloads, while new tabs start from your last selection. Folder expansion stays with each tab; Scratch and Recent layout preferences carry into new tabs.

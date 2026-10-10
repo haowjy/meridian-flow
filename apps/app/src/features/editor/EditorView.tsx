@@ -631,14 +631,6 @@ function ActiveSessionEditorView({
             ) : undefined
           }
           scrollRef={scrollContainerRef}
-          onScroll={(event) => {
-            event.currentTarget.dataset.stableLayoutScrollTop = String(
-              event.currentTarget.scrollTop,
-            );
-            event.currentTarget.dataset.stableLayoutScrollLeft = String(
-              event.currentTarget.scrollLeft,
-            );
-          }}
         />
         {/* The one chrome mount host. Every surface registers in
           `chrome/chrome-surfaces.tsx`; nothing new is added to this file. */}
