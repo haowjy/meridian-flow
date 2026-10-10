@@ -142,6 +142,8 @@ export type TreeStateNode = {
     contextSourceId: ContextSourceId;
     folderId: FolderId | null;
     path: string;
+    /** `path` spelled as a canonical URI; null when it can't be spelled. */
+    uri: string | null;
     deleted: boolean;
     /** Soft-deleted ancestor folders, nearest first: restored with it (decision 9). */
     deletedAncestors: readonly FolderId[];
@@ -153,6 +155,8 @@ export type TreeStateNode = {
     name: string;
     extension: string;
     path: string;
+    /** `path` spelled as a canonical URI; null when it can't be spelled. */
+    uri: string | null;
   };
   /** The rendered location token's source. */
   locationVersion: bigint;
@@ -162,7 +166,7 @@ export type TreeStateNode = {
      * 5a (F11): a different node visible in the draft holds the target path, or a
      * document holds the path of a folder the target needs.
      */
-    | { kind: "clash"; withNode: NodeRef; at: string }
+    | { kind: "clash"; withNode: NodeRef; at: string; uri: string | null }
     /** Created, revealed, then moved or renamed live: Apply names it back. */
     | { kind: "relocated" }
     /** Created-and-revealed or edited, then deleted live: Apply restores it (decision 7, F9). */
@@ -662,10 +666,35 @@ export function createTreeReader(db: Database): TreeReader {
       return null;
     };
 
+    // Both locations spelled from the same read as the paths and the version token.
+    const spelled = await spellNodeAddresses(
+      tx(),
+      items.flatMap(({ row }, item) => {
+        const target = targets[item] as (typeof targets)[number];
+        return [
+          rowLocation(row),
+          {
+            ...rowLocation(row),
+            contextSourceId: target.contextSourceId,
+            folderId: target.parentFolderId,
+            name: target.name,
+            extension: target.extension,
+          },
+        ];
+      }),
+      chains,
+    );
+
     return items.map(({ origin, row, draft }, item): TreeStateNode => {
       const target = targets[item] as (typeof targets)[number];
       const liveChain = chainOf(row.folderId);
       const clash = clashOf(item);
+      const liveUri = spelled[item * 2]?.uri ?? null;
+      const targetAddress = spelled[item * 2 + 1] ?? null;
+      const targetPath = folderPath(
+        chainOf(target.parentFolderId),
+        renderFilename(target.name, target.extension),
+      );
       const relocated =
         origin === "created" &&
         !row.hidden &&
@@ -685,19 +714,18 @@ export function createTreeReader(db: Database): TreeReader {
           contextSourceId: row.contextSourceId,
           folderId: row.folderId,
           path: folderPath(liveChain, renderFilename(row.name, row.extension)),
+          uri: liveUri,
           deleted: row.deleted,
           deletedAncestors: liveChain.filter((folder) => folder.deleted).map((folder) => folder.id),
         },
-        target: {
-          ...target,
-          path: folderPath(
-            chainOf(target.parentFolderId),
-            renderFilename(target.name, target.extension),
-          ),
-        },
+        target: { ...target, path: targetPath, uri: targetAddress?.uri ?? null },
         locationVersion: row.locationVersion,
         conflict: clash
-          ? { kind: "clash", ...clash }
+          ? {
+              kind: "clash",
+              ...clash,
+              uri: sameSourceUri(targetAddress?.uri ?? null, targetPath, clash.at),
+            }
           : !row.hidden && row.deleted
             ? { kind: "deleted_live" }
             : relocated
@@ -766,6 +794,15 @@ function positions(asks: readonly (Omit<PathSlot, "key"> & { owner: number })[])
       return [...new Set(hits.filter((hit) => asked.has(hit.key)).map((hit) => hit.id))];
     },
   };
+}
+
+/**
+ * `path` in the source `uri` (at `uriPath`) is spelled in: an ancestor path of a target
+ * shares its scheme and authority.
+ */
+function sameSourceUri(uri: string | null, uriPath: string, path: string): string | null {
+  if (!uri?.endsWith(uriPath)) return null;
+  return uri.slice(0, uri.length - uriPath.length) + path;
 }
 
 /** The identity of a node a reader found. */

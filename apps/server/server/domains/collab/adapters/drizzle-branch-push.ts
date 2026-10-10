@@ -5,10 +5,12 @@ import type { Database } from "@meridian/database";
 import {
   branchWriteJournal,
   documentBranches,
+  drafts,
+  draftTreeChanges,
   pushLineage,
   works,
 } from "@meridian/database/schema";
-import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -322,51 +324,56 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
   return {
     async countPendingByWorkIds(workIds) {
       if (workIds.length === 0) return new Map();
-      const rows = await currentDrizzleDb(db)
-        .select({
-          workId: branchDraftWork.workId,
-          count: countDistinct(documentBranches.id),
-        })
+      const tx = currentDrizzleDb(db);
+      const branched = tx
+        .select({ workId: branchDraftWork.workId, documentId: documentBranches.documentId })
         .from(documentBranches)
         .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
-        .innerJoin(
-          branchWriteJournal,
-          and(
-            eq(branchWriteJournal.branchId, documentBranches.id),
-            eq(branchWriteJournal.generation, documentBranches.generation),
-            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
-          ),
-        )
         .where(
           and(
             inArray(branchDraftWork.workId, workIds),
+            eq(drafts.status, "active"),
             eq(documentBranches.kind, "work_draft"),
             eq(documentBranches.status, "active"),
-            sql`(${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
-              or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId') is distinct from 'string'`,
+            sql`exists (
+              select 1 from ${branchWriteJournal}
+              where ${branchWriteJournal.branchId} = ${documentBranches.id}
+                and ${branchWriteJournal.generation} = ${documentBranches.generation}
+                and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
           ),
-        )
-        .groupBy(branchDraftWork.workId);
-
-      return new Map(
-        rows.flatMap(({ workId, count }) =>
-          workId === null ? [] : [[workId as WorkId, Number(count)] as const],
-        ),
-      );
+        );
+      // A created document is pending with no text yet (a branchless image, an empty create).
+      const changed = tx
+        .select({ workId: drafts.originWorkId, documentId: draftTreeChanges.nodeId })
+        .from(draftTreeChanges)
+        .innerJoin(drafts, eq(drafts.id, draftTreeChanges.draftId))
+        .where(
+          and(
+            inArray(drafts.originWorkId, workIds),
+            eq(drafts.status, "active"),
+            eq(draftTreeChanges.nodeKind, "document"),
+          ),
+        );
+      const documents = new Map<WorkId, Set<string>>();
+      for (const { workId, documentId } of await branched.union(changed)) {
+        if (!workId) continue;
+        const set = documents.get(workId as WorkId) ?? new Set<string>();
+        set.add(documentId);
+        documents.set(workId as WorkId, set);
+      }
+      return new Map([...documents].map(([workId, set]) => [workId, set.size]));
     },
-    async listReviewableEvidenceForDraft(draftId) {
+    async listDraftBranchEvidence(draftId) {
       const rows = await currentDrizzleDb(db)
         .select({
           branchId: documentBranches.id,
           documentId: documentBranches.documentId,
           generation: documentBranches.generation,
-          journal: {
-            turnId: branchWriteJournal.turnId,
-            updateMeta: branchWriteJournal.updateMeta,
-          },
+          journalId: branchWriteJournal.id,
+          turnId: branchWriteJournal.turnId,
         })
         .from(documentBranches)
-        .innerJoin(
+        .leftJoin(
           branchWriteJournal,
           and(
             eq(branchWriteJournal.branchId, documentBranches.id),
@@ -394,7 +401,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           },
           rows: [],
         };
-        branch.rows.push(row.journal);
+        if (row.journalId !== null) branch.rows.push({ turnId: row.turnId });
         evidence.set(row.branchId, branch);
       }
       return [...evidence.values()];

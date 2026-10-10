@@ -3,53 +3,49 @@
  * AI writes go; a draft write never pushes itself live, so a reply that saves
  * into the draft after a switch to auto-apply waits there like a kept change.
  */
-import type { UserId } from "@meridian/contracts/runtime";
 import type {
-  PushToLiveResult,
   SetWorkPushPolicyInput,
   SetWorkPushPolicyResult,
   WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
+import type { DraftPublication } from "./draft-publication.js";
+import type { DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
-import type { PendingWorkDraft, WorkDraftPending } from "./work-draft-pending.js";
-
-type ApplyPendingDraft = (input: {
-  draft: PendingWorkDraft;
-  pushedByUserId?: UserId;
-}) => Promise<PushToLiveResult>;
 
 export function createWorkPushPolicy(input: {
   workPushPolicyStore: WorkPushPolicyStore;
-  workDraftPending: WorkDraftPending;
   drafts: Pick<Drafts, "activeForWork">;
-  applyPendingDraft: ApplyPendingDraft;
+  reviewItems: Pick<DraftReviewItems, "list">;
+  publication: Pick<DraftPublication, "applyItems">;
 }) {
   return {
     /**
      * Switching to auto-apply with pending changes needs the writer's choice
-     * (D40): `apply` pushes every pending draft once, first; `keep` leaves them
-     * for review. An archived Work's drafts are frozen (D30): `apply`'s first
-     * push refuses under the Work lock.
+     * (D40): `apply` applies the whole draft as one publication first, closing it
+     * when nothing stays (a held item stays in the draft as a kept change); `keep`
+     * leaves it for review. An archived Work's draft is frozen (D30): the Apply
+     * refuses under the Work lock.
      */
     async setWorkPushPolicy(policyInput: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult> {
       if (policyInput.policy === "auto") {
         // A Work with no active draft has nothing pending; the switch never makes one.
         const draft = await input.drafts.activeForWork(policyInput.workId);
-        const pendingDrafts = draft ? await input.workDraftPending.list(draft.id) : [];
-        if (pendingDrafts.length > 0 && !policyInput.pending) {
+        const pending = draft ? await input.reviewItems.list(draft.id) : [];
+        if (pending.length > 0 && !policyInput.pending) {
           return {
             status: "confirmation_required",
-            unpushedCount: pendingDrafts.length,
-            reason: `Switching to Auto-apply needs a choice for ${pendingDrafts.length} pending changes: apply them now or keep them for review.`,
+            unpushedCount: pending.length,
+            reason: `Switching to Auto-apply needs a choice for ${pending.length} pending changes: apply them now or keep them for review.`,
           };
         }
-        if (policyInput.pending !== "keep") {
-          for (const draft of pendingDrafts) {
-            await input.applyPendingDraft({
-              draft,
-              ...(policyInput.pushedByUserId ? { pushedByUserId: policyInput.pushedByUserId } : {}),
-            });
-          }
+        if (draft && pending.length > 0 && policyInput.pending !== "keep") {
+          await input.publication.applyItems({
+            workId: policyInput.workId,
+            draftId: draft.id,
+            selection: { kind: "all_pending" },
+            closeWhenEmpty: true,
+            ...(policyInput.pushedByUserId ? { userId: policyInput.pushedByUserId } : {}),
+          });
         }
       }
       await input.workPushPolicyStore.setWorkWriteMode(policyInput.workId, policyInput.policy);

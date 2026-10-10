@@ -278,16 +278,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "clash",
         withNode: { kind: "document", id: liveIntro },
         at: "intro.md",
+        uri: "manuscript://intro.md",
       });
       expect(state.get(coast)?.conflict).toEqual({
         kind: "clash",
         withNode: { kind: "document", id: maps },
         at: "maps",
+        uri: "manuscript://maps",
       });
       expect(state.get(chapter)).toMatchObject({
         hidden: false,
-        live: { path: "chapters/chapter-one.md", deleted: false },
-        target: { path: "chapters/one.md" },
+        live: {
+          path: "chapters/chapter-one.md",
+          uri: "manuscript://chapters/chapter-one.md",
+          deleted: false,
+        },
+        target: { path: "chapters/one.md", uri: "manuscript://chapters/one.md" },
         conflict: { kind: "relocated" },
       });
       expect(state.get(scene)).toMatchObject({
@@ -305,11 +311,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "clash",
         withNode: { kind: "document", id: occupant },
         at: "saga/three.md",
+        uri: "manuscript://saga/three.md",
       });
       expect(state.get(tale)?.conflict).toEqual({
         kind: "clash",
         withNode: { kind: "folder", id: taleFolder },
         at: "tale/four.md",
+        uri: "manuscript://tale/four.md",
       });
       expect(state.get(quiet)).toMatchObject({ origin: "edited", conflict: { kind: "none" } });
       // A tombstone is no longer the draft's item.

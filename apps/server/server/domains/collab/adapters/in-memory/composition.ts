@@ -363,6 +363,12 @@ function createInMemoryDraftStub(documents: {
       async list() {
         return [];
       },
+      async listItems() {
+        return { draftId: null, drafts: [], items: [] };
+      },
+      async applyAll(input) {
+        return { status: "gone", draftId: input.draftId };
+      },
       async preview(input) {
         const live = await documents.readAsMarkdown(input.documentId);
         if (!live.ok) throw new Error(`read_failed:${live.error.code}`);

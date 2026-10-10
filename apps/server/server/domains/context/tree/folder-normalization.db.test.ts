@@ -459,10 +459,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "clash",
         withNode: { kind: "document", id: kaelFile },
         at: "ideas/kael",
+        uri: "manuscript://ideas/kael",
       });
-      await expect(scenario.apply(ascension, [notes]), "held at Apply").rejects.toThrow(
-        "Another file holds ideas/kael",
-      );
+      expect.soft(await scenario.apply(ascension, [notes]), "held at Apply (F11)").toEqual([
+        {
+          httpStatus: 409,
+          body: {
+            status: "held",
+            draftId: expect.any(String),
+            reason: { code: "path_taken", path: "manuscript://ideas/kael" },
+          },
+        },
+      ]);
       expect.soft((await document(notes)).hidden, "still hidden after Apply").toBe(true);
     });
 

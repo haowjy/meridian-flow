@@ -19,7 +19,6 @@ import { grantedJournal, testFileGrant } from "../../../test-support/file-grants
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
-import { createDrizzleDraftTreeReviewBridge } from "../adapters/drizzle-draft-tree-review-bridge.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -58,13 +57,18 @@ const {
   createDrizzleBranchJournalReadStore,
   createDrizzleWorkDraftPendingStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkPushPolicyStore,
 } = await import("../adapters/drizzle-branch-push.js");
 const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
-const { manifestArrivalPublication } = await import("../adapters/drizzle-manifest-arrivals.js");
+const { createDrizzleDraftTreeStep } = await import("../adapters/drizzle-draft-tree-step.js");
+const { createDraftBranchAheadRegistration } = await import(
+  "../domain/draft-branch-ahead-registration.js"
+);
+const { createDraftPublication } = await import("../domain/draft-publication.js");
+const { createDraftReviewItems } = await import("../domain/draft-review-items.js");
+const { createTreeReader } = await import("../../context/tree/tree-view.js");
 const { lockDocumentNamespaces } = await import(
   "../../context/adapters/context-fs/document-locations.js"
 );
@@ -288,11 +292,11 @@ export type ChangeTrailHarnessOptions = {
   beforeCompletionCommit?: () => void;
   /** Inside the completion transaction, after each push's text is admitted (journal and projection). */
   afterAdmission?: (input: { documentId: DocumentId; ordinal: number }) => void | Promise<void>;
-  /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
+  /** Ahead-ref settlement at Apply's arrivals; absent, completions settle nothing. */
   arrivals?: DocumentArrivals;
   /** Inside a withdrawal (refusal or hold), at its first write. */
   duringWithdrawal?: () => Promise<void>;
-  /** Publication steps after the manifest arrival step, in the order they run. */
+  /** Publication steps after the draft tree step, in the order they run. */
   publicationSteps?: readonly SettlementPublicationStep[];
 };
 
@@ -423,7 +427,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     changeTrails,
     notices,
   );
-  const durableWorkPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
   const durableWorkDraftPendingStore = createDrizzleWorkDraftPendingStore(db);
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
@@ -447,7 +450,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           lockDocumentNamespaces(db, documentIds, sourceIds),
       },
       steps: [
-        ...(options.arrivals ? manifestArrivalPublication(db, options.arrivals).steps : []),
+        createDrizzleDraftTreeStep(db, {
+          drafts: workDrafts,
+          branches: branchStore,
+          pending: durableWorkDraftPendingStore,
+          ...(options.arrivals ? { arrivals: options.arrivals } : {}),
+        }),
         ...(options.publicationSteps ?? []),
       ],
     },
@@ -511,9 +519,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     criticalSections: branchCriticalSections,
     journalReadStore: durableBranchJournalReadStore,
     commitStore: durablePushCommitStore,
-    workPushPolicyStore: durableWorkPushPolicyStore,
-    workDraftPendingStore: durableWorkDraftPendingStore,
-    drafts: workDrafts,
     settlementStore,
     branchCoordinator,
     journal: persistence.journal,
@@ -673,6 +678,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branches: branchStore,
     resolveDocumentUri,
   });
+  const reviewItems = createDraftReviewItems({
+    tree: createTreeReader(db),
+    branches: createWorkDraftPending(durableWorkDraftPendingStore).branches,
+    liveFingerprint: (documentId) =>
+      liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
+  });
   const drafts = createWorkDraftReviewService({
     links,
     discardWorkDraft: createDrizzleWorkDraftDiscard(
@@ -683,21 +694,28 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       liveCoordinator,
       workDrafts,
     ),
-    draftTree: createDrizzleDraftTreeReviewBridge(db, {
-      drafts: workDrafts,
-    }),
     branches: branchStore,
     branchCoordinator,
     branchJournal: durableBranchJournalReadStore,
-    branchPush: realBranchPush,
     branchReview,
-    workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
     liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
     agentEdit,
-    resolveDocumentUri,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
+    drafts: workDrafts,
+    reviewItems,
+    publication: createDraftPublication({
+      drafts: workDrafts,
+      reviewItems,
+      draftLinks: createDraftBranchAheadRegistration({
+        branches: branchCoordinator,
+        drafts: workDrafts,
+        registrar: UNSUPPORTED_AHEAD_REFS,
+        outsideTransaction: runOutsideDrizzleTransaction,
+      }),
+      push: realBranchPush,
+    }),
   });
   const collab = {
     agentEdit: () => agentEdit,

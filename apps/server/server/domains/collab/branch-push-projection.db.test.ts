@@ -33,8 +33,6 @@ import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkDraftPendingStore,
-  createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
@@ -181,7 +179,6 @@ describe("branch-push durable projection", () => {
       stageSettlementBatchWithinTx,
       changeTrails,
     );
-    const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
     const settlementStore = createDrizzlePendingSettlementStore(
       db,
       serializer,
@@ -217,9 +214,6 @@ describe("branch-push durable projection", () => {
       branchStore,
       journalReadStore,
       commitStore,
-      workPushPolicyStore,
-      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
-      drafts,
       settlementStore,
       branchCoordinator,
       journal: persistence.journal,
@@ -421,9 +415,6 @@ describe("branch-push durable projection", () => {
       branchStore,
       journalReadStore,
       commitStore,
-      workPushPolicyStore: createDrizzleWorkPushPolicyStore(db),
-      workDraftPendingStore: createDrizzleWorkDraftPendingStore(db),
-      drafts,
       settlementStore: createDrizzlePendingSettlementStore(
         db,
         engine,

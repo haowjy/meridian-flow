@@ -1,49 +1,8 @@
-/** Pure document materialization and effect-verification primitives for branch pushes. */
+/** Pure document materialization and integration primitives for branch pushes. */
 import { createHash } from "node:crypto";
-import {
-  decodeUpdateForDependencies,
-  deleteRanges,
-  rangeCovers,
-  suppliedRanges,
-  toDocHandle,
-  type YProsemirrorDocumentModel,
-} from "@meridian/agent-edit/integration";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
-export class BranchPushEffectVerificationError extends Error {
-  constructor(
-    readonly operation: string,
-    readonly journalIds: readonly number[],
-    readonly reason: string,
-  ) {
-    super(
-      `${operation} did not integrate selected Yjs effects (${reason}) for journal rows ${journalIds.join(",")}`,
-    );
-    this.name = "BranchPushEffectVerificationError";
-  }
-}
-
-export function assertRowsIntegrated(
-  doc: Y.Doc,
-  rows: readonly BranchJournalRow[],
-  operation: string,
-): void {
-  const stateVector = Y.decodeStateVector(Y.encodeStateVector(doc));
-  const docDeleteRanges = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(doc)));
-  for (const row of rows) {
-    const decoded = decodeUpdateForDependencies(row.updateData);
-    for (const range of suppliedRanges(decoded)) {
-      if ((stateVector.get(range.client) ?? 0) < range.clock + range.length) {
-        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_struct_range");
-      }
-    }
-    for (const range of deleteRanges(decoded)) {
-      if (!docDeleteRanges.some((candidate) => rangeCovers(candidate, range))) {
-        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_delete_range");
-      }
-    }
-  }
-}
+import type { PublicationBlockChange } from "./branch-push-contracts.js";
 
 export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
   return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
@@ -79,14 +38,11 @@ export function stablePushIdempotencyKey(input: {
   branchId: string;
   generation: number;
   journalIds: number[];
-  publicationKind: "content" | "manifest";
 }): string {
   return createHash("sha256")
     .update(input.branchId)
     .update("\0")
     .update(String(input.generation))
-    .update("\0")
-    .update(input.publicationKind)
     .update("\0")
     .update([...input.journalIds].sort((a, b) => a - b).join(","))
     .digest("hex");

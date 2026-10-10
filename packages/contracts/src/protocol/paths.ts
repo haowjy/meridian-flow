@@ -107,6 +107,11 @@ export function apiProjectWorkDraftsPath(projectId: string, workId: string): str
   return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
 }
 
+/** Apply all: one command over the Work's whole draft. */
+export function apiProjectWorkDraftsApplyPath(projectId: string, workId: string): string {
+  return `${apiProjectWorkDraftsPath(projectId, workId)}/apply`;
+}
+
 export function apiProjectWorkDocumentDraftPath(
   projectId: string,
   workId: string,

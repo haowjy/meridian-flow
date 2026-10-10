@@ -1,15 +1,33 @@
-/** Route core for authenticated AI draft preview/Apply/Discard over Work-scoped draft documents. */
+/**
+ * Route core for authenticated AI draft review over a Work's draft: the list (legacy
+ * branch items plus the additive `items`), preview, Apply (per document and Apply all,
+ * one publication each) and Discard. Wire changes are additive (F14, contract §13.4).
+ */
 
+import type { DraftId } from "@meridian/contracts";
+import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type {
+  DraftApplyAllRequest,
+  DraftApplyAllResponse,
+  DraftApplyItemResult,
+  DraftApplyNote,
+  DraftApplyRefusalBody,
   DraftApplyResponse,
+  DraftApplyResponseAdditions,
+  DraftApplyTokens,
   DraftDiscardResponse,
+  DraftListResponseAdditions,
+  DraftPreviewAdditions,
   DraftPreviewResponse,
+  DraftReviewItemWire,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import type { FileGrant, FileNeed } from "../domains/file-policy/index.js";
+import { DraftLinkRegistrationFailedError } from "../domains/collab/domain/draft-publication.js";
+import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
+import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
 import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
@@ -18,7 +36,10 @@ import { throwWorkMutationHttpError } from "./work-http.js";
 type DraftRouteServices = {
   projects: Pick<AppServices["projectRepo"], "findById">;
   works: Pick<AppServices["workRepo"], "findById">;
-  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit" | "listAccess">;
+  fileAccess: Pick<
+    AppServices["fileAccess"],
+    "authorize" | "authorizeAt" | "confirmEdit" | "listAccess"
+  >;
   documentSync: Pick<AppServices["documentSync"], "draftReview">;
 };
 
@@ -84,19 +105,32 @@ async function draftGrants<N extends FileNeed>(
 export async function handleWorkDraftListRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },
-): Promise<ThreadDraftListResponse> {
+): Promise<ThreadDraftListResponse & DraftListResponseAdditions> {
   await requireDraftWorkAccess(deps, input);
-  const drafts = await deps.documentSync.draftReview.list({
-    projectId: input.projectId,
-    workId: input.workId,
-  });
-  const visibleDrafts = await filterAccessibleDrafts(deps, {
-    drafts,
-    projectId: input.projectId,
-    userId: input.userId,
-  });
+  const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  // Readable in the draft's view, where its created documents are (file-access §6); a
+  // document deleted live is no longer readable anywhere, but stays the draft's item.
+  const readable = listed.draftId
+    ? await deps.fileAccess.listAccess(
+        { accountId: input.userId },
+        listed.items.map((item) => item.documentId),
+        {
+          draftViews: new Map(
+            listed.items.map((item) => [
+              item.documentId,
+              { kind: "draft" as const, draftId: listed.draftId as DraftId },
+            ]),
+          ),
+        },
+      )
+    : new Map();
+  const items = listed.items.filter((item) => readable.has(item.documentId) || item.deletedLive);
+  const shown = new Set(items.map((item) => item.documentId));
   return {
-    drafts: visibleDrafts.map((draft) => serializeThreadDraft(draft, undefined)),
+    drafts: listed.drafts
+      .filter((draft) => shown.has(draft.documentId))
+      .map((draft) => serializeThreadDraft(draft, undefined)),
+    items: items.map(toWireItem),
   };
 }
 
@@ -109,7 +143,7 @@ export async function handleWorkDraftPreviewRequest(
     draftId: string;
     userId: UserId;
   },
-): Promise<DraftPreviewResponse> {
+): Promise<DraftPreviewResponse & Partial<DraftPreviewAdditions>> {
   await draftGrants(deps, input, "read");
   const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
   if (preview.status === "gone") return preview;
@@ -124,6 +158,7 @@ export async function handleWorkDraftPreviewRequest(
     draftRevisionToken: preview.draftRevisionToken,
     ...(preview.notice ? { notice: preview.notice } : {}),
     ...(preview.isNewDocument ? { isNewDocument: true } : {}),
+    ...(preview.item ? { item: toWireItem(preview.item) } : {}),
   };
   return {
     ...base,
@@ -133,6 +168,11 @@ export async function handleWorkDraftPreviewRequest(
   };
 }
 
+/**
+ * The legacy per-document Apply (§11.4): one rendered item through the one publication.
+ * Optional additive tokens; without them nothing is compared (as before). A held or
+ * stale item answers 409, never `applied`.
+ */
 export async function handleApplyWorkDraftRequest(
   deps: DraftRouteServices,
   input: {
@@ -141,15 +181,155 @@ export async function handleApplyWorkDraftRequest(
     documentId: DocumentId;
     draftId: string;
     userId: UserId;
+    tokens?: DraftApplyTokens;
     signal?: AbortSignal;
   },
-): Promise<DraftApplyResponse> {
-  const grants = await draftGrants(deps, input, "edit", { live: true });
-  const result = await withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(deps.documentSync.draftReview.applyWorkDraft(input)),
+): Promise<DraftApplyRouteResult> {
+  await requireDraftWorkAccess(deps, input);
+  const { items } = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  const item = items.find(
+    (candidate) =>
+      candidate.documentId === input.documentId && candidate.draftBranchId === input.draftId,
   );
-  if (result.status === "applied") return result;
-  throw createError({ statusCode: 404, message: "Draft not found" });
+  if (!item) throw createError({ statusCode: 404, message: "Draft not found" });
+  const grants = await applyGrants(deps, { ...input, items: [item] });
+  const result = await withEditGrants(deps.fileAccess, grants, () =>
+    callDraftReview(
+      deps.documentSync.draftReview.applyWorkDraft({
+        workId: input.workId,
+        documentId: input.documentId,
+        draftId: input.draftId,
+        userId: input.userId,
+        ...(input.tokens ? { tokens: input.tokens } : {}),
+        ...(input.signal ? { signal: input.signal } : {}),
+      }),
+    ),
+  );
+  switch (result.status) {
+    case "applied":
+      return {
+        httpStatus: 200,
+        body: { status: "applied", draftId: result.draftId, item: toWireApplied(result.item) },
+      };
+    case "held":
+      return {
+        httpStatus: 409,
+        body: { status: "held", draftId: result.draftId, reason: result.reason },
+      };
+    case "stale":
+      return { httpStatus: 409, body: { status: "stale", draftId: result.draftId } };
+    case "not_found":
+      throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+}
+
+/** The per-document Apply's answer: 200 applied, or 409 held or stale (F14: never `applied`). */
+export type DraftApplyRouteResult =
+  | { httpStatus: 200; body: DraftApplyResponse & DraftApplyResponseAdditions }
+  | { httpStatus: 409; body: DraftApplyRefusalBody };
+
+/**
+ * Apply all (§11.5): the items the dock rendered, one server command. The request's
+ * draft must be the Work's active one (else `gone`); every status is a 200.
+ */
+export async function handleApplyAllWorkDraftRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    userId: UserId;
+    request: DraftApplyAllRequest;
+    signal?: AbortSignal;
+  },
+): Promise<DraftApplyAllResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+  const draftId = input.request.draftId as DraftId;
+  if (listed.draftId !== draftId) return { status: "gone", draftId };
+  // The grants of what is still an item; one that isn't answers stale from the service.
+  const keys = new Set(input.request.items.map((ref) => ref.itemKey));
+  const grants = await applyGrants(deps, {
+    ...input,
+    items: listed.items.filter((item) => keys.has(item.itemKey)),
+  });
+  const result = await withEditGrants(deps.fileAccess, grants, () =>
+    callDraftReview(
+      deps.documentSync.draftReview.applyAll({
+        workId: input.workId,
+        draftId,
+        items: input.request.items,
+        userId: input.userId,
+        ...(input.signal ? { signal: input.signal } : {}),
+      }),
+    ),
+  );
+  switch (result.status) {
+    case "gone":
+      return { status: "gone", draftId: result.draftId };
+    case "stale":
+      return { status: "stale", draftId: result.draftId, staleItemKeys: [...result.staleItemKeys] };
+    case "applied":
+      return {
+        status: "applied",
+        draftId: result.draftId,
+        draftClosed: result.draftClosed,
+        items: result.items.map((item) =>
+          item.status === "applied" ? toWireApplied(item) : { ...item },
+        ),
+      };
+  }
+}
+
+/**
+ * The edit grants an Apply needs (TM "Authorization", §13.3): the draft's grant on each
+ * item (its location in the draft is where it lands), and the live grant on one live
+ * readers see. A document deleted live isn't in the draft's view: it authorizes at its
+ * final location's source through the draft's destination (F9).
+ */
+async function applyGrants(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    userId: UserId;
+    items: readonly DraftReviewItem[];
+  },
+): Promise<FileGrant<"edit">[]> {
+  const grants: FileGrant<"edit">[] = [];
+  for (const item of input.items) {
+    if (item.deletedLive) {
+      grants.push(await restoreGrant(deps, input, item));
+      continue;
+    }
+    grants.push(
+      ...(await draftGrants(deps, { ...input, documentId: item.documentId }, "edit", {
+        live: !item.isNew,
+      })),
+    );
+  }
+  return grants;
+}
+
+async function restoreGrant(
+  deps: DraftRouteServices,
+  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
+  item: DraftReviewItem,
+): Promise<FileGrant<"edit">> {
+  const parsed = item.path ? parseUnifiedContextUri(item.path) : null;
+  if (!parsed?.ok || !isProjectScopedScheme(parsed.value.scheme)) {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  const grant = await deps.fileAccess.authorizeAt(
+    { accountId: input.userId },
+    {
+      kind: "container",
+      scheme: parsed.value.scheme,
+      owner: { scope: "project", projectId: input.projectId },
+    },
+    { kind: "draft", workId: input.workId, workSlug: null },
+  );
+  if (isFileAccessDenied(grant)) throw createError({ statusCode: 404, message: "Draft not found" });
+  return grant;
 }
 
 export async function handleDiscardWorkDraftRequest(
@@ -184,6 +364,9 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   try {
     return await promise;
   } catch (cause) {
+    if (cause instanceof DraftLinkRegistrationFailedError) {
+      throw createError({ statusCode: 503, message: cause.message });
+    }
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }
@@ -195,16 +378,31 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-/** The drafts whose documents the writer can still read (file-access §6). */
-async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
-  deps: DraftRouteServices,
-  input: { drafts: T[]; projectId: ProjectId; userId: UserId },
-): Promise<T[]> {
-  const access = await deps.fileAccess.listAccess(
-    { accountId: input.userId },
-    input.drafts.map((draft) => draft.documentId),
-  );
-  return input.drafts.filter((draft) => access.has(draft.documentId));
+function toWireItem(item: DraftReviewItem): DraftReviewItemWire {
+  return {
+    draftId: item.draftId,
+    itemKey: item.itemKey,
+    documentId: item.documentId,
+    draftBranchId: item.draftBranchId,
+    origin: item.origin,
+    isNew: item.isNew,
+    binary: item.binary,
+    documentName: item.documentName,
+    path: item.path,
+    livePath: item.livePath,
+    conflict: item.conflict,
+    locationToken: item.tokens.locationToken,
+    liveTextToken: item.tokens.liveTextToken,
+    branchGenerationToken: item.tokens.branchGenerationToken,
+  };
+}
+
+function toWireApplied(item: {
+  itemKey: string;
+  status: "applied";
+  notes: readonly DraftApplyNote[];
+}): Extract<DraftApplyItemResult, { status: "applied" }> {
+  return { itemKey: item.itemKey, status: "applied", notes: [...item.notes] };
 }
 
 function serializeThreadDraft(
