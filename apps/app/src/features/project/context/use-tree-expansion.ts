@@ -9,6 +9,10 @@ import {
   writeTreeExpansion,
 } from "./tree-expansion-state";
 
+function entryIsExpanded(entries: TreeExpansion["entries"], entryId: string): boolean {
+  return entries[entryId] ?? false;
+}
+
 export function useTreeExpansion(
   projectId: string,
   scope: string,
@@ -45,7 +49,24 @@ export function useTreeExpansion(
       })),
     [update],
   );
+  const isExpanded = useCallback(
+    (entryId: string) => entryIsExpanded(saved.state.entries, entryId),
+    [saved.state.entries],
+  );
+  const toggleEntry = useCallback(
+    (entryId: string) =>
+      update((current) => ({
+        ...current,
+        entries: {
+          ...current.entries,
+          [entryId]: !entryIsExpanded(current.entries, entryId),
+        },
+      })),
+    [update],
+  );
   return {
+    isExpanded,
+    toggleEntry,
     expanded: saved.state.expanded,
     expandedEntryIds: saved.state.entries,
     setExpanded,

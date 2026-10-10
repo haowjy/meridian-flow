@@ -141,7 +141,7 @@ function SchemeSection({
         .map((entry) => entry.entryId),
     );
   }, [catalog, isComplete]);
-  const { expanded, setExpanded, expandedEntryIds, setExpandedEntryIds } = useTreeExpansion(
+  const { expanded, setExpanded, isExpanded, toggleEntry, setExpandedEntryIds } = useTreeExpansion(
     projectId,
     `editor:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`,
     folderIds,
@@ -195,16 +195,6 @@ function SchemeSection({
     [onRequestCreate, revealPath, setExpanded],
   );
 
-  const toggleEntry = useCallback(
-    (entryId: string, defaultOpen: boolean) => {
-      setExpandedEntryIds((current) => ({
-        ...current,
-        [entryId]: !(current[entryId] ?? defaultOpen),
-      }));
-    },
-    [setExpandedEntryIds],
-  );
-
   // Catalogs stay warm while collapsed so a newly created row can resolve and open.
   useEffect(() => {
     if (!pendingOpenPath || !catalog) return;
@@ -232,7 +222,7 @@ function SchemeSection({
             onCreateDone,
             onCreatedFilePath: setPendingOpenPath,
             catalog,
-            isExpanded: (entryId) => expandedEntryIds[entryId] ?? false,
+            isExpanded,
             toggleEntry,
           } satisfies TreeEnv)
         : null,
@@ -247,7 +237,7 @@ function SchemeSection({
       requestCreate,
       deleteConfirm.requestDelete,
       onCreateDone,
-      expandedEntryIds,
+      isExpanded,
       toggleEntry,
       catalog,
     ],
