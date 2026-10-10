@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- A missing draft read stays observable while writer delivery protects review, so withdrawn delivery closes the missing review instead of leaving it stranded.
+
 - Document session snapshots update on pending-writing edges, not on every keystroke, while retaining review through remote Discard.
 
 - Draft review sees pending native-socket typing before an empty successor read, so remote Discard keeps surviving words visible as your changes.
