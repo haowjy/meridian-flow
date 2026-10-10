@@ -121,9 +121,8 @@ document (moved identities and any overwrite victim) with
 there: journal FK inserts must remain compatible. After the DML a cross-project
 move carries live manifest membership to its destination project, then the move
 settles ahead refs waiting at its destinations (move-in arrival), then counts the
-note's `linkUpdate`: occurrences in the request project's live holders (live
-manifest members, for drafted sources) whose ref names a moved document
-(`links/move-link-count.ts`).
+note's `linkUpdate`: occurrences in the request project's live holders (visible in the live tree view) whose ref names a moved document
+(`links/move-link-count.ts`). Hidden draft holders are excluded by tree identity status.
 
 Every arrival (tracked create, upload, move-in, Work restore, Apply) settles ahead
 refs once, against its final tree, through `DocumentArrivals`; see

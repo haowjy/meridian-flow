@@ -21,19 +21,9 @@
       "reason": "Namespace locks, location-history claims and records, subtree enumeration: identity and history by id, no visibility answer"
     },
     {
-      "path": "apps/server/server/domains/context/adapters/document-link-scope.ts",
-      "forms": ["read"],
-      "reason": "pending: lane C; delegate document ownership to tree.projectOfDocument"
-    },
-    {
       "path": "apps/server/server/domains/context/adapters/document-link-history.ts",
       "forms": ["read"],
       "reason": "Previous-location lookup: a history row names the document; access by project ownership; hidden documents have no history rows until reveal"
-    },
-    {
-      "path": "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.ts",
-      "forms": ["read"],
-      "reason": "pending: lane C; recovery join and isLive use the live tree view"
     },
     {
       "path": "apps/server/server/domains/projects/adapters/work-cascade.ts",

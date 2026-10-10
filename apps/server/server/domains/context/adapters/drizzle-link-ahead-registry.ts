@@ -10,7 +10,6 @@ import type { Database } from "@meridian/database";
 import {
   contextSources,
   documentLinks,
-  documents,
   linkAheadRefs,
   projects,
   works,
@@ -37,17 +36,13 @@ import {
   RegistrationInsideTransactionError,
 } from "../ports/link-ahead-registry.js";
 import type { DocumentCoordinates } from "../tree/tree-addresses.js";
+import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import { lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
   currentDocumentAddress,
-  documentAt,
-  listsThroughLiveManifest,
   resolveCanonicalAddress,
   sameCoordinates,
 } from "./document-address.js";
-
-/** Membership of the live manifest; `userId`-owned `user://` and non-drafted schemes never consult it. */
-type MembershipResolver = (input: { projectId: ProjectId }) => Promise<{ members: string[] }>;
 
 /** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
@@ -55,7 +50,6 @@ type Address = DocumentCoordinates;
 export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   constructor(
     private readonly db: Database,
-    private readonly resolveManifestMembership: MembershipResolver,
     private readonly eventSink: EventSink = createNoopEventSink(),
   ) {}
 
@@ -123,7 +117,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     let settled = 0;
     for (const documentId of new Set(documentIds)) {
       const address = await currentDocumentAddress(this.db, documentId);
-      // Every arrival calls this; the manifest read is paid only when a ref waits here.
+      // Every arrival calls this; the visibility read is paid only when a ref waits here.
       if (
         address &&
         (await this.hasUnsettled(address)) &&
@@ -140,6 +134,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     page: AheadRecoveryPage,
   ): Promise<AheadRecoveryProgress> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
+    const documents = visibleDocuments(LIVE_TREE);
     const holderProject = sql`coalesce(${contextSources.projectId}, ${works.projectId})`;
     const pending = await this.db
       .selectDistinctOn([documentLinks.aheadId], {
@@ -158,7 +153,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           isNotNull(documentLinks.aheadId),
           isNotNull(documentLinks.address),
           isNull(linkAheadRefs.aheadId),
-          isNull(documents.deletedAt),
           scope === undefined
             ? undefined
             : "documentId" in scope
@@ -193,16 +187,17 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     return { registered, next: pending.length === page.limit && last ? last : null };
   }
 
-  /** A SQL row is not a live arrival while only a Work draft's manifest holds it (e4 §1). */
-  private async isLive(address: Address, documentId: string): Promise<boolean> {
-    if (!listsThroughLiveManifest(address.scheme)) return true;
-    const { members } = await this.resolveManifestMembership({ projectId: address.projectId });
-    return members.includes(documentId);
+  private async isLive(_address: Address, documentId: string): Promise<boolean> {
+    return (
+      (await createTreeReader(this.db).findById(LIVE_TREE, documentId as DocumentId)).kind ===
+      "found"
+    );
   }
 
   private async liveDocumentAt(address: Address): Promise<DocumentId | null> {
-    const documentId = await documentAt(this.db, address);
-    return documentId && (await this.isLive(address, documentId)) ? documentId : null;
+    const occupants = await createTreeReader(this.db).occupantsAt(LIVE_TREE, [address]);
+    const ids = [...occupants.values()][0] ?? [];
+    return ids.length === 1 ? (ids[0] ?? null) : null;
   }
 
   private async hasUnsettled(address: Address): Promise<boolean> {
@@ -249,8 +244,7 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
 
 export function createDrizzleLinkAheadRegistry(
   db: Database,
-  resolveManifestMembership: MembershipResolver,
   eventSink?: EventSink,
 ): LinkAheadRegistry {
-  return new DrizzleLinkAheadRegistry(db, resolveManifestMembership, eventSink);
+  return new DrizzleLinkAheadRegistry(db, eventSink);
 }

@@ -59,7 +59,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
   for (const door of ["chat", "Work"] as const)
     it(`settles only live content through ${door} restore`, async () => {
       const db = database.current;
-      const registry = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+      const registry = createDrizzleLinkAheadRegistry(db);
       const arrivals = createDrizzleDocumentArrivals(db, registry);
       const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, arrivals);
       const threadRepo = createDrizzleThreadRepository(db, { lineageScratch: lifecycle });

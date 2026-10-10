@@ -61,7 +61,6 @@ import {
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
-  type LinkScopeMembership,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
   type ProjectDocumentCatalogRefreshPort,
@@ -70,6 +69,7 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import {
   type AgentChain,
   createAllowAllFileAccess,
@@ -249,6 +249,7 @@ import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
+  liveDocuments: Pick<TreeReader, "findById">;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
@@ -485,19 +486,7 @@ export async function createProductionAppPorts(input: {
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
   // Bound once the collab domain exists; neither runs before composition finishes.
-  const manifestMembership: LinkScopeMembership = (input) => {
-    if (!boundManifestMembership) {
-      throw new Error("Manifest membership resolver used before the collab domain was bound");
-    }
-    return boundManifestMembership.resolveManifestMembership(
-      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
-    );
-  };
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
-    db,
-    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
-    eventSink,
-  );
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, eventSink);
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
@@ -538,7 +527,12 @@ export async function createProductionAppPorts(input: {
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
-    membership: manifestMembership,
+    drafts: {
+      viewForWork: (workId) => {
+        if (!boundManifestMembership) throw new Error("Drafts used before composition finished");
+        return boundManifestMembership.drafts.viewForWork(workId);
+      },
+    },
     observer: createLinkScopeObserver(eventSink),
   });
   const documentSync = createCollabDomain({
@@ -1018,6 +1012,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,
+      drafts: ports.documentSync.drafts,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,
     }),
@@ -1089,6 +1084,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readPending,
     }),
     documentSync: ports.documentSync,
+    liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
@@ -1381,6 +1377,11 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    liveDocuments: {
+      async findById() {
+        throw new Error("Live tree reads are unavailable in memory");
+      },
+    },
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,

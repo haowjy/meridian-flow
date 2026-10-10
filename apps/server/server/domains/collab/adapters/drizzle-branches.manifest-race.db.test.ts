@@ -14,7 +14,6 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
-import { hasLiveManifestMembership } from "../../../lib/yjs-ws-handler.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createDrizzleBranchStore } from "./drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
@@ -176,23 +175,5 @@ describe("Drizzle manifest persistence", () => {
     await expect(
       store.resolveManifestMembership({ projectId: projectId as never }),
     ).resolves.toEqual(expect.objectContaining({ members: [contentDocumentId] }));
-  });
-
-  it("heals a live-room gate miss with exactly one seed update", async () => {
-    const { projectId, contentDocumentId } = await createProjectFixture("gate-heal");
-    const manifest = await store.ensureProjectManifest({ projectId: projectId as never });
-    manifest.doc.destroy();
-
-    await expect(manifestHistoryCounts(manifest.documentId)).resolves.toEqual({
-      updates: 0,
-      checkpoints: 1,
-    });
-    await expect(hasLiveManifestMembership(store, projectId, contentDocumentId)).resolves.toBe(
-      true,
-    );
-    await expect(manifestHistoryCounts(manifest.documentId)).resolves.toEqual({
-      updates: 1,
-      checkpoints: 1,
-    });
   });
 });

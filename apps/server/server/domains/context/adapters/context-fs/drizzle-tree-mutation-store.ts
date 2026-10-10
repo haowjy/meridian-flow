@@ -144,11 +144,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       await this.arrivals?.settle(moved);
     }
     return input.linkNoteProjectId
-      ? countIncomingLinks(
-          this.db,
-          { projectId: input.linkNoteProjectId as ProjectId, movedDocumentIds: moved },
-          this.liveMembership,
-        )
+      ? countIncomingLinks(this.db, {
+          projectId: input.linkNoteProjectId as ProjectId,
+          movedDocumentIds: moved,
+        })
       : { links: 0, documents: 0 };
   }
 

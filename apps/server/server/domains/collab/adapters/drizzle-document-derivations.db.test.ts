@@ -544,7 +544,7 @@ describe("durable document derivations", () => {
   });
 
   it("the sweep registers a client-minted ahead ref whose registration failed after certification", async () => {
-    const real = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+    const real = createDrizzleLinkAheadRegistry(db);
     let failRegistration = true;
     const aheadStore = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), {
       registry: {

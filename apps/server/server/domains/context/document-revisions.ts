@@ -2,7 +2,7 @@
 
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { BranchPeerShadowAccess, DocumentLinkScopes } from "../collab/index.js";
+import type { BranchPeerShadowAccess, DocumentLinkScopes, Drafts } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import type { WorkRepository } from "../projects/index.js";
 import {
@@ -12,10 +12,12 @@ import {
 } from "../threads/index.js";
 import type { DocumentRevisions } from "./ports/document-revisions.js";
 import type { ProjectContextAvailabilityPort } from "./ports/project-context-availability.js";
+import { LIVE_TREE } from "./tree/tree-view.js";
 
 export function createDocumentRevisions(deps: {
   documents: Pick<BranchPeerShadowAccess, "readEffectiveRevision">;
-  /** One snapshot serves every document asked about together: membership loads once. */
+  drafts: Pick<Drafts, "viewForWork">;
+  /** One snapshot serves every document asked about together. */
   links: Pick<DocumentLinkScopes, "within">;
   threads: Pick<ThreadRepository, "findById">;
   availability: ProjectContextAvailabilityPort;
@@ -39,11 +41,12 @@ export function createDocumentRevisions(deps: {
     const valid = thread && !thread.deletedAt && work && !work.deletedAt;
     const draftOwner = work ? threadExecutionContext(work).draftOwner : null;
     const draftWork = draftOwner && work ? { id: draftOwner.workId, slug: work.slug } : null;
+    const view = draftWork ? await deps.drafts.viewForWork(draftWork.id) : LIVE_TREE;
     for (const documentId of new Set(documentIds)) {
       let revision: string | null = null;
       if (valid) {
         const { resolutions } = await deps.availability.lookup(
-          { projectId: thread.projectId, documentIds: [documentId] },
+          { projectId: thread.projectId, documentIds: [documentId], view },
           { userId: thread.userId },
         );
         const source = resolutions[0];
