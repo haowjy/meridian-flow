@@ -10,8 +10,7 @@ with a single unified `ContextPort` that resolves durable project schemes
 
 Runtime uses the context-owned `DocumentRevisions.current` port, never collab
 directly. Its adapter resolves the thread's current primary Work and write mode,
-checks project-final availability, and in draft mode checks the thread's Work
-manifest membership for `manuscript://` sources. It then delegates each
+checks project-final availability, then delegates each
 document to collab's effective reader. A document a re-read would not find
 returns null, even when its Y.Doc remains loaded in Hocuspocus. Draft reads
 pull live changes synchronously before selecting peer, Work draft, or live;
@@ -30,12 +29,27 @@ Each result also says which `version` it came from, `draft` or `live`.
 **Thread views (D14, D20).** A thread's port reads every source through its
 `ThreadContextView`: each document in the version that thread's writes change
 (`destination` from `domains/file-policy`), so drafted sources read the Work
-draft in draft mode and everything else reads live. Drafted sources this
-project stores (`isDrafted`, minus `user://`, which lives in the personal
-project's manifest) also list through the project manifest, so a draft-only
-create appears in `ls` and `search`. `version: "live"` on the view reads live text and the live
-manifest, and never touches a draft. `read`, `search` and `ls` build their port
-with the version the model named.
+draft in draft mode and everything else reads live. Which documents and folders
+exist is the tree view's answer (`tree/`): a drafted source's adapter has a
+draft placement and resolves its view once per command with
+`drafts.viewForWork` (live while the Work has no active draft; a read never
+makes one), so a draft's hidden create appears in `stat`, `read`, `ls`,
+`search` and `locate` in that draft only. `version: "live"` reads the live tree
+and live text, and never touches a draft. `read`, `search` and `ls` build their
+port with the version the model named.
+
+**Creates by placement (contract §6).** A draft placement's `ensureTrackedDocument`
+and `writeBinary` make (or, for text, join) a hidden row through
+`tree/hidden-nodes.ts` in a command transaction that locks the drafting Work,
+ensures and locks its draft, then takes namespace keys. Whole-file writes,
+creates with text, untitled creates and `mkdir` refuse in a draft placement: a
+draft never seeds live Yjs. A live create at a hidden document's or folder's
+path reveals it instead of inserting a twin; with content it discovers the
+candidate holding nothing, takes its live lease, and admits the content on a
+clone inside the reveal's transaction (`writeCollabMarkdownHeld`), applied to
+the warm room after commit. `retractCreate` reverses a create for a rolled-back
+reply or a failed create write: delete when live, end the draft's use when
+drafted, unless another thread's committed text makes it stand.
 Plain markdown convenience reads and versioned reads share collab serialization.
 
 
@@ -49,14 +63,11 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   affected subtrees, including unchanged entries and children moved out of the
   root. Never rely on a separate repair to restore visibility. An absent root
   means the subtree is gone from this scope, not pending refetch.
-  Project Manuscript entries use live-manifest membership. ContextFS
-  observations fail closed when membership cannot be read, while catalog
-  reconciliation aborts and preserves its last good tree. Mutation-triggered
-  Manuscript reconciliation reserves an availability generation, then publishes
-  the catalog commit and generation atomically after the aggregate commit; a
-  failed deferred repair is retried and never publishes its reserved generation.
-  Source refreshes and post-Apply/Discard document refreshes share this adapter's
-  deferred queue, retry policy, and failure reporting. Repairs coalesce per catalog
+  Entries are the live tree view (`visibleDocuments(LIVE_TREE)`,
+  `visibleFolders(LIVE_TREE)`): a draft's hidden rows and folders never reach
+  it. Source refreshes publish in the mutating transaction; post-Apply/Discard
+  project refreshes go through this adapter's deferred queue, retry policy, and
+  failure reporting. Repairs coalesce per catalog
   scope. A running batch stays frozen; refreshes committed during it queue one dirty rerun.
   Overlapping pending scope groups merge transitively and retain per-scope
   invalidations and per-authority generation maxima. All scopes and generations
@@ -242,11 +253,8 @@ writable. Both tracked-create doors (`createTrackedDocument`,
 `entry`); that is what refuses writer creation into a lineage. Never move the
 creation check to bind time or add a second lineage-creation guard downstream.
 
-Repair (`repairTrackedDocument`) restores membership and, if the document has
-no Yjs state, an empty one; it never reparses the stored projection, whose
-links spell pre-move paths. A document whose only content is a non-empty
-projection is incomplete, not repairable: repair fails with that message and
-leaves the row and its bytes as they are for recovery.
+A live create's identity, content and arrival commit in one aggregate, so no
+half-created document exists to repair; a visible row is used as it is.
 
 ## Ahead refs and arrivals
 
@@ -272,7 +280,10 @@ it. Arrival hooks, each once against the operation's final tree:
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
 | Draft Apply (warm and recovery) | push completion that publishes membership: Work → arriving namespaces → holder lock | as listed |
 
-Draft-only rows and deleted rows are not arrivals.
+A draft's hidden create is no arrival: it settles unsettled refs at its address
+in the draft only (`link_ahead_draft_settlements`). A reveal is an arrival at
+the creator's path, through the creation aggregate. Deleted rows are not
+arrivals.
 
 `adapters/document-address.ts` owns server document addresses: the canonical
 address a document's folder chain spells now, a canonical address resolved to
