@@ -5,6 +5,7 @@
  * is not the current bind is refused, so a late callback cannot leak a row or
  * retire another account's unresolved intent.
  */
+import { composerSessionDraft } from "@/client/composer-drafts";
 import {
   type ChatSubmission,
   type ChatSubmissionStorage,
@@ -70,7 +71,12 @@ export function readFirstSendSubmission(
 }
 
 export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
-  return browserJournal()?.record(accountId, entry) ?? false;
+  const recorded = browserJournal()?.record(accountId, entry) ?? false;
+  if (recorded && entry.kind === "existing-thread" && entry.draft)
+    composerSessionDraft(accountId, { kind: "chat", id: entry.threadId }).handoffSubmitted(
+      entry.draft,
+    );
+  return recorded;
 }
 
 export function retireChatSubmission(
@@ -79,4 +85,23 @@ export function retireChatSubmission(
   expectedEpoch?: number,
 ): boolean {
   return browserJournal()?.retire(accountId, submissionId, expectedEpoch) ?? false;
+}
+
+/** One settlement owner, independent of mounted panes. Transfer words before retiring the witness. */
+export function settleChatSubmission(
+  accountId: string,
+  submissionId: string,
+  outcome: "accepted" | "rejected",
+  expectedEpoch: number,
+): boolean {
+  const current = browserJournal();
+  if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
+  const entry = current.get(submissionId);
+  if (entry?.kind === "existing-thread" && entry.draft) {
+    const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
+    if (outcome === "rejected") {
+      if (!owner.restoreRejected(entry.draft)) return false;
+    } else if (!owner.acceptSubmitted()) return false;
+  }
+  return current.retire(accountId, submissionId, expectedEpoch);
 }
