@@ -74,30 +74,9 @@ UPDATE documents d SET context_source_id = m.destination_id,
   location_version = d.location_version + 1, updated_at = now()
 FROM scratch_archive_moves m WHERE d.context_source_id = m.old_id;
 --> statement-breakpoint
--- Claim the newly occupied destination paths, consuming old identity aliases
--- there just as recordDocumentMove does. Only live, traversable occupants claim
--- aliases; trashed content still moves without consuming unrelated history.
-WITH RECURSIVE paths AS (
-  SELECT f.id, f.context_source_id, f.name AS path
-  FROM folders f JOIN scratch_archive_moves m ON m.folder_id = f.id
-  WHERE f.deleted_at IS NULL
-  UNION ALL
-  SELECT f.id, f.context_source_id, p.path || '/' || f.name
-  FROM folders f JOIN paths p ON f.parent_id = p.id AND f.context_source_id = p.context_source_id
-  WHERE f.deleted_at IS NULL
-), occupied AS (
-  SELECT context_source_id, path FROM paths
-  UNION ALL
-  SELECT d.context_source_id, p.path || '/' || d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END
-  FROM documents d JOIN paths p ON d.folder_id = p.id AND d.context_source_id = p.context_source_id
-  WHERE d.deleted_at IS NULL AND d.kind = 'content'
-)
-DELETE FROM document_previous_locations l USING occupied o
-WHERE l.context_source_id = o.context_source_id AND l.path = o.path;
---> statement-breakpoint
--- Settle only still-unsettled refs at the exact newly occupied live addresses.
--- Old Work Scratch is non-drafted. Every live content row is an arrival;
--- trashed content and live rows beneath trashed ancestors never settle refs.
+-- Live, traversable occupants claim destination aliases. Only content arrivals
+-- settle exact ahead refs; folders claim aliases but never settle document refs.
+-- Trash still moves without consuming history or settling hidden addresses.
 WITH RECURSIVE paths AS (
   SELECT f.id, f.context_source_id, m.project_id, f.name AS path
   FROM folders f JOIN scratch_archive_moves m ON m.folder_id = f.id
@@ -107,10 +86,17 @@ WITH RECURSIVE paths AS (
   FROM folders f JOIN paths p ON f.parent_id = p.id AND f.context_source_id = p.context_source_id
   WHERE f.deleted_at IS NULL
 ), arrivals AS (
-  SELECT d.id, p.project_id, p.path || '/' || d.name ||
+  SELECT d.id, d.context_source_id, p.project_id, p.path || '/' || d.name ||
     CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS path
   FROM documents d JOIN paths p ON d.folder_id = p.id AND d.context_source_id = p.context_source_id
   WHERE d.deleted_at IS NULL AND d.kind = 'content'
+), consumed_aliases AS (
+  DELETE FROM document_previous_locations l USING (
+    SELECT context_source_id, path FROM paths
+    UNION ALL
+    SELECT context_source_id, path FROM arrivals
+  ) occupied
+  WHERE l.context_source_id = occupied.context_source_id AND l.path = occupied.path
 )
 UPDATE link_ahead_refs r SET settled_document_id = a.id, settled_at = now()
 FROM arrivals a
