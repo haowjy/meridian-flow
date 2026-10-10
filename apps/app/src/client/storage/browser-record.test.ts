@@ -12,6 +12,9 @@ it("validates envelopes before domain parsing and distinguishes absent from expl
   const record = browserRecord(
     () => ({
       getItem: () => raw,
+      removeItem: () => {
+        raw = null;
+      },
       setItem: (_, value) => {
         raw = value;
       },
@@ -23,6 +26,8 @@ it("validates envelopes before domain parsing and distinguishes absent from expl
   expect(record.write(null)).toBe(true);
   expect(record.read()).toBeNull();
   const valid = JSON.parse(raw ?? "null");
+  expect(record.write(undefined)).toBe(true);
+  expect(record.read()).toBeUndefined();
   for (const invalid of [
     { ...valid, accountId: "foreign" },
     { ...valid, scope: "foreign" },
@@ -79,6 +84,7 @@ it("never throws for unavailable, denied, or full storage, or a throwing domain 
       () => ({
         getItem: () => '{"version":1,"accountId":"account","payload":null}',
         setItem: denied,
+        removeItem: denied,
       }),
       { key: "key", version: 1, accountId: "account" },
       denied,

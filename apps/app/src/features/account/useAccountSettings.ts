@@ -113,9 +113,7 @@ export function useAccountSettings(
       revisions.current[write.key] === write.revision
     );
   }
-  function success(settings: AccountSettings, write: Write) {
-    if (write.epoch.aborted || write.epoch !== currentEpoch.current) return;
-    acceptSnapshot(settings, nextAccountSettingsGeneration(), true, write.key);
+  function retireIntent(write: Write) {
     if (!live(write)) return;
     const next = { ...intentsRef.current };
     delete next[write.key];
@@ -127,7 +125,11 @@ export function useAccountSettings(
     scope: { id: `account:${accountId}:settings` },
     mutationFn: (write: Write) =>
       updateAccountSettings({ [write.key]: write.value }, { signal: write.epoch }),
-    onSuccess: success,
+    onSuccess: (settings, write) => {
+      if (write.epoch.aborted || write.epoch !== currentEpoch.current) return;
+      acceptSnapshot(settings, nextAccountSettingsGeneration(), true, write.key);
+      retireIntent(write);
+    },
     onError: (cause, write) => {
       if (!live(write)) return;
       const status =
@@ -150,8 +152,8 @@ export function useAccountSettings(
         void getAccountSettings({ signal: write.epoch })
           .then((settings) => {
             if (!live(write)) return;
-            if (settings[write.key] === write.value) success(settings, write);
-            else acceptSnapshot(settings, generation, true);
+            if (settings[write.key] === write.value) retireIntent(write);
+            acceptSnapshot(settings, generation, true);
           })
           .catch(() => undefined);
       }

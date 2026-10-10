@@ -102,3 +102,34 @@ it("publishes confirmation even when the visible preference values have not chan
   expect(localStorage.getItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`)).not.toBe(pendingPaint);
   expect(readAccountSettingsCache("a")).toEqual(settings);
 });
+
+it("uses identical runtime and pre-paint acceptance for complete owned versioned records", () => {
+  for (const raw of [
+    JSON.stringify({ version: 1, accountId: "a", payload: { settings, writeId: "w" } }),
+    JSON.stringify({
+      version: 1,
+      accountId: "a",
+      payload: { settings: { theme: "dark" }, writeId: "w" },
+    }),
+    JSON.stringify({ accountId: "a", settings: { theme: "dark" } }),
+    JSON.stringify({ version: 1, accountId: "b", payload: { settings, writeId: "w" } }),
+    JSON.stringify({ version: 2, accountId: "a", payload: { settings, writeId: "w" } }),
+    JSON.stringify({
+      version: 1,
+      accountId: "a",
+      scope: "unexpected",
+      payload: { settings, writeId: "w" },
+    }),
+    JSON.stringify({ version: 1, accountId: "a", payload: { settings } }),
+    "{",
+  ]) {
+    localStorage.setItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`, raw);
+    runBootScript(createUiThemeBootScript({ accountId: "a" }));
+    expect(document.documentElement.getAttribute("data-ui-theme") === "dark", raw).toBe(
+      readAccountSettingsCache("a")?.theme === "dark",
+    );
+    expect(readAccountSettingsCache("a") !== null, raw).toBe(
+      raw === JSON.stringify({ version: 1, accountId: "a", payload: { settings, writeId: "w" } }),
+    );
+  }
+});
