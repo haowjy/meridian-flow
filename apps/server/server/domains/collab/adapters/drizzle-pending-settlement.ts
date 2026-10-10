@@ -20,16 +20,16 @@ import {
   pushLineage,
 } from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   currentDrizzleDb,
   isInDrizzleTransaction,
+  runInDrizzleSavepoint,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   FIRST_CLAIM_EPOCH,
   type PendingLiveSettlement,
@@ -74,6 +74,20 @@ import {
   requiredBranchLeases,
   type SettlementPublication,
 } from "./drizzle-settlement-publication.js";
+
+class CompletionRetry extends Error {}
+
+class CompletionRefusal extends Error {
+  constructor(readonly reason: PublicationRefusal) {
+    super(`Publication refused: ${reason.code}`);
+  }
+}
+
+class CompletionRediscover extends Error {
+  constructor(readonly branchIds: readonly string[]) {
+    super("Publication needs branch leases its caller doesn't hold");
+  }
+}
 
 export class AmbientSettlementTransactionError extends Error {
   constructor(operation: string) {
@@ -170,59 +184,49 @@ export function createDrizzlePendingSettlementStore(
   notices?: NoticePort,
   eventSink?: EventSink,
   publication: SettlementPublication = { steps: [] },
+  /** Publishes the Works whose pending drafts a withdrawal makes reviewable again. */
+  workProjection?: WorkProjectionMutation,
 ): PendingSettlementStore {
   const memberDeps = { durableProjectionSerializer, projectionEffects, derivationStore };
 
   /**
-   * A step refused a staged batch: in a new transaction under the owner predicate,
-   * every member goes back to review (journal rows active, trail contribution and
-   * notices retired, lineage and outbox gone) and the batch ends `abandoned`, a
-   * terminal state recovery never lists. False when the claim was lost meanwhile.
+   * A step refused the staged batch. Still inside completion's root transaction, with
+   * every lock held and the tentative publication rolled back to its savepoint, every
+   * member goes back to review (journal rows active and published through the Work
+   * projection, trail contribution and notices retired, lineage and outbox gone) and the
+   * batch ends `abandoned`, a terminal state recovery never lists. If the lease ran out
+   * meanwhile the terminal UPDATE matches nothing and the whole transaction rolls back:
+   * a withdrawal never commits without its terminal state.
    */
-  async function abandonBatch(
+  async function abandonWithinTx(
+    txDb: DrizzleDb,
     input: BatchCompletion,
+    members: readonly BatchCompletionMember[],
     reason: PublicationRefusal,
-  ): Promise<boolean> {
-    return runInDrizzleTransaction(db, async () => {
-      const txDb = currentDrizzleDb(db);
-      const members = sortedMembers(input.members);
-      await lockWorksInIdOrder(
-        txDb,
-        await pushWorkIds(
-          txDb,
-          members.map(({ push }) => push.id),
-        ),
-      );
-      for (const { push } of members) await lockDocumentMutation(txDb, push.documentId);
-      const [owned] = await txDb
-        .select({ id: branchPushSettlementBatches.id })
-        .from(branchPushSettlementBatches)
-        .where(batchOwnerPredicate(input.batchId, input.claim))
-        .for("update")
-        .limit(1);
-      if (!owned) return false;
-      if (members.length > 0) {
-        await changeTrails.replacePushContributions(members.map(retiredContribution), {
-          refineCurrentVersion: false,
-        });
-      }
-      await withdrawSettlementMembersWithinTx(
-        txDb,
-        members.map(({ push }) => push),
-        notices,
-      );
-      await txDb
-        .update(branchPushSettlementBatches)
-        .set({
-          state: "abandoned",
-          abandonedAt: sql`clock_timestamp()`,
-          lastErrorCode: reason.code,
-          lastError: reason.detail === undefined ? null : JSON.stringify(reason.detail),
-          ...releasedClaim,
-        })
-        .where(batchOwnerPredicate(input.batchId, input.claim));
-      return true;
-    });
+  ): Promise<void> {
+    if (members.length > 0) {
+      await changeTrails.replacePushContributions(members.map(retiredContribution), {
+        refineCurrentVersion: false,
+      });
+    }
+    await withdrawSettlementMembersWithinTx(
+      txDb,
+      members.map(({ push }) => push),
+      notices,
+      workProjection,
+    );
+    const [abandoned] = await txDb
+      .update(branchPushSettlementBatches)
+      .set({
+        state: "abandoned",
+        abandonedAt: sql`clock_timestamp()`,
+        lastErrorCode: reason.code,
+        lastError: reason.detail === undefined ? null : JSON.stringify(reason.detail),
+        ...releasedClaim,
+      })
+      .where(batchOwnerPredicate(input.batchId, input.claim))
+      .returning({ id: branchPushSettlementBatches.id });
+    if (!abandoned) throw new CompletionRetry();
   }
 
   return {
@@ -234,23 +238,14 @@ export function createDrizzlePendingSettlementStore(
 
     async completeBatch(input) {
       assertRootOwnedSettlement("Batch settlement completion");
-      class CompletionRetry extends Error {}
-      class CompletionRefusal extends Error {
-        constructor(readonly reason: PublicationRefusal) {
-          super(`Publication refused: ${reason.code}`);
-        }
-      }
-      class CompletionRediscover extends Error {
-        constructor(readonly branchIds: readonly string[]) {
-          super("Publication needs branch leases its caller doesn't hold");
-        }
-      }
       let plans: PlannedStep[] = [];
       let held: PublicationItemHold[] = [];
       let admitted: DocumentId[] = [];
-      let projections: CommittedChangeTrailProjection[];
+      let outcome:
+        | { kind: "completed"; projections: CommittedChangeTrailProjection[] }
+        | { kind: "refused"; reason: PublicationRefusal };
       try {
-        projections = await runInDrizzleTransaction(db, async () => {
+        outcome = await runInDrizzleTransaction(db, async () => {
           const txDb = currentDrizzleDb(db);
           const members = sortedMembers(input.members);
           // Immutable inputs, read before any lock: the members reconstructed from their
@@ -266,7 +261,7 @@ export function createDrizzlePendingSettlementStore(
               members: descriptors,
               held: checkHolds,
               payloads: input.payloads,
-              liveStateVectors: input.liveStateVectors,
+              liveTextFingerprints: input.liveTextFingerprints,
             },
             {
               workIds: descriptors.flatMap(({ workId }) => (workId ? [workId] : [])),
@@ -301,110 +296,128 @@ export function createDrizzlePendingSettlementStore(
             throw new CompletionRetry();
           }
 
-          const admission = await decideAdmission(plans, (plan) => plan.beforeAdmission?.());
-          if (admission.kind === "refuse") throw new CompletionRefusal(admission.reason);
-          const completionHolds = admission.hold ?? [];
-          const heldDocuments = new Set(
-            completionHolds.flatMap(({ documentId }) => documentId ?? []),
-          );
-          const heldMembers = members.filter(({ push }) => heldDocuments.has(push.documentId));
-          const admittedMembers = members.filter(({ push }) => !heldDocuments.has(push.documentId));
-          await writeHolds(txDb, input.batchId, completionHolds, "completion");
-          admitted = admittedMembers.map(({ push }) => push.documentId);
-          const cuts = await readSettlementCuts(
-            txDb,
-            locked.filter(({ push }) => !heldDocuments.has(push.documentId as DocumentId)),
-          );
+          // Everything the publication writes is tentative until the steps have decided: a
+          // refusal rolls it back to this savepoint and abandons the batch in this same
+          // transaction, so no committed state has the publication undone without a durable
+          // refusal.
+          try {
+            const projections = await runInDrizzleSavepoint(db, async () => {
+              const publicationDb = currentDrizzleDb(db);
+              const admission = await decideAdmission(plans, (plan) => plan.beforeAdmission?.());
+              if (admission.kind === "refuse") throw new CompletionRefusal(admission.reason);
+              const completionHolds = admission.hold ?? [];
+              const heldDocuments = new Set(
+                completionHolds.flatMap(({ documentId }) => documentId ?? []),
+              );
+              const heldMembers = members.filter(({ push }) => heldDocuments.has(push.documentId));
+              const admittedMembers = members.filter(
+                ({ push }) => !heldDocuments.has(push.documentId),
+              );
+              await writeHolds(publicationDb, input.batchId, completionHolds, "completion");
+              admitted = admittedMembers.map(({ push }) => push.documentId);
+              const cuts = await readSettlementCuts(
+                publicationDb,
+                locked.filter(({ push }) => !heldDocuments.has(push.documentId as DocumentId)),
+              );
 
-          // A member classified at its current join version refines the trail version its
-          // commit published; one joined since publishes the next version, once per batch,
-          // together with the retired contributions of held members.
-          const firstClassified = admittedMembers.filter(
-            (member) =>
-              lockedByPush.get(member.push.id)?.outbox.classifiedJoinVersion !== member.joinVersion,
-          );
-          const refined = admittedMembers.filter((member) => !firstClassified.includes(member));
-          const committed: CommittedChangeTrailProjection[] = [];
-          for (const [contributions, refineCurrentVersion] of [
-            [refined.map(contribution), true],
-            [
-              [...firstClassified.map(contribution), ...heldMembers.map(retiredContribution)],
-              false,
-            ],
-          ] as const) {
-            if (contributions.length === 0) continue;
-            committed.push(
-              ...(await changeTrails.replacePushContributions(contributions, {
-                refineCurrentVersion,
-              })),
-            );
-          }
-          for (const member of firstClassified) {
-            if (!member.trail.transactionalNotice) continue;
-            await notices?.record({
-              ...member.trail.transactionalNotice,
-              data: {
-                ...member.trail.transactionalNotice.data,
-                pushId: String(member.push.id),
-                threadId: member.push.threadId ?? null,
-                turnId: member.push.turnId ?? null,
-              },
+              // A member classified at its current join version refines the trail version
+              // its commit published; one joined since publishes the next version, once per
+              // batch, together with the retired contributions of held members.
+              const firstClassified = admittedMembers.filter(
+                (member) =>
+                  lockedByPush.get(member.push.id)?.outbox.classifiedJoinVersion !==
+                  member.joinVersion,
+              );
+              const refined = admittedMembers.filter((member) => !firstClassified.includes(member));
+              const committed: CommittedChangeTrailProjection[] = [];
+              for (const [contributions, refineCurrentVersion] of [
+                [refined.map(contribution), true],
+                [
+                  [...firstClassified.map(contribution), ...heldMembers.map(retiredContribution)],
+                  false,
+                ],
+              ] as const) {
+                if (contributions.length === 0) continue;
+                committed.push(
+                  ...(await changeTrails.replacePushContributions(contributions, {
+                    refineCurrentVersion,
+                  })),
+                );
+              }
+              for (const member of firstClassified) {
+                if (!member.trail.transactionalNotice) continue;
+                await notices?.record({
+                  ...member.trail.transactionalNotice,
+                  data: {
+                    ...member.trail.transactionalNotice.data,
+                    pushId: String(member.push.id),
+                    threadId: member.push.threadId ?? null,
+                    turnId: member.push.turnId ?? null,
+                  },
+                });
+              }
+              await withdrawSettlementMembersWithinTx(
+                publicationDb,
+                heldMembers.map(({ push }) => push),
+                notices,
+                workProjection,
+              );
+              for (const member of admittedMembers) {
+                await publicationDb
+                  .update(branchPushSettlementOutbox)
+                  .set({
+                    classifiedJoinVersion: member.joinVersion,
+                    updatedAt: sql`clock_timestamp()`,
+                  })
+                  .where(eq(branchPushSettlementOutbox.pushId, member.push.id));
+                await admitSettlementMemberWithinTx(
+                  publicationDb,
+                  lockedByPush.get(member.push.id) as (typeof locked)[number],
+                  memberDeps,
+                );
+              }
+              for (const { plan } of plans) await plan.afterAdmission?.(admitted);
+
+              const decision = input.recheck(cuts);
+              if (decision !== "commit" && decision !== "retry") {
+                throw new Error("Batch settlement recheck must return synchronously");
+              }
+              if (decision === "retry") throw new CompletionRetry();
+              const [completed] = await publicationDb
+                .update(branchPushSettlementBatches)
+                .set({
+                  state: "completed",
+                  completedAt: sql`clock_timestamp()`,
+                  claimToken: null,
+                  claimKind: null,
+                  claimedAt: null,
+                  leaseExpiresAt: null,
+                  updatedAt: sql`clock_timestamp()`,
+                })
+                .where(batchOwnerPredicate(input.batchId, input.claim))
+                .returning({ id: branchPushSettlementBatches.id });
+              if (!completed) throw new CompletionRetry();
+              held = await readHolds(publicationDb, input.batchId);
+              return latestProjections(committed).filter((projection) =>
+                admitted.includes(projection.documentId as DocumentId),
+              );
             });
+            return { kind: "completed" as const, projections };
+          } catch (cause) {
+            if (!(cause instanceof CompletionRefusal)) throw cause;
+            admitted = [];
+            await abandonWithinTx(txDb, input, members, cause.reason);
+            return { kind: "refused" as const, reason: cause.reason };
           }
-          await withdrawSettlementMembersWithinTx(
-            txDb,
-            heldMembers.map(({ push }) => push),
-            notices,
-          );
-          for (const member of admittedMembers) {
-            await txDb
-              .update(branchPushSettlementOutbox)
-              .set({ classifiedJoinVersion: member.joinVersion, updatedAt: sql`clock_timestamp()` })
-              .where(eq(branchPushSettlementOutbox.pushId, member.push.id));
-            await admitSettlementMemberWithinTx(
-              txDb,
-              lockedByPush.get(member.push.id) as (typeof locked)[number],
-              memberDeps,
-            );
-          }
-          for (const { plan } of plans) await plan.afterAdmission?.(admitted);
-
-          const decision = input.recheck(cuts);
-          if (decision !== "commit" && decision !== "retry") {
-            throw new Error("Batch settlement recheck must return synchronously");
-          }
-          if (decision === "retry") throw new CompletionRetry();
-          const [completed] = await txDb
-            .update(branchPushSettlementBatches)
-            .set({
-              state: "completed",
-              completedAt: sql`clock_timestamp()`,
-              claimToken: null,
-              claimKind: null,
-              claimedAt: null,
-              leaseExpiresAt: null,
-              updatedAt: sql`clock_timestamp()`,
-            })
-            .where(batchOwnerPredicate(input.batchId, input.claim))
-            .returning({ id: branchPushSettlementBatches.id });
-          if (!completed) throw new CompletionRetry();
-          held = await readHolds(txDb, input.batchId);
-          return latestProjections(committed).filter((projection) =>
-            admitted.includes(projection.documentId as DocumentId),
-          );
         });
       } catch (cause) {
         if (cause instanceof CompletionRetry) return { status: "retry" as const };
         if (cause instanceof CompletionRediscover) {
           return { status: "rediscover" as const, branchIds: cause.branchIds };
         }
-        if (cause instanceof CompletionRefusal) {
-          return (await abandonBatch(input, cause.reason))
-            ? { status: "refused" as const, reason: cause.reason }
-            : { status: "retry" as const };
-        }
         throw cause;
       }
+      if (outcome.kind === "refused") return { status: "refused" as const, reason: outcome.reason };
       // Committed: the root transaction above has returned.
       const admittedAfterCommit = admitted;
       await runAfterCommitEffects(
@@ -419,7 +432,7 @@ export function createDrizzlePendingSettlementStore(
         input.batchId,
         eventSink,
       );
-      return { status: "completed" as const, projections, held };
+      return { status: "completed" as const, projections: outcome.projections, held };
     },
 
     async checkPublication(input) {
@@ -440,7 +453,7 @@ export function createDrizzlePendingSettlementStore(
             batchId: input.batchId,
             members,
             payloads: input.payloads,
-            liveStateVectors: input.liveStateVectors,
+            liveTextFingerprints: input.liveTextFingerprints,
           },
           {
             workIds: members.flatMap(({ workId }) => (workId ? [workId] : [])),
@@ -656,17 +669,6 @@ function contribution(member: BatchCompletionMember) {
 /** The push never reached live: its provisional contribution leaves the trail. */
 function retiredContribution(member: BatchCompletionMember) {
   return { pushId: String(member.push.id), replacement: member.replacement, retire: true };
-}
-
-/** The Works whose drafts a batch's pushes came from; none for live-only pushes. */
-async function pushWorkIds(db: DrizzleDb, pushIds: readonly number[]): Promise<WorkId[]> {
-  if (pushIds.length === 0) return [];
-  const rows = await db
-    .selectDistinct({ workId: documentBranches.workId })
-    .from(pushLineage)
-    .innerJoin(documentBranches, eq(documentBranches.id, pushLineage.branchId))
-    .where(inArray(pushLineage.id, [...pushIds]));
-  return rows.flatMap((row) => (row.workId ? [row.workId as WorkId] : []));
 }
 
 /**

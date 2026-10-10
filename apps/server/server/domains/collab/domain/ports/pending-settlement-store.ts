@@ -46,8 +46,8 @@ export type SettlementCut = {
 export type PublicationInputs = {
   /** Durable step inputs staged with the batch, by step kind. */
   payloads: ReadonlyMap<string, JsonValue>;
-  /** Each member's live state vector at its coordinator lease (its lock cut). */
-  liveStateVectors: ReadonlyMap<DocumentId, Uint8Array>;
+  /** Each member's full-state fingerprint at its coordinator lease (its lock cut). */
+  liveTextFingerprints: ReadonlyMap<DocumentId, string>;
 };
 
 export type BatchCompletion = PublicationInputs & {

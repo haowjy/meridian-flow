@@ -7,6 +7,8 @@
  */
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { drafts } from "@meridian/database/schema";
+import { asc, inArray } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
@@ -30,7 +32,7 @@ export type PlannedStep = { step: number; kind: string; plan: SettlementPublicat
 
 /**
  * Plans every step from the scope, then locks, each over the whole batch at
- * once: Work rows, then one sorted namespace acquisition over the declared
+ * once: Work rows, then draft rows, then one sorted namespace acquisition over the declared
  * documents' sources and explicit sources, then document mutation locks. Nothing
  * a step needs is locked later, so no step takes a namespace lock under a
  * document lock (file-access §5, contract §9.4).
@@ -48,6 +50,15 @@ export async function planAndLock(
   await lockWorksInIdOrder(db, [
     ...new Set([...members.workIds, ...plans.flatMap(({ plan }) => plan.workIds ?? [])]),
   ]);
+  const draftIds = sortedUnique(plans.flatMap(({ plan }) => plan.draftIds ?? []));
+  if (draftIds.length > 0) {
+    await db
+      .select({ id: drafts.id })
+      .from(drafts)
+      .where(inArray(drafts.id, draftIds))
+      .orderBy(asc(drafts.id))
+      .for("no key update");
+  }
   const documentIds = sortedUnique(plans.flatMap(({ plan }) => plan.namespaceDocumentIds ?? []));
   const sourceIds = sortedUnique(plans.flatMap(({ plan }) => plan.namespaceSourceIds ?? []));
   if (documentIds.length > 0 || sourceIds.length > 0) {

@@ -22,8 +22,12 @@ import {
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
-import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
+import {
+  createDrizzlePendingSettlementStore,
+  stageSettlementBatchWithinTx,
+} from "../collab/adapters/drizzle-pending-settlement.js";
 import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
+import { trailContributionReplacement } from "../collab/domain/branch-trail-projection.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
@@ -231,6 +235,104 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const pushed = await projectionState();
       expect(pushed.entityRevision).toBe((redone.entityRevision ?? 0n) + 1n);
       expect(BigInt(pushed.catalogEntityRevision ?? "0")).toBe(pushed.entityRevision);
+
+      // Withdrawal makes the draft pending again: a refused batch, then a batch whose only
+      // member is held, each publish the Work like the push that staged them did.
+      let decision: "refuse" | "hold" = "refuse";
+      const settlement = createDrizzlePendingSettlementStore(
+        db,
+        {} as never,
+        {} as never,
+        createDrizzleChangeTrailAggregateWriter(db),
+        {} as never,
+        undefined,
+        undefined,
+        {
+          steps: [
+            {
+              kind: "test_decision",
+              async plan() {
+                return {
+                  async beforeAdmission() {
+                    return decision === "refuse"
+                      ? { kind: "refuse" as const, reason: { code: "stale" } }
+                      : {
+                          kind: "proceed" as const,
+                          hold: [
+                            {
+                              itemKey: "chapter",
+                              documentId: DOCUMENT_ID as never,
+                              reason: { code: "path_taken" },
+                            },
+                          ],
+                        };
+                  },
+                };
+              },
+            },
+          ],
+        },
+        projection,
+      );
+      const settle = async (batchId: string, claimToken: string) => {
+        const batch = await settlement.loadSettlementBatch({
+          batchId,
+          owner: { token: claimToken, epoch: 1 },
+        });
+        if (!batch) throw new Error("the committer lost its batch");
+        return settlement.completeBatch({
+          batchId,
+          claim: batch.claim,
+          members: batch.members.map((member) => ({
+            push: member.push,
+            joinVersion: member.joinVersion,
+            trail: member.trail,
+            replacement: trailContributionReplacement(member.trail, member.push),
+          })),
+          payloads: batch.payloads,
+          liveTextFingerprints: new Map(),
+          leasedBranchIds: [],
+          recheck: () => "commit",
+          afterCommit() {},
+        });
+      };
+      const expectPublishedAfter = async (
+        previous: Awaited<ReturnType<typeof projectionState>>,
+      ) => {
+        const state = await projectionState();
+        expect(state.entityRevision).toBe((previous.entityRevision ?? 0n) + 1n);
+        expect(BigInt(state.catalogEntityRevision ?? "0")).toBe(state.entityRevision);
+        expect(state.availabilityGeneration).toBeGreaterThan(previous.availabilityGeneration ?? 0);
+        return state;
+      };
+      await expect(
+        settle("00000000-0000-4000-8000-000000000948", "00000000-0000-4000-8000-000000000947"),
+      ).resolves.toMatchObject({ status: "refused" });
+      const refused = await expectPublishedAfter(pushed);
+
+      decision = "hold";
+      await pushStore.commitPushBatch({
+        settlement: {
+          batchId: "00000000-0000-4000-8000-000000000949",
+          claimToken: "00000000-0000-4000-8000-00000000094a",
+        },
+        pushes: [
+          {
+            branch,
+            journalRows: await journal.listReviewableJournalRows(BRANCH_ID, 1),
+            pushUpdate: validUpdate,
+            idempotencyKey: "work-projection-pending-owner-push",
+            trail,
+            documentTitle: "chapter.md",
+            lockCutUpdate: validUpdate,
+          },
+        ],
+      });
+      const repushed = await expectPublishedAfter(refused);
+      await expect(
+        settle("00000000-0000-4000-8000-000000000949", "00000000-0000-4000-8000-00000000094a"),
+      ).resolves.toMatchObject({ status: "completed", held: [{ itemKey: "chapter" }] });
+      await expectPublishedAfter(repushed);
     });
   });
 }
