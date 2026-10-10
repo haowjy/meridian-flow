@@ -185,8 +185,11 @@ accessible name, not a line of text. The section is content-sized up to 40% of t
 itself; the project tree keeps the rest. On desktop the writer can resize between the two: the shell's
 `ResizeHandle` (vertical orientation, `measure` and `onReset`) sits on the divider above the expanded
 section ("Resize Scratch", Up/Down keys, double-click resets), each pane keeps at least 120px, and the
-height is remembered with the expanded flag. Collapsed has no handle, and the phone drawer has none. Expanded or collapsed (and the chosen height) is remembered per viewer on the device
-(`chat/scratch-section-pref.ts`, collapsed by default; the tree's own sections do not persist).
+height is remembered with the expanded flag. Collapsed has no handle, and the phone drawer has none. Expanded or collapsed (and the chosen height) is a device layout preference
+in `layout/surface-prefs-store.ts` (collapsed by default), alongside Recent disclosure.
+Tree section and folder expansion is tab-local, account/project/tree scoped, owned
+by `context/use-tree-expansion.ts`; new tabs start collapsed, and resolved catalogs
+prune missing folder identities. Active document reveal is a one-shot expansion.
 It always means the chat on screen, `displayedChatThreadId(chatDisplay)`: the center
 chat on the Chat screen, the dock's chat on the Editor and Work screens, and no
 section (it hides, with its divider) when no chat is on screen, such as the chat index. A collapsed
@@ -238,8 +241,11 @@ the current chat waits beside it as an inactive chip that reopens it. The dock h
 carries the chat switcher, which lists the chats and New chat. Phone reaches the
 index through the `Chats` breadcrumb ancestor instead of a door.
 
-`routing/chat-navigation.tsx` owns one current chat per browser, account, and
-project (`client/current-chat.ts`, never synced): a thread identity (primary or
+`routing/chat-navigation.tsx` owns one current chat per browser tab, account, and
+project (`client/current-chat.ts`, never synced). The chat and remembered Work
+use `client/tab-first-remembered-id.ts`: sessionStorage wins on reload, localStorage
+seeds only the first read in a new tab, and writes update both (including an empty
+chat selection): a thread identity (primary or
 subagent) or none. It publishes one `ChatDisplay` variant, derived at render
 from the URL (never the reverse): the index with the current chat's id (for its
 reopen chip), a URL-addressed thread, or the dock's thread-or-none. Consumers
@@ -403,13 +409,15 @@ Stable surface ids (`layout/types.ts`): `threads`, `chat`, `context-viewer`,
 
 `layout/surface-prefs-store.ts` is the **device-local** chrome-prefs store
 (Zustand `persist`, localStorage key `meridian:project-surface-layout`,
-`version: 3`). It stores width + collapsed per surface, plus the
-shared `slotPrefs.dock`. **Slot placement is NOT stored** — it is a pure function
+`version: 4`). It stores width + collapsed per surface, the
+shared `slotPrefs.dock`, and `railPrefs` (Scratch disclosure and height, Recent
+disclosure). It is the sole owner of device rail layout. Browser storage failure
+leaves its actions working in memory. **Slot placement is NOT stored** — it is a pure function
 of the active screen, merged into a render-time `SurfaceLayoutMap` by the
 placement module. `DEFAULT_*`/`*_WIDTH_BOUNDS` are the clamps.
 
-Browser-storage keys use `meridian:` + kebab-case. Scope per-project/per-work/per-file
-state inside the persisted value, not by appending entity ids to the key.
+Browser-storage keys use `meridian:` + kebab-case. The layout store is device-wide. Tab-local selection and tree codecs use
+versioned, account/project-scoped keys; tree payloads also validate their scope.
 
 ## Reload stability — the hydration gate (load-bearing)
 
