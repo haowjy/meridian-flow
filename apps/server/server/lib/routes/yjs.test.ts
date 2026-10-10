@@ -27,6 +27,9 @@ function services(stale: boolean) {
   return {
     fileAccess: {} as never,
     fileAccessChanges: createLocalFileAccessChanges(),
+    liveDocuments: {
+      findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+    },
     eventSink: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
@@ -39,6 +42,9 @@ function gatewayServices() {
   return {
     fileAccess: {} as never,
     fileAccessChanges: createLocalFileAccessChanges(),
+    liveDocuments: {
+      findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+    },
     eventSink: {} as never,
     documentSync: { bindHocuspocus: () => undefined } as never,
   };
@@ -125,6 +131,13 @@ describe("Yjs branch handshake route guard", () => {
           headSchemaVersion: vi.fn(async () => null),
           flushBranchLivePull,
         } as never,
+        liveDocuments: {
+          findById: async () => ({
+            kind: "found" as const,
+            document: {} as never,
+            clashesWith: [],
+          }),
+        },
         eventSink: { emit() {} } as never,
       },
       createYjsRoomAccessIndex(),
@@ -305,6 +318,9 @@ describe("Yjs branch handshake route guard", () => {
     });
     const gateway = createYjsGateway({
       ...gatewayServices(),
+      liveDocuments: {
+        findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+      },
       eventSink: { emit: vi.fn() } as never,
       documentSync: {
         bindHocuspocus: () => undefined,
@@ -506,6 +522,9 @@ describe("Yjs room access", () => {
       },
       fileAccessChanges: createLocalFileAccessChanges(),
       documentSync: documentSync as never,
+      liveDocuments: {
+        findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+      },
       eventSink: { emit() {} } as never,
       admitLiveWriterUpdate: documentSync.admitLiveWriterUpdate,
     };

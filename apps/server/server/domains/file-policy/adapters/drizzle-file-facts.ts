@@ -71,34 +71,47 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
 
   return {
     load,
-    async loadList(documentIds, draftWorkId) {
+    async loadList(documentIds, draftWorkId, draftViews) {
       const ids = [...new Set(documentIds)].filter(isUuid);
       const out = new Map<DocumentId, FileFacts>();
       if (ids.length === 0) return out;
-      const view = await viewForWork(draftWorkId);
-      const documents = identityDocuments(view);
-      const rows = await documentRows(db, view).where(
-        and(inArray(documents.id, ids), eq(documents.kind, "content")),
-      );
+      const defaultView = await viewForWork(draftWorkId);
+      const groups = new Map<string, { view: TreeView; ids: DocumentId[] }>();
+      for (const id of ids) {
+        const view = draftViews?.get(id) ?? defaultView;
+        const key = view.kind === "live" ? "live" : view.draftId;
+        const group = groups.get(key);
+        if (group) group.ids.push(id);
+        else groups.set(key, { view, ids: [id] });
+      }
       const draftRow = draftWorkId === undefined ? undefined : await readWork(db, draftWorkId);
-      for (const row of rows) {
-        if (!isContextUriScheme(row.scheme)) continue;
-        const documentId = row.documentId as DocumentId;
-        const target = { kind: "document", documentId } as const;
-        const base: FileFacts = {
-          ...documentBase(row, documentId, []),
-          scheme: row.scheme,
-          target,
-        };
-        if (draftWorkId === undefined) {
-          out.set(documentId, base);
-          continue;
+      const tree = createTreeReader(db);
+      for (const { view, ids } of groups.values()) {
+        const documents = identityDocuments(view);
+        const rows = await documentRows(db, view).where(
+          and(inArray(documents.id, ids), eq(documents.kind, "content")),
+        );
+        for (const row of rows) {
+          if (!isContextUriScheme(row.scheme)) continue;
+          const documentId = row.documentId as DocumentId;
+          const lineage = await tree.lineage(view, documentId);
+          if (!lineage) continue;
+          const target = { kind: "document", documentId } as const;
+          const base: FileFacts = {
+            ...documentBase(row, documentId, lineage.folders),
+            scheme: row.scheme,
+            target,
+          };
+          if (draftWorkId === undefined) {
+            out.set(documentId, base);
+            continue;
+          }
+          if (draftRow && draftRow.projectId !== base.projectId) continue;
+          out.set(documentId, {
+            ...base,
+            draftWork: draftRow ? workFacts(draftRow) : missingWork(draftWorkId),
+          });
         }
-        if (draftRow && draftRow.projectId !== base.projectId) continue;
-        out.set(documentId, {
-          ...base,
-          draftWork: draftRow ? workFacts(draftRow) : missingWork(draftWorkId),
-        });
       }
       return out;
     },

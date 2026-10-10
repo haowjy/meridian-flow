@@ -1,3 +1,8 @@
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "./adapters/drizzle-drafts.js";
+import { createDrafts } from "./domain/drafts.js";
 /** Revision identity across live rooms, Work peers, response settlement and rebinding. */
 
 import { renderAgentEditResult, toDocHandle } from "@meridian/agent-edit/integration";
@@ -42,10 +47,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-import {
-  createTestDocumentLinkScopes,
-  lateBoundManifestMembership,
-} from "./test-support/document-link-scopes.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 
 /** The grant names this project and its owner, as the file policy would: the read's scope key. */
 function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
@@ -103,6 +105,10 @@ async function fixture(
     }),
     availability: createDrizzleProjectContextAvailability(db),
     documents: effective,
+    drafts: createDrafts({
+      store: createDrizzleDraftStore(db),
+      boundary: createDrizzleDraftWriteBoundary(db),
+    }),
     works: createDrizzleProjectWorkRepository({
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
@@ -200,12 +206,9 @@ describe("document revisions (postgres and collab)", () => {
   });
 
   it("a tree-only move changes the view revision, so compaction does not elide the stale read", async () => {
-    // The real manifest authority, so a Work view's own membership counts.
-    const manifest = lateBoundManifestMembership();
     const f = await fixture(db, harnesses, "direct", {
-      links: createTestDocumentLinkScopes(db, { membership: manifest.membership }),
+      links: createTestDocumentLinkScopes(db, {}),
     });
-    manifest.bind(f.effective);
     const doc = f.hocuspocus.documents.get(ALPHA_ID);
     if (!doc) throw new Error("Fixture live room missing");
     const before = Y.encodeStateVector(doc);
@@ -234,8 +237,7 @@ describe("document revisions (postgres and collab)", () => {
     expect(moved).not.toBe(shown);
     expect((await f.read()).revision).toBe(moved);
 
-    // Alpha stays untouched in its Work: every effective door renders that view alike,
-    // spelling beta where the draft sees it now.
+    // A drafted view follows live locations for documents it did not create.
     const view = {
       documentId: ALPHA_ID,
       threadId: THREAD_ID,

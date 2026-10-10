@@ -20,10 +20,7 @@ import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/driz
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
 import type { LinkScopeKey } from "./domain/ports/document-link-scope.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
-import {
-  createTestDocumentLinkScopes,
-  lateBoundManifestMembership,
-} from "./test-support/document-link-scopes.js";
+import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import {
   createWorkDraftFixture,
   DOC_ID,
@@ -279,13 +276,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("spells a reply's own create alike at every door, and in its draft after a cold undo", async () => {
-      // The real manifest authority: the created chapter exists only in this
-      // reply's draft until it saves, and only for this thread.
-      const manifest = lateBoundManifestMembership();
-      const links = createTestDocumentLinkScopes(db, { membership: manifest.membership });
+      // All effective rendering doors share the real tree-backed scope.
+      const links = createTestDocumentLinkScopes(db);
       const start = () => {
         const started = createTestCollab(links);
-        manifest.bind(started);
         started.bindHocuspocus(hocuspocus as never);
         return started;
       };
@@ -432,8 +426,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(after.value.content.join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
-      // The same comparison in live: a reply that creates a chapter live sees it
-      // in its own live view, never in baseline live or its draft view.
+      // Live creation is immediately visible in every view, independent of the reply.
       const LIVE_CREATED_ID = "00000000-0000-4000-8000-000000000716";
       const LIVE_RESPONSE_ID = "00000000-0000-4000-8000-000000000717";
       await db.insert(documents).values({
@@ -496,8 +489,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect
             .soft(ownLive?.spellLink(link).href, "the reply's live view")
             .toBe("live-created.md");
-          expect.soft(baseline?.resolve(link), "baseline live").toEqual({ kind: "gone" });
-          expect.soft(ownDraft?.resolve(link), "the reply's draft view").toEqual({ kind: "gone" });
+          expect
+            .soft(baseline?.resolve(link), "baseline live")
+            .toMatchObject({ kind: "document", inDraft: false });
+          expect
+            .soft(ownDraft?.resolve(link), "the reply's draft view")
+            .toMatchObject({ kind: "document", inDraft: false });
         },
       );
       await collab.agentEdit().rollbackResponse(LIVE_RESPONSE_ID);

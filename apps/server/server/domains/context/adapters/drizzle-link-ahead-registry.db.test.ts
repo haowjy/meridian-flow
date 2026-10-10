@@ -50,16 +50,12 @@ if (!RUN) {
       address: addressFor(scheme),
     });
     const registration = registrationFor("manuscript");
-    // Controlled manifest membership: tests decide which SQL rows are live.
-    let liveMembers: string[] = [];
-    const membership = async () => ({ members: liveMembers });
     // Registration commits in its own root transaction, so no rollback fixture: reset by FK order.
     const database = createDb(DATABASE_URL, { max: 4 });
     const arrivalConnection = createDb(DATABASE_URL, { max: 2 });
     const gateConnection = createDb(DATABASE_URL, { max: 2 });
 
     async function seed() {
-      liveMembers = [DOCUMENT, DOCUMENT_2];
       await deleteDrizzleRows(database, [users]);
       await database.insert(users).values(conformanceUserValues(USER, "ahead-registry"));
       await database
@@ -94,7 +90,7 @@ if (!RUN) {
       (await database.select({ id: linkAheadRefs.settledDocumentId }).from(linkAheadRefs)).map(
         (row) => row.id,
       );
-    const newRegistry = (db: Database) => createDrizzleLinkAheadRegistry(db, membership);
+    const newRegistry = (db: Database) => createDrizzleLinkAheadRegistry(db);
 
     /** The exact key real arrivals take for this scheme's source (Work: the persisted row id). */
     const arrivalKey = (scheme: Scheme) =>

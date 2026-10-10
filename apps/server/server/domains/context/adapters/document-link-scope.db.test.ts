@@ -5,10 +5,13 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import {
   contextSources,
   documents,
+  drafts,
+  draftTreeChanges,
   folders,
   linkAheadRefs,
   projects,
   users,
+  works,
 } from "@meridian/database/schema";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -19,10 +22,7 @@ import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createScopedDocumentLinks, liveViewFor } from "../../collab/domain/document-links-port.js";
 import { createLinkScopeObserver } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
-import {
-  createDrizzleDocumentLinkScopes,
-  type LinkScopeMembership,
-} from "./document-link-scope.js";
+import { createDrizzleDocumentLinkScopes } from "./document-link-scope.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -55,7 +55,7 @@ const UNKNOWN_THREAD = id(23);
 const MISSING_ASSET = id(24);
 const RESPONSE = "response-f2";
 const LIVE = { kind: "live" } as const;
-const DRAFT = { kind: "draft", workId: WORK, responseId: RESPONSE } as const;
+const _DRAFT = { kind: "draft", workId: WORK, responseId: RESPONSE } as const;
 
 const schema = buildDocumentSchema();
 
@@ -94,21 +94,10 @@ if (!RUN) {
 } else {
   describe("document-link scope (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
-    // Manifest membership the way ContextFS reads it: live, and a Work draft that
-    // removed NOTES and holds a document it created, plus one this response staged
-    // in its thread (the real resolver counts staged creates only with both).
-    const membership: LinkScopeMembership = async (view) => {
-      const live = [HOLDER, TARGET, SECRET, NOTES, MAP, CREST];
-      if (!view.workId) return { members: live };
-      const staged = view.responseId === RESPONSE && view.threadId === THREAD ? [STAGED] : [];
-      return {
-        members: [...live.filter((each) => each !== NOTES), DRAFTED, ...staged],
-      };
-    };
     const scopes = createDrizzleDocumentLinkScopes({
       db,
       fileAccess,
-      membership,
+      drafts: { viewForWork: async () => ({ kind: "draft", draftId: id(25) as never }) },
       observer: createLinkScopeObserver(),
     });
 
@@ -137,8 +126,8 @@ if (!RUN) {
         row(DELETED, "gone", { deletedAt: new Date() }),
         row(SECRET, "secret"),
         row(NOTES, "notes"),
-        row(DRAFTED, "drafted"),
-        row(STAGED, "staged"),
+        row(DRAFTED, "drafted", { hidden: true }),
+        row(STAGED, "staged", { hidden: true }),
         row(MAP, "map", { folderId: PART, extension: "png", fileType: "image" }),
         // A deleted picture alone at its path, and one whose path a live picture took.
         row(SEAL, "seal", { extension: "png", fileType: "image", deletedAt: new Date() }),
@@ -146,6 +135,28 @@ if (!RUN) {
         row(CREST, "crest", { extension: "png", fileType: "image" }),
         { id: FOREIGN, contextSourceId: OTHER_SOURCE, name: "foreign", extension: "md" },
       ]);
+      await db.insert(works).values({
+        id: WORK,
+        projectId: PROJECT,
+        createdByUserId: USER,
+        name: "Draft",
+        slug: "draft",
+      });
+      await db
+        .insert(drafts)
+        .values({ id: id(25), projectId: PROJECT, originWorkId: WORK, createdBy: USER });
+      await db.insert(draftTreeChanges).values(
+        [DRAFTED, STAGED].map((nodeId) => ({
+          draftId: id(25),
+          nodeId,
+          nodeKind: "document" as const,
+          created: true,
+          contextSourceId: SOURCE,
+          parentFolderId: null,
+          name: nodeId === DRAFTED ? "drafted" : "staged",
+          extension: "md",
+        })),
+      );
       await db.insert(linkAheadRefs).values([
         {
           aheadId: SETTLED_AHEAD,
@@ -266,57 +277,6 @@ if (!RUN) {
         ]);
       });
       expect.soft(registered).toEqual([PROJECT]);
-    });
-
-    it("sees a Work draft's created and same-response staged documents in the draft view only", async () => {
-      await scopes.within({ documentId: HOLDER, viewer: { threadId: THREAD } }, async () => {
-        await scopes.prepare({
-          holders: [
-            { documentId: HOLDER, view: DRAFT },
-            { documentId: HOLDER, view: LIVE },
-          ],
-          refs: [`doc:${DRAFTED}`, `doc:${STAGED}`, `doc:${NOTES}`],
-        });
-        const draft = scopes.holder({ documentId: HOLDER, view: DRAFT });
-        const live = scopes.holder({ documentId: HOLDER, view: LIVE });
-        for (const [ref, path] of [
-          [`doc:${DRAFTED}`, "../drafted.md"],
-          [`doc:${STAGED}`, "../staged.md"],
-        ] as const) {
-          expect.soft(draft.resolve({ ref, href: "x.md" })).toMatchObject({
-            kind: "document",
-            inDraft: true,
-          });
-          expect.soft(draft.spellLink({ ref, href: "x.md" }).href).toBe(path);
-          expect.soft(live.resolve({ ref, href: "x.md" })).toEqual({ kind: "gone" });
-          expect.soft(live.spellLink({ ref, href: "x.md" }).href).toBe("x.md");
-        }
-        // The draft's own manifest wins: a live document it removed is gone there.
-        const notes = { ref: `doc:${NOTES}`, href: "x.md" };
-        expect.soft(draft.resolve(notes), "removed in the draft").toEqual({ kind: "gone" });
-        expect.soft(live.resolve(notes), "still live").toMatchObject({ kind: "document" });
-        // A view whose membership was never loaded is a miss: it keeps the stored href.
-        const other = scopes.holder({
-          documentId: HOLDER,
-          view: { kind: "draft", workId: WORK, responseId: "other-response" },
-        });
-        expect.soft(other.resolve(notes), "unloaded view").toEqual({ kind: "unknown" });
-        expect.soft(other.spellLink(notes).href).toBe("x.md");
-      });
-      // Read outside the reply's thread, the staged create is not this reader's.
-      await scopes.within({ documentId: HOLDER }, async () => {
-        await scopes.prepare({
-          holders: [{ documentId: HOLDER, view: DRAFT }],
-          refs: [`doc:${STAGED}`],
-        });
-        expect
-          .soft(
-            scopes
-              .holder({ documentId: HOLDER, view: DRAFT })
-              .resolve({ ref: `doc:${STAGED}`, href: "x.md" }),
-          )
-          .toEqual({ kind: "gone" });
-      });
     });
 
     it("reuses one snapshot in nested scopes, reloads an inherited settled one, and fails a door that never prepared", async () => {

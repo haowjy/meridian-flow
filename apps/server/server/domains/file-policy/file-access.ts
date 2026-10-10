@@ -4,6 +4,7 @@
  * re-check a write seam runs inside its transaction.
  */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { TreeView } from "../context/tree/tree-view.js";
 import { decide, levelAt, personLevel } from "./domain/policy.js";
 import {
   type AgentChain,
@@ -63,6 +64,7 @@ export interface FileAccess {
   listAccess(
     principal: Principal,
     documentIds: readonly DocumentId[],
+    options?: { draftViews?: ReadonlyMap<DocumentId, TreeView> },
   ): Promise<Map<DocumentId, FileDecision>>;
   /**
    * History reads (change-trail detail) keep a deleted document's captured
@@ -144,8 +146,12 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       return facts.deleted || facts.ownerWork?.deleted === true ? "deleted" : "available";
     },
 
-    async listAccess(principal, documentIds) {
-      const facts = await deps.facts.loadList(documentIds, principal.agent?.draftWork?.id);
+    async listAccess(principal, documentIds, options) {
+      const facts = await deps.facts.loadList(
+        documentIds,
+        principal.agent?.draftWork?.id,
+        options?.draftViews,
+      );
       const out = new Map<DocumentId, FileDecision>();
       for (const [documentId, fact] of facts) {
         const result = await decision(principal, fact);
