@@ -45,6 +45,14 @@ visible is a browser question and belongs in a probe.
   when claiming those outcomes. Existing consumers may still supply their own
   network/account seams to `renderReviewScopes`; importing the helper installs
   nothing. Keep surface-only setup and scenario data in their suites.
+- **`branch-handoff-harness.ts`** — real branch sessions, pool and
+  `BranchWriterHandoff` over `HeldBranchTransport`, a wire whose sync and
+  acknowledgements the test controls. That wire stores local bytes before it
+  announces them, so it cannot witness transport ordering. For a claim about
+  when pending writing becomes observable, pass a real Hocuspocus transport
+  over `core/transport/test-support/DocumentSocketHarness` through its
+  `transportFactory` (it replaces the wire for generation-1 rooms only). The
+  fake's order hid a live review failure through two fixes.
 - **`editor-session-fakes.ts`** — fake document sessions and a branch-room
   registry for suites about which editor exists and when (`EditorView`).
 - **`inline-review-editor.ts`** — a real collaborative editor with the

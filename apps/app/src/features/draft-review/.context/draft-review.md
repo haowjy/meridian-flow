@@ -128,7 +128,7 @@ by class or operation overlap:
   `gone` is not held: the change leaves with a toast. `incomplete_class` is
   treated as `stale`, for Apply and Discard alike.
 
-Apply and Discard are not queued offline: their mutations run with `networkMode: "always"` and throw `DraftCommandNotSentError` when the browser is offline, so the click is refused on the change (or the draft) at once and nothing fires on reconnect.
+Apply and Discard are not queued offline: their mutations run with `networkMode: "always"` and throw `DraftCommandNotSentError` when `navigator.onLine` or `onlineManager` reports offline, so the click is refused on the change (or the draft) at once and nothing fires on reconnect. A batch issued while offline therefore refuses every file in one pass. A transport failure while both signals still say online is not that refusal: the request left, its error path refreshes the draft reads (a whole Discard still shows `discard-offline`), and `runDraftBatch`, serial by design, attempts every remaining draft once that settles, possibly after reconnect.
 
 Apply and Discard send the live and draft revision tokens of the cached preview
 the writer saw (opaque strings), so a change updated under them is refused,

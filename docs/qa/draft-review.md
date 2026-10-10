@@ -351,9 +351,21 @@ Continue with Probe G's fixture (recreate affected proposals between actions).
    then verify dispositions become available with the successful preview. From
    a Work with multiple files go offline and attempt whole
    Apply/Discard; each affected file reports its own failure, no successful completion
-   or navigation. Reconnect and verify no queued command fires. For a held online
+   or navigation. Reconnect and verify no queued command fires. Log both online
+   signals before every click; see the offline-emulation artifact in
+   [README.md](README.md). A transport failure while the app still believes it is
+   online is not this case: the serial batch then attempts every draft, possibly
+   after reconnect. For a held online
    batch, refuse one file: later files run, failed-file reason remains until explicit
    action/dismissal.
+8. **Two-tab whole Discard with held writing.** Open one draft's review in tabs A and
+   B. In A, hold outgoing Yjs frames and incoming acknowledgements at the native
+   WebSocket (HTTP stays open), then type in surviving prose and inside an AI-added
+   change. In B, Discard all changes from the Work page. Release A without navigating
+   it and recheck after 30 s. PASS: A keeps the `draft` address and shows the next
+   generation with the surviving words as a **You** change; the words typed inside
+   the discarded change are absent; live is unchanged. Control with no held writing:
+   A leaves review for live and drops the address.
 
 ## Probe J — chat links from Work rows and cold history
 
@@ -402,7 +414,8 @@ Exercise cold and warm Next draft, another document's strip Review, Apply draft 
 Discard draft moving on, room-read failure on desktop and phone, leaving to Chat
 mid-hold, and ordinary document switches on both shells. Navigation must change
 outside the hold immediately; no sampled frame may show uncovered blank prose or
-live prose under review chrome. Failure releases to the destination's card. Verify
+live prose under review chrome, and the cover must never show a loading status
+("Opening document…"); phone Discard draft moving on is the case that caught it. Failure releases to the destination's card. Verify
 the status line announces the destination, focus returns to the pane, copied ids are
 absent and the 10-second bound does not restart on another move. Scope the pane by
 screen visibility: route/session acquisition temporarily deactivates input but
