@@ -38,6 +38,7 @@ const U = Object.fromEntries(
 
 const doc = (documentId: string, uri: string, extra: Partial<CatalogDocument> = {}) => ({
   documentId,
+  owner: { workId: null },
   projectId: "p1",
   uri,
   presence: "live" as const,
@@ -461,17 +462,28 @@ function internal(uri: string, suffix: string) {
   return { kind: "internal" as const, uri, suffix };
 }
 
-it("spells lineage Scratch contextually only for its own chat reader", () => {
-  const target = doc(U.cast, "scratch://@/c12/notes/jade.md");
+it("spells lineage links through their holder, without a chat-only spelling channel", () => {
+  const target = doc(U.cast, "scratch://@/c12/x.md");
   const resolution = { kind: "document", document: target, inDraft: false } as const;
   const link = { ref: `doc:${U.cast}`, href: "scratch://@/c12/old.md#gate" };
-  const chat = { ...holder, uri: null, scratchRootThreadRef: "c12" };
-  expect(spellStoredLink(link, chat, resolution, "holder")).toEqual({
-    href: "scratch://notes/jade.md#gate",
-    address: target.uri,
-  });
-  for (const other of [holder, { ...chat, scratchRootThreadRef: "c13" }])
-    expect(spellStoredLink(link, other, resolution, "holder").href).toBe(
-      "scratch://@/c12/notes/jade.md#gate",
+  const ownScratch = { ...holder, uri: "scratch://@/c12/holder.md" };
+  expect(spellStoredLink(link, ownScratch, resolution, "holder").href).toBe("x.md#gate");
+  // Contextual spelling already in the chat's own Scratch stays contextual.
+  expect(
+    spellStoredLink(
+      { ref: null, href: "scratch://x.md" },
+      ownScratch,
+      { kind: "address" },
+      "holder",
+    ).href,
+  ).toBe("scratch://x.md");
+  for (const uri of [
+    null,
+    "scratch://@/c13/holder.md",
+    "scratch://@arc/holder.md",
+    "manuscript://holder.md",
+  ])
+    expect(spellStoredLink(link, { ...holder, uri }, resolution, "holder").href).toBe(
+      "scratch://@/c12/x.md#gate",
     );
 });

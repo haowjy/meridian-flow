@@ -273,6 +273,74 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await r.resolve(input)).toMatchObject({ documentId: occupant });
     });
 
+    it("transports the prepared owners of a mixed catalog without resolving Work slugs again", async () => {
+      const db = database.current;
+      const root = crypto.randomUUID();
+      await db.insert(threads).values({
+        id: root,
+        projectId: p,
+        rootThreadId: root,
+        createdByUserId: u,
+        ref: "c1",
+      });
+      const lineageSource = crypto.randomUUID();
+      const note = crypto.randomUUID();
+      await db.insert(contextSources).values({
+        id: lineageSource,
+        projectId: p,
+        rootThreadId: root,
+        scope: "lineage",
+        slug: "scratch",
+        name: "Scratch",
+      });
+      await db.insert(documents).values({
+        id: note,
+        contextSourceId: lineageSource,
+        name: "note",
+        extension: "md",
+      });
+      const rows = [
+        { id: note, uri: "scratch://@/c1/note.md", workId: null, rootThreadId: root },
+        { id: await add("scratch", "named", b), uri: "scratch://@work-b/named.md", workId: b },
+        { id: await add("uploads", "seal", noWork), uri: "uploads://@/seal.md", workId: noWork },
+        { id: await add("manuscript", "chapter"), uri: "manuscript://chapter.md", workId: null },
+        { id: await add("user", "personal"), uri: "user://personal.md", workId: null },
+      ];
+      const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
+        listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
+      };
+      const works = createDrizzleProjectWorkAuthorityResolver(db);
+      const unexpectedLookup = async () => {
+        throw new Error("Prepared document ownership was discarded");
+      };
+      const deps: DocumentLinkRouteDeps = {
+        projectRepo: { findById: async () => ({ userId: u, deletedAt: null }) } as never,
+        documentLinks: resolver(),
+        fileAccess,
+        workAuthorityResolver: { ...works, bySlug: unexpectedLookup, noWork: unexpectedLookup },
+        linkScopes: createDrizzleDocumentLinkScopes({
+          db,
+          fileAccess,
+          membership: async () => ({ members: rows.map(({ id }) => id) }),
+          observer: createLinkScopeObserver(createNoopEventSink()),
+        }),
+      };
+      const result = await handleDocumentLinkResolveRequest(deps, {
+        projectId: p,
+        userId: u,
+        request: {
+          baseUri: null,
+          links: rows.map(({ id, uri }) => ({ ref: `doc:${id}`, href: uri })),
+        },
+      });
+      expect(result.answers).toHaveLength(rows.length);
+      for (const [index, row] of rows.entries()) {
+        expect(result.answers[index]).toMatchObject({ state: "document", document: row });
+        if (!("rootThreadId" in row))
+          expect(result.answers[index]).not.toHaveProperty("document.rootThreadId");
+      }
+    });
+
     it("answers ref links through the route core: gone never carries a location", async () => {
       const db = database.current;
       const live = await add("manuscript", "live");

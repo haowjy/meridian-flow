@@ -40,6 +40,34 @@ export type ParsedContextAuthority =
   | { kind: "lineage"; rootThreadRef: string }
   | { kind: "work"; workSlug: WorkSlug };
 
+/** The owners a holder's authority supplies, independently for each owned scheme. */
+export function holderAuthorities(
+  authority: ParsedContextAuthority,
+): Record<WorkScopedContextUriScheme, ParsedContextAuthority | null> {
+  switch (authority.kind) {
+    case "work":
+      return { scratch: authority, uploads: authority };
+    case "lineage":
+      return { scratch: authority, uploads: { kind: "none" } };
+    case "none":
+      return { scratch: null, uploads: authority };
+    case "contextual":
+      return { scratch: null, uploads: null };
+  }
+}
+
+/** Qualify a contextual address only when its holder supplies that scheme's owner. */
+export function qualifyContextUriByHolder(uri: string, holderUri: string | null): string {
+  const target = parseContextUri(uri);
+  const holder = holderUri ? parseContextUri(holderUri) : null;
+  if (!target.ok || target.value.authority.kind !== "contextual" || !holder?.ok) return uri;
+  if (isProjectScopedScheme(target.value.scheme)) return uri;
+  const authority = holderAuthorities(holder.value.authority)[target.value.scheme];
+  return authority
+    ? formatParsedContextUri(target.value.scheme, target.value.path, authority)
+    : uri;
+}
+
 /** Authority accepted by stable URI serialization. */
 export type CanonicalContextAuthority =
   | { kind: "contextual" }
