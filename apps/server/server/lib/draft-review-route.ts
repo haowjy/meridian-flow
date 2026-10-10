@@ -25,6 +25,7 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import { PublicationLeasesChangedError } from "../domains/collab/domain/branch-push-transition.js";
 import {
   DraftLinkRegistrationFailedError,
   DuplicateApplyItemError,
@@ -372,6 +373,14 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     }
     if (cause instanceof DuplicateApplyItemError) {
       throw createError({ statusCode: 400, message: cause.message });
+    }
+    // The draft kept growing past the call's bounded retries: the staged batch is with
+    // recovery, which finishes it; nothing failed, so this is no 500 (F22).
+    if (cause instanceof PublicationLeasesChangedError) {
+      throw createError({
+        statusCode: 503,
+        message: "The draft kept changing while it was applied; it finishes in the background.",
+      });
     }
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));

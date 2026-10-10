@@ -48,11 +48,25 @@ export class PendingLiveSettlementError extends Error {
   }
 }
 
+/**
+ * A staged batch whose completion needs branch leases its execution doesn't hold, still
+ * owned by that execution (F22): it releases what it holds, leases the grown set in
+ * global order and continues the same batch with `continueStaged`.
+ */
+export type StagedBatchHandoff = {
+  batchId: string;
+  claim: SettlementClaim;
+  /** The pushes staged with it, for the caller's per-item results. */
+  pushes: readonly PushLineageRow[];
+};
+
 /** A publication step needs branch leases this execution doesn't hold; discovery must run again. */
 export class PublicationLeasesChangedError extends Error {
   constructor(
     readonly batchId: string,
     readonly branchIds: readonly string[],
+    /** The batch the execution still owns and continues once it holds `branchIds` too. */
+    readonly staged: StagedBatchHandoff,
   ) {
     super(`Settlement batch ${batchId} needs branch leases its caller doesn't hold`);
     this.name = "PublicationLeasesChangedError";
@@ -82,7 +96,7 @@ type SettleResult =
       outcomes: readonly PublicationItemOutcome[];
     }
   | { kind: "refused"; reason: PublicationRefusal }
-  | { kind: "rediscover"; branchIds: readonly string[] };
+  | { kind: "rediscover"; branchIds: readonly string[]; claim: SettlementClaim };
 
 export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
@@ -187,20 +201,8 @@ export function createBranchPushTransition(input: {
           leasedBranchIds: prepared.leasedBranchIds,
           signal: inputExecution.signal,
         });
-        if (settled.kind === "rediscover") {
-          throw new PublicationLeasesChangedError(settlement.batchId, settled.branchIds);
-        }
-        if (settled.kind === "refused") {
-          return prepared.finish({ outcome: { kind: "refused", reason: settled.reason }, docs });
-        }
-        const heldDocuments = new Set(settled.held.flatMap(({ documentId }) => documentId ?? []));
         return prepared.finish({
-          outcome: {
-            kind: "settled",
-            pushes: committed.pushes.filter((push) => !heldDocuments.has(push.documentId)),
-            held: settled.held,
-            outcomes: settled.outcomes,
-          },
+          outcome: outcomeOf(settled, { batchId: settlement.batchId, pushes: committed.pushes }),
           docs,
         });
       },
@@ -342,13 +344,8 @@ export function createBranchPushTransition(input: {
       }
       if (completion.status === "refused") return { kind: "refused", reason: completion.reason };
       if (completion.status === "rediscover") {
-        // Hand the batch back: the next owner discovers and leases the grown set first.
-        await input.settlementStore.recordFailure({
-          batchId,
-          claim,
-          error: "publication branch leases changed",
-        });
-        return { kind: "rediscover", branchIds: completion.branchIds };
+        // The owner keeps the batch: it leases the grown set first, then settles again.
+        return { kind: "rediscover", branchIds: completion.branchIds, claim };
       }
       if (completion.status === "completed") {
         for (const projection of completion.projections) {
@@ -454,7 +451,16 @@ export function createBranchPushTransition(input: {
             (docs) =>
               settle({ batch: claimed, docs, leasedBranchIds, signal: recoveryInput?.signal }),
           );
-          if (settled.kind !== "rediscover") recovered += 1;
+          if (settled.kind === "rediscover") {
+            // Hand it back: the next pass discovers and leases the grown set first.
+            await input.settlementStore.recordFailure({
+              batchId,
+              claim: settled.claim,
+              error: "publication branch leases changed",
+            });
+          } else {
+            recovered += 1;
+          }
         } catch (cause) {
           if (!batch || cause instanceof PendingLiveSettlementError) return;
           await input.settlementStore.recordFailure({
@@ -468,7 +474,60 @@ export function createBranchPushTransition(input: {
     return recovered;
   }
 
-  return { execute, recover };
+  /**
+   * Continues a batch this execution staged and still owns, after leasing the grown set
+   * its completion asked for (F22): the same claim, the members' coordinator leases, the
+   * same completion. Another growth hands it back again; the caller bounds the retries.
+   */
+  async function continueStaged<T>(continuation: {
+    staged: StagedBatchHandoff;
+    leasedBranchIds: readonly string[];
+    signal?: AbortSignal;
+    finish: (input: { outcome: PublicationOutcome; docs: LiveDocs }) => T | Promise<T>;
+  }): Promise<T> {
+    const { staged } = continuation;
+    const batch = await input.settlementStore.loadSettlementBatch({
+      batchId: staged.batchId,
+      owner: staged.claim,
+    });
+    if (!batch) throw new PendingLiveSettlementError(staged.batchId);
+    return withDocumentLocks(
+      batch.members.map((member) => member.push.documentId),
+      continuation.signal,
+      async (docs) => {
+        const settled = await settle({
+          batch,
+          docs,
+          leasedBranchIds: continuation.leasedBranchIds,
+          signal: continuation.signal,
+        });
+        return continuation.finish({ outcome: outcomeOf(settled, staged), docs });
+      },
+    );
+  }
+
+  return { execute, continueStaged, recover };
+}
+
+/** A settlement's outcome for its execution; a grown lease set hands the batch up. */
+function outcomeOf(
+  settled: SettleResult,
+  staged: Omit<StagedBatchHandoff, "claim">,
+): PublicationOutcome {
+  if (settled.kind === "rediscover") {
+    throw new PublicationLeasesChangedError(staged.batchId, settled.branchIds, {
+      ...staged,
+      claim: settled.claim,
+    });
+  }
+  if (settled.kind === "refused") return { kind: "refused", reason: settled.reason };
+  const heldDocuments = new Set(settled.held.flatMap(({ documentId }) => documentId ?? []));
+  return {
+    kind: "settled",
+    pushes: staged.pushes.filter((push) => !heldDocuments.has(push.documentId)),
+    held: settled.held,
+    outcomes: settled.outcomes,
+  };
 }
 
 /** The only reconstruction path for final pre-push content, warm or cold. */

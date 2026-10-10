@@ -12,6 +12,7 @@ import {
 } from "../../lib/work-write-mode-route.js";
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
   it("holds the second draft's picture at a path the first's took, a payload-only Apply (E-5)", async () => {
@@ -160,12 +161,40 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("dep/a.md"), "X kept").toBe(x);
   });
 
-  it("applies the whole draft through the same command when D40 switches to auto-apply (E-7b)", async () => {
+  it("finishes an Apply whose draft grows mid-flight in the same request, through the route and D40 (E-7b)", async () => {
     const { runtime, s } = await start();
     const beacon = await s.work("Beacon", "draft");
+    const second = await s.thread(beacon);
+    const live = s.view("live");
+    /** At staging, a second chat of the Work adds a document to the draft (F22). */
+    const growAtStaging = (path: string) => {
+      const remove = setCollabHook("applyItems.afterStaging", async () => {
+        remove();
+        await s.model(second).create(path, "Late, drafted.");
+      });
+      return remove;
+    };
+    const original = await s.model(beacon).create("growth/original.md", "Original, drafted.");
+    const [rendered] = await s.items(beacon);
+    const stop = growAtStaging("growth/late.md");
+    const grown = await s.applyAll(beacon);
+    stop();
+    expect.soft(grown, "the staged batch finishes with real results").toEqual({
+      status: "applied",
+      draftId: rendered?.draftId,
+      draftClosed: false,
+      items: [{ itemKey: rendered?.itemKey, status: "applied", notes: [] }],
+    });
+    expect.soft(await live.idAt("growth/original.md"), "published").toBe(original);
+    expect.soft(await live.idAt("growth/late.md"), "the late item stays in D").toBeNull();
+    expect.soft(await s.batchStates(), "one batch, completed").toEqual(["completed"]);
+
+    // D40: switching to auto-apply applies the whole draft through the same command and
+    // completes even when the draft grows under it.
     await s.writer.createDocument("other.md", "Other.");
     await s.model(beacon).edit("other.md", "Other.", "Other, drafted.");
     const mira = await s.model(beacon).create("characters/mira.md", "Mira.");
+    const stopAgain = growAtStaging("growth/later.md");
     const switched = await handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
       projectId: s.project.id,
       workId: beacon.id,
@@ -173,10 +202,12 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
       aiWriteMode: "direct",
       pending: "apply",
     });
+    stopAgain();
     expect.soft(switched).toMatchObject({ aiWriteMode: "direct" });
-    expect.soft(await s.view("live").text("other.md")).toContain("Other, drafted.");
-    expect.soft(await s.view("live").idAt("characters/mira.md")).toBe(mira);
-    expect.soft(await s.draftStatuses(beacon), "D40 closed it").toEqual(["closed"]);
-    expect.soft(await s.batchStates(), "one publication").toEqual(["completed"]);
+    expect.soft(await live.text("other.md")).toContain("Other, drafted.");
+    expect.soft(await live.idAt("characters/mira.md")).toBe(mira);
+    expect.soft(await live.idAt("growth/late.md"), "the earlier late item applied").not.toBeNull();
+    expect.soft(await live.idAt("growth/later.md"), "the newest stays in D").toBeNull();
+    expect.soft(await s.draftStatuses(beacon), "D stays open for it").toEqual(["active"]);
   });
 });
