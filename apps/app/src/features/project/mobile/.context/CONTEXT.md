@@ -79,9 +79,10 @@ open-tab set; phone navigation derives the active tab from the context tree and
 does not write to desktop tabs.
 
 The same resolved editable document is published into the persistent Editor
-review value. When that value selects a draft, the host resolves its review room
-and supplies the Work-qualified review identity to the existing `EditorView`;
-phone review does not own a parallel controller or state machine.
+review value through `useActiveReviewBinding`, which also leases live presence.
+The phone suspends presence for the requested review; desktop waits for its
+resolved room. Hosts pass only requested draft identity to `EditorView`; the
+adapter reads its canonical room and Work from the scope.
 
 This ownership is mandatory. Mounting `EditorView` directly without `retain()`
 creates Yjs sessions that the registry cannot know are closed.

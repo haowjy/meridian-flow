@@ -60,8 +60,8 @@ const queryClient = new QueryClient();
 const liveSession = {
   getSnapshot: () => ({ status: "synced", schemaFence: null }),
   subscribe: () => () => undefined,
-  suspendPresence: () => undefined,
-  resumePresence: () => undefined,
+  suspendPresence: vi.fn(),
+  resumePresence: vi.fn(),
 } as unknown as DocumentSession;
 
 const tab = {
@@ -130,6 +130,7 @@ describe("ContextEditorMountHost draft-only review", () => {
       // The review handoff claims review once the document is published as the
       // active editor, which needs no live session.
       expect(review.publish).toHaveBeenCalledWith("document-a", null, false, expect.anything());
+      const owner = review.publish.mock.calls.at(-1)?.[3];
       await act(async () => startReview());
       const editor = document.querySelector("[data-editor]");
       expect(editor?.getAttribute("data-review-draft")).toBe("draft-a");
@@ -142,12 +143,16 @@ describe("ContextEditorMountHost draft-only review", () => {
       await act(async () => promote());
       await act(async () => undefined);
       expect(opener.open).toHaveBeenCalledOnce();
+      expect(review.publish).toHaveBeenLastCalledWith("document-a", liveSession, true, owner);
+      expect(liveSession.suspendPresence).toHaveBeenCalledOnce();
     });
+    expect(liveSession.resumePresence).toHaveBeenCalledOnce();
   });
 
   it("passes the requested review before its room resolves", async () => {
     review.reviewing = true;
     review.room = null;
+    vi.mocked(liveSession.suspendPresence).mockClear();
     const opener = {
       open: vi.fn(async () => ({
         kind: "opened",
@@ -182,6 +187,7 @@ describe("ContextEditorMountHost draft-only review", () => {
         expect(editor?.getAttribute("data-live-session")).toBe("true");
         // The click's intent reaches the editor, which holds the live one read-only.
         expect(editor?.getAttribute("data-review-draft")).toBe("draft-a");
+        expect(liveSession.suspendPresence).not.toHaveBeenCalled();
       },
     );
     review.reviewing = false;
