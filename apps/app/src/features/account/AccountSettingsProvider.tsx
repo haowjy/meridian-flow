@@ -53,7 +53,10 @@ function AccountSettingsOwner({
   const preference = settings.preference("workingSetSyncEnabled");
   useLayoutEffect(() => {
     changeUiTheme(settings.value.theme);
-    changeLocale(resolveQueryLocale() ?? settings.value.language);
+    // A link can choose the initial language, but never veto the writer’s choice.
+    changeLocale(
+      (settings.hasLocalLanguageIntent ? null : resolveQueryLocale()) ?? settings.value.language,
+    );
     changeStatsForNerds(settings.value.statsForNerds);
   }, [settings.value]);
   const connectivityHints = useConnectivityHints();

@@ -44,6 +44,7 @@ export function useAccountSettings(serverValue: AccountSettings | null) {
     () => readAccountSettingsCache(accountId) ?? serverValue ?? DEFAULTS,
   );
   const [confirmed, setConfirmed] = useState(serverValue);
+  const hasConfirmedSnapshot = useRef(serverValue !== null);
   const [errors, setErrors] = useState<Partial<Record<SettingKey, SettingError>>>({});
   const [pending, setPending] = useState<Partial<Record<SettingKey, boolean>>>({});
   const revisions = useRef<Partial<Record<SettingKey, number>>>({});
@@ -59,6 +60,7 @@ export function useAccountSettings(serverValue: AccountSettings | null) {
   }
   useEffect(() => {
     if (!serverValue) return;
+    hasConfirmedSnapshot.current = true;
     setConfirmed((previous) => {
       const next = { ...(previous ?? DEFAULTS) };
       for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
@@ -95,8 +97,9 @@ export function useAccountSettings(serverValue: AccountSettings | null) {
             capturedStorageRevision !== storageRevision.current
           )
             return;
+          hasConfirmedSnapshot.current = true;
           setConfirmed((previous) => {
-            const next = { ...(previous ?? DEFAULTS) };
+            const next = { ...(previous ?? settings) };
             for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
               if (
                 !pending[key] &&
@@ -122,9 +125,25 @@ export function useAccountSettings(serverValue: AccountSettings | null) {
   }
   function success(settings: AccountSettings, write: Write) {
     if (write.epoch.aborted || write.epoch !== currentEpoch.current) return;
-    setConfirmed((previous) => ({ ...(previous ?? DEFAULTS), [write.key]: settings[write.key] }));
+    const firstSnapshot = !hasConfirmedSnapshot.current;
+    hasConfirmedSnapshot.current = true;
+    setConfirmed((previous) => {
+      const next = { ...(previous ?? settings) };
+      for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
+        if (key === write.key || (firstSnapshot && !revisions.current[key]))
+          Object.assign(next, { [key]: settings[key] });
+      }
+      return next;
+    });
+    const next = { ...values.current };
+    for (const key of Object.keys(DEFAULTS) as SettingKey[]) {
+      if ((firstSnapshot && !revisions.current[key]) || (key === write.key && live(write)))
+        Object.assign(next, { [key]: settings[key] });
+    }
+    // Even a superseded write can supply the first full account snapshot.
+    // Only its own field waits for the latest intent's settlement.
+    adopt(next);
     if (!live(write)) return;
-    adopt({ ...values.current, [write.key]: settings[write.key] });
     setErrors((previous) => ({ ...previous, [write.key]: undefined }));
     setPending((previous) => ({ ...previous, [write.key]: false }));
     void router.invalidate().catch(() => undefined);
@@ -177,5 +196,5 @@ export function useAccountSettings(serverValue: AccountSettings | null) {
       },
     };
   }
-  return { value, preference };
+  return { value, preference, hasLocalLanguageIntent: Boolean(revisions.current.language) };
 }

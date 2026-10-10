@@ -22,9 +22,10 @@ export function readAccountSettingsCache(accountId?: string): AccountSettings | 
 }
 export function writeAccountSettingsCache(accountId: string, settings: AccountSettings): void {
   try {
+    // Confirming an unchanged optimistic value must still wake other tabs.
     localStorage.setItem(
       ACCOUNT_SETTINGS_CACHE_PREFIX + accountId,
-      JSON.stringify({ accountId, settings }),
+      JSON.stringify({ accountId, settings, writeId: crypto.randomUUID() }),
     );
     localStorage.setItem(ACCOUNT_SETTINGS_ACTIVE_KEY, accountId);
   } catch {

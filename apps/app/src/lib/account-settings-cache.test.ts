@@ -94,3 +94,11 @@ it("accepts only supported query locales without overwriting the account cache",
     window.history.replaceState(null, "", window.location.pathname);
   }
 });
+
+it("publishes confirmation even when the visible preference values have not changed", () => {
+  writeAccountSettingsCache("a", settings);
+  const pendingPaint = localStorage.getItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`);
+  writeAccountSettingsCache("a", settings);
+  expect(localStorage.getItem(`${ACCOUNT_SETTINGS_CACHE_PREFIX}a`)).not.toBe(pendingPaint);
+  expect(readAccountSettingsCache("a")).toEqual(settings);
+});
