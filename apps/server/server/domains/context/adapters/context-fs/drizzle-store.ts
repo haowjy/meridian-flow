@@ -29,6 +29,7 @@ import {
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { createLive, findLiveCreateCandidate, findRevealIdentity } from "../../tree/creates.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
+import { insertDocumentRow } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
 import {
   createTreeReader,
@@ -39,11 +40,7 @@ import {
   visibleFolders,
 } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
-import {
-  claimDocumentLocation,
-  hasOppositeContextEntry,
-  lockContextSources,
-} from "./document-locations.js";
+import { hasOppositeContextEntry, lockContextSources } from "./document-locations.js";
 
 type DocumentRow = Pick<
   VisibleDocument,
@@ -204,19 +201,27 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       await lockContextSources(this.deps.db, [this.sourceId]);
       if (await liveFileOccupied(this, this.deps.db, this.sourceId, input)) return null;
       const created = await createLive(this.deps.db, {
-        slot: {
-          contextSourceId: this.sourceId,
-          folderId: input.folderId,
-          name: input.name,
-          extension: input.extension,
-        },
+        slot: this.slotOf(input),
         claim,
         catalog: this.deps.catalogMutations,
-        insert: () => this.insertTrackedRow(input),
+        insert: {
+          node: {
+            kind: "tracked",
+            filetype: input.filetype,
+            ...(input.metadata ? { metadata: input.metadata } : {}),
+          },
+          markdown: input.markdown,
+          ...(input.id ? { id: input.id as DocumentId } : {}),
+          ...(input.provisionalName ? { provisionalName: true } : {}),
+        },
       });
       if (!created.ok) {
         if (created.error.code === "candidate_changed") throw new LiveCreateCandidateChangedError();
+        if (created.error.code === "id_taken") throw new ContextEntryConflictError();
         return null;
+      }
+      if (created.value.kind === "inserted") {
+        await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       }
       const document = await this.findDocument(
         LIVE_TREE,
@@ -229,30 +234,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  /** Today's live insert: the row, its projection, its location claim, the catalog. */
-  private async insertTrackedRow(input: CreateDocumentInput): Promise<DocumentId> {
-    const [row] = await this.db
-      .insert(documents)
-      .values({
-        id: input.id,
-        contextSourceId: this.sourceId,
-        folderId: input.folderId,
-        name: input.name,
-        extension: input.extension,
-        fileType: input.filetype,
-        sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
-        provisionalName: input.provisionalName ?? false,
-        ...(input.metadata ? { metadata: input.metadata } : {}),
-      })
-      .onConflictDoNothing()
-      .returning({ id: documents.id });
-    if (!row) throw new ContextEntryConflictError();
-    await this.db
-      .insert(documentMarkdownProjections)
-      .values({ documentId: row.id, markdown: input.markdown });
-    await claimLiveLocation(this.deps.db, this.sourceId, input);
-    await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-    return row.id;
+  private slotOf(input: { folderId: string | null; name: string; extension: string }) {
+    return {
+      contextSourceId: this.sourceId,
+      folderId: input.folderId as FolderId | null,
+      name: input.name,
+      extension: input.extension,
+    };
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
@@ -298,34 +286,31 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         throw new ContextEntryConflictError();
       }
       // A live upload at a hidden image's path is a different document (12b-Q2).
-      const [row] = await this.db
-        .insert(documents)
-        .values({
-          id: input.id,
-          contextSourceId: this.sourceId,
-          folderId: input.folderId,
-          name: input.name,
-          extension: input.extension,
+      const documentId = await insertDocumentRow(
+        this.deps.db,
+        this.slotOf(input),
+        {
+          kind: "binary",
           fileType: input.fileType,
           storageUrl: input.storageUrl,
           mimeType: input.mimeType,
           sizeBytes: input.sizeBytes,
           ...(input.metadata ? { metadata: input.metadata } : {}),
-        })
-        .returning({ id: documents.id });
-      if (!row) throw new Error("Failed to create binary document");
-      await claimLiveLocation(this.deps.db, this.sourceId, input);
+        },
+        { hidden: false, ...(input.id ? { id: input.id as DocumentId } : {}) },
+      );
+      if (!documentId) throw new Error("Failed to create binary document");
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       // The upload is an arrival (contract §9.3): its live identity and the settlement of a ref
       // waiting at this address publish together, under the namespace key this command holds.
-      await this.deps.arrivals?.settle([row.id]);
+      await this.deps.arrivals?.settle([documentId]);
       const document = await this.findDocument(
         LIVE_TREE,
         input.folderId,
         input.name,
         input.extension,
       );
-      if (!document) throw new Error(`Created binary document ${row.id} is not live`);
+      if (!document) throw new Error(`Created binary document ${documentId} is not live`);
       return document;
     });
   }
@@ -366,19 +351,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       );
     return rows.map(mapDocument);
   }
-}
-
-function claimLiveLocation(
-  db: Database,
-  sourceId: string,
-  input: { folderId: string | null; name: string; extension: string },
-): Promise<void> {
-  return claimDocumentLocation(
-    db,
-    sourceId,
-    input.folderId,
-    renderFilename(input.name, input.extension),
-  );
 }
 
 /** A live entry already holds this file's rendered path: a document, or a folder of that name. */

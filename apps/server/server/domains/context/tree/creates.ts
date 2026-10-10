@@ -10,9 +10,7 @@
  * branch).
  */
 import type { ContextSourceId, DocumentId, DraftId, ProjectId } from "@meridian/contracts";
-import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { documentMarkdownProjections, documents } from "@meridian/database/schema";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { isUuid } from "../../../shared/uuid.js";
@@ -30,7 +28,13 @@ import type {
   RevealIdentity,
   TrackedNode,
 } from "./hidden-node-types.js";
-import { filePath, insertFolder, lockDocuments, tombstoneDocuments } from "./node-rows.js";
+import {
+  filePath,
+  insertDocumentRow,
+  insertFolder,
+  lockDocuments,
+  tombstoneDocuments,
+} from "./node-rows.js";
 import { place, walkFolders } from "./placement.js";
 import { type TreeHookPoint, treeHook } from "./test-hooks.js";
 import { spellNodeAddresses } from "./tree-addresses.js";
@@ -115,7 +119,12 @@ export async function createInDraft(
     joined = documentId !== null;
   }
   if (documentId === null) {
-    documentId = await insertHiddenDocument(db, slot, input.node);
+    const id = input.node.kind === "binary" ? input.node.documentId : undefined;
+    documentId = await insertDocumentRow(db, slot, input.node, {
+      hidden: true,
+      ...(id ? { id } : {}),
+    });
+    if (!documentId) throw new Error(`Hidden document ${slot.name} was not inserted`);
     if (input.node.kind === "tracked") await input.ensureEmptyContent(documentId);
   }
 
@@ -136,39 +145,6 @@ export async function createInDraft(
 
 function ambiguous(nodes: readonly { id: string }[]): CreateFault {
   return { code: "ambiguous", ids: nodes.map((node) => node.id) };
-}
-
-async function insertHiddenDocument(
-  db: Database,
-  slot: DocumentSlot,
-  node: TrackedNode | BinaryNode,
-): Promise<DocumentId> {
-  const tx = currentDrizzleDb(db);
-  const [row] = await tx
-    .insert(documents)
-    .values({
-      ...(node.kind === "binary" && node.documentId ? { id: node.documentId } : {}),
-      contextSourceId: slot.contextSourceId,
-      folderId: slot.folderId,
-      name: slot.name,
-      extension: slot.extension,
-      hidden: true,
-      ...(node.kind === "tracked"
-        ? { fileType: node.filetype, sizeBytes: 0 }
-        : {
-            fileType: node.fileType,
-            storageUrl: node.storageUrl,
-            mimeType: node.mimeType,
-            sizeBytes: node.sizeBytes,
-          }),
-      ...(node.metadata ? { metadata: node.metadata as JsonObject } : {}),
-    })
-    .returning({ id: documents.id });
-  if (!row) throw new Error(`Hidden document ${slot.name} was not inserted`);
-  if (node.kind === "tracked") {
-    await tx.insert(documentMarkdownProjections).values({ documentId: row.id, markdown: "" });
-  }
-  return row.id;
 }
 
 /** Each unsettled ahead ref at the draft's address now means this document in the draft (12a rule 1). */
@@ -253,12 +229,22 @@ export type LiveCreateOutcome =
 export type LiveCreateFault =
   | CreateFault
   /** What the create was planned against isn't what its locks find. */
-  | { code: "candidate_changed" };
+  | { code: "candidate_changed" }
+  /** The caller-minted id already names a document. */
+  | { code: "id_taken" };
+
+/** The live row a create inserts when it reveals nothing. */
+export type LiveInsert = {
+  node: TrackedNode;
+  id?: DocumentId;
+  markdown: string;
+  provisionalName?: boolean;
+};
 
 /**
  * A live create at `slot` (§6.3 step 2, §6.4), under the claim its caller planned before
  * the transaction: reveal the hidden document at the path or the one named by id, or
- * insert the visible row through `insert`. A claim the locks don't confirm is
+ * insert the visible row `insert` describes. A claim the locks don't confirm is
  * `candidate_changed`. The caller holds the namespaces of the destination and of the
  * candidate's physical source, and has checked that no visible node sits at the path.
  */
@@ -268,7 +254,7 @@ export async function createLive(
     slot: DocumentSlot;
     claim: LiveClaim;
     catalog?: ContextCatalogMutationPort;
-    insert(): Promise<DocumentId>;
+    insert: LiveInsert;
   },
 ): Promise<Result<LiveCreateOutcome, LiveCreateFault>> {
   const { claim } = input;
@@ -287,7 +273,16 @@ export async function createLive(
         : chosen?.id === expected.documentId && chosen.sourceId === expected.sourceId);
     if (!confirmed) return Err({ code: "candidate_changed" });
   }
-  if (!chosen) return Ok({ kind: "inserted", documentId: await input.insert() });
+  if (!chosen) {
+    const { node, markdown, id, provisionalName } = input.insert;
+    const documentId = await insertDocumentRow(db, input.slot, node, {
+      hidden: false,
+      markdown,
+      ...(id ? { id } : {}),
+      ...(provisionalName ? { provisionalName } : {}),
+    });
+    return documentId ? Ok({ kind: "inserted", documentId }) : Err({ code: "id_taken" });
+  }
   const placed = await place(db, {
     targets: [
       {
