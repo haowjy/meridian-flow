@@ -26,9 +26,10 @@ async function blockedBy(db: Database, holder: number): Promise<Set<number>> {
 }
 
 /**
- * `bWaited` is true when a session that wasn't already waiting on `a` started waiting on
- * a lock `a`'s transaction holds while `b` ran. At a hook outside any transaction `a`
- * holds nothing, so nothing waits on it.
+ * `b` runs to completion or to its first wait on `a` (at most five seconds) before `a` is
+ * released. `bWaited` is true when a session that wasn't already waiting on `a` started
+ * waiting on a lock `a`'s transaction holds. At a hook outside any transaction `a` holds
+ * nothing, so nothing waits on it.
  */
 export async function interleave<A, B>(
   db: Database,
@@ -66,8 +67,9 @@ export async function interleave<A, B>(
       bDone = true;
     });
     let bWaited = false;
-    while (holder !== null && !bDone && Date.now() < deadline) {
-      if ([...(await blockedBy(db, holder))].some((pid) => !before.has(pid))) {
+    // `b` runs to completion, or to its first wait on `a`, before `a` goes on.
+    while (!bDone && Date.now() < deadline) {
+      if (holder !== null && [...(await blockedBy(db, holder))].some((pid) => !before.has(pid))) {
         bWaited = true;
         break;
       }
