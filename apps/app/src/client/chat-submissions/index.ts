@@ -70,9 +70,13 @@ export function readFirstSendSubmission(
   );
 }
 
-export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
+export function recordChatSubmission(
+  accountId: string,
+  entry: ChatSubmission,
+  handoffDraft = true,
+): boolean {
   const recorded = browserJournal()?.record(accountId, entry) ?? false;
-  if (recorded && entry.kind === "existing-thread" && entry.draft)
+  if (recorded && handoffDraft && entry.kind === "existing-thread" && entry.draft)
     composerSessionDraft(accountId, { kind: "chat", id: entry.threadId }).handoffSubmitted(
       entry.draft,
     );
@@ -97,11 +101,15 @@ export function settleChatSubmission(
   const current = browserJournal();
   if (!current || current.accountId !== accountId || current.epoch !== expectedEpoch) return false;
   const entry = current.get(submissionId);
-  if (entry?.kind === "existing-thread" && entry.draft) {
+  if (!entry) return false;
+  if (entry.kind === "existing-thread" && entry.draft) {
     const owner = composerSessionDraft(accountId, { kind: "chat", id: entry.threadId });
     if (outcome === "rejected") {
-      if (!owner.restoreRejected(entry.draft)) return false;
+      if (!owner.restoreRejected(entry.draft))
+        return current.record(accountId, { ...entry, state: "rejected" });
     } else if (!owner.acceptSubmitted()) return false;
   }
+  if (outcome === "rejected" && entry?.kind === "existing-thread" && !entry.draft)
+    return current.record(accountId, { ...entry, state: "rejected" });
   return current.retire(accountId, submissionId, expectedEpoch);
 }

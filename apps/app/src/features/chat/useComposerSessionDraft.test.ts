@@ -3,11 +3,12 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ComposerSessionDraft } from "@/client/composer-drafts";
 import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { ComposerSessionDraft, useComposerSessionDraft } from "./useComposerSessionDraft";
+import { useComposerSessionDraft } from "./useComposerSessionDraft";
 
 const account = "01900000-0000-7000-8000-000000000002";
 const scope = { kind: "chat", id: "chat-1" } as const;
@@ -144,4 +145,19 @@ it("hands the latest words between pane mounts before a debounced write or effec
     await act(() => root.unmount());
     actGlobal.IS_REACT_ACT_ENVIRONMENT = previous;
   }
+});
+
+it("does not claim a rejected snapshot when another tab has newer writing", () => {
+  const tabA = storage();
+  const tabB = storage();
+  const a = new ComposerSessionDraft(account, scope, () => tabA);
+  const b = new ComposerSessionDraft(account, scope, () => tabB);
+  const rejected = change("Rejected words");
+  a.updateDraft(rejected);
+  a.handoffSubmitted(rejected.snapshot);
+  b.updateDraft(change("New tab B writing"));
+  expect(b.restoreRejected(rejected.snapshot)).toBe(false);
+  expect(new ComposerSessionDraft(account, scope, () => tabB).initialDraft?.doc).toEqual(
+    plainComposerDoc("New tab B writing"),
+  );
 });
