@@ -52,7 +52,7 @@ export async function createContextEntry(input: {
 
   const result = await input.port.createTrackedDocument(uri, input.body.content ?? "", {
     origin: { type: "human", userId: input.userId },
-    ...(input.body.documentId ? { documentId: input.body.documentId } : {}),
+    ...(input.body.documentId ? { revealDocumentId: input.body.documentId } : {}),
   });
   if (!result.ok) {
     if (result.error.code === "conflict") return { status: "conflict" as const, uri };

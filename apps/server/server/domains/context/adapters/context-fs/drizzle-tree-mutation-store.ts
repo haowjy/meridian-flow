@@ -201,7 +201,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       dir,
     });
     if (!ensured.ok) rollback("conflict");
-    return ensured.value.folderId;
+    return ensured.value;
   }
 
   /** The live node at `path`: a hidden node is never moved or deleted live. */

@@ -71,6 +71,12 @@ export interface ContextWriteResult {
   updateSeq?: number;
 }
 
+/** A binary write's outcome: where it landed, as the adapter's placement decided (§2.3). */
+export interface ContextBinaryWriteResult extends ContextWriteResult {
+  documentId: string;
+  placement: "live" | "draft";
+}
+
 export interface ContextEnsureTrackedDocumentResult {
   uri: string;
   documentId: string;
@@ -231,8 +237,17 @@ export type WriteProvenance =
 
 export interface ContextWriteOptions {
   origin?: WriteProvenance;
-  /** Stable identity reserved by an authoritative aggregate before content creation. */
+  /**
+   * Stable identity reserved by an authoritative aggregate before content creation (an
+   * upload's reservation): a create mints it.
+   */
   documentId?: string;
+  /**
+   * A draft's hidden document to reveal at the create's path (link Create on an "in a
+   * draft" link, contract §6.4). Only a hidden document of this project is revealed; any
+   * other id conflicts and is never minted.
+   */
+  revealDocumentId?: string;
   /** Recorded in `documents.metadata` when this call creates the document; never on an existing one. */
   metadata?: DocumentCreationMetadata;
 }
@@ -333,7 +348,7 @@ export interface ContextPort {
   writeBinary(
     uri: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<ContextWriteResult, ContextError>>;
+  ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
 
   move(
     sourceUri: string,

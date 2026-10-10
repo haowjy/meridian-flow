@@ -72,6 +72,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,

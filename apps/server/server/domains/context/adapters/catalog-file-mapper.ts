@@ -9,7 +9,8 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkSlug, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-const BINARY_FILE_TYPES = new Set(["docx", "image", "pdf", "binary"]);
+/** The stored file types whose bytes live in object storage (one definition, SQL included). */
+export const BINARY_FILE_TYPES: ReadonlySet<string> = new Set(["docx", "image", "pdf", "binary"]);
 
 /** Bytes in object storage rather than a Yjs document. */
 export function isStorageBackedDocument(document: {

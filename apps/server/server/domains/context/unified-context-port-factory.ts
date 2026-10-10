@@ -21,17 +21,15 @@ import { approveDraftWriteJoin } from "../../shared/draft-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type { Drafts } from "../collab/domain/drafts.js";
 import type { DocumentDerivationService } from "../collab/domain/ports/document-derivations.js";
-import type { DocumentCreationAggregate } from "../collab/index.js";
+import type { BranchPeerShadowAccess, DocumentCreationAggregate } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
-import {
-  ContextFS,
-  type ContextFSDeps,
-  type ContextPlacement,
-} from "./adapters/context-fs/context-fs.js";
+import { ContextFS, type ContextFSDeps } from "./adapters/context-fs/context-fs.js";
+import type { ContextPlacement } from "./adapters/context-fs/create-placement.js";
 import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
+import { createDrizzleDraftCreates } from "./adapters/context-fs/drizzle-draft-creates.js";
 import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
@@ -62,6 +60,7 @@ import type {
   WorkScopedContextFsScheme,
 } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import type { DraftCreatePort } from "./ports/draft-create.js";
 import type { LiveMembership } from "./ports/live-membership.js";
 import type { ScratchLineage, ScratchLineages } from "./scratch-owner.js";
 import {
@@ -133,28 +132,40 @@ interface AdapterAssembly {
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   thread?: ThreadContextView;
-  /** The drafts resolver; without one (in memory) every placement is live. */
-  drafts?: Pick<Drafts, "viewForWork">;
+  /**
+   * Where draft-mode threads' creates may land: Postgres resolves drafts and makes draft
+   * creates per source; the in-memory port is explicitly live-only.
+   */
+  placements: "live-only" | DraftPlacements;
   owner: { projectId: string; userId: string };
 }
+
+type DraftPlacements = {
+  drafts: Pick<Drafts, "viewForWork">;
+  creates(store: ContextDocumentStore): DraftCreatePort;
+};
 
 /**
  * Where an adapter's creates land (contract §2.3): a draft-mode thread's drafted source
  * is a draft placement, exactly as `sourceDestination` decides; people and auto-apply
  * Works are live (D20).
  */
-function placementFor(assembly: AdapterAssembly, scheme: ContextScheme): ContextPlacement {
-  const { thread, drafts } = assembly;
-  if (!thread || !drafts) return { kind: "live" };
+function placementFor(
+  assembly: AdapterAssembly,
+  scheme: ContextScheme,
+  store: ContextDocumentStore,
+): ContextPlacement {
+  const { thread, placements } = assembly;
+  if (!thread || placements === "live-only") return { kind: "live" };
   const destination = sourceDestination(scheme, thread.draftWork);
   if (destination.kind !== "draft") return { kind: "live" };
   return {
     kind: "draft",
-    workId: destination.workId,
-    projectId: assembly.owner.projectId,
-    threadId: thread.threadId,
-    userId: assembly.owner.userId,
-    drafts,
+    workId: destination.workId as WorkId,
+    threadId: thread.threadId as ThreadId,
+    userId: assembly.owner.userId as UserId,
+    drafts: placements.drafts,
+    creates: placements.creates(store),
   };
 }
 
@@ -164,7 +175,7 @@ function contextFsAdapter(
 ): ContextSchemeAdapter {
   return new ContextFS({
     ...deps,
-    placement: placementFor(assembly, deps.scheme),
+    placement: placementFor(assembly, deps.scheme, deps.store),
     documentSync: assembly.documentSync,
     links: assembly.links,
     documentCreation: assembly.documentCreation,
@@ -277,7 +288,7 @@ function buildUnifiedContextPort(input: {
   documentSync: ContextFSDeps["documentSync"];
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
-  drafts?: Pick<Drafts, "viewForWork">;
+  placements: AdapterAssembly["placements"];
   operationReceipts?: ContextOperationReceipts;
   moveLinks?: ConstructorParameters<
     typeof import("./context/context-tree-mover.js").ContextTreeMover
@@ -290,7 +301,7 @@ function buildUnifiedContextPort(input: {
     links: input.links,
     documentCreation: input.documentCreation,
     commandTransaction: input.commandTransaction,
-    ...(input.drafts ? { drafts: input.drafts } : {}),
+    placements: input.placements,
     owner: { projectId: scope.projectId, userId: scope.userId },
     ...(scope.kind === "work" && scope.thread ? { thread: scope.thread } : {}),
   };
@@ -528,6 +539,7 @@ export function createInMemoryUnifiedContextPortFactory(
         storeResolvers,
         documentSync,
         links: { within: (_key, operation) => operation() },
+        placements: "live-only",
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -536,6 +548,7 @@ export function createInMemoryUnifiedContextPortFactory(
         storeResolvers,
         documentSync,
         links: { within: (_key, operation) => operation() },
+        placements: "live-only",
       });
     },
   };
@@ -544,7 +557,9 @@ export function createInMemoryUnifiedContextPortFactory(
 export function createProductionUnifiedContextPortFactory(options: {
   links: ContextFSDeps["links"];
   db: Database;
-  documentSync: ContextFSDeps["documentSync"] & DocumentCreationAggregate;
+  documentSync: ContextFSDeps["documentSync"] &
+    DocumentCreationAggregate &
+    Pick<BranchPeerShadowAccess, "ensureCreatedDraftBranch" | "retractCreatedDraftBranch">;
   manifestMembership: ManifestMembershipPort;
   documentDerivations?: Pick<DocumentDerivationService, "flush">;
   catalogMutations?: ContextCatalogMutationPort;
@@ -568,6 +583,17 @@ export function createProductionUnifiedContextPortFactory(options: {
     options.eventSink,
     options.arrivals,
   );
+
+  const placements: DraftPlacements = {
+    drafts: options.drafts,
+    creates: (store) =>
+      createDrizzleDraftCreates({
+        db: options.db,
+        sourceId: () => store.contextSourceId(),
+        documents: options.documentSync,
+        branches: options.documentSync,
+      }),
+  };
 
   function moveLinks(projectId: string, userId: string) {
     return {
@@ -604,13 +630,13 @@ export function createProductionUnifiedContextPortFactory(options: {
               approveDraftWriteJoin();
               if (draftWrite.mode === "ensure") {
                 command.draft = await options.drafts.ensureActiveForWrite({
-                  workId: draftWrite.workId as WorkId,
+                  workId: draftWrite.workId,
                   projectId: projectId as ProjectId,
-                  threadId: draftWrite.threadId as ThreadId,
-                  userId: draftWrite.userId as UserId,
+                  threadId: draftWrite.threadId,
+                  userId: draftWrite.userId,
                 });
               } else {
-                const active = await options.drafts.activeForWork(draftWrite.workId as WorkId);
+                const active = await options.drafts.activeForWork(draftWrite.workId);
                 command.draft = active ? await options.drafts.lockActive(active.id) : null;
               }
             },
@@ -636,7 +662,7 @@ export function createProductionUnifiedContextPortFactory(options: {
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
         commandTransaction: commandTransaction(projectId, userId),
-        drafts: options.drafts,
+        placements,
       });
     },
     forWork(authority, projectId, userId, workAuthorities, thread) {
@@ -651,7 +677,7 @@ export function createProductionUnifiedContextPortFactory(options: {
           createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
         ),
         commandTransaction: commandTransaction(projectId, userId),
-        drafts: options.drafts,
+        placements,
       });
     },
   };

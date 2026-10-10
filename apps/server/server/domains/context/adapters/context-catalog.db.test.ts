@@ -430,6 +430,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: failingCatalog,
       });
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
@@ -475,6 +476,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         failingCatalog,
       );
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,

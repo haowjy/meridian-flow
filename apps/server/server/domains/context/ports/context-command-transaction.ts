@@ -1,4 +1,4 @@
-import type { DraftId, WorkId } from "@meridian/contracts";
+import type { DraftId, ThreadId, UserId, WorkId } from "@meridian/contracts";
 import type { ContextScheme } from "./context-port.js";
 
 export type ContextCommandScope = { scheme: ContextScheme; workId: string | null };
@@ -10,9 +10,9 @@ export type ContextCommandScope = { scheme: ContextScheme; workId: string | null
  */
 export type ContextCommandDraft = {
   mode: "ensure" | "existing";
-  workId: string;
-  threadId: string;
-  userId: string;
+  workId: WorkId;
+  threadId: ThreadId;
+  userId: UserId;
 };
 
 export type ContextCommandOptions = {
@@ -21,10 +21,16 @@ export type ContextCommandOptions = {
   sourceIds?: readonly string[];
 };
 
+/** A locked active draft as the transaction resolved it. */
+export type ContextCommandActiveDraft = { id: DraftId; originWorkId: WorkId | null };
+
 /** What the transaction resolved before the command ran. */
 export type ContextCommandContext = {
-  /** The locked active draft, when the command asked for one; null when none is active. */
-  draft: { id: DraftId; originWorkId: WorkId | null } | null;
+  /**
+   * The locked active draft, when the command asked for one; null when none is active.
+   * An `ensure` command always has one (the transaction makes it).
+   */
+  draft: ContextCommandActiveDraft | null;
 };
 
 /** Transaction boundary for one result-returning Context command. */

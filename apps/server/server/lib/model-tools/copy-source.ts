@@ -13,15 +13,10 @@ import {
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
 import type { CopiedFrom } from "../../domains/context/document-metadata.js";
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
-import {
-  type FileGrant,
-  type Principal,
-  sourceDestination,
-} from "../../domains/file-policy/index.js";
+import type { FileGrant, Principal } from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { documentGrant } from "./file-access.js";
 import { type ReadSelection, readDocument } from "./read-document.js";
@@ -191,10 +186,9 @@ export async function copyBinary(
     return writeToolError(input.command, contextErrorMessage(copied.error));
   }
   if (copied.value.documentId) recordTouchInBackground(deps, copied.value.documentId, ctx);
-  const parsed = parseUnifiedContextUri(copied.value.uri);
-  const destination = parsed.ok
-    ? sourceDestination(parsed.value.scheme, context.resolution.primaryDraftWork)
-    : ({ kind: "live" } as const);
+  // The port's placement decided where the copy landed; only the Work's slug is ours to add.
+  const destination = copied.value.placement;
+  const draftWork = context.resolution.primaryDraftWork;
   return {
     output: modelResult({
       command: "copy",
@@ -202,8 +196,8 @@ export async function copyBinary(
       phase: "committed",
       payload: {
         path: input.path,
-        destination: destination.kind,
-        ...(destination.kind === "draft" ? { draftWork: destination.workSlug ?? "/" } : {}),
+        destination,
+        ...(destination === "draft" ? { draftWork: draftWork?.slug ?? "/" } : {}),
         copied: { from: input.from.path },
       },
     }),

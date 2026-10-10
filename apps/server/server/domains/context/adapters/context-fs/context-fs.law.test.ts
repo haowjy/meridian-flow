@@ -37,6 +37,7 @@ function createUntitledFs(input: {
   const mutationStore = new InMemoryContextTreeMutationStore(backing);
   return {
     fs: new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
@@ -60,6 +61,7 @@ function createKbFs(documentSync: object = {}) {
     store,
     mutationStore,
     context: new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,
@@ -95,6 +97,7 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
   const backing = createInMemoryContextDocumentStoreBacking();
   const store = new InMemoryContextDocumentStore({ backing });
   return new ContextFS({
+    placement: { kind: "live" },
     holder: { projectId: "test-project" },
     links: { within: (_key, operation) => operation() },
     store,
@@ -178,6 +181,7 @@ describe("ContextFS rename filetype invariant", () => {
     const markdownByDocument = new Map<string, string>();
     const mutationStore = new InMemoryContextTreeMutationStore(backing);
     const context = new ContextFS({
+      placement: { kind: "live" },
       holder: { projectId: "test-project" },
       links: { within: (_key, operation) => operation() },
       store,

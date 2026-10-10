@@ -4,6 +4,7 @@
  * by path or by id, and an aborted held write leaves live state alone (C-3); and the fences
  * between a join, a reveal and a last use hold in both orders (I-1, I-2, I-3).
  */
+import { randomUUID } from "node:crypto";
 import type { DocumentId, WorkId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import {
@@ -25,7 +26,8 @@ import {
   draftTreeScenario,
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { endUse, setHiddenNodeHook } from "./hidden-nodes.js";
+import { setLiveCreateHook } from "../adapters/context-fs/live-create.js";
+import { endUse } from "./hidden-nodes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -228,7 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const warmDoc = warm.document;
       if (!warmDoc) throw new Error("the warm room has no document");
       const warmBefore = Y.encodeStateVector(warmDoc);
-      const remove = setHiddenNodeHook("createLive.afterHeldAdmission", async () => {
+      const remove = setLiveCreateHook("liveCreate.afterHeldAdmission", async () => {
         throw new Error("injected after the held admission");
       });
       try {
@@ -271,6 +273,72 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await folderNamed(scenario, "root"), "root pruned").toEqual([]);
       expect(await folderNamed(scenario, "one")).toEqual([]);
       expect(await folderNamed(scenario, "two")).toEqual([]);
+    });
+
+    // §6.4: Create by id reveals only a hidden identity of the caller's project, found by
+    // its physical row (not the draft's address), and never mints a row with the id.
+    it.each([
+      {
+        name: "another account's hidden document",
+        expected: "conflict" as const,
+        async arrange() {
+          const { scenario: victim } = await start();
+          const theirs = await victim.work("Theirs", "draft");
+          const id = await victim.model(theirs).create("secret.md", "Their secret.");
+          return {
+            id,
+            untouched: { hidden: true, contextSourceId: victim.project.sources.manuscript },
+          };
+        },
+      },
+      {
+        name: "a hidden document its draft places in another source",
+        expected: "created" as const,
+        async arrange(scenario: DraftTreeScenario) {
+          const drafting = await scenario.work("Drafting", "draft");
+          const id = await scenario.model(drafting).create("draft-place/x.md", "Placed elsewhere.");
+          // The draft has it in KB; the row stays in Manuscript.
+          await db
+            .update(draftTreeChanges)
+            .set({ contextSourceId: scenario.project.sources.kb, parentFolderId: null })
+            .where(eq(draftTreeChanges.nodeId, id));
+          return { id, untouched: null };
+        },
+      },
+      {
+        name: "an id no document has",
+        expected: "conflict" as const,
+        async arrange() {
+          return { id: randomUUID() as DocumentId, untouched: null };
+        },
+      },
+      {
+        name: "a tombstone",
+        expected: "conflict" as const,
+        async arrange(scenario: DraftTreeScenario) {
+          const drafting = await scenario.work("Drafting", "draft");
+          const id = await scenario.model(drafting).create("gone/x.md", "Discarded.");
+          await scenario.discard(drafting, [id]);
+          return { id, untouched: { hidden: true, deletedAt: expect.any(Date) } };
+        },
+      },
+    ])("Create by id with $name: $expected (C-3)", async ({ arrange, expected }) => {
+      const { scenario } = await start();
+      const { id, untouched } = await arrange(scenario);
+      const created = await scenario.writer.create("revealed.md", { documentId: id });
+      if (expected === "created") {
+        expect(created).toEqual({ status: "created", documentId: id });
+        expect(await row(id)).toMatchObject({
+          hidden: false,
+          contextSourceId: scenario.project.sources.manuscript,
+          name: "revealed",
+        });
+        return;
+      }
+      expect(created).toEqual({ status: "conflict" });
+      expect(await rowsNamed(scenario, "revealed"), "nothing minted").toEqual([]);
+      if (untouched) expect(await row(id), "the identity is untouched").toMatchObject(untouched);
+      else expect(await db.select().from(documents).where(eq(documents.id, id))).toEqual([]);
     });
 
     it("never joins a tombstone nor orphans a node when a join meets a last use (I-1)", async () => {

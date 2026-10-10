@@ -137,6 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
       }
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         scheme: "manuscript",
         links,
@@ -385,6 +386,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const markdown = await collab.readEffectiveMarkdown(view);
       const hashlines = await collab.readEffectiveHashlines(view);
       const search = await new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         scheme: "manuscript",
         links,

@@ -7,6 +7,7 @@
  * they own the DB-level context-source lifecycle, separate from adapter assembly.
  */
 
+import type { ProjectId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -30,12 +31,11 @@ import type {
   ContextDocumentStore,
   CreateBinaryDocumentInput,
   CreateDocumentInput,
-  DraftCreateInput,
-  LiveCreateExpectation,
   UpsertBinaryDocumentInput,
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
+import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";
 
 const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
@@ -302,9 +302,11 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.findDocumentById(view, documentId) ?? null;
   }
 
-  async liveIdentity(documentId: string) {
+  async findRevealIdentity(documentId: string, projectId: ProjectId) {
     return (
-      (await this.readableSourceStore())?.liveIdentity(documentId) ?? { kind: "other" as const }
+      (await this.readableSourceStore())?.findRevealIdentity(documentId, projectId) ?? {
+        kind: "absent" as const,
+      }
     );
   }
 
@@ -319,10 +321,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.ensureFolderPath(dir));
   }
 
-  async findLiveCreateCandidate(dir: readonly string[], filename: string) {
+  async findLiveCreateCandidate(dir: readonly string[], name: string, extension: string) {
     return (
-      (await this.readableSourceStore())?.findLiveCreateCandidate(dir, filename) ?? {
-        none: true as const,
+      (await this.readableSourceStore())?.findLiveCreateCandidate(dir, name, extension) ?? {
+        kind: "none" as const,
       }
     );
   }
@@ -331,8 +333,8 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return this.mutate((store) => store.createDocument(input));
   }
 
-  async createDocumentRecordIfAbsent(input: CreateDocumentInput & LiveCreateExpectation) {
-    return this.mutate((store) => store.createDocumentRecordIfAbsent(input));
+  async createDocumentRecordIfAbsent(input: CreateDocumentInput, claim?: LiveClaim) {
+    return this.mutate((store) => store.createDocumentRecordIfAbsent(input, claim));
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput) {
@@ -341,14 +343,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput) {
     return this.mutate((store) => store.upsertBinaryDocument(input));
-  }
-
-  async createInDraft(input: DraftCreateInput) {
-    return this.mutate((store) => store.createInDraft(input));
-  }
-
-  async retractDraftCreate(input: Parameters<ContextDocumentStore["retractDraftCreate"]>[0]) {
-    return this.mutate((store) => store.retractDraftCreate(input));
   }
 
   async contextSourceId() {

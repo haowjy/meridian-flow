@@ -39,6 +39,7 @@ import {
 import { createDrafts, type Drafts } from "../domains/collab/domain/drafts.js";
 import type { Draft } from "../domains/collab/domain/ports/draft-store.js";
 import { ContextFS } from "../domains/context/adapters/context-fs/context-fs.js";
+import { createDrizzleDraftCreates } from "../domains/context/adapters/context-fs/drizzle-draft-creates.js";
 import { DrizzleContextTreeMutationStore } from "../domains/context/adapters/context-fs/drizzle-tree-mutation-store.js";
 import {
   contextPortForThread,
@@ -404,25 +405,30 @@ export async function draftTreeScenario(
       search: async (query) => (await port()).search(query),
       async locate(documentId) {
         const { ports } = runtime().runtime;
+        const store = createProjectContextDocumentStore(db, projectId, "manuscript", userId);
         const fs = new ContextFS({
           links: ports.linkScopes,
-          store: createProjectContextDocumentStore(db, projectId, "manuscript", userId),
+          store,
           mutationStore: new DrizzleContextTreeMutationStore(db),
           documentSync: ports.documentSync,
           scheme: "manuscript",
           holder: { projectId },
-          ...(of === "live" || of.mode !== "draft"
-            ? {}
-            : {
-                placement: {
-                  kind: "draft" as const,
+          placement:
+            of === "live" || of.mode !== "draft"
+              ? { kind: "live" }
+              : {
+                  kind: "draft",
                   workId: of.id,
-                  projectId,
                   threadId: of.threadId,
                   userId,
                   drafts: ports.documentSync.drafts,
+                  creates: createDrizzleDraftCreates({
+                    db,
+                    sourceId: () => store.contextSourceId(),
+                    documents: ports.documentSync,
+                    branches: ports.documentSync,
+                  }),
                 },
-              }),
         });
         const located = await fs.locateDocument(documentId);
         if (!located.ok) throw new Error(JSON.stringify(located.error));

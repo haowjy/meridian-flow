@@ -9,26 +9,36 @@
  * advisory locks. Hidden nodes are tombstoned, never hard-deleted, and a draft's create
  * never seeds live Yjs (its text lives in the draft's branch).
  */
-import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type {
+  ContextSourceId,
+  DocumentId,
+  DraftId,
+  FolderId,
+  ProjectId,
+} from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import {
-  branchWriteJournal,
-  documentBranches,
-  documentMarkdownProjections,
-  documents,
-  folders,
-} from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { documentMarkdownProjections, documents, folders } from "@meridian/database/schema";
+import { eq, inArray, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { isUuid } from "../../../shared/uuid.js";
+import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { claimDocumentLocation } from "../adapters/context-fs/document-locations.js";
 import { renderFilename } from "../context/paths.js";
-import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import { dropDocumentRows, recordCreated } from "./draft-tree-store.js";
+import type {
+  BinaryNode,
+  CreateFault,
+  DraftCreateResult,
+  LiveClaim,
+  LiveCreateCandidate,
+  RevealExpectation,
+  RevealIdentity,
+  TrackedNode,
+} from "./hidden-node-types.js";
 import { loadFolderChains, spellNodeAddresses } from "./tree-addresses.js";
 import {
   createTreeReader,
@@ -45,13 +55,8 @@ import {
   loadDocumentIdentityRows,
   loadFolderIdentityRows,
   loadHiddenDocumentCandidates,
+  loadRevealIdentityRow,
 } from "./tree-view-sql.js";
-
-export type CreateFault =
-  /** Opposite kind at the path, or a binary create where a document sits. */
-  | { code: "conflict" }
-  /** The path names two or more nodes in the view. */
-  | { code: "ambiguous"; ids: readonly string[] };
 
 /**
  * Test-only injection points on this module's production code (contract §16.1), wired
@@ -60,7 +65,6 @@ export type CreateFault =
 export type HiddenNodeHookPoint =
   | "createInDraft.afterCandidateLock"
   | "createLive.afterCandidateLock"
-  | "createLive.afterHeldAdmission"
   | "endUse.afterRevalidate"
   | "place.afterRevalidate";
 const hooks = new Map<HiddenNodeHookPoint, () => Promise<void>>();
@@ -77,10 +81,9 @@ export function setHiddenNodeHook(
 }
 
 /** Runs the hook installed at `point`, if any (a no-op in production). */
-export async function hiddenNodeHook(point: HiddenNodeHookPoint): Promise<void> {
+async function hiddenNodeHook(point: HiddenNodeHookPoint): Promise<void> {
   await hooks.get(point)?.();
 }
-const hook = hiddenNodeHook;
 
 function filePath(dir: readonly string[], name: string, extension: string): string {
   return [...dir, renderFilename(name, extension)].join("/");
@@ -93,27 +96,6 @@ async function lockDocuments(db: Database, ids: readonly string[]): Promise<void
 // ---------------------------------------------------------------------------------------
 // Draft creates (§6.2)
 // ---------------------------------------------------------------------------------------
-
-export type TrackedNode = {
-  kind: "tracked";
-  filetype: Filetype;
-  metadata?: DocumentCreationMetadata;
-};
-export type BinaryNode = {
-  kind: "binary";
-  documentId?: DocumentId;
-  fileType: DocumentFileType;
-  storageUrl: string;
-  mimeType: string;
-  sizeBytes: number;
-  metadata?: JsonObject | DocumentCreationMetadata;
-};
-
-export type DraftCreateResult =
-  /** Something already sits at the path in the draft's view. */
-  | { kind: "existing"; documentId: DocumentId; binary: boolean }
-  /** The draft now uses this document: a new hidden row, or (`joined`) another draft's. */
-  | { kind: "created"; documentId: DocumentId; joined: boolean };
 
 /**
  * A draft's create at `dir/name.extension` (§6.2): hidden folders as needed, then the
@@ -147,7 +129,7 @@ export async function createInDraft(
   if (occupant.kind === "ambiguous") return Err({ code: "ambiguous", ids: occupant.ids });
   if (occupant.kind === "found") {
     if (occupant.node.kind === "folder") return Err({ code: "conflict" });
-    const binary = occupant.node.document.storageUrl !== null;
+    const binary = isStorageBackedDocument(occupant.node.document);
     if (input.node.kind === "binary") return Err({ code: "conflict" });
     return Ok({ kind: "existing", documentId: occupant.node.document.id, binary });
   }
@@ -237,7 +219,7 @@ async function joinHiddenDocument(
   const candidates = await loadHiddenDocumentCandidates(db, slot, { excludeDraftId: draftId });
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
-  await hook("createInDraft.afterCandidateLock");
+  await hiddenNodeHook("createInDraft.afterCandidateLock");
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { excludeDraftId: draftId, ids });
   await tombstoneDocuments(
@@ -312,16 +294,11 @@ async function settleAheadRefsInDraft(
 // Live creates (§6.3, §6.4)
 // ---------------------------------------------------------------------------------------
 
-export type LiveCreateCandidate =
-  | { occupant: DocumentId }
-  /** A hidden text document a live create there would reveal, and its current source. */
-  | { candidate: DocumentId; sourceId: ContextSourceId }
-  | { none: true };
-
 /**
  * What a live create at this path would find, holding nothing (§6.3 step 1): a visible
- * occupant, the hidden candidate it would reveal, or nothing. The caller takes the
- * candidate's live lease before its transaction when the create carries content.
+ * occupant (a document, a folder of that name, or two nodes), the hidden candidate it
+ * would reveal at its physical source, or nothing. The caller takes the candidate's live
+ * lease before its transaction when the create carries content.
  */
 export async function findLiveCreateCandidate(
   db: Database,
@@ -330,12 +307,9 @@ export async function findLiveCreateCandidate(
   const tree = createTreeReader(db);
   const path = filePath(at.dir, at.name, at.extension);
   const occupant = await tree.resolvePath(LIVE_TREE, { contextSourceId: at.contextSourceId, path });
-  if (occupant.kind === "found" && occupant.node.kind === "document") {
-    return { occupant: occupant.node.document.id };
-  }
-  if (occupant.kind !== "not_found") return { none: true };
+  if (occupant.kind !== "not_found") return { kind: "occupant" };
   const folderId = await liveFolderAt(db, tree, at.contextSourceId, at.dir);
-  if (folderId === undefined) return { none: true };
+  if (folderId === undefined) return { kind: "none" };
   const [candidate] = (
     await loadHiddenDocumentCandidates(db, {
       contextSourceId: at.contextSourceId,
@@ -344,9 +318,29 @@ export async function findLiveCreateCandidate(
       extension: at.extension,
     })
   ).filter((each) => each.activeUses > 0);
-  if (!candidate) return { none: true };
-  const [row] = await loadDocumentIdentityRows(currentDrizzleDb(db), [candidate.id]);
-  return row ? { candidate: candidate.id, sourceId: row.contextSourceId } : { none: true };
+  return candidate
+    ? { kind: "candidate", documentId: candidate.id, sourceId: candidate.sourceId }
+    : { kind: "none" };
+}
+
+/**
+ * A caller-named identity as a live create may use it (§6.4). A hidden document is usable
+ * only when its row is in `projectId` and an active draft of that project uses it: that
+ * draft view is the authority a project's owner reveals it under. The source is the row's
+ * physical one, never a draft's address for it. No locks.
+ */
+export async function findRevealIdentity(
+  db: Database,
+  input: { documentId: DocumentId; projectId: ProjectId },
+): Promise<RevealIdentity> {
+  if (!isUuid(input.documentId)) return { kind: "absent" };
+  const row = await loadRevealIdentityRow(currentDrizzleDb(db), input.documentId, input.projectId);
+  if (!row) return { kind: "absent" };
+  if (row.deleted || row.projectId !== input.projectId) return { kind: "unusable" };
+  if (!row.hidden) return { kind: "visible", documentId: row.id, sourceId: row.sourceId };
+  return row.projectUses > 0
+    ? { kind: "hidden", documentId: row.id, sourceId: row.sourceId }
+    : { kind: "unusable" };
 }
 
 /**
@@ -391,7 +385,7 @@ export async function ensureLiveFolderPath(
     dir: readonly string[];
     catalog?: ContextCatalogMutationPort;
   },
-): Promise<Result<{ folderId: FolderId | null; created: readonly FolderId[] }, CreateFault>> {
+): Promise<Result<FolderId | null, CreateFault>> {
   const tree = createTreeReader(db);
   const { contextSourceId } = input;
   let parentId: FolderId | null = null;
@@ -415,7 +409,7 @@ export async function ensureLiveFolderPath(
     created.push(folderId);
   }
   if (created.length > 0) await input.catalog?.refreshSources([contextSourceId], created);
-  return Ok({ folderId: parentId, created });
+  return Ok(parentId);
 }
 
 async function parentOf(db: Database, folderId: FolderId): Promise<FolderId | null> {
@@ -424,46 +418,45 @@ async function parentOf(db: Database, folderId: FolderId): Promise<FolderId | nu
 }
 
 export type LiveCreateOutcome =
-  | { kind: "revealed"; documentId: DocumentId; sourceIds: readonly ContextSourceId[] }
+  | { kind: "revealed"; documentId: DocumentId }
   | { kind: "inserted"; documentId: DocumentId };
 
 export type LiveCreateFault =
   | CreateFault
-  /** The candidate seen before the transaction isn't the one found under its lock. */
+  /** What the create was planned against isn't what its locks find. */
   | { code: "candidate_changed" };
 
 /**
- * A live create at `slot` (§6.3 step 2, §6.4): reveals the oldest valid hidden text
- * document at the path, or the named document (`revealById`), instead of inserting a
- * twin; otherwise `insert` makes the visible row. `expected` is the candidate the caller
- * discovered before its transaction (and holds the live lease of, for a create with
- * content): a different candidate, none, or a moved one is `candidate_changed`. The
- * caller holds the namespaces of the destination and of the candidate's current source,
- * and has checked that no visible node sits at the path.
+ * A live create at `slot` (§6.3 step 2, §6.4), under the claim its caller planned before
+ * the transaction: reveal the hidden document at the path or the one named by id, or
+ * insert the visible row through `insert`. A claim the locks don't confirm is
+ * `candidate_changed`. The caller holds the namespaces of the destination and of the
+ * candidate's physical source, and has checked that no visible node sits at the path.
  */
 export async function createLive(
   db: Database,
   input: {
     slot: DocumentSlot;
-    binary: boolean;
-    revealById?: DocumentId;
-    expected?: { documentId: DocumentId; sourceId: ContextSourceId } | { none: true };
+    claim: LiveClaim;
     catalog?: ContextCatalogMutationPort;
     insert(): Promise<DocumentId>;
   },
 ): Promise<Result<LiveCreateOutcome, LiveCreateFault>> {
-  const chosen = input.revealById
-    ? await revalidateRevealById(db, input.revealById, input.expected)
-    : input.binary
-      ? null
-      : await chooseLiveCandidate(db, input.slot);
-  if (chosen === "changed") return Err({ code: "candidate_changed" });
-  if (input.expected && !input.revealById) {
-    const expectedId = "documentId" in input.expected ? input.expected.documentId : null;
-    if ((chosen?.id ?? null) !== expectedId) return Err({ code: "candidate_changed" });
-    if (chosen && "sourceId" in input.expected && chosen.sourceId !== input.expected.sourceId) {
-      return Err({ code: "candidate_changed" });
-    }
+  const { claim } = input;
+  let chosen: { id: DocumentId; sourceId: ContextSourceId } | null = null;
+  if (claim.kind === "reveal" && claim.reveal.byId) {
+    const revalidated = await revalidateRevealById(db, claim.reveal, claim.reveal.projectId);
+    if (!revalidated) return Err({ code: "candidate_changed" });
+    chosen = revalidated;
+  } else if (claim.kind !== "mint") {
+    chosen = await chooseLiveCandidate(db, input.slot);
+    const expected = claim.kind === "reveal" ? claim.reveal : null;
+    const confirmed =
+      claim.kind === "any" ||
+      (expected === null
+        ? chosen === null
+        : chosen?.id === expected.documentId && chosen.sourceId === expected.sourceId);
+    if (!confirmed) return Err({ code: "candidate_changed" });
   }
   if (!chosen) return Ok({ kind: "inserted", documentId: await input.insert() });
   const placed = await place(db, {
@@ -486,7 +479,7 @@ export async function createLive(
       placed.error.code === "stale" ? { code: "candidate_changed" } : { code: "conflict" },
     );
   }
-  return Ok({ kind: "revealed", documentId: chosen.id, sourceIds: placed.value.sourceIds });
+  return Ok({ kind: "revealed", documentId: chosen.id });
 }
 
 async function chooseLiveCandidate(
@@ -496,7 +489,7 @@ async function chooseLiveCandidate(
   const candidates = await loadHiddenDocumentCandidates(db, slot);
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
-  await hook("createLive.afterCandidateLock");
+  await hiddenNodeHook("createLive.afterCandidateLock");
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ids });
   await tombstoneDocuments(
@@ -504,25 +497,27 @@ async function chooseLiveCandidate(
     valid.filter((candidate) => candidate.activeUses === 0).map((candidate) => candidate.id),
   );
   const chosen = valid.find((candidate) => candidate.activeUses > 0);
-  if (!chosen) return null;
-  const [row] = await loadDocumentIdentityRows(currentDrizzleDb(db), [chosen.id]);
-  return row ? { id: chosen.id, sourceId: row.contextSourceId } : null;
+  return chosen ? { id: chosen.id, sourceId: chosen.sourceId } : null;
 }
 
-/** §6.4: the named document, under its lock, is still hidden, live, used and in its source. */
+/**
+ * §6.4 under the document's lock: the named document is still hidden, live, in the
+ * caller's project and used by one of its drafts, at the physical source discovery saw.
+ */
 async function revalidateRevealById(
   db: Database,
-  documentId: DocumentId,
-  expected: { documentId: DocumentId; sourceId: ContextSourceId } | { none: true } | undefined,
-): Promise<{ id: DocumentId; sourceId: ContextSourceId } | "changed"> {
-  await lockDocuments(db, [documentId]);
-  const [row] = await loadDocumentIdentityRows(currentDrizzleDb(db), [documentId]);
-  const uses = await loadActiveDraftUses(currentDrizzleDb(db), [documentId]);
-  if (!row?.hidden || row.deleted || uses.length === 0) return "changed";
-  if (expected && "sourceId" in expected && expected.sourceId !== row.contextSourceId) {
-    return "changed";
-  }
-  return { id: documentId, sourceId: row.contextSourceId };
+  expected: Pick<RevealExpectation, "documentId" | "sourceId">,
+  projectId: ProjectId,
+): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
+  await lockDocuments(db, [expected.documentId]);
+  const row = await loadRevealIdentityRow(currentDrizzleDb(db), expected.documentId, projectId);
+  const usable =
+    row?.hidden &&
+    !row.deleted &&
+    row.projectId === projectId &&
+    row.projectUses > 0 &&
+    row.sourceId === expected.sourceId;
+  return usable ? { id: expected.documentId, sourceId: expected.sourceId } : null;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -544,6 +539,10 @@ export type PlaceTarget = {
   mode: "reveal" | "restore";
 };
 
+/**
+ * What a placement did. `absorbed` and `restored` are contract surface for Apply and
+ * restore (lanes E, D); nothing in this lane reads them yet.
+ */
 export type PlaceResult = {
   /** Targets plus revealed or restored ancestors. */
   placed: readonly NodeRef[];
@@ -576,7 +575,7 @@ export async function place(
   for (const target of input.targets) {
     const stale = await revalidatePlacement(db, target);
     if (stale) return Err(stale);
-    await hook("place.afterRevalidate");
+    await hiddenNodeHook("place.afterRevalidate");
     const ancestors = await placeAncestors(db, tree, target);
     if (!ancestors.ok) return ancestors;
     placed.push(...ancestors.value.placed);
@@ -794,7 +793,7 @@ export async function endUse(
   const rows = await loadDocumentIdentityRows(tx, ids);
   const used = new Set((await loadActiveDraftUses(tx, ids)).map((use) => use.documentId));
   const ending = rows.filter((row) => row.hidden && !row.deleted && !used.has(row.id));
-  await hook("endUse.afterRevalidate");
+  await hiddenNodeHook("endUse.afterRevalidate");
   const tombstoned: NodeRef[] = [];
   if (ending.length === 0) return { tombstoned, releasedObjects: [] };
   await tombstoneDocuments(
@@ -840,69 +839,26 @@ async function tombstoneDocuments(db: Database, ids: readonly DocumentId[]): Pro
 }
 
 /**
- * Reverse a draft's create for a rolled-back reply or a failed create (§12.5, O-11):
- * only while the draft's text branch on the document holds no committed rows (another
- * thread's or reply's contribution would make the create stand). Then the draft's use
- * ends and its empty branches on the document go with it. The caller holds the Work,
- * the draft, the namespace and runs in the command transaction.
+ * Reverse a draft's create for a rolled-back reply or a failed create (§12.5, O-11). The
+ * tree half only: collab's `retractBranch` decides whether the draft's text branch holds
+ * another contribution (then the create stands) and otherwise removes it; the draft's use
+ * then ends. The caller holds the Work, the draft and the namespace, in the command
+ * transaction.
  */
 export async function retractCreate(
   db: Database,
   input: {
     draftId: DraftId;
-    /** The Work whose branches carry the draft's text until branches are keyed by draft. */
-    workId: string;
     documentId: DocumentId;
+    retractBranch(): Promise<"retracted" | "stands">;
   },
 ): Promise<{ retracted: boolean; tombstoned: readonly NodeRef[] }> {
-  const tx = currentDrizzleDb(db);
   await lockDocuments(db, [input.documentId]);
-  const [created] = (await loadActiveDraftUses(tx, [input.documentId])).filter(
-    (use) => use.draftId === input.draftId,
-  );
-  if (!created) return { retracted: false, tombstoned: [] };
-  const draftBranches = await tx
-    .select({ id: documentBranches.id, generation: documentBranches.generation })
-    .from(documentBranches)
-    .where(
-      and(
-        eq(documentBranches.documentId, input.documentId),
-        eq(documentBranches.kind, "work_draft"),
-        eq(documentBranches.status, "active"),
-        eq(documentBranches.workId, input.workId as never),
-      ),
-    );
-  const draftBranchIds = draftBranches.map((branch) => branch.id);
-  const peers =
-    draftBranchIds.length === 0
-      ? []
-      : await tx
-          .select({ id: documentBranches.id, generation: documentBranches.generation })
-          .from(documentBranches)
-          .where(inArray(documentBranches.upstreamBranchId, draftBranchIds));
-  const branches = [...peers, ...draftBranches];
-  for (const branch of branches) {
-    const [committed] = await tx
-      .select({ id: branchWriteJournal.id })
-      .from(branchWriteJournal)
-      .where(
-        and(
-          eq(branchWriteJournal.branchId, branch.id),
-          eq(branchWriteJournal.generation, branch.generation),
-          inArray(branchWriteJournal.status, ["active", "pushed"]),
-        ),
-      )
-      .limit(1);
-    if (committed) return { retracted: false, tombstoned: [] };
+  const uses = await loadActiveDraftUses(currentDrizzleDb(db), [input.documentId]);
+  if (!uses.some((use) => use.draftId === input.draftId)) {
+    return { retracted: false, tombstoned: [] };
   }
-  if (branches.length > 0) {
-    await tx.delete(documentBranches).where(
-      inArray(
-        documentBranches.id,
-        branches.map((branch) => branch.id),
-      ),
-    );
-  }
+  if ((await input.retractBranch()) === "stands") return { retracted: false, tombstoned: [] };
   const ended = await endUse(db, { draftId: input.draftId, documentIds: [input.documentId] });
   return { retracted: true, tombstoned: ended.tombstoned };
 }

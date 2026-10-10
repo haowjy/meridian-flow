@@ -22,7 +22,6 @@ import {
   type ContextFolder,
   type CreateBinaryDocumentInput,
   type CreateDocumentInput,
-  type LiveCreateExpectation,
   type LiveDocumentCreation,
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
@@ -37,7 +36,7 @@ import {
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
-import type { LiveCreateCandidate } from "../../tree/hidden-nodes.js";
+import type { LiveCreateCandidate, RevealIdentity } from "../../tree/hidden-node-types.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import {
   type ContextDocumentMembershipObserver,
@@ -359,7 +358,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocumentRecordIfAbsent(
-    input: CreateDocumentInput & LiveCreateExpectation,
+    input: CreateDocumentInput,
   ): Promise<LiveDocumentCreation | null> {
     if (
       hasOppositeEntry(
@@ -412,24 +411,17 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return { document: this.publicDocument(doc), revealed: false };
   }
 
-  async liveIdentity(documentId: string) {
+  async findRevealIdentity(documentId: string): Promise<RevealIdentity> {
+    // In memory nothing is ever hidden: drafts and the tree view are Postgres's.
     const row = this.backing.documents.get(documentId);
-    return row && row.deletedAt === null && isContentDocumentKind(row.kind)
-      ? { kind: "visible" as const, contextSourceId: row.contextSourceId }
-      : { kind: "other" as const };
+    if (!row) return { kind: "absent" };
+    return row.deletedAt === null && isContentDocumentKind(row.kind)
+      ? { kind: "visible", documentId: row.id, sourceId: row.contextSourceId }
+      : { kind: "unusable" };
   }
 
   async findLiveCreateCandidate(): Promise<LiveCreateCandidate> {
-    // In memory nothing is ever hidden: drafts and the tree view are Postgres's.
-    return { none: true };
-  }
-
-  async createInDraft(): Promise<never> {
-    throw new Error("Draft creates need the Postgres tree view; the in-memory store has no drafts");
-  }
-
-  async retractDraftCreate(): Promise<never> {
-    throw new Error("Draft creates need the Postgres tree view; the in-memory store has no drafts");
+    return { kind: "none" };
   }
 
   async findDocumentById(_view: TreeView, documentId: string) {

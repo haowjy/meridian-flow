@@ -23,6 +23,7 @@ import type {
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type {
+  ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentResult,
   ContextDeleteOptions,
@@ -552,7 +553,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     async writeBinary(
       uri: string,
       options: ContextWriteBinaryOptions,
-    ): Promise<Result<ContextWriteResult, ContextError>> {
+    ): Promise<Result<ContextBinaryWriteResult, ContextError>> {
       const r = await resolveMutation(uri, options?.origin);
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
@@ -615,14 +616,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const r = await resolveMutation(uri);
       if (!r.ok) return r;
       const { adapter, canonical } = r.value;
-      const retracted = adapter.retractCreate
-        ? await callAdapter(
-            canonical,
-            () =>
-              adapter.retractCreate?.(r.value.path, options.documentId) ??
-              Promise.resolve(Ok({ placement: "live" as const })),
-          )
-        : Ok({ placement: "live" as const });
+      const retracted = await callAdapter(canonical, () =>
+        adapter.retractCreate(r.value.path, options.documentId),
+      );
       if (!retracted.ok) return retracted;
       if (retracted.value.placement === "draft") return Ok(undefined);
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });

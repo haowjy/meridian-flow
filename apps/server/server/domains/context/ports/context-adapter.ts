@@ -8,6 +8,7 @@ import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri"
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type {
+  ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentOptions,
   ContextEnsureTrackedDocumentResult,
@@ -159,14 +160,14 @@ export interface ContextSchemeAdapter {
    * Reverse this adapter's create of `documentId` (contract §12.5): a draft placement
    * retracts the draft's use itself; `live` asks the caller to delete the document.
    */
-  retractCreate?(
+  retractCreate(
     path: string,
     documentId: string,
   ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>>;
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<AdapterContextWriteResult, AdapterFault>>;
+  ): Promise<Result<Omit<ContextBinaryWriteResult, "uri">, AdapterFault>>;
   list(
     path: string,
     options?: ContextListOptions,
