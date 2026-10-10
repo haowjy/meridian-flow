@@ -255,7 +255,16 @@ export function createInMemoryCollabDomain(): CollabDomain {
       links,
     ),
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
-    draftResolver: { drafts },
+    draftResolver: {
+      drafts,
+      // No draft branches in memory: nothing to register, and no publication to prepare.
+      draftLinks: {
+        prepareDraftLinkPublication: async () => {
+          throw new Error("Draft links need Postgres; the in-memory collab domain has no drafts");
+        },
+        flush: async () => {},
+      },
+    },
     documentCreation,
   });
 }

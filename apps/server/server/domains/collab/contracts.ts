@@ -41,6 +41,7 @@ import type {
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
@@ -361,7 +362,14 @@ export type CollabDrafts = {
 };
 
 /** The one drafts resolver (Work → active draft, made only at the write boundary). */
-export type CollabDraftResolver = { drafts: Drafts };
+export type CollabDraftResolver = {
+  drafts: Drafts;
+  /**
+   * A draft's links, registered in the draft: Apply's prerequisite (§10.8), and a drain
+   * for the debounced registration of writers' review-room edits (§10.7).
+   */
+  draftLinks: Pick<DraftBranchAheadRegistration, "prepareDraftLinkPublication" | "flush">;
+};
 
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;

@@ -67,6 +67,8 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
+  /** A writer's update to a draft branch is durable (the draft's own links register, §10.7). */
+  onBranchWriterUpdateAdmitted?(branchId: string): void;
   offlineReconciliation?: OfflineReconciliation;
 };
 
@@ -493,13 +495,14 @@ export function createHocuspocusPersistenceService(
       const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
       const admission = (async () => {
         try {
-          await requireBranchCoordinator().commitWriterUpdate({
+          const { admitted } = await requireBranchCoordinator().commitWriterUpdate({
             branchId: input.branchId,
             expectedGeneration: input.expectedGeneration,
             updateData: input.update,
             actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
             roomDocument: input.document,
           });
+          if (admitted) deps.onBranchWriterUpdateAdmitted?.(input.branchId);
         } catch (cause) {
           if (
             cause instanceof ReservedNamespaceAdmissionError ||
