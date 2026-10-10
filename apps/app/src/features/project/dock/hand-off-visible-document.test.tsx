@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-/** Real review and address owners witness both accepted hand-off directions. */
-import { beforeEach, expect, it, vi } from "vitest";
+/** Real review/address owners witness hand-offs and container-local document/review Close. */
+
+import type { ParsedRequestId } from "@meridian/contracts/request-id";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import { handOffVisibleDocument } from "./hand-off-visible-document";
@@ -15,24 +17,29 @@ const panelTab = {
   filetype: "markdown",
   schemaType: "document",
 } satisfies ContextTab;
-beforeEach(() => useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true));
+beforeEach(() => {
+  vi.useFakeTimers();
+  useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
+});
+afterEach(() => vi.useRealTimers());
 
 // Real review/address owners compose with both document hosts; only session,
 // TipTap construction and paint are substituted, never the controller.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import { act, type ReactNode, useCallback, useEffect, useState } from "react";
+import { act, type ReactNode, useEffect, useState } from "react";
 import {
   DraftReviewBoundary,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import { createReviewScopeFixture, listed, preview, work } from "@/test-support/draft-review-scope";
-import { withReactRoot } from "@/test-support/react-dom-harness";
+import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import * as account from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
 import { PresentedDocumentContext, resolvePresentedDocument } from "../presented-document";
 import { ReviewAddressOwner } from "../ReviewAddressOwner";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
+import { useEditorContainerAddress } from "../routing/project-local-selection";
 import { openDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { EditorReviewHandoffProvider } from "./editor-review-handoff";
 
@@ -108,11 +115,34 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
     drafts: [{ ...listed, contextPath: tab.path, isNewDocument: draftOnly }],
   });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
-  const route = vi.fn(async () => ({ kind: "applied" as const }));
+  let setEditorDraftId!: (draftId: string | undefined) => void;
+  const route = vi.fn(async (_target: unknown, options?: { draftId?: string }) => {
+    setEditorDraftId(options?.draftId);
+    return { kind: "applied" as const };
+  });
+  let editorDraftId: string | undefined;
   let changeScreen!: (next: "chat" | "context") => void;
   let value!: ReturnType<typeof useDraftReviewScopeValue>;
   function Harness() {
     const [screen, setScreen] = useState<"chat" | "context">("context");
+    const [draftId, setDraftId] = useState<string | undefined>("draft-a");
+    editorDraftId = draftId;
+    setEditorDraftId = setDraftId;
+    const editorAddress = useEditorContainerAddress({
+      active: screen === "context",
+      accountId: "account-a",
+      address: {
+        projectId: "project-a",
+        destination:
+          screen === "context"
+            ? { kind: "document", scheme: "manuscript", path: "panel.md" }
+            : { kind: "chat-index" },
+        work: { kind: "id", id: work.id as ParsedRequestId },
+        ...(screen === "context" ? { draftId } : {}),
+      },
+      documentId: screen === "context" ? tab.documentId : null,
+      workId: "work-a",
+    });
     const occupant = useDockDocumentStore((state) => state.occupant);
     const presented = resolvePresentedDocument({
       phone: false,
@@ -123,7 +153,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         scheme: "manuscript",
         path: tab.path,
         documentId: tab.documentId,
-        draftId: "draft-a",
+        draftId: screen === "context" ? draftId : undefined,
         draftOnly,
       },
     });
@@ -132,7 +162,6 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
       work,
       presented,
     });
-    const write = useCallback(() => {}, []);
     changeScreen = (next) => {
       const store = useDockDocumentStore.getState();
       const plan = handOffVisibleDocument({
@@ -153,11 +182,13 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
           else store.closeDocument();
         },
       });
-      if (next === "context" && plan)
+      if (next === "context" && plan?.review)
         void openDocumentInEditor(route as unknown as OpenContextRoute, plan.tab, {
           afterCommit: plan.afterCommit,
           review: plan.review,
         });
+      if (next === "context" && !plan?.review)
+        void route({}, { draftId: editorAddress?.address.draftId });
       setScreen(next);
       plan?.afterCommit();
     };
@@ -173,9 +204,9 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
               presented={presented}
               port={{
                 write: (address) =>
-                  screen === "chat"
+                  screen !== "context"
                     ? useDockDocumentStore.getState().setDocumentReview(address)
-                    : write(),
+                    : setDraftId(address?.draftId),
                 admit: (target) =>
                   value.controller.enterInlineReview(target.documentId, target.draftId),
               }}
@@ -208,7 +239,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         const container = document.getElementById("root");
         if (!container) throw new Error("Missing harness root");
         await act(async () => value.controller.enterInlineReview(tab.documentId, "draft-a"));
-        await vi.waitFor(() => expect(container.textContent).toContain("Valid draft prose"));
+        await settleReact(() => expect(container.textContent).toContain("Valid draft prose"));
         const selected = value.controller.inlineReview;
         await act(async () => changeScreen("chat"));
         expect(container.querySelector('[data-container="dock"]')?.textContent).toContain(
@@ -228,6 +259,24 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         expect(container.querySelector('[data-container="editor"]')?.textContent).toContain(
           "Valid draft prose",
         );
+        await act(async () => changeScreen("chat"));
+        await act(async () => useDockDocumentStore.getState().closeDocument());
+        expect(useDockDocumentStore.getState().occupant).toBeNull();
+        await act(async () => changeScreen("context"));
+        expect(editorDraftId).toBe("draft-a");
+        await settleReact(() => expect(value.controller.inlineReview?.draftId).toBe("draft-a"));
+        expect(container.querySelector('[data-container="editor"]')?.textContent).toContain(
+          "Valid draft prose",
+        );
+        if (!draftOnly) {
+          await act(async () => changeScreen("chat"));
+          await act(async () => value.controller.exitInlineReview());
+          expect(useDockDocumentStore.getState().occupant?.review).toBeNull();
+          expect(editorDraftId).toBe("draft-a");
+          await act(async () => changeScreen("context"));
+          expect(editorDraftId).toBe("draft-a");
+          await settleReact(() => expect(value.controller.inlineReview?.draftId).toBe("draft-a"));
+        }
       },
     );
   } finally {

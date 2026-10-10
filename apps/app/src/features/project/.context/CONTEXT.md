@@ -290,7 +290,14 @@ presented review's Work, falling back to the Editor route Work.
 `PresentedReviewScope` provides it to Editor and dock hosts and offers its
 presentation to outside lists. `ReviewAddressOwner` writes and restores the
 address through the presenting container's port: the Editor route, or dock
-admission without navigation. Chat and Work lists compose the existing Work
+admission without navigation. The port belongs to the screen's container even
+when its document slot is empty; an empty dock never selects the Editor port.
+The route boundary retains the Editor's own URL address while Chat/Work presents.
+Returning to an existing tab reuses its addressed draft only in the same Work
+and document. A rail return from that document's live dock copy resumes the
+Editor address; an explicit dock jump or another reviewed document still hands
+over its own address. Local Close and Back to live cannot erase the warm
+Editor's review. Chat and Work lists compose the existing Work
 drafts query with creation-bound `useWorkDraftCommands`, without review state
 or executor arbitration. Commands publish addressed records for the open
 review to observe. `DraftOnlySettlement` is the project lifecycle owner
