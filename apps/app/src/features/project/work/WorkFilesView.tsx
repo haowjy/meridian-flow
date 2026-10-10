@@ -102,13 +102,13 @@ export function WorkFilesView({
         : null,
     [scratch.catalog, scratch.isComplete],
   );
-  const { expandedEntryIds: expanded, setExpandedEntryIds: setExpanded } = useTreeExpansion(
+  const { isExpanded, toggleEntry } = useTreeExpansion(
     projectId,
     `work-files:scratch:${work.id}`,
     folderIds,
   );
   const expandedPaths = scratchFolders
-    .filter((folder) => expanded[folder.entryId])
+    .filter((folder) => isExpanded(folder.entryId))
     .map((folder) => folder.path);
   const scratchFiles =
     scratch.catalog
@@ -120,8 +120,6 @@ export function WorkFilesView({
       ) ?? [];
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
-  const toggleFolder = (id: string) =>
-    setExpanded((current) => ({ ...current, [id]: !current[id] }));
 
   const scratchRows = inTreeOrder([
     ...visible.map((node) => ({
@@ -131,8 +129,8 @@ export function WorkFilesView({
         node.kind === "dir" ? (
           <FolderRow
             folder={node}
-            open={expanded[node.entryId] ?? false}
-            onToggle={() => toggleFolder(node.entryId)}
+            open={isExpanded(node.entryId)}
+            onToggle={() => toggleEntry(node.entryId)}
           />
         ) : (
           <ScratchFileRow

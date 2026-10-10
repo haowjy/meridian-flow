@@ -45,7 +45,9 @@ Shared across both shells:
   buttons. Never a `drillsIn` boolean.
 - Tree disclosure is tab-local sessionStorage, account/project/tree scoped.
   `use-tree-expansion.ts` owns it for the project tree, chat Scratch, and Work
-  Files. Only resolved catalogs prune missing folders; new tabs start collapsed.
+  Files. It owns the closed-by-default rule for folders at every depth; rows
+  request `toggleEntry(id)` without supplying defaults. Only resolved catalogs
+  prune missing folders; new tabs start collapsed.
   Active document reveal expands once, not on every catalog refresh.
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only
   the tree root scrolls.

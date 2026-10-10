@@ -101,7 +101,7 @@ export function RailScratchSection({
         : null,
     [scratch?.source.ready, scratch?.source.tree],
   );
-  const { expandedEntryIds: toggled, setExpandedEntryIds: setToggled } = useTreeExpansion(
+  const { isExpanded, toggleEntry } = useTreeExpansion(
     projectId,
     `chat-scratch:${scratch?.scope ?? "none"}`,
     folderIds,
@@ -168,8 +168,8 @@ export function RailScratchSection({
             folderId={null}
             depth={1}
             openId={openId}
-            toggled={toggled}
-            onToggle={(id, open) => setToggled((current) => ({ ...current, [id]: !open }))}
+            isExpanded={isExpanded}
+            onToggle={toggleEntry}
             onPick={(node) => {
               if (scratch.pick(node)) onPicked?.();
             }}
@@ -185,7 +185,7 @@ function ScratchRows({
   folderId,
   depth,
   openId,
-  toggled,
+  isExpanded,
   onToggle,
   onPick,
 }: {
@@ -193,8 +193,8 @@ function ScratchRows({
   folderId: string | null;
   depth: number;
   openId: string | undefined;
-  toggled: Record<string, boolean>;
-  onToggle: (id: string, open: boolean) => void;
+  isExpanded: (id: string) => boolean;
+  onToggle: (id: string) => void;
   onPick: (node: DrillNode) => void;
 }) {
   const entries = tree.children(folderId);
@@ -212,7 +212,7 @@ function ScratchRows({
           onOpen={() => onPick(node)}
         />
       );
-    const open = toggled[node.id] ?? false;
+    const open = isExpanded(node.id);
     return (
       <div key={node.id}>
         <RailFolderRow
@@ -220,7 +220,7 @@ function ScratchRows({
           name={node.name}
           depth={depth}
           expanded={open}
-          onToggle={() => onToggle(node.id, open)}
+          onToggle={() => onToggle(node.id)}
         />
         {open ? (
           <ScratchRows
@@ -228,7 +228,7 @@ function ScratchRows({
             folderId={node.id}
             depth={depth + 1}
             openId={openId}
-            toggled={toggled}
+            isExpanded={isExpanded}
             onToggle={onToggle}
             onPick={onPick}
           />
