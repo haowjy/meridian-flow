@@ -23,7 +23,6 @@ import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import type { WikilinkPasteCatalog } from "./links";
 import { gateCaretPresence } from "./local-presence";
-import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
   documentId: string;
@@ -166,11 +165,8 @@ export function useMountedEditor({
         editable: surface.editable,
         editorProps: { ...editorConfig.editorProps, ...surface.editorProps },
       },
-      witness: {
-        document: session.document,
-        evidenceDegraded,
-        onRepair: (event: SchemaRepairEvent) => session.reportSchemaRepair(event),
-      },
+      session,
+      evidenceDegraded,
     };
   });
 
@@ -194,20 +190,13 @@ export function useMountedEditor({
     // TipTap's useEditor defers construction into its own passive effect when
     // immediatelyRender is false. Owning construction here is what creates one
     // gap-free synchronous bracket around every extension lifecycle mutation.
-    const witness = createSchemaRepairWitness(construction.witness);
-    let mounted: Editor;
-    try {
-      mounted = new Editor(construction.initialOptions);
-      // Atomic with construction: live observation starts before this effect
-      // yields, rather than in a later effect or TipTap's deferred onCreate.
-      witness.enterLive(mounted);
-    } catch (error) {
-      witness.destroy();
-      throw error;
-    }
+    const { editor: mounted, release } = construction.session.bindEditor(
+      () => new Editor(construction.initialOptions),
+      construction.evidenceDegraded,
+    );
     setEditor(mounted);
     return () => {
-      witness.destroy();
+      release();
       if (!mounted.isDestroyed) mounted.destroy();
     };
   }, [construction]);
