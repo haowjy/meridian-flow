@@ -28,5 +28,7 @@ to create a chat. No model send is needed.
 
 The helper and selection tests exercise the transplant and unavailable-storage
 boundaries hermetically. Composer hand-off still deletes the record and retains
-its dirty draft if deletion fails. The settings cache and pre-paint boot scripts
-are outside this codec migration. Stop this stack with `pnpm dev:stop`.
+its dirty draft if deletion fails. The account settings cache uses the same
+envelope; the pre-paint theme script reads it with the runtime validator, and
+`account-settings-cache.test.ts` checks both readers accept the same records.
+Stop this stack with `pnpm dev:stop`.
