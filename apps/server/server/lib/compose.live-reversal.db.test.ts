@@ -107,9 +107,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID },
         threadId: LIVE.threadId,
       });
-      await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
-        projectId: PROJECT_ID,
-      });
       const script = runtimes.script(runtime, LIVE);
       try {
         // Separate replies: one reply's edits to one block share a write handle.

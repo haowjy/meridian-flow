@@ -21,7 +21,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createCollabDomain } = await import("../collab/composition.js");
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
-    const { eq } = await import("drizzle-orm");
     const { default: postgres } = await import("postgres");
 
     const USER_ID = "00000000-0000-4000-8000-000000000358";
@@ -82,7 +81,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.select({ id: schema.documents.id }).from(schema.documents),
           db.select({ id: schema.threads.id }).from(schema.threads),
         ]).then((rows) => rows.map((row) => row.length)),
-      ).resolves.toEqual([1, 1, 2, 2, 0]);
+      ).resolves.toEqual([1, 1, 2, 1, 0]);
 
       const [project] = await db
         .select({ ready: schema.projects.defaultBootstrapReady })
@@ -174,10 +173,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select({ ready: schema.projects.defaultBootstrapReady })
         .from(schema.projects);
       expect(ready?.ready).toBe(true);
-      const [document] = await db
-        .select({ id: schema.documents.id })
-        .from(schema.documents)
-        .where(eq(schema.documents.kind, "content"));
+      const [document] = await db.select({ id: schema.documents.id }).from(schema.documents);
       expect(await collab.readAsMarkdown(document?.id as never)).toEqual({
         ok: true,
         value: "# Chapter 1\n",

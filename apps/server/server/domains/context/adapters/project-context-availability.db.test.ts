@@ -160,7 +160,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const evidence = createInMemoryEventSink();
       const foreignInvalidSource = "00000000-0000-4000-8000-000000000935";
       const foreignInvalidDocument = "00000000-0000-4000-8000-000000000936";
-      const foreignManifest = "00000000-0000-4000-8000-000000000937";
+      const foreignHidden = "00000000-0000-4000-8000-000000000937";
       const missingDocument = "00000000-0000-4000-8000-999999999999";
       await db.insert(contextSources).values({
         id: foreignInvalidSource,
@@ -176,10 +176,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           extension: "md",
         },
         {
-          id: foreignManifest,
+          id: foreignHidden,
           contextSourceId: FOREIGN_SOURCE,
-          kind: "manifest",
-          name: ".manifest",
+          hidden: true,
+          name: "draft-only",
           extension: "json",
         },
       ]);
@@ -187,7 +187,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const result = await createDrizzleProjectContextAvailability(db, evidence).lookup(
         {
           projectId: PROJECT as never,
-          documentIds: [missingDocument, DOCS[4], foreignManifest, foreignInvalidDocument] as never,
+          documentIds: [missingDocument, DOCS[4], foreignHidden, foreignInvalidDocument] as never,
         },
         { userId: USER },
       );
@@ -554,35 +554,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("classifies internal and inconsistent identities before any destructive outcome", async () => {
+    it("hides draft-only identities from live availability", async () => {
       const db = await seed();
       const evidence = createInMemoryEventSink();
-      const manifestId = "00000000-0000-4000-8000-000000000927";
+      const hiddenId = "00000000-0000-4000-8000-000000000927";
       await db.insert(documents).values({
-        id: manifestId,
+        id: hiddenId,
         contextSourceId: PROJECT_SOURCE,
-        kind: "manifest",
-        name: ".manifest",
+        hidden: true,
+        name: "draft-only",
         extension: "json",
       });
       const availability = createDrizzleProjectContextAvailability(db, evidence);
       const result = await availability.lookup(
-        { projectId: PROJECT as never, documentIds: [manifestId] as never },
+        { projectId: PROJECT as never, documentIds: [hiddenId] as never },
         { userId: USER },
       );
       expect(result.resolutions).toEqual([
-        expect.objectContaining({
-          kind: "indeterminate",
-          documentId: manifestId,
-          reason: "identity_inconsistent",
-        }),
+        expect.objectContaining({ kind: "not-visible", documentId: hiddenId }),
       ]);
-      expect(evidence.events).toEqual([
-        expect.objectContaining({
-          name: "ProjectContextIdentityInconsistent",
-          payload: { documentId: manifestId, projectId: PROJECT },
-        }),
-      ]);
+      expect(evidence.events).toEqual([]);
     });
 
     it("reports conflicting requested-project owners for live and tombstoned rows", async () => {

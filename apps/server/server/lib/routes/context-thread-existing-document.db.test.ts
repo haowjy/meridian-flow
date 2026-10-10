@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -89,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     type Fixture = Awaited<ReturnType<typeof createFixture>>;
     const succeeded = { result: { status: "success" } };
 
-    async function threadPort(fixture: Fixture) {
+    async function _threadPort(fixture: Fixture) {
       const resolution = await resolveThreadContext(fixture.routeDeps, THREAD_ID);
       if (!resolution) throw new Error("thread did not resolve");
       return contextPortForThread(fixture.contextPorts, resolution, { responseId: null });
@@ -222,44 +222,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ),
       ).resolves.toMatchObject({ documentId: existingId });
-    });
-
-    // No Work and a direct-mode Work share the live path; one row covers both.
-    it("keeps no .manifest thread branch for a direct-mode Work thread", async () => {
-      await bindThread(DIRECT_WORK_ID);
-      const fixture = await createFixture();
-      await seedExisting(fixture, "kept.md");
-
-      const port = await threadPort(fixture);
-      await expect(port.read("manuscript://kept.md")).resolves.toMatchObject({ ok: true });
-      expect(
-        await settlesWithin(
-          "create",
-          fixture.callWrite({
-            command: "create",
-            path: "manuscript://fresh.md",
-            content: "Fresh.",
-          }),
-        ),
-      ).toMatchObject(succeeded);
-
-      const branches = await db
-        .select({ id: schema.documentBranches.id })
-        .from(schema.documentBranches)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.documentBranches.documentId))
-        .where(
-          and(
-            eq(schema.documents.kind, "manifest"),
-            eq(schema.documentBranches.threadId, THREAD_ID),
-          ),
-        );
-      expect(branches).toEqual([]);
-      const live = await fixture.collab.resolveManifestMembership({
-        projectId: PROJECT_ID as never,
-      });
-      const fresh = await port.stat("manuscript://fresh.md");
-      if (!fresh.ok || !fresh.value.documentId) throw new Error("fresh.md missing");
-      expect(live.members).toContain(fresh.value.documentId);
     });
 
     it("refuses an unknown Work or scheme in a read as not found", async () => {

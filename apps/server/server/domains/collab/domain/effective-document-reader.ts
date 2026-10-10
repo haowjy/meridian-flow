@@ -9,7 +9,7 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -240,21 +240,6 @@ export function createEffectiveDocumentReader(input: {
           .map((block) => spelledLinks([block], scope));
         return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
       });
-    },
-    resolveManifestMembership(command) {
-      return input.branches.resolveManifestMembership({ projectId: command.projectId });
-    },
-    reconcileProjectManifest(projectId: ProjectId) {
-      return input.branches.reconcileProjectManifest(projectId);
-    },
-    transferLiveManifestMembership(documentIds, projects) {
-      return input.branches.transferLiveManifestMembership(documentIds, projects);
-    },
-    async recordManifestDocumentCreated(documentId: DocumentId, view?: { projectId: ProjectId }) {
-      await input.branches.recordManifestDocumentCreated(documentId, view);
-    },
-    async recordManifestDocumentDeleted(documentId: DocumentId, view?: { projectId: ProjectId }) {
-      await input.branches.recordManifestDocumentDeleted(documentId, view);
     },
     ensureCreatedDraftBranch(command) {
       return input.branches.ensureCreatedDraftBranch(command);

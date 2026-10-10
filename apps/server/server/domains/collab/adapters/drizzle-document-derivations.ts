@@ -41,7 +41,6 @@ export async function captureDocumentDerivation(
       generation: documentYjsHeads.authorityGeneration,
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
       locationVersion: documents.locationVersion,
-      kind: documents.kind,
       deletedAt: documents.deletedAt,
     })
     .from(documents)
@@ -53,15 +52,14 @@ export async function captureDocumentDerivation(
   // Never certify a warm room: writer admission precedes its in-memory apply.
   const state = await loadDocumentState(createDrizzleJournal(tx as Database), documentId);
   if (!state) return null;
-  const address = row.kind === "manifest" ? null : await lastAddress(documentId);
-  if (row.kind === "content" && !row.deletedAt && !address)
+  const address = await lastAddress(documentId);
+  if (!row.deletedAt && !address)
     throw new Error(`Missing canonical URI for live document ${documentId}`);
   // Under the deleted-ancestor rule a document in a deleted folder or Work holds no address.
   const holderUri = address && !address.deleted ? address.uri : null;
   return {
     documentId,
     holderUri,
-    kind: row.kind,
     state,
     watermark: {
       generation: row.generation,

@@ -470,7 +470,7 @@ export async function createProductionAppPorts(input: {
   const backgroundTasks = createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  let boundManifestMembership: CollabDomain | null = null;
+  let boundCollab: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
     eventSink,
@@ -529,8 +529,8 @@ export async function createProductionAppPorts(input: {
     fileAccess,
     drafts: {
       viewForWork: (workId) => {
-        if (!boundManifestMembership) throw new Error("Drafts used before composition finished");
-        return boundManifestMembership.drafts.viewForWork(workId);
+        if (!boundCollab) throw new Error("Drafts used before composition finished");
+        return boundCollab.drafts.viewForWork(workId);
       },
     },
     observer: createLinkScopeObserver(eventSink),
@@ -568,7 +568,7 @@ export async function createProductionAppPorts(input: {
         ),
     },
   });
-  boundManifestMembership = documentSync;
+  boundCollab = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     lineages: createDrizzleScratchLineages(db),
@@ -581,7 +581,6 @@ export async function createProductionAppPorts(input: {
     links: documentLinks,
     db,
     documentSync,
-    manifestMembership: documentSync,
     documentDerivations: documentSync.documentDerivations,
     catalogMutations: contextCatalog,
     eventSink,

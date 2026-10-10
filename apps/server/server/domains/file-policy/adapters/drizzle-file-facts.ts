@@ -88,9 +88,7 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
       const tree = createTreeReader(db);
       for (const { view, ids } of groups.values()) {
         const documents = identityDocuments(view);
-        const rows = await documentRows(db, view).where(
-          and(inArray(documents.id, ids), eq(documents.kind, "content")),
-        );
+        const rows = await documentRows(db, view).where(inArray(documents.id, ids));
         for (const row of rows) {
           if (!isContextUriScheme(row.scheme)) continue;
           const documentId = row.documentId as DocumentId;
@@ -181,9 +179,7 @@ async function loadDocument(
 ): Promise<BaseFacts | null> {
   const documents = identityDocuments(view);
   if (!isUuid(documentId)) return null;
-  const [row] = await documentRows(db, view)
-    .where(and(eq(documents.id, documentId), eq(documents.kind, "content")))
-    .limit(1);
+  const [row] = await documentRows(db, view).where(eq(documents.id, documentId)).limit(1);
   if (!row || !isContextUriScheme(row.scheme)) return null;
   const lineage = await createTreeReader(db).lineage(view, documentId);
   if (!lineage) return null;

@@ -3,23 +3,11 @@
 import type { ContextSourceId } from "@meridian/contracts";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contentDocumentKindSql,
-  contentDocumentPredicate,
-  contextSources,
-  documents,
-  folders,
-  works,
-} from "@meridian/database/schema";
+import { documents, folders } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../../shared/document-mutation-lock.js";
-import {
-  currentDrizzleDb,
-  runAfterDrizzleCommit,
-  runInDrizzleSavepoint,
-} from "../../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { EventSink } from "../../../observability/index.js";
 import { parseFilename } from "../../context/paths.js";
 import { countIncomingLinks } from "../../links/move-link-count.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
@@ -35,7 +23,6 @@ import {
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
-import type { LiveMembership } from "../../ports/live-membership.js";
 import { ensureLiveFolderPath } from "../../tree/hidden-nodes.js";
 import { createTreeReader, LIVE_TREE } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
@@ -46,12 +33,6 @@ import {
   readTreeLocations,
   recordDocumentMove,
 } from "./document-locations.js";
-import {
-  type ContextDocumentMembershipEvent,
-  type ContextDocumentMembershipObserver,
-  createMembershipCommandId,
-  dispatchMembershipEvents,
-} from "./membership-event-dispatcher.js";
 
 function normalizeTreePath(path: string): string {
   return path.split("/").filter(Boolean).join("/");
@@ -105,11 +86,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
   constructor(
     private readonly db: Database,
-    private readonly membershipObserver?: ContextDocumentMembershipObserver,
     private readonly catalogMutations?: ContextCatalogMutationPort,
-    private readonly eventSink?: EventSink,
     private readonly arrivals?: Pick<DocumentArrivals, "settle">,
-    private readonly liveMembership?: LiveMembership,
   ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
@@ -123,9 +101,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
 
   /**
    * Move-in arrival (contract §9.3): once per move, after all DML and history, so a folder
-   * move settles against its final tree. Every participating namespace is already locked. A
-   * cross-project move (personal ↔ project) first carries live membership to the destination
-   * project, so the arrival is live there. Then the note's count, which includes refs this
+   * move settles against its final tree. Every participating namespace is already locked.
+   * The destination source determines project visibility. The note's count includes refs this
    * settlement just bound (contract §10).
    */
   private async settleMovedIn(
@@ -136,11 +113,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       entry.kind === "file" ? [entry.id as DocumentId] : [],
     );
     if (moved.length > 0) {
-      if (input.source.sourceId !== input.destinationSourceId && this.liveMembership) {
-        const from = await this.sourceProjectId(input.source.sourceId);
-        const to = await this.sourceProjectId(input.destinationSourceId);
-        if (from !== to) await this.liveMembership.transfer(moved, { from, to });
-      }
       await this.arrivals?.settle(moved);
     }
     return input.linkNoteProjectId
@@ -151,41 +123,12 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       : { links: 0, documents: 0 };
   }
 
-  private async sourceProjectId(sourceId: string): Promise<ProjectId> {
-    const [row] = await currentDrizzleDb(this.db)
-      .select({
-        projectId: sql<ProjectId>`coalesce(${contextSources.projectId}, ${works.projectId})`,
-      })
-      .from(contextSources)
-      .leftJoin(works, eq(works.id, contextSources.workId))
-      .where(eq(contextSources.id, sourceId));
-    if (!row?.projectId) throw new Error(`Context source ${sourceId} has no project`);
-    return row.projectId;
-  }
-
   private async withMutationTransaction<T>(
-    operation: (
-      events: ContextDocumentMembershipEvent[],
-    ) => Promise<Result<T, ContextTreeMutationError>>,
+    operation: () => Promise<Result<T, ContextTreeMutationError>>,
   ): Promise<Result<T, ContextTreeMutationError>> {
-    const events: ContextDocumentMembershipEvent[] = [];
-    const commandId = createMembershipCommandId();
     let result: Result<T, ContextTreeMutationError>;
     try {
-      result = await runInDrizzleSavepoint(this.db, async () => {
-        const mutationResult = await operation(events);
-        if (mutationResult.ok && events.length > 0) {
-          runAfterDrizzleCommit(() =>
-            dispatchMembershipEvents({
-              observer: this.membershipObserver,
-              events,
-              commandId,
-              eventSink: this.eventSink,
-            }),
-          );
-        }
-        return mutationResult;
-      });
+      result = await runInDrizzleSavepoint(this.db, operation);
     } catch (error) {
       if (error instanceof ContextTreeMutationRollback) return Err({ code: error.code });
       if (isPgConstraintError(error)) return Err({ code: "conflict" });
@@ -247,7 +190,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   async commitMove(
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
-    return this.withMutationTransaction(async (events) => {
+    return this.withMutationTransaction(async () => {
       await lockContextSources(this.db, [input.source.sourceId, input.destinationSourceId]);
       const destinationPath = normalizeTreePath(input.destinationPath);
       const targetBasename = treeBasename(destinationPath);
@@ -325,7 +268,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             )
             .returning({ id: documents.id });
           if (deletedTarget.length !== 1) rollback("stale_target");
-          events.push({ method: "documentDeleted", documentId: targetToken.nodeId });
         }
 
         const { name, extension } = parseFilename(targetBasename);
@@ -452,7 +394,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         SET context_source_id = ${input.destinationSourceId},
             updated_at = NOW()
         WHERE deleted_at IS NULL
-          AND ${contentDocumentKindSql()}
           AND folder_id IN (SELECT id FROM subtree)
       `);
 
@@ -505,7 +446,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       throw new Error("Recursive deletion requires catalog generation authority");
     }
     const catalogMutations = this.catalogMutations;
-    return this.withMutationTransaction(async (events) => {
+    return this.withMutationTransaction(async () => {
       const token = command.root;
       await lockContextSources(this.db, [token.sourceId]);
       if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
@@ -522,14 +463,12 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             and(
               eq(documents.id, token.nodeId),
               eq(documents.contextSourceId, token.sourceId),
-              contentDocumentPredicate(),
               isNull(documents.deletedAt),
             ),
           )
           .returning({ id: documents.id });
         const [deletedDocument] = deleted;
         if (!deletedDocument || deleted.length !== 1) rollback("stale_source");
-        events.push({ method: "documentDeleted", documentId: deletedDocument.id });
         const availabilityGeneration = await catalogMutations.refreshSources(
           [token.sourceId],
           [token.nodeId],
@@ -554,7 +493,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const folderIds = folderClosure.map((row) => row.id);
       if (!folderIds.includes(token.nodeId)) rollback("stale_source");
       const documentClosure = await currentDrizzleDb(this.db)
-        .select({ id: documents.id, kind: documents.kind })
+        .select({ id: documents.id })
         .from(documents)
         .where(
           and(
@@ -563,10 +502,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             isNull(documents.deletedAt),
           ),
         );
-      const deletedDocumentIds = documentClosure
-        .filter((row) => row.kind === "content")
-        .map((row) => row.id)
-        .sort();
+      const deletedDocumentIds = documentClosure.map((row) => row.id).sort();
 
       await this.runBeforeDestructiveWrite();
       if (documentClosure.length > 0) {
@@ -592,9 +528,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         )
         .returning({ id: folders.id });
       if (deletedFolders.length !== folderIds.length) rollback("stale_source");
-      for (const documentId of deletedDocumentIds) {
-        events.push({ method: "documentDeleted", documentId });
-      }
       const availabilityGeneration = await catalogMutations.refreshSources(
         [token.sourceId],
         [token.nodeId],

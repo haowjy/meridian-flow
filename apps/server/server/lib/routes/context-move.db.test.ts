@@ -180,7 +180,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         documentSync: collab,
         drafts: collab.drafts,
-        manifestMembership: collab,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
       if (!authority) throw new Error("missing Work authority");
@@ -468,9 +467,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("promotes scratch into manuscript, graduating provisional naming without touching Yjs authority", async () => {
-      const { projectId, workId, collab, port } = await arrangeUntitled();
-      const manifestBefore = await collab.resolveManifestMembership({ projectId });
-      expect(manifestBefore.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
+      const { projectId, workId, port } = await arrangeUntitled();
       const documentYjsBefore = await yjsState(DOCUMENT_ID);
 
       await expect(
@@ -517,8 +514,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         value: { documentId: DOCUMENT_ID },
       });
 
-      const manifestAfter = await collab.resolveManifestMembership({ projectId });
-      expect(manifestAfter.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
       expect(await yjsState(DOCUMENT_ID)).toEqual(documentYjsBefore);
     });
 
@@ -630,7 +625,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("graduates provisional naming in place on a deliberate stay-put", async () => {
-      const { projectId, workId, collab, port } = await arrangeUntitled();
+      const { workId, port } = await arrangeUntitled();
       const rowBefore = await db
         .select()
         .from(schema.documents)
@@ -666,8 +661,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.documents.id, DOCUMENT_ID));
       expect(rowAfter[0]).toEqual({ ...rowBefore[0], provisionalName: false });
       expect(await yjsState(DOCUMENT_ID)).toEqual(yjsBefore);
-      const manifest = await collab.resolveManifestMembership({ projectId });
-      expect(manifest.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
     });
 
     it("keeps provisional naming across a system move without the writer-placement option", async () => {

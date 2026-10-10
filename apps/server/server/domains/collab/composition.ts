@@ -174,7 +174,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
-      coordinator: liveCoordinator,
     },
     deps.workProjectionMutation,
   );
@@ -463,7 +462,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftTree: createDrizzleDraftTreeReviewBridge(deps.db, {
       drafts: workDrafts,
       ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
-      recordLiveMembership: (documentId) => branches.recordManifestDocumentCreated(documentId),
     }),
     branches,
     branchCoordinator,

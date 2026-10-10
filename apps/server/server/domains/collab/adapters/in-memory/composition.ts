@@ -317,13 +317,6 @@ function createInMemoryBranchPeerStub(
           holder: { uri: scope.holder.uri, view: LIVE_VIEW },
         });
       }),
-    async resolveManifestMembership() {
-      return { documentId: "" as DocumentId, members: [] };
-    },
-    async reconcileProjectManifest() {},
-    async transferLiveManifestMembership() {},
-    async recordManifestDocumentCreated() {},
-    async recordManifestDocumentDeleted() {},
     async ensureCreatedDraftBranch() {
       throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
     },

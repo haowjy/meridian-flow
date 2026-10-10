@@ -94,7 +94,7 @@ export async function loadDocumentAddresses(
     WITH RECURSIVE candidates AS (
       SELECT d.id, d.name, d.extension, d.folder_id, d.context_source_id, d.file_type,
         d.deleted_at IS NOT NULL AS deleted, ${documentHiddenSql("d")} AS hidden
-      FROM documents d WHERE d.kind = 'content' AND ${filter}
+      FROM documents d WHERE ${filter}
     ),
     up AS (
       SELECT c.id AS document_id, c.folder_id AS folder_id, ''::text AS path, false AS deleted

@@ -3,7 +3,6 @@ import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime"
 import { type AiWriteMode, decodeWorkSlug, type Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
-  contentDocumentPredicate,
   contextAvailabilityHeads,
   contextCatalogScopeHeads,
   documents,
@@ -95,7 +94,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     const rows = await currentDrizzleDb(db)
       .select({ id: documents.id })
       .from(documents)
-      .where(and(eq(documents.deletedByWorkId, workId), contentDocumentPredicate()));
+      .where(eq(documents.deletedByWorkId, workId));
     return rows.map((row) => row.id as DocumentId);
   }
 

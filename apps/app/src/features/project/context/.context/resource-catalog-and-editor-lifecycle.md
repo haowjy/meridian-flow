@@ -121,7 +121,7 @@ but neither offers Retry nor retries on a revision change, so a failed phone
 open has no in-place recovery yet.
 
 A draft-only tab (a new document proposed by a draft) opens no live binding at
-all: it has no live manifest membership and the server refuses a room for it,
+all: it is absent from the live SQL tree and the server refuses a room for it,
 so review hosts the draft branch room alone (`liveRoom={!branchOnly}`) and a
 failed branch room offers Retry or closing the tab, never a fallback to an empty
 live editor. The phone hosts it through the same `ContextEditorMountHost`

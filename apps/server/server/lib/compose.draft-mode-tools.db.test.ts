@@ -109,9 +109,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD.threadId,
       });
-      await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
-        projectId: PROJECT_ID,
-      });
       return runtimes.script(runtime, THREAD);
     }
 

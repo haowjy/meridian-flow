@@ -287,7 +287,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("rolls catalog state back and excludes manifests and content-only changes", async () => {
+    it("rolls catalog state back and excludes hidden rows and content-only changes", async () => {
       const db = database.current;
       await seedProject(db, "catalog-rollback");
       const catalog = createDrizzleContextCatalog(db);
@@ -298,9 +298,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await currentDrizzleDb(db).insert(documents).values({
             id: DOCUMENT_ID,
             contextSourceId: SOURCE_ID,
-            name: "manifest",
+            name: "draft-only",
             extension: "json",
-            kind: "manifest",
+            hidden: true,
           });
           await catalog.refreshSources([SOURCE_ID]);
           throw new Error("rollback");
@@ -434,7 +434,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
+        mutationStore: new DrizzleContextTreeMutationStore(db, failingCatalog),
         scheme: "manuscript",
         documentSync: {
           ensureDocument: async () => {},
@@ -472,7 +472,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         "kb",
         USER_ID,
-        undefined,
         failingCatalog,
       );
       const context = new ContextFS({
@@ -480,7 +479,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
+        mutationStore: new DrizzleContextTreeMutationStore(db, failingCatalog),
         scheme: "kb",
         documentSync: {
           ensureDocument: async () => {},
@@ -619,7 +618,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await catalog.refreshSources([SOURCE_ID, KB_SOURCE_ID]);
       const scope = { kind: "project", projectId: PROJECT_ID } as const;
       const before = await catalog.snapshot(scope);
-      const mutationStore = new DrizzleContextTreeMutationStore(db, undefined, catalog);
+      const mutationStore = new DrizzleContextTreeMutationStore(db, catalog);
       await expect(
         mutationStore.commitProvisionalGraduation({
           kind: "file",

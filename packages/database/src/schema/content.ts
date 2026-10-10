@@ -28,17 +28,6 @@ import {
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { users } from "./users";
 
-export const DOCUMENT_KINDS = {
-  content: "content",
-  manifest: "manifest",
-} as const;
-
-export type DocumentKind = (typeof DOCUMENT_KINDS)[keyof typeof DOCUMENT_KINDS];
-
-export function isContentDocumentKind(kind: string | null | undefined): boolean {
-  return kind === DOCUMENT_KINDS.content;
-}
-
 export const projects = pgTable(
   "projects",
   {
@@ -246,7 +235,6 @@ export const documents = pgTable(
   "documents",
   {
     id: idColumn<DocumentId>(),
-    kind: text("kind").$type<DocumentKind>().notNull().default(DOCUMENT_KINDS.content),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -290,19 +278,14 @@ export const documents = pgTable(
     // Hidden documents occupy no live path; nothing makes them unique.
     uniqueIndex("documents_context_folder_name_live")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.kind} = 'content'`),
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
     uniqueIndex("documents_context_root_name_live")
       .on(table.contextSourceId, table.name, table.extension)
-      .where(
-        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden} AND ${table.kind} = 'content'`,
-      ),
-    uniqueIndex("documents_manifest_context_active")
-      .on(table.contextSourceId)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manifest'`),
+      .where(sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
     // Image path lookups, deleted images included.
     index("documents_context_images")
       .on(table.contextSourceId)
-      .where(sql`${table.fileType} = 'image' AND ${table.kind} = 'content'`),
+      .where(sql`${table.fileType} = 'image'`),
     index("documents_name_fts").using("gin", sql`to_tsvector('simple', ${table.name})`),
     index("documents_name_trgm").using("gin", sql`${table.name} gin_trgm_ops`),
     check(
@@ -313,7 +296,6 @@ export const documents = pgTable(
       "documents_file_type_valid",
       sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
-    check("documents_kind_valid", sql`${table.kind} IN ('content', 'manifest')`),
   ],
 );
 
@@ -385,14 +367,6 @@ export const uploadIntakes = pgTable(
     check("upload_intakes_digest_valid", sql`${table.byteDigest} ~ '^[0-9a-f]{64}$'`),
   ],
 );
-
-export function contentDocumentPredicate(table: Pick<typeof documents, "kind"> = documents) {
-  return sql`${table.kind} = ${DOCUMENT_KINDS.content}`;
-}
-
-export function contentDocumentKindSql(alias = "documents") {
-  return sql`${sql.raw(alias)}.kind = ${DOCUMENT_KINDS.content}`;
-}
 
 // folders.parent_id self-FK added in migration SQL
 
