@@ -35,12 +35,12 @@ import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type * as Y from "yjs";
 import { isRemoteDocumentRebuild } from "../../anchors";
+import { relativePositionRuntimeFromState } from "../../relative-position-runtime";
 import {
   inlineReviewClassNames,
   paintDecorations,
   type ReviewGeometry,
   resolveGeometry,
-  resolverFromState,
 } from "./decorations";
 import type { InlineReviewModel } from "./model";
 import type { RemovalHandlers } from "./removal-widget";
@@ -75,7 +75,7 @@ export interface InlineReviewPluginState {
    * the document changes. Null while the binding cannot resolve anchors yet.
    */
   geometry: ReviewGeometry | null;
-  /** Model-derived hunk decorations over the server draft projection. */
+  /** Full projection, including pending writer attribution, even while hidden. */
   decorations: DecorationSet;
 }
 
@@ -256,7 +256,7 @@ function geometryFor(
 ): ReviewGeometry | null {
   if (!model) return null;
   if (!reresolve && previous?.model === model && previous.doc === newState.doc) return previous;
-  const resolver = resolverFromState(newState);
+  const resolver = relativePositionRuntimeFromState(newState);
   return resolver ? resolveGeometry(model, resolver) : null;
 }
 
@@ -265,7 +265,7 @@ function paint(
   state: InlineReviewPluginState,
   refocusRemoval: string | null = null,
 ) {
-  if (!state.marksVisible || !geometry) return DecorationSet.empty;
+  if (!geometry) return DecorationSet.empty;
   return paintDecorations(
     geometry,
     {
@@ -393,7 +393,6 @@ export function buildInlineReviewPlugin({
           mustRebuild = true;
         } else if (meta?.kind === "set-marks-visible") {
           marksVisible = meta.visible;
-          mustRebuild = true;
         } else if (meta?.kind === "removal-click") {
           activeOperationId = meta.operationId;
           if (meta.toggle !== null) {
@@ -423,7 +422,7 @@ export function buildInlineReviewPlugin({
         if (mustRebuild) {
           next.geometry = geometryFor(model, previous.geometry, newState, ySyncChangeOrigin);
           let rebuilt = paint(next.geometry, next, refocusRemoval);
-          if (keepOptimistic && marksVisible) {
+          if (keepOptimistic) {
             const typed = previous.decorations
               .map(tr.mapping, tr.doc)
               .find(undefined, undefined, isOptimistic);
@@ -434,8 +433,7 @@ export function buildInlineReviewPlugin({
           // Local edits: map existing decoration positions through the
           // transaction. Cheap; positions stay stable through typing bursts.
           const mapped = previous.decorations.map(tr.mapping, tr.doc);
-          next.decorations =
-            marksVisible && !ySyncChangeOrigin ? withOptimisticWriterRanges(mapped, tr) : mapped;
+          next.decorations = !ySyncChangeOrigin ? withOptimisticWriterRanges(mapped, tr) : mapped;
         }
         return next;
       },
@@ -457,7 +455,7 @@ export function buildInlineReviewPlugin({
     props: {
       decorations(state) {
         const pluginState = draftInlineReviewPluginKey.getState(state);
-        return pluginState?.decorations ?? DecorationSet.empty;
+        return pluginState?.marksVisible ? pluginState.decorations : DecorationSet.empty;
       },
       // Editor-side click seam. A click on any hunk decoration DOM adopts its
       // first-listed operation as the active one — surfaces reading plugin

@@ -235,7 +235,7 @@ describe("removals", () => {
     expect(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString()).not.toContain("his");
   });
 
-  it("strikes an unclassified removal in full, in no author's colour", () => {
+  it("paints unclassified insertion and removal in no author's colour", () => {
     const { editor } = createReviewEditor(["Lin Feng counted the breath."]);
     const at = posOf(editor, "breath");
     const key = unattributedHunkKey("h-loose");
@@ -243,10 +243,12 @@ describe("removals", () => {
       editor,
       [],
       [key],
-      { from: at, to: at },
+      { from: at, to: at + 6 },
       { deletedText: "first slow ", deletedSpans: [], unclassified: true },
       "h-loose",
     );
+    expect(marked(editor, "meridian-review-merged")).toEqual(["breath"]);
+    expect(marked(editor, "meridian-review-added")).toEqual([]);
     const [removal] = removals(editor);
     const del = removal?.querySelector("del");
     expect(del?.textContent).toBe("first slow ");
@@ -258,21 +260,6 @@ describe("removals", () => {
     // Focusing it by its key emphasises it, as a click on it does.
     editor.commands.setInlineReviewActiveOperation(key);
     expect(removals(editor)[0]?.classList.contains("meridian-review-emphasized")).toBe(true);
-  });
-
-  it("paints an unclassified insertion neutral, not as the AI's", () => {
-    const { editor } = createReviewEditor(["Elder Mo raised one withered hand."]);
-    const withered = posOf(editor, "one withered");
-    paintText(
-      editor,
-      [],
-      [unattributedHunkKey("h-loose")],
-      { from: withered, to: withered + 12 },
-      { unclassified: true },
-      "h-loose",
-    );
-    expect(marked(editor, "meridian-review-merged")).toEqual(["one withered"]);
-    expect(marked(editor, "meridian-review-added")).toEqual([]);
   });
 
   it.each([
@@ -413,28 +400,40 @@ describe("removals", () => {
     expect(removals(editor)[0]?.querySelectorAll("del")).toHaveLength(0);
   });
 
-  it("keeps an unfolded removal open across a model refresh", () => {
+  it("refreshes removal content and attribution without reusing stale DOM", () => {
     const { editor } = createReviewEditor(["Keep one.", "Keep two."]);
     const between = posOf(editor, "Keep two") - 1;
-    const next = () =>
-      model(
+    const next = (suffix = "OLD", deletedBy: "agent" | "writer" = "agent", id = "h1") =>
+      paintText(
+        editor,
         [operation("a1", "agent")],
-        [
-          textHunk(
-            editor,
-            "h1",
-            ["a1"],
-            { from: between, to: between },
-            {
-              deletedText: "y".repeat(REMOVAL_COLLAPSE_CHARS + 50),
-            },
-          ),
-        ],
+        ["a1"],
+        { from: between, to: between },
+        {
+          deletedText: "y".repeat(REMOVAL_COLLAPSE_CHARS + 50) + suffix,
+          deletedSpans: [
+            { from: 0, to: 100, deletedBy },
+            { from: 100, to: REMOVAL_COLLAPSE_CHARS + 53, deletedBy: "agent" },
+          ],
+        },
+        id,
       );
-    setModel(editor, next());
+    next();
     removals(editor)[0]?.querySelector("button")?.click();
-    setModel(editor, next());
+    next();
     expect(removals(editor)[0]?.querySelector("del")).not.toBeNull();
+    next("NEW");
+    if (!removals(editor)[0]?.querySelector("del"))
+      removals(editor)[0]?.querySelector("button")?.click();
+    expect(removals(editor)[0]?.textContent).toContain("NEW");
+    next("NEW", "writer");
+    if (!removals(editor)[0]?.querySelector("del"))
+      removals(editor)[0]?.querySelector("button")?.click();
+    expect(
+      removals(editor)[0]?.querySelector(".meridian-review-removal-text-writer"),
+    ).not.toBeNull();
+    next("NEW", "writer", "refetched-hunk");
+    expect(removals(editor)[0]?.getAttribute("data-review-hunk")).toBe("refetched-hunk");
   });
 
   it("is not selectable into and not clickable into the document", () => {
@@ -629,24 +628,23 @@ describe("focus and visibility", () => {
     const { editor } = createReviewEditor(["alpha beta gamma."]);
     setModel(editor, focusModel(editor));
     editor.commands.setInlineReviewActiveOperation("a2");
+    editor.commands.insertContentAt(posOf(editor, "gamma") + 2, "NEW ");
 
     editor.commands.setInlineReviewMarksVisible(false);
     expect(marked(editor, "meridian-review-added")).toEqual([]);
     expect(marked(editor, "meridian-review-writer")).toEqual([]);
     expect(removals(editor)).toHaveLength(0);
-    expect(editor.getText()).toBe("alpha beta gamma.");
+    editor.chain().setTextSelection(1).insertContent("zz").run();
+    editor.commands.setInlineReviewActiveOperation("a2");
+    expect(marked(editor, "meridian-review-writer")).toEqual([]);
+    expect(editor.getText()).toBe("zzalpha beta gaNEW mma.");
 
     editor.commands.setInlineReviewMarksVisible(true);
-    expect(marked(editor, "meridian-review-added")).toEqual(["alpha", "gamma"]);
+    expect(marked(editor, "meridian-review-writer")).toEqual(["zz", "beta", "NEW "]);
+    expect(marked(editor, "meridian-review-added").join("")).toBe("zzalphagaNEW mma");
     expect(removals(editor)).toHaveLength(1);
-    expect(marked(editor, "meridian-review-emphasized").sort()).toEqual(["gamma", "old"]);
-  });
-
-  it("does not paint typed text while marks are hidden", () => {
-    const { editor } = createReviewEditor(["alpha beta gamma."]);
-    setModel(editor, focusModel(editor));
-    editor.commands.setInlineReviewMarksVisible(false);
-    editor.chain().setTextSelection(posOf(editor, "gamma")).insertContent("zz").run();
+    expect(marked(editor, "meridian-review-emphasized").join("")).toContain("gaNEW mma");
+    setModel(editor, model([], []));
     expect(marked(editor, "meridian-review-writer")).toEqual([]);
   });
 });

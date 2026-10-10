@@ -1039,7 +1039,7 @@
 }
 
 /* A change that arrived while the writer was reviewing: its row in the dock's
-   Changes list lights up once and settles. Its marks pulse in editor.css. */
+   Changes list lights up once and settles. Its marks pulse in inline-review.css. */
 @keyframes review-row-arrive {
   from {
     background-color: var(--color-review-added-ring);

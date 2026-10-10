@@ -15,9 +15,8 @@ import { i18n } from "@lingui/core";
 import type { ReviewOperation } from "@meridian/contracts/drafts";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import type * as Y from "yjs";
 import {
-  relativePositionRuntimeFromState,
+  type RelativePositionRuntime,
   resolveRelativePosition,
 } from "../../relative-position-runtime";
 
@@ -41,19 +40,6 @@ import {
   type RemovalPlan,
   type RemovalSegment,
 } from "./removal-widget";
-
-/**
- * Everything the builder needs from the editor state to resolve anchors.
- * Injected rather than pulled from state so the builder can be tested
- * with fakes.
- */
-export interface DecorationResolver {
-  doc: PMNode;
-  yDoc: Y.Doc;
-  yFragment: Y.XmlFragment;
-  /** The ProseMirror↔Yjs node mapping owned by y-prosemirror's binding. */
-  mapping: Map<Y.AbstractType<unknown>, PMNode>;
-}
 
 const ADDED_CLASS = "meridian-review-added";
 const WRITER_CLASS = "meridian-review-writer";
@@ -123,16 +109,16 @@ export interface ReviewGeometry {
  */
 export function resolveGeometry(
   model: InlineReviewModel,
-  resolver: DecorationResolver,
+  resolver: RelativePositionRuntime,
 ): ReviewGeometry {
   const operationsById = indexOperations(model.operations);
   const hunks: HunkGeometry[] = [];
   const removals: RemovalInput[] = [];
 
   for (const hunk of model.hunks) {
-    const startPos = resolveAnchor(hunk.relStart, resolver);
+    const startPos = resolveRelativePosition(resolver, hunk.relStart);
     if (startPos == null) continue;
-    const endPos = resolveAnchor(hunk.relEnd, resolver);
+    const endPos = resolveRelativePosition(resolver, hunk.relEnd);
 
     const removed = removedSegments(hunk, operationsById);
     if (removed.length > 0) {
@@ -221,7 +207,7 @@ export function paintDecorations(
           }),
         {
           // The locale is part of the key: the fold's label is copy, redrawn when it changes.
-          key: `removal:${plan.identity}:${plan.kind}${plan.tight ? ":tight" : ""}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
+          key: `removal:${plan.identity}:${JSON.stringify([plan.block, plan.tight, plan.hunkIds])}:${focused ? "focused" : "idle"}:${pulsed ? "arrived" : "settled"}:${expanded ? "open" : "folded"}:${i18n.locale}`,
           side: -1,
           // The widget owns its pointer events; ProseMirror must not move the
           // caret or start a drag from them.
@@ -307,7 +293,7 @@ function blockMarks(
   startPos: number,
   endPos: number,
   operationsById: ReadonlyMap<string, ReviewOperation>,
-  resolver: DecorationResolver,
+  resolver: RelativePositionRuntime,
 ): MarkGeometry[] {
   if (!hunk.insertedBlock) return [];
   const node = resolver.doc.nodeAt(startPos);
@@ -335,7 +321,7 @@ function textMarks(
   startPos: number,
   endPos: number,
   operationsById: ReadonlyMap<string, ReviewOperation>,
-  resolver: DecorationResolver,
+  resolver: RelativePositionRuntime,
 ): MarkGeometry[] {
   const tone = hunkTone(hunk, operationsById);
   const whole: MarkGeometry = {
@@ -376,12 +362,12 @@ interface ResolvedSpanRange {
  */
 function resolveSpanRanges(
   hunk: ResolvedTextReviewHunk,
-  resolver: DecorationResolver,
+  resolver: RelativePositionRuntime,
 ): ResolvedSpanRange[] {
   const raw: ResolvedSpanRange[] = [];
   for (const span of hunk.spans) {
-    const from = resolveAnchor(span.from, resolver);
-    const to = resolveAnchor(span.to, resolver);
+    const from = resolveRelativePosition(resolver, span.from);
+    const to = resolveRelativePosition(resolver, span.to);
     if (from == null || to == null || to <= from) continue;
     raw.push({ operationId: span.operationId, from, to });
   }
@@ -397,31 +383,6 @@ function resolveSpanRanges(
     }
   }
   return merged;
-}
-
-/**
- * Pull the resolver context out of an EditorState. Returns `null` if the
- * y-sync plugin hasn't finished binding yet (mapping is empty on the first
- * frame after mount), which the plugin treats as "no decorations this tick."
- */
-export function resolverFromState(state: {
-  doc: PMNode;
-  plugins?: unknown;
-  // biome-ignore lint/suspicious/noExplicitAny: EditorState.field is typed via generics we can't parameterise here without pulling prosemirror-state.
-  [key: string]: any;
-}): DecorationResolver | null {
-  const runtime = relativePositionRuntimeFromState(state as never);
-  if (!runtime) return null;
-  return {
-    doc: runtime.doc,
-    yDoc: runtime.yDoc,
-    yFragment: runtime.yFragment,
-    mapping: runtime.mapping,
-  };
-}
-
-function resolveAnchor(anchor: Y.RelativePosition, resolver: DecorationResolver): number | null {
-  return resolveRelativePosition(resolver, anchor);
 }
 
 function markClassName(mark: MarkGeometry, focused: boolean, pulsed: boolean): string {
