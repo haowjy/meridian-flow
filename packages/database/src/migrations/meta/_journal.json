@@ -253,6 +253,13 @@
       "when": 1791603138214,
       "tag": "0035_batch_settlement",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791603158556,
+      "tag": "0036_batch_refusal_payloads",
+      "breakpoints": true
     }
   ]
 }

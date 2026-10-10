@@ -37,7 +37,7 @@ type DocumentBranchKind = "work_draft" | "thread_peer";
 type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
-type BranchPushSettlementState = "pending" | "blocked" | "completed";
+type BranchPushSettlementState = "pending" | "blocked" | "completed" | "abandoned";
 type BranchPushSettlementClaimKind = "warm" | "recovery";
 type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
 type ChangeTrailOwnerKind = "turn" | "shared";
@@ -201,6 +201,8 @@ export const branchPushSettlementBatches = pgTable(
     lastError: text("last_error"),
     blockedAt: timestamp("blocked_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    /** A publication step refused the staged batch; nothing of it reached live. */
+    abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -211,17 +213,18 @@ export const branchPushSettlementBatches = pgTable(
     // Writer admissions join unresolved members; few batches are ever unresolved.
     index("branch_push_settlement_batches_unresolved")
       .on(table.id)
-      .where(sql`${table.state} <> 'completed'`),
+      .where(sql`${table.state} IN ('pending', 'blocked')`),
     check(
       "branch_push_settlement_batches_state_valid",
-      sql`${table.state} IN ('pending', 'blocked', 'completed')`,
+      sql`${table.state} IN ('pending', 'blocked', 'completed', 'abandoned')`,
     ),
     check(
       "branch_push_settlement_batches_terminal_shape",
       sql`(
-        (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-        OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-        OR (${table.state} = 'pending' AND ${table.blockedAt} IS NULL AND ${table.completedAt} IS NULL)
+        (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.abandonedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.abandonedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'abandoned' AND ${table.abandonedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'pending' AND ${table.blockedAt} IS NULL AND ${table.completedAt} IS NULL AND ${table.abandonedAt} IS NULL)
       )`,
     ),
     check(
@@ -240,6 +243,19 @@ export const branchPushSettlementBatches = pgTable(
       sql`${table.attemptCount} >= 0 AND ${table.claimEpoch} >= 0`,
     ),
   ],
+);
+
+/** A publication step's durable input, staged with its batch and read on claim and recovery. */
+export const branchPushSettlementPayloads = pgTable(
+  "branch_push_settlement_payloads",
+  {
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
+    stepKind: text("step_kind").notNull(),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.batchId, table.stepKind] })],
 );
 
 /** One staged push of a settlement batch: its lock cut, update, trail and joins. */

@@ -14,6 +14,7 @@ import {
   type PendingLiveSettlement,
   type PendingSettlementBatch,
   type PreparedPushCommit,
+  type PublicationPayloads,
   type PushCommitStore,
   type PushLineageRow,
   type SettlementClaim,
@@ -25,6 +26,7 @@ import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
 import type { PendingSettlementStore, SettlementCut } from "./ports/pending-settlement-store.js";
+import type { PublicationHold, PublicationRefusal } from "./ports/settlement-publication.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
@@ -38,6 +40,24 @@ export class PendingLiveSettlementError extends Error {
 }
 
 type LiveDocs = ReadonlyMap<DocumentId, Y.Doc>;
+
+/** A member kept out of live, before staging (no push) or in completion (its push withdrawn). */
+export type HeldPublicationMember = PublicationHold & { pushId: number | null };
+
+/** How a staged (or checked) batch ended. */
+export type PublicationOutcome =
+  | {
+      kind: "settled";
+      /** The pushes whose text reached live. */
+      pushes: readonly PushLineageRow[];
+      held: readonly HeldPublicationMember[];
+    }
+  | { kind: "refused"; reason: PublicationRefusal };
+
+/** What one settlement attempt sequence ended with. */
+type SettleResult =
+  | { kind: "completed"; held: readonly HeldPublicationMember[] }
+  | { kind: "refused"; reason: PublicationRefusal };
 
 export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
@@ -55,10 +75,12 @@ export function createBranchPushTransition(input: {
     | { kind: "return"; value: T }
     | {
         kind: "push";
+        /** May be empty when `payloads` carries the whole publication. */
         pushes: PreparedPushCommit[];
+        payloads?: PublicationPayloads;
         afterDurableCommit?: (documentIds: readonly string[]) => Promise<void>;
         onConflict: (push: PushLineageRow) => T;
-        finish: (input: { pushes: readonly PushLineageRow[]; docs: LiveDocs }) => T | Promise<T>;
+        finish: (input: { outcome: PublicationOutcome; docs: LiveDocs }) => T | Promise<T>;
       };
 
   async function execute<T>(inputExecution: {
@@ -75,22 +97,71 @@ export function createBranchPushTransition(input: {
       async (docs, lockCuts) => {
         const prepared = await inputExecution.prepare({ docs, lockCuts });
         if (prepared.kind === "return") return prepared.value;
-        if (prepared.pushes.length === 0) throw new Error("Branch push transition requires a push");
+        const payloads = prepared.payloads ?? {};
+        const hasPayloads = Object.keys(payloads).length > 0;
+        if (prepared.pushes.length === 0 && !hasPayloads) {
+          throw new Error("Branch push transition requires a push or a publication payload");
+        }
         const settlement = { batchId: randomUUID(), claimToken: randomUUID() };
+        // The same plans and lock order as completion, before anything is staged:
+        // a refusal stages nothing, and held candidates leave the batch first.
+        const check = await input.settlementStore.checkPublication({
+          batchId: settlement.batchId,
+          members: prepared.pushes.map((push) => ({
+            documentId: push.branch.documentId,
+            branchId: push.branch.branchId,
+            workId: push.branch.workId,
+            journalIds: push.journalRows.map((row) => row.id),
+          })),
+          payloads: new Map(Object.entries(payloads)),
+          liveStateVectors: new Map(
+            prepared.pushes.map((push) => [
+              push.branch.documentId,
+              Y.encodeStateVectorFromUpdate(push.lockCutUpdate),
+            ]),
+          ),
+        });
+        if (check.kind === "refuse") {
+          return prepared.finish({ outcome: { kind: "refused", reason: check.reason }, docs });
+        }
+        const checkHeld = new Map((check.hold ?? []).map((hold) => [hold.documentId, hold]));
+        const pushes = prepared.pushes.filter((push) => !checkHeld.has(push.branch.documentId));
+        const heldBeforeStaging = [...checkHeld.values()].map((hold) => ({
+          ...hold,
+          pushId: null,
+        }));
+        if (pushes.length === 0 && !hasPayloads) {
+          return prepared.finish({
+            outcome: { kind: "settled", pushes: [], held: heldBeforeStaging },
+            docs,
+          });
+        }
         const committed = await input.commitStore.commitPushBatch({
           settlement,
-          pushes: prepared.pushes,
+          pushes,
+          ...(hasPayloads ? { payloads } : {}),
         });
         if (committed.status === "conflict") return prepared.onConflict(committed.push);
-        await prepared.afterDurableCommit?.(prepared.pushes.map((push) => push.branch.documentId));
+        await prepared.afterDurableCommit?.(pushes.map((push) => push.branch.documentId));
         // The committer holds the batch's first claim; it never adopts a later one.
         const batch = await input.settlementStore.loadSettlementBatch({
           batchId: settlement.batchId,
           owner: { token: settlement.claimToken, epoch: FIRST_CLAIM_EPOCH },
         });
         if (!batch) throw new PendingLiveSettlementError(settlement.batchId);
-        await settle({ batch, docs, signal: inputExecution.signal });
-        return prepared.finish({ pushes: committed.pushes, docs });
+        const settled = await settle({ batch, docs, signal: inputExecution.signal });
+        if (settled.kind === "refused") {
+          return prepared.finish({ outcome: { kind: "refused", reason: settled.reason }, docs });
+        }
+        const heldPushIds = new Set(settled.held.map((held) => held.pushId));
+        return prepared.finish({
+          outcome: {
+            kind: "settled",
+            pushes: committed.pushes.filter((push) => !heldPushIds.has(push.id)),
+            held: [...heldBeforeStaging, ...settled.held],
+          },
+          docs,
+        });
       },
     );
   }
@@ -152,7 +223,7 @@ export function createBranchPushTransition(input: {
 
   type Settlement = { batch: PendingSettlementBatch; docs: LiveDocs; signal?: AbortSignal };
 
-  function settle(settlement: Settlement): Promise<void> {
+  function settle(settlement: Settlement): Promise<SettleResult> {
     const documentIds = settlement.batch.members.map((member) => member.push.documentId);
     const [documentId] = documentIds;
     // A batch with no text members (tree-only, or whose documents were hard-deleted)
@@ -161,7 +232,7 @@ export function createBranchPushTransition(input: {
     return input.links.within({ documentId, documentIds }, () => settleBatch(settlement));
   }
 
-  async function settleBatch(settlement: Settlement): Promise<void> {
+  async function settleBatch(settlement: Settlement): Promise<SettleResult> {
     const { batchId } = settlement.batch;
     let claim: SettlementClaim = settlement.batch.claim;
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
@@ -176,7 +247,7 @@ export function createBranchPushTransition(input: {
       }
       const owned = await input.settlementStore.loadSettlementBatch({ batchId, owner: claim });
       if (!owned) throw new PendingLiveSettlementError(batchId);
-      const { members } = owned;
+      const { members, payloads } = owned;
       const sweeps = new Map<DocumentId, SweptChangesByRecipient>();
       for (const member of members) {
         const prePush = materializeFinalPrePush(member);
@@ -197,8 +268,19 @@ export function createBranchPushTransition(input: {
             trail: member.trail,
             replacement: trailContributionReplacement(member.trail, member.push),
           })),
+          payloads,
+          liveStateVectors: new Map(
+            members.map((member) => [
+              member.push.documentId,
+              Y.encodeStateVectorFromUpdate(member.lockCutUpdate),
+            ]),
+          ),
           recheck: (cuts) => recheckWarmState(cuts, settlement.docs, ingress),
-          afterCommit: () => applyToWarmRooms(members, settlement.docs),
+          afterCommit: (admitted) =>
+            applyToWarmRooms(
+              members.filter((member) => admitted.includes(member.push.documentId)),
+              settlement.docs,
+            ),
         });
       } catch (cause) {
         if (isCorruptDurableProjectionError(cause)) {
@@ -211,6 +293,7 @@ export function createBranchPushTransition(input: {
         }
         throw cause;
       }
+      if (completion.status === "refused") return { kind: "refused", reason: completion.reason };
       if (completion.status === "completed") {
         for (const projection of completion.projections) {
           const sweep = sweeps.get(projection.documentId as DocumentId);
@@ -225,7 +308,7 @@ export function createBranchPushTransition(input: {
             // and the trail must never be reported as failed because it missed.
           }
         }
-        return;
+        return { kind: "completed", held: completion.held };
       }
     }
     await input.settlementStore.recordFailure({

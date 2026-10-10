@@ -8,6 +8,7 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { PendingChangesChoice } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
@@ -15,6 +16,7 @@ import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
+import type { PublicationRefusal } from "./ports/settlement-publication.js";
 import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { SweepEvidence } from "./sweep-policy.js";
@@ -96,7 +98,14 @@ export type PushToLiveResult =
       documentId: DocumentId;
       branchGeneration: number;
       reason: "no_active_rows";
-    };
+    }
+  /** A publication step kept this draft out of live; its rows stay reviewable. */
+  | { status: "held"; branchId: string; documentId: DocumentId; reason: PublicationRefusal }
+  /** A publication step refused the whole batch; nothing of it reached live. */
+  | { status: "refused"; branchId: string; documentId: DocumentId; reason: PublicationRefusal };
+
+/** Durable publication-step inputs staged with a batch, by step kind. */
+export type PublicationPayloads = Readonly<Record<string, JsonValue>>;
 
 export type PreparedPushCommit = {
   branch: BranchSnapshot;
@@ -148,6 +157,8 @@ export type PendingSettlementBatch = {
   batchId: string;
   claim: SettlementClaim;
   attemptCount: number;
+  /** Publication-step inputs staged with the batch, by step kind. */
+  payloads: ReadonlyMap<string, JsonValue>;
   /** Sorted by document id, the global document lock order. */
   members: readonly PendingLiveSettlement[];
 };
@@ -192,7 +203,9 @@ export type PushCandidate = {
 };
 
 export type CandidateBatch = {
+  /** May be empty when `payloads` carries the whole publication (a branchless Apply). */
   candidates: PushCandidate[];
+  payloads?: PublicationPayloads;
   receiptId: string;
   resetPolicy?: "auto";
   pushedByUserId?: UserId;
@@ -230,6 +243,7 @@ export type PushCommitStore = {
   commitPushBatch(input: {
     settlement: SettlementBatchIdentity;
     pushes: readonly PreparedPushCommit[];
+    payloads?: PublicationPayloads;
   }): Promise<
     { status: "inserted"; pushes: PushLineageRow[] } | { status: "conflict"; push: PushLineageRow }
   >;
@@ -270,11 +284,17 @@ export type BranchPushService = {
   }): Promise<PushToLiveResult>;
   /** Publishes several drafts as one batch; one item per requested branch, in request order. */
   pushBranchesToLive(input: {
+    /** May be empty when `payloads` carries the whole publication (a branchless Apply). */
     branchIds: readonly string[];
+    payloads?: PublicationPayloads;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
     resetPolicy?: "auto";
-  }): Promise<{ items: PushToLiveResult[] }>;
+  }): Promise<{
+    items: PushToLiveResult[];
+    /** Set when a publication step refused the batch; every drafted item is `refused`. */
+    refused?: PublicationRefusal;
+  }>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;

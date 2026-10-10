@@ -2,7 +2,11 @@
 import { randomUUID } from "node:crypto";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import type { BranchJournalRow, CandidateBatch } from "./branch-push-contracts.js";
+import type {
+  BranchJournalRow,
+  CandidateBatch,
+  PublicationPayloads,
+} from "./branch-push-contracts.js";
 import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
 
 type CandidateSource = {
@@ -12,10 +16,12 @@ type CandidateSource = {
 
 export function buildWholeBranchCandidates(input: {
   sources: readonly CandidateSource[];
+  payloads?: PublicationPayloads;
   resetPolicy?: "auto";
   pushedByUserId?: UserId;
 }): CandidateBatch {
   return {
+    ...(input.payloads ? { payloads: input.payloads } : {}),
     candidates: input.sources.map((source) => ({
       branchId: source.branch.branchId,
       documentId: source.branch.documentId,

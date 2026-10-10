@@ -71,13 +71,32 @@
   push's trail in one pass: one trail version per commit. Per-push trail writes
   against a shared turn trail were quadratic and dominated a 40-chapter batch.
 - **Publication steps are the ordered extension point**
-  (`domain/ports/settlement-publication.ts`): a step plans from immutable
-  inputs, names extra Works, namespace documents and document locks, and runs
-  `beforeAdmission` (vacate, install), `afterAdmission` (settle arrivals,
-  record history) and `afterCommit` (catalog refresh, wake hints) inside the
-  same batch. Today's manifest companion is the one step
-  (`adapters/drizzle-manifest-arrivals.ts`); Apply's tree candidate replaces
-  it. A batch with no text members settles through the same order.
+  (`domain/ports/settlement-publication.ts`, contract §11.1): a step owns a
+  payload `kind`, plans from immutable inputs (the scope's pushes, the payloads
+  staged with the batch, each member's lock-cut state vector) and names extra
+  Works, namespace documents, explicit namespace sources and document locks.
+  `adapters/drizzle-settlement-publication.ts` plans and locks in the global
+  order (Works, one sorted namespace acquisition over documents' sources and
+  explicit sources, documents), and both the pre-staging check and completion
+  call it, so they lock the same set in the same order.
+  - **Check before staging:** `checkPublication` runs every step's `check()` in
+    one short transaction under the coordinator leases. `refuse` stages
+    nothing; held candidates leave the batch before staging.
+  - **Decide in completion:** `beforeAdmission` returns `proceed` (optionally
+    holding members, each with a reason) or `refuse`. A held member is withdrawn
+    in the same transaction: no admission, trail contribution retired, notices
+    retracted, lineage and outbox gone, journal rows `active` again, no warm
+    room, no recheck, no auto reset. A refusal rolls completion back and
+    `abandonBatch` withdraws every member the same way in a new transaction
+    under the owner predicate and ends the batch `abandoned` (terminal; never
+    listed for recovery). `afterAdmission` receives the admitted documents.
+  - **Payloads:** `branch_push_settlement_payloads` rows are staged with the
+    batch and loaded on every claim; a batch with payloads and no pushes (a
+    branchless Apply) stages and settles through the same order.
+  - Today's manifest companion is the one production step
+    (`adapters/drizzle-manifest-arrivals.ts`); Apply's tree step replaces it.
+    The draft-row lock slot (`draftIds`, after Works) is not built yet: the
+    `drafts` table arrives with lane T1, and lane E adds the slot.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized

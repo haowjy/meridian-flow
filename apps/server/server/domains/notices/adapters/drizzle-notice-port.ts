@@ -1,7 +1,7 @@
 /** Drizzle-backed storage for model-context notices with ID-based consumption. */
 import type { Database } from "@meridian/database";
 import { pendingNotices } from "@meridian/database/schema";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { Notice, NoticePort } from "../index.js";
 
@@ -30,6 +30,15 @@ export function createDrizzleNoticePort(db: Database): NoticePort {
         .where(eq(pendingNotices.threadId, threadId))
         .orderBy(asc(pendingNotices.createdAt), asc(pendingNotices.id));
       return rows.map(mapNotice);
+    },
+
+    async retractForPushes(pushIds) {
+      if (pushIds.length === 0) return;
+      await runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db)
+          .delete(pendingNotices)
+          .where(inArray(sql<string>`${pendingNotices.data}->>'pushId'`, [...pushIds]));
+      });
     },
 
     async consume(ids) {

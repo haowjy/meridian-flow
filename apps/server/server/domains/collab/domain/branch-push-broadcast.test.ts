@@ -140,6 +140,7 @@ function stores(
         batchId: settlement.batchId,
         claim: { token: settlement.claimToken, epoch: 1, kind: "warm", leaseExpiresAt: new Date() },
         attemptCount: 0,
+        payloads: new Map(),
         members: pushes.map((prepared, index) => ({
           push: rows[index] as PushLineageRow,
           documentTitle: prepared.documentTitle,
@@ -183,9 +184,10 @@ function stores(
         ),
       ).toBe("commit");
       for (const member of batch.members) completed.push(member.push.documentId);
-      input.afterCommit();
+      input.afterCommit(batch.members.map(({ push }) => push.documentId));
       return {
         status: "completed",
+        held: [],
         projections: batch.members.map(({ push }) =>
           projection({
             revision: 1,
@@ -195,6 +197,7 @@ function stores(
         ),
       };
     },
+    checkPublication: async () => ({ kind: "proceed", hold: [] }),
     listRecoverableBatchIds: async () => [],
   };
   return { commitStore, settlementStore };

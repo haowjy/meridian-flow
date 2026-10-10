@@ -67,5 +67,10 @@ export function createTestNoticePort(initial: Notice[] = []): NoticePort & { row
       for (const notice of rows.filter((notice) => consumed.has(notice.id)))
         rows.splice(rows.indexOf(notice), 1);
     },
+    async retractForPushes(pushIds) {
+      const retracted = new Set(pushIds);
+      for (const notice of rows.filter((notice) => retracted.has(String(notice.data.pushId))))
+        rows.splice(rows.indexOf(notice), 1);
+    },
   };
 }
