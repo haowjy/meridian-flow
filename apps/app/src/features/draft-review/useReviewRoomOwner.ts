@@ -113,6 +113,7 @@ export function useReviewRoomOwner({
         dispatch(action.type === "generationObserved" ? { ...action, claim } : action);
     }
     if (
+      preview?.status !== "gone" &&
       observations.some((action) => action.type === "reviewAbsent" && action.evidence?.proposal) &&
       !review?.completion &&
       !disposing
@@ -168,8 +169,7 @@ export function useReviewRoomOwner({
         answer = await read();
       if (!current()) return;
       setEntryAnswered(target);
-      if (answer.status === "gone") observeAbsence(false, answer.draftGeneration);
-      else
+      if (answer.status !== "gone")
         dispatch({
           type: "generationObserved",
           documentId,
@@ -179,12 +179,10 @@ export function useReviewRoomOwner({
           claim: draftClaim(queryClient, draft),
           roomName: answer.reviewRoomName,
         });
-    })().catch((error: unknown) => {
+    })().catch(() => {
       if (!current()) return;
       setEntryAnswered(target);
-      if (error && typeof error === "object" && "status" in error && error.status === 404)
-        observeAbsence();
-      else dispatch({ type: "roomFailed", documentId, draftId });
+      dispatch({ type: "roomFailed", documentId, draftId });
     });
     return () => {
       owned = false;

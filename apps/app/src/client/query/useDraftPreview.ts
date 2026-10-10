@@ -84,7 +84,18 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
         row?.draftGeneration ?? 0,
       );
       const answer = await readPreviewAfterChangeCommands(draft, () =>
-        getDraftPreview(draft.projectId, draft.workId, draft.documentId, draft.draftId, signal),
+        getDraftPreview(
+          draft.projectId,
+          draft.workId,
+          draft.documentId,
+          draft.draftId,
+          signal,
+        ).catch((error: unknown) => {
+          // HTTP absence is the same durable observation as a JSON gone answer.
+          if (error && typeof error === "object" && "status" in error && error.status === 404)
+            return { status: "gone" as const, draftId: draft.draftId };
+          throw error;
+        }),
       );
       return answer.status === "gone" ? { ...answer, draftGeneration: generation } : answer;
     },
