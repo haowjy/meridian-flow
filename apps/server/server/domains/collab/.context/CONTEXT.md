@@ -80,9 +80,11 @@ calls `prepareDraftLinkPublication` before staging. It registers every ref in
 the branches it reads and returns their cut: each branch's full-state
 fingerprint, read under its lease with the refs (F18: a live pull writes no
 journal row and no generation, a deletion moves no state vector). Staging
-compares the same fingerprint and repeats on a change. A ref that can't
-register answers `registration_failed`, never a cut; review-room registration
-stays best effort. A model copy out of a holder carries
+compares the same fingerprint and repeats on a change. A ref the registry
+refuses for good (its typed `UnregistrableAheadRefError`: a Work that doesn't
+exist, an inadmissible address) is listed `unregistrable` in a ready cut and
+publishes unbound (F20); any other failure answers `registration_failed`, never
+a cut. Review-room registration stays best effort. A model copy out of a holder carries
 `doc:<id>` for each ref the holder's own binding answers
 (`LinkBinder.rebindHolderBoundRefs`).
 
