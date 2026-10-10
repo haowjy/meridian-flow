@@ -138,7 +138,8 @@ draft is a Yjs room and the writer is one more peer in it, so keystrokes in
 review land in the draft branch rather than live. The phone mounts it
 read-only (`features/project/mobile`).
 `setInlineReviewMarksVisible(false)` hides every mark and removal without
-remounting; the model, selection and open folds survive.
+remounting; the full projection (including typing while hidden), model,
+selection and open folds survive.
 
 ## Component API
 
