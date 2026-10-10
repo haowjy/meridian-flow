@@ -18,13 +18,14 @@ import {
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import {
   type DraftTreeScenario,
   draftTreeScenario,
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { setHiddenNodeHook } from "./hidden-nodes.js";
+import { endUse, setHiddenNodeHook } from "./hidden-nodes.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -252,6 +253,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(await runtime.ports.documentSync.readAsMarkdown(tide), "live empty")
         .toEqual({ ok: true, value: "" });
+    });
+
+    // §12.2 step 5: a batch's last uses prune every hidden ancestor left empty, whichever
+    // document of the batch comes first.
+    it.each([
+      ["one first"],
+      ["two first"],
+    ])("tombstones a shared hidden ancestor when one batch ends sibling subtrees, %s", async (order) => {
+      const { scenario } = await start();
+      const drafting = await scenario.work("Drafting", "draft");
+      const one = await scenario.seedHidden(drafting, "root/one/x.md");
+      const two = await scenario.seedHidden(drafting, "root/two/y.md");
+      const draft = await scenario.draftOf(drafting);
+      const ids = order === "one first" ? [one, two] : [two, one];
+      await runInDrizzleTransaction(db, () => endUse(db, { draftId: draft.id, documentIds: ids }));
+      expect(await folderNamed(scenario, "root"), "root pruned").toEqual([]);
+      expect(await folderNamed(scenario, "one")).toEqual([]);
+      expect(await folderNamed(scenario, "two")).toEqual([]);
     });
 
     it("never joins a tombstone nor orphans a node when a join meets a last use (I-1)", async () => {
