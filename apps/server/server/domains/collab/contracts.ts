@@ -4,7 +4,7 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import type { DraftId, LinkView } from "@meridian/contracts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -40,6 +40,7 @@ import type {
 
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
+import type { BranchCriticalSections } from "./domain/branch-critical-sections.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type { Drafts } from "./domain/drafts.js";
@@ -369,6 +370,11 @@ export type CollabDraftResolver = {
    * for the debounced registration of writers' review-room edits (§10.7).
    */
   draftLinks: Pick<DraftBranchAheadRegistration, "prepareDraftLinkPublication" | "flush">;
+  /**
+   * The in-process branch leases every branch writer shares. Closing a draft takes every
+   * one of its branches' leases before its transaction (§2.1, §14), as a reply's save does.
+   */
+  branchLeases: BranchCriticalSections;
 };
 
 export type TurnLiveLineageAccess = {
@@ -406,7 +412,6 @@ export type BranchPeerShadowAccess = {
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
-  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
   readEffectiveMarkdown(
     input: {
@@ -427,20 +432,20 @@ export type BranchPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * The Work's draft branch on a document a draft just created or joined, seeded from its
-   * live document (empty: a draft create never seeds live Yjs), in the caller's
-   * transaction; idempotent against a racing peer ensure (contract §6.2 step 5).
+   * The draft's branch on a document it just created or joined, seeded from its live
+   * document (empty: a draft create never seeds live Yjs), in the caller's transaction;
+   * idempotent against a racing peer ensure (contract §6.2 step 5).
    */
-  ensureCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<void>;
+  ensureCreatedDraftBranch(input: { documentId: DocumentId; draftId: DraftId }): Promise<void>;
   /**
    * Reverse a draft create's branch (contract §12.5, O-11), in the caller's transaction:
-   * `stands` when the Work's draft branch on the document (or a thread peer of it) holds
-   * a contribution; otherwise the branches go and, once the transaction commits, their
+   * `stands` when the draft's branch on the document (or a thread peer of it) holds a
+   * contribution; otherwise the branches go and, once the transaction commits, their
    * pooled cores, caches and rooms are retired.
    */
   retractCreatedDraftBranch(input: {
     documentId: DocumentId;
-    workId: WorkId;
+    draftId: DraftId;
   }): Promise<"retracted" | "stands">;
 };
 

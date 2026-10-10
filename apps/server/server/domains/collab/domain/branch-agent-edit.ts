@@ -6,7 +6,7 @@ import {
   type ConcurrentUpdateOrigin,
   cloneYDoc,
   type DocumentCoordinator,
-  DocumentNotFoundError,
+  type DocumentLockOptions,
   type JournalBatchAppendEntry,
   type JournalBatchAppendResult,
   type JournalReadOptions,
@@ -21,9 +21,10 @@ import {
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchLockLease } from "./branch-critical-sections.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
-import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
+import type { BranchResolver } from "./branch-resolver.js";
 import {
   type BranchReversalScope,
   type BranchReversalState,
@@ -126,7 +127,6 @@ type PartitionedConcurrentUpdate =
 
 export function createBranchAgentEditCoordinator(input: {
   threadId: ThreadId;
-  liveCoordinator: DocumentCoordinator;
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
@@ -141,14 +141,27 @@ export function createBranchAgentEditCoordinator(input: {
 }): DocumentCoordinator {
   const concurrentJournalWatermarks =
     input.concurrentJournalWatermarks ?? createBranchConcurrentJournalWatermarks();
+  // The branch a document access resolved and the lease it runs under, for the reads
+  // and the upstream commit nested in it (a save's owned lease covers both, §2.5).
+  const access = new AsyncLocalStorage<DocumentAccess>();
+  const coordinator = input.branchCoordinator;
   return {
-    async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-      const branchId = await ensureThreadBranch(input, docId as DocumentId);
+    async withDocument<T>(
+      docId: string,
+      fn: (doc: Y.Doc) => Promise<T>,
+      options?: DocumentLockOptions,
+    ): Promise<T> {
+      const branchId =
+        options?.pinnedBranchId ?? (await resolveThreadBranchId(input, docId as DocumentId));
+      const lease = options?.lease as BranchLockLease | undefined;
+      const transient = (run: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>) =>
+        lease
+          ? coordinator.withBranchTransientWithLease(lease, branchId, run)
+          : coordinator.withBranchTransient(branchId, run);
       let result: T;
       try {
-        result = await input.branchCoordinator.withBranchTransient(
-          branchId,
-          async (doc, snapshot) => {
+        result = await access.run({ docId, branchId, lease }, () =>
+          transient(async (doc, snapshot) => {
             const beforeState = Y.encodeStateAsUpdate(doc);
             const result = await fn(doc);
             const pendingBatch =
@@ -166,7 +179,8 @@ export function createBranchAgentEditCoordinator(input: {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
               const sourceHasBranchDelta = await sourceDocHasBranchDelta(
-                input.branchCoordinator,
+                coordinator,
+                lease,
                 workDraftBranchId,
                 doc,
               );
@@ -180,7 +194,7 @@ export function createBranchAgentEditCoordinator(input: {
                 });
                 throw new StagedBranchWriteNoopError(workDraftBranchId, docId);
               }
-              const committed = await input.branchCoordinator.commitSyncFromDoc({
+              const sync: Parameters<BranchCoordinator["commitSyncFromDoc"]>[0] = {
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
                 source: "agent",
@@ -196,7 +210,10 @@ export function createBranchAgentEditCoordinator(input: {
                   : {}),
                 updateMeta: pending?.meta ?? null,
                 ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
-              });
+              };
+              const committed = lease
+                ? await coordinator.commitSyncFromDocWithLease(lease, sync)
+                : await coordinator.commitSyncFromDoc(sync);
               if (!committed) return result;
               advanceConcurrentJournalWatermark(
                 concurrentJournalWatermarks,
@@ -219,7 +236,7 @@ export function createBranchAgentEditCoordinator(input: {
               throw new StagedBranchWriteNoopError(workDraftBranchId, docId);
             }
             return result;
-          },
+          }),
         );
       } catch (cause) {
         concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
@@ -228,8 +245,9 @@ export function createBranchAgentEditCoordinator(input: {
       return result;
     },
 
-    async recover(docId: string): Promise<void> {
-      await ensureThreadBranch(input, docId as DocumentId);
+    async recover(): Promise<void> {
+      // Branch state is durable per commit; there is no journal to replay, and a peer is
+      // made only by a pull in a draft (contract §2.5), never here.
     },
 
     async concurrentUpdatesSince({
@@ -246,6 +264,7 @@ export function createBranchAgentEditCoordinator(input: {
         input,
         docId as DocumentId,
         afterJournalId,
+        access.getStore(),
       );
       // Durable upstream work-draft rows are never suppressed as "self" merely
       // because they came from this thread; the journal watermark is the fence.
@@ -581,7 +600,10 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch(
       branchId: string,
-    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "workId" | "generation" | "state"> | null>;
+    ): Promise<Pick<
+      BranchSnapshot,
+      "upstreamBranchId" | "draftId" | "workId" | "generation" | "state"
+    > | null>;
   };
 
 type BranchPendingJournalEntries = {
@@ -634,17 +656,32 @@ export function createBranchPendingJournalEntries(
   };
 }
 
+/** One document access of the thread core: its resolved branch and, under a save, its lease. */
+type DocumentAccess = { docId: string; branchId: string; lease: BranchLockLease | undefined };
+
+function readUnder<T>(
+  branchCoordinator: BranchCoordinator,
+  lease: BranchLockLease | undefined,
+  branchId: string,
+  fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+): Promise<T> {
+  return lease
+    ? branchCoordinator.readBranchWithLease(lease, branchId, fn)
+    : branchCoordinator.readBranch(branchId, fn);
+}
+
 async function sourceDocHasBranchDelta(
   branchCoordinator: BranchCoordinator,
+  lease: BranchLockLease | undefined,
   branchId: string,
   sourceDoc: Y.Doc,
 ): Promise<boolean> {
-  return branchCoordinator.readBranch(branchId, async (branchDoc) =>
+  return readUnder(branchCoordinator, lease, branchId, async (branchDoc) =>
     Boolean(yjsDeltaUpdate(sourceDoc, branchDoc)),
   );
 }
 
-function emptyDocState(): Uint8Array {
+function _emptyDocState(): Uint8Array {
   const doc = new Y.Doc({ gc: false });
   try {
     return Y.encodeStateAsUpdate(doc);
@@ -653,37 +690,17 @@ function emptyDocState(): Uint8Array {
   }
 }
 
-async function ensureThreadBranch(
-  input: {
-    threadId: ThreadId;
-    liveCoordinator: DocumentCoordinator;
-    branches: BranchLookupWithSnapshots;
-  },
+/**
+ * The thread's current peer of the document. A peer is made only by a pull in a draft
+ * (contract §2.5): an access that finds none is `BranchNotFoundError`, never a new branch.
+ */
+async function resolveThreadBranchId(
+  input: { threadId: ThreadId; branches: BranchLookupWithSnapshots },
   documentId: DocumentId,
 ): Promise<string> {
-  try {
-    return (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
-  } catch (cause) {
-    if (!isBranchNotFoundError(cause)) throw cause;
-    const liveState = await input.liveCoordinator
-      .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
-      .catch((cause: unknown) => {
-        if (cause instanceof DocumentNotFoundError) return emptyDocState();
-        throw cause;
-      });
-    const liveDoc = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(liveDoc, liveState);
-      const peer = await input.branches.ensureThreadPeerBranch({
-        documentId,
-        threadId: input.threadId,
-        liveDoc,
-      });
-      return peer.branchId;
-    } finally {
-      liveDoc.destroy();
-    }
-  }
+  const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
+  peer.doc.destroy();
+  return peer.branchId;
 }
 
 async function concurrentUpstreamJournalRows(
@@ -695,15 +712,18 @@ async function concurrentUpstreamJournalRows(
   },
   documentId: DocumentId,
   afterJournalId?: number,
+  access?: DocumentAccess,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
-  const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
-  peer.doc.destroy();
-  const peerSnapshot = await input.branches.getBranch(peer.branchId);
+  // Inside a document access, the branch it resolved (a save's pin); else the current peer.
+  const peerBranchId =
+    access?.docId === documentId ? access.branchId : await resolveThreadBranchId(input, documentId);
+  const peerSnapshot = await input.branches.getBranch(peerBranchId);
   const upstreamBranchId = peerSnapshot?.upstreamBranchId;
   if (!upstreamBranchId) return { rows: [] };
-  return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
+  const lease = access?.docId === documentId ? access.lease : undefined;
+  return readUnder(input.branchCoordinator, lease, upstreamBranchId, async (doc, snapshot) => {
     const rows = await journalRows.listConcurrentJournalRows(
       upstreamBranchId,
       snapshot.generation,

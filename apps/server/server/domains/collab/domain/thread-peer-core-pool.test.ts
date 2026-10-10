@@ -6,6 +6,7 @@ import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js"
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import type { FileDestination } from "../../file-policy/index.js";
 import {
+  createFakeDrafts,
   createFakeThreadPeerCores,
   inProcessResponseTransactions,
 } from "../test-support/thread-peer-pool-fakes.js";
@@ -17,9 +18,11 @@ const live: FileDestination = { kind: "live" };
 const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
 function createPool() {
   const { history, liveCore, threadCore } = createFakeThreadPeerCores();
+  // No Work here starts with an active draft: a drafted read reads live (F7) until a write ensures one.
+  const { drafts, pinFences } = createFakeDrafts();
   const pool = createThreadPeerCorePool({
-    // No Work here has an active draft: a drafted call reads the live tree (F7).
-    drafts: { viewForWork: async () => ({ kind: "live" }) },
+    drafts,
+    pinFences,
     liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
     createThreadCore: () => threadCore.asCore(),
     reversalHistory: history.reader,
@@ -70,7 +73,11 @@ describe("thread-peer pool", () => {
   // The stray .manifest peer made every live undo throw BranchNotFoundError.
   it("keeps undo live for a thread that pulled a peer but never drafted", async () => {
     const { pool, liveCore, threadCore, pullThreadPeer } = createPool();
-    await pullThreadPeer({ documentId: "ch12" as DocumentId, threadId: THREAD_ID });
+    await pullThreadPeer({
+      documentId: "ch12" as DocumentId,
+      threadId: THREAD_ID,
+      draftId: "draft-a",
+    });
 
     await pool.write({ command: "undo", file: "ch12.md", documentId: "ch12" }, context(draftA));
 

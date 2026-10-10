@@ -14,7 +14,7 @@ import {
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import {
   type FileAccess,
   type FileAccessDenied,
@@ -29,7 +29,6 @@ import {
   buildBranchReversalState,
   resolveBranchReversalScope,
 } from "./branch-reversal-history.js";
-import type { Drafts } from "./drafts.js";
 import {
   mergeReversals,
   type ReversalHistory,
@@ -51,8 +50,6 @@ type Histories = {
 };
 
 export function createThreadPeerReversals(input: {
-  /** The drafted side spells in the Work's active draft's view (live when it has none). */
-  drafts: Pick<Drafts, "viewForWork">;
   liveUtilityCore: LiveAgentEditCore;
   coreFor(threadId: string | undefined): Promise<AgentEditCore>;
   /** The thread's Work-draft history: its undo and redo reverse drafted writes there. */
@@ -92,7 +89,8 @@ export function createThreadPeerReversals(input: {
     return {
       live: { active, reversals },
       draft: { active: drafted.activeWrites, reversals: drafted.reversals },
-      draftView: await input.drafts.viewForWork(scope.workId as WorkId),
+      // The drafted side spells in the draft its history was read from.
+      draftView: { kind: "draft", draftId: scope.draftId },
     };
   }
 

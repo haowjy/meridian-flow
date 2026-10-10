@@ -4,12 +4,18 @@ import type {
   ResponseCommitSuccessResult,
   WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftId, LinkView } from "@meridian/contracts";
+import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { vi } from "vitest";
 import * as Y from "yjs";
+import {
+  type BranchLockLease,
+  createBranchCriticalSections,
+} from "../domain/branch-critical-sections.js";
 import type { BranchJournalRow } from "../domain/branch-push-contracts.js";
 import { BranchNotFoundError } from "../domain/branch-resolver.js";
 import type { BranchReversalHistoryReader } from "../domain/branch-reversal-history.js";
+import type { Draft } from "../domain/ports/draft-store.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -81,7 +87,12 @@ function createFakeReversalHistory() {
   const peers = new Map<string, string>();
   const branches = new Map<
     string,
-    { upstreamBranchId: string | null; workId: WorkId | null; generation: number }
+    {
+      upstreamBranchId: string | null;
+      draftId: DraftId;
+      workId: WorkId | null;
+      generation: number;
+    }
   >();
   const rows: BranchJournalRow[] = [];
   const key = (documentId: string, threadId: string) => `${documentId}:${threadId}`;
@@ -112,32 +123,40 @@ function createFakeReversalHistory() {
       activeWriteSummary: async () => [],
       readReversals: async () => [],
     },
-    pullThreadPeer: vi.fn(async (input: { documentId: DocumentId; threadId: ThreadId }) => {
-      const peerKey = key(input.documentId, input.threadId);
-      if (!peers.has(peerKey)) {
-        const draftId = `draft:${input.documentId}`;
-        branches.set(draftId, {
-          upstreamBranchId: null,
-          workId: FAKE_DRAFT_WORK_ID,
-          generation: 1,
-        });
-        branches.set(`peer:${peerKey}`, {
-          upstreamBranchId: draftId,
-          workId: FAKE_DRAFT_WORK_ID,
-          generation: 1,
-        });
-        peers.set(peerKey, `peer:${peerKey}`);
-      }
-      return { branchGeneration: 1, attributionBaseline: new Uint8Array() };
-    }),
+    pullThreadPeer: vi.fn(
+      async (input: { documentId: DocumentId; threadId: ThreadId; draftId: DraftId }) => {
+        const peerKey = key(input.documentId, input.threadId);
+        if (!peers.has(peerKey)) {
+          const draftBranchId = `draft-branch:${input.documentId}`;
+          branches.set(draftBranchId, {
+            upstreamBranchId: null,
+            draftId: input.draftId,
+            workId: FAKE_DRAFT_WORK_ID,
+            generation: 1,
+          });
+          branches.set(`peer:${peerKey}`, {
+            upstreamBranchId: draftBranchId,
+            draftId: input.draftId,
+            workId: FAKE_DRAFT_WORK_ID,
+            generation: 1,
+          });
+          peers.set(peerKey, `peer:${peerKey}`);
+        }
+        return {
+          branchId: `peer:${peerKey}`,
+          branchGeneration: 1,
+          attributionBaseline: new Uint8Array(),
+        };
+      },
+    ),
     /** What a thread core's drafted write leaves in the Work draft's journal. */
     recordDraftedWrite(documentId: string, threadId: string) {
       const peerId = peers.get(key(documentId, threadId));
-      const draftId = peerId ? branches.get(peerId)?.upstreamBranchId : null;
-      if (!draftId) return;
+      const draftBranchId = peerId ? branches.get(peerId)?.upstreamBranchId : null;
+      if (!draftBranchId) return;
       rows.push({
         id: rows.length + 1,
-        branchId: draftId,
+        branchId: draftBranchId,
         generation: 1,
         wId: rows.length + 1,
         source: "agent",
@@ -166,6 +185,42 @@ export function createFakeThreadPeerCores() {
     },
   });
   return { history, liveCore, threadCore };
+}
+
+/**
+ * Drafts with no database: a Work has no draft until a write ensures one (F7), and the
+ * save's pin fences lease in-process and find nothing stale.
+ */
+export function createFakeDrafts() {
+  const active = new Map<WorkId, DraftId>();
+  const sections = createBranchCriticalSections();
+  return {
+    drafts: {
+      viewForWork: async (workId: WorkId | null): Promise<LinkView> => {
+        const draftId = workId ? active.get(workId) : undefined;
+        return draftId ? { kind: "draft", draftId } : { kind: "live" };
+      },
+      ensureActiveForWrite: vi.fn(async (input: { workId: WorkId }): Promise<Draft> => {
+        const id = active.get(input.workId) ?? (`draft-of-${input.workId}` as DraftId);
+        active.set(input.workId, id);
+        return {
+          id,
+          projectId: "project-1" as ProjectId,
+          status: "active",
+          originWorkId: input.workId,
+          originThreadId: null,
+          createdBy: "user-1" as UserId,
+          createdAt: new Date(0),
+        };
+      }),
+    },
+    pinFences: {
+      branchIds: async (pins: readonly { branchId: string }[]) => pins.map((pin) => pin.branchId),
+      withLeases: <T>(ids: readonly string[], run: (lease: BranchLockLease) => Promise<T>) =>
+        sections.withBranches(ids, run),
+      stale: async () => new Set<DocumentId>(),
+    },
+  };
 }
 
 /** Pool wiring with no database: settles inline and runs the save in-process. */

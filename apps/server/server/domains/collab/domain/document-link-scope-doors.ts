@@ -152,7 +152,6 @@ export function scopeBranchPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    pullThreadPeer: access.pullThreadPeer,
     flushBranchLivePull: access.flushBranchLivePull,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),

@@ -195,6 +195,13 @@ export async function seedDatabase(
     slug: "atomicity-work",
     aiWriteMode: "draft",
   });
+  // The Work already has its draft, as if an earlier write ensured it (contract §2.5):
+  // a drafted read pulls its thread peers instead of reading live.
+  await db.insert(schema.drafts).values({
+    projectId: PROJECT_ID,
+    originWorkId: WORK_ID,
+    createdBy: USER_ID,
+  });
   await db.insert(schema.contextSources).values({
     id: SOURCE_ID,
     projectId: PROJECT_ID,
@@ -317,9 +324,16 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journal: persistence.journal,
   });
   const branchCriticalSections = createBranchCriticalSections();
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
   const realBranchStore = createDrizzleBranchStore(db, {
-    journal: persistence.journal,
-    lifecycle: persistence.lifecycle,
+    live: {
+      journal: persistence.journal,
+      lifecycle: persistence.lifecycle,
+    },
+    drafts: workDrafts,
   });
   let journalInsertCount = 0;
   // Which branch journal insert of the next save fails, counting from 1.
@@ -499,6 +513,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     commitStore: durablePushCommitStore,
     workPushPolicyStore: durableWorkPushPolicyStore,
     workDraftPendingStore: durableWorkDraftPendingStore,
+    drafts: workDrafts,
     settlementStore,
     branchCoordinator,
     journal: persistence.journal,
@@ -580,10 +595,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     inTransaction: isInDrizzleTransaction,
   });
   const projections = { refresh: runDocumentWriteHook };
-  const workDrafts = createDrafts({
-    store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
-  });
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
@@ -593,10 +604,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
-      liveCoordinator,
       lifecycle: persistence.lifecycle,
       branches: branchStore,
       branchCoordinator,
+      criticalSections: branchCriticalSections,
       branchPulls,
       branchJournal: durableBranchJournalReadStore,
       concurrentJournalWatermarks: watermarks,

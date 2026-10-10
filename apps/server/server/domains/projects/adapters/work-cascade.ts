@@ -2,7 +2,6 @@
 import type { ContextSourceId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   contextSources,
-  documentBranches,
   documents,
   folders,
   projectResults,
@@ -136,27 +135,6 @@ const WORK_CASCADE: readonly WorkCascadeEntry[] = [
         .update(contextSources)
         .set({ deletedAt: null, deletedByWorkId: null })
         .where(eq(contextSources.deletedByWorkId, workId));
-    },
-  },
-  {
-    name: "Work draft branches",
-    async cascadeDelete({ db, workId, at }) {
-      await currentDrizzleDb(db)
-        .update(documentBranches)
-        .set({ status: "closed", deletedByWorkId: workId, updatedAt: at })
-        .where(
-          and(
-            eq(documentBranches.workId, workId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        );
-    },
-    async cascadeRestore({ db, workId, at }) {
-      await currentDrizzleDb(db)
-        .update(documentBranches)
-        .set({ status: "active", deletedByWorkId: null, updatedAt: at })
-        .where(eq(documentBranches.deletedByWorkId, workId));
     },
   },
 ];

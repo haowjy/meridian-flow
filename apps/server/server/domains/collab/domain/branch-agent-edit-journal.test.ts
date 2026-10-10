@@ -55,14 +55,23 @@ describe("branch agent-edit journal appendBatch", () => {
         ensureThreadPeerBranch: async () => {
           throw new Error("not used");
         },
-        ensureWorkDraftBranch: async () => {
-          throw new Error("not used");
-        },
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 2, state: new Uint8Array() }
-            : { upstreamBranchId: null, workId: WORK_ID, generation: 2, state: new Uint8Array() },
+            ? {
+                upstreamBranchId: "work",
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 2,
+                state: new Uint8Array(),
+              }
+            : {
+                upstreamBranchId: null,
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 2,
+                state: new Uint8Array(),
+              },
       },
       branchRows: {
         listJournalRowsForBranch: async () => [
@@ -101,12 +110,10 @@ describe("branch agent-edit journal appendBatch", () => {
         ensureThreadPeerBranch: async () => {
           throw new Error("not used");
         },
-        ensureWorkDraftBranch: async () => {
-          throw new Error("not used");
-        },
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async () => ({
           upstreamBranchId: "work",
+          draftId: "draft-1",
           workId: WORK_ID,
           generation: 1,
           state: new Uint8Array(),
@@ -134,14 +141,23 @@ describe("branch agent-edit journal appendBatch", () => {
         ensureThreadPeerBranch: async () => {
           throw new Error("not used");
         },
-        ensureWorkDraftBranch: async () => {
-          throw new Error("not used");
-        },
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 1, state: new Uint8Array() }
-            : { upstreamBranchId: null, workId: WORK_ID, generation: 1, state: new Uint8Array() },
+            ? {
+                upstreamBranchId: "work",
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 1,
+                state: new Uint8Array(),
+              }
+            : {
+                upstreamBranchId: null,
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 1,
+                state: new Uint8Array(),
+              },
       },
       branchRows: {
         listJournalRowsForBranch: async () => [
@@ -232,14 +248,23 @@ describe("branch agent-edit journal appendBatch", () => {
         ensureThreadPeerBranch: async () => {
           throw new Error("not used");
         },
-        ensureWorkDraftBranch: async () => {
-          throw new Error("not used");
-        },
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 1, state: branchState }
-            : { upstreamBranchId: null, workId: WORK_ID, generation: 1, state: branchState },
+            ? {
+                upstreamBranchId: "work",
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 1,
+                state: branchState,
+              }
+            : {
+                upstreamBranchId: null,
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 1,
+                state: branchState,
+              },
       },
       branchRows: {
         listJournalRowsForBranch: async () => [
@@ -318,14 +343,23 @@ describe("branch agent-edit journal appendBatch", () => {
         ensureThreadPeerBranch: async () => {
           throw new Error("not used");
         },
-        ensureWorkDraftBranch: async () => {
-          throw new Error("not used");
-        },
         listActiveWorkDraftBranchIds: async () => ["work"],
         getBranch: async (branchId) =>
           branchId === "peer"
-            ? { upstreamBranchId: "work", workId: WORK_ID, generation: 1, state: branchState }
-            : { upstreamBranchId: null, workId: WORK_ID, generation: 1, state: branchState },
+            ? {
+                upstreamBranchId: "work",
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 1,
+                state: branchState,
+              }
+            : {
+                upstreamBranchId: null,
+                draftId: "draft-1",
+                workId: WORK_ID,
+                generation: 1,
+                state: branchState,
+              },
       },
       branchRows: { listJournalRowsForBranch: listRows },
     });

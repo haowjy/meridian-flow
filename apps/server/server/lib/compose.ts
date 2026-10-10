@@ -6,7 +6,7 @@
 
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -588,8 +588,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     arrivals,
     drafts: documentSync.drafts,
-    // Pending enrollment for a draft's tree change until lane K's mutatePendingDraft (§13.2).
-    draftTreeChanged: (workId) => workProjectionMutation.touchWorks([workId as WorkId]),
+    pendingDraft: workProjectionMutation,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db),

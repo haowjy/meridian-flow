@@ -1,4 +1,5 @@
 /** Canonical pending-review predicate for Work draft branches. */
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
 import type {
@@ -17,13 +18,13 @@ export type PendingWorkDraft = {
 };
 
 export type WorkDraftPending = {
-  list(workId: WorkId): Promise<PendingWorkDraft[]>;
+  list(draftId: DraftId): Promise<PendingWorkDraft[]>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };
 
 export function createWorkDraftPending(store: WorkDraftPendingStore): WorkDraftPending {
-  async function list(workId: WorkId): Promise<PendingWorkDraft[]> {
-    const evidence = await store.listReviewableEvidenceForWork(workId);
+  async function list(draftId: DraftId): Promise<PendingWorkDraft[]> {
+    const evidence = await store.listReviewableEvidenceForDraft(draftId);
     const manifestEntries = new Map<DocumentId, PendingWorkDraft["manifestEntry"]>();
     for (const { branch, rows } of evidence) {
       for (const row of rows) {

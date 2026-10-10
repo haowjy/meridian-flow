@@ -12,6 +12,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
+import type { Drafts } from "./drafts.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -363,6 +364,8 @@ export type BranchPushServiceInput = {
   commitStore: PushCommitStore;
   workPushPolicyStore: WorkPushPolicyStore;
   workDraftPendingStore: WorkDraftPendingStore;
+  /** The D40 switch applies the Work's active draft's pending branches. */
+  drafts: Pick<Drafts, "activeForWork">;
   settlementStore: PendingSettlementStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;

@@ -68,7 +68,7 @@ describe("response committer", () => {
           ...context,
           responseId,
           turnId: `turn-${file}`,
-          interactionContext: { mode: "threadPeer", branchGeneration: 1 },
+          interactionContext: { mode: "threadPeer", branchGeneration: 1, branchId: "branch-peer" },
         },
       );
     }

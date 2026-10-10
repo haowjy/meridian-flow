@@ -5,6 +5,7 @@ import {
   contextSources,
   documentBranches,
   documents,
+  drafts,
   projects,
   threads,
   threadWorks,
@@ -73,6 +74,10 @@ export function createWorkDraftFixture(db: Database) {
       slug: "work",
       aiWriteMode: "draft",
     });
+    // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
+    await db
+      .insert(drafts)
+      .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
     await db.insert(contextSources).values({
       id: SOURCE_ID,
       projectId: PROJECT_ID,

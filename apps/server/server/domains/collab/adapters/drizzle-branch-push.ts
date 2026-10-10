@@ -13,6 +13,7 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import {
+  branchDraftWork,
   lockDraftBranchWorks,
   runWithActiveWorkDrafts,
 } from "../../../shared/work-draft-lifecycle.js";
@@ -323,10 +324,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
       if (workIds.length === 0) return new Map();
       const rows = await currentDrizzleDb(db)
         .select({
-          workId: documentBranches.workId,
+          workId: branchDraftWork.workId,
           count: countDistinct(documentBranches.id),
         })
         .from(documentBranches)
+        .innerJoin(branchDraftWork.drafts, branchDraftWork.on)
         .innerJoin(
           branchWriteJournal,
           and(
@@ -337,14 +339,14 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         )
         .where(
           and(
-            inArray(documentBranches.workId, workIds),
+            inArray(branchDraftWork.workId, workIds),
             eq(documentBranches.kind, "work_draft"),
             eq(documentBranches.status, "active"),
             sql`(${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
               or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId') is distinct from 'string'`,
           ),
         )
-        .groupBy(documentBranches.workId);
+        .groupBy(branchDraftWork.workId);
 
       return new Map(
         rows.flatMap(({ workId, count }) =>
@@ -352,7 +354,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         ),
       );
     },
-    async listReviewableEvidenceForWork(workId) {
+    async listReviewableEvidenceForDraft(draftId) {
       const rows = await currentDrizzleDb(db)
         .select({
           branchId: documentBranches.id,
@@ -374,7 +376,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         )
         .where(
           and(
-            eq(documentBranches.workId, workId),
+            eq(documentBranches.draftId, draftId),
             eq(documentBranches.kind, "work_draft"),
             eq(documentBranches.status, "active"),
           ),
@@ -387,7 +389,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           branch: {
             branchId: row.branchId,
             documentId: row.documentId,
-            workId,
+            draftId,
             generation: row.generation,
           },
           rows: [],

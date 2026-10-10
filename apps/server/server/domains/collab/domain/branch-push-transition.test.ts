@@ -131,6 +131,7 @@ function fixture() {
       documentId,
       kind: "work_draft",
       upstreamBranchId: null,
+      draftId: "draft-1",
       workId: "work" as WorkId,
       threadId: null,
       status: "active",

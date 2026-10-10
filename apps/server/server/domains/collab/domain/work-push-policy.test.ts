@@ -1,6 +1,6 @@
 /** Contract tests for switching a Work's AI write mode (D40, D59). */
 
-import type { UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
@@ -8,6 +8,7 @@ import { createWorkPushPolicy } from "./work-push-policy.js";
 
 const WORK_ID = "00000000-0000-4000-8000-000000000001" as WorkId;
 const USER_ID = "00000000-0000-4000-8000-000000000002" as UserId;
+const DRAFT_ID = "00000000-0000-4000-8000-000000000004";
 
 function createHarness() {
   const events: string[] = [];
@@ -35,6 +36,17 @@ function createHarness() {
   const policy = createWorkPushPolicy({
     workPushPolicyStore,
     workDraftPending,
+    drafts: {
+      activeForWork: async (workId) => ({
+        id: DRAFT_ID,
+        projectId: "00000000-0000-4000-8000-000000000005" as ProjectId,
+        status: "active",
+        originWorkId: workId,
+        originThreadId: null,
+        createdBy: USER_ID,
+        createdAt: new Date(0),
+      }),
+    },
     applyPendingDraft,
   });
 
@@ -88,7 +100,7 @@ function pendingDrafts(...branchIds: string[]) {
     branch: {
       branchId,
       documentId: "00000000-0000-4000-8000-000000000003",
-      workId: WORK_ID,
+      draftId: DRAFT_ID,
       generation: 1,
     },
     rows: [],

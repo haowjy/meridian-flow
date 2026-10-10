@@ -22,7 +22,7 @@ import { createTestWorkProjectionMutation } from "../../test-support/work-projec
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDocumentRevisions } from "../context/index.js";
-import { createLocalFileAccessChanges } from "../file-policy/index.js";
+import { createLocalFileAccessChanges, type FileDestination } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
@@ -133,8 +133,15 @@ async function fixture(
       ),
     ),
   };
-  const read = (responseId?: string) =>
-    core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });
+  const read = (responseId?: string, destination?: FileDestination) =>
+    core.read(
+      { file: "alpha.md", documentId: ALPHA_ID },
+      {
+        ...context,
+        responseId,
+        ...(destination ? { grant: inProject(testFileGrant(destination)) } : {}),
+      },
+    );
   const current = async () =>
     (await revisions.current({ threadId: THREAD_ID, documentIds: [ALPHA_ID] })).get(ALPHA_ID);
   async function writerDelete() {
@@ -175,7 +182,7 @@ async function fixture(
     expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
   }
-  return { ...f, core, read, current, stage, writerDelete, revisions, effective };
+  return { ...f, drafts, core, read, current, stage, writerDelete, revisions, effective };
 }
 
 describe("document revisions (postgres and collab)", () => {
@@ -294,7 +301,9 @@ describe("document revisions (postgres and collab)", () => {
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);
-    expect((await f.read()).revision).toBe(await f.current());
+    // The thread's grants now name Work B, which has no draft yet: the read is live (S1).
+    const rebound = { kind: "draft", workId: workB, workSlug: "other-draft" } as const;
+    expect((await f.read(undefined, rebound)).revision).toBe(await f.current());
   });
 
   it("does not treat a deleted document's still-loaded room as a readable source", async () => {
@@ -352,7 +361,9 @@ describe("document revisions (postgres and collab)", () => {
   it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
     const f = await fixture(db, harnesses, "draft");
     await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
-      await f.branchStore.ensureWorkDraftBranch({ documentId: ALPHA_ID, workId: WORK_ID, liveDoc });
+      const draft = await f.drafts.activeForWork(WORK_ID);
+      if (!draft) throw new Error("the harness seeds the Work's draft");
+      await f.branchStore.ensureDraftBranch({ documentId: ALPHA_ID, draftId: draft.id, liveDoc });
     });
     const before = await f.current();
     const captured = deferred();
@@ -429,7 +440,13 @@ describe("document revisions (postgres and collab)", () => {
       runResponseTransaction(
         (operation) => runInDrizzleTransaction(db, operation),
         async () => {
-          await pulls.pullThreadPeer({ documentId: ALPHA_ID, threadId: THREAD_ID });
+          const draft = await f.drafts.activeForWork(WORK_ID);
+          if (!draft) throw new Error("the harness seeds the Work's draft");
+          await pulls.pullThreadPeer({
+            documentId: ALPHA_ID,
+            threadId: THREAD_ID,
+            draftId: draft.id,
+          });
           throw new Error("response aborted");
         },
       ),

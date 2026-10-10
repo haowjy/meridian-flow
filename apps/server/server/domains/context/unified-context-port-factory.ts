@@ -7,7 +7,7 @@
  * thread resolution to context-port-resolution.ts.
  */
 
-import type { CanonicalContextAuthority } from "@meridian/contracts";
+import type { CanonicalContextAuthority, DraftId } from "@meridian/contracts";
 import {
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
@@ -511,8 +511,13 @@ export function createProductionUnifiedContextPortFactory(options: {
   arrivals?: DocumentArrivals;
   /** The one drafts resolver: draft placements read and write through it (§2.3). */
   drafts: Drafts;
-  /** Enrolls a Work's pending projection when a draft's tree changes (§13.2, S3). */
-  draftTreeChanged?(workId: string): Promise<void>;
+  /**
+   * Enrolls the drafting Work's pending projection when a draft command moves its pending
+   * count (§13.2, S3): `mutatePendingDraft` from the Work projection.
+   */
+  pendingDraft?: {
+    mutatePendingDraft<T>(draftIds: readonly DraftId[], operation: () => Promise<T>): Promise<T>;
+  };
 }): UnifiedContextPortFactory {
   const catalogMutations =
     options.catalogMutations ??
@@ -582,9 +587,10 @@ export function createProductionUnifiedContextPortFactory(options: {
               }
             },
           });
-          const result = await operation(command);
-          if (draftWrite && command.draft) await options.draftTreeChanged?.(draftWrite.workId);
-          return result;
+          const draft = command.draft;
+          return draft && options.pendingDraft
+            ? options.pendingDraft.mutatePendingDraft([draft.id], () => operation(command))
+            : operation(command);
         }),
     };
   }

@@ -74,6 +74,7 @@ function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
     documentId,
     kind: "work_draft",
     upstreamBranchId: null,
+    draftId: "draft-1",
     workId: WORK_ID,
     threadId: null,
     status: "active",

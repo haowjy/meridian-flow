@@ -16,10 +16,9 @@ import {
   branchPushSettlementHolds,
   branchPushSettlementOutbox,
   branchPushSettlementPayloads,
-  documentBranches,
   pushLineage,
 } from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   currentDrizzleDb,
@@ -27,6 +26,7 @@ import {
   runInDrizzleSavepoint,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { draftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -645,14 +645,8 @@ async function stagedMembers(
   members: readonly BatchCompletionMember[],
 ): Promise<StagedPublicationMember[]> {
   const branchIds = members.flatMap(({ push }) => (push.branchId ? [push.branchId] : []));
-  const works =
-    branchIds.length === 0
-      ? []
-      : await db
-          .select({ branchId: documentBranches.id, workId: documentBranches.workId })
-          .from(documentBranches)
-          .where(inArray(documentBranches.id, branchIds));
-  const workByBranch = new Map(works.map(({ branchId, workId }) => [branchId, workId]));
+  const works = await draftBranchWorks(db, branchIds);
+  const workByBranch = new Map(works.map(({ id, workId }) => [id, workId]));
   return members.map(({ push }) => ({
     pushId: push.id,
     documentId: push.documentId,

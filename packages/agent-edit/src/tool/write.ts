@@ -60,7 +60,10 @@ export interface WriteTool {
   ): Promise<ResponseCommitSuccessResult>;
   rollbackResponse(
     responseId: string,
-    options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
+    options?: Pick<
+      import("./response-committer.js").ResponseCommitOptions,
+      "deferFinalization" | "branchLease"
+    >,
   ): Promise<ResponseRollbackResult>;
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
   withResponseDocument: ResponseCommitter["withResponseDocument"];

@@ -101,14 +101,10 @@ describe("change trail (postgres)", () => {
     ] as const;
     // The Work's draft created both: hidden rows and the draft's `created` rows.
     const [draft] = await db
-      .insert(schema.drafts)
-      .values({
-        projectId: PROJECT_ID as never,
-        originWorkId: WORK_ID,
-        createdBy: USER_ID as never,
-      })
-      .returning({ id: schema.drafts.id });
-    if (!draft) throw new Error("draft not inserted");
+      .select({ id: schema.drafts.id })
+      .from(schema.drafts)
+      .where(eq(schema.drafts.originWorkId, WORK_ID));
+    if (!draft) throw new Error("the harness seeds the Work's draft");
     await db.insert(schema.documents).values(
       created.map((id, index) => ({
         id: id as never,
@@ -134,9 +130,9 @@ describe("change trail (postgres)", () => {
     for (const [index, documentId] of created.entries()) {
       await fixture.persistence.lifecycle.ensureDocument(documentId as never);
       const emptyLive = new Y.Doc({ gc: false });
-      const branch = await fixture.branchStore.ensureWorkDraftBranch({
+      const branch = await fixture.branchStore.ensureDraftBranch({
         documentId: documentId as never,
-        workId: WORK_ID,
+        draftId: draft.id,
         liveDoc: emptyLive,
       });
       emptyLive.destroy();
@@ -426,10 +422,15 @@ describe("change trail (postgres)", () => {
     if (reviewed.status !== "active" || !reviewed.draftId) {
       throw new Error("missing reviewed draft preview");
     }
+    const [draft] = await db
+      .select({ id: schema.drafts.id })
+      .from(schema.drafts)
+      .where(eq(schema.drafts.originWorkId, WORK_ID));
+    if (!draft) throw new Error("the harness seeds the Work's draft");
     const branch = await fixture.liveCoordinator.withDocument(ALPHA_ID, (liveDoc) =>
-      fixture.branchStore.resolveWorkDraftBranchForWork({
+      fixture.branchStore.resolveDraftBranch({
         documentId: ALPHA_ID,
-        workId: WORK_ID,
+        draftId: draft.id,
         liveDoc,
       }),
     );

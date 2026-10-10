@@ -23,6 +23,7 @@ import {
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
+import { createBranchCriticalSections } from "../../domain/branch-critical-sections.js";
 import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
@@ -114,6 +115,14 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     discardThreadPeerBranches: async () => {},
     pullThreadPeer: async () => undefined,
+    // Thread cores are the live core here, so nothing is ever pinned to a branch.
+    pinFences: {
+      branchIds: async () => [],
+      withLeases: () => {
+        throw new Error("The in-memory collab domain has no branches to lease");
+      },
+      stale: async () => new Set(),
+    },
     commitThreadResponseAtomically: (operation) => operation(),
     responseTransactionSettlement: {
       deferUntilCommit: () => false,
@@ -258,6 +267,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
     draftResolver: {
       drafts,
+      branchLeases: createBranchCriticalSections(),
       // No draft branches in memory: nothing to register, and no publication to prepare.
       draftLinks: {
         prepareDraftLinkPublication: async () => {
@@ -308,7 +318,6 @@ function createInMemoryBranchPeerStub(
       const read = await documents.readVersionedMarkdown(input.documentId);
       return read.ok ? read.value.revision : null;
     },
-    async pullThreadPeer() {},
     async flushBranchLivePull() {},
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>

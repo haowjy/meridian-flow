@@ -57,6 +57,14 @@ function refusedAtSave(denial: FileAccessDenied): {
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 
+/** The draft a document's writes were pinned to moved on before the save (contract §2.5). */
+function staleAtSave(): { message: string } {
+  return {
+    message:
+      "This file's draft changed before your reply saved (it was applied or discarded), so these changes weren't kept. Read the file again before editing.",
+  };
+}
+
 /**
  * Reverse a reply's create (contract §12.5): a live create is deleted; a drafted one ends
  * its draft's use of the document, unless another thread's committed text makes it stand.
@@ -123,7 +131,7 @@ export function createAgentEditResponseWriteLifecycle(
           ),
           refused: result.refused.map((refusal) => ({
             documentId: refusal.documentId,
-            ...refusedAtSave(refusal.denial),
+            ...("denial" in refusal ? refusedAtSave(refusal.denial) : staleAtSave()),
           })),
         };
       };

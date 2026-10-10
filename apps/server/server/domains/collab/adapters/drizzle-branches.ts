@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { DocumentLifecycle, UpdateJournal } from "@meridian/agent-edit/integration";
+import type { DraftId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -12,6 +13,7 @@ import {
   documents,
   documentYjsHeads,
   documentYjsUpdates,
+  drafts as draftRows,
   threadWorks,
   works,
 } from "@meridian/database/schema";
@@ -33,13 +35,18 @@ import {
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
-import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
+import {
+  branchDraftWork,
+  draftBranchWorks,
+  runWithActiveWorkDrafts,
+} from "../../../shared/work-draft-lifecycle.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   type AppendBranchJournalInput,
   assertReadableBranch,
   type BranchSnapshot,
+  BranchStaleUpdateError,
   type CommitBranchMutationInput,
   type PersistBranchInput,
   type ResetBranchSnapshotInput,
@@ -51,20 +58,24 @@ import {
   type BranchState,
 } from "../domain/branch-resolver.js";
 import { replicateFrozenIdentity } from "../domain/document-mutation-policy.js";
+import type { Drafts } from "../domain/drafts.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
 export function createDrizzleBranchStore(
   db: Database,
-  live:
-    | {
-        journal: UpdateJournal;
-        lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-      }
-    | undefined,
-  workProjection?: WorkProjectionMutation,
+  deps: {
+    live?: {
+      journal: UpdateJournal;
+      lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+    };
+    workProjection?: WorkProjectionMutation;
+    /** A peer ensure relies on its draft staying active; a thread finds its Work's draft. */
+    drafts: Pick<Drafts, "shareActive" | "activeForWork">;
+  },
 ): DrizzleBranchStore {
+  const { live, workProjection, drafts } = deps;
   const mutatePending = <T>(branchIds: readonly string[], operation: () => Promise<T>) =>
     workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
@@ -99,15 +110,15 @@ export function createDrizzleBranchStore(
     )`;
   }
 
-  async function activeWorkDraft(
+  async function activeDraftBranch(
     documentId: DocumentId,
-    workId: WorkId,
+    draftId: DraftId,
   ): Promise<BranchSnapshot | null> {
     const [row] = await selectBranch(currentDrizzleDb(db))
       .where(
         and(
           eq(documentBranches.documentId, documentId),
-          eq(documentBranches.workId, workId),
+          eq(documentBranches.draftId, draftId),
           eq(documentBranches.kind, "work_draft"),
           eq(documentBranches.status, "active"),
         ),
@@ -126,12 +137,14 @@ export function createDrizzleBranchStore(
       .values({ ...values, schemaVersion: packCollabSchemaVersion(values.schemaVersion) })
       .returning();
     if (!row) throw new Error("Failed to create document branch");
+    const [mapped] = await draftBranchWorks(db, [row.id]);
     return mapBranch({
       branchId: row.id,
       documentId: row.documentId,
       kind: row.kind,
       upstreamBranchId: row.upstreamBranchId,
-      workId: row.workId,
+      draftId: row.draftId,
+      workId: mapped?.workId ?? null,
       threadId: row.threadId,
       status: row.status,
       generation: row.generation,
@@ -182,14 +195,14 @@ export function createDrizzleBranchStore(
     return row ? unpackCollabSchemaVersion(row.schemaVersion) : COLLAB_SCHEMA_VERSION;
   }
 
-  async function ensureWorkDraftBranch(input: {
+  async function ensureDraftBranch(input: {
     documentId: DocumentId;
-    workId: WorkId;
+    draftId: DraftId;
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
-    const existing = await activeWorkDraft(input.documentId, input.workId);
+    const existing = await activeDraftBranch(input.documentId, input.draftId);
     if (existing) return existing;
-    await assertDraftableUnderWork(input.documentId, input.workId);
+    await assertDraftableInDraft(input.documentId, input.draftId);
     const seed = await replicatedSnapshotFrom(input.liveDoc);
     // A draft create's ensure and a thread peer's racing root ensure get one branch.
     const [inserted] = await currentDrizzleDb(db)
@@ -199,7 +212,7 @@ export function createDrizzleBranchStore(
         documentId: input.documentId,
         kind: "work_draft",
         upstreamBranchId: null,
-        workId: input.workId,
+        draftId: input.draftId,
         threadId: null,
         status: "active",
         ...seed,
@@ -207,23 +220,22 @@ export function createDrizzleBranchStore(
       })
       .onConflictDoNothing()
       .returning({ id: documentBranches.id });
-    const branch = await activeWorkDraft(input.documentId, input.workId);
+    const branch = await activeDraftBranch(input.documentId, input.draftId);
     if (!branch) {
       throw new Error(
-        `Work draft branch for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
+        `Draft branch for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
       );
     }
     return branch;
   }
 
-  /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
   /**
    * §12.5, O-11: a contribution is any journal row of the branch's current generation that
    * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
    */
   async function retractCreatedDraftBranch(input: {
     documentId: DocumentId;
-    workId: WorkId;
+    draftId: DraftId;
   }): Promise<
     | { outcome: "stands" }
     | { outcome: "retracted"; deleted: readonly { branchId: string; threadId: ThreadId | null }[] }
@@ -241,7 +253,7 @@ export function createDrizzleBranchStore(
           eq(documentBranches.documentId, input.documentId),
           eq(documentBranches.kind, "work_draft"),
           eq(documentBranches.status, "active"),
-          eq(documentBranches.workId, input.workId),
+          eq(documentBranches.draftId, input.draftId),
         ),
       );
     const peers =
@@ -292,9 +304,10 @@ export function createDrizzleBranchStore(
     };
   }
 
+  /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
   async function ensureCreatedDraftBranch(input: {
     documentId: DocumentId;
-    workId: WorkId;
+    draftId: DraftId;
   }): Promise<void> {
     if (!live) throw new Error("A draft create's branch needs the collab live journal");
     await live.lifecycle.ensureDocument(input.documentId);
@@ -303,18 +316,18 @@ export function createDrizzleBranchStore(
     try {
       if (snapshot.checkpoint) Y.applyUpdate(liveDoc, snapshot.checkpoint);
       for (const update of snapshot.updates) Y.applyUpdate(liveDoc, update.update);
-      await ensureWorkDraftBranch({ ...input, liveDoc });
+      await ensureDraftBranch({ ...input, liveDoc });
     } finally {
       liveDoc.destroy();
     }
   }
 
   /**
-   * Callers route scratch and uploads live (D9), and pick a Work of the document's own
-   * project; reaching here otherwise is a routing or authorization bug. Every Work draft
-   * is created here, so no entry point can pair a document with another project's Work.
+   * Callers route scratch and uploads live (D9), and pick a draft of the document's own
+   * project; reaching here otherwise is a routing or authorization bug. Every draft branch
+   * is created here, so no entry point can pair a document with another project's draft.
    */
-  async function assertDraftableUnderWork(documentId: DocumentId, workId: WorkId): Promise<void> {
+  async function assertDraftableInDraft(documentId: DocumentId, draftId: DraftId): Promise<void> {
     const sourceWork = alias(works, "source_work");
     const [row] = await currentDrizzleDb(db)
       .select({
@@ -331,19 +344,25 @@ export function createDrizzleBranchStore(
     if (row && isContextUriScheme(row.scheme) && !isDrafted(row.scheme)) {
       throw new Error(`Document ${documentId} is in ${row.scheme}://, which is never drafted`);
     }
-    const [work] = await currentDrizzleDb(db)
-      .select({ projectId: works.projectId })
-      .from(works)
-      .where(eq(works.id, workId))
+    const [draft] = await currentDrizzleDb(db)
+      .select({ projectId: draftRows.projectId })
+      .from(draftRows)
+      .where(eq(draftRows.id, draftId))
       .limit(1);
-    if (!row || !work || row.projectId !== work.projectId) {
-      throw new Error(`Work ${workId} cannot draft document ${documentId} outside its project`);
+    if (!row || !draft || row.projectId !== draft.projectId) {
+      throw new Error(`Draft ${draftId} cannot draft document ${documentId} outside its project`);
     }
   }
 
+  /**
+   * The thread's peer in the given draft (contract §2.5): never ensures a draft. The draft
+   * is held `FOR SHARE` while the branches are made, so a close either waits for this to
+   * commit or has already closed it (then the peer is stale). Locks no Work row.
+   */
   async function ensureThreadPeerBranch(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId: DraftId;
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
     return runInDrizzleTransaction(db, async () => {
@@ -351,9 +370,11 @@ export function createDrizzleBranchStore(
       // Keep authority stable with the caller's thread lock. The branch writes
       // commit independently; reacquiring this row in the root would self-deadlock.
       return runInRootDrizzleTransaction(db, async () => {
-        const workId = await findPrimaryWork(input.threadId);
+        if (!(await drafts.shareActive(input.draftId))) {
+          throw new BranchStaleUpdateError(`draft:${input.draftId}`);
+        }
         const existing = await findActiveThreadPeer(input.documentId, input.threadId);
-        if (existing?.workId === workId) return existing;
+        if (existing?.draftId === input.draftId) return existing;
         if (existing) {
           await currentDrizzleDb(db)
             .update(documentBranches)
@@ -365,9 +386,9 @@ export function createDrizzleBranchStore(
               ),
             );
         }
-        const workDraft = await ensureWorkDraftBranch({
+        const workDraft = await ensureDraftBranch({
           documentId: input.documentId,
-          workId,
+          draftId: input.draftId,
           liveDoc: input.liveDoc,
         });
         const upstreamDoc = materializeBranch(workDraft, input.threadId);
@@ -377,7 +398,7 @@ export function createDrizzleBranchStore(
             documentId: input.documentId,
             kind: "thread_peer",
             upstreamBranchId: workDraft.branchId,
-            workId,
+            draftId: input.draftId,
             threadId: input.threadId,
             status: "active",
             ...(await replicatedSnapshotFrom(upstreamDoc)),
@@ -609,7 +630,8 @@ export function createDrizzleBranchStore(
           throw new BranchNotFoundError(documentId, threadId);
         throw cause;
       }
-      const row = await activeWorkDraft(documentId, workId);
+      const draft = await drafts.activeForWork(workId);
+      const row = draft ? await activeDraftBranch(documentId, draft.id) : null;
       if (!row) throw new BranchNotFoundError(documentId, threadId);
       return {
         branchId: row.branchId,
@@ -618,8 +640,8 @@ export function createDrizzleBranchStore(
       };
     },
 
-    async resolveWorkDraftBranchForWork(input): Promise<BranchState> {
-      const row = await ensureWorkDraftBranch(input);
+    async resolveDraftBranch(input): Promise<BranchState> {
+      const row = await ensureDraftBranch(input);
       return {
         branchId: row.branchId,
         doc: materializeBranch(row, "" as ThreadId),
@@ -641,8 +663,8 @@ export function createDrizzleBranchStore(
       return rows.map((row) => row.id);
     },
 
-    ensureWorkDraftBranch(input) {
-      return runInDrizzleTransaction(db, () => ensureWorkDraftBranch(input));
+    ensureDraftBranch(input) {
+      return runInDrizzleTransaction(db, () => ensureDraftBranch(input));
     },
 
     ensureCreatedDraftBranch,
@@ -669,6 +691,7 @@ class NoPrimaryWorkError extends Error {
 
 type BranchSelectRow = Awaited<ReturnType<ReturnType<typeof selectBranch>["limit"]>>[number];
 
+/** A branch row with its Work derived through its draft (contract §2.4). */
 function selectBranch(db: DrizzleDb) {
   return db
     .select({
@@ -676,7 +699,8 @@ function selectBranch(db: DrizzleDb) {
       documentId: documentBranches.documentId,
       kind: documentBranches.kind,
       upstreamBranchId: documentBranches.upstreamBranchId,
-      workId: documentBranches.workId,
+      draftId: documentBranches.draftId,
+      workId: branchDraftWork.workId,
       threadId: documentBranches.threadId,
       status: documentBranches.status,
       generation: documentBranches.generation,
@@ -685,7 +709,8 @@ function selectBranch(db: DrizzleDb) {
       discardedStateVector: documentBranches.discardedStateVector,
       schemaVersion: documentBranches.schemaVersion,
     })
-    .from(documentBranches);
+    .from(documentBranches)
+    .innerJoin(branchDraftWork.drafts, branchDraftWork.on);
 }
 
 function mapBranch(row: BranchSelectRow): BranchSnapshot {
@@ -694,7 +719,8 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     documentId: row.documentId,
     kind: row.kind,
     upstreamBranchId: row.upstreamBranchId,
-    workId: row.workId,
+    draftId: row.draftId,
+    workId: (row.workId as WorkId | null) ?? null,
     threadId: row.threadId,
     status: row.status,
     generation: row.generation,

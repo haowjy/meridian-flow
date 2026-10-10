@@ -96,7 +96,7 @@ export type DraftBranchAheadDiagnostics = {
 
 export function createDraftBranchAheadRegistration(input: {
   branches: Pick<BranchCoordinator, "readBranch">;
-  drafts: Pick<Drafts, "activeForWork" | "byIds">;
+  drafts: Pick<Drafts, "byIds">;
   registrar: AheadRefRegistrar;
   /** Registration opens its own root transaction, so it never runs inside a caller's. */
   outsideTransaction<T>(operation: () => T): T;
@@ -169,11 +169,10 @@ export function createDraftBranchAheadRegistration(input: {
   }
 
   async function draftOfBranch(snapshot: BranchSnapshot) {
-    // A work_draft branch belongs to its Work's active draft; one with none has no view.
-    if (snapshot.kind !== "work_draft" || snapshot.status !== "active" || !snapshot.workId) {
-      return null;
-    }
-    return input.drafts.activeForWork(snapshot.workId);
+    // An active work_draft branch's own draft; a closed one has no view to register in.
+    if (snapshot.kind !== "work_draft" || snapshot.status !== "active") return null;
+    const [draft] = await input.drafts.byIds([snapshot.draftId]);
+    return draft?.status === "active" ? draft : null;
   }
 
   /** Best effort: a ref that can't register is reported, and Apply's prerequisite refuses it. */

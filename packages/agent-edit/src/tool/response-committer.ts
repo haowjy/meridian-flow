@@ -6,7 +6,7 @@ import type { AgentEditCodec, AgentEditCodecFactory } from "../codec-adapter.js"
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { DocumentCoordinator, DocumentLockOptions } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
@@ -52,7 +52,7 @@ export interface ResponseCommitter {
   ): Promise<ResponseCommitSuccessResult>;
   rollbackResponse(
     responseId: string,
-    options?: Pick<ResponseCommitOptions, "deferFinalization">,
+    options?: Pick<ResponseCommitOptions, "deferFinalization" | "branchLease">,
   ): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
@@ -73,6 +73,11 @@ export interface ResponseCommitter {
 export interface ResponseCommitOptions {
   signal?: AbortSignal;
   lockTimeoutMs?: number;
+  /**
+   * Host locks the caller took before the save's transaction (`DocumentLockOptions.lease`);
+   * every document access of this save and its recovery runs under them.
+   */
+  branchLease?: unknown;
   /** Host transaction hook; keeps lifecycle publication aligned with durable commit. */
   deferFinalization?(participant: {
     commit(): void | Promise<void>;
@@ -354,6 +359,8 @@ export function createResponseCommitter(deps: {
     options: ResponseCommitOptions,
   ): Promise<ResponseCommitSuccessResult> {
     const { buffer } = owner;
+    const lockFor = (docBuffer: ResponseDocumentBuffer, base?: DocumentLockOptions) =>
+      savedDocumentLock(docBuffer, options.branchLease, base);
     const docBuffers = [...buffer.docs.values()]
       .filter((docBuffer) => docBuffer.updates.length > 0)
       .sort((left, right) => left.docId.localeCompare(right.docId));
@@ -424,7 +431,10 @@ export function createResponseCommitter(deps: {
               actor: lastStagedUpdate(docBuffer).actor,
             });
           },
-          { signal: options.signal, timeoutMs: options.lockTimeoutMs ?? 30_000 },
+          lockFor(docBuffer, {
+            signal: options.signal,
+            timeoutMs: options.lockTimeoutMs ?? 30_000,
+          }),
         );
         if (isInternalWriteResult(preflight)) {
           if (preflight.status === "document_not_found" && docBuffer.createdDocumentBeforeCommit) {
@@ -496,7 +506,7 @@ export function createResponseCommitter(deps: {
               },
               preflights.get(docBuffer.docId),
             ),
-          lockOptions,
+          lockFor(docBuffer, lockOptions),
         );
         if (isInternalWriteResult(applied)) throw internalResultError(applied);
         if (!applied) throw new Error(`Live apply returned no result for ${docBuffer.docId}.`);
@@ -642,10 +652,12 @@ export function createResponseCommitter(deps: {
       }
 
       const recoverySnapshots = recoveryRecheckInputs
-        ? await captureRecoverySnapshots(docBuffers, recoveryRecheckInputs).catch(() => null)
+        ? await captureRecoverySnapshots(docBuffers, recoveryRecheckInputs, lockFor).catch(
+            () => null,
+          )
         : null;
       const recoveryFailure = await runtimeStore
-        .recoverCommittedResponseProjection(docBuffers)
+        .recoverCommittedResponseProjection(docBuffers, (document) => lockFor(document))
         .catch((error: unknown) => error);
       if (!recoveryFailure) {
         emit("recovery_succeeded", responseId, "journalCommitted", {
@@ -658,6 +670,7 @@ export function createResponseCommitter(deps: {
               documents,
               recoveryRecheckInputs,
               recoverySnapshots,
+              lockFor,
             ).catch(() => null)
           : null;
         // A positive recheck can report the concrete sweep. A negative result
@@ -700,6 +713,7 @@ export function createResponseCommitter(deps: {
     knownDocuments: readonly ResponseCommitDocumentResult[],
     inputs: ReadonlyMap<string, CommitPreflightInput>,
     recoverySnapshots: ReadonlyMap<string, Uint8Array> | null,
+    lockFor: (docBuffer: ResponseDocumentBuffer) => DocumentLockOptions,
   ): Promise<ResponseCommitDocumentResult[]> {
     if (!recoverySnapshots) throw new Error("Recovery snapshot capture was unavailable.");
     const documentsById = new Map(
@@ -717,6 +731,7 @@ export function createResponseCommitter(deps: {
         docBuffer.docId,
         docBuffer.commandName,
         (liveDoc) => mutationCommit.recheckCommittedUpdate(liveDoc, input, beforeRecoverySnapshot),
+        lockFor(docBuffer),
       );
       if (isInternalWriteResult(rechecked) || !rechecked) {
         throw new Error(`Recovery recheck unavailable for ${docBuffer.docId}.`);
@@ -818,6 +833,7 @@ export function createResponseCommitter(deps: {
   async function captureRecoverySnapshots(
     docBuffers: readonly ResponseDocumentBuffer[],
     inputs: ReadonlyMap<string, CommitPreflightInput>,
+    lockFor: (docBuffer: ResponseDocumentBuffer) => DocumentLockOptions,
   ): Promise<ReadonlyMap<string, Uint8Array>> {
     const snapshots = new Map<string, Uint8Array>();
     for (const docBuffer of docBuffers) {
@@ -828,6 +844,7 @@ export function createResponseCommitter(deps: {
         docBuffer.docId,
         docBuffer.commandName,
         (liveDoc) => Y.encodeStateAsUpdate(liveDoc),
+        lockFor(docBuffer),
       );
       if (isInternalWriteResult(snapshot) || !snapshot) {
         throw new Error(`Recovery snapshot capture unavailable for ${docBuffer.docId}.`);
@@ -872,7 +889,7 @@ export function createResponseCommitter(deps: {
 
   async function rollbackResponse(
     responseId: string,
-    options: Pick<ResponseCommitOptions, "deferFinalization"> = {},
+    options: Pick<ResponseCommitOptions, "deferFinalization" | "branchLease"> = {},
   ): Promise<ResponseRollbackResult> {
     let state = responses.get(responseId);
     if (!state) {
@@ -904,6 +921,7 @@ export function createResponseCommitter(deps: {
           docBuffer.docId,
           docBuffer.runtime,
           docBuffer.commandName,
+          savedDocumentLock(docBuffer, options.branchLease),
         );
         if (isInternalWriteResult(restored)) throw internalResultError(restored);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
@@ -1446,4 +1464,21 @@ function deferredPromise<T>(): {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+/**
+ * A staged document's lock options at its save: the branch its writes were pinned to,
+ * and the lease the caller holds (never a fresh branch, never a lock taken inside).
+ */
+function savedDocumentLock(
+  docBuffer: { interactionContext?: InteractionContext },
+  lease: unknown,
+  base?: DocumentLockOptions,
+): DocumentLockOptions {
+  const context = docBuffer.interactionContext;
+  return {
+    ...base,
+    ...(context?.mode === "threadPeer" ? { pinnedBranchId: context.branchId } : {}),
+    ...(lease !== undefined ? { lease } : {}),
+  };
 }
