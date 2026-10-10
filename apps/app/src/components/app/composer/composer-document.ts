@@ -15,7 +15,8 @@ import { formatMarkdownLink } from "@meridian/markup";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { getSchema, mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
-import { Plugin, TextSelection } from "@tiptap/pm/state";
+import { Plugin, Selection as PMSelection, TextSelection } from "@tiptap/pm/state";
+import { Transform } from "@tiptap/pm/transform";
 import StarterKit from "@tiptap/starter-kit";
 import type { AuthoritativeReference } from "@/core/completion";
 import { referenceUriForAuthority } from "@/core/completion";
@@ -444,9 +445,6 @@ export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnaps
     if (
       !Number.isSafeInteger(snapshot.revision) ||
       snapshot.revision < 0 ||
-      !snapshot.selection ||
-      !Number.isSafeInteger(snapshot.selection.anchor) ||
-      !Number.isSafeInteger(snapshot.selection.head) ||
       !Array.isArray(snapshot.ownedUploads) ||
       snapshot.doc?.type !== "doc"
     )
@@ -454,7 +452,7 @@ export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnaps
     const clean = (node: JSONContent): JSONContent | null => {
       if (!node || typeof node !== "object" || typeof node.type !== "string")
         throw new Error("Invalid node");
-      if (node.type === "composerUpload") return null;
+
       if (node.type === "composerReference") {
         const reference = parseClipboardReference(JSON.stringify(node.attrs?.reference));
         if (!reference) throw new Error("Invalid reference");
@@ -492,7 +490,31 @@ export function parseRestorableComposerDraft(value: unknown): ComposerDraftSnaps
     ]);
     const parsed = restorableDraftSchema.nodeFromJSON(doc);
     parsed.check();
-    return serializeComposerDraft(parsed.toJSON(), snapshot.revision, snapshot.selection).draft;
+    const saved = snapshot.selection;
+    const valid =
+      saved &&
+      [saved.anchor, saved.head].every(
+        (position) =>
+          Number.isSafeInteger(position) &&
+          position >= 0 &&
+          position <= parsed.content.size &&
+          parsed.resolve(position).parent.inlineContent,
+      );
+    const selection = valid
+      ? TextSelection.create(parsed, saved.anchor, saved.head)
+      : PMSelection.atStart(parsed);
+    const transform = new Transform(parsed);
+    const uploads: { position: number; size: number }[] = [];
+    parsed.descendants((node, position) => {
+      if (node.type.name === "composerUpload") uploads.push({ position, size: node.nodeSize });
+    });
+    for (const { position, size } of uploads.reverse()) transform.delete(position, position + size);
+    const mapped = selection.map(transform.doc, transform.mapping);
+    return serializeComposerDraft(
+      transform.doc.toJSON(),
+      snapshot.revision,
+      composerSelection(mapped),
+    ).draft;
   } catch {
     return null;
   }
