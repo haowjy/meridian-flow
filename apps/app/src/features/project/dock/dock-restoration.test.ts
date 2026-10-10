@@ -7,7 +7,7 @@ import {
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
 import { DOCK_STORAGE_KEY, type DockStorage } from "./dock-persistence";
-import { createDockViewStore, type DockDocument } from "./dock-view-store";
+import { createDockViewStore, type DockDocument, dockDocumentFitsScope } from "./dock-view-store";
 import { restoreDockDocument } from "./restore-dock-document";
 
 const availability = vi.hoisted(() => vi.fn());
@@ -239,4 +239,19 @@ it("reloads the production singleton with its saved document and view", async ()
     vi.unstubAllGlobals();
     vi.resetModules();
   }
+});
+
+it.each([
+  { projectId: "project", screen: "work", workId: "work", stays: true },
+  { projectId: "project", screen: "work", workId: "other", stays: false },
+  { projectId: "project", screen: "chat", workId: "work", stays: false },
+  { projectId: "other", screen: "work", workId: "work", stays: false },
+] as const)("one Work scope rule: $projectId/$screen/$workId", ({ stays, ...scope }) => {
+  const note: DockDocument = {
+    ...document,
+    screen: "work",
+    tab: { ...tab, scheme: "scratch", workId: "work" },
+  };
+  expect(dockDocumentFitsScope(note, scope)).toBe(stays);
+  expect(dockDocumentFitsScope(document, scope)).toBe(scope.projectId === "project");
 });
