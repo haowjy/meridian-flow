@@ -11,7 +11,6 @@ export interface ThreadDraftListItem {
    * carries the next proposal at the higher generation. Never decreases.
    */
   draftGeneration: number;
-  lastActorTurnId: string | null;
   /** Chats with pending agent writes in this draft, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;
@@ -55,7 +54,6 @@ export type DraftPreviewResponse =
     })
   | { status: "gone"; draftId: string };
 
-export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
@@ -75,11 +73,9 @@ export interface ReviewOperation {
   /** False when this class contains incomplete attribution; omit per-change actions. */
   canApplyOrDiscard?: boolean;
   kind: "agent" | "writer";
-  contribution: ReviewOperationContribution;
   classification: ReviewOperationClassification;
   beforeExcerpt?: string;
   afterExcerpt?: string;
-  hunkCount: number;
   /** Writer responsible for a writer-origin operation. */
   actorUserId?: string;
 }

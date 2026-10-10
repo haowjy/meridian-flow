@@ -13,9 +13,7 @@ function op(overrides: Partial<ReviewOperation> & { operationId: string }): Revi
   return {
     closureClassId: `closure:${overrides.operationId}`,
     kind: "agent",
-    contribution: "added",
     classification: "addition",
-    hunkCount: 1,
     ...overrides,
   };
 }

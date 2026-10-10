@@ -34,9 +34,8 @@ the old peer is no longer resolvable; provisioning closes it and seeds a new
 peer from the new primary Work draft while holding the conversation row lock.
 
 The review list therefore emits one active item per document and folds all
-contributing journal rows into that item. `lastActorTurnId` is representative
-metadata, not review identity. `draftId` is the only application and wire
-identity. `createWorkDraftReviewService()` resolves it to the physical Work
+contributing journal rows into that item. `actorThreads` lists candidate chats;
+`draftId` is the only application and wire identity. `createWorkDraftReviewService()` resolves it to the physical Work
 branch and keeps that branch identity inside the domain; `reviewRoomName`
 remains an opaque transport address.
 

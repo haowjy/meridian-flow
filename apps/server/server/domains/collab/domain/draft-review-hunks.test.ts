@@ -3,7 +3,8 @@ import { toDocHandle } from "@meridian/agent-edit/integration";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
+import { alignBlocks } from "./document-difference.js";
+import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { captureUpdate, cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
 
 describe("draft review hunks", () => {

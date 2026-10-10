@@ -1,5 +1,9 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import {
+  type AgentEditModel,
+  toDocHandle,
+  type YProsemirrorDocumentModel,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -11,7 +15,14 @@ import type {
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
-import { draftOperationIdsByChangedBlock } from "./draft-review-hunks.js";
+import {
+  alignBlocks,
+  describeBlocks,
+  diffAlignedBlocks,
+  hunkDeletedRanges,
+  hunkInsertedRanges,
+} from "./document-difference.js";
+import { type IndexedDraftUpdate, indexDraftUpdates } from "./draft-review-attribution.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -437,4 +448,32 @@ export function buildDurablePushTrail(input: {
     journalOwners,
     changes: input.prepared.trailChanges,
   };
+}
+
+/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
+function draftOperationIdsByChangedBlock(input: {
+  liveDoc: Y.Doc;
+  draftDoc: Y.Doc;
+  model: AgentEditModel;
+  draftUpdates: readonly IndexedDraftUpdate[];
+}): Map<string, string[]> {
+  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
+  const rawHunks = diffAlignedBlocks(
+    alignBlocks(
+      describeBlocks(input.liveDoc, input.model),
+      describeBlocks(input.draftDoc, input.model),
+    ),
+    input.draftDoc,
+  );
+  const result = new Map<string, string[]>();
+  for (const hunk of rawHunks) {
+    const owners = attribution.attributeRanges({
+      insertedRanges: hunkInsertedRanges(hunk),
+      deletedRanges: hunkDeletedRanges(hunk),
+    });
+    result.set(hunk.blockKey, [
+      ...new Set([...(result.get(hunk.blockKey) ?? []), ...owners.operationIds]),
+    ]);
+  }
+  return result;
 }

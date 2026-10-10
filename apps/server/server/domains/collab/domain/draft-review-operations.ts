@@ -1,15 +1,10 @@
 /** Groups the complete draft difference into attributed, dependency-closed review classes. */
 
-import type {
-  ReviewDeletedSpan,
-  ReviewHunk,
-  ReviewOperationContribution,
-} from "@meridian/contracts/drafts";
+import type { ReviewDeletedSpan, ReviewHunk } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 import { assignReviewClasses } from "./branch-review-closure.js";
 import {
   type ClockRange,
-  type DraftOperationContributionFlags,
   type DraftUpdateAttributionIndex,
   deleteSetRanges,
   type IndexedDraftUpdate,
@@ -27,8 +22,6 @@ type OperationGraphHunk = {
     deletedRanges: readonly ClockRange[];
     insertedText: string;
     deletedText: string;
-    blockKey: string;
-    blockIndex: number;
   };
   review: ReviewHunk;
 };
@@ -91,14 +84,6 @@ function groupOperationsForHunks(
   updates: readonly IndexedDraftUpdate[],
   baseDeletedRanges: readonly ClockRange[],
 ): DraftReviewOperationGraph {
-  const contributionByOperationId = new Map<string, DraftOperationContributionFlags>();
-  for (const hunk of attributedHunks) {
-    for (const [operationId, contribution] of attribution.operationContributionsForRanges({
-      insertedRanges: hunk.raw.insertedRanges,
-      deletedRanges: hunk.raw.deletedRanges,
-    }))
-      mergeContribution(contributionByOperationId, operationId, contribution);
-  }
   const hunks = attributedHunks.map((hunk) => {
     const attributionFields = {
       operationIds: [...hunk.operationIds].sort(operationSort),
@@ -116,15 +101,9 @@ function groupOperationsForHunks(
     } satisfies ReviewHunk;
   });
 
-  const hunkCounts = new Map<string, number>();
-  for (const hunk of hunks) {
-    for (const operationId of hunk.operationIds) {
-      hunkCounts.set(operationId, (hunkCounts.get(operationId) ?? 0) + 1);
-    }
-  }
-
-  const operations = [...hunkCounts.entries()]
-    .flatMap(([operationId, hunkCount]) => {
+  const visibleOperationIds = new Set(hunks.flatMap((hunk) => hunk.operationIds));
+  const operations = [...visibleOperationIds]
+    .flatMap((operationId) => {
       const operation = attribution.byOperationId.get(operationId);
       if (!operation) return [];
       return [
@@ -135,9 +114,7 @@ function groupOperationsForHunks(
           ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),
           kind: operation.kind,
           ...(operation.actorUserId ? { actorUserId: operation.actorUserId } : {}),
-          contribution: operationContribution(contributionByOperationId.get(operation.operationId)),
           ...operationSemanticFields(operation.operationId, hunks, attributedHunks),
-          hunkCount,
         },
       ];
     })
@@ -161,34 +138,6 @@ function groupOperationsForHunks(
       .filter((hunk) => hunk.unclassified)
       .map((hunk) => ({ code: "unattributed_hunk", hunkId: hunk.hunkId })),
   };
-}
-
-function mergeContribution(
-  contributions: Map<string, DraftOperationContributionFlags>,
-  operationId: string,
-  contribution: DraftOperationContributionFlags,
-): void {
-  const current = contributions.get(operationId) ?? { inserted: false, deleted: false };
-  mergeContributionInto(current, contribution);
-  contributions.set(operationId, current);
-}
-
-function mergeContributionInto(
-  target: DraftOperationContributionFlags,
-  contribution: DraftOperationContributionFlags,
-): void {
-  target.inserted ||= contribution.inserted;
-  target.deleted ||= contribution.deleted;
-}
-
-function operationContribution(
-  contribution: DraftOperationContributionFlags | undefined,
-): ReviewOperationContribution {
-  if (!contribution) return "edited";
-  if (contribution.inserted && contribution.deleted) return "rewrote";
-  if (contribution.inserted) return "added";
-  if (contribution.deleted) return "removed";
-  return "edited";
 }
 
 function operationSort(left: string, right: string): number {
