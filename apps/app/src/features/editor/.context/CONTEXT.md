@@ -72,8 +72,8 @@ that moves, so they read `anchorRect` rather than a captured point. Both are
 
 ## Draft chrome
 
-Two self-contained surfaces, both resolving their own state from
-`DraftReviewProvider` (never props-drilled):
+Desktop draft chrome reads the Editor value from `DraftReviewProvider`. Phone
+`MobileDocumentReview` passes one shared header model to top and bottom chrome:
 
 - `DraftReviewChip` — the version chip on a live document with a pending
   draft, mounted by the context feature's `DocumentIdentityBar` in the
@@ -111,11 +111,17 @@ painted/pending/failed surfaces; only finished paint replaces its retained
 snapshot, never a loading status or a pending-token gap. `EditorView` chooses terminal
 notices before settled live, painted review, requested-but-pending review, or
 ordinary live. Warm live and constructing review surfaces stay mounted in
-inactive paint scopes. A requested review waits for its editor and marks (or
-1.5 s), including draft-only entry. `setInlineReviewShown(reviewVisible ||
+inactive paint scopes. `EditorView` owns a construction receipt addressed by mount identity and session
+GUID. A requested review waits for that editor's model acknowledgement (or
+1.5 s), including draft-only entry; the room owner owns no paint state. `setInlineReviewShown(reviewVisible ||
 settled)` still synchronizes the body, header and completion focus in layout.
 A draft-only tab without a review shows a terminal Close card. Surface wrappers
 carry `data-editor-surface="live|review"`; the inert copy is `data-paint-hold`.
+
+For generation, completion and command ordering, use the
+[draft-review lifecycle reference](../../draft-review/.context/draft-review.md).
+`SessionEditor` constructs the common surface; `EditorView` composes review-only
+registration, model sync and focus.
 
 The review manuscript is the server draft projection plus decorations, in the
 manner of suggestion mode. Insertions are inline decorations over text that

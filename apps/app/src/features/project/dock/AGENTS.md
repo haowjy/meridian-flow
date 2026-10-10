@@ -5,7 +5,7 @@
 The right dock is a **container** that sits in the project shell's `dock` grid
 slot and holds one occupant: the chat on Work and Editor, the context rail on
 Chat. It owns the header row, the view store and, on Work, the transient file
-view. It has no Changes view: each scope of draft review has its own surface
+view. It has no Changes view: each draft-review list has its own surface
 (the chat's composer strip, the document's list in its identity row and the
 phone sheet, the Work page's Changes to review), and the dock keeps no draft
 review state.
@@ -66,7 +66,7 @@ rail's) and shows no switch.
 - **Don't unmount the primary body.** It breaks the surface-parking invariant
   and loses chat state.
 - **Don't put draft review state or a Changes list in the dock.** Draft review
-  lives in each scope's own surface: the composer strip, the document's identity
+  has scope-specific lists: the composer strip, the document's identity
   row (the change sheet on the phone), and the Work page.
 - **Don't persist the dock view choice.** A stale view across reloads is worse
   than starting fresh.
@@ -77,7 +77,7 @@ rail's) and shows no switch.
 
 - [`.context/CONTEXT.md`](.context/CONTEXT.md) — contracts, architecture, tailwind-merge trap
 - [`../.context/CONTEXT.md`](../.context/CONTEXT.md) — project shell layout, slot topology, surface-prefs store
-- [`../../draft-review/AGENTS.md`](../../draft-review/AGENTS.md) — draft review controller, provider, change lists
+- [`../../draft-review/AGENTS.md`](../../draft-review/AGENTS.md) — draft review ownership map and lifecycle reference
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — the DraftDock composer strip
 - [`../work/WorkChanges.tsx`](../work/WorkChanges.tsx) — the Work page's Changes to review
 - [`../../editor/DraftReviewBand.tsx`](../../editor/DraftReviewBand.tsx) — the review controls inside the identity row

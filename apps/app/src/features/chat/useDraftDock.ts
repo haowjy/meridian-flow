@@ -6,8 +6,9 @@
  * pending writes in a draft); each candidate's preview confirms whether the
  * chat still has a change in it. Apply and Discard never touch a whole draft:
  * per file they name every operation of this chat's actionable changes, with
- * that preview's tokens, through creation-bound Work commands. A refusal stays on its
- * file; nothing navigates.
+ * that preview's tokens, through creation-bound Work commands and the shared
+ * executor, never the Editor's command authority. A refusal stays on its file;
+ * nothing navigates.
  */
 import { t } from "@lingui/core/macro";
 import { useCallback, useMemo } from "react";

@@ -7,6 +7,10 @@ the review launcher. They catch bugs that unit tests around React Query state
 miss: stale-row windows, silent
 no-op verbs, stuck pending states.
 
+Ownership and command contracts: [draft-review reference](../../apps/app/src/features/draft-review/.context/draft-review.md). The shared
+`draft-command-executor.ts` admits commands; `EditorView` owns paint readiness,
+not `useReviewRoomOwner`.
+
 ## Environment
 
 - Start a dev stack from the branch under test: `pnpm dev` in a tmux session
@@ -341,10 +345,10 @@ Continue with Probe G's fixture (recreate affected proposals between actions).
    the previous answer/list read lands late. Leave for another document and repeat:
    a late answer cannot reopen the previous review. Capture request/response order.
 
-6. **Scope choices and no-scope interval.** Visit Files when its Work matches Editor,
+6. **Work capability and unresolved interval.** Visit Files when its Work matches Editor,
    matches Chat only, matches neither, and matches both. Command one run-owned change
    each time and verify exact Work/document authority in requests and fresh reads.
-   Hold scope resolution: no actionable stale Work list appears. While a batch waits,
+   Hold Work resolution: no actionable stale Work list appears. While a batch waits,
    switch Work then archive its original Work; later requests remain bound to the
    original Work, controls lock and late answers do not navigate back.
 7. **Work failures and offline batch.** Fail an expanded preview, Retry successfully,
