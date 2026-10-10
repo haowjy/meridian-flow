@@ -26,6 +26,7 @@ import { BranchNotFoundError } from "./branch-resolver.js";
 import { documentRevision, versioned } from "./document-revision.js";
 import type { Drafts } from "./drafts.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
+import type { PeerRetirement } from "./peer-retirement.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -46,7 +47,8 @@ export function createEffectiveDocumentReader(input: {
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
   /** Closes a branch's review rooms (Hocuspocus), for branches a retraction deleted. */
-  closeBranchRoom(branchId: string): void;
+  /** Exactly the deleted branches' rooms and thread state, after commit. */
+  retirePeers: PeerRetirement;
   deferUntilCommit(callback: () => Promise<void>): boolean;
   drafts: Pick<Drafts, "viewForWork">;
 }): BranchPeerShadowAccess {
@@ -253,13 +255,14 @@ export function createEffectiveDocumentReader(input: {
         // the deletion is durable (an abort keeps the branches). Another Work's peers on
         // the same document are not this retraction's.
         const { deleted } = retracted;
-        const retire = async () => {
-          for (const { branchId } of deleted) input.closeBranchRoom(branchId);
-          await input.agentEdit.retireThreadPeers(
-            command.documentId,
-            deleted.flatMap(({ threadId }) => (threadId ? [threadId] : [])),
+        const retire = () =>
+          input.retirePeers(
+            deleted.map(({ branchId, threadId }) => ({
+              branchId,
+              documentId: command.documentId,
+              threadId,
+            })),
           );
-        };
         if (!input.deferUntilCommit(retire)) await retire();
       }
       return retracted.outcome;

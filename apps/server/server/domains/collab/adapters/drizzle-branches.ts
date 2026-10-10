@@ -59,6 +59,7 @@ import {
 } from "../domain/branch-resolver.js";
 import { replicateFrozenIdentity } from "../domain/document-mutation-policy.js";
 import type { Drafts } from "../domain/drafts.js";
+import type { RetiredBranch } from "../domain/peer-retirement.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
@@ -432,20 +433,30 @@ export function createDrizzleBranchStore(
     return row ? mapBranch(row) : null;
   }
 
-  async function discardActiveThreadPeerBranches(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-  }): Promise<void> {
-    const clauses = [
-      eq(documentBranches.documentId, input.documentId),
-      eq(documentBranches.kind, "thread_peer"),
-      eq(documentBranches.status, "active"),
-    ];
-    if (input.threadId) clauses.push(eq(documentBranches.threadId, input.threadId));
-    await currentDrizzleDb(db)
+  async function closeThreadPeersOf(
+    upstreamBranchIds: readonly string[],
+  ): Promise<RetiredBranch[]> {
+    if (upstreamBranchIds.length === 0) return [];
+    const closed = await currentDrizzleDb(db)
       .update(documentBranches)
       .set({ status: "closed", updatedAt: new Date() })
-      .where(and(...clauses));
+      .where(
+        and(
+          inArray(documentBranches.upstreamBranchId, [...upstreamBranchIds]),
+          eq(documentBranches.kind, "thread_peer"),
+          eq(documentBranches.status, "active"),
+        ),
+      )
+      .returning({
+        branchId: documentBranches.id,
+        documentId: documentBranches.documentId,
+        threadId: documentBranches.threadId,
+      });
+    return closed.map((branch) => ({
+      branchId: branch.branchId,
+      documentId: branch.documentId as DocumentId,
+      threadId: branch.threadId as ThreadId | null,
+    }));
   }
 
   async function updateBranchSnapshot(input: PersistBranchInput): Promise<boolean> {
@@ -698,9 +709,7 @@ export function createDrizzleBranchStore(
       return ensureThreadPeerBranch(input);
     },
 
-    discardActiveThreadPeerBranches(input) {
-      return discardActiveThreadPeerBranches(input);
-    },
+    closeThreadPeersOf,
   };
 }
 

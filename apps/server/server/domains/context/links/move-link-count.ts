@@ -3,6 +3,7 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { HiddenNodeRepair } from "../tree/hidden-node-repair.js";
 import { loadDocumentAddresses } from "../tree/tree-addresses.js";
 import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
 
@@ -18,6 +19,7 @@ import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
 export async function countIncomingLinks(
   db: Database,
   input: { projectId: ProjectId; movedDocumentIds: readonly DocumentId[] },
+  repair?: Pick<HiddenNodeRepair, "schedule">,
 ): Promise<{ links: number; documents: number }> {
   if (input.movedDocumentIds.length === 0) return { links: 0, documents: 0 };
   const moved = sql.join(
@@ -37,7 +39,7 @@ export async function countIncomingLinks(
   const holders = (await loadDocumentAddresses(db, { ids: [...links.keys()] })).filter(
     (holder) => !holder.deleted && holder.projectId === input.projectId,
   );
-  const statuses = await createTreeReader(db).identityStatus(
+  const statuses = await createTreeReader(db, repair ? { repair } : {}).identityStatus(
     LIVE_TREE,
     holders.map((holder) => holder.documentId),
   );

@@ -119,6 +119,7 @@ import { createDraftPublication } from "./domain/draft-publication.js";
 import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { createPeerRetirement } from "./domain/peer-retirement.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import {
@@ -518,6 +519,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     coordinator: branchCoordinator,
     workProjection: deps.workProjectionMutation,
+    catalog: deps.catalogMutations,
+  });
+  // Exactly the branches a committed change closed or deleted: their rooms and threads.
+  const retirePeers = createPeerRetirement({
+    closeBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
+    agentEdit,
   });
   const discard = createDraftDiscard({
     drafts: workDrafts,
@@ -526,12 +533,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     criticalSections,
     liveCoordinator,
     store: discardStore,
-    invalidateThread: (documentId, threadId) => agentEdit.invalidateThread(documentId, threadId),
+    retire: retirePeers,
     releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
   });
   const drafts = createWorkDraftReviewService({
     links: deps.links,
     discard,
+    retirePeers,
     branches,
     branchCoordinator,
     branchJournal,
@@ -539,7 +547,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
-    agentEdit,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
     drafts: workDrafts,
     reviewItems,
@@ -556,7 +563,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       model: runtime.model,
       codec: runtime.codec,
       links: deps.links,
-      closeBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
+      retirePeers,
       deferUntilCommit: deferUntilDrizzleCommit,
       drafts: workDrafts,
     }),
@@ -673,6 +680,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workDraftDisposal: createDrizzleWorkDraftDisposal(deps.db, {
         drafts: workDrafts,
         criticalSections,
+        catalog: deps.catalogMutations,
       }),
     },
     documentCreation,

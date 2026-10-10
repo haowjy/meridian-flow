@@ -8,6 +8,8 @@ import type { BranchPeerShadowAccess, MarkdownDocumentStore } from "../../../col
 import type { DraftCreatePort } from "../../ports/draft-create.js";
 import { createInDraft } from "../../tree/creates.js";
 import { retractCreate } from "../../tree/end-use.js";
+import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
+import { lockDocumentNamespaces } from "./document-locations.js";
 
 export function createDrizzleDraftCreates(deps: {
   db: Database;
@@ -15,12 +17,25 @@ export function createDrizzleDraftCreates(deps: {
   sourceId(): Promise<string>;
   documents: Pick<MarkdownDocumentStore, "ensureDocument">;
   branches: Pick<BranchPeerShadowAccess, "ensureCreatedDraftBranch" | "retractCreatedDraftBranch">;
+  /** Repair on touch: the candidate picker reports what it repaired (§12.4). */
+  repair?: Pick<HiddenNodeRepair, "report">;
 }): DraftCreatePort {
+  /**
+   * The source, with its namespace held (§14: after the command's Work and draft, before
+   * any document lock). A resolved source id is cached across commands, so the lock is
+   * taken here, every command, never left to provisioning.
+   */
+  async function lockedSource(): Promise<string> {
+    const sourceId = await deps.sourceId();
+    await lockDocumentNamespaces(deps.db, [], [sourceId]);
+    return sourceId;
+  }
+
   return {
     async createInDraft({ draft, dir, name, extension, node }) {
       return createInDraft(deps.db, {
         draftId: draft.id,
-        contextSourceId: await deps.sourceId(),
+        contextSourceId: await lockedSource(),
         dir,
         name,
         extension,
@@ -28,9 +43,11 @@ export function createDrizzleDraftCreates(deps: {
         ensureEmptyContent: (documentId) => deps.documents.ensureDocument(documentId),
         ensureDraftBranch: (documentId) =>
           deps.branches.ensureCreatedDraftBranch({ documentId, draftId: draft.id }),
+        ...(deps.repair ? { repair: deps.repair } : {}),
       });
     },
     async retractCreate({ draft, documentId }) {
+      await lockedSource();
       const retracted = await retractCreate(deps.db, {
         draftId: draft.id,
         documentId,

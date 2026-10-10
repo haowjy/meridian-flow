@@ -69,7 +69,8 @@ function createFakeAgentEditCore(
       staged: [`${name}-doc`],
       created: [] as string[],
     })),
-    invalidateThread: vi.fn(async (..._args: unknown[]) => {}),
+    invalidateThreadDocument: vi.fn(async (..._args: unknown[]) => {}),
+    evictThread: vi.fn(async (..._args: unknown[]) => {}),
   };
   return Object.assign(fake, { asCore: () => fake as unknown as AgentEditCore });
 }

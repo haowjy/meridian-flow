@@ -12,7 +12,7 @@ import {
   type UpdateJournal,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { FileAccess } from "../file-policy/index.js";
@@ -149,11 +149,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
       });
     },
     reversalHistory: { branches: input.branches, branchRows: input.branchJournal },
-    discardThreadPeerBranches: (documentId, threadId) =>
-      input.branches.discardActiveThreadPeerBranches({
-        documentId,
-        threadId: threadId ? (threadId as ThreadId) : null,
-      }),
     pullThreadPeer: (command) => input.branchPulls.pullThreadPeer(command),
   });
 }

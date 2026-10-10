@@ -549,11 +549,13 @@ export async function createProductionAppPorts(input: {
       });
     },
   });
+  // One repair on touch for every production tree reader and create (§12.4).
+  const hiddenNodeRepair = createHiddenNodeRepair({ db, eventSink, objects: objectRelease });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
     observer: createLinkScopeObserver(eventSink),
-    repair: createHiddenNodeRepair({ db, eventSink, objects: objectRelease }),
+    repair: hiddenNodeRepair,
   });
   const documentSync = createCollabDomain({
     db,
@@ -607,6 +609,7 @@ export async function createProductionAppPorts(input: {
     catalogMutations: contextCatalog,
     eventSink,
     arrivals,
+    hiddenNodeRepair,
     drafts: documentSync.drafts,
     pendingDraft: workProjectionMutation,
   });

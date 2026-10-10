@@ -16,7 +16,8 @@ export interface AgentEditCore {
   undo: ReturnType<typeof createWriteTool>["undo"];
   redo: ReturnType<typeof createWriteTool>["redo"];
   reverse: ReturnType<typeof createWriteTool>["reverse"];
-  invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
+  invalidateThreadDocument: ReturnType<typeof createWriteTool>["invalidateThreadDocument"];
+  evictThread: ReturnType<typeof createWriteTool>["evictThread"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -34,7 +35,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     undo: tool.undo,
     redo: tool.redo,
     reverse: tool.reverse,
-    invalidateThread: tool.invalidateThread,
+    invalidateThreadDocument: tool.invalidateThreadDocument,
+    evictThread: tool.evictThread,
   };
 }
 

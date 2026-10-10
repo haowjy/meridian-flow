@@ -4,6 +4,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
+import type { RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
@@ -46,10 +47,12 @@ export type ApplicationBranchStore = BranchStore &
       draftId: DraftId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
-    discardActiveThreadPeerBranches(input: {
-      documentId: DocumentId;
-      threadId?: ThreadId | null;
-    }): Promise<void>;
+    /**
+     * Close the active thread peers of these branches (a reset or a Discard moved their
+     * upstream), in the caller's transaction; exactly the peers closed come back, for their
+     * rooms and thread state to retire after commit.
+     */
+    closeThreadPeersOf(upstreamBranchIds: readonly string[]): Promise<RetiredBranch[]>;
     resolveWorkDraftBranchForThread(
       documentId: DocumentId,
       threadId: ThreadId,

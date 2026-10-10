@@ -22,12 +22,17 @@ import {
   linkAheadDraftSettlements,
   linkAheadRefs,
   users,
+  works,
 } from "@meridian/database/schema";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { handleDocumentLinkResolveRequest } from "../../lib/document-link-route.js";
+import {
+  currentDrizzleDb,
+  runOutsideDrizzleTransaction,
+} from "../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../test-support/composed-runtime.js";
 import {
   type DraftTreeScenario,
@@ -37,6 +42,7 @@ import {
 } from "../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
+import { setTreeHook } from "../context/tree/test-hooks.js";
 import { createInMemoryEventSink } from "../observability/index.js";
 import { processDetachedWork } from "../runtime/detached-work.js";
 
@@ -447,6 +453,200 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(await storageOf(stray), "released")
         .toEqual({ yjs: 0, branches: 0, projection: 0 });
       expect.soft(await foldersNamed(s, "lore"), "its hidden folder too").toEqual([]);
+      expect
+        .soft(
+          eventSink.events.filter(
+            (event) => event.source === "context.hidden-node" && event.name === "repaired",
+          ),
+          "one warn event",
+        )
+        .toMatchObject([{ level: "warn", payload: { documentIds: [stray] } }]);
+    });
+    it("retires only its own draft's peers: another Work's staged reply on the shared document saves (D-R1)", async () => {
+      const { s } = await start();
+      const [ascension, beacon] = [
+        await s.work("Ascension", "draft"),
+        await s.work("Beacon", "draft"),
+      ];
+      const ori = await s.model(ascension).create("lore/ori.md", "Ascension's Ori.");
+      expect.soft(await s.model(beacon).create("lore/ori.md", "Beacon's Ori."), "joined").toBe(ori);
+      const staged = await s.model(beacon).reply();
+      expect((await staged.call("read", { path: "manuscript://lore/ori.md" })).isError).toBeFalsy();
+      const write = await staged.call("write", {
+        command: "replace",
+        path: "manuscript://lore/ori.md",
+        find: "Beacon's Ori.",
+        content: "BEACON STAGED TEXT.",
+      });
+      expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
+
+      await s.discard(ascension, [ori]);
+      const saved = (await staged.save()) as {
+        status: string;
+        receipts: { documentId: string }[];
+        refused: unknown[];
+      };
+      expect.soft(saved.status, "Beacon's reply saves").toBe("committed");
+      expect.soft(saved.refused, "refusing nothing").toEqual([]);
+      expect
+        .soft(
+          saved.receipts.map((receipt) => receipt.documentId),
+          "with a receipt for Ori",
+        )
+        .toContain(ori);
+      expect
+        .soft(await s.view(beacon).read("lore/ori.md"), "Beacon's staged text survived")
+        .toMatchObject({
+          ok: true,
+          value: { content: expect.stringContaining("BEACON STAGED TEXT.") },
+        });
+    });
+
+    it("repairs a corrupt draft branch in review without touching another Work's staged reply (corrupt reset)", async () => {
+      const { runtime, s } = await start();
+      const [ascension, beacon] = [
+        await s.work("Ascension", "draft"),
+        await s.work("Beacon", "draft"),
+      ];
+      const chapter = await live(s, "chapter.md", "Live words.");
+      await draftEdit(s, ascension, "chapter.md", "Live words.", "Ascension's words.");
+      await draftEdit(s, beacon, "chapter.md", "Live words.", "Beacon's words.");
+      const staged = await s.model(beacon).reply();
+      expect((await staged.call("read", { path: "manuscript://chapter.md" })).isError).toBeFalsy();
+      const write = await staged.call("write", {
+        command: "replace",
+        path: "manuscript://chapter.md",
+        find: "Beacon's words.",
+        content: "BEACON STAGED TEXT.",
+      });
+      expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
+      // The seam: Ascension's draft branch row no longer decodes.
+      const item = (await s.review(ascension)).items.find((each) => each.documentId === chapter);
+      const branchId = item?.draftBranchId ?? "";
+      await db
+        .update(documentBranches)
+        .set({ state: Buffer.from([255, 255, 255, 255]) })
+        .where(eq(documentBranches.id, branchId));
+
+      const preview = await runtime.ports.documentSync.draftReview.preview({
+        workId: ascension.id,
+        documentId: chapter,
+        draftId: branchId,
+      });
+      expect.soft(preview, "the review repaired it").toMatchObject({
+        status: "active",
+        notice: { code: "branch_corrupt_reset" },
+      });
+      const saved = (await staged.save()) as {
+        status: string;
+        receipts: { documentId: string }[];
+        refused: unknown[];
+      };
+      expect.soft(saved.refused, "Beacon's reply refuses nothing").toEqual([]);
+      expect.soft(saved.receipts.map((receipt) => receipt.documentId)).toContain(chapter);
+      expect
+        .soft(await s.view(beacon).read("chapter.md"), "Beacon's staged text survived")
+        .toMatchObject({
+          ok: true,
+          value: { content: expect.stringContaining("BEACON STAGED TEXT.") },
+        });
+    });
+
+    it("purges only inside a verified scope: a move to another source and a create there leave no hidden document under a tombstone (D-R2)", async () => {
+      const { runtime, s } = await start();
+      const [doomed, beacon] = [await s.work("Doomed", "draft"), await s.work("Beacon", "draft")];
+      await s.writer.mkdir("carry");
+      const ori = await s.model(doomed).create("carry/sub/ori.md", "Text.");
+      await runtime.ports.workRepo.softDelete(doomed.id);
+      await db
+        .update(works)
+        .set({ deletedAt: new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000) })
+        .where(eq(works.id, doomed.id));
+
+      // At purge's last check, a create of Beacon's under the moved folder starts; paused
+      // after its locks, it either already holds what purge needs or waits on purge.
+      let created: Promise<unknown> | null = null;
+      let reachedCreate = false;
+      let releaseCreate!: () => void;
+      const createGate = new Promise<void>((resolve) => {
+        releaseCreate = resolve;
+      });
+      const removeCreateHook = setTreeHook("createInDraft.afterCandidateLock", async () => {
+        removeCreateHook();
+        reachedCreate = true;
+        await createGate;
+      });
+      const removeEndHook = setTreeHook("endUse.afterRevalidate", async () => {
+        removeEndHook();
+        const [self] = await currentDrizzleDb(db).execute<{ pid: number }>(
+          sql`SELECT pg_backend_pid() AS pid`,
+        );
+        // Its own connection: started here, it would otherwise join purge's transaction.
+        created = runOutsideDrizzleTransaction(() =>
+          s.model(beacon).now("write", {
+            command: "create",
+            path: "kb://carry/sub/new.md",
+            content: "Beacon's new text.",
+          }),
+        );
+        for (let tries = 0; tries < 300 && !reachedCreate; tries += 1) {
+          const [waiting] = await db.execute<{ pid: number }>(sql`
+            SELECT pid FROM pg_stat_activity
+            WHERE datname = current_database() AND ${Number(self?.pid)}::int = ANY(pg_blocking_pids(pid))`);
+          if (waiting) break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      });
+      try {
+        const run = await interleave(
+          db,
+          () => s.writer.move("carry", "kb://carry"),
+          "moves.beforeInstall",
+          () => runtime.app.recovery.purgeWorks(),
+          { waitMs: 3_000 },
+        );
+        expect.soft(run.bWaited, "purge waited on the move's namespace").toBe(true);
+        expect.soft(run.a, "moved").toMatchObject({ ok: true, value: { ok: true } });
+        expect.soft(run.b, "purged").toMatchObject({ ok: true, value: 1 });
+      } finally {
+        releaseCreate();
+        removeCreateHook();
+        removeEndHook();
+      }
+      const made = (await created) as { isError?: boolean; output?: unknown } | null;
+      expect.soft(made?.isError, `Beacon's create: ${JSON.stringify(made?.output)}`).toBeFalsy();
+      expect.soft(await row(ori), "ori tombstoned").toMatchObject({ tombstone: true });
+      expect
+        .soft(await s.view(beacon).read("kb://carry/sub/new.md"), "Beacon reads its create")
+        .toMatchObject({
+          ok: true,
+          value: { content: expect.stringContaining("Beacon's new text.") },
+        });
+      expect
+        .soft(
+          await db
+            .select({ name: documents.name })
+            .from(documents)
+            .innerJoin(folders, eq(folders.id, documents.folderId))
+            .where(and(isNull(documents.deletedAt), isNotNull(folders.deletedAt))),
+          "no live document under a tombstoned folder",
+        )
+        .toEqual([]);
+    });
+
+    it("warns once a create's candidate picker repairs a hidden document no draft uses (D-R3)", async () => {
+      const eventSink = createInMemoryEventSink();
+      const { s } = await start({ eventSink });
+      const [first, second] = [await s.work("First", "draft"), await s.work("Second", "draft")];
+      const stray = await s.model(first).create("lore/stray.md", "Stray.");
+      // A bug's leftover: the draft's use is gone, the node is still hidden and live.
+      await db.delete(draftTreeChanges).where(eq(draftTreeChanges.nodeId, stray));
+      const made = await s.model(second).create("lore/stray.md", "Second's stray.");
+      expect.soft(made, "a fresh document, not the stray").not.toBe(stray);
+      expect.soft(await row(stray), "the stray tombstoned").toMatchObject({ tombstone: true });
+      expect
+        .soft(await storageOf(stray), "released")
+        .toEqual({ yjs: 0, branches: 0, projection: 0 });
       expect
         .soft(
           eventSink.events.filter(

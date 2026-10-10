@@ -18,6 +18,7 @@ import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { settleInDraft } from "../adapters/link-ahead-draft-settlements.js";
 import { recordCreated } from "./draft-tree-store.js";
 import { tombstoneUnused } from "./end-use.js";
+import type { HiddenNodeRepair } from "./hidden-node-repair.js";
 import type {
   BinaryNode,
   CreateFault,
@@ -64,6 +65,8 @@ export async function createInDraft(
     ensureEmptyContent(documentId: DocumentId): Promise<void>;
     /** The draft's branch on a text document, seeded from its empty live document. */
     ensureDraftBranch(documentId: DocumentId): Promise<void>;
+    /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
+    repair?: Pick<HiddenNodeRepair, "report">;
   },
 ): Promise<Result<DraftCreateResult, CreateFault>> {
   const tree = createTreeReader(db);
@@ -108,6 +111,7 @@ export async function createInDraft(
         await pickHiddenCandidate(db, slot, {
           excludeDraftId: input.draftId,
           lock: "createInDraft.afterCandidateLock",
+          ...(input.repair ? { repair: input.repair } : {}),
         })
       )?.id ?? null;
     joined = documentId !== null;
@@ -249,6 +253,8 @@ export async function createLive(
     slot: DocumentSlot;
     claim: LiveClaim;
     insert: LiveInsert;
+    /** Where a repair on touch is reported, to be warned about once this commits (§12.4). */
+    repair?: Pick<HiddenNodeRepair, "report">;
   },
 ): Promise<Result<LiveCreateOutcome, LiveCreateFault>> {
   const { claim } = input;
@@ -258,7 +264,10 @@ export async function createLive(
     if (!revalidated) return Err({ code: "candidate_changed" });
     chosen = revalidated;
   } else if (claim.kind !== "mint") {
-    chosen = await pickHiddenCandidate(db, input.slot, { lock: "createLive.afterCandidateLock" });
+    chosen = await pickHiddenCandidate(db, input.slot, {
+      lock: "createLive.afterCandidateLock",
+      ...(input.repair ? { repair: input.repair } : {}),
+    });
     const expected = claim.kind === "reveal" ? claim.reveal : null;
     const confirmed =
       claim.kind === "any" ||
@@ -333,7 +342,11 @@ async function revalidateRevealById(
 async function pickHiddenCandidate(
   db: Database,
   slot: DocumentSlot,
-  options: { excludeDraftId?: DraftId; lock?: TreeHookPoint } = {},
+  options: {
+    excludeDraftId?: DraftId;
+    lock?: TreeHookPoint;
+    repair?: Pick<HiddenNodeRepair, "report">;
+  } = {},
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
   const filter = options.excludeDraftId ? { excludeDraftId: options.excludeDraftId } : {};
   const candidates = await loadHiddenDocumentCandidates(db, slot, filter);
@@ -347,10 +360,11 @@ async function pickHiddenCandidate(
   await treeHook(options.lock);
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ...filter, ids });
-  await tombstoneUnused(
+  const repaired = await tombstoneUnused(
     db,
     valid.filter((candidate) => candidate.activeUses === 0).map((candidate) => candidate.id),
     { keepFolders: true },
   );
+  options.repair?.report(repaired, "create");
   return firstUsed(valid);
 }

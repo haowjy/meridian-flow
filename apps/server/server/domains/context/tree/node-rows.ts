@@ -3,7 +3,7 @@
  * inserts, tombstones with their storage release, and document locks in id order. Hidden
  * nodes are tombstoned, never hard-deleted. Every function runs in its caller's transaction.
  */
-import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, FolderId, ThreadId } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
@@ -137,8 +137,8 @@ export async function tombstoneFolders(db: Database, ids: readonly FolderId[]): 
 export async function releaseDocumentStorage(
   db: Database,
   ids: readonly DocumentId[],
-): Promise<void> {
-  if (ids.length === 0) return;
+): Promise<ReleasedBranch[]> {
+  if (ids.length === 0) return [];
   const tx = currentDrizzleDb(db);
   const list = [...ids];
   await tx.delete(documentYjsReversalOps).where(inArray(documentYjsReversalOps.documentId, list));
@@ -147,10 +147,29 @@ export async function releaseDocumentStorage(
   await tx.delete(documentYjsHeads).where(inArray(documentYjsHeads.documentId, list));
   await tx.delete(documentYjsCheckpoints).where(inArray(documentYjsCheckpoints.documentId, list));
   await tx.delete(documentYjsUpdates).where(inArray(documentYjsUpdates.documentId, list));
-  await tx.delete(documentBranches).where(inArray(documentBranches.documentId, list));
+  const branches = await tx
+    .delete(documentBranches)
+    .where(inArray(documentBranches.documentId, list))
+    .returning({
+      branchId: documentBranches.id,
+      documentId: documentBranches.documentId,
+      threadId: documentBranches.threadId,
+    });
   await tx.delete(documentDerivations).where(inArray(documentDerivations.documentId, list));
   await tx
     .delete(documentMarkdownProjections)
     .where(inArray(documentMarkdownProjections.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
+  return branches.map((branch) => ({
+    branchId: branch.branchId,
+    documentId: branch.documentId as DocumentId,
+    threadId: branch.threadId as ThreadId | null,
+  }));
 }
+
+/** A branch a tombstone's release deleted: collab retires its room and thread state after commit. */
+export type ReleasedBranch = {
+  branchId: string;
+  documentId: DocumentId;
+  threadId: ThreadId | null;
+};

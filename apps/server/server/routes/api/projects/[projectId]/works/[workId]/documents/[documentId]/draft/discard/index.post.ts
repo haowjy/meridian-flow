@@ -5,7 +5,6 @@ import { createError, defineEventHandler, getRouterParam, readBody } from "nitro
 import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
   handleDiscardWorkDraftRequest,
-  scheduleDraftCatalogRefresh,
   selectDraftRouteServices,
 } from "../../../../../../../../../../lib/draft-review-route.js";
 
@@ -29,6 +28,5 @@ export default defineEventHandler(async (event) => {
         )
       : undefined,
   });
-  scheduleDraftCatalogRefresh(app, projectId, event.waitUntil.bind(event));
   return result;
 });

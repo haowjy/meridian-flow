@@ -33,6 +33,7 @@ import type {
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
 import { findRevealIdentity } from "./tree/creates.js";
+import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";
 
@@ -234,6 +235,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly beforeWrite?: () => Promise<void>,
     private readonly arrivals?: DocumentArrivals,
+    private readonly repair?: HiddenNodeRepair,
   ) {}
 
   private async resolvedWorkId(): Promise<string | undefined> {
@@ -276,6 +278,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       contextSourceId: sourceId,
       catalogMutations: this.catalogMutations,
       arrivals: this.arrivals,
+      ...(this.repair ? { repair: this.repair } : {}),
     });
   }
 
@@ -393,6 +396,7 @@ export function createProjectContextDocumentStore(
   userId: string,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
+  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
@@ -402,6 +406,7 @@ export function createProjectContextDocumentStore(
     catalogMutations,
     undefined,
     arrivals,
+    repair,
   );
 }
 
@@ -411,6 +416,7 @@ export function createWorkContextDocumentStore(
   scheme: WorkScopedContextFsScheme,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
+  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
   return new SourceResolvedContextDocumentStore(
     db,
@@ -420,6 +426,7 @@ export function createWorkContextDocumentStore(
     catalogMutations,
     undefined,
     arrivals,
+    repair,
   );
 }
 
@@ -429,6 +436,7 @@ export function createNoWorkContextDocumentStore(
   scheme: "uploads",
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
+  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
   const resolveWorkId = async () => {
     const workId = await findNoWorkId(db, projectId);
@@ -446,6 +454,7 @@ export function createNoWorkContextDocumentStore(
     catalogMutations,
     undefined,
     arrivals,
+    repair,
   );
 }
 
@@ -456,6 +465,7 @@ export function createLineageContextDocumentStore(
   rootThreadId: string,
   catalogMutations?: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
+  repair?: HiddenNodeRepair,
 ): ContextDocumentStore {
   const lifecycle = createDrizzleLineageScratchLifecycle(db, catalogMutations, arrivals);
   const find = async () => {
@@ -481,5 +491,6 @@ export function createLineageContextDocumentStore(
     catalogMutations,
     () => lifecycle.requireLive(projectId, rootThreadId),
     arrivals,
+    repair,
   );
 }

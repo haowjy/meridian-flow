@@ -62,7 +62,8 @@ export function createWriteReversalEndpoints(deps: {
   return {
     runTurnReversalEndpoint,
     reverse,
-    invalidateThread,
+    invalidateThreadDocument,
+    evictThread,
     undoOrRedo,
   };
 
@@ -183,12 +184,20 @@ export function createWriteReversalEndpoints(deps: {
     } as VerifiedReverseResult;
   }
 
-  async function invalidateThread(docId: string, threadId: string): Promise<void> {
+  async function invalidateThreadDocument(docId: string, threadId: string): Promise<void> {
+    if (!docId || !threadId) {
+      throw new Error("invalidateThreadDocument names one document and one thread");
+    }
     responseCommitter.dropForThread(docId, threadId);
     await runtimeStore.evictThreadRuntimes(docId, threadId, {
       markLiveDocStale: true,
     });
     threadOrigins.evictThread(docId, threadId);
+  }
+
+  async function evictThread(threadId: string): Promise<void> {
+    if (!threadId) throw new Error("evictThread names one thread");
+    await runtimeStore.evictThreadRuntimes(null, threadId);
   }
 
   async function encodedLiveDocument(docId: string): Promise<Uint8Array | null> {

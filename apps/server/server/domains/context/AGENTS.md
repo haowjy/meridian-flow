@@ -100,9 +100,10 @@ hidden rows and folders never reach it. Draft Apply reconciles every source
 its tree step placed into or moved out of inside the completion transaction,
 warm or recovered (collab's `drizzle-draft-tree-step.ts`, F23), so a replica
 replaying from a pre-Apply cursor learns the revealed, restored and renamed
-nodes. Discard still schedules a project refresh after its response
-(`scheduleDraftCatalogRefresh` in `server/lib/draft-review-route.ts`) until it
-moves into its own kernel. Source refreshes publish in the mutating transaction.
+nodes. Discard's kernel (collab's `drizzle-draft-discard.ts`) reconciles every
+source whose hidden nodes it tombstoned inside its own transaction the same way,
+for the writer's Discard and Work purge alike. Source refreshes publish in the
+mutating transaction.
 Routes authenticate and translate transport only; catalog transaction and replay
 policy live in the context domain.
 

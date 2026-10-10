@@ -24,6 +24,7 @@ import {
 } from "../../ports/context-tree-mutation-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { splitHiddenContents } from "../../tree/folder-normalization.js";
+import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import { movedDocumentIds, moveNodes } from "../../tree/node-moves.js";
 import { createTreeReader, LIVE_TREE } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
@@ -88,6 +89,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     private readonly db: Database,
     private readonly catalogMutations?: ContextCatalogMutationPort,
     private readonly arrivals?: Pick<DocumentArrivals, "settle">,
+    /** Repair on touch (§12.4): the move's link count reads identity with it. */
+    private readonly repair?: Pick<HiddenNodeRepair, "schedule">,
   ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
@@ -113,10 +116,11 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       await this.arrivals?.settle(moved);
     }
     return input.linkNoteProjectId
-      ? countIncomingLinks(this.db, {
-          projectId: input.linkNoteProjectId as ProjectId,
-          movedDocumentIds: moved,
-        })
+      ? countIncomingLinks(
+          this.db,
+          { projectId: input.linkNoteProjectId as ProjectId, movedDocumentIds: moved },
+          this.repair,
+        )
       : { links: 0, documents: 0 };
   }
 
