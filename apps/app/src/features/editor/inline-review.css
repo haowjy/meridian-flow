@@ -1,0 +1,285 @@
+/* Draft-review decorations: continuous inline highlights and block rings.
+   Inline emphasis thickens the underline; no padding or rounded span boxes,
+   so adjacent green, gold and struck ranges join without tiled seams. */
+/* Tone variables are local to each mark. Writer comes last so pending gold
+   inside an agent range wins without a combined-class paint recipe. */
+.meridian-editor .ProseMirror .meridian-review-added {
+  --review-tint: var(--color-review-added-tint);
+  --review-border: var(--color-review-added-border);
+  --review-emphasis: var(--color-review-added-emphasis);
+  --review-ring: var(--color-review-added-ring);
+}
+
+.meridian-editor .ProseMirror .meridian-review-merged {
+  --review-tint: var(--color-review-merged-tint);
+  --review-border: var(--color-review-merged-border);
+  --review-emphasis: var(--color-review-merged-emphasis);
+  --review-ring: var(--color-review-merged-ring);
+}
+
+.meridian-editor .ProseMirror .meridian-review-writer {
+  --review-tint: var(--color-review-writer-tint);
+  --review-border: var(--color-review-writer-border);
+  --review-emphasis: var(--color-review-writer-emphasis);
+  --review-ring: var(--color-review-writer-ring);
+}
+
+.meridian-editor .ProseMirror :is(.meridian-review-added, .meridian-review-writer) {
+  background: var(--review-tint);
+  box-shadow: inset 0 -1px 0 0 var(--review-border);
+  transition: background-color 120ms ease;
+}
+
+.meridian-editor
+  .ProseMirror
+  :is(.meridian-review-added, .meridian-review-writer).meridian-review-emphasized {
+  background: var(--review-emphasis);
+  box-shadow: inset 0 -2px 0 0 var(--review-ring);
+}
+
+/* Removed live text — a read-only widget (never document text) struck through
+   where it used to be. Crimson when the AI removed it, gold when the writer
+   did, so everything the writer did reads gold. Unselectable by design: the
+   writer can click it to select the change but cannot select into it. */
+.meridian-editor .ProseMirror .meridian-review-removal {
+  --removal-border: var(--color-review-removed-border);
+  --removal-tint: var(--color-review-removed-tint);
+  color: var(--color-review-removed-foreground);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-text {
+  --removal-emphasis: color-mix(in oklab, var(--color-review-removed-ring) 45%, transparent);
+  --removal-ring: var(--color-review-removed-ring);
+  color: var(--color-review-removed-foreground);
+  background: var(--color-review-removed-tint);
+  border-radius: 2px;
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in oklab, currentColor 70%, transparent);
+  padding-inline-end: 0.15em;
+}
+
+/* A struck removal beside the text that replaced it must read as two things,
+   not "his" fused into "one". The air is a margin on the widget, never a space
+   character, so it is not text and cannot be selected or saved. Before
+   punctuation or a line end there is none: a gap before "," reads as a typo.
+   Inline removals only; a block removal is its own paragraph. */
+.meridian-editor .ProseMirror span.meridian-review-removal:not(.meridian-review-removal-block) {
+  margin-inline-end: 0.12em;
+}
+
+.meridian-editor .ProseMirror span.meridian-review-removal-tight {
+  margin-inline-end: 0;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal-tight
+  > .meridian-review-removal-text:last-child {
+  padding-inline-end: 0;
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-writer {
+  --removal-border: var(--color-review-writer-border);
+  --removal-tint: var(--color-review-writer-tint);
+  color: var(--color-review-writer-removed-foreground);
+}
+
+/* Every stretch unattributed: the fold's label wears the same neutral as its text. */
+.meridian-editor .ProseMirror .meridian-review-removal-unattributed {
+  --removal-border: var(--color-review-merged-border);
+  --removal-tint: var(--color-review-merged-tint);
+  color: var(--color-muted-foreground);
+}
+
+/* Colour is per stretch: one removal can hold the AI's words and the writer's. */
+.meridian-editor .ProseMirror .meridian-review-removal-text-writer {
+  --removal-emphasis: var(--color-review-writer-emphasis);
+  --removal-ring: var(--color-review-writer-ring);
+  color: var(--color-review-writer-removed-foreground);
+  background: var(--color-review-writer-tint);
+}
+
+/* Struck, but in no author's colour: the server could not say who removed it. */
+.meridian-editor .ProseMirror .meridian-review-removal-text-unattributed {
+  --removal-emphasis: var(--color-review-merged-emphasis);
+  --removal-ring: var(--color-review-merged-ring);
+  color: var(--color-muted-foreground);
+  background: var(--color-review-merged-tint);
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-block > p {
+  margin: 0;
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-block > p + p {
+  margin-top: 0.9em;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal.meridian-review-emphasized
+  .meridian-review-removal-text {
+  background: var(--removal-emphasis);
+  box-shadow: inset 0 -2px 0 0 var(--removal-ring);
+}
+
+/* The focused change's bar, when the margin has no room for it: a block of its
+   own after the change's paragraph. It sits in the manuscript's flow, so the
+   text below moves down for it. The manuscript's serif and prose rhythm stop
+   at its edge; the bar is app chrome. */
+.meridian-editor .ProseMirror .meridian-review-bar-slot {
+  margin-block: 0.5rem 0.75rem;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-foreground);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A long removal folds to one quiet line the writer can open. */
+.meridian-editor .ProseMirror .meridian-review-removal-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0 0.15em 0 0;
+  padding: 0.05em 0.6em;
+  border: 1px dashed var(--removal-border);
+  border-radius: var(--radius-sm);
+  background: var(--removal-tint);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125em;
+  line-height: 1.5;
+  cursor: pointer;
+  user-select: none;
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-block > .meridian-review-removal-toggle {
+  display: flex;
+  width: fit-content;
+  margin: 0;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal-block
+  > .meridian-review-removal-toggle[aria-expanded="true"] {
+  margin-bottom: 0.4em;
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-toggle::before {
+  content: "";
+  width: 0.4em;
+  height: 0.4em;
+  border-inline-end: 1.5px solid currentColor;
+  border-block-end: 1.5px solid currentColor;
+  transform: translateY(-0.1em) rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-toggle[aria-expanded="true"]::before {
+  transform: translateY(-0.15em) rotate(45deg);
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-toggle:hover {
+  background: color-mix(in oklab, currentColor 12%, transparent);
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal-toggle:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
+
+/* Merge-artifact seam — concurrent writer + AI edits the CRDT combined into
+   one run. NOT an authorship tint: neutral fill + a DASHED underline (the
+   solid-vs-dashed contrast against `.meridian-review-added` is the load-bearing
+   signal), full-contrast text so the prose stays readable — the dock verb
+   (`Merged`) and marker carry the caution, not a wash or strike. */
+.meridian-editor .ProseMirror .meridian-review-merged {
+  background: var(--color-review-merged-tint);
+  border-bottom: 1px dashed var(--color-review-merged-border);
+  transition: background-color 120ms ease;
+}
+
+.meridian-editor .ProseMirror .meridian-review-merged.meridian-review-emphasized {
+  background: var(--color-review-merged-emphasis);
+  border-bottom-width: 2px;
+  border-bottom-color: var(--color-review-merged-ring);
+}
+
+/* Whole-block review decorations — non-text blocks (lists, rules, quotes)
+   review at block granularity. The inserted node keeps the insert tint from
+   its base class and swaps the underline hint for an outer ring, so nodes
+   with no paintable area of their own (a 1px horizontal rule) still read as
+   "new block." */
+.meridian-editor .ProseMirror
+  .meridian-review-block:is(
+    .meridian-review-added,
+    .meridian-review-writer,
+    .meridian-review-merged
+  ) {
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 0 0 3px var(--review-tint),
+    0 0 0 4px var(--review-border);
+}
+
+.meridian-editor .ProseMirror .meridian-review-block.meridian-review-merged {
+  border-bottom: 0;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-block:is(
+    .meridian-review-added,
+    .meridian-review-writer,
+    .meridian-review-merged
+  ).meridian-review-emphasized {
+  box-shadow:
+    0 0 0 3px var(--review-emphasis),
+    0 0 0 5px var(--review-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meridian-editor .ProseMirror .meridian-review-added,
+  .meridian-editor .ProseMirror .meridian-review-writer,
+  .meridian-editor .ProseMirror .meridian-review-merged,
+  .meridian-editor .ProseMirror .meridian-review-removal-toggle::before {
+    transition: none;
+  }
+}
+
+/* A change that arrived while the writer was reviewing pulses once: its marks
+   (and its row in the dock) light up and settle. Reduced motion: no pulse. */
+@keyframes meridian-review-arrive {
+  from {
+    background-color: var(--color-review-added-ring);
+  }
+}
+
+.meridian-editor .ProseMirror .meridian-review-arrived {
+  animation: meridian-review-arrive 1.3s ease-out 1;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal.meridian-review-arrived
+  .meridian-review-removal-text {
+  animation: meridian-review-arrive 1.3s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meridian-editor .ProseMirror .meridian-review-arrived,
+  .meridian-editor
+    .ProseMirror
+    .meridian-review-removal.meridian-review-arrived
+    .meridian-review-removal-text {
+    animation: none;
+  }
+}
