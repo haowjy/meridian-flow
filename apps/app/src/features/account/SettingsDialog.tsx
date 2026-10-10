@@ -19,7 +19,7 @@ import { useAuth } from "@workos/authkit-tanstack-react-start/client";
 import type { LucideIcon } from "lucide-react";
 import { CircleUserRound, CreditCard, SlidersHorizontal } from "lucide-react";
 import { type ReactNode, useCallback, useEffect } from "react";
-
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -32,19 +32,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { useTextSize } from "@/hooks/use-text-size";
 import { useUiTheme } from "@/hooks/use-ui-theme";
-import { changeLocale, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
-import { changeStatsForNerds } from "@/lib/stats-for-nerds";
+import { SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { changeTextSize, TEXT_SIZES, type TextSize } from "@/lib/text-size";
-import { changeUiTheme, UI_THEMES, type UiTheme } from "@/lib/ui-theme";
+import { UI_THEMES, type UiTheme } from "@/lib/ui-theme";
 import { cn } from "@/lib/utils";
+import { useSharedAccountSettings } from "./AccountSettingsProvider";
 import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSettings";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./settings-sections";
+import type { AccountPreference, SettingKey } from "./useAccountSettings";
 import { WorkingSetSyncPreferenceRow } from "./WorkingSetSyncPreferenceRow";
 
 /**
@@ -316,6 +316,9 @@ function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPr
 
 function PreferencesSection({ presentation = "desktop" }: { presentation?: SectionPresentation }) {
   const { i18n } = useLingui();
+  const settings = useSharedAccountSettings();
+  const language = settings.preference("language");
+  const theme = settings.preference("theme");
   const currentLocale = i18n.locale as SupportedLocale;
   const currentTextSize = useTextSize();
   const currentUiTheme = useUiTheme();
@@ -331,111 +334,119 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
         description={<Trans>Appearance and behavior settings.</Trans>}
       />
 
-      <Tabs defaultValue="device">
-        <TabsList>
-          <TabsTrigger value="device">
-            <Trans>This device</Trans>
-          </TabsTrigger>
-          <TabsTrigger value="account">
-            <Trans>Account</Trans>
-          </TabsTrigger>
-        </TabsList>
+      <section className="space-y-4" aria-label={t`All your devices`}>
+        <PreferenceGroupHeading
+          title={<Trans>All your devices</Trans>}
+          description={<Trans>These preferences follow your account wherever you sign in.</Trans>}
+        />
+        <div className={rowClassName}>
+          <span className={labelClassName}>
+            <Trans>Theme</Trans>
+          </span>
+          <Select value={currentUiTheme} onValueChange={(value) => theme.change(value as UiTheme)}>
+            <SelectTrigger
+              className={triggerClassName}
+              aria-label={t`Color theme`}
+              aria-busy={theme.pending || undefined}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {UI_THEMES.map((theme) => (
+                <SelectItem key={theme} value={theme}>
+                  <UiThemeLabel theme={theme} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-        <TabsContent value="device">
-          <div className="space-y-4">
-            <div className={rowClassName}>
-              <span className={labelClassName}>
-                <Trans>Theme</Trans>
-              </span>
-              <Select
-                value={currentUiTheme}
-                onValueChange={(value) => changeUiTheme(value as UiTheme)}
-              >
-                <SelectTrigger className={triggerClassName} aria-label={t`Color theme`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {UI_THEMES.map((theme) => (
-                    <SelectItem key={theme} value={theme}>
-                      <UiThemeLabel theme={theme} />
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <PreferenceError preference={theme} />
+        <div className={rowClassName}>
+          <span className={labelClassName}>
+            <Trans>Language</Trans>
+          </span>
+          <Select
+            value={currentLocale}
+            onValueChange={(value) => language.change(value as SupportedLocale)}
+          >
+            <SelectTrigger
+              className={triggerClassName}
+              aria-label={t`Interface language`}
+              aria-busy={language.pending || undefined}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SUPPORTED_LOCALES.map(({ code, label }) => (
+                <SelectItem key={code} value={code}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-            <div className={rowClassName}>
-              <span className={labelClassName}>
-                <Trans>Language</Trans>
-              </span>
-              <Select
-                value={currentLocale}
-                onValueChange={(value) => changeLocale(value as SupportedLocale)}
-              >
-                <SelectTrigger className={triggerClassName} aria-label={t`Interface language`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUPPORTED_LOCALES.map(({ code, label }) => (
-                    <SelectItem key={code} value={code}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className={rowClassName}>
-              <span className={labelClassName}>
-                <Trans>Text size</Trans>
-              </span>
-              <Select
-                value={currentTextSize}
-                onValueChange={(value) => changeTextSize(value as TextSize)}
-              >
-                <SelectTrigger className={triggerClassName} aria-label={t`Reading text size`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TEXT_SIZES.map((textSize) => (
-                    <SelectItem key={textSize} value={textSize}>
-                      <TextSizeLabel textSize={textSize} />
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <StatsForNerdsRow />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="account">
-          <WorkingSetSyncPreferenceRow />
-        </TabsContent>
-      </Tabs>
+        <PreferenceError preference={language} />
+        <StatsForNerdsRow />
+        <WorkingSetSyncPreferenceRow />
+      </section>
+      <section
+        className="mt-6 space-y-4 border-t border-border-subtle pt-5"
+        aria-label={t`This device`}
+      >
+        <PreferenceGroupHeading
+          title={<Trans>This device</Trans>}
+          description={<Trans>These preferences stay on this device to suit your screen.</Trans>}
+        />
+        <div className={rowClassName}>
+          <span className={labelClassName}>
+            <Trans>Text size</Trans>
+          </span>
+          <Select
+            value={currentTextSize}
+            onValueChange={(value) => changeTextSize(value as TextSize)}
+          >
+            <SelectTrigger className={triggerClassName} aria-label={t`Reading text size`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TEXT_SIZES.map((textSize) => (
+                <SelectItem key={textSize} value={textSize}>
+                  <TextSizeLabel textSize={textSize} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </section>
     </div>
   );
 }
 
-/** Device-local, like theme and text size: a way of looking, not account data. */
+/** Account-level display preference with an error beside its control. */
 function StatsForNerdsRow() {
+  const preference = useSharedAccountSettings().preference("statsForNerds");
   const enabled = useStatsForNerds();
   return (
-    <div className="flex items-center justify-between gap-6">
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-foreground">
-          <Trans>Stats for nerds</Trans>
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-6">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">
+            <Trans>Stats for nerds</Trans>
+          </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            <Trans>Shows token counts and the model on each reply and compaction</Trans>
+          </p>
         </div>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          <Trans>Shows token counts and the model on each reply and compaction</Trans>
-        </p>
+        <Switch
+          checked={enabled}
+          onCheckedChange={preference.change}
+          aria-busy={preference.pending || undefined}
+          aria-label={t`Stats for nerds`}
+        />
       </div>
-      <Switch
-        checked={enabled}
-        onCheckedChange={changeStatsForNerds}
-        aria-label={t`Stats for nerds`}
-      />
+      <PreferenceError preference={preference} />
     </div>
   );
 }
@@ -464,4 +475,35 @@ function UsageSection() {
       </div>
     </div>
   );
+}
+
+function PreferenceGroupHeading({
+  title,
+  description,
+}: {
+  title: ReactNode;
+  description: ReactNode;
+}) {
+  return (
+    <header>
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    </header>
+  );
+}
+function PreferenceError<K extends SettingKey>({
+  preference,
+}: {
+  preference: AccountPreference<K>;
+}) {
+  return preference.error ? (
+    <InlineErrorRow
+      message={
+        preference.error.kind === "rejected"
+          ? t`Couldn’t save this preference.`
+          : t`Couldn’t confirm this preference saved.`
+      }
+      onRetry={preference.retry}
+    />
+  ) : null;
 }

@@ -36,6 +36,9 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   statements are all re-runnable. Authoring rules and runner semantics are in
   `.context/CONTEXT.md`. Regenerating after a base merge drops these hand
   edits; reapply them.
+- Column retirement requires auditing the removed values and removing readers
+  in the same release. Bound the strong lock with transactional
+  `SET LOCAL lock_timeout` of 1–5 seconds; migration lint enforces that bound.
 - **Until launch, a migration need not keep the previous server version
   working.** Do not split a change into expand/contract releases or add
   old-binary tolerance code; a broken deploy is reset instead, with explicit

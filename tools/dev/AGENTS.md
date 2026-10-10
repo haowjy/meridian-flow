@@ -32,6 +32,10 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Silent fallback is forbidden in worktree mode.** If a tool cannot derive the worktree-scoped DB, it must throw/exit loudly. Silent fallback to a shared DB would re-introduce the cross-worktree blast radius.
 - **`drop-db` must always go through `isReservedDatabase`** against the full set of main-checkout DB names. New "main-like" databases get protected by extending `RESERVED_DATABASES` in `lib/dev-db.ts` (or the registry), not by patching the CLI.
 - **Schema changes use `generate` + `migrate`, not `push`.** `dev`/`bootstrap` ensure the worktree database and extensions through `prepare-db.ts`, then `db:migrate` applies committed migrations and SQL functions; `db:push` is for disposable local experiments only and never carries `--force`.
+- **Column retirement is single-release until launch.** Remove reads and audit
+  retired data in the same change. DROP COLUMN lint requires a transactional
+  SET LOCAL lock_timeout of 1–5 seconds before the drop, not an old-server
+  compatibility deploy or a lint skip. Content still must be moved, never lost.
 - **Migration-lint policy is explicit.** Errors always block; warnings block only
   under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
   `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline. A

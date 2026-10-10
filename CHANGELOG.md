@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Theme, language and Stats for nerds now follow your account across devices. Settings separates these preferences from this device’s text size.
+
 - Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
 
 - Empty Chat side panels show only the Open document header. Its menu and the document header menu have no root heading; folder back rows remain.

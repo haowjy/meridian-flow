@@ -301,18 +301,27 @@ rendering.
 
 `src/routes/_authenticated.tsx` mounts one unconditional route composition for
 every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
-`WorkingSetSyncPreferenceProvider` →
+`AccountSettingsProvider` →
 `ProjectStoreProvider` → `ThreadStoreProvider` → `TransportProvider` →
 `MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously
 dropped `ThreadStoreProvider` during transitions.
 
-The account-lifetime `WorkingSetSyncPreferenceProvider` owns the cross-device
-working-set preference: it runs the command hook once per account, seeds from
-the loader only before the first local revision, and drives both the Settings
-row and `configureWorkingSetSync` from the same confirmed value. A stale or
-`null` loader commit cannot hide the switch or move the driver once a local
-confirm exists; an account epoch reset clears the override.
+The account-lifetime `AccountSettingsProvider` owns language, theme, Stats for
+nerds and working-set sync. Serialized partial PATCH commands keep per-setting
+revisions, pending state and retryable errors. Rejections retain the displayed
+choice; only server-confirmed sync values drive `configureWorkingSetSync`.
+Loader echoes cannot overwrite locally revised fields; account epoch changes
+remount the owner and fence abandoned writes.
+
+`meridian:account-settings:v1:<accountId>` is an account-stamped first-paint
+cache, not a pending-write journal. The active-account pointer lets the theme
+boot script read it before hydration; SSR supplies the current account and a
+server theme fallback on a new device. After load the account value reconciles
+and rewrites the cache. Storage events update this account's other tabs without
+sending duplicate PATCHes. `?locale=` remains a local language override.
+Text size alone stays device-local at `meridian:text-size:v1`. Settings uses
+shared section bodies for desktop and phone, grouped by these two scopes.
 
 **Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
 `/_authenticated`) so the settings dialog is URL-addressable from any authenticated

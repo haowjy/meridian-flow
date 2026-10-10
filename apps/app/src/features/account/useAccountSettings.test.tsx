@@ -7,16 +7,17 @@
  * so the projection, rejection-vs-ambiguity behavior, latest-intent fence, and
  * account fence are proven rather than assumed.
  */
+
+import { DEFAULT_ACCOUNT_APPEARANCE } from "@meridian/contracts/preferences";
 import type { AccountSettings } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, useState } from "react";
+import { act, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import {
-  useWorkingSetSyncPreference,
-  type WorkingSetSyncPreference,
-} from "./useWorkingSetSyncPreference";
+import { type AccountPreference, useAccountSettings } from "./useAccountSettings";
+
+type WorkingSetSyncPreference = AccountPreference<"workingSetSyncEnabled">;
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -76,6 +77,7 @@ async function waitFor(assertion: () => void) {
 
 type Harness = {
   read: () => WorkingSetSyncPreference;
+  readAll: () => ReturnType<typeof useAccountSettings>;
   rerender: () => Promise<void>;
   setServerValue: (value: boolean | null) => Promise<void>;
 };
@@ -84,13 +86,20 @@ async function mount(
   initialServerValue: boolean | null,
   run: (harness: Harness) => Promise<void> | void,
 ): Promise<void> {
-  let latest!: WorkingSetSyncPreference;
+  let latest!: ReturnType<typeof useAccountSettings>;
   let force: (() => void) | null = null;
   let serverValue = initialServerValue;
   function Probe() {
     const [, setTick] = useState(0);
     force = () => setTick((n) => n + 1);
-    latest = useWorkingSetSyncPreference(serverValue);
+    const seed = useMemo(
+      () =>
+        serverValue === null
+          ? null
+          : { ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: serverValue },
+      [serverValue],
+    );
+    latest = useAccountSettings(seed);
     return null;
   }
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -106,7 +115,8 @@ async function mount(
   });
   try {
     await run({
-      read: () => latest,
+      read: () => latest.preference("workingSetSyncEnabled"),
+      readAll: () => latest,
       rerender: async () => {
         await act(async () => {
           force?.();
@@ -126,6 +136,7 @@ async function mount(
 }
 
 afterEach(() => {
+  localStorage.clear();
   mocks.updateAccountSettings.mockReset();
   mocks.getAccountSettings.mockReset();
   mocks.invalidate.mockClear();
@@ -134,7 +145,7 @@ afterEach(() => {
 });
 
 describe("useWorkingSetSyncPreference", () => {
-  it("reverts to the last confirmed value when the latest overlapping write is rejected", async () => {
+  it("keeps the latest optimistic intent when an overlapping write is rejected", async () => {
     const first = deferred<AccountSettings>();
     const second = deferred<AccountSettings>();
     mocks.updateAccountSettings
@@ -144,7 +155,9 @@ describe("useWorkingSetSyncPreference", () => {
       await act(async () => read().change(true));
       await act(async () => read().change(false));
 
-      await act(async () => first.resolve({ workingSetSyncEnabled: true }));
+      await act(async () =>
+        first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true }),
+      );
       await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
 
       await act(async () => second.reject(new HttpResponseError("bad", 400, {})));
@@ -152,9 +165,7 @@ describe("useWorkingSetSyncPreference", () => {
 
       expect(read().error?.kind).toBe("rejected");
       expect(read().error?.retryValue).toBe(false);
-      // The first write confirmed `true`, so rejection reverts to that truth,
-      // not to the original `false`.
-      expect(read().value).toBe(true);
+      expect(read().value).toBe(false);
     });
   });
 
@@ -197,7 +208,9 @@ describe("useWorkingSetSyncPreference", () => {
       await rerender();
 
       // The first write settles only now; its captured epoch is closed and stale.
-      await act(async () => write.resolve({ workingSetSyncEnabled: false }));
+      await act(async () =>
+        write.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false }),
+      );
       await flush();
 
       expect(read().value).toBe(true);
@@ -224,7 +237,9 @@ describe("useWorkingSetSyncPreference", () => {
       mocks.account.controller = new AbortController();
       await rerender();
 
-      await act(async () => first.resolve({ workingSetSyncEnabled: true }));
+      await act(async () =>
+        first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true }),
+      );
       await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
 
       // The queued write must keep its captured epoch, not adopt the later one.
@@ -233,8 +248,141 @@ describe("useWorkingSetSyncPreference", () => {
         { signal: epochA },
       );
 
-      await act(async () => second.resolve({ workingSetSyncEnabled: false }));
+      await act(async () =>
+        second.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false }),
+      );
       await flush();
     });
+  });
+});
+
+it("changes every account setting immediately and keeps failures on their own control", async () => {
+  const writes = [
+    deferred<AccountSettings>(),
+    deferred<AccountSettings>(),
+    deferred<AccountSettings>(),
+  ];
+  for (const write of writes) mocks.updateAccountSettings.mockReturnValueOnce(write.promise);
+  await mount(true, async ({ readAll }) => {
+    await act(async () => {
+      readAll().preference("theme").change("dark");
+      readAll().preference("language").change("zh");
+      readAll().preference("statsForNerds").change(true);
+    });
+    expect(readAll().value).toEqual({
+      theme: "dark",
+      language: "zh",
+      statsForNerds: true,
+      workingSetSyncEnabled: true,
+    });
+    await act(async () => writes[0].reject(new HttpResponseError("bad", 400, {})));
+    await waitFor(() => expect(readAll().preference("theme").error?.kind).toBe("rejected"));
+    expect(readAll().preference("theme").value).toBe("dark");
+    expect(readAll().preference("language").error).toBeNull();
+    await act(async () =>
+      writes[1].resolve({
+        ...DEFAULT_ACCOUNT_APPEARANCE,
+        language: "zh",
+        workingSetSyncEnabled: true,
+      }),
+    );
+    await act(async () =>
+      writes[2].resolve({
+        ...DEFAULT_ACCOUNT_APPEARANCE,
+        language: "zh",
+        statsForNerds: true,
+        workingSetSyncEnabled: true,
+      }),
+    );
+    await waitFor(() => expect(readAll().preference("statsForNerds").pending).toBe(false));
+    expect(readAll().value.theme).toBe("dark");
+    expect(readAll().preference("theme").error?.kind).toBe("rejected");
+  });
+});
+it("follows account cache storage events without sending duplicate patches", async () => {
+  const { writeAccountSettingsCache, ACCOUNT_SETTINGS_CACHE_PREFIX } = await import(
+    "@/lib/account-settings-cache"
+  );
+  mocks.getAccountSettings.mockResolvedValue({
+    ...DEFAULT_ACCOUNT_APPEARANCE,
+    theme: "dark",
+    workingSetSyncEnabled: false,
+  });
+  await mount(true, async ({ readAll }) => {
+    writeAccountSettingsCache("account-a", {
+      ...DEFAULT_ACCOUNT_APPEARANCE,
+      theme: "dark",
+      workingSetSyncEnabled: false,
+    });
+    await act(async () =>
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: `${ACCOUNT_SETTINGS_CACHE_PREFIX}account-a` }),
+      ),
+    );
+    expect(readAll().value.theme).toBe("dark");
+    await waitFor(() =>
+      expect(readAll().preference("workingSetSyncEnabled").confirmed).toBe(false),
+    );
+    expect(mocks.updateAccountSettings).not.toHaveBeenCalled();
+  });
+});
+
+it("keeps an ambiguous intent visible unless a server read confirms it", async () => {
+  mocks.updateAccountSettings.mockRejectedValue(new Error("response lost"));
+  mocks.getAccountSettings.mockResolvedValue({
+    ...DEFAULT_ACCOUNT_APPEARANCE,
+    workingSetSyncEnabled: false,
+  });
+  await mount(false, async ({ read }) => {
+    await act(async () => read().change(true));
+    await waitFor(() => expect(read().error?.kind).toBe("ambiguous"));
+    await flush();
+    expect(read().value).toBe(true);
+    expect(read().confirmed).toBe(false);
+    expect(read().error?.retryValue).toBe(true);
+  });
+});
+it("adopts a server witness when an ambiguous save actually committed", async () => {
+  mocks.updateAccountSettings.mockRejectedValue(new Error("response lost"));
+  mocks.getAccountSettings.mockResolvedValue({
+    ...DEFAULT_ACCOUNT_APPEARANCE,
+    workingSetSyncEnabled: true,
+  });
+  await mount(false, async ({ read }) => {
+    await act(async () => read().change(true));
+    await waitFor(() => expect(read().confirmed).toBe(true));
+    expect(read().value).toBe(true);
+    expect(read().error).toBeNull();
+  });
+});
+
+it("does not let an older cross-tab confirmation overwrite the newest one", async () => {
+  const { writeAccountSettingsCache, ACCOUNT_SETTINGS_CACHE_PREFIX } = await import(
+    "@/lib/account-settings-cache"
+  );
+  const first = deferred<AccountSettings>();
+  const second = deferred<AccountSettings>();
+  mocks.getAccountSettings.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+  await mount(true, async ({ read }) => {
+    for (const enabled of [true, false]) {
+      writeAccountSettingsCache("account-a", {
+        ...DEFAULT_ACCOUNT_APPEARANCE,
+        workingSetSyncEnabled: enabled,
+      });
+      await act(async () =>
+        window.dispatchEvent(
+          new StorageEvent("storage", { key: `${ACCOUNT_SETTINGS_CACHE_PREFIX}account-a` }),
+        ),
+      );
+    }
+    await act(async () =>
+      second.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false }),
+    );
+    await waitFor(() => expect(read().confirmed).toBe(false));
+    await act(async () =>
+      first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true }),
+    );
+    expect(read().confirmed).toBe(false);
+    expect(read().value).toBe(false);
   });
 });

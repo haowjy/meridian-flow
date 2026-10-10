@@ -1,10 +1,6 @@
-/**
- * Drizzle ProjectPreferencesRepository: persists (userId, projectId) preferences in project_user_preferences with atomic partial upserts.
- * Key decision: the conflict update only sets fields present in the partial request, so concurrent independent group/pin writes do not need a read-modify-write round trip.
- */
+/** Drizzle persistence for the per-project auto-resume runtime policy. */
 import type {
   ProjectPreferences,
-  ThreadGroupBy,
   UpdateProjectPreferencesRequest,
 } from "@meridian/contracts/preferences";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
@@ -19,8 +15,6 @@ type ProjectPreferencesRow = typeof projectUserPreferences.$inferSelect;
 
 function mapPreferences(row: ProjectPreferencesRow): ProjectPreferences {
   return {
-    threadGroupBy: row.threadGroupBy as ThreadGroupBy,
-    pinnedThreadIds: [...row.pinnedThreadIds],
     autoResume: {
       enabled: row.autoResumeEnabled,
       timeoutMs: row.autoResumeTimeoutMs,
@@ -61,8 +55,6 @@ export function createDrizzleProjectPreferencesRepository(
       const set: Partial<typeof projectUserPreferences.$inferInsert> = {
         updatedAt: new Date(),
       };
-      if (input.threadGroupBy !== undefined) set.threadGroupBy = input.threadGroupBy;
-      if (input.pinnedThreadIds !== undefined) set.pinnedThreadIds = [...input.pinnedThreadIds];
       if (input.autoResume !== undefined) {
         set.autoResumeEnabled = input.autoResume.enabled;
         set.autoResumeTimeoutMs = input.autoResume.timeoutMs;
@@ -73,8 +65,6 @@ export function createDrizzleProjectPreferencesRepository(
         .values({
           userId,
           projectId,
-          threadGroupBy: defaultsForInsert.threadGroupBy,
-          pinnedThreadIds: defaultsForInsert.pinnedThreadIds,
           autoResumeEnabled: defaultsForInsert.autoResume?.enabled,
           autoResumeTimeoutMs: defaultsForInsert.autoResume?.timeoutMs,
         })

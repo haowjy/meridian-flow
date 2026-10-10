@@ -16,7 +16,7 @@ export function getAccountSettings(init?: AccountSettingsRequestInit): Promise<A
 }
 
 export function updateAccountSettings(
-  settings: AccountSettings,
+  settings: Partial<AccountSettings>,
   init?: AccountSettingsRequestInit,
 ): Promise<AccountSettings> {
   const url = init?.origin
