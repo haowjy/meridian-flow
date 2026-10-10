@@ -15,6 +15,7 @@
  */
 import type { ContextSourceId, DocumentId, DraftId, FolderId, WorkId } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
+import { documents, folders } from "@meridian/database/schema";
 import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
 import {
   bigint,
@@ -455,4 +456,60 @@ function uuidList(ids: readonly string[]): SQL {
     ids.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
+}
+
+/**
+ * Diagnostic identity rows: the view's locations and visibility, retaining tombstones
+ * and non-content identities so availability can explain lifecycle and corrupt identity.
+ * These do not admit content; ordinary readers use visibleDocuments/visibleFolders.
+ */
+export function identityDocuments(view: TreeView) {
+  const columns = getTableColumns(documents);
+  const located = new Set(["contextSourceId", "folderId", "name", "extension"]);
+  const fields = sql.join(
+    Object.entries(columns).map(([key, column]) => {
+      const live = sql.raw(`d.${column.name}`);
+      if (view.kind === "live" || !located.has(key)) return live;
+      const value =
+        key === "folderId"
+          ? draftFolderId
+          : sql.raw(`COALESCE(c.${column.name}, d.${column.name})`);
+      return sql`${value} AS ${sql.identifier(column.name)}`;
+    }),
+    sql`, `,
+  );
+  const query =
+    view.kind === "live"
+      ? sql`SELECT ${fields} FROM documents d WHERE NOT d.hidden`
+      : sql`SELECT ${fields} FROM documents d LEFT JOIN draft_tree_changes c
+        ON c.node_id = d.id AND c.node_kind = 'document' AND c.draft_id = ${view.draftId}::uuid
+        WHERE NOT d.hidden OR c.created`;
+  return subquery(query, columns, "document_identities");
+}
+
+/** Folder lifecycle facts in the view, including deleted ancestors for diagnostics. */
+export function identityFolders(view: TreeView) {
+  const columns = getTableColumns(folders);
+  const query = sql`SELECT f.* FROM folders f WHERE NOT f.hidden
+    ${view.kind === "draft" ? sql`OR f.id IN (SELECT id FROM ${visibleFoldersSql(view)} shown)` : sql``}`;
+  return subquery(query, columns, "folder_identities");
+}
+
+/** Plain selections for nested Drizzle selects (a Subquery itself is not a selection). */
+export function visibleDocumentFields(
+  relation: VisibleDocumentsSubquery,
+): typeof visibleDocumentColumns {
+  return Object.fromEntries(
+    Object.keys(visibleDocumentColumns).map((key) => [
+      key,
+      relation[key as keyof typeof visibleDocumentColumns],
+    ]),
+  ) as typeof visibleDocumentColumns;
+}
+
+export function identityDocumentFields(relation: ReturnType<typeof identityDocuments>) {
+  const columns = getTableColumns(documents);
+  return Object.fromEntries(
+    Object.keys(columns).map((key) => [key, relation[key as keyof typeof columns]]),
+  ) as typeof columns;
 }

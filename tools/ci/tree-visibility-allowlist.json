@@ -41,31 +41,6 @@
       "reason": "pending: lane C; recovery join and isLive use the live tree view"
     },
     {
-      "path": "apps/server/server/domains/context/adapters/figures/drizzle-figure-document-repository.ts",
-      "forms": ["read"],
-      "reason": "pending: lane R; resolve figures through the caller tree view"
-    },
-    {
-      "path": "apps/server/server/domains/context/adapters/project-context-availability.ts",
-      "forms": ["read"],
-      "reason": "pending: lane R; availability reads use the caller tree view"
-    },
-    {
-      "path": "apps/server/server/domains/context/uploads/drizzle-upload-intake.ts",
-      "forms": ["read"],
-      "reason": "pending: lane R; upload names use the live tree view"
-    },
-    {
-      "path": "apps/server/server/domains/context/uploads/upload-identity.ts",
-      "forms": ["read"],
-      "reason": "pending: lane R; upload identity uses the live tree view"
-    },
-    {
-      "path": "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts",
-      "forms": ["read"],
-      "reason": "pending: lane R; lineage and folder chain move to the tree owner"
-    },
-    {
       "path": "apps/server/server/domains/projects/adapters/work-cascade.ts",
       "forms": ["write"],
       "reason": "Work-owned sources (scratch, uploads) only, never drafted, so never hidden: cascade soft-delete and restore, bumping location_version"
@@ -74,16 +49,6 @@
       "path": "apps/server/server/domains/projects/adapters/work-repository/drizzle.ts",
       "forms": ["read"],
       "reason": "Rows the Work cascade deleted, by deleted_by_work_id: history of Work-owned sources"
-    },
-    {
-      "path": "apps/server/server/domains/projects/index.ts",
-      "forms": ["read"],
-      "reason": "pending: lane R; bootstrap chapter lookup uses the live tree view"
-    },
-    {
-      "path": "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.ts",
-      "forms": ["read"],
-      "reason": "pending: lane R; record, list and prune use the live tree view"
     },
     {
       "path": "apps/server/server/domains/collab/adapters/drizzle-branches.ts",

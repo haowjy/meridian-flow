@@ -23,7 +23,9 @@ level = min(person term, lifecycle term, agent term)
 
 `domain/policy.ts` is pure. `SOURCE_RULES` there says which sources are
 drafted (`scratch://` and `uploads://` never are) and each source's agent cap.
-Ancestors come from walking `folders.parent_id`; there is no closure table.
+File facts resolve the Work through the canonical drafts resolver and read
+`tree.lineage(view, documentId)` for source and nearest-first folder ancestors.
+Hidden identities outside that draft have no facts. There is no closure table.
 
 ## The service (`file-access.ts`)
 

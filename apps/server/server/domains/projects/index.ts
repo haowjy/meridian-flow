@@ -7,7 +7,7 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents, projects, works } from "@meridian/database";
+import { projects, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type {
@@ -18,6 +18,7 @@ import type {
 import { ensureWorkContextSource } from "../context/context-source-provisioning.js";
 import { DrizzleContextDocumentStore } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import { LIVE_TREE, visibleDocuments } from "../context/tree/tree-view.js";
 import {
   ensureProjectManifestSource,
   nextProjectSlug,
@@ -192,14 +193,13 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     }
 
     const [existing] = await tx
-      .select({ id: documents.id })
-      .from(documents)
+      .select({ id: liveDocuments.id })
+      .from(liveDocuments)
       .where(
         and(
-          eq(documents.contextSourceId, contextSourceId),
-          eq(documents.name, "chapter-1"),
-          eq(documents.extension, "md"),
-          isNull(documents.deletedAt),
+          eq(liveDocuments.contextSourceId, contextSourceId),
+          eq(liveDocuments.name, "chapter-1"),
+          eq(liveDocuments.extension, "md"),
         ),
       )
       .limit(1);
@@ -355,3 +355,5 @@ export {
 } from "./update-work.js";
 export { requireWorkOwner } from "./work-access.js";
 export type { WorkChangeOrigin, WorkContextNotices } from "./work-context-notices.js";
+
+const liveDocuments = visibleDocuments(LIVE_TREE);
