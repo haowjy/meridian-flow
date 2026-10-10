@@ -40,6 +40,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/response-save-destinations.db.test.ts",
   "apps/server/server/domains/collab/response-transaction-atomicity.db.test.ts",
   "apps/server/server/domains/collab/document-revisions.db.test.ts",
+  "apps/server/server/domains/collab/draft-tree.reply.db.test.ts",
   "apps/server/server/domains/collab/writer-ingress.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
   "apps/server/server/domains/context/adapters/context-fs/context-fs.create-untitled.db.test.ts",
