@@ -753,6 +753,25 @@ describe("rejected draft ownership", () => {
     );
   });
 
+  it("removes a retired failed row on remount when its words already belong to the composer", async () => {
+    const scenario = new ThreadRunScenario();
+    const state = await setupDraft(scenario);
+    await act(() => state.getRecovery().markRejected("sub-1", state.row.id));
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+    await act(() => state.root.unmount());
+    await cleanup?.();
+    cleanup = undefined;
+    let recovery!: ChatSubmissionRecovery;
+    await mount(ACCOUNT, scenario, (value) => {
+      recovery = value;
+    });
+    expect(scenario.turns()).toEqual([]);
+    expect(recovery.rejected).toEqual([]);
+    expect(
+      new ComposerSessionDraft(ACCOUNT, { kind: "chat", id: THREAD_ID }).initialDraft?.doc,
+    ).toEqual(state.envelope.draft.doc);
+  });
+
   it("reconciles a journal rejection on remount and returns its reference atoms before retirement", async () => {
     const state = await setupDraft();
     await act(() => state.root.unmount());

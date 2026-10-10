@@ -21,5 +21,6 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
     initialDraft: owner.initialDraft,
     updateDraft: owner.updateDraft,
     handoff: owner.handoff,
+    handoffSubmitted: owner.handoffSubmitted,
   };
 }
