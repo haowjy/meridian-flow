@@ -1,0 +1,119 @@
+{
+  "entries": [
+    {
+      "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts",
+      "forms": ["read", "write"],
+      "reason": "Live and hidden creation writer: inserts and updates rows; every read goes through the view"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.ts",
+      "forms": ["read", "write"],
+      "reason": "Live mover: CAS-inspects through the view, moves and deletes rows, enumerates subtrees including hidden contents (they move with their folder; absorb and split need them)"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/context-fs/document-locations.ts",
+      "forms": ["read", "write"],
+      "reason": "Namespace locks, location-history claims and records, subtree enumeration: identity and history by id, no visibility answer"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/context-catalog.ts",
+      "forms": ["read"],
+      "reason": "pending: lane C; switch catalog reads to the live tree view"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/document-address.ts",
+      "forms": ["read"],
+      "reason": "pending: lane T; move addresses to the tree owner (view arguments in lane C)"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/document-link-scope.ts",
+      "forms": ["read"],
+      "reason": "pending: lane C; delegate document ownership to tree.projectOfDocument"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/document-link-history.ts",
+      "forms": ["read"],
+      "reason": "Previous-location lookup: a history row names the document; access by project ownership; hidden documents have no history rows until reveal"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/drizzle-link-ahead-registry.ts",
+      "forms": ["read"],
+      "reason": "pending: lane C; recovery join and isLive use the live tree view"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/figures/drizzle-figure-document-repository.ts",
+      "forms": ["read"],
+      "reason": "pending: lane R; resolve figures through the caller tree view"
+    },
+    {
+      "path": "apps/server/server/domains/context/adapters/project-context-availability.ts",
+      "forms": ["read"],
+      "reason": "pending: lane R; availability reads use the caller tree view"
+    },
+    {
+      "path": "apps/server/server/domains/context/uploads/drizzle-upload-intake.ts",
+      "forms": ["read"],
+      "reason": "pending: lane R; upload names use the live tree view"
+    },
+    {
+      "path": "apps/server/server/domains/context/uploads/upload-identity.ts",
+      "forms": ["read"],
+      "reason": "pending: lane R; upload identity uses the live tree view"
+    },
+    {
+      "path": "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.ts",
+      "forms": ["read"],
+      "reason": "pending: lane R; lineage and folder chain move to the tree owner"
+    },
+    {
+      "path": "apps/server/server/domains/projects/adapters/work-cascade.ts",
+      "forms": ["write"],
+      "reason": "Work-owned sources (scratch, uploads) only, never drafted, so never hidden: cascade soft-delete and restore, bumping location_version"
+    },
+    {
+      "path": "apps/server/server/domains/projects/adapters/work-repository/drizzle.ts",
+      "forms": ["read"],
+      "reason": "Rows the Work cascade deleted, by deleted_by_work_id: history of Work-owned sources"
+    },
+    {
+      "path": "apps/server/server/domains/projects/index.ts",
+      "forms": ["read"],
+      "reason": "pending: lane R; bootstrap chapter lookup uses the live tree view"
+    },
+    {
+      "path": "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.ts",
+      "forms": ["read"],
+      "reason": "pending: lane R; record, list and prune use the live tree view"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-branches.ts",
+      "forms": ["read", "write"],
+      "reason": "Branch ownership by id (draftable source, project of a document)"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-collab-lookups.ts",
+      "forms": ["read"],
+      "reason": "Yjs engine: a document's schema by id for a live or branch room the caller already holds; grants nothing"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-document-activity.ts",
+      "forms": ["read"],
+      "reason": "Activity side effect keyed by an id from a committed edit; returns no document to anyone"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.ts",
+      "forms": ["read", "write"],
+      "reason": "Certified derive: projection and links of any row by id under its generation/location CAS"
+    },
+    {
+      "path": "apps/server/server/domains/collab/adapters/drizzle-work-draft-discard.ts",
+      "forms": ["read"],
+      "reason": "pending: lane D; discard delegates to hidden-node lifecycle"
+    },
+    {
+      "path": "apps/server/scripts/phase4-smoke.ts",
+      "forms": ["read"],
+      "reason": "pending: lane P; smoke reads the separate Markdown projection table"
+    }
+  ]
+}
