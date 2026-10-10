@@ -53,11 +53,11 @@ export function namespaceDestinationLocation(destination: ResourceDestination): 
 
 export function projectFolderNeedsRepair(
   record: FolderNamespaceRecord,
-): { intentId: string; name: string } | null {
+): { intentId: string; name: string; destination: ResourceDestination } | null {
   const failed = record.intents.find((intent) => intent.state === "needs-repair");
   if (failed?.desired.kind !== "set-folder-location") return null;
   const destination = namespaceRepairDestination(record.intents, failed);
-  return destination ? { intentId: failed.intentId, name: destination.name } : null;
+  return destination ? { intentId: failed.intentId, name: destination.name, destination } : null;
 }
 
 /** Work that can progress without a new writer command, as `resourceNeedsBackgroundReconciliation` for files. */

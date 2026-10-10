@@ -9,6 +9,7 @@ import type {
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
+import type { TabOwner } from "@/client/stores";
 import { cn } from "@/lib/utils";
 import {
   ContextEntryMenu,
@@ -24,17 +25,19 @@ import {
   contextTreeRowClassName,
   contextTreeRowGrowClassName,
 } from "./context-row-geometry";
-import { schemeAllowsCreation } from "./context-schemes";
+import { EntryMovePicker } from "./EntryMovePicker";
 import { EntryNameField } from "./EntryNameField";
-import { LinkUpdateNote } from "./LinkUpdateNote";
+import { LinkUpdateNote, rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import { useRenameEntryForm } from "./use-rename-entry-form";
-import { useRepairOnFreshFailure } from "./use-repair-on-fresh-failure";
+import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
 export type TreeEnv = {
   projectId: string;
   workId: string | null;
+  owner?: TabOwner;
+  actions: readonly EntryAction[];
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
@@ -127,6 +130,22 @@ export function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
   );
 }
 
+export function ContextTreeEntry({
+  node,
+  depth,
+  siblingNames,
+}: {
+  node: ContextNode;
+  depth: number;
+  siblingNames: readonly string[];
+}) {
+  return node.kind === "dir" ? (
+    <DirRow dir={node} depth={depth} siblingNames={siblingNames} />
+  ) : (
+    <FileRow file={node} depth={depth} siblingNames={siblingNames} />
+  );
+}
+
 function DirRow({
   dir,
   depth,
@@ -138,30 +157,35 @@ function DirRow({
 }) {
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
-  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const noteOperationId = useRenameOperation(dir.entryId);
+  const setNoteOperationId = (operationId: string) =>
+    rememberRenameOperation(dir.entryId, operationId);
   const isOpen = env.isExpanded(dir.entryId, depth);
   // A refused rename offers its name field once, as the failure arrives.
-  useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
+  useEntryRenameRepair(dir, () => setRenaming(true), env.actions.includes("rename"));
   const toggle = () => {
     if (env.creating) env.onCreateDone();
     env.toggleEntry(dir.entryId, depth < 2);
   };
 
   function handleAction(action: EntryAction) {
+    if (!env.actions.includes(action)) return;
     if (action === "new-file") env.onRequestCreate("file", dir.path);
     else if (action === "new-folder") env.onRequestCreate("folder", dir.path);
     else if (action === "rename") setRenaming(true);
+    else if (action === "move") setMoving(true);
     else if (action === "delete")
       env.onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
   }
 
-  if (renaming) {
+  if (renaming && env.actions.includes("rename")) {
     return (
       <RenameRow
         entryId={dir.entryId}
         path={dir.path}
         currentName={dir.name}
-        repairName={dir.namespaceRepairName}
+        repairName={dir.namespaceRepairMove ? undefined : dir.namespaceRepairName}
         siblingNames={siblingNames}
         kind="folder"
         depth={depth}
@@ -172,46 +196,54 @@ function DirRow({
     );
   }
 
-  const allowCreate = schemeAllowsCreation(env.scheme);
-  const allowDelete = env.scheme !== "uploads";
   return (
     <>
-      <ContextEntryMenu allowCreate={allowCreate} allowDelete={allowDelete} onAction={handleAction}>
-        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={isOpen}
-          aria-label={t`Toggle folder ${dir.name}`}
-          onClick={toggle}
-          onKeyDown={activateOnKey(toggle)}
-          className={cn(
-            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground hover:bg-sidebar-accent/50",
-            contextTreeRowGrowClassName,
-          )}
-          style={{ paddingLeft: rowPaddingLeft(depth) }}
-        >
-          <Twistie expanded={isOpen} />
-          <RowIcon icon={isOpen ? FolderOpen : Folder} />
-          <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-            <span className="truncate">{dir.name}</span>
-            <LinkUpdateNote
-              projectId={env.projectId}
-              subject={{ kind: "folder", id: dir.entryId }}
-              operationId={noteOperationId}
-              layout="stacked"
-            />
-          </span>
-          {dir.namespaceFailure ? (
-            <NamespaceFailureMark failure={dir.namespaceFailure} folder />
-          ) : null}
-          <EntryKebabButton
-            allowCreate={allowCreate}
-            allowDelete={allowDelete}
-            onAction={handleAction}
-          />
-        </div>
-      </ContextEntryMenu>
+      <EntryMovePicker
+        projectId={env.projectId}
+        scheme={env.scheme}
+        owner={env.owner ?? { workId: env.workId ?? undefined }}
+        entry={{ id: dir.entryId, name: dir.name, path: dir.path, kind: "folder" }}
+        repairMove={dir.namespaceRepairMove}
+        open={moving && env.actions.includes("move")}
+        onOpenChange={setMoving}
+      >
+        <ContextEntryMenu allowedActions={env.actions} onAction={handleAction}>
+          {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-expanded={isOpen}
+            aria-label={t`Toggle folder ${dir.name}`}
+            onClick={toggle}
+            onKeyDown={activateOnKey(toggle)}
+            className={cn(
+              "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground hover:bg-sidebar-accent/50",
+              contextTreeRowGrowClassName,
+            )}
+            style={{ paddingLeft: rowPaddingLeft(depth) }}
+          >
+            <Twistie expanded={isOpen} />
+            <RowIcon icon={isOpen ? FolderOpen : Folder} />
+            <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+              <span className="truncate">{dir.name}</span>
+              <LinkUpdateNote
+                projectId={env.projectId}
+                subject={{ kind: "folder", id: dir.entryId }}
+                operationId={noteOperationId}
+                layout="stacked"
+              />
+            </span>
+            {dir.namespaceFailure ? (
+              <NamespaceFailureMark
+                failure={dir.namespaceFailure}
+                move={Boolean(dir.namespaceRepairMove)}
+                folder
+              />
+            ) : null}
+            <EntryKebabButton allowedActions={env.actions} onAction={handleAction} />
+          </div>
+        </ContextEntryMenu>
+      </EntryMovePicker>
       {isOpen ? (
         <TreeChildren parentId={dir.entryId} parentPath={dir.path} depth={depth + 1} />
       ) : null}
@@ -230,15 +262,20 @@ function FileRow({
 }) {
   const env = useTreeEnv();
   const [renaming, setRenaming] = useState(false);
-  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const noteOperationId = useRenameOperation(file.documentId);
+  const setNoteOperationId = (operationId: string) =>
+    rememberRenameOperation(file.documentId, operationId);
   const select = () => env.onSelectFile(env.scheme, file);
-  useRepairOnFreshFailure(file.namespaceFailureAt, () => setRenaming(true));
+  useEntryRenameRepair(file, () => setRenaming(true), env.actions.includes("rename"));
 
   function handleAction(action: EntryAction) {
     const parentPath = parentContextEntryPath(file.path);
+    if (!env.actions.includes(action)) return;
     if (action === "new-file") env.onRequestCreate("file", parentPath);
     else if (action === "new-folder") env.onRequestCreate("folder", parentPath);
     else if (action === "rename") setRenaming(true);
+    else if (action === "move") setMoving(true);
     else if (action === "delete")
       env.onRequestDelete({
         name: file.name,
@@ -248,13 +285,13 @@ function FileRow({
       });
   }
 
-  if (renaming) {
+  if (renaming && env.actions.includes("rename")) {
     return (
       <RenameRow
         entryId={file.documentId}
         path={file.path}
         currentName={file.name}
-        repairName={file.namespaceRepairName}
+        repairName={file.namespaceRepairMove ? undefined : file.namespaceRepairName}
         siblingNames={siblingNames}
         kind="file"
         depth={depth}
@@ -266,38 +303,48 @@ function FileRow({
   }
 
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
-  const allowCreate = schemeAllowsCreation(env.scheme);
-  const allowDelete = env.scheme !== "uploads";
+
   return (
-    <ContextEntryMenu allowCreate={allowCreate} allowDelete={allowDelete} onAction={handleAction}>
-      {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={select}
-        onKeyDown={activateOnKey(select)}
-        className={cn("focus-ring", contextTreeFileRowClassName(active))}
-        style={{ paddingLeft: rowPaddingLeft(depth) }}
-      >
-        <span className="h-7 w-4 shrink-0" aria-hidden />
-        <RowIcon icon={fileKindIcon(file)} />
-        <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-          <span className="truncate">{file.name}</span>
-          <LinkUpdateNote
-            projectId={env.projectId}
-            subject={{ kind: "file", id: file.documentId }}
-            operationId={noteOperationId}
-            layout="stacked"
-          />
-        </span>
-        {file.namespaceFailure ? <NamespaceFailureMark failure={file.namespaceFailure} /> : null}
-        <EntryKebabButton
-          allowCreate={allowCreate}
-          allowDelete={allowDelete}
-          onAction={handleAction}
-        />
-      </div>
-    </ContextEntryMenu>
+    <EntryMovePicker
+      projectId={env.projectId}
+      scheme={env.scheme}
+      owner={env.owner ?? { workId: env.workId ?? undefined }}
+      entry={{ id: file.documentId, name: file.name, path: file.path, kind: "file" }}
+      repairMove={file.namespaceRepairMove}
+      open={moving && env.actions.includes("move")}
+      onOpenChange={setMoving}
+    >
+      <ContextEntryMenu allowedActions={env.actions} onAction={handleAction}>
+        {/* biome-ignore lint/a11y/useSemanticElements: row nests a separate kebab button. */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={select}
+          onKeyDown={activateOnKey(select)}
+          className={cn("focus-ring", contextTreeFileRowClassName(active))}
+          style={{ paddingLeft: rowPaddingLeft(depth) }}
+        >
+          <span className="h-7 w-4 shrink-0" aria-hidden />
+          <RowIcon icon={fileKindIcon(file)} />
+          <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
+            <span className="truncate">{file.name}</span>
+            <LinkUpdateNote
+              projectId={env.projectId}
+              subject={{ kind: "file", id: file.documentId }}
+              operationId={noteOperationId}
+              layout="stacked"
+            />
+          </span>
+          {file.namespaceFailure ? (
+            <NamespaceFailureMark
+              failure={file.namespaceFailure}
+              move={Boolean(file.namespaceRepairMove)}
+            />
+          ) : null}
+          <EntryKebabButton allowedActions={env.actions} onAction={handleAction} />
+        </div>
+      </ContextEntryMenu>
+    </EntryMovePicker>
   );
 }
 
@@ -327,7 +374,7 @@ function RenameRow({
   const env = useTreeEnv();
   const form = useRenameEntryForm({
     projectId: env.projectId,
-    owner: { workId: env.workId ?? undefined },
+    owner: env.owner ?? { workId: env.workId ?? undefined },
     scheme: env.scheme,
     entryId,
     path,

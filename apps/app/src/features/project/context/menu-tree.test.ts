@@ -1,12 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { areaNode, buildMenuTree, foldersIn, type MenuArea } from "./menu-tree";
+import {
+  areaNode,
+  buildMenuTree,
+  foldersIn,
+  isFolderWithin,
+  type MenuArea,
+  menuEntryFor,
+} from "./menu-tree";
 
 type Entry = { entryId: string; kind: "dir" | "file"; name: string; path: string; parent: string };
 
 /** A catalog with just what the tree reads: children, ids, files and path lookup. */
 function catalog(root: string, entries: Entry[]): CatalogContextView {
-  const byId = new Map(entries.map((entry) => [entry.entryId, entry]));
+  const byId = new Map(
+    entries.map((entry) => [
+      entry.entryId,
+      {
+        ...entry,
+        kind: entry.kind === "dir" ? "folder" : "file",
+        path: entry.path.split("/").filter(Boolean),
+        sourceId: root,
+      },
+    ]),
+  );
   return {
     root: { entryId: root },
     normalized: { entries: byId },
@@ -85,5 +102,38 @@ describe("a document menu's tree", () => {
     const tree = buildMenuTree({ heading: "Scratch", areas: [withEarlier], rooted: false });
     expect(tree.children(null).map((node) => node.name)).toEqual(["Earlier notes"]);
     expect(tree.children("earlier:area:scratch").map((node) => node.name)).toEqual(["n.md"]);
+  });
+});
+
+describe("folder picker boundaries", () => {
+  it("does not confuse equal paths across areas in one shared catalog snapshot", () => {
+    const m = catalog("m", [
+      { entryId: "m-act", kind: "dir", name: "Act", path: "/Act", parent: "m" },
+    ]);
+    const k = catalog("k", [
+      { entryId: "k-act", kind: "dir", name: "Act", path: "/Act", parent: "k" },
+      { entryId: "note", kind: "file", name: "note.md", path: "/Act/note.md", parent: "k-act" },
+    ]);
+    const entries = new Map([...m.normalized.entries, ...k.normalized.entries]);
+    m.normalized = { ...m.normalized, entries };
+    k.normalized = { ...k.normalized, entries };
+    const tree = buildMenuTree({
+      heading: "",
+      areas: [
+        area("m", "Manuscript", { catalog: m }),
+        area("k", "Knowledge Base", { scheme: "kb", catalog: k }),
+      ],
+      rooted: true,
+    });
+    expect(menuEntryFor(m, "k-act")).toBeNull();
+    expect(menuEntryFor(k, "k-act")?.entryId).toBe("k-act");
+    expect(tree.children("k-act").map((node) => node.name)).toEqual(["note.md"]);
+  });
+
+  it("rejects self and descendants without rejecting similarly prefixed siblings or parents", () => {
+    expect(isFolderWithin("/Act", "/Act")).toBe(true);
+    expect(isFolderWithin("/Act/Scene", "/Act")).toBe(true);
+    expect(isFolderWithin("/Act Two", "/Act")).toBe(false);
+    expect(isFolderWithin("/", "/Act")).toBe(false);
   });
 });

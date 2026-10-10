@@ -4,7 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { FilePlus, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
+import { FilePlus, FolderInput, FolderPlus, type LucideIcon, Pencil, Trash2 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { Fragment, useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
@@ -38,7 +38,7 @@ import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
-export type EntryAction = "new-file" | "new-folder" | "rename" | "delete";
+export type EntryAction = "new-file" | "new-folder" | "rename" | "move" | "delete";
 
 type EntryActionSpec = {
   action: EntryAction;
@@ -52,6 +52,7 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
   { action: "new-file", label: <Trans>New file</Trans>, icon: FilePlus, group: "create" },
   { action: "new-folder", label: <Trans>New folder</Trans>, icon: FolderPlus, group: "create" },
   { action: "rename", label: <Trans>Rename</Trans>, icon: Pencil, group: "manage" },
+  { action: "move", label: <Trans>Move…</Trans>, icon: FolderInput, group: "manage" },
   {
     action: "delete",
     label: <Trans>Delete</Trans>,
@@ -60,10 +61,6 @@ const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
     destructive: true,
   },
 ];
-
-function visibleEntryActions(allowCreate: boolean): readonly EntryActionSpec[] {
-  return allowCreate ? ENTRY_ACTIONS : ENTRY_ACTIONS.filter((spec) => spec.group !== "create");
-}
 
 export type EntryActionTarget = {
   /** Display name of the entry (basename). */
@@ -78,18 +75,15 @@ type DeleteTarget = EntryActionTarget & { workId: string | null };
 
 export function ContextEntryMenu({
   children,
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
   children: React.ReactNode;
-  /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
-  allowCreate: boolean;
-  /** Upload intake owns deletion; its tree projection cannot issue generic deletes. */
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
+  if (allowedActions.length === 0) return children;
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>{children}</ContextMenuPrimitive.Trigger>
@@ -102,11 +96,7 @@ export function ContextEntryMenu({
           )}
           onCloseAutoFocus={onCloseAutoFocus}
         >
-          <ContextActionItems
-            allowCreate={allowCreate}
-            allowDelete={allowDelete}
-            onAction={dispatch}
-          />
+          <ContextActionItems allowedActions={allowedActions} onAction={dispatch} />
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
@@ -134,23 +124,20 @@ function useMenuActionDispatch(onAction: (action: EntryAction) => void) {
 // ─── Hover kebab button + dropdown ──────────────────────────────────────────
 
 export function EntryKebabButton({
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
   className,
   align = "start",
   sideOffset = 2,
 }: {
-  /** From `schemeAllowsCreation(scheme)` — hides New file / New folder. */
-  allowCreate: boolean;
-  /** Upload intake owns deletion; its tree projection cannot issue generic deletes. */
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
   className?: string;
   align?: "start" | "center" | "end";
   sideOffset?: number;
 }) {
   const { dispatch, onCloseAutoFocus } = useMenuActionDispatch(onAction);
+  if (allowedActions.length === 0) return null;
   return (
     <OverflowMenu
       label={t`Actions`}
@@ -159,11 +146,7 @@ export function EntryKebabButton({
       onCloseAutoFocus={onCloseAutoFocus}
       triggerClassName={cn(contextTreeOverflowTriggerClassName, className)}
     >
-      <DropdownActionItems
-        allowCreate={allowCreate}
-        allowDelete={allowDelete}
-        onAction={dispatch}
-      />
+      <DropdownActionItems allowedActions={allowedActions} onAction={dispatch} />
     </OverflowMenu>
   );
 }
@@ -171,17 +154,13 @@ export function EntryKebabButton({
 // ─── Primitive-specific renderers over the shared action specification ─────
 
 function ContextActionItems({
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
-  allowCreate: boolean;
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const actions = visibleEntryActions(allowCreate).filter(
-    (spec) => allowDelete || spec.action !== "delete",
-  );
+  const actions = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
   return (
     <>
       {actions.map((spec, index) => {
@@ -211,17 +190,13 @@ function ContextActionItems({
 }
 
 function DropdownActionItems({
-  allowCreate,
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
-  allowCreate: boolean;
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
-  const actions = visibleEntryActions(allowCreate).filter(
-    (spec) => allowDelete || spec.action !== "delete",
-  );
+  const actions = ENTRY_ACTIONS.filter((spec) => allowedActions.includes(spec.action));
   return actions.map((spec, index) => {
     const Icon = spec.icon;
     const startsGroup = index > 0 && actions[index - 1]?.group !== spec.group;

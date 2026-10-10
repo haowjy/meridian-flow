@@ -14,12 +14,18 @@
  * tooltip and accessible name rather than a line of text.
  */
 import { t } from "@lingui/core/macro";
+import { parseContextUri } from "@meridian/contracts/context-uri";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { type CSSProperties, useRef, useState } from "react";
+import { useWorks } from "@/client/query/useWorks";
+import type { TabOwner } from "@/client/stores";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
+import { ContextTreeEntry, TreeEnvProvider } from "../context/ContextTreeRows";
+import { fileKindIcon as nodeIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
 import { RailPaneHeader } from "../context/RailPaneHeader";
-import { useCatalogMenuSource } from "../context/use-catalog-menu-source";
+import { type CatalogMenuSource, useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import { useDockDocument } from "../dock/dock-view-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { ResizeHandle } from "../layout/ResizeHandle";
@@ -152,6 +158,8 @@ export function RailScratchSection({
       {expanded ? (
         <div className="min-h-0 overflow-y-auto overflow-x-hidden pb-1">
           <ScratchRows
+            projectId={projectId}
+            source={scratch.source}
             tree={tree}
             folderId={null}
             depth={1}
@@ -169,6 +177,8 @@ export function RailScratchSection({
 }
 
 function ScratchRows({
+  projectId,
+  source,
   tree,
   folderId,
   depth,
@@ -177,6 +187,8 @@ function ScratchRows({
   onToggle,
   onPick,
 }: {
+  projectId: string;
+  source: CatalogMenuSource;
   tree: DrillTree;
   folderId: string | null;
   depth: number;
@@ -189,6 +201,20 @@ function ScratchRows({
   if (entries.length === 0)
     return folderId === null ? <RailEmptyHint>{tree.empty}</RailEmptyHint> : null;
   return entries.map((node) => {
+    const entry = source.entryFor(node.id);
+    if (entry)
+      return (
+        <ScratchEntry
+          key={node.id}
+          projectId={projectId}
+          entry={entry}
+          depth={depth}
+          openId={openId}
+          toggled={toggled}
+          onToggle={onToggle}
+          onPick={onPick}
+        />
+      );
     if (!node.folder)
       return (
         <RailFileRow
@@ -212,6 +238,8 @@ function ScratchRows({
         />
         {open ? (
           <ScratchRows
+            projectId={projectId}
+            source={source}
             tree={tree}
             folderId={node.id}
             depth={depth + 1}
@@ -224,4 +252,77 @@ function ScratchRows({
       </div>
     );
   });
+}
+
+/** Actual Scratch entries share the Files row forms, actions and optimistic namespace owner. */
+function ScratchEntry({
+  projectId,
+  entry,
+  depth,
+  openId,
+  toggled,
+  onToggle,
+  onPick,
+}: {
+  projectId: string;
+  entry: NonNullable<ReturnType<CatalogMenuSource["entryFor"]>>;
+  depth: number;
+  openId: string | undefined;
+  toggled: Record<string, boolean>;
+  onToggle: (id: string, open: boolean) => void;
+  onPick: (node: DrillNode) => void;
+}) {
+  const parsed = parseContextUri(entry.node.uri);
+  const owner: TabOwner =
+    entry.owner.rootThreadId && parsed.ok && parsed.value.authority.kind === "lineage"
+      ? {
+          rootThreadId: entry.owner.rootThreadId,
+          rootThreadRef: parsed.value.authority.rootThreadRef,
+        }
+      : { workId: entry.owner.workId ?? undefined };
+  const { works, noWork } = useWorks(projectId);
+  const work =
+    entry.owner.workId === noWork?.id
+      ? noWork
+      : works?.find((candidate) => candidate.id === entry.owner.workId);
+  const editable = !entry.owner.workId || Boolean(work && !isWorkArchived(work));
+  return (
+    <TreeEnvProvider
+      value={{
+        projectId,
+        scheme: "scratch",
+        workId: entry.owner.workId ?? null,
+        owner,
+        actions: editable ? ["rename", "move"] : [],
+        catalog: entry.catalog,
+        activeScheme: "scratch",
+        activePath: entry.catalog.findDocument(openId ?? "")?.path ?? null,
+        creating: null,
+        onSelectFile: (_scheme, file) => {
+          // Descendant rows resolve their own node through the rail's canonical opener.
+          onPick({
+            id: file.entryId,
+            documentId: file.documentId,
+            name: file.name,
+            icon: nodeIcon(file),
+            folder: false,
+          });
+        },
+        onRequestCreate: () => undefined,
+        onRequestDelete: () => undefined,
+        onCreateDone: () => undefined,
+        onCreatedFilePath: () => undefined,
+        isExpanded: (id, rowDepth) => toggled[id] ?? rowDepth < 2,
+        toggleEntry: (id, defaultOpen) => onToggle(id, toggled[id] ?? defaultOpen),
+      }}
+    >
+      <ContextTreeEntry
+        node={entry.node}
+        depth={depth}
+        siblingNames={entry.catalog
+          .children(entry.node.parentId ?? entry.catalog.root.entryId)
+          .map((node) => node.name)}
+      />
+    </TreeEnvProvider>
+  );
 }

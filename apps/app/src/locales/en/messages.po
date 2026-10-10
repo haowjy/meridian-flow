@@ -512,6 +512,11 @@ msgstr "All chats"
 msgid "All Work"
 msgstr "All Work"
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Already in {0}"
+msgstr "Already in {0}"
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr "Alt text"
@@ -1233,6 +1238,18 @@ msgstr "Couldn't load Work."
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't move this entry. Try again."
+msgstr "Couldn't move this entry. Try again."
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
+msgstr "Couldn't move to {failedFolder}. Try again or pick another folder."
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
+msgstr "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
+
 #: src/features/project/context/ContextDocumentHost.tsx
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
@@ -1293,6 +1310,10 @@ msgstr "Couldn't rename this folder. Try again."
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
 msgstr "Couldn’t rename this Work. Try again."
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't rename. Use Rename in the file list to try again."
+msgstr "Couldn't rename. Use Rename in the file list to try again."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -2370,6 +2391,15 @@ msgstr "More chats couldn't load."
 msgid "More composer controls"
 msgstr "More composer controls"
 
+#. placeholder {0}: entry.name
+#: src/features/project/context/EntryMovePicker.tsx
+#~ msgid "Move {0}"
+#~ msgstr "Move {0}"
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move {name}"
+msgstr "Move {name}"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr "Move column left"
@@ -2394,9 +2424,23 @@ msgstr "Move row down"
 msgid "Move row up"
 msgstr "Move row up"
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to {0}"
+msgstr "Move to {0}"
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
 msgstr "Move up"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Move…"
+msgstr "Move…"
+
+#. placeholder {0}: folder ?? ""
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "Moved to {0}"
+msgstr "Moved to {0}"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -3988,6 +4032,10 @@ msgstr "This image never finished uploading."
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "This link can no longer be edited. Close the form and try again."
 msgstr "This link can no longer be edited. Close the form and try again."
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "This location is unavailable. Refresh and try again."
+msgstr "This location is unavailable. Refresh and try again."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This note is empty. Open it in the Editor to write."

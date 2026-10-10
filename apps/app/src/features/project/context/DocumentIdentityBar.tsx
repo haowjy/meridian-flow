@@ -4,15 +4,18 @@
  * refused move, a review). The Editor shows it as a band above the page; a
  * document beside the chat shows it in the dock header (`variant="header"`).
  */
+import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
 
+import { refusedMoveDestination } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "./account-feature-context";
+import { schemeLabel } from "./context-schemes";
 import { DocumentPath } from "./DocumentPath";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -71,9 +74,7 @@ export function DocumentIdentityBar({
     return outcome;
   };
 
-  // A queued placement that failed after this document materialized reopens
-  // the field with the writer's name restored and the failure's recovery
-  // note — the receipt must never be dropped silently.
+  // Only provisional placement can be repaired here; homed refusals stay in lists.
   const { records } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.resourceHandle
@@ -82,18 +83,30 @@ export function DocumentIdentityBar({
   );
   const repair = resource ? projectResourceNeedsRepair(projectId, resource) : null;
   const identityFailure =
-    repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
+    location.provisional && repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
       ? ({ kind: "error", name: repair.name } as const)
       : null;
+  const repairMove = resource?.resource.canonical
+    ? refusedMoveDestination(repair?.destination, resource.resource.canonical)
+    : undefined;
+  const failedFolder = repairMove
+    ? (repairMove.folderPath.split("/").filter(Boolean).at(-1) ?? schemeLabel(repairMove.scheme))
+    : null;
+  const passiveFailure = failedFolder
+    ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
+    : t`Couldn't rename. Use Rename in the file list to try again.`;
   const failureAt =
     repair?.kind === "set-location"
       ? resource?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
       : undefined;
-  useRepairOnFreshFailure(identityFailure ? failureAt : undefined, () => setFieldOpen(true));
+  useRepairOnFreshFailure(identityFailure && !readOnly ? failureAt : undefined, () =>
+    setFieldOpen(true),
+  );
 
   // An untitled draft is invited to choose a home. Once it has one, renaming
   // and moving belong to the lists that show it. Uploads aren't writing material.
   const showChip = !readOnly && location.provisional && location.scheme !== "uploads";
+  const placementOpen = fieldOpen && showChip;
 
   return (
     <div className={cn("@container min-w-0", variant === "header" ? "flex-1" : "shrink-0")}>
@@ -109,7 +122,7 @@ export function DocumentIdentityBar({
           variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
         )}
       >
-        {fieldOpen && !readOnly ? (
+        {placementOpen ? (
           <IdentityPlacementField
             projectId={projectId}
             editorWorkId={editorWorkId}
@@ -142,25 +155,29 @@ export function DocumentIdentityBar({
           />
         )}
         {/* The path fills the row; the placement field needs the same push. */}
-        {fieldOpen && !readOnly ? <span className="min-w-1 flex-1" /> : null}
-        {/* A refused rename stays visible while the repair field is closed, and reopens it. */}
-        {repair?.kind === "set-location" && !fieldOpen ? (
-          <button
-            type="button"
-            className="focus-ring flex min-w-0 items-center rounded-md"
-            onClick={() => {
-              setDismissedRepairId(null);
-              setFieldOpen(true);
-            }}
-          >
-            <NamespaceFailureMark failure="set-location" labelled />
-          </button>
+        {placementOpen ? <span className="min-w-1 flex-1" /> : null}
+        {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
+        {repair?.kind === "set-location" && !placementOpen ? (
+          location.provisional && !readOnly ? (
+            <button
+              type="button"
+              className="focus-ring flex min-w-0 items-center rounded-md"
+              onClick={() => {
+                setDismissedRepairId(null);
+                setFieldOpen(true);
+              }}
+            >
+              <NamespaceFailureMark failure="set-location" labelled />
+            </button>
+          ) : (
+            <NamespaceFailureMark failure="set-location" message={passiveFailure} />
+          )
         ) : null}
         <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
-          show={showChip && !fieldOpen}
+          show={showChip && !placementOpen}
           onChooseHome={() => {
             setFieldOpen(true);
           }}

@@ -73,3 +73,8 @@ export function validateContextEntryName(
   }
   return null;
 }
+
+/** A move retry preserves the complete refused intent, including a queued rename. */
+export function moveEntryName(currentName: string, repair?: { name: string }): string {
+  return repair?.name ?? currentName;
+}

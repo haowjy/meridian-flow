@@ -512,6 +512,11 @@ msgstr ""
 msgid "All Work"
 msgstr ""
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Already in {0}"
+msgstr ""
+
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr ""
@@ -1233,6 +1238,18 @@ msgstr ""
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't move this entry. Try again."
+msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
+msgstr ""
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
+msgstr ""
+
 #: src/features/project/context/ContextDocumentHost.tsx
 msgid "Couldn't open review mode."
 msgstr ""
@@ -1292,6 +1309,10 @@ msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
+msgstr ""
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -2370,6 +2391,15 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#. placeholder {0}: entry.name
+#: src/features/project/context/EntryMovePicker.tsx
+#~ msgid "Move {0}"
+#~ msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move {name}"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr ""
@@ -2394,8 +2424,22 @@ msgstr ""
 msgid "Move row up"
 msgstr ""
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to {0}"
+msgstr ""
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Move…"
+msgstr ""
+
+#. placeholder {0}: folder ?? ""
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "Moved to {0}"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -3987,6 +4031,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "This link can no longer be edited. Close the form and try again."
+msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "This location is unavailable. Refresh and try again."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx

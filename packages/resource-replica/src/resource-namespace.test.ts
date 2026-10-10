@@ -742,6 +742,13 @@ it.each([
     intentId: "move",
     kind: "set-location",
     name: "after.md",
+    destination: {
+      scheme: "scratch",
+      folderPath: "",
+      name: "after.md",
+      workId: "work",
+      workSlug: "notes",
+    },
   });
   const noReplay = vi.fn();
   await expect(
@@ -892,6 +899,7 @@ it("offers the latest queued file name after refusal and retries from accepted p
     intentId: "B.md",
     kind: "set-location",
     name: "C.md",
+    destination: { scheme: "manuscript", folderPath: "", name: "C.md", workId: null },
   });
   if (!offered) throw new Error("Missing offered repair");
   // The caller retries the offered destination, keeping the original receipt as evidence.

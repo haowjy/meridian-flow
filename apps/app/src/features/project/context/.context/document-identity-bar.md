@@ -44,8 +44,8 @@ Contracts:
   home as read-only spans left of the name. Enter with a home built moves
   (+renames); name-only Enter renames in place — naming isn't homing.
   Naming stays in Unfiled; filing changes source membership.
-- **Homed documents have no chip.** The field still opens for a homed document
-  only to repair a refused move (below); rename and move start in the lists.
+- **Homed documents have no chip.** The field never opens for a homed document,
+  including refusals; rename and move start and retry in the lists.
 - **Commit seam**: the field submits one final `{ destination, name }` to
   `use-identity-commit.ts`. The hook resolves the stable resource handle and
   writes one durable location intent. The optimistic resource projection updates
@@ -54,9 +54,12 @@ Contracts:
   Navigation additionally requires that the committed document is still active.
   The field does not blur-dismiss while a save is pending.
 - **Repair receipts**: a failed placement remains `needs-repair` in the journal.
-  The identity field reopens with the writer's name and recovery note; retry
-  settles the failed attempt and appends a new immutable intention. Failures are
-  never inferred from catalog absence.
+  Only a provisional draft's placement refusal reopens the identity field with
+  the writer's name and recovery note, automatically or through its failure mark.
+  Homed documents show a passive failure mark whose tooltip names the failed
+  move destination (or rename) and directs retry to Move… (or Rename) in the
+  file list. The mark never opens a field. Retry settles the failed attempt and
+  appends a new immutable intention. Failures are never inferred from catalog absence.
 - **Field buttons**: the open field renders ✓/× icon buttons after it —
   additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
   contract can't fire before the click lands). Keyboard behavior unchanged.
