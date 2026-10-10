@@ -16,7 +16,7 @@ they serve and belong to the rebuild, not to incremental patches here. See
 The rest of this surface is the prose column, the sync indicator, and the
 notice/popover surfaces below. Image ingress is not here: it is a lane of its
 own ([`surfaces/images/AGENTS.md`](../surfaces/images/AGENTS.md)) whose runtime
-`EditorView` mounts, exactly as it mounts the link runtime.
+`SessionEditor` mounts, exactly as it mounts the link runtime.
 
 Block alignment is a shared command module, not the toolbar's own:
 `block-alignment.ts` resolves every alignable block a selection touches (a
@@ -159,7 +159,7 @@ than gating on `isActive` alone.
 
 ### Insertion and document catalogs
 
-`EditorView` owns §5.7's eleven-entry slash catalog and the `[[` menu's
+`SessionEditor` owns §5.7's eleven-entry slash catalog and the `[[` menu's
 document list, and hands `useMountedEditor` a *getter* for each, never the
 catalog itself. The extension mounts as a construction fact;
 its localized labels, group headings, hints, and the door into the image picker
@@ -175,7 +175,7 @@ is the resolver's own candidate set
 
 ## The editor's scope
 
-One plain value, `{ projectId, workId }`, provided by `EditorView` around
+One plain value, `{ projectId, workId }`, provided by `SessionEditor` around
 its host (`editor-scope.tsx`) and read with `useEditorScope()`. The Editor has
 no Work: for links, Scratch and Uploads holders use the replica's projected
 resource location `workId` (including No Work); manuscript, kb, user, and
@@ -189,7 +189,7 @@ Scope is deliberately NOT part of `EditorMountIdentity`: moving a holder
 must not destroy its collaborative editor or UndoManager. Route `workId`
 and `reviewWorkId` remain separate inputs for draft navigation and review.
 
-The runtimes `EditorView` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
+The runtimes `SessionEditor` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
 are ports and render nothing; the surfaces those lanes show the writer mount
 through the chrome host like every other one. See
 [`surfaces/link/.context/CONTEXT.md`](../surfaces/link/.context/CONTEXT.md).
@@ -215,7 +215,7 @@ native behavior; both hosts opt in.
 
 ## Schema fence
 
-`EditorView` subscribes to its `DocumentSessionSnapshot` and derives live
+`SessionEditor` subscribes to its `DocumentSessionSnapshot` and derives live
 editability as the caller's `editable` input AND the absence of
 `snapshot.schemaFence`. A fence raised after mount reaches the existing
 `useMountedEditor()` surface-options seam, which calls `setEditable(false)`
@@ -227,7 +227,7 @@ state.
 
 ## Schema repair report
 
-`EditorView` delays binding behind the bounded evidence horizon and renders the
+`SessionEditor` delays binding behind the bounded evidence horizon and renders the
 existing pending shell while it waits. A timeout degrades evidence but always
 continues into an editable mount.
 
@@ -250,7 +250,7 @@ mounts no projection at all, and a surface with no projection to read stands
 down on its own.
 
 Detail comes from the shared trail-detail cache in
-[`features/change-trail`](../../change-trail/AGENTS.md). `EditorView` prefetches
+[`features/change-trail`](../../change-trail/AGENTS.md). `SessionEditor` prefetches
 it for every agent mark on screen, so the popover normally opens with its
 evidence already available; while a first read is genuinely in flight the
 actions row is withheld rather than rendered half-empty, and only actor and

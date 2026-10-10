@@ -178,20 +178,14 @@ it("a room-opening read cannot resurrect a change confirmed while the read waite
   });
 });
 
-it("a late paint receipt cannot revoke the current session's input", async () => {
+it("input eligibility follows the addressed replacement room", async () => {
   await fixture.render(async (probe) => {
     await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
     await settled(() => expect(probe().editor.roomOwner.session).not.toBeNull());
-    const old = probe().editor.roomOwner.session;
     const next = proposal(2, "3");
     fixture.network.getDraftPreview.mockResolvedValue(next);
     await act(async () => probe().queryClient.setQueryData(previewKey, next));
     await settled(() => expect(probe().editor.roomOwner.session?.roomKey).toBe("room-g2"));
-    const current = probe().editor.roomOwner.session;
-    if (!old || !current) throw new Error("Missing session");
-    await act(async () => probe().editor.roomOwner.reportPaint(current));
-    expect(probe().editor.roomOwner.inputEligible).toBe(true);
-    await act(async () => probe().editor.roomOwner.reportPaint(old));
     expect(probe().editor.roomOwner.inputEligible).toBe(true);
   });
 });

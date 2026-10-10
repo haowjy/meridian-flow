@@ -225,10 +225,6 @@ export function ContextEditorMountHost({
                       // The intent, not the resolved room: the live editor goes
                       // read-only from the click, while the room is still resolving.
                       reviewDraftId={selectedReviewDraftId}
-                      reviewRoomName={reviewRoomName}
-                      reviewWorkId={reviewDraftId ? controller.workId : null}
-                      // Leaving review would strand a draft-only tab on an empty
-                      // editor; the writer closes it from the tab bar instead.
                       // A room the server has moved past is not the end of the review,
                       // a draft-only one included: the review reads the current room.
                     />

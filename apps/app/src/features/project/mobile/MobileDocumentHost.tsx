@@ -250,7 +250,7 @@ function useMobileRouteBinding({
 function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
   const workId = editorWorkId;
   const projectionOwner = useRef({});
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const { setActiveEditorDocumentId } = useDraftReview();
   const activeContextScheme = route.scheme;
   const activeContextPath = route.path;
   const activeTab = route.tab;
@@ -263,10 +263,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     activeScheme: activeContextScheme,
     documentId: activeEditorDocumentId,
   });
-  const reviewRoomName =
-    activeEditorDocumentId && selectedReviewDraftId
-      ? reviewRoomNameForDraft(activeEditorDocumentId, selectedReviewDraftId)
-      : null;
   const reviewDraftId = selectedReviewDraftId;
 
   const live = useLiveDocumentBinding({
@@ -405,8 +401,6 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
           ariaLabel={t`Read-only live document`}
           showCollaborationDecorations={false}
           reviewDraftId={reviewDraftId}
-          reviewRoomName={reviewRoomName}
-          reviewWorkId={reviewDraftId ? controller.workId : null}
         />
       </div>
     </MobileDocumentReview>

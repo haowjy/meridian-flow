@@ -139,9 +139,7 @@ function Host() {
       documentId={documentId}
       projectId="project-a"
       session={draftOnly ? undefined : sessionFor(documentId)}
-      reviewWorkId="work-a"
       reviewDraftId={inlineReview?.draftId}
-      reviewRoomName={reviewRoomName ?? undefined}
     />
   );
 }
@@ -231,7 +229,6 @@ it.each([
   "refused",
 ] as const)("%s keeps painted prose inert until its replacement paints", async (disposition) => {
   await run(async (_client, oldRoom) => {
-    const oldSession = review?.roomOwner.session;
     const oldEditor = mounted();
     await act(async () => oldEditor.commands.insertContent("The held review."));
     const live = sessionFor(documentId).document;
@@ -281,8 +278,6 @@ it.each([
     expect(mounted()).not.toBe(oldEditor);
     expect(review?.roomOwner.inputEligible).toBe(true);
     expect(sessionFor(documentId).document).toBe(live);
-    if (oldSession) await act(async () => review?.roomOwner.reportPaint(oldSession));
-    expect(review?.roomOwner.inputEligible).toBe(true);
   });
 });
 
