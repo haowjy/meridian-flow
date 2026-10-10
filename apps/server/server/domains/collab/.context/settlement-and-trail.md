@@ -49,10 +49,24 @@
   publish one new version; the rest refine the version their commit
   published), then text admission per member, then a synchronous warm-state
   recheck of every member against cuts read inside the transaction. Any retry,
-  fault or recheck mismatch rolls the whole batch back. Warm rooms receive the
-  admitted updates only after commit (`runAfterDrizzleCommit`); nothing reaches
-  a room before. Recovery claims a batch with one `UPDATE` on its row, so two
-  recoverers cannot split it, and completes it whole. Commit takes every
+  fault or recheck mismatch rolls the whole batch back. Settlement is
+  root-owned: staging (`commitPushBatch`), recovery claims and completion each
+  reject an ambient transaction before writing, because a retry must roll back
+  and the warm apply must outlive the coordinator locks it closes over. Once
+  the completion transaction has returned, one batch-owned sequence applies the
+  admitted updates to warm rooms and then awaits each publication step's
+  `afterCommit` in declared order; a failing effect is logged
+  (`settlement.after_commit_failed`) and the later, independent ones still run.
+  Nothing reaches a room before commit. Recovery claims a batch with one
+  `UPDATE` on its row, so two recoverers cannot split it, and completes it
+  whole. Ownership is the credentials a claim wrote: every batch load is
+  conditioned on the caller's token and epoch and returns nothing once a
+  successor (or the same token at a later epoch, after backoff) holds the row.
+  The batch owner (`adapters/drizzle-pending-settlement.ts`) keeps claims, lock
+  order and the completion transaction; per-member staging, journal admission,
+  attribution, derivation and sweep-evidence reconstruction live in
+  `adapters/drizzle-settlement-member.ts`, which takes the owner's transaction
+  and the members it read once under the locks. Commit takes every
   document lock before any trail lock, as completion does, and records every
   push's trail in one pass: one trail version per commit. Per-push trail writes
   against a shared turn trail were quadratic and dominated a 40-chapter batch.

@@ -638,7 +638,7 @@ recovery. Adding an approval gate here would refuse the writer's own
 instruction to the AI.</p>
 </div>
 
-<h3>Settlement: how a push reaches live</h3>
+<h3 id="push-settlement">Settlement: how a push reaches live</h3>
 <p>
 A push (Apply or automatic) is a staged, fenced transition so that warm and
 cold execution produce the same live document. Every push one commit stages
@@ -666,9 +666,12 @@ belongs to one <em>settlement batch</em>; a single push is a batch of one.
     fingerprint with its rebuilt pre-push document. A newer writer admission
     or mismatch anywhere rolls the whole batch back and retries.</li>
   <li><strong>After commit.</strong> Apply the admitted updates to warm rooms,
-    run publication steps' after-commit effects, deliver change events.</li>
+    then await each publication step's after-commit effect in order (a
+    failing one is logged; the later ones still run), then deliver change
+    events. Staging, claiming and completion are root-owned: each rejects an
+    ambient transaction before it writes.</li>
 </ol>
-<p class="ref"><code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code>, <code>domain/ports/settlement-publication.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>completeBatch</code> and <code>completeStagedPush</code></p>
+<p class="ref"><code>domain/branch-push.ts</code>, <code>domain/branch-push-transition.ts</code>, <code>domain/ports/settlement-publication.ts</code>, <code>adapters/drizzle-branch-push.ts</code>, <code>adapters/drizzle-pending-settlement.ts</code> <code>completeBatch</code>, <code>adapters/drizzle-settlement-member.ts</code> <code>admitSettlementMemberWithinTx</code></p>
 <p>
 The reconcile row exists because the active authored rows alone can omit
 causal dependencies of the branch state being published; replaying only them
@@ -1018,7 +1021,7 @@ specific write paths, and some write paths do not refresh it at all.
   </tr>
   <tr>
     <td>Push completion (Apply or automatic)</td>
-    <td>Re-derived from the durable journal inside the completion-fence transaction, so it rolls back with the push. <span class="ref"><code>adapters/drizzle-pending-settlement.ts</code> <code>deriveDurableProjection</code>, <code>adapters/drizzle-document-activity.ts</code> <code>applyPushCompletion</code></span></td>
+    <td>Re-derived from the durable journal inside the batch's completion transaction, so it rolls back with the batch. See <a href="#push-settlement">push settlement</a>. <span class="ref"><code>adapters/drizzle-settlement-member.ts</code> <code>admitSettlementMemberWithinTx</code>, <code>adapters/drizzle-document-activity.ts</code> <code>applyPushCompletion</code></span></td>
   </tr>
   <tr>
     <td>Writer typing over the WebSocket</td>
