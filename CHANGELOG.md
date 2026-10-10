@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: share explicit snapshot commits and preview-fenced request construction across durable review tests.
+
 - Development: consolidate review session, shell and scheduling fixtures, keeping native writer-handoff histories explicit and retiring weaker duplicate traces.
 
 - Development: isolate review launch fixtures so their focus witnesses do not depend on test order.
