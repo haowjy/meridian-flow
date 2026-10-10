@@ -15,11 +15,16 @@ import {
 } from "../context/ContextEntryActions";
 import { fileKindIcon } from "../context/context-file-icon";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { EntryMovePicker } from "../context/EntryMovePicker";
 import { EntryNameField } from "../context/EntryNameField";
-import { LinkUpdateNote } from "../context/LinkUpdateNote";
+import {
+  LinkUpdateNote,
+  rememberRenameOperation,
+  useRenameOperation,
+} from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
-import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
+import { useEntryRenameRepair } from "../context/use-repair-on-fresh-failure";
 import { useDockDocument } from "../dock/dock-view-store";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { RowIcon } from "../RuledList";
@@ -46,7 +51,7 @@ export function FolderRow({
   );
 }
 
-/** Rename and Delete, offered only while the file's Work is editable. */
+/** Rename, Move and Delete, offered only while the file's Work is editable. */
 export type ScratchFileEdit = {
   renaming: boolean;
   onRename: (path: string | null) => void;
@@ -71,12 +76,20 @@ export function ScratchFileRow({
   const screen = useProjectScreen();
   const docked = useDockDocument(screen, projectId)?.tab.documentId === file.documentId;
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
-  const startRename = edit?.onRename;
-  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  // Renames and moves from any list share one note per document, so a moved row still shows it.
+  const noteOperationId = useRenameOperation(file.documentId);
+  const setNoteOperationId = (operationId: string) =>
+    rememberRenameOperation(file.documentId, operationId);
   // Like the tree, a refused rename offers its name field once, as the failure arrives.
-  useRepairOnFreshFailure(edit ? file.namespaceFailureAt : undefined, () =>
-    startRename?.(file.path),
-  );
+  useEntryRenameRepair(file, () => edit?.onRename(file.path), Boolean(edit));
+  const actions: readonly EntryAction[] = edit ? ["rename", "move", "delete"] : [];
+  const handleAction = (action: EntryAction) => {
+    if (!edit) return;
+    if (action === "rename") edit.onRename(file.path);
+    if (action === "move") setMoving(true);
+    if (action === "delete") edit.onDelete();
+  };
   if (edit?.renaming)
     return (
       <div className="flex min-h-10 items-center gap-3 px-2 py-1.5 text-sm font-medium text-foreground">
@@ -118,38 +131,38 @@ export function ScratchFileRow({
             <span className="block truncate text-xs text-muted-foreground">{folder}</span>
           ) : null}
           {file.namespaceFailure ? (
-            <NamespaceFailureMark failure={file.namespaceFailure} labelled />
+            <NamespaceFailureMark
+              failure={file.namespaceFailure}
+              move={Boolean(file.namespaceRepairMove)}
+              labelled
+            />
           ) : null}
         </span>
       </button>
       {edit ? (
         <div className="absolute right-1">
-          <EntryKebabButton
-            allowCreate={false}
-            allowDelete
-            onAction={(action) => onEditAction(edit, file, action)}
-            align="end"
-          />
+          <EntryKebabButton allowedActions={actions} onAction={handleAction} align="end" />
         </div>
       ) : null}
     </div>
   );
-  // Rename and Delete are the whole menu, so a row that only opens has none.
+  // An archived Work row only opens, with no mutation actions.
   if (!edit) return row;
   return (
-    <ContextEntryMenu
-      allowCreate={false}
-      allowDelete
-      onAction={(action) => onEditAction(edit, file, action)}
+    <EntryMovePicker
+      projectId={projectId}
+      scheme="scratch"
+      owner={{ workId }}
+      entry={{ id: file.documentId, name: file.name, path: file.path, kind: "file" }}
+      repairMove={file.namespaceRepairMove}
+      open={moving}
+      onOpenChange={setMoving}
     >
-      {row}
-    </ContextEntryMenu>
+      <ContextEntryMenu allowedActions={actions} onAction={handleAction}>
+        {row}
+      </ContextEntryMenu>
+    </EntryMovePicker>
   );
-}
-
-function onEditAction(edit: ScratchFileEdit, file: CatalogFile, action: EntryAction) {
-  if (action === "rename") edit.onRename(file.path);
-  if (action === "delete") edit.onDelete();
 }
 
 /**
@@ -216,7 +229,7 @@ function InlineRename({
     scheme: "scratch",
     path: file.path,
     currentName: file.name,
-    repairName: file.namespaceRepairName,
+    repairName: file.namespaceRepairMove ? undefined : file.namespaceRepairName,
     siblingNames,
     kind: "file",
     onRenamed,

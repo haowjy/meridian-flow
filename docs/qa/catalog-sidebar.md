@@ -66,7 +66,7 @@ catalog-sidebar close`, and the fresh session). Stop this worktree with
 `pnpm dev --stop`. Keep feeds, screenshots, command logs, and outcomes in the
 active work directory; do not clear another session or database.
 
-## Chat side panel and document menu
+## Chat side panel and document path
 
 Use the owned stack's existing project, plus `./mf thread create --project
 "$PROJECT" --title "Empty side panel probe" --json` for a chat with no touches.
@@ -74,17 +74,42 @@ Use a chat whose `./mf api GET /api/threads/$THREAD/recent-documents --json`
 returns documents for the populated case.
 
 1. On the Chat index with no chat selected and no document open, capture the
-   right panel: only its Open document header, no hint or RECENT heading.
-2. Open the untouched chat and capture the same header-only panel.
-3. Open the chat with recent documents. Capture its RECENT section and file
-   rows; confirm they still open the document beside the chat.
-4. Open the Open document menu. Capture the root: area rows without a project
-   name heading. Drill into Manuscript and a folder if present: capture the
-   retained back row. Use it to return to the root.
-5. Open a document and repeat through its title menu. It starts at its own
-   folder; back rows still climb to a root without a heading.
-6. At phone width, confirm existing full-screen document/navigation surfaces
+   right panel: its header reads Recent (or the view switch, when Changes is
+   offered), with no browse menu and no hint.
+2. Open the untouched chat and capture the same header with an empty list.
+3. Open the chat with recent documents. Capture its file rows (no heading of
+   their own); confirm they still open the document beside the chat.
+4. With a document open beside the chat, capture the header: close, the path,
+   Open in Editor, collapse, and no title chip. Click each crumb: an area or
+   folder opens inside itself, the filename inside its folder, `…` one level
+   above the crumb after it. Climb with a back row: the folder left behind is
+   highlighted, and climbing past the area reaches the area list without a
+   heading. Pick a file: it replaces the document beside the chat.
+5. At phone width, confirm existing full-screen document/navigation surfaces
    are unchanged. Do not expect a desktop right panel or add a phone equivalent.
 
 Save screenshots and the two recent-documents responses in the active work
 directory. Close only the browser session used for this probe.
+
+## List moves and passive document failures
+
+Named risks: Work Files exposes an unhandled Move command; a homed document's
+refusal opens a name-only field; move retry loses a queued rename.
+
+1. Open an editable Work's Files tab. On a Scratch file, choose Move… from its
+   Actions menu. Drill to a different folder and submit. Check the file leaves
+   the old list and its new URI reads through `./mf doc read`.
+2. Keep a homed chapter open. For one move request, inject a typed terminal
+   HTTP 409 with `{code: "conflict", message: "Probe refusal", source: "system",
+   retryable: false}` into the owned browser's fetch. Move it from the file list.
+   After reconciliation, the path bar must show its original path and a passive
+   failure icon. Its tooltip names the rejected folder and says to use Move…
+   in the file list. Clicking the mark must not open a placement/name field.
+3. Repeat with a refused Rename. The list may offer its inline name repair;
+   the path bar only directs retry to Rename in the file list.
+4. Restore native fetch. Retry through the list. For a cancelled rename/move
+   chain, check the request's name is the retained destination name, not the
+   restored original name. Collision validation must use that retained name too.
+5. Restore any moved probe file and the Work's original lifecycle state. Save
+   screenshots and requests in the active work directory. Never leave fetch
+   interception installed in the shared browser session.

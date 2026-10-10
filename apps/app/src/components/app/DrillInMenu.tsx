@@ -11,7 +11,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
-import { type ReactElement, useCallback, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DropdownMenu,
@@ -48,15 +48,27 @@ export type DrillAction = {
   label: string;
   icon: LucideIcon;
   onSelect: () => void;
+  disabled?: boolean;
+  /** Keep the menu open while the caller validates or admits an action. */
+  keepOpen?: boolean;
 };
 
 export type DrillInMenuProps = {
   tree: DrillTree;
-  /** The entry the writer is on; it is highlighted wherever it appears. */
-  currentId: string | null;
+  /**
+   * Where the writer is: the document and the folders that hold it. Any of them
+   * listed at the level shown is highlighted, so each level marks the way back.
+   */
+  hereIds: readonly string[];
   /** The folders, outermost first, the menu opens inside. */
   openAt: readonly DrillNode[];
-  actions: readonly DrillAction[];
+  actions: readonly DrillAction[] | ((trail: readonly DrillNode[]) => readonly DrillAction[]);
+  caption?: ReactNode;
+  status?: ReactNode;
+  isDisabled?: (node: DrillNode) => boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onCloseAutoFocus?: (event: Event) => void;
   onPick: (node: DrillNode) => void;
   /** The trigger, rendered as the menu's anchor. */
   children: ReactElement;
@@ -64,22 +76,43 @@ export type DrillInMenuProps = {
 
 export function DrillInMenu({
   tree,
-  currentId,
+  hereIds,
   openAt,
   actions,
   onPick,
   children,
+  caption,
+  status,
+  isDisabled,
+  open: controlledOpen,
+  onOpenChange,
+  onCloseAutoFocus,
 }: DrillInMenuProps) {
-  const [open, setOpen] = useState(false);
+  const [localOpen, setOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
   const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
+  // The folder a back row just climbed out of, highlighted so the writer keeps their place.
+  const [exitedId, setExitedId] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setTrail(openAt);
+      setExitedId(null);
+    }
+    wasOpen.current = open;
+  }, [open, openAt]);
   // An action runs after the menu has handed focus back, so what it focuses
   // (a rename field) is not pulled away by the trigger's restore.
   const pendingAction = useRef<DrillAction | null>(null);
 
   const changeOpen = (next: boolean) => {
-    if (next) setTrail(openAt);
+    if (next) {
+      setTrail(openAt);
+      setExitedId(null);
+    }
     setOpen(next);
+    onOpenChange?.(next);
   };
   const focusFirstRow = useCallback(() => {
     requestAnimationFrame(() =>
@@ -87,12 +120,15 @@ export function DrillInMenu({
     );
   }, []);
   const drill = (next: readonly DrillNode[]) => {
+    setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
     setTrail(next);
     focusFirstRow();
   };
+  const isHere = (id: string) => id === exitedId || hereIds.includes(id);
 
   const folder = trail.at(-1) ?? null;
   const entries = tree.children(folder?.id ?? null);
+  const currentActions = typeof actions === "function" ? actions(trail) : actions;
 
   return (
     <DropdownMenu open={open} onOpenChange={changeOpen}>
@@ -113,9 +149,10 @@ export function DrillInMenu({
           if (action) {
             event.preventDefault();
             action.onSelect();
-          }
+          } else onCloseAutoFocus?.(event);
         }}
       >
+        {caption ? <p className="px-2 py-1.5 text-xs text-muted-foreground">{caption}</p> : null}
         {folder ? (
           <DropdownMenuItem
             onSelect={(event) => {
@@ -142,8 +179,9 @@ export function DrillInMenu({
           entries.map((node) => (
             <DropdownMenuItem
               key={node.id}
-              aria-current={node.id === currentId ? "true" : undefined}
-              className={cn(node.id === currentId && "bg-dropdown-selected font-medium")}
+              disabled={isDisabled?.(node)}
+              aria-current={isHere(node.id) ? "true" : undefined}
+              className={cn(isHere(node.id) && "bg-dropdown-selected font-medium")}
               onSelect={(event) => {
                 if (node.folder) {
                   event.preventDefault();
@@ -157,12 +195,21 @@ export function DrillInMenu({
             </DropdownMenuItem>
           ))
         )}
-        {actions.length > 0 ? <DropdownMenuSeparator /> : null}
-        {actions.map((action) => (
+        {status ? (
+          <div role="alert" className="px-2 py-1.5 text-xs text-destructive">
+            {status}
+          </div>
+        ) : null}
+        {currentActions.length > 0 ? <DropdownMenuSeparator /> : null}
+        {currentActions.map((action) => (
           <DropdownMenuItem
             key={action.key}
-            onSelect={() => {
-              pendingAction.current = action;
+            disabled={action.disabled}
+            onSelect={(event) => {
+              if (action.keepOpen) {
+                event.preventDefault();
+                action.onSelect();
+              } else pendingAction.current = action;
             }}
           >
             <action.icon aria-hidden />

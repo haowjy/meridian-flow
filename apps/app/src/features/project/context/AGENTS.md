@@ -14,7 +14,7 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 A **browse surface** over the account resource replica. The replica owns durable
 resource descriptors, catalog checkpoints, local content access, and file and folder
 namespace work. React Query delivers acquisition results to consumers; it is not a second
-catalog owner. Renames of files and folders are admitted locally and dispatched in
+catalog owner. Renames and moves of files and folders are admitted locally and dispatched in
 the background; folder creation and deletion still use the direct context API.
 
 `ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
@@ -31,6 +31,9 @@ Shared across both shells:
 - **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
   (right-click context menu + hover kebab) rendered from one ordered action
   specification. Add an action once; both primitive-specific renderers inherit it.
+  Rename is inline; Move… opens `EntryMovePicker`, the shared `DrillInMenu`
+  and project catalog tree as a folder picker. Scratch reuses these rows and
+  forms with its explicit lineage/Work owner and action capabilities: Rename and Move… only while the actual owner is editable, neither for archived Work notes. Closed row pickers mount no project catalog hooks. Refused moves retain their destination and reopen through Move, not the name-only repair field.
   Uploads omits generic Delete because only the identity/revision-bound intake
   contract may delete an upload.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
@@ -65,7 +68,8 @@ Shared across both shells:
 - **Shells**: `ContextTreePanel.tsx` (desktop scheme/query orchestration),
   `ContextTreeRows.tsx` (direct-child desktop rows), `MobileContextBrowser.tsx`
   (phone Files destination)
-- **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
+- **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`),
+  `EntryMovePicker.tsx` (row-anchored placement)
 - **Inline forms**: `use-create-entry-form.ts`, `use-rename-entry-form.ts`,
   `EntryNameField.tsx`, `context-entry-name.ts` (validation); the core is
   `components/ui/use-inline-edit.ts`
@@ -77,9 +81,10 @@ Shared across both shells:
   `ContextEditorMountHost.tsx` (the Editor's warm-set LRU), `ContextDocumentHost.tsx`
   (one document's session and editor, rendered by the Editor's tabs and by the dock's
   document alike), `context-tab-session.tsx` (the session boundary beneath it),
-  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
-  (the universal breadcrumb band — placement, rename, and move share one inline
-  field, committed through `use-identity-commit.ts`). Resource-backed tabs retain
+  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` +
+  `DocumentPath.tsx` (the path, whose crumbs open the drill-in menu and only navigate) +
+  `IdentityPlacementField.tsx` (Choose a home for an untitled draft, and repair of its refused
+  placement, committed through `use-identity-commit.ts`). Resource-backed tabs retain
   one stable handle and editor ancestry through create, acknowledgement, rename,
   remint, and catalog refresh.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and

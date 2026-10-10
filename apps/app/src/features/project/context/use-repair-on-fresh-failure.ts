@@ -5,7 +5,9 @@
  * is typing elsewhere: the field never takes focus from another input. The failure
  * mark stays either way, and the Rename action opens the same field on request.
  */
+
 import { useEffect } from "react";
+import type { CatalogNode } from "@/client/query/context-catalog-projection";
 
 const FRESH_MS = 5_000;
 const offered = new Set<number>();
@@ -26,4 +28,12 @@ export function useRepairOnFreshFailure(failedAt: number | undefined, openRepair
     if (Date.now() - failedAt > FRESH_MS || anotherInputIsActive()) return;
     openRepair();
   }, [failedAt, openRepair]);
+}
+
+/** All Files and Scratch rows distinguish move refusal from name-only repair. */
+export function useEntryRenameRepair(entry: CatalogNode, openRepair: () => void, allowed = true) {
+  useRepairOnFreshFailure(
+    allowed && !entry.namespaceRepairMove ? entry.namespaceFailureAt : undefined,
+    openRepair,
+  );
 }

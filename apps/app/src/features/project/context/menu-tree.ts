@@ -12,7 +12,7 @@
 import { t } from "@lingui/core/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Folder, type LucideIcon } from "lucide-react";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import type { CatalogContextView, CatalogNode } from "@/client/query/context-catalog-projection";
 import type { ServerContextTab } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
 import { fileKindIcon } from "./context-file-icon";
@@ -92,9 +92,9 @@ export function buildMenuTree({
       for (const candidate of areas) {
         if (folderId === earlierId(candidate))
           return candidate.earlier?.catalog ? listChildren(candidate.earlier.catalog, null) : [];
-        if (candidate.catalog?.normalized.entries.has(folderId))
+        if (candidate.catalog && menuEntryFor(candidate.catalog, folderId))
           return listChildren(candidate.catalog, folderId);
-        if (candidate.earlier?.catalog?.normalized.entries.has(folderId))
+        if (candidate.earlier?.catalog && menuEntryFor(candidate.earlier.catalog, folderId))
           return listChildren(candidate.earlier.catalog, folderId);
       }
       return [];
@@ -125,4 +125,21 @@ export function foldersIn(area: MenuArea, path: string): DrillNode[] {
       ? [{ id: folder.entryId, name: folder.name, folder: true, icon: Folder }]
       : [];
   });
+}
+
+/** Catalog snapshots span multiple areas; an ID must belong to this projected source. */
+export function menuEntryFor(catalog: CatalogContextView, rowId: string): CatalogNode | null {
+  const entry = catalog.normalized.entries.get(rowId);
+  if (
+    !entry ||
+    (entry.kind !== "folder" && entry.kind !== "file") ||
+    entry.sourceId !== catalog.root.entryId
+  )
+    return null;
+  return catalog.findPath(`/${entry.path.join("/")}`);
+}
+
+/** Segment-aware containment for forbidding a folder's own subtree as a destination. */
+export function isFolderWithin(path: string, ancestor: string): boolean {
+  return path === ancestor || path.startsWith(`${ancestor}/`);
 }

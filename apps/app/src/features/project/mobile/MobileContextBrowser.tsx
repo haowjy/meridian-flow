@@ -23,13 +23,18 @@ import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
+import { EntryMovePicker } from "../context/EntryMovePicker";
 import { EntryNameField } from "../context/EntryNameField";
-import { LinkUpdateNote } from "../context/LinkUpdateNote";
+import {
+  LinkUpdateNote,
+  rememberRenameOperation,
+  useRenameOperation,
+} from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
-import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
+import { useEntryRenameRepair } from "../context/use-repair-on-fresh-failure";
 import type { ResolvedProjectViewProps } from "../ProjectView";
 
 export type MobileContextBrowserProps = Pick<
@@ -53,16 +58,15 @@ export type MobileContextBrowserProps = Pick<
 };
 
 function MobileEntryActionsMenu({
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
   return (
     <EntryKebabButton
-      allowCreate={false}
-      allowDelete={allowDelete}
+      allowedActions={allowedActions}
       align="end"
       sideOffset={6}
       className={mobileContextTreeOverflowTriggerClassName}
@@ -370,8 +374,10 @@ function MobileFolderRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
-  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
-  useRepairOnFreshFailure(dir.namespaceFailureAt, () => setRenaming(true));
+  const [moving, setMoving] = useState(false);
+  const noteOperationId = useRenameOperation(dir.entryId);
+  const setNoteOperationId = (id: string) => rememberRenameOperation(dir.entryId, id);
+  useEntryRenameRepair(dir, () => setRenaming(true));
 
   if (renaming) {
     return (
@@ -383,7 +389,7 @@ function MobileFolderRow({
           entryId={dir.entryId}
           path={dir.path}
           currentName={dir.name}
-          repairName={dir.namespaceRepairName}
+          repairName={dir.namespaceRepairMove ? undefined : dir.namespaceRepairName}
           siblingNames={siblingNames}
           kind="folder"
           icon={Folder}
@@ -396,30 +402,48 @@ function MobileFolderRow({
 
   return (
     <li>
-      <DrillRow
-        icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-        label={dir.name}
-        trailing={
-          <span className="flex items-center">
-            <LinkUpdateNote
-              projectId={projectId}
-              subject={{ kind: "folder", id: dir.entryId }}
-              operationId={noteOperationId}
-            />
-            {dir.namespaceFailure ? (
-              <NamespaceFailureMark failure={dir.namespaceFailure} folder />
-            ) : null}
-            <MobileEntryActionsMenu
-              allowDelete={scheme !== "uploads"}
-              onAction={(action) => {
-                if (action === "rename") setRenaming(true);
-                else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
-              }}
-            />
-          </span>
-        }
-        onClick={onDrill}
-      />
+      <EntryMovePicker
+        projectId={projectId}
+        scheme={scheme}
+        owner={{ workId: editorWorkId ?? undefined }}
+        entry={{ id: dir.entryId, name: dir.name, path: dir.path, kind: "folder" }}
+        repairMove={dir.namespaceRepairMove}
+        open={moving}
+        onOpenChange={setMoving}
+      >
+        <DrillRow
+          icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+          label={dir.name}
+          trailing={
+            <span className="flex items-center">
+              <LinkUpdateNote
+                projectId={projectId}
+                subject={{ kind: "folder", id: dir.entryId }}
+                operationId={noteOperationId}
+              />
+              {dir.namespaceFailure ? (
+                <NamespaceFailureMark
+                  failure={dir.namespaceFailure}
+                  move={Boolean(dir.namespaceRepairMove)}
+                  folder
+                />
+              ) : null}
+              <MobileEntryActionsMenu
+                allowedActions={
+                  scheme === "uploads" ? ["rename", "move"] : ["rename", "move", "delete"]
+                }
+                onAction={(action) => {
+                  if (action === "rename") setRenaming(true);
+                  else if (action === "move") setMoving(true);
+                  else if (action === "delete")
+                    onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
+                }}
+              />
+            </span>
+          }
+          onClick={onDrill}
+        />
+      </EntryMovePicker>
     </li>
   );
 }
@@ -443,9 +467,11 @@ function MobileFileRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
-  const [noteOperationId, setNoteOperationId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const noteOperationId = useRenameOperation(file.documentId);
+  const setNoteOperationId = (id: string) => rememberRenameOperation(file.documentId, id);
   const FileIcon = fileKindIcon(file);
-  useRepairOnFreshFailure(file.namespaceFailureAt, () => setRenaming(true));
+  useEntryRenameRepair(file, () => setRenaming(true));
 
   if (renaming) {
     return (
@@ -457,7 +483,7 @@ function MobileFileRow({
           entryId={file.documentId}
           path={file.path}
           currentName={file.name}
-          repairName={file.namespaceRepairName}
+          repairName={file.namespaceRepairMove ? undefined : file.namespaceRepairName}
           siblingNames={siblingNames}
           kind="file"
           icon={FileIcon}
@@ -470,36 +496,52 @@ function MobileFileRow({
 
   return (
     <li>
-      <DrillRow
-        icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-        label={file.name}
-        trailing={
-          <span className="flex items-center">
-            <LinkUpdateNote
-              projectId={projectId}
-              subject={{ kind: "file", id: file.documentId }}
-              operationId={noteOperationId}
-            />
-            {file.namespaceFailure ? (
-              <NamespaceFailureMark failure={file.namespaceFailure} />
-            ) : null}
-            <MobileEntryActionsMenu
-              allowDelete={scheme !== "uploads"}
-              onAction={(action) => {
-                if (action === "rename") setRenaming(true);
-                else
-                  onRequestDelete({
-                    name: file.name,
-                    path: file.path,
-                    kind: "file",
-                    documentId: file.documentId,
-                  });
-              }}
-            />
-          </span>
-        }
-        onClick={onOpen}
-      />
+      <EntryMovePicker
+        projectId={projectId}
+        scheme={scheme}
+        owner={{ workId: editorWorkId ?? undefined }}
+        entry={{ id: file.documentId, name: file.name, path: file.path, kind: "file" }}
+        repairMove={file.namespaceRepairMove}
+        open={moving}
+        onOpenChange={setMoving}
+      >
+        <DrillRow
+          icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+          label={file.name}
+          trailing={
+            <span className="flex items-center">
+              <LinkUpdateNote
+                projectId={projectId}
+                subject={{ kind: "file", id: file.documentId }}
+                operationId={noteOperationId}
+              />
+              {file.namespaceFailure ? (
+                <NamespaceFailureMark
+                  failure={file.namespaceFailure}
+                  move={Boolean(file.namespaceRepairMove)}
+                />
+              ) : null}
+              <MobileEntryActionsMenu
+                allowedActions={
+                  scheme === "uploads" ? ["rename", "move"] : ["rename", "move", "delete"]
+                }
+                onAction={(action) => {
+                  if (action === "rename") setRenaming(true);
+                  else if (action === "move") setMoving(true);
+                  else if (action === "delete")
+                    onRequestDelete({
+                      name: file.name,
+                      path: file.path,
+                      kind: "file",
+                      documentId: file.documentId,
+                    });
+                }}
+              />
+            </span>
+          }
+          onClick={onOpen}
+        />
+      </EntryMovePicker>
     </li>
   );
 }

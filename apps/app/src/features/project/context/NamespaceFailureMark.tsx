@@ -1,6 +1,6 @@
 /**
  * The mark a document or folder row carries when the server refused its delete
- * or rename and reconciliation put the row back. The Editor tree shows it as an
+ * or rename/move and reconciliation put the row back. The Editor tree shows it as an
  * icon with a tooltip; the Work Files tab has room to say it in words.
  */
 import { t } from "@lingui/core/macro";
@@ -11,8 +11,13 @@ type NamespaceFailure = NonNullable<
   CatalogFile["namespaceFailure"] | CatalogDirectory["namespaceFailure"]
 >;
 
-function namespaceFailureMessage(failure: NamespaceFailure, folder: boolean): string {
+function namespaceFailureMessage(
+  failure: NamespaceFailure,
+  folder: boolean,
+  move: boolean,
+): string {
   if (failure === "delete") return t`Couldn't delete this document. Try again.`;
+  if (move) return t`Couldn't move this entry. Try again.`;
   return folder
     ? t`Couldn't rename this folder. Try again.`
     : t`Couldn't rename this document. Try again.`;
@@ -21,15 +26,21 @@ function namespaceFailureMessage(failure: NamespaceFailure, folder: boolean): st
 export function NamespaceFailureMark({
   failure,
   folder = false,
+  move = false,
   labelled,
+  message: customMessage,
 }: {
   failure: NamespaceFailure;
   /** The failed row is a folder, not a document. */
   folder?: boolean;
+  /** The refused destination changed its parent or area, not only its name. */
+  move?: boolean;
   /** Say the failure in words beside the icon instead of in a tooltip. */
   labelled?: boolean;
+  /** A surface may explain where its passive status can be retried. */
+  message?: string;
 }) {
-  const message = namespaceFailureMessage(failure, folder);
+  const message = customMessage ?? namespaceFailureMessage(failure, folder, move);
   if (labelled)
     return (
       <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">

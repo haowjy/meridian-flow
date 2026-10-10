@@ -137,7 +137,7 @@ msgid "{0} finished"
 msgstr "{0} 已完成"
 
 #. placeholder {0}: schemeLabel(locatedTab.scheme)
-#: src/features/project/dock/DockDocumentTitle.tsx
+#: src/features/project/context/DocumentPath.tsx
 msgid "{0} for {ownerName}"
 msgstr ""
 
@@ -510,6 +510,11 @@ msgstr ""
 
 #: src/features/project/work/useWorkChrome.tsx
 msgid "All Work"
+msgstr ""
+
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Already in {0}"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -1004,8 +1009,8 @@ msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
-msgid "Context"
-msgstr ""
+#~ msgid "Context"
+#~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1233,6 +1238,18 @@ msgstr ""
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
+#: src/features/project/context/NamespaceFailureMark.tsx
+msgid "Couldn't move this entry. Try again."
+msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Couldn't move to {failedFolder}. Try again or pick another folder."
+msgstr ""
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't move to {failedFolder}. Use Move… in the file list to try again."
+msgstr ""
+
 #: src/features/project/context/ContextDocumentHost.tsx
 msgid "Couldn't open review mode."
 msgstr ""
@@ -1292,6 +1309,10 @@ msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Couldn’t rename this Work. Try again."
+msgstr ""
+
+#: src/features/project/context/DocumentIdentityBar.tsx
+msgid "Couldn't rename. Use Rename in the file list to try again."
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
@@ -1845,7 +1866,6 @@ msgid "Figure could not be loaded."
 msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
-#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
 msgstr ""
@@ -2371,6 +2391,15 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#. placeholder {0}: entry.name
+#: src/features/project/context/EntryMovePicker.tsx
+#~ msgid "Move {0}"
+#~ msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move {name}"
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Move column left"
 msgstr ""
@@ -2395,8 +2424,22 @@ msgstr ""
 msgid "Move row up"
 msgstr ""
 
+#. placeholder {0}: folder.name
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "Move to {0}"
+msgstr ""
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Move…"
+msgstr ""
+
+#. placeholder {0}: folder ?? ""
+#: src/features/project/context/LinkUpdateNote.tsx
+msgid "Moved to {0}"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -2715,8 +2758,8 @@ msgid "Open conversation"
 msgstr ""
 
 #: src/features/project/dock/DockDocumentTitle.tsx
-msgid "Open document"
-msgstr ""
+#~ msgid "Open document"
+#~ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
@@ -2920,7 +2963,7 @@ msgstr ""
 msgid "Reason: {0}"
 msgstr ""
 
-#: src/features/project/shell/ContextSidebar.tsx
+#: src/features/project/dock/DockHeader.tsx
 msgid "Recent"
 msgstr ""
 
@@ -3025,8 +3068,6 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
-#: src/features/project/context/IdentityChips.tsx
-#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
@@ -3042,8 +3083,8 @@ msgid "Rename project: {title}"
 msgstr ""
 
 #: src/features/project/context/IdentityChips.tsx
-msgid "Rename this document or move it somewhere else in your project."
-msgstr ""
+#~ msgid "Rename this document or move it somewhere else in your project."
+#~ msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
@@ -3990,6 +4031,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "This link can no longer be edited. Close the form and try again."
+msgstr ""
+
+#: src/features/project/context/EntryMovePicker.tsx
+msgid "This location is unavailable. Refresh and try again."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx

@@ -99,6 +99,11 @@ rejected Undo reopens the row with its restore failure. `workListEntries`
 tab's entries, so `WorkCollection` only maps entries to rows. Work lists, the
 Deleted tab, the Files groups and the recency lists share one row grammar
 (`RuledList`, `RowIcon`, `GroupLabel`).
+Work Files Scratch rows declare Rename, Move… and Delete explicitly while their
+Work is editable. Move uses the shared `EntryMovePicker`; move refusals retain
+the destination (including its name), while only rename refusals offer the
+inline name repair. Archived Work rows remain navigable without actions.
+
 Detail composes identity and lifecycle, Goal, pending drafts, Scratch,
 and associated chats. `WorkDetailScreen` keeps the titles, the
 goal and the sticky tab switch; `WorkChatsTab` and `WorkFilesTab` each
@@ -178,7 +183,7 @@ The left rail ends in a **Scratch** section above the account (`chat/ChatScratch
 `RailScratchSection`, passed to `WorkspaceNavBody`'s `scratch` slot by `LeftSidebar` and
 `NavigationDrawer`). It is a tree section in the tree's own style: the head is the tree's
 `RailPaneHeader` (chevron, Scratch icon, "SCRATCH"), clicking it expands upwards or collapses, and the
-body is the chat's Scratch as tree rows (`RailFolderRow`/`RailFileRow` over
+body is the chat's Scratch as shared Files rows (`ContextTreeEntry` over
 `contextTreeFileRowClassName`), with folders opening in place and the open note highlighted. The
 wording "Scratch for this chat" (a chat's own notes) or "Scratch for <Work>" is the head's tooltip and
 accessible name, not a line of text. The section is content-sized up to 40% of the rail and scrolls
@@ -202,7 +207,11 @@ says "No notes yet" and the list fills live with the AI's writes (the AI makes t
 notes; there is no New note). A pick opens beside the chat by the existing rule
 (`dock/use-open-scratch-note.ts`) and the section stays open. On a phone it sits at the
 foot of the drawer: a pick closes the drawer and opens the note full screen. Wherever else a lineage is named (a missing-link
-dialog, the dock title chip's menu) it is by its first chat's title (`useLineageTitle`), never its handle.
+dialog, a document path's drill-in menu) it is by its first chat's title (`useLineageTitle`), never its handle.
+Actual note and folder rows have the Files right-click and ellipsis menu:
+inline Rename and Move… through the shared folder picker, never Delete or creation. They retain
+Scratch's explicit owner; archived Work notes stay navigable without mutation actions. The "Earlier notes"
+group stays a navigation-only heading.
 
 On the Chat screen every chat door opens its document in the dock instead of leaving for the Editor
 (see `dock/.context/CONTEXT.md`); the Editor and Work screens and the phone are unchanged.
