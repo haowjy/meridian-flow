@@ -137,9 +137,7 @@ export async function runMigrations(input: {
       `;
       for (const entry of plan.pending) {
         const migrationPath = path.join(input.migrationsDirectory, `${entry.tag}.sql`);
-        const content = normalizeMigrationSql(
-          (history.sqlFiles.get(`${entry.tag}.sql`) as Buffer).toString("utf8"),
-        );
+        const content = normalizeMigrationSql(entry.sql.toString("utf8"));
         const noTransaction = isNoTransactionMigration(content);
         // Reserved postgres.js sessions do not expose begin(); keep transaction
         // control on the same connection that owns the session advisory lock.
