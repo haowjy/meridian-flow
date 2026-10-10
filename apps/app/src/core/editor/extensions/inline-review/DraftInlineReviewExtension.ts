@@ -1,30 +1,11 @@
 /**
- * DraftInlineReviewExtension — projection-only change marks for the draft
- * review editor, in the manner of suggestion mode.
- *
- * Owns a single `DecorationSet` describing every hunk in the current server
- * review model. Insertions tint content already present in the draft (green
- * for the AI, gold for the writer, dashed grey where the two can't be split);
- * removed live text is a read-only struck-through widget. Marks are decorations
- * only: the plugin never creates manuscript text, so nothing it shows can be
- * typed into or saved.
- *
- * Lifecycle inside the plugin:
- *  - `setInlineReviewModel` command → rebuild the DecorationSet from scratch
- *    (decode `Y.RelativePosition` anchors → absolute positions).
- *  - Remote sync transactions rebuild from relative anchors; local writer
- *    typing maps the existing set through the transaction.
- *  - `setInlineReviewActiveOperation` command → repaint from the resolved
- *    geometry so the focused change picks up the emphasis class. Anchors are
- *    resolved once per model and document: a focus step, a pulse, a fold or a
- *    locale change repaints without resolving a single position again.
- *  - `setInlineReviewMarksVisible(false)` hides every mark (the header's
- *    "Show changes" off) without dropping the model, selection or folds.
- *  - Local typing paints its own inserted range gold at once, so the writer's
- *    words never wait on the preview refetch to look like theirs.
- *
- * The extension is only installed in review mode — live editors never load
- * this code path and pay no per-transaction cost.
+ * Draft-only review projection: model geometry plus a pending writer overlay.
+ * Local insertions paint gold before the Yjs binding writes; view.update then
+ * captures their relative anchors. Rebuilds resolve those identities, never
+ * mapped decorations. Only explicit writer coverage in a model refresh retires
+ * pending text. Visibility gates output without changing attribution.
+ * Focus, folds, pulses and locale repaint cached model geometry; live editors
+ * never install this extension. Removal widgets never enter manuscript content.
  */
 
 import { i18n } from "@lingui/core";
@@ -35,7 +16,11 @@ import { Plugin, PluginKey, Selection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type * as Y from "yjs";
 import { isRemoteDocumentRebuild } from "../../anchors";
-import { relativePositionRuntimeFromState } from "../../relative-position-runtime";
+import {
+  relativePositionForIndex,
+  relativePositionRuntimeFromState,
+  resolveRelativeRange,
+} from "../../relative-position-runtime";
 import {
   inlineReviewClassNames,
   paintDecorations,
@@ -75,11 +60,18 @@ export interface InlineReviewPluginState {
    * the document changes. Null while the binding cannot resolve anchors yet.
    */
   geometry: ReviewGeometry | null;
+  pendingWriterRanges: PendingWriterRange[];
   /** Full projection, including pending writer attribution, even while hidden. */
   decorations: DecorationSet;
 }
 
+type Range = { from: number; to: number };
+type PendingWriterRange = Range & {
+  anchors: { start: Y.RelativePosition; end: Y.RelativePosition } | null;
+};
+
 type PluginMeta =
+  | { kind: "capture-writer"; ranges: PendingWriterRange[] }
   | { kind: "set-model"; model: InlineReviewModel | null }
   | { kind: "set-active-operation"; operationId: string | null }
   | { kind: "set-marks-visible"; visible: boolean }
@@ -87,9 +79,6 @@ type PluginMeta =
   | { kind: "set-bar-slot"; open: boolean }
   | { kind: "relocalize" }
   | { kind: "removal-click"; operationId: string; toggle: string | null; keyboard: boolean };
-
-/** Spec flag on the writer's just-typed ranges; the next full rebuild replaces them. */
-const OPTIMISTIC_SPEC = "optimisticWriter";
 
 /** Public plugin key so React consumers can read state without holding the extension instance. */
 export const draftInlineReviewPluginKey = new PluginKey<InlineReviewPluginState>(
@@ -297,34 +286,32 @@ function insertedRanges(tr: Transaction): Array<{ from: number; to: number }> {
   return ranges;
 }
 
-const isOptimistic = (spec: Record<string, unknown>) => spec[OPTIMISTIC_SPEC] === true;
+/** Subtract only explicit writer coverage; stale and partial receipts leave the rest pending. */
+function uncovered(ranges: Range[], coverage: Range[]): Range[] {
+  return coverage.reduce(
+    (remaining, cover) =>
+      remaining.flatMap((range) => {
+        if (cover.to <= range.from || cover.from >= range.to) return [range];
+        return [
+          ...(cover.from > range.from ? [{ from: range.from, to: cover.from }] : []),
+          ...(cover.to < range.to ? [{ from: cover.to, to: range.to }] : []),
+        ];
+      }),
+    ranges,
+  );
+}
 
-/**
- * Paint what a local transaction inserted as the writer's, one run at a time:
- * a keystroke that touches an earlier optimistic range extends it, so a typed
- * sentence is one decoration rather than one per character.
- */
-function withOptimisticWriterRanges(decorations: DecorationSet, tr: Transaction): DecorationSet {
-  let next = decorations;
-  for (const range of insertedRanges(tr)) {
-    let { from, to } = range;
-    const touching = next.find(from, to, isOptimistic);
-    for (const existing of touching) {
-      from = Math.min(from, existing.from);
-      to = Math.max(to, existing.to);
-    }
-    next = next
-      .remove(touching)
-      .add(tr.doc, [
-        Decoration.inline(
-          from,
-          to,
-          { class: inlineReviewClassNames.writer },
-          { [OPTIMISTIC_SPEC]: true },
-        ),
-      ]);
+function coalesced(ranges: (Range & Partial<PendingWriterRange>)[]): PendingWriterRange[] {
+  const result: PendingWriterRange[] = [];
+  for (const range of ranges.sort((a, b) => a.from - b.from)) {
+    if (range.to <= range.from) continue;
+    const last = result.at(-1);
+    if (last && range.from <= last.to) {
+      last.to = Math.max(last.to, range.to);
+      last.anchors = null;
+    } else result.push({ anchors: null, ...range });
   }
-  return next;
+  return result;
 }
 
 export function buildInlineReviewPlugin({
@@ -346,6 +333,7 @@ export function buildInlineReviewPlugin({
           expandedRemovals: new Set(),
           barSlot: false,
           geometry: null,
+          pendingWriterRanges: [],
           decorations: DecorationSet.empty,
         };
         const geometry = geometryFor(initialModel, null, state, true);
@@ -371,14 +359,12 @@ export function buildInlineReviewPlugin({
           barSlot,
         } = previous;
         let mustRebuild = false;
-        let keepOptimistic = true;
+        let pendingWriterRanges = previous.pendingWriterRanges;
         let refocusRemoval: string | null = null;
 
         if (meta?.kind === "set-model") {
           model = meta.model;
           mustRebuild = true;
-          // The refetched model already attributes what the writer typed.
-          keepOptimistic = false;
         } else if (meta?.kind === "set-active-operation") {
           activeOperationId = meta.operationId;
           mustRebuild = true;
@@ -402,7 +388,10 @@ export function buildInlineReviewPlugin({
             if (meta.keyboard) refocusRemoval = meta.toggle;
           }
           mustRebuild = true;
-        } else if (ySyncChangeOrigin && model) {
+        } else if (meta?.kind === "capture-writer") {
+          pendingWriterRanges = meta.ranges;
+          mustRebuild = true;
+        } else if (ySyncChangeOrigin) {
           // Remote edit or first binding pass — re-anchor from
           // RelativePositions so we don't drift on the initial sync frame
           // or on concurrent AI/collab writes.
@@ -416,24 +405,62 @@ export function buildInlineReviewPlugin({
           marksVisible,
           expandedRemovals,
           barSlot,
+          pendingWriterRanges,
           geometry: previous.geometry,
           decorations: previous.decorations,
         };
-        if (mustRebuild) {
-          next.geometry = geometryFor(model, previous.geometry, newState, ySyncChangeOrigin);
-          let rebuilt = paint(next.geometry, next, refocusRemoval);
-          if (keepOptimistic) {
-            const typed = previous.decorations
-              .map(tr.mapping, tr.doc)
-              .find(undefined, undefined, isOptimistic);
-            rebuilt = rebuilt.add(tr.doc, typed);
-          }
-          next.decorations = rebuilt;
+        const runtime = relativePositionRuntimeFromState(newState);
+        if (mustRebuild && runtime) {
+          next.pendingWriterRanges = coalesced(
+            pendingWriterRanges.flatMap((range) => {
+              const resolved = range.anchors && resolveRelativeRange(runtime, range.anchors);
+              return !resolved
+                ? [range]
+                : resolved.to > resolved.from
+                  ? [{ ...range, ...resolved }]
+                  : [];
+            }),
+          );
         } else if (tr.docChanged) {
-          // Local edits: map existing decoration positions through the
-          // transaction. Cheap; positions stay stable through typing bursts.
-          const mapped = previous.decorations.map(tr.mapping, tr.doc);
-          next.decorations = !ySyncChangeOrigin ? withOptimisticWriterRanges(mapped, tr) : mapped;
+          next.pendingWriterRanges = coalesced([
+            ...pendingWriterRanges.map((range) => ({
+              from: tr.mapping.map(range.from, 1),
+              to: tr.mapping.map(range.to, -1),
+            })),
+            ...insertedRanges(tr),
+          ]);
+        }
+        if (mustRebuild) {
+          next.geometry = geometryFor(
+            model,
+            previous.geometry,
+            newState,
+            ySyncChangeOrigin || meta?.kind === "capture-writer",
+          );
+          if (meta?.kind === "set-model") {
+            const coverage =
+              next.geometry?.hunks.flatMap((hunk) =>
+                hunk.marks.filter((mark) => mark.tone === "writer"),
+              ) ?? [];
+            next.pendingWriterRanges = coalesced(uncovered(next.pendingWriterRanges, coverage));
+          }
+          next.decorations = paint(next.geometry, next, refocusRemoval);
+        } else if (tr.docChanged) {
+          // Before the binding writes, map only the model's painted projection.
+          next.decorations = paint(previous.geometry, next).map(tr.mapping, tr.doc);
+        }
+        if (mustRebuild || tr.docChanged) {
+          next.decorations = next.decorations.add(
+            tr.doc,
+            next.pendingWriterRanges.map(({ from, to }) =>
+              Decoration.inline(
+                from,
+                to,
+                { class: inlineReviewClassNames.writer },
+                { optimisticWriter: true },
+              ),
+            ),
+          );
         }
         return next;
       },
@@ -445,7 +472,26 @@ export function buildInlineReviewPlugin({
       // The fold's label is copy: a locale change redraws it from the same geometry.
       const unsubscribe = i18n.on("change", () => dispatchMeta(view, { kind: "relocalize" }));
       return {
-        update: (view) => writerClient?.capture(view.state),
+        update: (view) => {
+          writerClient?.capture(view.state);
+          const state = draftInlineReviewPluginKey.getState(view.state);
+          const ranges = state?.pendingWriterRanges;
+          const runtime = relativePositionRuntimeFromState(view.state);
+          if (
+            !runtime ||
+            !ranges ||
+            (!ranges.some((range) => !range.anchors) &&
+              (!state?.geometry || state.geometry.doc === view.state.doc))
+          )
+            return;
+          const captured = ranges.map((range) => {
+            const start = relativePositionForIndex(runtime, range.from);
+            const end = relativePositionForIndex(runtime, range.to);
+            return { ...range, anchors: start && end ? { start, end } : null };
+          });
+          if (captured.every((range) => range.anchors))
+            dispatchMeta(view, { kind: "capture-writer", ranges: captured });
+        },
         destroy: () => {
           unsubscribe();
           detach?.();

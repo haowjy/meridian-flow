@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep pending writer text gold across remote collaborative edits and stale or partial draft-review refreshes.
+
 - Development: drive review command reads with controlled React scheduling so threaded full-suite runs stay quiet.
 
 - Development: share explicit snapshot commits and preview-fenced request construction across durable review tests.
