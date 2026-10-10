@@ -79,6 +79,24 @@ it("carries what a copied link names across the clipboard", async () => {
       pasted: { link: "uploads://@/seal.md", ref: null },
     },
     {
+      row: "No Work Uploads supply no Scratch owner",
+      copied: { from: "uploads://@/holder.md", href: "scratch://note.md#gate", ref: null },
+      into: { holder: "manuscript://chapter.md", project: "project-a" },
+      pasted: { link: "scratch://note.md#gate", ref: null },
+    },
+    {
+      row: "No Work Uploads retain their Uploads owner",
+      copied: { from: "uploads://@/holder.md", href: "uploads://seal.md", ref: null },
+      into: { holder: "manuscript://chapter.md", project: "project-a" },
+      pasted: { link: "uploads://@/seal.md", ref: null },
+    },
+    {
+      row: "named Work Uploads supply the Scratch owner across schemes",
+      copied: { from: "uploads://@arc/holder.md", href: "scratch://note%23one.md#gate", ref: null },
+      into: { holder: "manuscript://chapter.md", project: "project-a" },
+      pasted: { link: "scratch://@arc/note%23one.md#gate", ref: null },
+    },
+    {
       row: "a same-project paste keeps the ref",
       copied: { from: "manuscript://a/source.md", href: "manuscript://a/kael.md", ref: KAEL_REF },
       into: { holder: "manuscript://b/new.md", project: "project-a" },
@@ -551,4 +569,24 @@ it("qualifies plain-text Scratch and Uploads without confusing their owners", ()
   expect(scope.spellLink({ ref: null, href: "uploads://seal.md" }).href).toBe(
     "uploads://@/seal.md",
   );
+});
+
+it("copies contextual links through the plugin's plain-text scope by applicable owner", () => {
+  const rows = [
+    ["uploads://@/holder.md", "scratch://note.md#gate", "scratch://note.md#gate"],
+    ["uploads://@/holder.md", "uploads://seal.md", "uploads://@/seal.md"],
+    ["scratch://@/c12/holder.md", "scratch://note.md#gate", "scratch://@/c12/note.md#gate"],
+    ["scratch://@/c12/holder.md", "uploads://seal.md", "uploads://@/seal.md"],
+    [
+      "uploads://@arc/holder.md",
+      "scratch://note%23one.md#gate",
+      "scratch://@arc/note%23one.md#gate",
+    ],
+    ["uploads://@arc/holder.md", "uploads://seal.md", "uploads://@arc/seal.md"],
+    ["manuscript://holder.md", "scratch://note.md", "scratch://note.md"],
+  ];
+  for (const [holder, href, expected] of rows) {
+    const state = EditorState.create({ schema, plugins: [clipboard(holder)] });
+    expect(clipboardLinkScope(state).spellLink({ ref: null, href }).href, holder).toBe(expected);
+  }
 });
