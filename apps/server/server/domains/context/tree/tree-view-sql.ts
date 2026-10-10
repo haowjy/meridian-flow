@@ -459,39 +459,34 @@ function uuidList(ids: readonly string[]): SQL {
 }
 
 /**
- * Diagnostic identity rows: the view's locations and visibility, retaining tombstones
- * and non-content identities so availability can explain lifecycle and corrupt identity.
- * These do not admit content; ordinary readers use visibleDocuments/visibleFolders.
+ * Diagnostics extend the canonical selection with formerly live lifecycle/malformed
+ * identities only. Placement comes from the same branches as visibleDocuments;
+ * hidden tombstones never enter either arm, even with a stale draft change row.
  */
 export function identityDocuments(view: TreeView) {
   const columns = getTableColumns(documents);
   const located = new Set(["contextSourceId", "folderId", "name", "extension"]);
-  const fields = sql.join(
-    Object.entries(columns).map(([key, column]) => {
-      const live = sql.raw(`d.${column.name}`);
-      if (view.kind === "live" || !located.has(key)) return live;
-      const value =
-        key === "folderId"
-          ? draftFolderId
-          : sql.raw(`COALESCE(c.${column.name}, d.${column.name})`);
-      return sql`${value} AS ${sql.identifier(column.name)}`;
-    }),
-    sql`, `,
-  );
-  const query =
-    view.kind === "live"
-      ? sql`SELECT ${fields} FROM documents d WHERE NOT d.hidden`
-      : sql`SELECT ${fields} FROM documents d LEFT JOIN draft_tree_changes c
-        ON c.node_id = d.id AND c.node_kind = 'document' AND c.draft_id = ${view.draftId}::uuid
-        WHERE NOT d.hidden OR c.created`;
+  const fields = (inView: boolean) =>
+    sql.join(
+      Object.entries(columns).map(
+        ([key, column]) =>
+          sql`${sql.raw(`${inView && located.has(key) ? "shown" : "d"}.${column.name}`)} AS ${sql.identifier(column.name)}`,
+      ),
+      sql`, `,
+    );
+  const query = sql`SELECT ${fields(true)} FROM (${documentsQuery(view)}) shown
+    JOIN documents d ON d.id = shown.id
+    UNION ALL
+    SELECT ${fields(false)} FROM documents d
+    WHERE NOT d.hidden AND (d.deleted_at IS NOT NULL OR d.kind <> 'content')`;
   return subquery(query, columns, "document_identities");
 }
 
-/** Folder lifecycle facts in the view, including deleted ancestors for diagnostics. */
+/** Canonical visible folders plus non-hidden deleted ancestor diagnostics. */
 export function identityFolders(view: TreeView) {
   const columns = getTableColumns(folders);
-  const query = sql`SELECT f.* FROM folders f WHERE NOT f.hidden
-    ${view.kind === "draft" ? sql`OR f.id IN (SELECT id FROM ${visibleFoldersSql(view)} shown)` : sql``}`;
+  const query = sql`SELECT f.* FROM (${foldersQuery(view)}) shown JOIN folders f ON f.id = shown.id
+    UNION ALL SELECT f.* FROM folders f WHERE NOT f.hidden AND f.deleted_at IS NOT NULL`;
   return subquery(query, columns, "folder_identities");
 }
 

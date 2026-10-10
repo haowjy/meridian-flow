@@ -49,6 +49,15 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           sizeBytes: 17,
         })
         .where(eq(documents.id, image));
+      const tombstones = [
+        await scenario.seedHidden(work, "gone.md"),
+        await scenario.seedHidden(work, "retired/gone.md"),
+      ];
+      for (const tombstone of tombstones)
+        await db
+          .update(documents)
+          .set({ deletedAt: new Date() })
+          .where(eq(documents.id, tombstone));
       const view = await scenario.drafts.viewForWork(work.id);
       const facts = createDrizzleFileFacts(db);
       const availability = createDrizzleProjectContextAvailability(db);
@@ -75,6 +84,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         work,
         id,
         image,
+        tombstones,
         view,
         facts,
         availability,
@@ -92,6 +102,32 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       await s.db.insert(userRecentDocuments).values({ userId: s.actor.userId, documentId: s.id });
       const live = await s.scenario.seedLive("chapter.md");
       const rows = [
+        {
+          surface: "hidden tombstone facts",
+          run: () =>
+            Promise.all(
+              s.tombstones.map((documentId) =>
+                s.facts.load({ target: { kind: "document", documentId } }),
+              ),
+            ),
+          expected: [null, null],
+        },
+        {
+          surface: "hidden tombstone facts list",
+          run: async () => [...(await s.facts.loadList(s.tombstones)).keys()],
+          expected: [],
+        },
+        {
+          surface: "hidden tombstone availability",
+          run: async () =>
+            (await s.availability.lookup({ ...s.input, documentIds: s.tombstones }, s.actor))
+              .resolutions,
+          expected: s.tombstones.map((documentId) => ({
+            kind: "not-visible",
+            documentId,
+            checkedGeneration: expect.any(String),
+          })),
+        },
         {
           surface: "file facts list",
           run: async () => (await s.facts.loadList([s.id])).has(s.id),
@@ -230,6 +266,36 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           and(eq(draftTreeChanges.draftId, s.view.draftId), eq(draftTreeChanges.nodeId, s.id)),
         );
       const rows = [
+        {
+          surface: "hidden tombstone facts in D",
+          run: () =>
+            Promise.all(
+              s.tombstones.map((documentId) =>
+                s.facts.load({ target: { kind: "document", documentId }, draftWorkId: s.work.id }),
+              ),
+            ),
+          expected: [null, null],
+        },
+        {
+          surface: "hidden tombstone facts list in D",
+          run: async () => [...(await s.facts.loadList(s.tombstones, s.work.id)).keys()],
+          expected: [],
+        },
+        {
+          surface: "hidden tombstone availability in D",
+          run: async () =>
+            (
+              await s.availability.lookup(
+                { ...s.input, documentIds: s.tombstones, view: s.view },
+                s.actor,
+              )
+            ).resolutions,
+          expected: s.tombstones.map((documentId) => ({
+            kind: "not-visible",
+            documentId,
+            checkedGeneration: expect.any(String),
+          })),
+        },
         {
           surface: "file facts list in D",
           run: async () => (await s.facts.loadList([s.id], s.work.id)).has(s.id),
