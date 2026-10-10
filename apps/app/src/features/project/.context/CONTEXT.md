@@ -207,7 +207,7 @@ says "No notes yet" and the list fills live with the AI's writes (the AI makes t
 notes; there is no New note). A pick opens beside the chat by the existing rule
 (`dock/use-open-scratch-note.ts`) and the section stays open. On a phone it sits at the
 foot of the drawer: a pick closes the drawer and opens the note full screen. Wherever else a lineage is named (a missing-link
-dialog, the dock title chip's menu) it is by its first chat's title (`useLineageTitle`), never its handle.
+dialog, a document path's drill-in menu) it is by its first chat's title (`useLineageTitle`), never its handle.
 Actual note and folder rows have the Files right-click and ellipsis menu:
 inline Rename and Move… through the shared folder picker, never Delete or creation. They retain
 Scratch's explicit owner; archived Work notes stay navigable without mutation actions. The "Earlier notes"
