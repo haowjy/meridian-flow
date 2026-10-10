@@ -7,7 +7,7 @@
  * they own the DB-level context-source lifecycle, separate from adapter assembly.
  */
 
-import type { ProjectId } from "@meridian/contracts";
+import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -36,6 +36,7 @@ import type {
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
+import { findRevealIdentity } from "./tree/hidden-nodes.js";
 import type { TreeView } from "./tree/tree-view.js";
 
 const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsScheme, string> = {
@@ -302,12 +303,12 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.findDocumentById(view, documentId) ?? null;
   }
 
-  async findRevealIdentity(documentId: string, projectId: ProjectId) {
-    return (
-      (await this.readableSourceStore())?.findRevealIdentity(documentId, projectId) ?? {
-        kind: "absent" as const,
-      }
-    );
+  /**
+   * A named identity is the project's, not this source's: its lookup never waits on (or
+   * provisions) the destination source, which a cross-source reveal may not have yet.
+   */
+  findRevealIdentity(documentId: string, projectId: ProjectId) {
+    return findRevealIdentity(this.db, { documentId: documentId as DocumentId, projectId });
   }
 
   async readProjections(ids: string[]): Promise<Map<string, string>> {
