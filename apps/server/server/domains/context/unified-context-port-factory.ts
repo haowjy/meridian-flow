@@ -99,16 +99,10 @@ interface ContextStoreResolvers {
     userId: string,
     scheme: ProjectContextFsScheme,
   ): ContextDocumentStore;
-  resolveWorkStore(
-    workId: string,
-    scheme: WorkScopedContextFsScheme,
-    projectId?: string,
-  ): ContextDocumentStore;
+  resolveWorkStore(workId: string, scheme: WorkScopedContextFsScheme): ContextDocumentStore;
   resolveNoWorkStore(projectId: string, scheme: "uploads", userId?: string): ContextDocumentStore;
   resolveNoWorkId(projectId: string): Promise<string>;
-  resolveMutationStore(
-    projectId?: string,
-  ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
+  resolveMutationStore(): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
 }
 
 /** What every adapter of one port shares: storage, collab, and the reading thread. */
@@ -182,7 +176,7 @@ function buildProjectContextFsAdapters(
       scheme,
       contextFsAdapter(assembly, {
         store: storeResolvers.resolveProjectStore(projectId, userId, scheme),
-        mutationStore: storeResolvers.resolveMutationStore(projectId),
+        mutationStore: storeResolvers.resolveMutationStore(),
         commandTransaction: commandTransaction && {
           run: (operation, _scopes, options) =>
             commandTransaction.run(operation, [{ scheme, workId: null }], options),
@@ -204,13 +198,13 @@ function buildWorkScopedContextFsAdapters(
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const { storeResolvers, commandTransaction } = assembly;
   // Scratch/uploads are canonical live documents even though their storage is Work-scoped.
-  const mutationStore = storeResolvers.resolveMutationStore(projectId);
+  const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of WORK_SCOPED_CONTEXTFS_SCHEMES) {
     adapters.set(
       scheme,
       contextFsAdapter(assembly, {
-        store: storeResolvers.resolveWorkStore(workId, scheme, projectId),
+        store: storeResolvers.resolveWorkStore(workId, scheme),
         mutationStore,
         commandTransaction: commandTransaction && {
           run: (operation, _scopes, options) =>
@@ -229,7 +223,7 @@ function buildNoWorkContextFsAdapters(
   projectId: string,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const { storeResolvers, commandTransaction } = assembly;
-  const mutationStore = storeResolvers.resolveMutationStore(projectId);
+  const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of ["uploads"] as const) {
     adapters.set(
