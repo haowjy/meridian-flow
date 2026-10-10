@@ -89,6 +89,43 @@ describeDraftTreeDb("Apply binds what the writer reviewed (postgres)", (start) =
         "the copy reads in a draft",
       )
       .toEqual({ id: kael, inDraft: true });
+
+    // 12b-Q3: the later Apply's binding wins for that holder only. One ref means kael in
+    // Ascension's draft and vela in Beacon's (seeded: a second draft's create at the
+    // same path would join the first's document). Ascension publishes it into chapters
+    // two and six; Beacon then publishes it into chapter two again.
+    const beacon = await s.work("Beacon", "draft");
+    const vela = await s.model(beacon).create("characters/vela.md", "Vela.");
+    const shared = await s.seedAhead("characters/shared.md");
+    await s.seedDraftSettlement(ascension, shared, kael);
+    await s.seedDraftSettlement(beacon, shared, vela);
+    const SHARED = "manuscript://characters/shared.md";
+    const six = await s.writer.createDocument("chapter-six.md", "Six.");
+    await s.model(ascension).edit("chapter-six.md", "Six.", "Six, drafted.");
+    await s.model(ascension).edit("chapter-two.md", "Two, drafted.", "Two, drafted twice.");
+    await s.writer.editDraft(ascension, two, typeLink(SHARED, shared));
+    await s.writer.editDraft(ascension, six, typeLink(SHARED, shared));
+    expect
+      .soft((await s.apply(ascension, [two, six])).map((result) => result.httpStatus))
+      .toEqual([200, 200]);
+    const chapterSix = { uri: "manuscript://chapter-six.md", id: six };
+    const sharedIn = (holder: { uri: string; id: DocumentId }) =>
+      s.liveMeaning({ ref: `ahead:${shared}`, href: SHARED, holder });
+    expect.soft(await sharedIn(chapterTwo), "Ascension's binding in two").toEqual(inDraft);
+    expect.soft(await sharedIn(chapterSix), "Ascension's binding in six").toEqual(inDraft);
+    await s.model(beacon).edit("chapter-two.md", "Two, drafted twice.", "Two, Beacon's.");
+    await s.writer.editDraft(beacon, two, typeLink(SHARED, shared));
+    expect.soft((await s.apply(beacon, [two])).map((result) => result.httpStatus)).toEqual([200]);
+    expect
+      .soft(await sharedIn(chapterTwo), "the later Apply's binding wins in two")
+      .toEqual({ id: vela, inDraft: true, bound: true });
+    expect.soft(await sharedIn(chapterSix), "six keeps Ascension's binding").toEqual(inDraft);
+    for (const holder of [two, six]) {
+      const refs = (await s.storedLinks(holder)).map((link) => link.ref);
+      expect.soft(refs, "the holder's text still says ahead").toContain(`ahead:${shared}`);
+      expect.soft(refs, "no meaning written into the text").not.toContain(`doc:${vela}`);
+      expect.soft(refs, "nor the first draft's").not.toContain(`doc:${kael}`);
+    }
   });
 
   it("binds from the staged snapshot across a crash and a Discard of the target, and nothing captures it later (E-3b)", async () => {
