@@ -24,6 +24,7 @@ import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 export type ReviewHeaderOptions = {
   documentId: string;
+  /** Empty while a stable chrome wrapper has no shown review. */
   draftId: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
@@ -104,7 +105,7 @@ export function useReviewHeader({
   onOpenDraft,
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, files } = useDraftReview();
-  const view = useReviewChanges(controller);
+  const view = useReviewChanges(controller, { enabled: Boolean(draftId) });
 
   const next = nextReviewFile(
     files,

@@ -16,6 +16,7 @@ import type {
 } from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
 import { useRequestedReview } from "../dock/editor-review-handoff";
@@ -72,7 +73,7 @@ export function ContextEditorMountHost({
   readOnly = false,
 }: ContextEditorMountHostProps) {
   const removal = useContextRemovalCoordinator();
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const { controller, reviewRoomNameForDraft } = useDraftReview();
   const activeTab = trackedTabs.find((tab) => tab.documentId === activeTabId);
   const requestedReview = useRequestedReview({
     editorWorkId: controller.workId,
@@ -185,24 +186,18 @@ export function ContextEditorMountHost({
                 {failed || !hosted ? null : (
                   <>
                     {active && isActive ? (
-                      <>
-                        <ActiveEditorProjection
-                          documentId={tab.documentId}
-                          session={session}
-                          inReview={Boolean(reviewDraftId)}
-                          setProjection={setActiveEditorDocumentId}
-                        />
-                        <RoomScopeCatalogCheck
-                          projectId={projectId}
-                          session={session}
-                          reviewRoomName={reviewRoomName}
-                          readOnly={readOnly}
-                        />
-                      </>
+                      <RoomScopeCatalogCheck
+                        projectId={projectId}
+                        session={session}
+                        reviewRoomName={reviewRoomName}
+                        readOnly={readOnly}
+                      />
                     ) : null}
-                    <PresenceSuspension
-                      session={session}
-                      enabled={Boolean(reviewDraftId && active)}
+                    <ActiveReviewBinding
+                      documentId={tab.documentId}
+                      liveSession={session}
+                      active={active && isActive}
+                      inReview={Boolean(reviewDraftId)}
                     />
                     <EditorView
                       draftOnly={branchOnly}
@@ -225,15 +220,6 @@ export function ContextEditorMountHost({
                       // The intent, not the resolved room: the live editor goes
                       // read-only from the click, while the room is still resolving.
                       reviewDraftId={selectedReviewDraftId}
-                      reviewRoomName={reviewRoomName}
-                      reviewWorkId={reviewDraftId ? controller.workId : null}
-                      // Leaving review would strand a draft-only tab on an empty
-                      // editor; the writer closes it from the tab bar instead.
-                      onReviewSessionUnavailable={
-                        branchOnly ? undefined : controller.exitInlineReview
-                      }
-                      // A room the server has moved past is not the end of the review,
-                      // a draft-only one included: the review reads the current room.
                     />
                   </>
                 )}
@@ -455,28 +441,8 @@ export function resourceAvailabilityRevision(
   ]);
 }
 
-function ActiveEditorProjection({
-  documentId,
-  session,
-  inReview,
-  setProjection,
-}: {
-  documentId: string;
-  /** Null while a draft-only document is hosted by its branch room alone. */
-  session: DocumentSession | null;
-  inReview: boolean;
-  setProjection: (
-    documentId: string | null,
-    session?: DocumentSession | null,
-    inReview?: boolean,
-    owner?: object,
-  ) => void;
-}) {
-  const owner = useRef({});
-  useEffect(() => {
-    setProjection(documentId, session, inReview, owner.current);
-    return () => setProjection(null, null, false, owner.current);
-  }, [documentId, inReview, session, setProjection]);
+function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]) {
+  useActiveReviewBinding(props);
   return null;
 }
 
@@ -517,21 +483,6 @@ function RoomScopeCatalogCheck({
     if (access === null || (access === "read") === readOnlyRef.current) return;
     void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
   }, [access, projectId, queryClient]);
-  return null;
-}
-
-function PresenceSuspension({
-  session,
-  enabled,
-}: {
-  session: DocumentSession | null;
-  enabled: boolean;
-}) {
-  useEffect(() => {
-    if (!enabled || !session) return;
-    session.suspendPresence();
-    return () => session.resumePresence();
-  }, [enabled, session]);
   return null;
 }
 

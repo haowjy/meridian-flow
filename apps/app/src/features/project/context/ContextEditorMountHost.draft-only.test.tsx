@@ -44,15 +44,13 @@ vi.mock("@/features/editor/EditorView", () => ({
   EditorView: (props: {
     session?: unknown;
     reviewDraftId?: string | null;
-    reviewRoomName?: string | null;
-    onReviewSessionUnavailable?: () => void;
+    draftOnly?: boolean;
   }) => (
     <div
       data-editor
-      data-leaves-review-when-unavailable={String(props.onReviewSessionUnavailable !== undefined)}
+      data-retains-draft-on-error={String(props.draftOnly === true)}
       data-live-session={String(props.session !== undefined)}
       data-review-draft={props.reviewDraftId ?? ""}
-      data-review-room={props.reviewRoomName ?? ""}
     />
   ),
 }));
@@ -62,8 +60,8 @@ const queryClient = new QueryClient();
 const liveSession = {
   getSnapshot: () => ({ status: "synced", schemaFence: null }),
   subscribe: () => () => undefined,
-  suspendPresence: () => undefined,
-  resumePresence: () => undefined,
+  suspendPresence: vi.fn(),
+  resumePresence: vi.fn(),
 } as unknown as DocumentSession;
 
 const tab = {
@@ -132,24 +130,29 @@ describe("ContextEditorMountHost draft-only review", () => {
       // The review handoff claims review once the document is published as the
       // active editor, which needs no live session.
       expect(review.publish).toHaveBeenCalledWith("document-a", null, false, expect.anything());
+      const owner = review.publish.mock.calls.at(-1)?.[3];
       await act(async () => startReview());
       const editor = document.querySelector("[data-editor]");
-      expect(editor?.getAttribute("data-review-room")).toBe("review-room-a");
+      expect(editor?.getAttribute("data-review-draft")).toBe("draft-a");
       expect(editor?.getAttribute("data-live-session")).toBe("false");
       // Leaving review would strand a draft-only tab on an empty editor.
-      expect(editor?.getAttribute("data-leaves-review-when-unavailable")).toBe("false");
+      expect(editor?.getAttribute("data-retains-draft-on-error")).toBe("true");
       expect(opener.open).not.toHaveBeenCalled();
       expect(resourceReplica.openDocument).not.toHaveBeenCalled();
 
       await act(async () => promote());
       await act(async () => undefined);
       expect(opener.open).toHaveBeenCalledOnce();
+      expect(review.publish).toHaveBeenLastCalledWith("document-a", liveSession, true, owner);
+      expect(liveSession.suspendPresence).toHaveBeenCalledOnce();
     });
+    expect(liveSession.resumePresence).toHaveBeenCalledOnce();
   });
 
   it("passes the requested review before its room resolves", async () => {
     review.reviewing = true;
     review.room = null;
+    vi.mocked(liveSession.suspendPresence).mockClear();
     const opener = {
       open: vi.fn(async () => ({
         kind: "opened",
@@ -182,9 +185,9 @@ describe("ContextEditorMountHost draft-only review", () => {
         await act(async () => undefined);
         const editor = document.querySelector("[data-editor]");
         expect(editor?.getAttribute("data-live-session")).toBe("true");
-        expect(editor?.getAttribute("data-review-room")).toBe("");
         // The click's intent reaches the editor, which holds the live one read-only.
         expect(editor?.getAttribute("data-review-draft")).toBe("draft-a");
+        expect(liveSession.suspendPresence).not.toHaveBeenCalled();
       },
     );
     review.reviewing = false;

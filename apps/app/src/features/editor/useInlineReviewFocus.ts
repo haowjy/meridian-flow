@@ -23,24 +23,18 @@ import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 
 export function useInlineReviewFocus({
   editor,
-  enabled,
   documentId,
   draftId,
 }: {
   editor: Editor | null;
-  enabled: boolean;
   documentId: string;
-  draftId: string | null;
+  draftId: string;
 }): void {
   const { controller } = useDraftReview();
-  const inThisReview =
-    enabled &&
-    controller.inlineReview?.documentId === documentId &&
-    controller.inlineReview.draftId === draftId;
-  const view = useReviewChanges(controller, { enabled: inThisReview });
+  const view = useReviewChanges(controller);
   const { reportFocusedChange, marksVisible } = controller;
 
-  const live = editor && !editor.isDestroyed && enabled ? editor : null;
+  const live = editor && !editor.isDestroyed ? editor : null;
   const reviewing = live !== null && getInlineReviewPluginState(live.state) !== null;
 
   // Show changes.
@@ -62,7 +56,7 @@ export function useInlineReviewFocus({
   // belongs to now, not only a new active mark: the server regrouping a class
   // moves the mark's change without moving the mark.
   useEffect(() => {
-    if (!live || !reviewing || !draftId) return;
+    if (!live || !reviewing) return;
     let reportedOperationId: string | null = null;
     let reportedModel: unknown = null;
     const onTransaction = () => {

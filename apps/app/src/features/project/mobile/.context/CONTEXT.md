@@ -79,9 +79,10 @@ open-tab set; phone navigation derives the active tab from the context tree and
 does not write to desktop tabs.
 
 The same resolved editable document is published into the persistent Editor
-review value. When that value selects a draft, the host resolves its review room
-and supplies the Work-qualified review identity to the existing `EditorView`;
-phone review does not own a parallel controller or state machine.
+review value through `useActiveReviewBinding`, which also leases live presence.
+The phone suspends presence for the requested review; desktop waits for its
+resolved room. Hosts pass only requested draft identity to `EditorView`; the
+adapter reads its canonical room and Work from the scope.
 
 This ownership is mandatory. Mounting `EditorView` directly without `retain()`
 creates Yjs sessions that the registry cannot know are closed.
@@ -93,9 +94,8 @@ and a pending new document) and adds the review's chrome while that document is
 under inline review. The column keeps one place in the tree whether or not a
 review is open, so entering and leaving never remounts the warm live editor;
 the review editor mounts beside it and swaps in, as on desktop (`EditorView`). Nothing here owns
-review state: the header runs `useReviewHeader`, the bar and sheet run
-`useReviewChanges`, both over the Editor scope's controller, the same hooks the
-desktop identity row and its change-list popover use. Optimistic Apply and
+review state: the stable wrapper obtains one `useReviewHeader` model and passes
+it to the header, bar and sheet. Sheet state and its toast stay phone-owned. Optimistic Apply and
 Discard, refusals held on the change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
 left" with Next draft are therefore the desktop's behaviour, not a copy of it.
 

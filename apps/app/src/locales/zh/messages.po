@@ -1015,7 +1015,7 @@ msgstr ""
 msgid "codeblock"
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/SessionEditor.tsx
 msgid "Collaborative document editor"
 msgstr ""
 
@@ -3266,7 +3266,7 @@ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/CreationComposer.tsx
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/SessionEditor.tsx
 msgid "Reference a file"
 msgstr ""
 
@@ -3752,7 +3752,7 @@ msgstr ""
 msgid "Start over"
 msgstr ""
 
-#: src/features/editor/EditorView.tsx
+#: src/features/editor/SessionEditor.tsx
 msgid "Start writing…"
 msgstr ""
 
@@ -4145,6 +4145,7 @@ msgid "This chapter is no longer available. The saved excerpts remain below."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
+#: src/features/editor/SessionEditor.tsx
 msgid "This chapter is temporarily unavailable"
 msgstr ""
 
