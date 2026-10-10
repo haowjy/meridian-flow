@@ -35,7 +35,9 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **Column retirement is single-release until launch.** Remove reads and audit
   retired data in the same change. DROP COLUMN lint requires a transactional
   SET LOCAL lock_timeout of 1–5 seconds before the drop, not an old-server
-  compatibility deploy or a lint skip. Content still must be moved, never lost.
+  compatibility deploy or a lint skip. This bounds the lock acquisition wait,
+  not how long a lock is held; later overrides invalidate the witness. Content
+  still must be moved, never lost.
 - **Migration-lint policy is explicit.** Errors always block; warnings block only
   under `--strict` (CI PRs to `main`/`staging`). `--changed <ref>` scopes PR lint,
   `--staged` powers pre-commit, and `0000_` is the warning-exempt baseline. A
