@@ -169,9 +169,9 @@ export async function liveDurableState(db: Database, documentIds: readonly Docum
         .from(schema.documentYjsHeads)
         .where(eq(schema.documentYjsHeads.documentId, documentId));
       const [row] = await db
-        .select({ markdownProjection: schema.documents.markdownProjection })
-        .from(schema.documents)
-        .where(eq(schema.documents.id, documentId));
+        .select({ markdownProjection: schema.documentMarkdownProjections.markdown })
+        .from(schema.documentMarkdownProjections)
+        .where(eq(schema.documentMarkdownProjections.documentId, documentId));
       return {
         documentId,
         updates: updates.map(({ originType }) => originType),
