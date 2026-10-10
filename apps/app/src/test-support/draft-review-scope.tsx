@@ -51,7 +51,6 @@ export const listed = {
   contextPath: null,
   status: "active" as const,
   draftGeneration: 1,
-  lastActorTurnId: "turn-1",
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
@@ -60,9 +59,7 @@ export const operation = (id: string) => ({
   operationId: id,
   closureClassId: `class-${id}`,
   kind: "agent" as const,
-  contribution: "added" as const,
   classification: "addition" as const,
-  hunkCount: 1,
 });
 
 export const preview = {

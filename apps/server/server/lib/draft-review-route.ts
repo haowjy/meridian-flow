@@ -245,7 +245,6 @@ function serializeThreadDraft(draft: {
   contextPath: string | null;
   status: "active";
   draftGeneration: number;
-  lastActorTurnId: string | null;
   actorThreads: ThreadDraftListItem["actorThreads"];
   updatedAt: Date;
   createdDocument?: boolean;
@@ -257,7 +256,6 @@ function serializeThreadDraft(draft: {
     contextPath: draft.contextPath,
     status: draft.status,
     draftGeneration: draft.draftGeneration,
-    lastActorTurnId: draft.lastActorTurnId,
     actorThreads: draft.actorThreads,
     updatedAt: draft.updatedAt.toISOString(),
     ...(draft.createdDocument ? { isNewDocument: true } : {}),

@@ -27,9 +27,7 @@ function preview(): DraftPreviewResponse {
     operationId,
     closureClassId,
     kind: "agent" as const,
-    contribution: "added" as const,
     classification: "addition" as const,
-    hunkCount: 1,
   });
   return {
     status: "active",
