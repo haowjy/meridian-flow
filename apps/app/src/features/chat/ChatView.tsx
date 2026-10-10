@@ -485,8 +485,14 @@ export function ChatView({
       onRetry: () => {
         void submissionRecovery.retry(entry.optimisticTurnId);
       },
-      // Settlement already returned the structured words; Edit only focuses them.
-      ...(draftIsRecoverable ? { onEdit: () => focusRejectedMessage() } : {}),
+      // Edit transfers durable rejected words before focusing the composer.
+      ...(draftIsRecoverable
+        ? {
+            onEdit: () => {
+              if (submissionRecovery.edit(entry.submissionId)) focusRejectedMessage();
+            },
+          }
+        : {}),
     });
   }
 
