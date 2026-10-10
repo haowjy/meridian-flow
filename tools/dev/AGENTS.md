@@ -41,6 +41,7 @@ Local-dev-only utilities. Never imported by the application runtime.
 - **The migration runner owns applied history.** Every schema-migration path goes
   through `runMigrations`. It matches hash and journal timestamp before applying
   anything, refuses structurally invalid, divergent or out-of-order history,
+  executes the normalized SQL snapshot whose raw bytes supplied that identity,
   holds one session advisory lock for the whole run, and commits each ordinary
   migration separately with its history row. A `-- migration: no-transaction`
   file autocommits and is recorded only after every statement succeeds; before
