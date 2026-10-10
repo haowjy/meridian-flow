@@ -29,6 +29,4 @@ export class AccountLinkConflictError extends Error {
  */
 export interface UserRepository {
   ensureUser(input: EnsureUserInput): Promise<UserId>;
-  getWorkingSetSyncEnabled(userId: UserId): Promise<boolean>;
-  updateWorkingSetSyncEnabled(userId: UserId, enabled: boolean): Promise<boolean>;
 }

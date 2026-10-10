@@ -11,11 +11,11 @@ import { useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { useSharedWorkingSetSyncPreference } from "./WorkingSetSyncPreferenceProvider";
+import { useSharedAccountSettings } from "./AccountSettingsProvider";
 
 export function WorkingSetSyncPreferenceRow() {
   const router = useRouter();
-  const preference = useSharedWorkingSetSyncPreference();
+  const preference = useSharedAccountSettings().preference("workingSetSyncEnabled");
   const [retrying, setRetrying] = useState(false);
 
   async function retryUnavailable() {

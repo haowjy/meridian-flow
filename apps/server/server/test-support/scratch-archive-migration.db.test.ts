@@ -202,7 +202,12 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         path.join(migrations, "0035_context_source_online_indexes.sql"),
         path.join(directory, "0035_context_source_online_indexes.sql"),
       );
-      await writeFile(path.join(directory, "meta/_journal.json"), JSON.stringify(journal));
+      // This historical upgrade stops at its online-index migration. Later
+      // schema migrations are intentionally absent from this fixture directory.
+      await writeFile(
+        path.join(directory, "meta/_journal.json"),
+        JSON.stringify({ ...journal, entries: journal.entries.slice(0, 36) }),
+      );
       // A failed concurrent build leaves an invalid remnant. The real runner
       // removes that remnant without touching the still-valid old guard.
       await expect(
