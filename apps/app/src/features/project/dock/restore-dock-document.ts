@@ -1,12 +1,15 @@
 /** Restores a hidden dock candidate only after replica hydration and identity validation. */
+
 import { resourceVisibleInProject } from "@meridian/resource-replica";
+import { useEffect } from "react";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import type { ContextTab } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { validateServerRoute } from "../browser-editor-tab-validation";
+import { useAccountResourceReplica } from "../context/account-feature-context";
 import { workingSetRouteForTab } from "../context/context-removal-planner";
 import { projectResourceTab } from "../context/context-tab-from-file";
-import type { DockDocument } from "./dock-view-store";
+import { type DockDocument, useDockViewStore } from "./dock-view-store";
 
 export async function restoreDockDocument(
   document: DockDocument,
@@ -41,4 +44,25 @@ export async function restoreDockDocument(
   const next = projectResourceTab(projectId, validated, current.records, current.folders);
   if (next.kind === "removed" || next.kind === "terminal") return null;
   return next.kind === "projected" ? next.tab : validated;
+}
+
+/** Dock-owned effect shell; the project supplies only its identity and Editor hydration signal. */
+export function useDockDocumentRestoration(projectId: string, workspaceHydrated: boolean): void {
+  const restoring = useDockViewStore((state) => state.restoring);
+  const resources = useAccountResourceReplica();
+  useEffect(() => {
+    if (!workspaceHydrated || !restoring || restoring.projectId !== projectId) return;
+    let live = true;
+    void restoreDockDocument(restoring, resources).then(
+      (tab) => {
+        if (live) useDockViewStore.getState().restore(restoring, tab);
+      },
+      () => {
+        // Read degradation is not proof of deletion. Keep the hidden candidate for reload/retry.
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceHydrated, restoring, resources, projectId]);
 }
