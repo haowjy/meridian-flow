@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { DocumentSession } from "@/core/editor/document-session";
 
 const ROOM = "document-1";
 
@@ -98,6 +99,36 @@ describe("document transport server acknowledgement", () => {
   afterEach(() => {
     harness.destroy();
     vi.useRealTimers();
+  });
+
+  it("publishes pending-writing edges once per typing burst, with bytes already visible", async () => {
+    const session = new DocumentSession({
+      roomKey: ROOM,
+      persistence: { kind: "none" },
+      transportFactory: ({ document, awareness }) =>
+        createHocuspocusDocumentTransport({ roomName: ROOM, document, awareness }),
+    });
+    try {
+      await settle();
+      const socket = latestSocket();
+      socket.open();
+      socket.syncStep1(ROOM, harness.serverDocument);
+      socket.syncStep2(ROOM, harness.serverDocument, Y.encodeStateVector(session.document));
+      socket.acknowledge(ROOM);
+      await settle();
+      const observations: boolean[] = [];
+      const unsubscribe = session.subscribe(() =>
+        observations.push(session.hasUnacknowledgedEdits()),
+      );
+      observations.length = 0;
+      for (let i = 0; i < 10; i++) session.document.getText("body").insert(i, "x");
+      expect(observations).toEqual([true]);
+      for (let i = 0; i < 10; i++) socket.acknowledge(ROOM);
+      expect(observations).toEqual([true, false]);
+      unsubscribe();
+    } finally {
+      await session.destroy();
+    }
   });
 
   it("keeps only unacknowledged local updates across reconnect and freezes them at terminal", async () => {

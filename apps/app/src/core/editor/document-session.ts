@@ -148,7 +148,8 @@ export type DocumentSessionTransportProvider = {
    * document update sent on the current connection. False on any local change,
    * on disconnect, and in terminal states; never inferred from the provider's
    * `unsyncedChanges` counter, which a reconnect resets mid-flight. Emits the
-   * current value synchronously on subscribe, then on every change.
+   * current value synchronously on subscribe, then on every change and when
+   * the local outbox becomes non-empty (with those bytes already visible).
    */
   subscribeServerAcknowledgement?: (listener: (acknowledged: boolean) => void) => () => void;
   /**
@@ -220,6 +221,7 @@ export class DocumentSession {
   private transportAcknowledged = false;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
+  private observedOutboxPresence = false;
   /**
    * Latest live connection-state from the transport. When the transport is
    * pre-`whenSynced` we treat the session as syncing; this field lets us
@@ -707,7 +709,14 @@ export class DocumentSession {
     if (this.destroyed) return;
     const next = this.deriveStatus();
     const acknowledged = next === "synced" && this.transportAcknowledged;
-    if (next === this.status && acknowledged === this.serverHasLocalChanges) return;
+    const outboxPresent = this.hasUnacknowledgedEdits();
+    if (
+      next === this.status &&
+      acknowledged === this.serverHasLocalChanges &&
+      outboxPresent === this.observedOutboxPresence
+    )
+      return;
+    this.observedOutboxPresence = outboxPresent;
     this.status = next;
     this.serverHasLocalChanges = acknowledged;
     this.emit();

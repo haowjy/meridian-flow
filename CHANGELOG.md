@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Document session snapshots update on pending-writing edges, not on every keystroke, while retaining review through remote Discard.
+
+- Draft review sees pending native-socket typing before an empty successor read, so remote Discard keeps surviving words visible as your changes.
+
 - Draft review stays open through a temporarily missing preview while your unacknowledged typing follows the draft into its replacement room.
 
 - Document switches keep the last finished page inert until the destination paints or fails, on desktop and phone.
