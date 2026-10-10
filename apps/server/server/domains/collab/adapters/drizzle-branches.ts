@@ -445,14 +445,6 @@ export function createDrizzleBranchStore(
     return Boolean(row);
   }
 
-  async function _getBranchSnapshot(branchId: string): Promise<BranchSnapshot> {
-    const [row] = await selectBranch(currentDrizzleDb(db))
-      .where(eq(documentBranches.id, branchId))
-      .limit(1);
-    if (!row) throw new Error(`Branch ${branchId} does not exist`);
-    return mapBranch(row);
-  }
-
   return {
     deferUntilCommit: deferUntilDrizzleCommit,
 
