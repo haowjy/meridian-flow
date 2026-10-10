@@ -30,7 +30,10 @@ only by pulls in an existing draft: a reply's save resolves exactly the peer
 each document was pinned to (`InteractionContext.branchId`), under the leases
 the pool took before the save's transaction, and refuses that document stale
 when the pin no longer holds (closed peer, reset or closed draft branch, closed
-draft). Closing a draft closes both kinds of its branches.
+draft). Closing a draft closes both kinds of its branches. The fencing lifecycle
+(pins, the save's leases, confirmation under its locks) is
+`domain/reply-save-fences.ts`; the pool (`domain/thread-peer-core-pool.ts`)
+routes and keeps reply records, and `thread-peer-composition.ts` assembles it.
 
 The review list therefore emits one active item per document and folds all
 contributing journal rows into that item. `lastActorTurnId` is representative
