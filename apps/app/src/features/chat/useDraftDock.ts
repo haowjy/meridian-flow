@@ -6,8 +6,7 @@
  * pending writes in a draft); each candidate's preview confirms whether the
  * chat still has a change in it. Apply and Discard never touch a whole draft:
  * per file they name every operation of this chat's actionable changes, with
- * that preview's tokens, through the one selection-command transport (so a draft
- * open in the Editor is run by the Editor's controller). A refusal stays on its
+ * that preview's tokens, through creation-bound Work commands. A refusal stays on its
  * file; nothing navigates.
  */
 import { t } from "@lingui/core/macro";
@@ -20,10 +19,11 @@ import {
   useChangeCommandRecords,
 } from "@/client/query/draft-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
-import { useDraftReview, useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { useEditorDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
-import { useChangeCommandRunner } from "@/features/draft-review/useChangeCommandRunner";
+import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { type DockFile, dockFile, dockNotes, isOnStrip, totalChanges } from "./draft-dock-files";
 
@@ -35,10 +35,11 @@ export type DockFileFailure =
   | { kind: "draft"; failure: DraftCommandFailure };
 
 export function useDraftDock({ threadId, generating }: { threadId: string; generating: boolean }) {
-  const { files: listedFiles, controller } = useDraftReview();
+  const controller = useBoundWorkDraftCommands();
+  const listedFiles = useWorkDrafts(controller.projectId, controller.workId).files ?? [];
   const editor = useEditorDraftReview().controller;
-  const { openAiDraft } = useAiDraftLauncher();
-  const runner = useChangeCommandRunner(controller);
+  const { openReviewFile } = useAiDraftLauncher();
+  const runner = controller;
   const records = useChangeCommandRecords();
   const { projectId, workId } = controller;
 
@@ -78,20 +79,9 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
 
   const review = useCallback(
     (file: DockFile) => {
-      const { row } = file;
-      if (!row.contextPath) return;
-      const focus = file.changes[0]?.operationIds;
-      openAiDraft({
-        workId,
-        documentId: row.documentId,
-        draftId: row.draft.draftId,
-        contextPath: row.contextPath,
-        documentName: row.documentName ?? undefined,
-        isNewDocument: row.isNewDocument,
-        ...(focus ? { focusOperationIds: focus } : {}),
-      });
+      openReviewFile(file.row, workId, file.changes[0]?.operationIds);
     },
-    [openAiDraft, workId],
+    [openReviewFile, workId],
   );
   const reviewable = files.find((file) => file.row.contextPath) ?? null;
 

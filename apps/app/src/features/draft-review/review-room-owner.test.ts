@@ -15,17 +15,16 @@ const enter = (generation = 1): DraftReviewAction => ({
   draftGeneration: generation,
 });
 const closed: DraftReviewAction = {
-  type: "reviewClosed",
+  type: "completionObserved",
   ...draftA,
   draftGeneration: 1,
-  documentName: "Chapter 12",
+  completion: { phase: "closed", documentName: "Chapter 12" },
 };
 const pending: DraftReviewAction = {
-  type: "reviewCompleting",
+  type: "completionObserved",
   ...draftA,
   draftGeneration: 1,
-  mode: "apply",
-  documentName: "Chapter 12",
+  completion: { phase: "pending", mode: "apply", documentName: "Chapter 12" },
 };
 const observe = (generation: number, proposal = true, roomName?: string): DraftReviewAction => ({
   type: "generationObserved",
@@ -119,7 +118,11 @@ describe("review-room transition table", () => {
     },
     {
       name: "refusal withdraws only predicted completion",
-      actions: [enter(), pending, { type: "reviewReopened", ...draftA, draftGeneration: 1 }],
+      actions: [
+        enter(),
+        pending,
+        { type: "completionObserved", ...draftA, draftGeneration: 1, completion: null },
+      ],
       result: { draftId: "draft-a", generation: 1, completion: null, room: null },
     },
     {

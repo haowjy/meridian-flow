@@ -5,9 +5,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
 import * as draftsApi from "@/client/api/drafts-api";
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { DraftOnlyTabSettlement } from "@/features/draft-review/DraftOnlyTabSettlement";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -16,17 +18,16 @@ import {
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftChangesView } from "@/features/draft-review/draft-changes";
-import {
-  type ChangeCommandRunner,
-  useChangeCommandRunner,
-} from "@/features/draft-review/useChangeCommandRunner";
 import { type DraftChangesTarget, useDraftChanges } from "@/features/draft-review/useDraftChanges";
-import type { DraftReviewController } from "@/features/draft-review/useDraftReviewController";
 import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
+import {
+  useWorkDraftCommands,
+  type WorkDraftCommands,
+  WorkDraftCommandsBoundary,
+} from "@/features/draft-review/useWorkDraftCommands";
 import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
-import { WorkReviewScopesProvider } from "@/features/project/work/useWorkReviewScope";
 import { withReactRoot } from "./react-dom-harness";
 
 export const work = {
@@ -36,7 +37,7 @@ export const work = {
   archivedAt: null,
 } as Work;
 
-/** A Work neither the Editor nor the Chat has: the Work page's third scope. */
+/** A Work neither the Editor nor the Chat has: an independent Work command capability. */
 export const workC = {
   id: "work-c",
   projectId: "project-a",
@@ -106,12 +107,13 @@ export const discarded = (draftClosed: boolean) => ({
 export type ScopeProbe = {
   queryClient: QueryClient;
   editor: DraftReviewContextValue;
-  chat: DraftReviewContextValue;
-  third: DraftReviewContextValue;
+  chat: { commands: WorkDraftCommands; files: ReviewFileTarget[] };
+  third: { commands: WorkDraftCommands; files: ReviewFileTarget[] };
   header: ReviewHeaderModel;
   openDraft: (draft: ReviewedDraft) => Promise<void>;
   mountLateReader: () => Promise<() => ReviewChangesView>;
-  chatRunner: ChangeCommandRunner;
+  chatRunner: WorkDraftCommands;
+  moveEditorToWork: (to: Work) => Promise<void>;
   moveChatToWork: (to: Work) => Promise<void>;
   mountDraftChanges: (
     target: DraftChangesTarget,
@@ -150,12 +152,12 @@ export async function renderReviewScopes(
   let addChangeList: ((target: DraftChangesTarget, scope: "chat" | "third") => void) | null = null;
   const changeLists = new Map<DraftChangesTarget, DraftChangesView>();
   function ChangeList({ target, scope }: { target: DraftChangesTarget; scope: "chat" | "third" }) {
-    const controller = current[scope]?.controller as DraftReviewController;
+    const controller = current[scope]?.commands as WorkDraftCommands;
     changeLists.set(target, useDraftChanges(target, { controller }));
     return null;
   }
   function RunnerProbe() {
-    current.chatRunner = useChangeCommandRunner(current.chat?.controller as DraftReviewController);
+    current.chatRunner = current.chat?.commands as WorkDraftCommands;
     return null;
   }
   function LateReader() {
@@ -199,34 +201,45 @@ export async function renderReviewScopes(
     );
   }
   function Scopes(): ReactNode {
+    const [editorWork, setEditorWork] = useState(options.editorWork ?? work);
+    current.moveEditorToWork = (to) => act(async () => setEditorWork(to));
     const editor = useDraftReviewScopeValue({
       projectId: options.projectId ?? "project-a",
-      work: options.editorWork ?? work,
+      work: editorWork,
     });
     const [chatWork, setChatWork] = useState(options.chatWork ?? work);
     current.moveChatToWork = (to) => act(async () => setChatWork(to));
-    const chat = useDraftReviewScopeValue({
+    const chatCommands = useWorkDraftCommands({
       projectId: options.projectId ?? "project-a",
       work: chatWork,
       threadId: options.threadId ?? "thread-a",
     });
-    const third = useDraftReviewScopeValue({
+    const thirdCommands = useWorkDraftCommands({
       projectId: options.projectId ?? "project-a",
       work: options.thirdWork ?? workC,
     });
     current.editor = editor;
+    const chat = {
+      commands: chatCommands,
+      files: useWorkDrafts(options.projectId ?? "project-a", chatWork.id).files ?? [],
+    };
     current.chat = chat;
+    const third = {
+      commands: thirdCommands,
+      files:
+        useWorkDrafts(options.projectId ?? "project-a", (options.thirdWork ?? workC).id).files ??
+        [],
+    };
     current.third = third;
     return (
       <EditorReviewScope value={editor}>
-        <WorkReviewScopesProvider chat={chat} third={third}>
-          <DraftReviewBoundary value={editor}>
-            <HeaderProbe />
-          </DraftReviewBoundary>
-          {chatSurface ? (
-            <DraftReviewBoundary value={chat}>{chatSurface}</DraftReviewBoundary>
-          ) : null}
-        </WorkReviewScopesProvider>
+        <DraftOnlyTabSettlement projectId={options.projectId ?? "project-a"} />
+        <DraftReviewBoundary value={editor}>
+          <HeaderProbe />
+        </DraftReviewBoundary>
+        {chatSurface ? (
+          <WorkDraftCommandsBoundary value={chat.commands}>{chatSurface}</WorkDraftCommandsBoundary>
+        ) : null}
       </EditorReviewScope>
     );
   }

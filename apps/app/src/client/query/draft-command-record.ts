@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 
 type DraftScope = { projectId: string; workId: string };
-type DraftRef = DraftScope & { documentId: string; draftId: string };
+export type DraftRef = DraftScope & { documentId: string; draftId: string };
 type ListedDraft = { documentId: string; draftId: string };
 
 /**

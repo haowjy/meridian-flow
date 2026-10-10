@@ -1,6 +1,5 @@
 /** Draft-review scope ownership and the boundary that exposes one scope to consumers. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,17 +13,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { contextCatalogScope, projectCatalogView } from "@/client/query/useContextCatalog";
 import { type ThreadDraftsStatus, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
-import { type ContextTab, getContextTabs } from "@/client/stores";
+import { getContextTabs } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
-import {
-  useContextRemovalCoordinator,
-  useOptionalAccountResourceReplica,
-} from "@/features/project/context/account-feature-context";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
   type DraftReviewController,
@@ -68,8 +61,8 @@ export function DraftReviewBoundary({
  * The Editor scope's review, offered to surfaces that live outside the Editor's
  * boundary. A review runs in the Editor's scope (its controller owns the open
  * draft and its commands), but the dock that lists its changes sits in the
- * Chat's boundary; reading the ambient controller there showed a review that
- * was never open.
+ * Chat's boundary; the shared Editor value supplies focus and presentation only.
+ * Work-bound commands are independent of this review.
  */
 const EditorReviewContext = createContext<DraftReviewContextValue | null>(null);
 
@@ -113,8 +106,6 @@ export function useDraftReviewScopeValue({
 }): DraftReviewContextValue {
   const workId = work?.id ?? null;
   const queryClient = useQueryClient();
-  const resources = useOptionalAccountResourceReplica();
-  const contextRemoval = useContextRemovalCoordinator();
   const effectiveProjectId = projectId ?? "";
   // Empty keys belong only to disabled queries; every ready Editor uses its Work row id.
   const effectiveWorkId = workId ?? "";
@@ -190,70 +181,6 @@ export function useDraftReviewScopeValue({
         : null,
     [controller.inlineReview, controller.reviewRoomName],
   );
-
-  // A draft-only tab whose draft left the active list was disposed of
-  // elsewhere. The list cannot say how, so the catalog decides: a document
-  // that now exists was applied, otherwise the draft was discarded.
-  useEffect(() => {
-    if (!resources || !projectId || !workId || controller.isDisposing) return;
-    if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const isOrphan = (tab: ContextTab, activeDrafts: readonly ThreadDraftListItem[]) =>
-      tab.kind === "tracked" &&
-      tab.draftOnly &&
-      tab.reviewWorkId === workId &&
-      !activeDrafts.some((draft) => draft.draftId === tab.reviewDraftId);
-    const activeDrafts = drafts.drafts ?? [];
-    if (!getContextTabs(projectId).tabs.some((tab) => isOrphan(tab, activeDrafts))) return;
-
-    const scope = contextCatalogScope(projectId, "manuscript", null) ?? {
-      kind: "project" as const,
-      projectId,
-    };
-    const attempt = new AbortController();
-    // A catalog observation that starts now: joining an older in-flight one
-    // could report the pre-Apply tree and misread a remote Apply as a Discard.
-    void resources
-      .acquireCatalogAfter(projectId, scope)
-      .then((view) => {
-        if (attempt.signal.aborted) return;
-        queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
-        const catalog = projectCatalogView(projectId, "manuscript", view);
-        const currentDrafts =
-          queryClient.getQueryData<ThreadDraftListItem[]>(
-            projectQueryKeys.workDrafts(projectId, workId),
-          ) ?? [];
-        for (const tab of getContextTabs(projectId).tabs) {
-          if (tab.kind !== "tracked" || !isOrphan(tab, currentDrafts)) continue;
-          if (catalog.findDocument(tab.documentId)) {
-            void contextRemoval.promoteAppliedDraft(projectId, tab);
-            continue;
-          }
-          const draftId = tab.reviewDraftId;
-          if (!draftId) continue;
-          if (
-            controller.inlineReview?.documentId === tab.documentId &&
-            controller.inlineReview.draftId === draftId
-          )
-            controller.exitReview();
-          contextRemoval.discardDraft(projectId, workId, tab.documentId, draftId);
-        }
-      })
-      // A failed membership check must leave the tab intact rather than guess
-      // that a remotely applied document was discarded.
-      .catch(() => undefined);
-    return () => attempt.abort();
-  }, [
-    contextRemoval,
-    controller.exitReview,
-    controller.inlineReview,
-    controller.isDisposing,
-    drafts.drafts,
-    drafts.status,
-    projectId,
-    queryClient,
-    resources,
-    workId,
-  ]);
 
   useReviewRefresh({
     projectId,

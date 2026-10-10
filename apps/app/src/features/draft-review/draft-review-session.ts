@@ -1,330 +1,5 @@
-/** One command/state policy for Work-draft selection and disposition. */
-
-import type { DraftApplyChangesResponse, DraftDiscardResponse } from "@meridian/contracts/drafts";
-import {
-  answerDraftSelection,
-  beginChangeCommand,
-  beginDraftBatch,
-  beginDraftCommand,
-  type ChangeFailureCode,
-  type ChangeSelection,
-  currentDraftCommandRecords,
-  type DraftCommandFailure,
-  failChangeCommand,
-  failDraftCommand,
-  type PendingDraftCommand,
-  pendingDraftCommand,
-  queueChangeSelection,
-  releaseDraftCommand,
-} from "@/client/query/draft-command-record";
-import { classifyDraftCommandRejection } from "@/client/query/draft-command-rejection";
+/** State policy for the selected draft review and its generation. */
 import type { ReviewFocus } from "./review-changes";
-
-export type DraftCommandOutcome =
-  | { kind: "blocked" }
-  | { kind: "applied" }
-  | { kind: "apply-outcome-unknown" }
-  | { kind: "discarded" }
-  /** A selection of changes was applied or discarded; the rest of the draft is untouched. */
-  | { kind: "change-settled"; mode: "apply" | "discard" }
-  /** A selection's command did not land; the reason is held on its changes. */
-  | { kind: "change-refused"; mode: "apply" | "discard"; code: ChangeFailureCode }
-  | { kind: "failed"; failure: DraftCommandFailure };
-
-export type ChangeApplyRequest = {
-  operationIds: string[];
-  liveRevisionToken: string;
-  draftRevisionToken: string;
-};
-
-/**
- * What the writer saw of the draft when they sent a selection: the tokens that
- * fence the request, and the generation the claim records (the tokens are not
- * an identity; the generation is).
- */
-export type ChangeBasis = Pick<ChangeApplyRequest, "liveRevisionToken" | "draftRevisionToken"> & {
-  draftGeneration: number;
-};
-
-export type DraftReviewCommandPorts = {
-  /** The Work these commands act in; part of every command record's identity. */
-  scope: { projectId: string; workId: string };
-  /** Resolves once the server has confirmed Apply, or "unknown" when the response was lost. */
-  apply: (
-    selection: DraftReviewSelection,
-    draftGeneration: number | undefined,
-  ) => Promise<"applied" | "unknown">;
-  /** Whole-draft Discard: unfenced, no operation ids. */
-  discard: (selection: DraftReviewSelection) => Promise<void>;
-  /**
-   * Discard the complete classes `request` names, fenced by the revision tokens
-   * the writer saw. Resolves with the server's answer (`stale` is data, not an
-   * error), or "unknown" when the request got none (it may have landed), and
-   * rejects when the server refused it.
-   */
-  discardChanges: (
-    selection: DraftReviewSelection,
-    request: ChangeApplyRequest,
-  ) => Promise<DraftDiscardResponse | "unknown">;
-  /**
-   * Apply the complete classes `request` names. Resolves with the server's
-   * answer, or "unknown" when the request got none (it may have landed), and
-   * rejects when the server refused it.
-   */
-  applyChanges: (
-    selection: DraftReviewSelection,
-    request: ChangeApplyRequest,
-  ) => Promise<DraftApplyChangesResponse | "unknown">;
-  /** The server confirmed a selection: drop its changes from the cached preview and refresh around them. */
-  changeConfirmed: (
-    selection: DraftReviewSelection,
-    changes: ChangeSelection,
-    mode: "apply" | "discard",
-  ) => void;
-  describeDraft: (
-    selection: DraftReviewSelection,
-    mode: "apply" | "discard",
-    batch: boolean,
-  ) => PendingDraftCommand;
-  draftDiscardStarted: (selection: DraftReviewSelection) => void;
-  draftSettled: (
-    selection: DraftReviewSelection,
-    draftGeneration: number | undefined,
-    mode: "apply" | "discard",
-  ) => void;
-};
-
-/**
- * The complete disposition command facade. React supplies I/O ports; this
- * session owns command sequencing, batches, and explicit navigation
- * callbacks.
- */
-export class DraftReviewSession {
-  constructor(private readonly ports: () => DraftReviewCommandPorts) {}
-
-  async applyReviewedDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
-    return this.wholeCommand("apply", selection, this.ports());
-  }
-
-  /**
-   * Apply a selection of changes (complete server closure classes) of one draft
-   * to live. The changes leave every surface at once; a refusal or a lost
-   * request brings them back with the reason held on them
-   * (`draft-command-record`).
-   */
-  applySelection(
-    draft: DraftReviewSelection,
-    changes: ChangeSelection,
-    basis: ChangeBasis,
-    completesDraft = false,
-  ): Promise<DraftCommandOutcome> {
-    return this.changeCommand("apply", draft, changes, basis, completesDraft, (ports, request) =>
-      ports.applyChanges(draft, request),
-    );
-  }
-
-  /**
-   * Discard a selection of changes: their operations go in a selective Discard,
-   * the draft's text returns to live's. Fenced by the same tokens as Apply, and
-   * answered the same way: `stale` brings the changes back; it never reads as a
-   * discarded or closed draft.
-   */
-  discardSelection(
-    draft: DraftReviewSelection,
-    changes: ChangeSelection,
-    basis: ChangeBasis,
-    completesDraft = false,
-  ): Promise<DraftCommandOutcome> {
-    return this.changeCommand("discard", draft, changes, basis, completesDraft, (ports, request) =>
-      ports.discardChanges(draft, request),
-    );
-  }
-
-  async discardDraft(selection: DraftReviewSelection): Promise<DraftCommandOutcome> {
-    return this.wholeCommand("discard", selection, this.ports());
-  }
-
-  async disposeDrafts(
-    mode: "apply" | "discard",
-    drafts: readonly DraftReviewSelection[],
-  ): Promise<DraftCommandOutcome[]> {
-    const ports = this.ports();
-    return (
-      await runDraftBatch(
-        ports.scope,
-        drafts.map((draft) => ({ draft, command: ports.describeDraft(draft, mode, true) })),
-        ({ draft }) => this.wholeCommand(mode, draft, ports, true),
-      )
-    ).map(({ outcome }) => outcome);
-  }
-
-  /**
-   * A selection's Apply or Discard. Both are answered by the same statuses
-   * (`applied` or `discarded` confirms, `gone` drops the change with a word,
-   * anything else brings it back with its reason), and a request that got no
-   * answer is held as `unknown` for both: it may have landed, so it is never
-   * read as a refusal and never inferred from the list.
-   */
-  private async changeCommand(
-    mode: "apply" | "discard",
-    selection: DraftReviewSelection,
-    change: ChangeSelection,
-    basis: ChangeBasis,
-    completesDraft: boolean,
-    send: (
-      ports: DraftReviewCommandPorts,
-      request: ChangeApplyRequest,
-    ) => Promise<{ status: string } | "unknown">,
-  ): Promise<DraftCommandOutcome> {
-    const ports = this.ports();
-    const draft = { ...ports.scope, ...selection };
-    if (!beginChangeCommand(draft, change, mode, basis.draftGeneration, completesDraft))
-      return { kind: "blocked" };
-    try {
-      let response: { status: string } | "unknown";
-      try {
-        response = await send(ports, {
-          operationIds: [...change.operationIds],
-          liveRevisionToken: basis.liveRevisionToken,
-          draftRevisionToken: basis.draftRevisionToken,
-        });
-      } catch (error) {
-        const rejection = classifyDraftCommandRejection(error);
-        const code = rejection.kind === "refused" ? "refused" : rejection.kind;
-        failChangeCommand(
-          draft,
-          change,
-          mode,
-          code,
-          rejection.kind === "refused"
-            ? { serverCode: rejection.serverCode, serverReason: rejection.serverReason }
-            : undefined,
-        );
-        return { kind: "change-refused", mode, code };
-      }
-      if (response === "unknown") {
-        failChangeCommand(draft, change, mode, "unknown");
-        return { kind: "change-refused", mode, code: "unknown" };
-      }
-      if (response.status === (mode === "apply" ? "applied" : "discarded")) {
-        answerDraftSelection(draft, mode === "apply" ? "applied" : "discarded");
-        ports.changeConfirmed(selection, change, mode);
-        return { kind: "change-settled", mode };
-      }
-      if (response.status === "gone") {
-        // Nothing left to handle: the change leaves, with a word about it.
-        answerDraftSelection(draft, "change-gone");
-        ports.changeConfirmed(selection, change, mode);
-        return { kind: "change-refused", mode, code: "gone" };
-      }
-      const code = response.status === "draft_only" ? "draft-only" : "stale";
-      failChangeCommand(draft, change, mode, code);
-      return { kind: "change-refused", mode, code };
-    } finally {
-      releaseDraftCommand(draft);
-    }
-  }
-
-  private async wholeCommand(
-    mode: "apply" | "discard",
-    selection: DraftReviewSelection,
-    ports: DraftReviewCommandPorts,
-    batch = false,
-  ): Promise<DraftCommandOutcome> {
-    const draft = { ...ports.scope, ...selection };
-    if (!batch && !beginDraftCommand(draft, ports.describeDraft(selection, mode, false)))
-      return { kind: "blocked" };
-    const generation = pendingDraftCommand(currentDraftCommandRecords(), draft)?.draftGeneration;
-    try {
-      // Navigation is explicit and optimistic, not inferred from settlement.
-      if (mode === "discard") ports.draftDiscardStarted(selection);
-      let result: "applied" | "unknown" | undefined;
-      try {
-        if (mode === "apply") result = await ports.apply(selection, generation);
-        else await ports.discard(selection);
-      } catch (error) {
-        const failure = commandFailure(mode, error);
-        failDraftCommand(draft, failure);
-        return { kind: "failed", failure };
-      }
-      if (result === "unknown") {
-        failDraftCommand(draft, { code: "apply-unknown" });
-        return { kind: "apply-outcome-unknown" };
-      }
-      if (!batch) ports.draftSettled(selection, generation, mode);
-      return { kind: mode === "apply" ? "applied" : "discarded" };
-    } finally {
-      releaseDraftCommand(draft);
-    }
-  }
-}
-
-export type DraftBatchItem = { draft: DraftReviewSelection } & (
-  | { selection: ChangeSelection; command?: never }
-  | { command: PendingDraftCommand; selection?: never }
-);
-export type DraftBatchOutcome = { draft: DraftReviewSelection; outcome: DraftCommandOutcome };
-
-/** Both whole and selective batches pin their starting Work and expose one busy lifetime. */
-export async function runDraftBatch<T extends DraftBatchItem>(
-  scope: DraftReviewCommandPorts["scope"],
-  items: readonly T[],
-  send: (item: T) => Promise<DraftCommandOutcome>,
-): Promise<DraftBatchOutcome[]> {
-  if (!items.length) return [];
-  const release = beginDraftBatch(scope);
-  if (!release) return items.map(({ draft }) => ({ draft, outcome: { kind: "blocked" } }));
-  const retires: (() => void)[] = [];
-  const outcomes: DraftBatchOutcome[] = [];
-  const blocked = new Set<number>();
-  try {
-    for (const [index, { draft, selection, command }] of items.entries()) {
-      if (command) {
-        if (beginDraftCommand({ ...scope, ...draft }, command))
-          retires.push(() => {
-            const target = { ...scope, ...draft };
-            if (pendingDraftCommand(currentDraftCommandRecords(), target) === command)
-              releaseDraftCommand(target);
-          });
-        else {
-          blocked.add(index);
-          retires.push(() => {});
-        }
-      } else
-        retires.push(
-          selection ? queueChangeSelection({ ...scope, ...draft }, selection) : () => {},
-        );
-    }
-    for (const [index, item] of items.entries()) {
-      const outcome = blocked.has(index)
-        ? Promise.resolve<DraftCommandOutcome>({ kind: "blocked" })
-        : send(item);
-      if (item.selection) retires[index]?.();
-      outcomes.push({ draft: item.draft, outcome: await outcome });
-    }
-    return outcomes;
-  } finally {
-    for (const retire of retires) retire();
-    release();
-  }
-}
-
-/** The failure a whole-draft Apply or Discard leaves, from the error its request threw. */
-function commandFailure(mode: "apply" | "discard", error: unknown): DraftCommandFailure {
-  const rejection = classifyDraftCommandRejection(error);
-  switch (rejection.kind) {
-    case "offline":
-      return { code: `${mode}-offline` };
-    case "server-error":
-      return { code: `${mode}-server-error` };
-    case "refused":
-      return {
-        code: `${mode}-refused`,
-        serverCode: rejection.serverCode,
-        ...(rejection.serverReason ? { serverReason: rejection.serverReason } : {}),
-      };
-  }
-}
 
 export type DraftReviewSelection = {
   documentId: string;
@@ -452,23 +127,11 @@ export type DraftReviewAction =
     }
   | { type: "roomFailed"; documentId: string; draftId: string }
   | { type: "roomStale"; documentId: string; draftId: string; roomName: string }
-  | {
-      type: "reviewCompleting";
-      documentId: string;
-      draftId: string;
-      /** The generation of the claim (or the batch hold) this completion belongs to. */
+  | (DraftReviewSelection & {
+      type: "completionObserved";
       draftGeneration: number;
-      mode: "apply" | "discard";
-      documentName: string | null;
-    }
-  | {
-      type: "reviewClosed";
-      documentId: string;
-      draftId: string;
-      draftGeneration: number;
-      documentName: string | null;
-    }
-  | { type: "reviewReopened"; documentId: string; draftId: string; draftGeneration: number }
+      completion: ReviewCompletion | null;
+    })
   | { type: "marksVisible"; visible: boolean }
   | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
   | { type: "toastDismissed"; id: number }
@@ -531,49 +194,8 @@ export function draftReviewReducer(
         const { roomName: _stale, ...asking } = review;
         return asking;
       });
-    case "reviewCompleting":
-      return onInline(state, action, (review) =>
-        onClaim(review, action.draftGeneration, {
-          // A prediction never overrides the server's answer.
-          held: (current) => {
-            const held = current.completion;
-            if (held?.phase === "closed") return current;
-            if (held?.mode === action.mode && held.documentName === action.documentName)
-              return current;
-            return {
-              ...current,
-              completion: {
-                phase: "pending",
-                mode: action.mode,
-                documentName: action.documentName,
-              },
-            };
-          },
-          entering: { phase: "pending", mode: action.mode, documentName: action.documentName },
-        }),
-      );
-    case "reviewClosed":
-      return onInline(state, action, (review) =>
-        onClaim(review, action.draftGeneration, {
-          held: (current) =>
-            current.completion?.phase === "closed"
-              ? current
-              : { ...current, completion: { phase: "closed", documentName: action.documentName } },
-          entering: { phase: "closed", documentName: action.documentName },
-        }),
-      );
-    case "reviewReopened":
-      return onInline(state, action, (review) =>
-        onClaim(review, action.draftGeneration, {
-          // Only a prediction is withdrawn: what the server closed stays closed.
-          held: (current) => {
-            if (current.completion?.phase !== "pending") return current;
-            const { completion: _completion, ...reopened } = current;
-            return reopened;
-          },
-          entering: undefined,
-        }),
-      );
+    case "completionObserved":
+      return onInline(state, action, (review) => observeCompletion(review, action));
     case "marksVisible":
       return state.marksVisible === action.visible
         ? state
@@ -686,21 +308,30 @@ function reenter(
 }
 
 /** Rows C1-C5: a claim speaks for the generation it acted on, and for no other. */
-function onClaim(
+function observeCompletion(
   review: InlineDraftReview,
-  claimed: number,
-  rule: {
-    /** C = R: the claim changes the review's completion. */
-    held: (review: InlineDraftReview) => InlineDraftReview;
-    /** C > R (or R unknown): the completion the review is entered with. */
-    entering: ReviewCompletion | undefined;
-  },
+  observed: { draftGeneration: number; completion: ReviewCompletion | null },
 ): InlineDraftReview {
   const shown = review.draftGeneration;
-  if (shown !== undefined && claimed < shown) return review;
-  if (shown === undefined || claimed > shown)
-    return reenter(review, claimed, rule.entering, undefined);
-  return rule.held(review);
+  if (shown !== undefined && observed.draftGeneration < shown) return review;
+  if (shown === undefined || observed.draftGeneration > shown)
+    return reenter(review, observed.draftGeneration, observed.completion ?? undefined, undefined);
+  const held = review.completion;
+  const next = observed.completion;
+  if (held?.phase === "closed") return review;
+  if (!next) {
+    if (!held) return review;
+    const { completion: _completion, ...reopened } = review;
+    return reopened;
+  }
+  if (
+    held?.phase === next.phase &&
+    held.documentName === next.documentName &&
+    next.phase === "pending" &&
+    held.mode === next.mode
+  )
+    return review;
+  return { ...review, completion: next };
 }
 
 /** Rows O1-O4 and P: what a read of the draft means for the review showing it. */

@@ -56,10 +56,10 @@ it("Editor selective Apply excludes Chat whole commands and both surfaces displa
       done = p().editor.controller.applyChanges(draftA, change("2"));
     });
     expect(p().editor.controller.isDisposing).toBe(true);
-    expect(p().chat.controller.dispositionLocked).toBe(true);
+    expect(p().chat.commands.dispositionLocked).toBe(true);
     await act(async () => {
-      expect(await p().chat.controller.apply("document-a", "draft-a")).toEqual({ kind: "blocked" });
-      expect(await p().chat.controller.discard("document-a", "draft-a")).toEqual({
+      expect(await p().chat.commands.apply("document-a", "draft-a")).toEqual({ kind: "blocked" });
+      expect(await p().chat.commands.discard("document-a", "draft-a")).toEqual({
         kind: "blocked",
       });
     });
@@ -69,7 +69,7 @@ it("Editor selective Apply excludes Chat whole commands and both surfaces displa
       answer.resolve(applied(false));
       await done;
     });
-    expect(p().chat.controller.isDisposing).toBe(false);
+    expect(p().chat.commands.isDisposing).toBe(false);
     expect(fixture.network.applyDraftChanges).toHaveBeenCalledTimes(1);
   });
 });
@@ -81,7 +81,7 @@ it("Chat whole Apply excludes Editor selection without hiding the blocked change
     await open(p);
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().chat.controller.apply("document-a", "draft-a");
+      done = p().chat.commands.apply("document-a", "draft-a");
     });
     expect(p().header.locked).toBe(true);
     await act(async () => {
@@ -199,7 +199,7 @@ it.each([
       ["work-a", "document-a", "draft-a"],
       ["work-a", "document-b", "draft-b"],
     ]);
-    expect(p().chat.controller.workId).toBe("work-c");
+    expect(p().chat.commands.workId).toBe("work-c");
   });
 });
 

@@ -13,15 +13,12 @@
  * its reason.
  */
 import { useCallback, useMemo } from "react";
+import type { DraftCommandOutcome } from "@/client/query/draft-command-executor";
 
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { selectionOf } from "./change-selection";
 import { type DraftChangesView, listablePreview, useChangeItems } from "./draft-changes";
-import {
-  adoptsGeneration,
-  type DraftCommandOutcome,
-  type DraftReviewSelection,
-} from "./draft-review-session";
+import { adoptsGeneration, type DraftReviewSelection } from "./draft-review-session";
 import { type ReviewChange, resolveFocusedChange, reviewChangesOfPreview } from "./review-changes";
 import type { DraftReviewController } from "./useDraftReviewController";
 
