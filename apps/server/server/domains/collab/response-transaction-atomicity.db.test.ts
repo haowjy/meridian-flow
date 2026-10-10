@@ -427,13 +427,11 @@ describe("change trail (postgres)", () => {
       .from(schema.drafts)
       .where(eq(schema.drafts.originWorkId, WORK_ID));
     if (!draft) throw new Error("the harness seeds the Work's draft");
-    const branch = await fixture.liveCoordinator.withDocument(ALPHA_ID, (liveDoc) =>
-      fixture.branchStore.resolveDraftBranch({
-        documentId: ALPHA_ID,
-        draftId: draft.id,
-        liveDoc,
-      }),
-    );
+    const branch = await fixture.branchStore.resolveDraftBranch({
+      draftBranchId: reviewed.draftId,
+      documentId: ALPHA_ID,
+      draftId: draft.id,
+    });
     const block = fixture.model.getBlocks(toDocHandle(branch.doc))[0];
     if (!block) throw new Error("draft writer block missing");
     const draftTextLength = fixture.model.getText(block).length;

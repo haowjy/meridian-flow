@@ -13,7 +13,7 @@ import type {
   BranchPushService,
   BranchReviewService,
 } from "./branch-push-contracts.js";
-import { BranchCorruptError } from "./branch-resolver.js";
+import { BranchCorruptError, isBranchNotFoundError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
@@ -110,14 +110,22 @@ export function createWorkDraftReviewService(input: {
       const liveDoc = createCollabYDoc({ gc: false });
       Y.applyUpdate(liveDoc, liveState.state);
       let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
+      // The requested branch, lookup only: a preview never makes one (§2.5).
+      const resolveRequested = () =>
+        input.branches
+          .resolveDraftBranch({
+            draftBranchId: command.draftId,
+            documentId: command.documentId,
+            draftId: activeDraftId,
+          })
+          .catch((cause: unknown) => {
+            if (isBranchNotFoundError(cause)) throw new Error("draft_not_found");
+            throw cause;
+          });
       try {
         let branch: { branchId: string; generation: number; doc: Y.Doc };
         try {
-          branch = await input.branches.resolveDraftBranch({
-            documentId: command.documentId,
-            draftId: activeDraftId,
-            liveDoc,
-          });
+          branch = await resolveRequested();
         } catch (cause) {
           if (!(cause instanceof BranchCorruptError)) throw cause;
           const corrupt = await input.branches.getBranch(cause.branchId);
@@ -128,13 +136,8 @@ export function createWorkDraftReviewService(input: {
             code: "branch_corrupt_reset",
             message: "Review state was repaired from the live document.",
           };
-          branch = await input.branches.resolveDraftBranch({
-            documentId: command.documentId,
-            draftId: activeDraftId,
-            liveDoc,
-          });
+          branch = await resolveRequested();
         }
-        if (branch.branchId !== command.draftId) throw new Error("draft_not_found");
         try {
           const draftUpdates = (
             await input.branchJournal.listReviewableJournalRows(branch.branchId, branch.generation)

@@ -13,7 +13,10 @@ export type ApplicationBranchStore = BranchStore &
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
     /** Every active branch of the draft, both kinds. */
     listActiveDraftBranchIds(draftId: DraftId): Promise<string[]>;
-    /** The draft's branch on the document, made from `liveDoc` if absent. Never makes a draft. */
+    /**
+     * The draft's branch on the document, made from `liveDoc` if absent: a write boundary
+     * only. Never makes a draft; refuses a closed one in the insert's transaction.
+     */
     ensureDraftBranch(input: {
       documentId: DocumentId;
       draftId: DraftId;
@@ -51,10 +54,14 @@ export type ApplicationBranchStore = BranchStore &
       documentId: DocumentId,
       threadId: ThreadId,
     ): Promise<BranchState>;
+    /**
+     * Lookup only: the requested branch, while it is the draft's active branch on the
+     * document; otherwise `BranchNotFoundError`. A review read never makes a branch.
+     */
     resolveDraftBranch(input: {
+      draftBranchId: string;
       documentId: DocumentId;
       draftId: DraftId;
-      liveDoc: Y.Doc;
     }): Promise<BranchState>;
   };
 

@@ -474,6 +474,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow(BranchCorruptError);
     });
 
+    it("never makes a branch in a closed draft: a review read of a captured draft after its close finds nothing", async () => {
+      const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
+      const draftStore = createDrizzleDraftStore(db);
+      // Review captured the Work's active draft and its branch, then a whole close ended it.
+      const captured = await store.ensureDraftBranch({
+        documentId: DOC_ID as never,
+        draftId: DRAFT_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      await runInDrizzleTransaction(db, async () => {
+        await draftStore.lockActive(DRAFT_ID as never);
+        await draftStore.close(DRAFT_ID as never, new Date());
+      });
+      const before = await db
+        .select({ id: documentBranches.id, status: documentBranches.status })
+        .from(documentBranches)
+        .where(eq(documentBranches.draftId, DRAFT_ID as never));
+
+      await expect
+        .soft(
+          store.resolveDraftBranch({
+            draftBranchId: captured.branchId,
+            documentId: DOC_ID as never,
+            draftId: DRAFT_ID as never,
+          }),
+          "the review read finds no branch",
+        )
+        .rejects.toMatchObject({ name: "BranchNotFoundError" });
+      await expect
+        .soft(
+          store.ensureDraftBranch({
+            documentId: DOC_ID as never,
+            draftId: DRAFT_ID as never,
+            liveDoc: docWithText("live"),
+          }),
+          "a write boundary refuses the closed draft",
+        )
+        .rejects.toMatchObject({ name: "BranchStaleUpdateError" });
+      expect
+        .soft(
+          await db
+            .select({ id: documentBranches.id, status: documentBranches.status })
+            .from(documentBranches)
+            .where(eq(documentBranches.draftId, DRAFT_ID as never)),
+          "and no branch row is added",
+        )
+        .toEqual(before);
+    });
+
     it("G2 §6.1 corrupt recovery resets from live without decoding the corrupt snapshot", async () => {
       await db.insert(documentBranches).values({
         id: "branch_corrupt_preview_reset",
@@ -494,9 +543,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toBeUndefined();
 
       const repaired = await store.resolveDraftBranch({
+        draftBranchId: "branch_corrupt_preview_reset",
         documentId: DOC_ID as never,
         draftId: DRAFT_ID as never,
-        liveDoc: docWithText("ignored"),
       });
       expect(repaired.branchId).toBe("branch_corrupt_preview_reset");
       expect(repaired.generation).toBeGreaterThan(0);
