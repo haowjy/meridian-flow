@@ -77,9 +77,10 @@ Shared across both shells:
   `ContextEditorMountHost.tsx` (the Editor's warm-set LRU), `ContextDocumentHost.tsx`
   (one document's session and editor, rendered by the Editor's tabs and by the dock's
   document alike), `context-tab-session.tsx` (the session boundary beneath it),
-  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
-  (the universal breadcrumb band — placement, rename, and move share one inline
-  field, committed through `use-identity-commit.ts`). Resource-backed tabs retain
+  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` +
+  `DocumentPath.tsx` (the path, whose crumbs open the drill-in menu and only navigate) +
+  `IdentityPlacementField.tsx` (Choose a home for an untitled draft, and repair of a refused
+  move, committed through `use-identity-commit.ts`). Resource-backed tabs retain
   one stable handle and editor ancestry through create, acknowledgement, rename,
   remint, and catalog refresh.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and

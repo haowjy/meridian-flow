@@ -137,7 +137,7 @@ msgid "{0} finished"
 msgstr "{0} 已完成"
 
 #. placeholder {0}: schemeLabel(locatedTab.scheme)
-#: src/features/project/dock/DockDocumentTitle.tsx
+#: src/features/project/context/DocumentPath.tsx
 msgid "{0} for {ownerName}"
 msgstr ""
 
@@ -1004,8 +1004,8 @@ msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
-msgid "Context"
-msgstr ""
+#~ msgid "Context"
+#~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1845,7 +1845,6 @@ msgid "Figure could not be loaded."
 msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
-#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/work/WorkFileRows.tsx
 msgid "File name"
 msgstr ""
@@ -2715,8 +2714,8 @@ msgid "Open conversation"
 msgstr ""
 
 #: src/features/project/dock/DockDocumentTitle.tsx
-msgid "Open document"
-msgstr ""
+#~ msgid "Open document"
+#~ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
@@ -2920,7 +2919,7 @@ msgstr ""
 msgid "Reason: {0}"
 msgstr ""
 
-#: src/features/project/shell/ContextSidebar.tsx
+#: src/features/project/dock/DockHeader.tsx
 msgid "Recent"
 msgstr ""
 
@@ -3025,8 +3024,6 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
-#: src/features/project/context/IdentityChips.tsx
-#: src/features/project/dock/DockDocumentTitle.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
@@ -3042,8 +3039,8 @@ msgid "Rename project: {title}"
 msgstr ""
 
 #: src/features/project/context/IdentityChips.tsx
-msgid "Rename this document or move it somewhere else in your project."
-msgstr ""
+#~ msgid "Rename this document or move it somewhere else in your project."
+#~ msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
