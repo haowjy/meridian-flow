@@ -44,6 +44,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/draft-tree.apply-links.db.test.ts",
   "apps/server/server/domains/collab/draft-tree.apply-placement.db.test.ts",
   "apps/server/server/domains/collab/draft-tree.apply-staleness.db.test.ts",
+  "apps/server/server/domains/collab/draft-tree.discard.db.test.ts",
   "apps/server/server/domains/collab/draft-tree.reply.db.test.ts",
   "apps/server/server/domains/collab/writer-ingress.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
