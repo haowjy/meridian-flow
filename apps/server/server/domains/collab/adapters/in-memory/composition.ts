@@ -53,7 +53,7 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
-import { createInMemoryDraftStore, inMemoryDraftWriteBoundary } from "./drafts.js";
+import { createInMemoryDraftStore, createInMemoryDraftWriteBoundary } from "./drafts.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
@@ -251,7 +251,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     draftResolver: {
       drafts: createDrafts({
         store: createInMemoryDraftStore(),
-        boundary: inMemoryDraftWriteBoundary,
+        boundary: createInMemoryDraftWriteBoundary(),
       }),
     },
     documentCreation,

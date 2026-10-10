@@ -4,6 +4,10 @@ import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-
 import { drafts, users } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  approveDraftWriteJoin,
+  DraftWriteJoinRefusedError,
+} from "../../../shared/draft-write-join.js";
 import { runInRootDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
@@ -57,6 +61,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: scenario.project.userId,
       };
 
+      // An ambient transaction the command boundary didn't approve is refused, not joined.
+      await expect(
+        runInRootDrizzleTransaction(first, () => resolverOn(first).ensureActiveForWrite(input)),
+      ).rejects.toBeInstanceOf(DraftWriteJoinRefusedError);
+
       // The first write's command transaction ensures the draft and stays open.
       let ensured!: () => void;
       const ensuredSignal = new Promise<void>((resolve) => {
@@ -67,6 +76,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         release = resolve;
       });
       const firstWrite = runInRootDrizzleTransaction(first, async () => {
+        approveDraftWriteJoin();
         const draft = await resolverOn(first).ensureActiveForWrite(input);
         ensured();
         await held;

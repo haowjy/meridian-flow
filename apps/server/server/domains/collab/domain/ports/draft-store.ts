@@ -41,9 +41,9 @@ export interface DraftStore {
 /** The write boundary's transaction and Work row lock. */
 export interface DraftWriteBoundary {
   /**
-   * Joins the ambient transaction (a context command transaction that has locked nothing
-   * but Works) or opens its own; locks the Work row and refuses a Work that isn't active
-   * with `WorkLifecycleUnavailableError`.
+   * Opens its own transaction, or joins an ambient one only when the command boundary
+   * approved it (it has locked nothing but Works); refuses any other ambient caller. Locks
+   * the Work row and refuses a Work that isn't active with `WorkLifecycleUnavailableError`.
    */
   withActiveWorkLocked<T>(workId: WorkId, operation: () => Promise<T>): Promise<T>;
 }

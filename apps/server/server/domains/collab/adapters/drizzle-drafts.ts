@@ -7,6 +7,7 @@ import type { DraftId, WorkId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { drafts, linkAheadDraftSettlements } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { assertDraftWriteJoinAllowed } from "../../../shared/draft-write-join.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
@@ -93,8 +94,9 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
 
 export function createDrizzleDraftWriteBoundary(db: Database): DraftWriteBoundary {
   return {
-    withActiveWorkLocked: (workId, operation) =>
-      runInDrizzleTransaction(db, async () => {
+    withActiveWorkLocked: (workId, operation) => {
+      assertDraftWriteJoinAllowed();
+      return runInDrizzleTransaction(db, async () => {
         const work = (await lockWorksInIdOrder(db, [workId])).get(workId) ?? {
           state: "missing" as const,
           slug: null,
@@ -103,6 +105,7 @@ export function createDrizzleDraftWriteBoundary(db: Database): DraftWriteBoundar
           throw new WorkLifecycleUnavailableError(workId, work.state, work.slug);
         }
         return operation();
-      }),
+      });
+    },
   };
 }
