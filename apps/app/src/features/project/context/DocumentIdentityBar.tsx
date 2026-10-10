@@ -1,6 +1,5 @@
 /** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
-
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
@@ -38,8 +37,7 @@ export type DocumentIdentityBarProps = {
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
-  /** Set for a draft-only document: its review closes the tab instead of returning to live. */
+  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string, owner: ContextOwner) => void;
   onCloseDraftOnly?: () => void;
 };
 

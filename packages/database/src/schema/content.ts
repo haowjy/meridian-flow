@@ -4,6 +4,7 @@ import type {
   FolderId,
   ProjectId,
   ProjectSettings,
+  ThreadId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
@@ -139,6 +140,8 @@ export const contextSources = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
+    // Lineage identity is not a thread-row FK: trashing/purging the first chat must not cascade.
+    rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -159,23 +162,28 @@ export const contextSources = pgTable(
     index("context_sources_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    uniqueIndex("context_sources_project_slug")
+    uniqueIndex("context_sources_project_scope_slug")
       .on(table.projectId, table.slug)
-      .where(sql`${table.workId} IS NULL AND ${table.deletedAt} IS NULL`),
+      .where(
+        sql`${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.deletedAt} IS NULL`,
+      ),
     uniqueIndex("context_sources_work_slug")
       .on(table.workId, table.slug)
       .where(sql`${table.workId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    uniqueIndex("context_sources_lineage_slug")
+      .on(table.rootThreadId, table.slug)
+      .where(sql`${table.rootThreadId} IS NOT NULL`),
     index("context_sources_project_sort")
       .on(table.projectId, table.sortOrder)
       .where(sql`${table.deletedAt} IS NULL`),
     check(
       "context_sources_exactly_one_scope",
-      sql`(${table.projectId} IS NOT NULL AND ${table.workId} IS NULL) OR (${table.projectId} IS NULL AND ${table.workId} IS NOT NULL)`,
+      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.slug} = 'scratch')`,
     ),
-    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'work')`),
+    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'work', 'lineage')`),
     check(
       "context_sources_scope_work_fk",
-      sql`${table.scope} = 'project' OR ${table.workId} IS NOT NULL`,
+      sql`${table.scope} <> 'work' OR ${table.workId} IS NOT NULL`,
     ),
     check(
       "context_sources_scope_project_fk",
@@ -433,6 +441,7 @@ export const linkAheadRefs = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
+    rootThreadId: uuid("root_thread_id"),
     path: text("path").notNull(),
     settledDocumentId: uuid("settled_document_id")
       .$type<DocumentId>()
@@ -443,8 +452,8 @@ export const linkAheadRefs = pgTable(
   (table) => [
     // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
     // exact path (Postgres B-tree tuples cap near 2.7 kB).
-    index("link_ahead_refs_unsettled")
-      .on(table.projectId, table.scheme, table.workId, sql`md5(${table.path})`)
+    index("link_ahead_refs_owner_unsettled")
+      .on(table.projectId, table.scheme, table.workId, table.rootThreadId, sql`md5(${table.path})`)
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],

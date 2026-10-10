@@ -169,7 +169,7 @@ export async function copyBinary(
   input: Extract<WriteToolInput, { command: "copy" }>,
   source: BinaryFileRef,
   sourceGrant: FileGrant<"read">,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "agentSlug">,
 ) {
   // Binary files have no drafts or revisions, so the copy always reads the live file.
   const copied = await copyBinaryDocument({
@@ -178,6 +178,7 @@ export async function copyBinary(
     objectStore: deps.objectStore,
     source,
     sourceGrant,
+    origin: { type: "agent", agentSlug: ctx.agentSlug, threadId: ctx.threadId, turnId: ctx.turnId },
     destinationUri: splitDocumentFile(input.path).filePath,
     copiedFrom: { uri: source.uri, version: "live", revision: null },
   });

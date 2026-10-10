@@ -12,7 +12,13 @@ export {
 } from "./adapters/document-link-scope.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
+export {
+  createDrizzleLineageScratchLifecycle,
+  type LineageScratchLifecycle,
+  lineageHasLiveMember,
+} from "./adapters/lineage-scratch-lifecycle.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
+export { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
@@ -129,6 +135,13 @@ export {
   type PromotionService,
 } from "./promotion/promotion-service.js";
 export type { ResultProvenance } from "./promotion/result-provenance.js";
+
+export {
+  type ScratchLineage,
+  type ScratchLineages,
+  type ScratchOwner,
+  scratchOwnerFor,
+} from "./scratch-owner.js";
 export {
   createInMemoryUnifiedContextPortFactory,
   createProductionUnifiedContextPortFactory,

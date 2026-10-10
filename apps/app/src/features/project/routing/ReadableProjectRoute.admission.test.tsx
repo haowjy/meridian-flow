@@ -82,7 +82,9 @@ vi.mock("./chat-navigation", () => ({
   chatSurfaceThreadId: () => null,
   ChatNavigationProvider: ({ children }: { children: ReactNode }) => children,
 }));
+vi.mock("@/hooks/use-phone-shell", () => ({ usePhoneShell: () => false }));
 vi.mock("../context/account-feature-context", () => ({
+  useAccountResourceProjection: () => ({ records: [], folders: [] }),
   useContextRemovalCoordinator: () => ({ admitDraftReview() {} }),
 }));
 vi.mock("../context/use-context-removal-project", () => ({

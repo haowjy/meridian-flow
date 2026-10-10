@@ -23,14 +23,20 @@ Rationale: [Models Read Connected Conversations by Lineage][kb-connected] and
 ## Scope: one authority
 
 `resolveReadableThread` admits a ref only when it parses, names a live thread
-in the caller's project owned by the caller's user, and shares the caller's
-lineage (`sameLineage`: same project and `rootThreadId`, forks and handoffs
-included). An unknown or foreign ref is `thread_not_found`; an unconnected one
+in the caller's project owned by the caller's user, and is connected: either
+it shares the caller's lineage (`sameLineage`: same project and `rootThreadId`;
+forks and subagents are in it) or is its direct handoff/source counterpart. `areThreadsConnected`
+checks the handoff's `originTurnId` owner in either direction, one hop only:
+no source ancestors, siblings, or descendants are admitted through that edge.
+A handoff still roots a new lineage; Scratch, credits, results, and
+`thread_ls` descendant scope remain separate. An unknown or foreign ref is
+`thread_not_found`; an unconnected one
 is `thread_not_connected`. `threads.root_thread_id` is `NOT NULL`, so every
 thread has a lineage root. Its callers are `thread_ls`, `thread_history`,
 `thread_report`, `spawn.from` (`child-run-coordinator.ts`), and the
 writer-facing report route. New readers reuse it; never reimplement the check.
-`thread_message` is a write and has its own authorization
+`thread_message` shares `areThreadsConnected` for background delivery; foreground
+delivery still requires the caller's subtree
 ([spawn](spawn.md#thread_message)).
 
 Domain refusals leave handlers through `toolFailureResult`, keeping their code:
@@ -144,5 +150,5 @@ tool registration only when the thread has no bake yet. Two places use it:
 A runtime composed without a registered-tool reader (tests, a tool-less
 runtime) freezes no read line.
 
-[kb-connected]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/connected-history-read.md
+[kb-connected]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/conversations/connected-history-read.md
 [kb-from]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/spawn-from-reference.md

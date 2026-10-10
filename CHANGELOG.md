@@ -64,6 +64,47 @@
 - Undo and Redo in draft review keep the original author of the text they restore, including after reload and when the draft is applied. Retyping the same words by hand stays yours.
 - Independent AI replacements stay separate changes: each AI write records only its own edits, including when a chat's edit is published into the Work's draft. Discarding a draft's last change keeps it discarded when the same chat writes again.
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
+### Changed
+
+- Reloading keeps the document and view you had open in the side panel.
+
+- Switching between Editor and Chat carries the document on screen, without turning sidebar peeks into Editor tabs. Cancelled switches leave the side panel document alone. While another document loads, the document still on screen is the one carried.
+
+- Empty Chat side panels show only the Open document header. Its menu and the document header menu have no root heading; folder back rows remain.
+
+- Copying Scratch and Uploads links keeps the applicable owner. Scratch links in No Work uploads stay contextual instead of preventing copy.
+
+- Writer file creation cannot bypass the AI-only policy of a chat’s Scratch.
+
+- Restoring a chat or Work reconnects waiting links to its returning Scratch notes.
+
+- Links in a No Work fork keep reading its draft after the first chat moves to another Work.
+
+- Your existing No Work Scratch notes stay available under Unfiled when chats gain their own Scratch.
+
+- "View projects" moves below your account at the foot of the left sidebar, so a near miss on Scratch no longer leaves the project.
+
+- On the Chat screen, the side panel's header now has an "Open document" menu even when nothing is open, listing Manuscript, Knowledge Base, User, Unfiled and Scratch. Clicking a file in the left project tree also opens it in the side panel (images and PDFs included), and the tree highlights it. On the Editor and Work screens and on a phone, tree clicks open as before.
+- On the Chat screen, opening a document from the chat (a link chip, a receipt row, a search or tool-result door, an `@` reference) now opens it in the side panel beside the chat instead of leaving for the Editor. From the Editor or Work screen and on a phone, they open as before.
+- The side panel's document header now has Close on the left, an expand button on the right that opens the document in the Editor, and a menu that climbs from the document's folder to the project's areas (Manuscript, Knowledge Base, User, Unfiled and Scratch) so any document is a few taps away.
+- Unfiled now has its own inbox icon, so it no longer looks like Scratch. It shows in the sidebar and on Unfiled link chips.
+- On the Chat screen, clicking a Recent document in the right context rail opens it in the editor beside the chat, in the side panel that covers the rail until you close it. The rail now looks like the left sidebar, with the same rows and section head, and no longer shows file sizes. Results are gone from the rail, and the phone's Results screen and its top-bar button are removed.
+- A SCRATCH section at the bottom of the left sidebar, styled like the file tree's sections, lists the notes the AI keeps for the chat on screen, even before its first note. Click its heading to expand it upwards (it remembers whether it was open), and open folders in place. On desktop, drag the divider above it to change how much of the sidebar it takes (double-click to reset); it remembers that too. Pick a note to open it next to the chat: in the side panel on the Chat screen, as an Editor tab elsewhere, and full screen on a phone, where the section sits at the bottom of the menu drawer. The open note is highlighted. After a chat moves onto a Work, its earlier notes stay under "Earlier notes".
+
+- A chat's Scratch keeps its name, and links and doors to its notes keep opening, after the chat that started it is deleted while a fork continues.
+
+- Links to a chat's Scratch notes open them, in chapters and in chat, and name the chat by its title. The Scratch crumb on a phone note no longer opens a view that says the folder is gone.
+
+- A handoff can read its source conversation again. The two chats can send each other background messages.
+
+- Rebinding a chat tells the AI where its earlier Scratch notes remain.
+
+- Unrelated No Work chats keep separate Scratch notes. Forks and subagents share their first chat's notes.
+
+- Handoffs start fresh chat lineages. No Work Scratch links name the first chat.
+- A Scratch note opened from a Work's Files now opens in the sidebar as the full editor: edit it, and it saves, works offline and freezes with an archived Work like an Editor tab. Its title menu lists the Work's other notes, with Open in Editor and Rename. Opening the same note in an Editor tab keeps your caret steady for other people.
+- Following a link inside a document the AI created and you are still reviewing now opens it, instead of waiting on "Opening the link" forever.
+- The Editor toolbar scrolls sideways in a narrow pane instead of cutting controls off.
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
@@ -124,8 +165,7 @@
 
 - Changes to an archived or deleted Work’s files no longer get stuck retrying. The file returns with its error.
 
-- A Scratch link without a Work name in a chapter always means No Work's Scratch, regardless of how you opened the Editor. Scratch and Uploads documents use their own Work.
-- A link to a Scratch note that doesn't exist says it can't be found, and nothing in the Editor creates Scratch notes. Scratch notes are made from the Work's Files tab or by the AI.
+- A link to a Scratch note that doesn't exist says it can't be found, and nothing in the Editor creates Scratch notes. Named-Work notes can be made from its Files tab or by the AI. Lineage notes are made by the AI.
 - A link clicked while the Editor is still loading its document's details waits, then opens, instead of doing nothing.
 
 - The No Work Editor now shows No Work drafts. Opening a document reference keeps your current Work.
@@ -156,7 +196,6 @@
 - Spawn's task label is `name` (was `description`) on the tool input, the `background.started` event, the background spawn result and the saved execution report; migration 0026 renames the report column.
 - A re-task of your own child notifies you when it finishes; report origin `foreground_message` is now `message`.
 - `thread_report` drops `run`: it returns the latest finished report and says when the child is running again.
-- Restoring a document fences checkpoints from already-open document handles. Heavy typing defers projection refresh without reporting an unexpected failure.
 - Agent profiles declare `permission: read | edit` (default `edit`); Critic, Continuity-checker and Reader-sim are `read`, and a read agent's system prompt says so. `spawn` `overrides.permission` may only lower it; a raise is `invalid_arguments`.
 - Tool lists say only which tools an agent has: `tools` is an optional allow-list and `disallowed-tools` removes tools, both arrays of real tool names. `edit` in `tools` and the allow/deny map fail to compile with the replacement named. An unknown name in `tools` makes the Agent unsupported; an unknown name in `disallowed-tools`, `Edit` and `apply_patch` included, is ignored. Tool names never fold onto another Flow tool: `search` stays `search`. No tool narrows its commands; a `read` agent gets `write` and is refused per file. Critic and Writer drop their tool lists.
 - `spawn.overrides` publishes its typed shape. `tools` is gone, `disallowed_tools` only adds denials and refuses a name outside the tool catalog, listing the tools, and a child with a tool its parent lacks is `invalid_arguments` naming it.

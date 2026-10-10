@@ -136,6 +136,8 @@ export type MoveContextEntryRequest = {
   destinationFolderPath: string;
   newName?: string;
   /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
+  sourceRootThreadId?: string | null;
+  destinationRootThreadId?: string | null;
   sourceWorkId?: WorkId | null;
   /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
   destinationWorkId?: WorkId | null;
@@ -159,6 +161,11 @@ export type MoveContextEntryLocator =
       scheme: WorkAuthorityScheme;
       path: string;
       authority: { workId: WorkId; workSlug: WorkSlug | null };
+    }
+  | {
+      scheme: "scratch";
+      path: string;
+      authority: { kind: "lineage"; rootThreadId: string; rootThreadRef: string };
     };
 export type MoveContextEntryConflict = {
   status: "conflict";
@@ -192,14 +199,32 @@ export function isWorkScopedProjectContextScheme(
 
 export type WorkAuthorityScheme = WorkScopedContextUriScheme;
 
+/**
+ * A recent document and its owner. Scratch and Uploads name a Work; a No Work
+ * chat's Scratch names its lineage by the first chat's id (`rootThreadId`).
+ */
 export type WorkingSetRoute =
   | {
       documentId: DocumentId;
       scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
       path: string;
       workId?: never;
+      rootThreadId?: never;
     }
-  | { documentId: DocumentId; scheme: WorkAuthorityScheme; path: string; workId: WorkId | null };
+  | {
+      documentId: DocumentId;
+      scheme: WorkAuthorityScheme;
+      path: string;
+      workId: WorkId | null;
+      rootThreadId?: never;
+    }
+  | {
+      documentId: DocumentId;
+      scheme: "scratch";
+      path: string;
+      workId?: never;
+      rootThreadId: string;
+    };
 
 export type WorkingSetRouteParseResult =
   | { ok: true; value: WorkingSetRoute }
@@ -247,6 +272,22 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
   }
   if (typeof route.path !== "string" || route.path.length === 0 || route.path.length > 1024) {
     return { ok: false, message: "Working-set route path must contain 1 to 1024 characters" };
+  }
+
+  if (route.rootThreadId !== undefined) {
+    const rootThreadId = parseRequestId(route.rootThreadId);
+    if (route.scheme !== "scratch" || route.workId !== undefined || !rootThreadId) {
+      return { ok: false, message: "Only Scratch routes name a lineage, and without a workId" };
+    }
+    return {
+      ok: true,
+      value: {
+        documentId: documentId as DocumentId,
+        scheme: route.scheme,
+        path: route.path,
+        rootThreadId,
+      },
+    };
   }
 
   if (isWorkScopedProjectContextScheme(route.scheme)) {

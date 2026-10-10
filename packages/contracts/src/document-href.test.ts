@@ -12,6 +12,8 @@ it.each([
   ["manuscript://x/base.md", "manuscript://x", "../x"],
   ["scratch://@revision/notes/base.md", "scratch://@revision/Gate.md", "../Gate.md"],
   ["scratch://@first/base.md", "scratch://@second/Gate.md", "scratch://@second/Gate.md"],
+  ["scratch://@/c12/notes/base.md", "scratch://@/c12/Gate.md", "../Gate.md"],
+  ["scratch://@/c12/one.md", "scratch://@/c40/two.md", "scratch://@/c40/two.md"],
   [
     "manuscript://other/base.md",
     "manuscript://volume 1/100% ready#final?.md",
@@ -41,6 +43,7 @@ it.each([
   ["https://example.com/chapter.md", "manuscript://base.md"],
   ["chapter.md", null],
   ["../../chapter.md", "manuscript://v/base.md"],
+  ["../c40/plan.md", "scratch://@/c12/one.md"],
   ["bad%escape.md", "manuscript://base.md"],
   ["chapter%2Fscene.md", "manuscript://base.md"],
 ])("rejects invalid document destination %s", (href, holder) => {

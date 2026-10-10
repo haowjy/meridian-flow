@@ -19,8 +19,14 @@ function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentC
 describe("readAgentChain", () => {
   it("returns each link's own permission and Work up to the root, read fresh per call", async () => {
     const threads = new Map([
-      ["parent", { id: "parent", parentThreadId: null }],
-      ["child", { id: "child", parentThreadId: "parent" }],
+      [
+        "parent",
+        { id: "parent", projectId: "project", rootThreadId: "parent", parentThreadId: null },
+      ],
+      [
+        "child",
+        { id: "child", projectId: "project", rootThreadId: "parent", parentThreadId: "parent" },
+      ],
     ]);
     const permissions = new Map([
       ["parent", "read"],
@@ -31,6 +37,7 @@ describe("readAgentChain", () => {
       ["child", "work-x"],
     ]);
     const deps = {
+      works: { findById: async (id: string) => ({ id, isNoWork: id === "no-work" }) as never },
       threads: {
         findByIdIncludingDeleted: async (id: ThreadId) =>
           (threads.get(id) as Thread | undefined) ?? null,
@@ -52,8 +59,18 @@ describe("readAgentChain", () => {
     };
 
     expect(await readAgentChain(deps, "child" as ThreadId)).toEqual([
-      { threadId: "child", permission: "edit", threadWorkId: "work-x" },
-      { threadId: "parent", permission: "read", threadWorkId: "no-work" },
+      {
+        threadId: "child",
+        permission: "edit",
+        threadWorkId: "work-x",
+        scratchOwner: { scope: "work", workId: "work-x" },
+      },
+      {
+        threadId: "parent",
+        permission: "read",
+        threadWorkId: "no-work",
+        scratchOwner: { scope: "lineage", projectId: "project", rootThreadId: "parent" },
+      },
     ]);
     primaries.set("parent", "work-y");
     expect((await readAgentChain(deps, "child" as ThreadId))[1]).toMatchObject({

@@ -11,3 +11,11 @@
   at minimum a read-only view of the last known content) — never extend it
   to new cases. The schema-fence read-only state is the model to follow:
   content visible, honest notice, automatic repair attempted.
+
+- `EditorSurfaceFrame.tsx` toolbar row in a narrow pane (the dock's document):
+  the row scrolls sideways with its scrollbar hidden, so at the narrowest dock
+  width (280px) the last control starts off-screen and nothing shows that the
+  row scrolls. Keyboard focus reveals it; a vertical mouse wheel does not move
+  it. Give the clipped edge a visible cue (a fade, or wheel-to-horizontal
+  scrolling) without moving controls into a menu: the toolbar's geometry is
+  fixed (`surfaces/toolbar/AGENTS.md`).

@@ -5,8 +5,13 @@ import { sameCatalogScope } from "./catalog-scope";
 import { projectFolderLocation } from "./folder-namespace";
 import { owningLocationIntent } from "./resource-intent-policy";
 import type { FolderNamespaceRecord, ResourceLocation } from "./resource-records";
-import { workAuthorityOf } from "./resource-records";
-import { resourceContextAuthority } from "./resource-work-authority";
+import { ownerOf, sameOwner } from "./resource-records";
+import {
+  catalogEntryOwner,
+  ownerListedInScope,
+  resourceContextAuthority,
+  resourceUriQualifier,
+} from "./resource-work-authority";
 
 function folderOverlays(projectId: string, records: readonly FolderNamespaceRecord[]) {
   return records
@@ -32,8 +37,7 @@ export function rebaseFolderResourceLocation(
     const source = folder.canonical;
     if (
       current.scheme !== source.scheme ||
-      current.workId !== source.workId ||
-      (current.workSlug ?? null) !== (source.workSlug ?? null) ||
+      !sameOwner(current, source) ||
       (current.path !== source.path && !current.path.startsWith(`${source.path}/`))
     )
       continue;
@@ -43,7 +47,7 @@ export function rebaseFolderResourceLocation(
       scheme: destination.scheme,
       path,
       name: path.split("/").at(-1) ?? destination.name,
-      ...workAuthorityOf(destination),
+      ...ownerOf(destination),
     };
   }
   return current;
@@ -61,18 +65,11 @@ export function projectFolderCatalog(
     if (entry.kind !== "file" && entry.kind !== "folder") return entry;
     const parsed = parseContextUri(entry.uri);
     if (!parsed.ok) throw new Error("Invalid catalog namespace URI");
-    const workId = entry.scope.kind === "work" ? entry.scope.workId : null;
     const location: ResourceLocation = {
       scheme: parsed.value.scheme,
       path: `/${entry.path.join("/")}`,
       name: entry.name,
-      ...(workId === null
-        ? { workId: null }
-        : {
-            workId,
-            workSlug:
-              parsed.value.authority.kind === "work" ? parsed.value.authority.workSlug : null,
-          }),
+      ...catalogEntryOwner(entry.scope, parsed.value.authority),
     };
     const next = rebaseFolderResourceLocation(projectId, location, folders);
     if (next === location) return entry;
@@ -80,11 +77,7 @@ export function projectFolderCatalog(
       (candidate) =>
         candidate.kind === "source" &&
         candidate.scheme === next.scheme &&
-        (next.workId !== null
-          ? candidate.scope.kind === "work" && candidate.scope.workId === next.workId
-          : next.scheme === "user"
-            ? candidate.scope.kind === "user"
-            : candidate.scope.kind === "project" && candidate.scope.projectId === projectId),
+        ownerListedInScope(next, next.scheme, candidate.scope, projectId),
     );
     if (source?.kind !== "source") throw new Error("Folder destination source is not installed");
     moved.add(entry.entryId);
@@ -117,9 +110,7 @@ export function projectFolderCatalog(
 }
 
 function namespaceUri(location: ResourceLocation): string {
-  const authority = resourceContextAuthority(location.scheme, location);
-  const qualifier =
-    authority.kind === "work" ? `@${authority.workSlug}/` : authority.kind === "none" ? "@/" : "";
+  const qualifier = resourceUriQualifier(resourceContextAuthority(location.scheme, location));
   const parsed = parseContextUri(
     `${location.scheme}://${qualifier}${location.path.replace(/^\/+/, "")}`,
   );

@@ -2,9 +2,22 @@
 
 Agent-readable/writable content addressed by context URIs. Context schemes split
 into durable Project content (`manuscript://`, `kb://`, `unfiled://`), authenticated personal
-content (`user://`), and Work-scoped material (`scratch://`, `uploads://`), including
-No Work. Public `@/` authority stays parse-only; resolve mints the locked Work id.
-Bare paths default to `manuscript://`.
+content (`user://`), and owned material: a named Work's `scratch://@slug/` and
+`uploads://@slug/`, No Work's `uploads://@/`, and a No Work chat lineage's
+`scratch://@/c12/`. Bare paths default to `manuscript://`.
+
+**Scratch has two owner kinds.** `scratchOwnerFor(thread, work)` is the one rule
+for bare `scratch://` and for the file policy's own-Scratch term: the named Work,
+or the No Work chat's lineage (`rootThreadId`). The locked No Work row has no
+Scratch source; never route Scratch to it. A lineage handle names the first chat,
+trashed included, never a fork. Only the AI creates lineage notes; writer create,
+intake and moves into a lineage are refused. Lineage provisioning and
+trash/restore liveness belong to `adapters/lineage-scratch-lifecycle.ts`; reuse
+it rather than adding another guard. A hidden-to-live lineage transition settles
+waiting ahead refs under its namespace lock in the same transaction. A lineage
+root names Scratch ownership, never a reader: draft visibility for link answers
+comes from the selected Work's manifest (No Work when a request names a
+lineage), so never pass `rootThreadId` as the viewing thread.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is
 model-only, resolved by `runtime/loop/skill-files.ts` per thread binding, and
@@ -31,7 +44,7 @@ Scheme capabilities are declared once in `ports/context-adapter.ts` and enforced
 by the router. F0 owns Uploads authority, provisioning, and resolution; F4 owns
 the actual `UploadIntake` lifecycle. `uploads://` does not allow general clients
 to create context entries or directories, so binary intake is flat;
-`scratch://` is the Work authoring space and accepts nested intake paths.
+`scratch://` is the authoring space and accepts nested intake paths.
 
 Text creation and writes must resolve the document filetype and use the collab
 document engine. Never seed Yjs by hand with an assumed markdown schema.
@@ -52,7 +65,7 @@ construction. Writer-facing mutation input goes through the shared
 reason-coded validators in `lib/context-mutation-validation.ts`.
 
 `move.post.ts` is intentionally a thinner shell over `lib/context-move-route.ts`:
-the route core resolves every requested locator to exact project/no-Work/Work
+the route core resolves every requested locator to exact project/lineage/Work
 authority before it calls
 `ContextPort.commitWriterLocation`. Proven destination occupation returns a
 collision locator with that same authority; any port identity mismatch is an

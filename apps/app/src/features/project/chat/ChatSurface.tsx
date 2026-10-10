@@ -80,6 +80,7 @@ export function ChatSurface({
         projectId={projectId}
         placement={placement}
         screen={activeScreen}
+        visible={visible}
         renderHeader={(args) => {
           const headerProps: DockHeaderProps = {
             ...args,

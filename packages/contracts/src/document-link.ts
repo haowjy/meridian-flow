@@ -17,6 +17,7 @@ import {
   splitDocumentHrefSuffix,
 } from "./document-href.js";
 import { parseLinkRef } from "./document-ref.js";
+import type { ResolvedContextOwner } from "./protocol/context-owner.js";
 
 export type LinkView =
   | { kind: "live"; responseId?: string }
@@ -31,6 +32,8 @@ export interface LinkHolder {
 
 export interface CatalogDocument {
   documentId: string;
+  /** Resolved storage owner; project and personal documents have a null Work owner. */
+  owner: ResolvedContextOwner;
   projectId: string;
   /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;

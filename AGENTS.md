@@ -2,7 +2,9 @@
 
 > **v3 full-stack rebuild.** TypeScript with Yjs + TipTap, Drizzle over Postgres,
 > WorkOS AuthKit, and credits-only billing. There are no real users or data.
-> Change schemas freely, delete unused code, and never add compatibility shims.
+> Change schemas freely, delete unused code, and never add compatibility shims;
+> write migrations as if production data exists (no data loss, online-safe DDL,
+> and no skips that rely on empty tables).
 
 ## Mission
 
@@ -44,9 +46,11 @@ Every project has one locked **No Work** row. Omitting a Work or sending
 explicit null binds the thread to that row. After creation, the writer may
 explicitly rebind the chat through one canonical operation; Work management
 and navigation never invoke it implicitly. The model can't rebind; see the
-[model's `work switch`][model-work-switch]. Work-capable URIs use `@/` for No Work authority and
-`@slug` for a named Work; internal IDs never appear in URI authority. The schema
-is `works` + `thread_works`.
+[model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
+No Work Uploads use `@/`. No Work owns no Scratch: a No Work chat's Scratch
+belongs to its lineage (the first chat, its forks and subagents) at
+`scratch://@/c12/`, named by the first chat's handle. Internal IDs never
+appear in URI authority. The schema is `works` + `thread_works`.
 
 ## Agency
 

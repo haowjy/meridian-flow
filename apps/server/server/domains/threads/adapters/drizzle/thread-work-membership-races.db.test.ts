@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../../file-policy/index.js";
 import {
   resetThreadWorkRaceFixture,
@@ -49,6 +50,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const threads = createDrizzleRepositoriesForTest(db);
     const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
     const works = createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),

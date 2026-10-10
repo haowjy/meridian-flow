@@ -64,3 +64,23 @@ checkbox in the list item's DOM, not the upstream nodes.
 
 Found while pinning the markdown autoformat truth table
 (`extensions/MarkdownAutoformatExtension.test.ts`); ruling 18 did not name it.
+
+## Two views of one session
+
+Two editors can bind one session (a warm Editor tab and the dock's document).
+The caret is arbitrated (`local-presence.ts` `gateCaretPresence`); two things
+are not:
+
+- **Uploads from two views at once.** `images/image-upload-presence.ts`
+  publishes each editor's whole `imageUploads` array, so when both views upload
+  at once, one view's update overwrites the other's announcement and peers see
+  the first upload as abandoned. If it matters, combine each view's
+  contribution at the session boundary instead of letting each view replace the
+  array.
+- **Undo covers both views' edits.** Each editor has its own undo stack, but
+  both track y-prosemirror's shared sync origin, so Ctrl+Z in one view undoes
+  text typed in the other, and one Ctrl+Z can be a no-op after the other view
+  already undid it. Whether a view's undo should cover only its own edits is
+  an open product question
+  ([KB](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/editor/collab-mapping/one-session-several-views.md));
+  do not change it without a ruling.

@@ -19,16 +19,20 @@ change-trail events, not manuscript content.
   rebuild destroys the Yjs UndoManager and drops keystrokes in flight.
   `EditorMountIdentity` carries every construction fact, `editorMountKey()`
   turns it into the React key that owns the mount, and `useMountedEditor()`
-  constructs and destroys TipTap itself so the schema-repair witness can
-  synchronously bracket every extension lifecycle mutation. Anything a caller
+  constructs and destroys TipTap itself through the session binding seam so
+  schema-repair observation synchronously brackets extension construction. Anything a caller
   can change while the writer keeps typing is `EditorSurfaceOptions` and
   reaches the running instance; projection data arrives through stores the
   extensions subscribe to (`SessionMarkerStore`, `AgentNameStore`). A new
   construction knob belongs in the identity type — never in an effect
   dependency list.
-- Schema repair is observed and reported, never fenced. Keep the pre-bind
-  snapshot, single update listener, and atomic open-to-live phase transition
-  together in `schema-repair-witness.ts`; do not add a second listener or move
+- Schema repair is observed and reported, never fenced. `DocumentSession` owns
+  one witness for its Y.Doc, armed lazily by `bindEditor()` immediately before
+  the first editor construction. Every bound view supplies PM attribution to
+  that witness; releasing a view removes only its attribution. Later views read
+  the session's correlated verdicts, never install document listeners.
+  Keep the pre-bind snapshot, single update listener, and atomic open-to-live
+  phase transition together in `schema-repair-witness.ts`; do not add a second listener or move
   construction back behind TipTap's deferred `useEditor` lifecycle. Its live
   correlation resolves each delete-only candidate independently within a Yjs
   transaction batch; the batch bounds candidate lifetime, not a batch-wide

@@ -4,7 +4,7 @@ Agent-readable/writable project workspace content addressed by context URIs.
 The context-URI cleanse (A0–A3) deleted the legacy dual-port and replaced it
 with a single unified `ContextPort` that resolves durable project schemes
 (`manuscript://`, `kb://`, `user://`, `unfiled://`) and work-item-scoped schemes
-(`scratch://@slug/…`, `uploads://@slug/…`) plus explicit no-Work `@/` authority.
+(`scratch://@slug/…`, `uploads://@slug/…`) plus No Work Uploads at `uploads://@/` and lineage Scratch at `scratch://@/c12/`.
 
 ## Revision queries and reads
 
@@ -92,7 +92,7 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   their owning project or account cascades them.
 
 - **Project-final availability** — stable-ID lookup classifies current
-  project/no-Work/Work/user authority from authoritative rows and advances
+  project/lineage/Work/user authority from authoritative rows and advances
   generation heads with mutations. A deleted request project or deleted backing
   source project returns `authority-unavailable/project_deleted`; restoring the
   backing project makes the same identity available again. Foreign identities
@@ -232,6 +232,12 @@ A caller that creates inside its own transaction binds first:
 `ContextPort.bindTrackedDocument`, then `createBoundDocument` with the
 bound write. Upload intake does this (`UploadContentPort.bind` runs
 before finalize's transaction, `persist` applies under its locks).
+Binding is preparation, not creation: it checks only that the scheme is
+writable. Both tracked-create doors (`createTrackedDocument`,
+`createBoundDocument`) pass the caller's origin and ask the source's one
+`requireCreation` policy (`intake` when a document id is supplied, else
+`entry`); that is what refuses writer creation into a lineage. Never move the
+creation check to bind time or add a second lineage-creation guard downstream.
 
 Repair (`repairTrackedDocument`) restores membership and, if the document has
 no Yjs state, an empty one; it never reparses the stored projection, whose
@@ -242,8 +248,9 @@ leaves the row and its bytes as they are for recovery.
 ## Ahead refs and arrivals
 
 `link_ahead_refs` records each `ahead:` ref with the decoded address it was
-minted for (project, scheme, Work id, path; Work by id, so a rename never
-orphans it). Rows are never deleted by link edits. Server mints register before
+minted for (project, scheme, Work id or lineage root id, path; owners by id, so
+a rename never orphans it). Lineage registrations and arrivals compare the root id
+as well as the exact path; two chats cannot capture each other’s waiting refs. Rows are never deleted by link edits. Server mints register before
 the write takes any lock; client mints are registered by the certified derive
 (awaited outside a transaction, after commit inside one), and the derivation
 sweep and `flush` recover any that failed with `registerUnregistered`. A soft-deleted
@@ -305,10 +312,12 @@ currently available to the request owner in the requested project.
 
 ## URI and router invariants
 
-- Wire context URIs are `scheme://[@slug]/path`; a scheme root is `scheme://`.
+- Wire context URIs are `scheme://[@slug]/path`, plus `scratch://@/cN/path` for
+  a lineage; a scheme root is `scheme://`.
   Parsing validates syntax and returns `normalized`; it does not authorize a
   Work. Stable server results use the persisted slug carried by opaque,
-  same-project resolved authority; explicit `@/` is no-Work authority.
+  same-project resolved authority; explicit `@/` is no-Work authority except
+  on Scratch, where it must be followed by a first-chat handle.
 - Bare paths default to `manuscript://` (project-scoped).
 - Leading/trailing slashes and repeated slashes are normalized away; `.` segments
   are dropped; `..` is rejected.
@@ -317,16 +326,18 @@ currently available to the request owner in the requested project.
   remain valid.
 - Work-scoped schemes (`scratch://`, `uploads://`) accept one `@<work-slug>`
   qualifier. Omitted authority resolves contextually to the thread's primary Work.
-  Explicit `@/` resolves to that project's locked No Work row and serializes as
-  `@/`. Every non-deleted named Work in the same project is addressable regardless
+  Uploads `@/` resolves to the locked No Work row. Scratch `@/c12/` resolves
+  to the first chat of a project-local lineage, including a trashed first chat.
+  Scratch `@/x` without a handle is refused with contextual and canonical hints. Every non-deleted named Work in the same project is addressable regardless
   of thread membership; cross-project Works are refused. `manuscript://`,
   `kb://`, `user://`, `unfiled://` carry no Work authority. Scratch and uploads
-  are Work-scoped only.
+  use named-Work owners; No Work Scratch instead uses the lineage owner.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Scheme and relative paths are exact (an omitted final extension may match);
   relative traversal cannot escape its scheme root. Canonical qualifiers may explicitly name another
   non-deleted Work in the project. Contextual scratch/uploads use the selected
-  scope; `@/` always means No Work. Legacy `work://` is not accepted.
+  scope; a lineage handle is part of the owner, so relative traversal cannot
+  cross it. Bare Scratch in a No Work chat selects its lineage. Legacy `work://` is not accepted.
   Archived Work identity still parses/resolves as authority and its Work-scoped
   catalog still lists its files (archive hides a Work from Active, not its
   contents) and remains an available read target. Only deleted Works hide their
@@ -346,6 +357,13 @@ currently available to the request owner in the requested project.
 - Adapter `Ok(null)` becomes `not_found`; `permission_denied`,
   `context_unavailable`, and `io_error` stay generic context/backing-store
   faults.
+- Contextual sources pair each adapter with its canonical owner, resolving lazily
+  when needed. Bare resolution, root listing and unscoped search use that same
+  set, including the chat's Scratch whether owned by a Work or lineage.
+- Mutation resolution binds a creation policy from owner, actor and scheme
+  capabilities. Entry creation and intake both enforce it; existing-content
+  writes and same-owner renames are not creation. Untitled allocation and
+  writer location commits remain writer seams.
 - Unscoped `search(query)` fans out across searchable adapters best-effort.
 - A `SearchResult` reports the first matching passages of a file (capped by the
   adapter) plus `matchCount`, the occurrences of the query in that whole file,
@@ -466,3 +484,32 @@ Yjs authority, catalog, availability and identity-preserving move operations as
 Manuscript and KB. Its membership means not yet filed; a name alone does not
 change that membership. It has no Work qualifier and remains accessible to
 normal context tools and reference resolution.
+
+## Lineage Scratch ownership
+
+`scratchOwnerFor` is shared by thread routing and the file policy's own-Scratch
+term. Named Works own Scratch; No Work chats use their persisted `rootThreadId`.
+A fork and subagents share notes; a handoff starts a fresh lineage. Source rows
+carry project plus root identity, not a Work. Provisioning is lazy on the first
+AI write and refuses an unassigned first-chat handle. No Work bootstrap only
+provisions Uploads.
+
+There is no thread FK on `context_sources.root_thread_id`. Trash reconciliation
+keeps notes while any lineage member is live, hides the source with the last
+member, and restores it with any member. It refreshes catalog and availability
+truth in the same transaction through the composed catalog mutation port.
+First-write provisioning and trash/restore share the Scratch namespace lock
+and any-live-member predicate; policy exposes the same liveness even before a
+source exists. Identity lookup by ID or handle allows trashed first chats,
+while `ls scratch://@/` discovers only available notes and labels each lineage
+with its first chat’s title. Its entries have independent edit decisions.
+`GET .../context/lineages/:rootThreadId` (`lineages.byId`) gives the app the
+same handle and title, trashed first chat included, so writer chrome can name a
+lineage whose first chat has left the live chat list.
+Work purge explicitly removes sources for roots
+in its purge set, including their documents, journal and memberships.
+
+Writer routes can read, edit, rename or move notes out, but cannot create notes
+or move files into a lineage. Canonical AI writes use the normal edit policy.
+Rebinding selects a different bare Scratch owner; it never moves notes. The
+durable Work-switch Notice names the previous canonical Scratch root.

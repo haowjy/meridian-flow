@@ -54,10 +54,12 @@ the design, from the primitives.
   the four that existed disagreed — one hid the row, one threw, one greyed, one
   closed as though the copy had happened.
 - **What the app knows reaches a surface as scope, not as props.**
-  `EditorScopeProvider` carries `{ projectId, workId }` around the host, and
-  `useEditorScope()` is how a lane asks. For links, `workId` comes from the
-  holder's replica location (Scratch/Uploads), or the No Work row (project
-  documents), never the Editor route or remembered Work. It is runtime scope: a holder moving
+  `EditorScopeProvider` carries `{ projectId, workId, rootThreadId }` around
+  the host, and `useEditorScope()` is how a lane asks. For links, `workId`
+  comes from the holder's replica location (Scratch/Uploads), or the No Work
+  row (project documents), never the Editor route or remembered Work. A note in
+  a chat's Scratch also carries its lineage (`rootThreadId`), which is what a
+  bare `scratch://` in it means; pass it on to links and the `@` catalog. It is runtime scope: a holder moving
   never remounts the editor, and it never appears in `EditorMountIdentity`.
 - Anything opened over the manuscript hands the caret back on close
   (`onCloseAutoFocus` → prose) and defers Escape to the kernel's chain. Both

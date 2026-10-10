@@ -8,10 +8,8 @@ import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  useOpenProjectDocument,
-  useProjectDocumentNavigationProjectId,
-} from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
 import type {
   MarkdownReferenceOccurrence,
@@ -84,7 +82,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
   // cutoff the server would use, so it offers none.
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
-  const openDocument = useOpenProjectDocument(projectId ?? undefined);
+  const openDocument = useOpenChatDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
   const resolutions = useReferenceAvailability(
     useMemo(

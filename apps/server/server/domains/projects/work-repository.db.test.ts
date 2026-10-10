@@ -1,9 +1,11 @@
 /** Postgres coverage for Work handles, cascaded soft deletion, and restore conflicts. */
+
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
 
@@ -62,6 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const fileAccessChanges = createLocalFileAccessChanges();
     const works = createDrizzleProjectWorkRepository({
+      lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges,
       projectionMutation,
@@ -666,7 +669,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         threadRepos.threads.listRecentByWork(PROJECT_ID as never, work.id, 10),
       ).resolves.toHaveLength(1);
-      await expect(resultRepository.listByProject(PROJECT_ID)).resolves.toHaveLength(1);
+      await expect(
+        db
+          .select()
+          .from(schema.projectResults)
+          .where(
+            and(
+              eq(schema.projectResults.projectId, PROJECT_ID),
+              isNull(schema.projectResults.deletedByWorkId),
+            ),
+          ),
+      ).resolves.toHaveLength(1);
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
       );
@@ -696,7 +709,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         threadRepos.threads.listRecentByWork(PROJECT_ID as never, work.id, 10),
       ).resolves.toEqual([]);
-      await expect(resultRepository.listByProject(PROJECT_ID)).resolves.toEqual([]);
+      await expect(
+        db
+          .select()
+          .from(schema.projectResults)
+          .where(
+            and(
+              eq(schema.projectResults.projectId, PROJECT_ID),
+              isNull(schema.projectResults.deletedByWorkId),
+            ),
+          ),
+      ).resolves.toEqual([]);
       expect((await catalog.snapshot(scope)).entries).toEqual([]);
       const { restoreOwnedThreadFromTrash } = await import("../threads/thread-access.js");
       const threadTrashDeps = {
@@ -764,7 +787,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await catalog.snapshot(scope)).entries.map((entry) => entry.entryId)).toContain(
         document.id,
       );
-      await expect(resultRepository.listByProject(PROJECT_ID)).resolves.toHaveLength(1);
+      await expect(
+        db
+          .select()
+          .from(schema.projectResults)
+          .where(
+            and(
+              eq(schema.projectResults.projectId, PROJECT_ID),
+              isNull(schema.projectResults.deletedByWorkId),
+            ),
+          ),
+      ).resolves.toHaveLength(1);
     });
 
     it("refuses restoring a deleted Work after its retention deadline", async () => {
@@ -1175,6 +1208,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         state: "finalized",
         storageUrl: stored.value.storageUrl,
       });
+      const [lineageSource] = await db
+        .insert(schema.contextSources)
+        .values({
+          projectId: PROJECT_ID,
+          rootThreadId: THREAD_ID,
+          scope: "lineage",
+          name: "Scratch",
+          slug: "scratch",
+        })
+        .returning();
+      const [lineageNote] = await db
+        .insert(schema.documents)
+        .values({
+          contextSourceId: lineageSource.id,
+          name: "outline",
+          extension: "md",
+          fileType: "markdown",
+        })
+        .returning();
+      await db
+        .insert(schema.threadDocuments)
+        .values({ threadId: THREAD_ID, documentId: lineageNote.id });
       await works.softDelete(work.id);
       await db
         .update(schema.works)
@@ -1183,6 +1238,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(purger.sweep()).resolves.toBe(1);
       await expect(works.findById(work.id)).resolves.toBeNull();
+      expect(
+        await db
+          .select()
+          .from(schema.contextSources)
+          .where(eq(schema.contextSources.id, lineageSource.id)),
+      ).toEqual([]);
+      expect(
+        await db.select().from(schema.documents).where(eq(schema.documents.id, lineageNote.id)),
+      ).toEqual([]);
       await expect(works.findById(other.id)).resolves.toMatchObject({ deletedAt: null });
       await expect(
         db

@@ -1,4 +1,5 @@
 /** PostgreSQL barriers for the production Work projection publication owner. */
+
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -32,6 +33,7 @@ import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizz
 import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
+import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createDrizzleRepositories } from "../threads/adapters/drizzle/index.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
@@ -212,7 +214,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("commits turn activity, entity authority, catalog signal, and project head together", async () => {
       const { projection } = await fixture();
       const before = await projectionState();
-      await createDrizzleRepositories(database.current, projection).turns.create({
+      await createDrizzleRepositories(
+        database.current,
+        projection,
+        createDrizzleLineageScratchLifecycle(database.current),
+      ).turns.create({
         id: TURN_ID,
         threadId: THREAD_ID,
         role: "user",
@@ -226,7 +232,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     it("rolls turn activity and every authority signal back with its outer transaction", async () => {
       const { projection } = await fixture();
-      const repos = createDrizzleRepositories(database.current, projection);
+      const repos = createDrizzleRepositories(
+        database.current,
+        projection,
+        createDrizzleLineageScratchLifecycle(database.current),
+      );
       const before = await projectionState();
       await expect(
         repos.transaction(async () => {

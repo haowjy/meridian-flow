@@ -45,10 +45,10 @@ import {
   projectCatalogFile,
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
-import { isEditorScheme, useContextTabsActions } from "@/client/stores";
+import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
-import { contextTabFromFile } from "./context-tab-from-file";
+import { contextOwnerOf, contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
 export interface LiveDocumentBinding {
@@ -195,6 +195,12 @@ export type OpenProjectDocumentRequest = {
   /** Omitted keeps the current Editor Work; Work-scoped files always use their resolved owner row. */
   workId?: string;
   disposition?: "current" | "background";
+  /**
+   * Offered the resolved tab before the route changes: a surface that shows
+   * documents beside the writer's place (the Chat screen's dock) takes it, so
+   * the open finishes without leaving. `cancelled` means a newer intent won.
+   */
+  beside?: (tab: ServerContextTab) => "opened" | "cancelled";
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
@@ -232,13 +238,14 @@ function localFileForRecord(
 ): {
   scheme: ProjectContextTreeScheme;
   workId: string | null;
+  rootThreadId?: string;
   file: CatalogFile;
   entry: CatalogFileEntry;
 } | null {
   if (record.resource.content.kind !== "exact") return null;
   const location = projectResourceLocation(projectId, record);
   if (!location) return null;
-  const scope = contextCatalogScope(projectId, location.scheme, location.workId);
+  const scope = contextCatalogScope(projectId, location.scheme, contextOwnerOf(location));
   if (!scope) return null;
   const projected = accessibleResourceCatalogView(projectId, scope, record);
   const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
@@ -249,6 +256,7 @@ function localFileForRecord(
   return {
     scheme: location.scheme,
     workId: location.workId,
+    rootThreadId: location.rootThreadId,
     file,
     entry,
   };
@@ -271,7 +279,7 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId, disposition = "current", signal }: OpenProjectDocumentRequest,
+    { documentId, workId, disposition = "current", beside, signal }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -309,7 +317,9 @@ export class ProjectDocumentNavigationAdapter {
             scheme: resolved.scheme,
             file: resolved.file,
             routeWorkId: resolved.workId ?? workId,
+            rootThreadId: resolved.rootThreadId,
             disposition,
+            beside,
             isCurrent,
             canCommit,
           });
@@ -368,6 +378,8 @@ export class ProjectDocumentNavigationAdapter {
       if (!scheme) return { kind: "unavailable", reason: "failed" };
       const routeWorkId =
         result.document.scope.kind === "work" ? result.document.scope.workId : workId;
+      const rootThreadId =
+        result.document.scope.kind === "lineage" ? result.document.scope.rootThreadId : undefined;
       const file = projectCatalogFile(result.document);
       if (disposition === "current" && !this.dependencies.openRoute) {
         throw new Error("Opening a project document requires the project route owner");
@@ -377,7 +389,9 @@ export class ProjectDocumentNavigationAdapter {
         scheme,
         file,
         routeWorkId,
+        rootThreadId,
         disposition,
+        beside,
         isCurrent,
         canCommit,
       });
@@ -395,15 +409,43 @@ export class ProjectDocumentNavigationAdapter {
     scheme: ProjectContextTreeScheme;
     file: CatalogFile;
     routeWorkId: string | undefined;
+    /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
+    rootThreadId?: string;
     disposition: "current" | "background";
+    beside?: (tab: ServerContextTab) => "opened" | "cancelled";
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
-    const tabWorkId = input.routeWorkId;
     const tab = isEditorScheme(input.scheme)
-      ? contextTabFromFile(input.scheme, input.file, tabWorkId)
+      ? contextTabFromFile(
+          input.scheme,
+          input.file,
+          input.rootThreadId
+            ? { rootThreadId: input.rootThreadId }
+            : { workId: input.routeWorkId ?? null },
+        )
       : undefined;
     if (!input.isCurrent()) return "cancelled";
+    if (input.disposition === "current" && input.beside) {
+      // A document with no owner row to name (never a dock candidate) is left to the route.
+      let besideTab: ServerContextTab | null = null;
+      try {
+        besideTab = serverTabFromFile(
+          input.scheme,
+          input.file,
+          input.rootThreadId
+            ? { rootThreadId: input.rootThreadId }
+            : { workId: input.routeWorkId ?? null },
+        );
+      } catch {
+        besideTab = null;
+      }
+      if (besideTab) {
+        const placed = input.beside(besideTab);
+        this.current = null;
+        return placed === "opened" ? "applied" : "cancelled";
+      }
+    }
     if (input.disposition === "current") {
       if (!this.dependencies.openRoute)
         throw new Error("Opening a project document requires the project route owner");
@@ -412,7 +454,8 @@ export class ProjectDocumentNavigationAdapter {
         {
           scheme: input.scheme,
           path: input.file.path,
-          workId: input.routeWorkId,
+          workId: input.rootThreadId ? undefined : input.routeWorkId,
+          ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
           documentId: input.file.documentId,
         },
         { tab, isCurrent: input.isCurrent, canCommit: input.canCommit },
