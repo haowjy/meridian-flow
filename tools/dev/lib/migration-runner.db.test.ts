@@ -1,4 +1,5 @@
 /** Real-Postgres contracts for migration refusal, catch-up, and serialization. */
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -189,6 +190,42 @@ describe.skipIf(!enabled)("migration runner (postgres)", () => {
     ]);
     expect(await sql`SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations`).toEqual([
       { count: 2 },
+    ]);
+  });
+
+  it("executes and records the snapshot read before waiting on the lock", async () => {
+    await sql`DROP SCHEMA public CASCADE`;
+    await sql`DROP SCHEMA IF EXISTS drizzle CASCADE`;
+    await sql`CREATE SCHEMA public`;
+    const directory = path.join(temporaryRoot, "snapshot");
+    const original = {
+      tag: "0000_snapshot",
+      when: 600,
+      sql: "\uFEFFCREATE TABLE public.snapshot_before (id int);\r\n",
+    };
+    await writeMigrations(directory, [original]);
+    await sql`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_ID})`;
+    const run = runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+    let waitError: unknown;
+    try {
+      await waitForAdvisoryLockWaiters(sql, 1);
+      await writeMigrations(directory, [
+        { ...original, when: 700, sql: "CREATE TABLE public.snapshot_after (id int);" },
+      ]);
+    } catch (error) {
+      waitError = error;
+    } finally {
+      await sql`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_ID})`;
+    }
+    const [result] = await Promise.allSettled([run]);
+    if (waitError) throw waitError;
+    if (result?.status === "rejected") throw result.reason;
+    expect(
+      await sql`SELECT to_regclass('public.snapshot_before') IS NOT NULL AS before,
+      to_regclass('public.snapshot_after') IS NOT NULL AS after`,
+    ).toEqual([{ before: true, after: false }]);
+    expect(await sql`SELECT hash, created_at FROM drizzle.__drizzle_migrations`).toEqual([
+      { hash: createHash("sha256").update(original.sql).digest("hex"), created_at: "600" },
     ]);
   });
 
