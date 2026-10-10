@@ -4,6 +4,8 @@ import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { draftPreviewQueryOptions } from "@/client/query/useDraftPreview";
+import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   applied,
   change,
@@ -14,6 +16,7 @@ import {
   previewOf,
   workC,
 } from "@/test-support/draft-review-scope";
+import { sessionFor, setConnectionState } from "@/test-support/editor-session-fakes";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 const previewKey = projectQueryKeys.workDraftPreview(
@@ -101,8 +104,10 @@ it.each([
     } else await act(async () => controller.exitInlineReview());
     if (horizon === "account") {
       // Closing the account destroys its query cache and retires its claims.
-      probe().queryClient.clear();
-      resetDraftCommandRecords();
+      await act(async () => {
+        probe().queryClient.clear();
+        resetDraftCommandRecords();
+      });
     }
     await act(async () => slow.resolve(proposal(7, "9")));
     await settled(() =>
@@ -219,5 +224,88 @@ it.each([false, true])("a gone entry read is authoritative (draft-only: %s)", as
         ? expect(probe().editor.controller.reviewRoomError).toBe(true)
         : expect(probe().editor.controller.inlineReview).toBeNull(),
     );
+  });
+});
+
+it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", async () => {
+  fixture.dispose();
+  let writerChanges!: (generation: number | null) => void;
+  fixture = createReviewScopeFixture({
+    registry: {
+      retainBranchRooms: (
+        _owner: string,
+        refs: Parameters<LiveDocumentSessionRegistry["retainBranchRooms"]>[1],
+      ) => {
+        const report = refs[0]?.writerChanges;
+        if (!report) throw new Error("Missing retained writer callback");
+        writerChanges = report;
+      },
+      releaseBranchRooms: () => {},
+      getBranchRoom: sessionFor,
+    } as unknown as LiveDocumentSessionRegistry,
+  });
+  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1"));
+  await fixture.render(async (probe) => {
+    await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+    await settled(() => expect(probe().editor.roomOwner.session?.roomKey).toBe("room-g1"));
+    await act(async () => writerChanges(1));
+    fixture.network.getDraftPreview.mockRejectedValue(
+      Object.assign(new Error("gone"), { status: 404 }),
+    );
+    await act(async () =>
+      setConnectionState("room-g1", {
+        kind: "reset",
+        reason: "branch-generation-stale",
+        disposition: "superseded",
+      }),
+    );
+    await settled(() =>
+      expect(probe().queryClient.getQueryState(previewKey)?.fetchStatus).toBe("idle"),
+    );
+    expect(probe().queryClient.getQueryData(previewKey)).toEqual({
+      status: "gone",
+      draftId: "draft-a",
+      draftGeneration: 1,
+    });
+    expect(probe().queryClient.getQueryData(listKey)).toEqual([listed]);
+    expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(1);
+    expect(probe().editor.controller.reviewRoomName).toBeNull();
+    expect(probe().editor.controller.reviewRoomError).toBe(false);
+    const reads = fixture.network.getDraftPreview.mock.calls.length;
+    await act(async () => writerChanges(null));
+    await settled(() => expect(probe().editor.controller.inlineReview).toBeNull());
+    expect(fixture.network.getDraftPreview).toHaveBeenCalledTimes(reads);
+  });
+});
+
+it("a late HTTP 404 retains its request-start horizon behind a newer cached proposal", async () => {
+  await fixture.render(async (probe) => {
+    await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+    await settled(() => expect(probe().editor.controller.reviewRoomName).toBe("room-g1"));
+    const absent = deferredReviewAnswer<ReturnType<typeof proposal>>();
+    fixture.network.getDraftPreview.mockReturnValueOnce(absent.promise);
+    let read!: Promise<unknown>;
+    await act(async () => {
+      read = probe().queryClient.fetchQuery({
+        ...draftPreviewQueryOptions({
+          projectId: "project-a",
+          workId: "work-a",
+          ...draftA,
+          draftGeneration: 1,
+        }),
+        staleTime: 0,
+      });
+    });
+    const next = proposal(2, "3");
+    fixture.network.getDraftPreview.mockResolvedValue(next);
+    await act(async () => probe().queryClient.setQueryData(previewKey, next));
+    await settled(() => expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2));
+    await act(async () => {
+      absent.reject(Object.assign(new Error("gone"), { status: 404 }));
+      await read;
+    });
+    expect(probe().queryClient.getQueryData(previewKey)).toEqual(next);
+    expect(probe().editor.controller.inlineReview?.draftGeneration).toBe(2);
   });
 });

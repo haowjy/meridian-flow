@@ -141,7 +141,14 @@ function renderEditor(run: () => Promise<void>) {
 
 async function reviewOpened() {
   await act(async () => review?.controller.enterInlineReview(documentId, "draft-a"));
-  await vi.waitFor(() => expect(surfaces()).toEqual(["review"]));
+  // Drive setup and the native room handshake under React's flush boundary.
+  for (let step = 0; step < 40; step++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25);
+    });
+    if (surfaces().join(",") === "review") break;
+  }
+  expect(surfaces()).toEqual(["review"]);
 }
 
 beforeEach(() => {
@@ -345,9 +352,9 @@ it.each([
           draftGeneration: 2,
           reviewRoomName: newRoom,
         });
-        releaseCarry(newRoom);
       }
       await act(async () => {
+        if (reason === "remote whole Discard") releaseCarry(newRoom);
         await vi.advanceTimersByTimeAsync(20);
       });
       if (reason === "successor typing") {
