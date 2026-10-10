@@ -72,7 +72,10 @@ const SOURCES: readonly ScenarioSource[] = ["manuscript", "kb", "unfiled"];
 export async function draftTreeScenario(db: Database): Promise<DraftTreeScenario> {
   const userId = randomUUID() as UserId;
   const projectId = randomUUID() as ProjectId;
-  await db.insert(users).values(conformanceUserValues(userId, "draft-tree-scenario"));
+  // One user per scenario, so a case may build several.
+  await db
+    .insert(users)
+    .values(conformanceUserValues(userId, `draft-tree-scenario-${userId.slice(0, 8)}`));
   await db.insert(projects).values({
     id: projectId,
     userId,
