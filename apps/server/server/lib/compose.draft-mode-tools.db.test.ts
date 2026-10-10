@@ -305,8 +305,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    // D24: a binary copy duplicates the stored object and lands live, even in a draft Work.
-    it("copies a binary file live as a new stored object", async () => {
+    // D24 with 12b-Q2: a binary copy duplicates the stored object; in a draft-mode Work it
+    // is the draft's own hidden row, never shared and not live.
+    it("copies a binary file into the draft as its own hidden row and stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(
@@ -340,12 +341,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { ...THREAD, agentSlug: null },
       );
 
-      expect(copied.result).toMatchObject({ status: "success", destination: "live" });
+      expect(copied.result).toMatchObject({
+        status: "success",
+        destination: "draft",
+        draftWork: "rewrite",
+      });
       const [copy] = await db
         .select()
         .from(schema.documents)
         .where(eq(schema.documents.name, "scan-copy"));
+      expect(copy?.hidden).toBe(true);
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
+      const created = await db
+        .select({ draftId: schema.draftTreeChanges.draftId })
+        .from(schema.draftTreeChanges)
+        .where(eq(schema.draftTreeChanges.nodeId, copy?.id ?? ""));
+      expect(created).toHaveLength(1);
+      await expect(
+        runtime.ports.contextPorts
+          .forProject(PROJECT_ID, USER_ID, new Map())
+          .stat("kb://scan-copy.pdf"),
+      ).resolves.toMatchObject({ ok: false, error: { code: "not_found" } });
       const key = copy?.storageUrl?.replace("object://meridian/", "") ?? "";
       const stored = await runtime.ports.objectStore.get(key);
       expect(stored.ok && [...stored.value.bytes]).toEqual([...bytes]);

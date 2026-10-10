@@ -203,6 +203,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async ensureFolderPath(dir: readonly string[]): Promise<string | null> {
+    if (dir.length === 0) return null;
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
       const ensured = await ensureLiveFolderPath(this.deps.db, {
@@ -228,8 +229,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
-    const created = await this.createDocumentRecordIfAbsent(input);
+    const created = await this.claimLive(input);
     if (!created) throw new ContextEntryConflictError();
+    // Direct creates tell the live manifest once they commit.
     await notifyMembershipObserver(
       this.deps.membershipObserver,
       "documentCreated",
@@ -239,6 +241,19 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocumentRecordIfAbsent(
+    input: CreateDocumentInput & LiveCreateExpectation,
+  ): Promise<LiveDocumentCreation | null> {
+    return runInDrizzleTransaction(this.deps.db, async () => {
+      const created = await this.claimLive(input);
+      // The creation aggregate's membership commits with the identity, until lane M
+      // retires the live manifest.
+      if (created) await this.deps.membershipObserver?.documentCreated(created.document.id);
+      return created;
+    });
+  }
+
+  /** Reveal the hidden document at the path, or insert the live row. Null when taken. */
+  private async claimLive(
     input: CreateDocumentInput & LiveCreateExpectation,
   ): Promise<LiveDocumentCreation | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
@@ -278,8 +293,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         input.extension,
       );
       if (!document) throw new Error(`Created document ${created.value.documentId} is not live`);
-      // Live manifest membership until the manifest is retired (lane M).
-      await this.deps.membershipObserver?.documentCreated(document.id);
       return { document, revealed: created.value.kind === "revealed" };
     });
   }

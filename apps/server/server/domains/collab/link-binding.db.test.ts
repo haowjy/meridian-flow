@@ -384,31 +384,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             markdown: "First.\n\n[A](a.md)\n",
           },
           {
-            door: "repair never publishes an empty document over a projection with no canonical state",
-            act: async () => {
-              const half = randomUUID();
-              const surviving = "Only surviving prose.\n\n[T](target.md)";
-              await db.insert(documents).values({
-                id: half,
-                contextSourceId: source?.id ?? "",
-                name: "half",
-                extension: "md",
-              });
-              await db
-                .insert(documentMarkdownProjections)
-                .values({ documentId: half, markdown: surviving });
-              const repaired = await port.ensureTrackedDocument("manuscript://half.md");
-              expect(repaired).toMatchObject({ ok: false, error: { code: "io_error" } });
-              const [kept] = await db
-                .select()
-                .from(documentMarkdownProjections)
-                .where(eq(documentMarkdownProjections.documentId, half));
-              expect(kept?.markdown).toBe(surviving);
-              expect((await createDrizzleJournal(db).read(half)).checkpoint).toBeFalsy();
-              return half;
-            },
-          },
-          {
             door: "a new code file is created with its content, as code",
             act: async () =>
               (

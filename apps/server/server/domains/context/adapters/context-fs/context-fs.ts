@@ -599,7 +599,9 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
     const withContent = content !== null && content.markdown.length > 0;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const discovered = await this.discoverLiveCreate(path, dir, filename, options);
+      const discovered = await this.commandExecutor.exclusive(() =>
+        this.discoverLiveCreate(path, dir, filename, options),
+      );
       if ("fault" in discovered) return Err(discovered.fault);
       if ("existing" in discovered) return Ok({ documentId: discovered.existing });
       const run = (held?: HeldLiveDocument) =>
@@ -727,7 +729,9 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!isUuid(options.documentId)) {
       return Err({ code: "invalid_operation", message: "documentId must be a UUID" });
     }
-    const identity = await this.store.liveIdentity(options.documentId);
+    const identity = await this.commandExecutor.exclusive(() =>
+      this.store.liveIdentity(options.documentId),
+    );
     return this.commandExecutor.run(
       () => this.createUntitledDocumentInTransaction(path, options, identity),
       undefined,

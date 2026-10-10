@@ -314,6 +314,8 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async ensureFolderPath(dir: readonly string[]) {
+    // The source root always exists.
+    if (dir.length === 0) return null;
     return this.mutate((store) => store.ensureFolderPath(dir));
   }
 
