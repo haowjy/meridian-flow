@@ -195,9 +195,14 @@ export function createInMemoryPendingSettlementStore(options?: {
         return "commit" as const;
       });
       if (result === "retry") return { status: "retry" as const };
-      input.afterCommit();
+      input.afterCommit(input.members.map(({ push }) => push.documentId));
       for (const member of input.members) options?.onCompleted?.(member.push.id);
-      return { status: "completed" as const, projections: [] };
+      return { status: "completed" as const, projections: [], held: [] };
+    },
+
+    // This store models no publication steps: every check proceeds.
+    async checkPublication() {
+      return { kind: "proceed" as const, hold: [] };
     },
 
     async listRecoverableBatchIds() {
@@ -232,6 +237,7 @@ function snapshot(batch: BatchState): PendingSettlementBatch {
     batchId: batch.batchId,
     claim: { ...batch.claim, leaseExpiresAt: new Date(batch.claim.leaseExpiresAt) },
     attemptCount: batch.attemptCount,
+    payloads: new Map(),
     members: batch.members.map(({ pending }) => ({
       ...pending,
       postCutUpdates: [...pending.postCutUpdates],

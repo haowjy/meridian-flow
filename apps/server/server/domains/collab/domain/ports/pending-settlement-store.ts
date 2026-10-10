@@ -1,5 +1,6 @@
 /** Persistence authority for pending branch-push settlement batches and their recovery. */
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   PendingSettlementBatch,
   PushLineageRow,
@@ -10,6 +11,11 @@ import type {
   CommittedChangeTrailProjection,
   DurableTrailRecord,
 } from "./change-trail-persistence.js";
+import type {
+  PublicationAdmission,
+  PublicationHold,
+  PublicationRefusal,
+} from "./settlement-publication.js";
 
 export type SettlementAdmission = {
   documentId: DocumentId;
@@ -36,23 +42,54 @@ export type SettlementCut = {
   pushUpdate: Uint8Array;
 };
 
-export type BatchCompletion = {
+/** What every publication step plans from, besides the members. */
+export type PublicationInputs = {
+  /** Durable step inputs staged with the batch, by step kind. */
+  payloads: ReadonlyMap<string, JsonValue>;
+  /** Each member's live state vector at its coordinator lease (its lock cut). */
+  liveStateVectors: ReadonlyMap<DocumentId, Uint8Array>;
+};
+
+export type BatchCompletion = PublicationInputs & {
   batchId: string;
   claim: SettlementClaim;
   members: readonly BatchCompletionMember[];
   /**
-   * Synchronous and non-mutating: compares warm state with every member's
-   * in-transaction cut after all writes, just before commit. `retry` rolls the
-   * whole batch back.
+   * Synchronous and non-mutating: compares warm state with every admitted
+   * member's in-transaction cut after all writes, just before commit. `retry`
+   * rolls the whole batch back.
    */
   recheck(cuts: readonly SettlementCut[]): "commit" | "retry";
-  /** Runs once the transaction commits, before every publication step's after-commit effect. */
-  afterCommit(): void;
+  /**
+   * Runs once the transaction commits, with the members whose text admitted,
+   * before every publication step's after-commit effect.
+   */
+  afterCommit(admitted: readonly DocumentId[]): void;
 };
 
+/** A member a publication step kept out of live: its push is gone and its rows are reviewable. */
+export type HeldMember = PublicationHold & { pushId: number };
+
 export type BatchCompletionResult =
-  | { status: "completed"; projections: readonly CommittedChangeTrailProjection[] }
+  | {
+      status: "completed";
+      projections: readonly CommittedChangeTrailProjection[];
+      held: readonly HeldMember[];
+    }
+  /** A step refused: the staged batch is abandoned and its journal rows are reviewable again. */
+  | { status: "refused"; reason: PublicationRefusal }
   | { status: "retry" };
+
+/** The pre-staging check: prepared members before any push or batch row exists. */
+export type PublicationCheck = PublicationInputs & {
+  batchId: string;
+  members: readonly {
+    documentId: DocumentId;
+    branchId: string;
+    workId: WorkId | null;
+    journalIds: readonly number[];
+  }[];
+};
 
 export type PendingSettlementStore = {
   joinAdmission(input: SettlementAdmission): Promise<void>;
@@ -94,5 +131,10 @@ export type PendingSettlementStore = {
    * recovery claims.
    */
   completeBatch(input: BatchCompletion): Promise<BatchCompletionResult>;
+  /**
+   * Runs every step's plan and `check()` under the completion's lock order in one
+   * short, write-free transaction before staging. Root-owned, like completion.
+   */
+  checkPublication(input: PublicationCheck): Promise<PublicationAdmission>;
   listRecoverableBatchIds(): Promise<string[]>;
 };

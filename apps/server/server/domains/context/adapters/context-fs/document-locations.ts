@@ -72,24 +72,26 @@ export async function lockContextSources(
 
 /**
  * Namespace keys of the sources these documents occupy now, deleted rows included (a restore
- * locks before it unhides). Arrivals that are not authored writes (Apply, Work restore) take
- * these after their Work locks and before any holder lock (contract §9.2, O6).
+ * locks before it unhides), together with explicit sources (an Apply's final locations), in one
+ * sorted acquisition. Arrivals that are not authored writes (Apply, Work restore) take these
+ * after their Work locks and before any holder lock (contract §9.2, O6).
  */
 export async function lockDocumentNamespaces(
   db: Database,
   documentIds: readonly string[],
+  sourceIds: readonly string[] = [],
 ): Promise<void> {
-  if (documentIds.length === 0) return;
-  const rows = await currentDrizzleDb(db)
-    .selectDistinct({ sourceId: documents.contextSourceId })
-    .from(documents)
-    .where(inArray(documents.id, [...new Set(documentIds)]));
+  if (documentIds.length === 0 && sourceIds.length === 0) return;
+  const rows =
+    documentIds.length === 0
+      ? []
+      : await currentDrizzleDb(db)
+          .selectDistinct({ sourceId: documents.contextSourceId })
+          .from(documents)
+          .where(inArray(documents.id, [...new Set(documentIds)]));
   await lockNamespaceKeys(
     db,
-    await sourceNamespaces(
-      db,
-      rows.map((row) => row.sourceId),
-    ),
+    await sourceNamespaces(db, [...rows.map((row) => row.sourceId), ...sourceIds]),
   );
 }
 

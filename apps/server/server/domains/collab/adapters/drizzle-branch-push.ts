@@ -250,12 +250,14 @@ export function createDrizzlePushCommitStore(
             });
           }
           // A durable commit requires its trail bundle: every push's, in one record.
-          await persistDurableTrailRecords(
-            staged.map(({ prepared, push }) => ({ record: prepared.trail, push })),
-            changeTrails,
-            notices,
-          );
-          await stageSettlementBatchWithinTx(txDb, input.settlement, staged);
+          if (staged.length > 0) {
+            await persistDurableTrailRecords(
+              staged.map(({ prepared, push }) => ({ record: prepared.trail, push })),
+              changeTrails,
+              notices,
+            );
+          }
+          await stageSettlementBatchWithinTx(txDb, input.settlement, staged, input.payloads);
           return { status: "inserted" as const, pushes: staged.map(({ push }) => push) };
         }),
       ).catch(async (error: unknown) => {

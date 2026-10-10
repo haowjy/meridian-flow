@@ -6,6 +6,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { JsonValue } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -57,6 +58,9 @@ const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = aw
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
 const { manifestArrivalPublication } = await import("../adapters/drizzle-manifest-arrivals.js");
+const { lockDocumentNamespaces } = await import(
+  "../../context/adapters/context-fs/document-locations.js"
+);
 const { createDrizzleChangeTrailAggregateWriter } = await import(
   "../adapters/drizzle-change-trail-aggregate.js"
 );
@@ -411,7 +415,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     notices,
     undefined,
     {
-      ...(options.arrivals ? { namespaces: options.arrivals } : {}),
+      // The real sorted acquisition, as composition's arrivals adapter takes it.
+      namespaces: {
+        lockNamespaces: ({ documentIds, sourceIds }) =>
+          lockDocumentNamespaces(db, documentIds, sourceIds),
+      },
       steps: [
         ...(options.arrivals ? manifestArrivalPublication(db, options.arrivals).steps : []),
         ...(options.publicationSteps ?? []),
@@ -1764,8 +1772,16 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         true,
       ),
     push: (branchId: string) => realBranchPush.pushToLive({ branchId }),
-    pushBranches: (branchIds: readonly string[], resetPolicy?: "auto") =>
-      realBranchPush.pushBranchesToLive({ branchIds, ...(resetPolicy ? { resetPolicy } : {}) }),
+    pushBranches: (
+      branchIds: readonly string[],
+      resetPolicy?: "auto",
+      payloads?: Readonly<Record<string, JsonValue>>,
+    ) =>
+      realBranchPush.pushBranchesToLive({
+        branchIds,
+        ...(resetPolicy ? { resetPolicy } : {}),
+        ...(payloads ? { payloads } : {}),
+      }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     seedDestructivePush,
@@ -1904,6 +1920,8 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
           trail: member.trail,
           replacement: trailContributionReplacement(member.trail, member.push),
         })),
+        payloads: batch.payloads,
+        liveStateVectors: new Map(),
         recheck() {
           completionCallbackRan = true;
           return "commit";

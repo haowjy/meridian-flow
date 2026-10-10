@@ -11,16 +11,20 @@ import { and, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { manifestMembershipRowDocumentId } from "../domain/manifest-membership-journal.js";
-import type { SettlementPublication } from "./drizzle-pending-settlement.js";
+import type { SettlementPublication } from "./drizzle-settlement-publication.js";
 
 export function manifestArrivalPublication(
   db: Database,
   arrivals: DocumentArrivals,
 ): SettlementPublication {
   return {
-    namespaces: arrivals,
+    namespaces: {
+      lockNamespaces: ({ documentIds, sourceIds }) =>
+        arrivals.lockNamespaces(documentIds, sourceIds),
+    },
     steps: [
       {
+        kind: "manifest_arrivals",
         async plan(batch) {
           const arriving = await arrivingDocumentIds(
             db,

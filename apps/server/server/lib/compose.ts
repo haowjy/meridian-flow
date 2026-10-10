@@ -1716,6 +1716,12 @@ function createInMemoryNoticePort(): NoticePort {
         if (consumed.has(rows[index]?.id ?? -1)) rows.splice(index, 1);
       }
     },
+    async retractForPushes(pushIds) {
+      const retracted = new Set(pushIds);
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (retracted.has(String(rows[index]?.data.pushId))) rows.splice(index, 1);
+      }
+    },
   };
 }
 

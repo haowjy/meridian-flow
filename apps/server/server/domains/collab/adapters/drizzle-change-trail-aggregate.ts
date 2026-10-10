@@ -172,8 +172,14 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           ? true
           : persistedPushChanges.length === incomingKeys.size &&
             persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
+        const retiredPushIds = new Set<string | null>(
+          input.settlementRefinement?.retiredPushIds ?? [],
+        );
         const replacement = input.settlementRefinement
-          ? refinePushChanges(persistedPushChanges, trail.changes)
+          ? refinePushChanges(
+              persistedPushChanges.filter((change) => !retiredPushIds.has(change.pushId)),
+              trail.changes,
+            )
           : trail.changes;
         const changes = input.settlementRefinement?.currentVersion
           ? refinementIsComplete
@@ -344,14 +350,14 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         { owner: NormalizedTrail["owner"]; changes: TrailChangeV1[] }
       >();
       const documentTitles = new Map<string, string>();
-      for (const { replacement } of contributions) {
+      for (const { replacement, retire } of contributions) {
         for (const [documentId, title] of replacement.documentTitles) {
           documentTitles.set(documentId, title);
         }
         for (const { owner, changes } of replacement.targets) {
           const key = trailIdForOwner(owner);
           const target = byTrail.get(key) ?? { owner, changes: [] };
-          target.changes.push(...changes);
+          if (!retire) target.changes.push(...changes);
           byTrail.set(key, target);
         }
       }
@@ -368,6 +374,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
         settlementRefinement: {
           pushIds: contributions.map(({ pushId }) => pushId),
           currentVersion: context.refineCurrentVersion,
+          retiredPushIds: contributions.flatMap(({ pushId, retire }) => (retire ? [pushId] : [])),
         },
       });
     },

@@ -102,11 +102,21 @@ export type ChangeTrailPersistence = {
     settlementRefinement?: {
       pushIds: readonly string[];
       currentVersion: boolean;
+      /** Of `pushIds`, those whose provisional changes leave the trail entirely. */
+      retiredPushIds?: readonly string[];
     };
   }): Promise<readonly CommittedChangeTrailProjection[]>;
-  /** Replaces several pushes' provisional contributions in one pass over each trail. */
+  /**
+   * Replaces several pushes' provisional contributions in one pass over each trail.
+   * A `retire` contribution removes the push's changes (it never reached live); its
+   * replacement names the owners only.
+   */
   replacePushContributions(
-    contributions: readonly { pushId: string; replacement: TrailContributionReplacement }[],
+    contributions: readonly {
+      pushId: string;
+      replacement: TrailContributionReplacement;
+      retire?: boolean;
+    }[],
     context: { refineCurrentVersion: boolean },
   ): Promise<readonly CommittedChangeTrailProjection[]>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;

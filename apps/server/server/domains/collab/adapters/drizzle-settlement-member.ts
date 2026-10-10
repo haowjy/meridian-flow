@@ -28,6 +28,7 @@ import {
 import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
@@ -118,6 +119,38 @@ export async function stageSettlementMemberWithinTx(
       update: Buffer.from(initialReconcile),
     });
   }
+}
+
+/**
+ * Puts pushes that never reached live back in review, inside the caller's
+ * transaction: their journal rows are active again at their generation, their
+ * unconsumed notices are retracted, and their lineage is deleted (the outbox
+ * member and its joins cascade), so the idempotency key never answers "already
+ * pushed" for an Apply that didn't happen. The caller retires their trail
+ * contribution.
+ */
+export async function withdrawSettlementMembersWithinTx(
+  db: DrizzleDb,
+  pushes: readonly Pick<PushLineageRow, "id" | "journalIds">[],
+  notices?: NoticePort,
+): Promise<void> {
+  if (pushes.length === 0) return;
+  const journalIds = pushes.flatMap((push) => push.journalIds);
+  if (journalIds.length > 0) {
+    await db
+      .update(branchWriteJournal)
+      .set({ status: "active", pushedAt: null, reviewedBy: null, reviewedAt: null })
+      .where(
+        and(inArray(branchWriteJournal.id, journalIds), eq(branchWriteJournal.status, "pushed")),
+      );
+  }
+  await notices?.retractForPushes(pushes.map((push) => String(push.id)));
+  await db.delete(pushLineage).where(
+    inArray(
+      pushLineage.id,
+      pushes.map((push) => push.id),
+    ),
+  );
 }
 
 /** Each member's lock cut and post-cut joins, read inside the completion transaction. */
@@ -566,7 +599,7 @@ export async function joinAdmissionWithinTx(
     .where(
       and(
         eq(branchPushSettlementOutbox.documentId, input.documentId),
-        ne(branchPushSettlementBatches.state, "completed"),
+        inArray(branchPushSettlementBatches.state, ["pending", "blocked"]),
         excludePushId === undefined
           ? undefined
           : ne(branchPushSettlementOutbox.pushId, excludePushId),

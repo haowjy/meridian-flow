@@ -155,7 +155,7 @@ export async function replaceDocumentAuthorityHeadGeneration(
   | { ok: true; generation: bigint; checkpointId: number }
   | { ok: false; code: "authority_head_busy" | "checkpoint_incomplete" | "stale_generation" }
 > {
-  const { and, ne } = await import("drizzle-orm");
+  const { and } = await import("drizzle-orm");
   const { branchPushSettlementBatches, branchPushSettlementOutbox, documentYjsCheckpoints } =
     await import("@meridian/database");
   const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
@@ -184,7 +184,7 @@ export async function replaceDocumentAuthorityHeadGeneration(
       .where(
         and(
           eq(branchPushSettlementOutbox.documentId, input.documentId),
-          ne(branchPushSettlementBatches.state, "completed"),
+          inArray(branchPushSettlementBatches.state, ["pending", "blocked"]),
         ),
       )
       .limit(1);

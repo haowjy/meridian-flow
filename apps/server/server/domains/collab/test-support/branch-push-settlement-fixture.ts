@@ -26,6 +26,7 @@ export {
   markdownFromUpdate,
   OTHER_USER_ID,
   runInRootDrizzleTransaction,
+  SOURCE_ID,
   schema,
   USER_ID,
 } from "./change-trail-postgres-harness.js";
