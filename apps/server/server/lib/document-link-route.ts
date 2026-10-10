@@ -50,7 +50,7 @@ export async function handleDocumentLinkResolveRequest(
   const { projectId, userId, request } = input;
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
   // Lineage is Scratch's owner, not a replacement for the chat's No Work
-  // draft view. Project-document refs still read that Work's manifest.
+  // draft view: project-document refs still read in that Work's draft view.
   const workId = request.rootThreadId
     ? ((await deps.workAuthorityResolver.noWork(projectId as ProjectId))?.workId ?? null)
     : (request.workId ?? null);

@@ -175,7 +175,10 @@ export function createDraftBranchAheadRegistration(input: {
     return draft?.status === "active" ? draft : null;
   }
 
-  /** Best effort: a ref that can't register is reported, and Apply's prerequisite refuses it. */
+  /**
+   * Best effort: a ref that can't register is reported. Apply's prerequisite registers
+   * again; it fails only on a failure that may pass, never on an unregistrable ref (F20).
+   */
   async function registerDraftBranchAheads(branchId: string): Promise<void> {
     const { snapshot, refs } = await readCut(branchId);
     const draft = await draftOfBranch(snapshot);

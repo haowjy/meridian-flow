@@ -10,8 +10,11 @@ editor UI or transport-shell policy.
   Sync propagates between them; journals are durable and runtime state is
   reconstructible.
 - A Work draft is shared by every thread editing the same document in that Work.
-  Apply publishes its whole current branch; Discard operates on server-vended
-  review classes rather than client-reconstructed turns.
+  Apply is one publication (`domain/draft-publication.ts`): each selected item's
+  whole current branch plus its tree change (reveal, restore, rename back) in one
+  batch, refused `stale` when the review's tokens moved and held per item on a
+  path clash. Discard operates on server-vended review classes rather than
+  client-reconstructed turns.
 - Each live document has a durable authority head whose identity, generation,
   and admission sequence fence every connection and mutation.
 - `@meridian/agent-edit` owns schema-safe mutation and reversal planning. This

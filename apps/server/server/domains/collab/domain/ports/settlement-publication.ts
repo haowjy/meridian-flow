@@ -39,7 +39,7 @@ export type PublicationRefusal = { code: string; detail?: JsonValue };
 
 /**
  * An item a step keeps out of live, and why. Items are the step's own units
- * (lane E: a draft item key); `documentId` names the text member that must not
+ * (Apply: a draft item key); `documentId` names the text member that must not
  * admit with it, absent for a branchless item (an image). Holds are durable:
  * staged with the batch when decided at the check, written in completion when
  * decided there, and reported per item either way.
@@ -120,7 +120,7 @@ export type SettlementPublicationStep = {
   kind: string;
   /**
    * The outer preparation, from the step's payload: the branch ids whose
-   * critical-section leases the batch needs (lane E: every branch of the draft
+   * critical-section leases the batch needs (Apply all: every branch of the draft
    * an Apply may close). Warm execution and recovery both acquire them before
    * coordinator leases and any database transaction; completion calls it again
    * under its locks, and a set that grew sends the batch back to discovery.

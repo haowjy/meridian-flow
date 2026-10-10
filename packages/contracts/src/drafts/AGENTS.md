@@ -1,8 +1,9 @@
 # contracts/drafts — Work-draft review wire DTOs
 
-`draftId` is the only product identity for preview, Apply, and Discard. The
-server translates it to branch infrastructure inside the Work-draft domain;
-wire DTOs must not expose `branchId`. `reviewRoomName` is an opaque,
+On the `review.ts` shapes, `draftId` (one document's branch) is the identity for
+preview, per-document Apply and Discard. The `apply.ts` shapes use D68 names: a
+whole draft's `draftId`, each item's `itemKey`, and `draftBranchId` for its
+branch. Wire DTOs never expose any other storage identity. `reviewRoomName` is an opaque,
 generation-fenced transport address, not another application identity.
 
 The list contains current reviewable work only; completed review is not retained
