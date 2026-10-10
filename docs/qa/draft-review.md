@@ -442,7 +442,13 @@ console error occurs when an empty active preview/reset arrives before the
 settlement catalog. Hold that catalog read to widen the ordering, then release
 it; list omission must not re-admit the unchanged dock address. Check dock Next draft
 and auto-advance stay on Chat, Back to live survives reload, Close only closes
-the dock, and collapse/expand retains review. Capture screenshots with
+the dock, and collapse/expand retains review. For each Close variant, start with
+the same review in an Editor tab, carry it to Chat, close the dock document (X)
+or use Close review on a new-document draft / Live version on a manuscript,
+then return immediately to Editor. Its tab, `draft` URL and marks survive;
+reload on Editor restores that review. Reload on Chat after closing the dock
+instead restores the native occupant (draft-only Editor overlays never persist).
+Capture screenshots with
 `page.screenshot()`, fresh API readback and console errors.
 
 Also check three fences. On a Work screen, open a manuscript in the dock through

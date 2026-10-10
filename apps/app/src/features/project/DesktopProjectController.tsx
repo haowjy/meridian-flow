@@ -102,13 +102,16 @@ export function useDesktopProjectController<
     selectRailScreen(next, () => {
       const plan = transfer(screen, next, screen === "context" ? editorTab : dockTab);
       const options = plan ? { afterCommit: plan.afterCommit, review: plan.review } : undefined;
+      // A live dock copy of the warm Editor document resumes the Editor's own
+      // address. Only a different document or an addressed review is a hand-off.
       return next === "chat"
         ? chat.showChatScreen(options)
         : next === "work"
           ? commands.showWork()
-          : plan
+          : plan &&
+              (plan.review || plan.tab.documentId !== editorPresentation.resolved.tab?.documentId)
             ? openDocumentInEditor(open, plan.tab, options)
-            : commands.showEditor();
+            : commands.showEditor(options);
     });
   };
   const openDockInEditor = (tab: ContextTab) => {

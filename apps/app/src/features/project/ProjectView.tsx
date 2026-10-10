@@ -550,7 +550,7 @@ function HydratedReviewControllers({
   const openEditorReview = useOpenEditorReview();
   const port = useMemo<ReviewAddressPort>(
     () =>
-      presented?.container === "dock"
+      props.activeScreen !== "context"
         ? {
             write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
             admit: (target) =>
@@ -561,7 +561,7 @@ function HydratedReviewControllers({
             admit: openEditorReview,
           },
     [
-      presented?.container,
+      props.activeScreen,
       presentedReview.controller.enterInlineReview,
       props.onSetEditorReviewDraftId,
       openEditorReview,

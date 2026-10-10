@@ -62,7 +62,11 @@ import {
   projectAddressHref,
 } from "./project-address";
 import { addressWorkSelection, workSelectionFor } from "./project-address-resolution";
-import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
+import {
+  resolveLocalDocumentSelection,
+  selectEditorEntryTab,
+  useEditorContainerAddress,
+} from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
@@ -401,6 +405,13 @@ function ReadableProjectDestination({
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
+  const editorContainerAddress = useEditorContainerAddress({
+    active: activeScreen === "context",
+    accountId: user.userId,
+    address,
+    documentId: addressDocumentId ?? null,
+    workId,
+  });
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : (routeWorkIssue(routeWork) ??
@@ -642,7 +653,13 @@ function ReadableProjectDestination({
       if (tab)
         return openContext(
           { ...routeTargetForTab(tab, workId), documentId: tab.documentId },
-          options,
+          {
+            ...options,
+            ...(editorContainerAddress?.documentId === tab.documentId &&
+            editorContainerAddress.workId === workId
+              ? { draftId: editorContainerAddress.address.draftId }
+              : {}),
+          },
         );
     }
     return go(

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep an Editor tab’s review when closing the same document or review in the dock.
+
 - Keep dock-only new-document reviews stable through remote Apply or Discard, and reject discarded documents during dock restoration.
 
 - Development: name the shared draft-review scope for the presented document, not the Editor.
