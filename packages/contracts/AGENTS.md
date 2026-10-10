@@ -62,8 +62,11 @@ runtime shapes, and observability records.
 - `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
   slugs are valid. Parsed URI `normalized` text is syntax, while stable
   real-Work serialization requires opaque project-resolved authority.
-  `formatParsedContextUri` spells parsed address syntax for transport (including
-  clipboard qualification); it never resolves or grants Work authority.
+  `formatParsedContextUri` spells parsed address syntax for transport; it never
+  resolves or grants Work authority. Clipboard qualification uses
+  `qualifyContextUriByHolder`: named Work supplies both owned schemes, lineage
+  supplies Scratch plus No Work Uploads, and No Work supplies only Uploads.
+  With no applicable owner, the link stays contextual.
 - `PENDING_PLACEHOLDER_ROLES` in `threads/` defines pending transcript
   placeholders (`compaction` and handoff seed `system`); the database partial
   index and orphan-repair queries derive from it.
@@ -86,6 +89,8 @@ runtime shapes, and observability records.
 - A document's owner is exclusive by type (`ContextOwner`, `context-owner.ts`):
   `workId` or, for Scratch, `rootThreadId` (the first chat's id), never both.
   A tab or placement carries the resolved form with the lineage's handle.
+  `CatalogDocument.owner` carries the complete `ResolvedContextOwner` from the
+  address snapshot; never recover its Work id by reparsing a URI.
   Flatten to `workId` / `rootThreadId` only at HTTP and storage edges
   (`ProjectContextRequestOptions`). `GET .../context/lineages/:rootThreadId`
   names a lineage by handle and title, trashed first chat included. `WorkingSetRoute` has the same two arms: a

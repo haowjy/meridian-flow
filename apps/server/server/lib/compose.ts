@@ -489,9 +489,22 @@ export async function createProductionAppPorts(input: {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, {
-    settle: (documentIds) => arrivals.settle(documentIds),
-  });
+  // Bound once the collab domain exists; neither runs before composition finishes.
+  const manifestMembership: LinkScopeMembership = (input) => {
+    if (!boundManifestMembership) {
+      throw new Error("Manifest membership resolver used before the collab domain was bound");
+    }
+    return boundManifestMembership.resolveManifestMembership(
+      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
+    );
+  };
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
+    db,
+    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
+    eventSink,
+  );
+  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
     db,
     workProjectionMutation,
@@ -527,21 +540,6 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
-  // Bound once the collab domain exists; neither runs before composition finishes.
-  const manifestMembership: LinkScopeMembership = (input) => {
-    if (!boundManifestMembership) {
-      throw new Error("Manifest membership resolver used before the collab domain was bound");
-    }
-    return boundManifestMembership.resolveManifestMembership(
-      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
-    );
-  };
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
-    db,
-    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
-    eventSink,
-  );
-  const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,

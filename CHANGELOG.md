@@ -8,7 +8,7 @@
 
 - Empty Chat side panels show only the Open document header. Its menu and the document header menu have no root heading; folder back rows remain.
 
-- Copying links from a chat’s Scratch keeps its chat handle without changing Uploads ownership.
+- Copying Scratch and Uploads links keeps the applicable owner. Scratch links in No Work uploads stay contextual instead of preventing copy.
 
 - Writer file creation cannot bypass the AI-only policy of a chat’s Scratch.
 
