@@ -167,13 +167,20 @@ function scan(file, text) {
   function checkSql(node, raw) {
     // Preserve line breaks, remove SQL comments and string literals (not identifier quotes).
     const sql = raw.replace(/'(?:''|[^'])*'|--[^\n]*|\/\*[\s\S]*?\*\//g, " ");
-    const table = '(?:"?(?:documents|folders)"?)';
-    if (new RegExp(`\\b(?:update|into|delete\\s+from)\\s+${table}\\b`, "i").test(sql))
+    const identifier = '(?:"(?:[^"\\n]|"")*"|[a-z_][\\w$]*)';
+    const tableName = '(?:"(?:documents|folders)"|(?:documents|folders))';
+    const qualifiedTable = `(?:${identifier}\\s*\\.\\s*)?${tableName}`;
+    // A word boundary alone accepts prefixes inside quoted names. Require the
+    // entire relation, including its optional schema, before classifying SQL.
+    const relation = `${qualifiedTable}(?![\\w$".])`;
+    if (new RegExp(`\\b(?:update|into|delete\\s+from)\\s+${relation}`, "i").test(sql))
       report(node, "raw-write");
-    const withoutDelete = sql.replace(/\bdelete\s+from\s+"?(?:documents|folders)"?\b/gi, " ");
-    if (new RegExp(`\\b(?:from|join)\\s+${table}\\b`, "i").test(withoutDelete))
+    const withoutDelete = sql.replace(new RegExp(`\\bdelete\\s+from\\s+${relation}`, "gi"), " ");
+    if (new RegExp(`\\b(?:from|join)\\s+${relation}`, "i").test(withoutDelete))
       report(node, "raw-read");
-    if (/\b(?:documents|folders)\b/i.test(sql) && /\bhidden\b/i.test(sql)) report(node, "hidden");
+    // SQL may name a table through a column interpolation, without FROM/JOIN.
+    const mention = new RegExp(`(?<![\\w$"])${qualifiedTable}(?![\\w$"])`, "i");
+    if (mention.test(sql) && /\bhidden\b/i.test(sql)) report(node, "hidden");
   }
   function mutationTarget(node) {
     while (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {

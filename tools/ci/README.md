@@ -68,7 +68,9 @@ excluded. Fixtures are checked separately, first, on **every invocation**.
 The syntactic rules cover Drizzle `from`/joins, relational `query`,
 `insert`/`update`/`delete`, imported `sql` templates and `sql.raw` strings, and
 bare table bindings escaping into helpers. Renamed imports, namespace imports,
-`alias()` results and local shadowing are tracked per file. `getTableColumns`
+`alias()` results and local shadowing are tracked per file. Raw SQL recognizes
+bare, quoted and schema-qualified table names without matching longer names
+such as `documents_archive` or `documents_view`. `getTableColumns`
 and `getTableName` are metadata operations, not escapes. Column references and
 type positions do not count as queries. This is a syntactic guard, not a
 whole-program dataflow analysis: wrappers must accept tree views, not raw tables.
