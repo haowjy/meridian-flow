@@ -1,6 +1,6 @@
 /**
- * Wire contracts for the whole-draft review list items and Apply (foundation contract
- * §11.6, §13.4). Additive in type and meaning (F14): today's `drafts` list, preview and
+ * Wire contracts for the whole-draft review list items, Apply and Discard all (foundation
+ * contract §11.6, §12.3, §13.4). Additive in type and meaning (F14): today's `drafts` list, preview and
  * per-document Apply keep their fields; new information rides on new fields with D68
  * names (`draftId` is a drafts row, `draftBranchId` one document's branch).
  */
@@ -82,3 +82,14 @@ export type DraftApplyResponseAdditions = { item: DraftApplyItemResult };
 export type DraftApplyRefusalBody =
   | { status: "held"; draftId: string; reason: DraftHeldReason }
   | { status: "stale"; draftId: string };
+
+/** Discard all (contract §12.3): the whole draft the dock rendered, one server command. */
+export const DraftDiscardAllRequestSchema = z.object({
+  /** A drafts row (D68), never a branch id. */
+  draftId: z.string().uuid(),
+});
+export type DraftDiscardAllRequest = z.infer<typeof DraftDiscardAllRequestSchema>;
+/** A whole Discard always closes the draft; `gone` names one that isn't the Work's active draft. */
+export type DraftDiscardAllResponse =
+  | { status: "discarded"; draftId: string; draftClosed: true }
+  | { status: "gone"; draftId: string };

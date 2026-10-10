@@ -17,6 +17,7 @@ import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { settleInDraft } from "../adapters/link-ahead-draft-settlements.js";
 import { recordCreated } from "./draft-tree-store.js";
+import { tombstoneUnused } from "./end-use.js";
 import type {
   BinaryNode,
   CreateFault,
@@ -27,13 +28,7 @@ import type {
   RevealIdentity,
   TrackedNode,
 } from "./hidden-node-types.js";
-import {
-  filePath,
-  insertDocumentRow,
-  insertFolder,
-  lockDocuments,
-  tombstoneDocuments,
-} from "./node-rows.js";
+import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";
 import { type PlaceResult, place, walkFolders } from "./placement.js";
 import { type TreeHookPoint, treeHook } from "./test-hooks.js";
 import { spellNodeAddresses } from "./tree-addresses.js";
@@ -352,9 +347,10 @@ async function pickHiddenCandidate(
   await treeHook(options.lock);
   if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ...filter, ids });
-  await tombstoneDocuments(
+  await tombstoneUnused(
     db,
     valid.filter((candidate) => candidate.activeUses === 0).map((candidate) => candidate.id),
+    { keepFolders: true },
   );
   return firstUsed(valid);
 }

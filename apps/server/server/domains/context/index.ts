@@ -138,6 +138,7 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
+export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 export * from "./tree/tree-view.js";
 export {
   createInMemoryUnifiedContextPortFactory,

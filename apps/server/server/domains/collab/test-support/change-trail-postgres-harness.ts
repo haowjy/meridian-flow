@@ -19,15 +19,17 @@ import { grantedJournal, testFileGrant } from "../../../test-support/file-grants
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftDiscard } from "../adapters/drizzle-draft-discard.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
 } from "../adapters/drizzle-drafts.js";
-import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
+import { createDraftBranchLeases } from "../domain/draft-branch-leases.js";
+import { createDraftDiscard } from "../domain/draft-discard.js";
 import { createDrafts } from "../domain/drafts.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
@@ -693,14 +695,25 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const drafts = createWorkDraftReviewService({
     links,
-    discardWorkDraft: createDrizzleWorkDraftDiscard(
-      db,
-      branchStore,
-      branchCoordinator,
-      branchCriticalSections,
+    discard: createDraftDiscard({
+      drafts: workDrafts,
+      reviewItems,
+      draftLeases: createDraftBranchLeases({
+        branches: branchStore,
+        criticalSections: branchCriticalSections,
+      }),
+      criticalSections: branchCriticalSections,
       liveCoordinator,
-      workDrafts,
-    ),
+      // No Work projection in this harness: pending counts aren't under test.
+      store: createDrizzleDraftDiscard(db, {
+        drafts: workDrafts,
+        branches: branchStore,
+        coordinator: branchCoordinator,
+        workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
+      }),
+      invalidateThread: (documentId, threadId) => agentEdit.invalidateThread(documentId, threadId),
+      releaseObjects: async () => {},
+    }),
     branches: branchStore,
     branchCoordinator,
     branchJournal: durableBranchJournalReadStore,

@@ -18,6 +18,7 @@ import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
+import type { WorkDraftDisposal } from "../projects/index.js";
 import type {
   RefusedResponseDocument,
   RoutedWriteOutcome,
@@ -43,6 +44,7 @@ export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
+import type { DiscardResult } from "./domain/draft-discard.js";
 import type { ApplyItemRef, ApplyResult } from "./domain/draft-publication.js";
 import type { DraftReviewItem } from "./domain/draft-review-items.js";
 import type { Drafts } from "./domain/drafts.js";
@@ -381,6 +383,8 @@ export type DraftReviewApi = {
     userId?: UserId;
     operationIds?: string[];
   }): Promise<DraftDiscardResult>;
+  /** Discard all (§12.3): the whole draft, one command; always closes it. */
+  discardAll(input: { workId: WorkId; draftId: DraftId; userId: UserId }): Promise<DiscardResult>;
 };
 
 export type DraftSessionStats = {
@@ -402,6 +406,8 @@ export type CollabDraftResolver = {
   draftLinks: Pick<DraftBranchAheadRegistration, "prepareDraftLinkPublication" | "flush">;
   /** Every branch of a draft leased before its transaction: what closing the draft needs. */
   draftLeases: DraftBranchLeases;
+  /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
+  workDraftDisposal: WorkDraftDisposal;
 };
 
 export type TurnLiveLineageAccess = {

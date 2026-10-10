@@ -1,12 +1,12 @@
 /**
  * Work-draft review: the list (tree state merged with branches with rows, §13.1), the
  * preview with the tokens Apply checks (§11.3), Apply through the one publication
- * (§11.4), and Discard.
+ * (§11.4), and Discard through the one kernel (§12): one item, or the whole draft.
  */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import { branchRoomName } from "@meridian/contracts/protocol";
-import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { CollabDrafts } from "../contracts.js";
@@ -16,19 +16,20 @@ import type { BranchJournalReadStore, BranchReviewService } from "./branch-push-
 import { fullStateFingerprint } from "./branch-push-transition.js";
 import { BranchCorruptError, isBranchNotFoundError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
+import type { DraftDiscard } from "./draft-discard.js";
 import type { ApplyItemRef, DraftPublication } from "./draft-publication.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { ApplicationBranchStore, WorkDraftDiscard } from "./ports/application-branch-store.js";
+import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 
 export function createWorkDraftReviewService(input: {
   /** Both sides of a preview spell from one snapshot: live in the live view, the draft in its own. */
   links: DocumentLinkScopes;
   branches: ApplicationBranchStore;
-  discardWorkDraft: WorkDraftDiscard;
+  discard: DraftDiscard;
   branchCoordinator: BranchCoordinator;
   branchJournal: BranchJournalReadStore;
   branchReview: BranchReviewService;
@@ -274,17 +275,18 @@ export function createWorkDraftReviewService(input: {
         reviewedByUserId: command.userId,
       });
     } else {
-      // Until lane D's discardItems: a created document still hidden ends the draft's use.
-      const createdBy = (await input.reviewItems.item(active.draftId, command.documentId))?.isNew
-        ? active.draftId
-        : null;
-      await input.discardWorkDraft({
-        ...(createdBy ? { createdBy } : {}),
-        workId: command.workId,
-        documentId: command.documentId,
-        contentBranchId: branch.branchId,
-      });
-      await input.agentEdit.invalidateThread(command.documentId, command.threadId ?? "");
+      // The whole item (§12.3): its text reset from live; a document the draft created
+      // ends the draft's use, tombstoned when no draft uses it any more.
+      const item = await input.reviewItems.item(active.draftId, command.documentId);
+      if (item && item.draftBranchId === branch.branchId) {
+        await input.discard.discardItems({
+          workId: command.workId,
+          draftId: active.draftId,
+          selection: { kind: "items", itemKeys: [item.itemKey] },
+          ...(command.userId ? { userId: command.userId } : {}),
+          ...(command.threadId ? { threadId: command.threadId as ThreadId } : {}),
+        });
+      }
     }
     return { status: "discarded" as const, draftId: command.draftId };
   }
@@ -319,6 +321,14 @@ export function createWorkDraftReviewService(input: {
       },
       async discardWorkDraft(command) {
         return discardWorkDraft(command);
+      },
+      async discardAll(command) {
+        return input.discard.discardItems({
+          workId: command.workId,
+          draftId: command.draftId,
+          selection: { kind: "whole" },
+          userId: command.userId,
+        });
       },
     },
     draftSessionStats: {

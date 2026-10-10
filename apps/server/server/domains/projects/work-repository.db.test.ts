@@ -5,6 +5,7 @@ import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createPostgresWorkDraftDisposal } from "../collab/test-support/work-draft-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
 import { createTestDrizzleDelivery } from "../runtime/loop/__tests__/test-drizzle-delivery.js";
@@ -1031,6 +1032,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
+        drafts: createPostgresWorkDraftDisposal(db),
       });
       await expect(purger.sweep()).resolves.toBe(1);
       await expect(works.findById(unrelatedWork.id)).resolves.toBeNull();
@@ -1061,7 +1063,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
       const eventSink = createInMemoryEventSink();
-      const purger = createDrizzleWorkPurger({ db, objectStore, eventSink });
+      const purger = createDrizzleWorkPurger({
+        db,
+        objectStore,
+        eventSink,
+        drafts: createPostgresWorkDraftDisposal(db),
+      });
       const other = await works.create({ projectId: PROJECT_ID, name: "Keep me" });
       const expiredTrashThreadId = "00000000-0000-4000-8000-000000000847";
       await db.insert(schema.threads).values({

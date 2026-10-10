@@ -14,6 +14,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { TreeView } from "../../context/tree/tree-view.js";
 import {
   type FileAccess,
   type FileDestination,
@@ -374,9 +375,27 @@ export function createThreadPeerCorePool(input: {
       pinStaged(entry, staged);
       return core.write(command, staged);
     };
-    const outcome = record
-      ? await call()
-      : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
+    // An immediate drafted write that lost its draft to a close (Discard all, Apply all)
+    // between the ensure and its commit refuses like a save does (§2.5), never as a crash.
+    const draftClosedUnder = async () =>
+      draftView?.kind === "draft" &&
+      destination.kind === "draft" &&
+      !sameView(await input.drafts.viewForWork(destination.workId), draftView);
+    const immediate = async (): Promise<WriteOutcome> => {
+      try {
+        const done = await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
+        return done.isError && done.status === "internal_error" && (await draftClosedUnder())
+          ? draftChanged(command)
+          : done;
+      } catch (cause) {
+        if (!(await draftClosedUnder())) throw cause;
+        if (documentId && context.threadId) {
+          await core.invalidateThread(documentId, context.threadId);
+        }
+        return draftChanged(command);
+      }
+    };
+    const outcome = record ? await call() : await immediate();
     if (!outcome.isError && documentId) {
       if (context.threadId) lastSeen.set(seenKey(context.threadId, documentId), destination);
       if (!context.responseId && destination.kind === "live") input.afterLiveCommit?.(documentId);
@@ -684,6 +703,27 @@ function readRequired(
       payload: { path, message },
     }),
   };
+}
+
+/** The Work's draft this write ensured closed before the write landed (§2.5). */
+function draftChanged(command: WriteCommand): WriteOutcome {
+  const path = splitDocumentFile(command.file).filePath;
+  const message = `This file's draft changed before your write landed (it was applied or discarded), so this change wasn't kept. Read ${path} again before editing.`;
+  return {
+    status: "invalid_write",
+    isError: true,
+    revision: null,
+    command: command.command,
+    result: modelResult({
+      command: command.command,
+      status: "invalid_write",
+      payload: { path, message },
+    }),
+  };
+}
+
+function sameView(a: TreeView, b: LinkView): boolean {
+  return a.kind === "draft" && b.kind === "draft" ? a.draftId === b.draftId : a.kind === b.kind;
 }
 
 function versionPhrase(destination: FileDestination, preposition: "in" | "to"): string {
