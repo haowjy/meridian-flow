@@ -677,9 +677,9 @@ commands, and the lightweight hunk model used by the plugin.
   decoration construction so anchor handling can be unit-tested without a DOM.
 - Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
   RelativePositions; local writer typing maps the existing set through the
-  transaction. The extension has no optimistic attribution path — the next
-  server model owns writer attribution. Review dispositions never use browser
-  mutation origins or collaborative history; Ctrl+Z is not a review restore
+  transaction. Local inserted ranges paint gold immediately, even while marks
+  are hidden; an authoritative server model replaces that pending attribution.
+  Review dispositions never use browser mutation origins or collaborative history; Ctrl+Z is not a review restore
   mechanism.
 - Editor-side click seam: mousedown on any decoration DOM
   (`[data-review-operations]`) dispatches
@@ -702,10 +702,11 @@ geometry: a merge artifact or an unclassified hunk is **neutral** (the dashed
 seam, a ring on a block, an unattributed struck removal and fold), never an
 invented AI colour. Anchors are resolved once per model and document into
 `ReviewGeometry` (`resolveGeometry`), kept in plugin state; focus, pulse, folds,
-the bar slot, marks visibility and a locale change repaint from it
-(`paintDecorations`) without resolving a position. Remote rebuilds, a new model
-and a changed document re-resolve. The removal widget's copy is Lingui, drawn at
-render time.
+the bar slot and a locale change repaint from it (`paintDecorations`) without
+resolving a position. Marks visibility gates only the view output, retaining
+the full projection. Remote rebuilds, a new model and a changed document re-resolve. The removal widget's copy is Lingui, drawn at
+render time. Widget reuse keys include exact removal text, segment attribution
+and emitted attributes; identical refetches retain unfolded state.
 
 ## Change-trail navigation
 

@@ -117,9 +117,10 @@ function removalIdentity(
   operationIds: readonly string[],
   paragraphs: readonly RemovalSegment[][],
 ): string {
-  const texts = paragraphs.map(paragraphText);
-  const chars = texts.reduce((total, text) => total + text.length, 0);
-  return `${operationIds.join("+")}:${texts.length}:${chars}:${texts[0]?.slice(0, 24) ?? ""}`;
+  return JSON.stringify([
+    operationIds,
+    paragraphs.map((paragraph) => paragraph.map(({ text, kind }) => [text, kind])),
+  ]);
 }
 
 export function removalCharCount(plan: RemovalPlan): number {
