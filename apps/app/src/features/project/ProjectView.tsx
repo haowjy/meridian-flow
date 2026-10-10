@@ -539,7 +539,6 @@ function expandToggle(
 /** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
   const screenSwitch = useDesktopProjectController({
-    entryKey: props.routeLocationKey ?? "",
     projectId: props.projectId,
     current:
       props.editorScope.status === "ready"

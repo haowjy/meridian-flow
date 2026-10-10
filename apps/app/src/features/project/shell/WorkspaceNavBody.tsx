@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
-import { useRailSwitchFailed } from "../DesktopProjectController";
+import { useRailSwitchFailed } from "../routing/document-switch-failure";
 import { SCREENS, type ScreenKey, type ScreenMeta, screenLabel } from "./screens";
 
 export type WorkspaceNavPresentation = "desktop" | "phone";

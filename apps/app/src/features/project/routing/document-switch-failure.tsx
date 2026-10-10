@@ -12,6 +12,7 @@ type SwitchFailure = {
 };
 const FailureContext = createContext<{
   failures: Partial<Record<Origin, SwitchFailure>>;
+  railSwitchFailed: ScreenKey | null;
   clear: (origin?: Origin) => void;
   report: (result: NavigationSettlement, source: SwitchSource) => void;
 } | null>(null);
@@ -36,6 +37,7 @@ export function DocumentSwitchFailureProvider({
     <FailureContext.Provider
       value={{
         failures,
+        railSwitchFailed: railFailure(failures, entryKey),
         clear: (origin) =>
           setFailures((previous) =>
             Object.fromEntries(
@@ -94,4 +96,23 @@ export function destinationFailure(
       failed.ticket.href === href &&
       failed.ticket.key === key,
   );
+}
+
+/** Both shells own rail intent; only desktop composes a document transfer into its command. */
+export function useRailScreenSwitch(
+  screen: ScreenKey,
+  isCurrent: ((ticket: ProjectNavigationTicket) => boolean) | undefined,
+) {
+  const failure = useDocumentSwitchFailures();
+  return (next: ScreenKey, command: () => Promise<NavigationSettlement>) => {
+    if (screen === next && next !== "chat") return;
+    failure.clear("rail");
+    void command().then((result) => {
+      if (result.kind === "failed" && isCurrent?.(result.ticket))
+        failure.report(result, { kind: "rail", screen: next });
+    });
+  };
+}
+export function useRailSwitchFailed() {
+  return useDocumentSwitchFailures().railSwitchFailed;
 }

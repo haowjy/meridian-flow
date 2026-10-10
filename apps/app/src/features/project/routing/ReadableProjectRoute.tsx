@@ -39,6 +39,7 @@ import {
   DocumentSwitchFailureProvider,
   destinationFailure,
   useDocumentSwitchFailures,
+  useRailScreenSwitch,
 } from "./document-switch-failure";
 import { editorDefaultWorkPending } from "./editor-default-work";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
@@ -649,9 +650,14 @@ function ReadableProjectDestination({
       { replace: false, ...options },
     );
   };
-  const selectScreen = (next: ScreenKey) => {
-    void (next === "chat" ? chat.showChatScreen() : showScreenDestination(next));
-  };
+  const selectRailScreen = useRailScreenSwitch(
+    activeScreen,
+    (ticket) => latest.current.navigation?.isCurrent(ticket) ?? false,
+  );
+  const selectScreen = (next: ScreenKey) =>
+    selectRailScreen(next, () =>
+      next === "chat" ? chat.showChatScreen() : showScreenDestination(next),
+    );
   // A project folder keeps the current editing context; a Work's folder names its Work.
   const browse = (scheme: ProjectContextTreeScheme | null, path = "") =>
     go(

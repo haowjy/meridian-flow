@@ -20,7 +20,7 @@ import { handOffVisibleDocument } from "./dock/hand-off-visible-document";
 import { commitDockDocument } from "./dock/use-dock-placement";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
 import { useChatNavigation } from "./routing/chat-navigation";
-import { railFailure, useDocumentSwitchFailures } from "./routing/document-switch-failure";
+import { useDocumentSwitchFailures, useRailScreenSwitch } from "./routing/document-switch-failure";
 import {
   useIsCurrentNavigation,
   useOpenContextRoute,
@@ -35,7 +35,6 @@ const DesktopPresentation = createContext<{
   screen: ScreenKey;
   document: DockDocument | null;
   openDockInEditor: (tab: ContextTab) => void;
-  railSwitchFailed: ScreenKey | null;
 } | null>(null);
 export function useDockEditorJump() {
   return useContext(DesktopPresentation)?.openDockInEditor;
@@ -45,13 +44,12 @@ export function useDesktopProjectController<
 >(input: {
   projectId: string;
   screen: ScreenKey;
-  entryKey: string;
   current: T | null;
   requestedWorkId: string | null;
   contextLive: boolean;
   issue?: ProjectRouteIssue;
 }) {
-  const { projectId, screen, entryKey } = input;
+  const { projectId, screen } = input;
   const editorPresentation = useDesktopEditorPresentation(input);
   const dockDocument = useDesktopDockPresentation(projectId, screen);
   const collapsed = useProjectSurfacePrefsStore((state) => state.slotPrefs.dock.collapsed);
@@ -62,6 +60,7 @@ export function useDesktopProjectController<
   const open = useOpenContextRoute();
   const isCurrent = useIsCurrentNavigation();
   const failure = useDocumentSwitchFailures();
+  const selectRailScreen = useRailScreenSwitch(screen, isCurrent);
   const transfer = (source: ScreenKey, destination: ScreenKey, tab: ContextTab | null) => {
     const store = useDockViewStore.getState();
     return handOffVisibleDocument({
@@ -84,19 +83,18 @@ export function useDesktopProjectController<
     if (result.kind === "failed" && isCurrent?.(result.ticket)) failure.report(result, source);
   };
   const selectScreen = (next: ScreenKey) => {
-    if (!commands || !open || (screen === next && next !== "chat")) return;
-    failure.clear("rail");
-    const plan = transfer(screen, next, screen === "context" ? editorTab : dockTab);
-    const options = plan ? { afterCommit: plan.afterCommit } : undefined;
-    const operation =
-      next === "chat"
+    if (!commands || !open) return;
+    selectRailScreen(next, () => {
+      const plan = transfer(screen, next, screen === "context" ? editorTab : dockTab);
+      const options = plan ? { afterCommit: plan.afterCommit } : undefined;
+      return next === "chat"
         ? chat.showChatScreen(options)
         : next === "work"
           ? commands.showWork()
           : plan
             ? openDocumentInEditor(open, plan.tab, options)
             : commands.showEditor();
-    void present(operation, { kind: "rail", screen: next });
+    });
   };
   const openDockInEditor = (tab: ContextTab) => {
     if (!open) return;
@@ -114,7 +112,6 @@ export function useDesktopProjectController<
     dockDocument,
     selectScreen,
     openDockInEditor,
-    railSwitchFailed: railFailure(failure.failures, entryKey),
   };
 }
 export function DesktopProjectPresentationProvider({
@@ -122,26 +119,18 @@ export function DesktopProjectPresentationProvider({
   screen,
   dockDocument,
   openDockInEditor,
-  railSwitchFailed,
 }: {
   children: ReactNode;
   screen: ScreenKey;
   dockDocument: DockDocument | null;
   openDockInEditor: (tab: ContextTab) => void;
-  railSwitchFailed: ScreenKey | null;
 }) {
   return (
-    <DesktopPresentation.Provider
-      value={{ screen, document: dockDocument, openDockInEditor, railSwitchFailed }}
-    >
+    <DesktopPresentation.Provider value={{ screen, document: dockDocument, openDockInEditor }}>
       {children}
     </DesktopPresentation.Provider>
   );
 }
-export function useRailSwitchFailed() {
-  return useContext(DesktopPresentation)?.railSwitchFailed ?? null;
-}
-
 export function useDesktopEditorPresentation<
   T extends VisibleEditorRoute & { editorWorkId: string },
 >(input: {

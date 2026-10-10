@@ -29,6 +29,7 @@ import {
   destinationFailure,
   headerFailure,
   useDocumentSwitchFailures,
+  useRailSwitchFailed,
 } from "./routing/document-switch-failure";
 import { createEditorDocumentCommand } from "./routing/editor-document-command";
 import {
@@ -119,6 +120,7 @@ async function setup(source: ScreenKey = "context") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Controller() {
     const failures = useDocumentSwitchFailures();
+    const railSwitchFailed = useRailSwitchFailed();
     const revision = useDockViewStore((state) => state.revision);
     const entry = useSyncExternalStore(
       (listener) => history.subscribe(listener),
@@ -137,7 +139,6 @@ async function setup(source: ScreenKey = "context") {
     const switcher = useDesktopProjectController({
       projectId,
       screen,
-      entryKey: entry.state.__TSR_key ?? "",
       current: recovery
         ? null
         : {
@@ -160,7 +161,7 @@ async function setup(source: ScreenKey = "context") {
         <button type="button" onClick={() => switcher.selectScreen("work")}>
           Work
         </button>
-        {switcher.railSwitchFailed && <p role="alert">Rail failure</p>}
+        {railSwitchFailed && <p role="alert">Rail failure</p>}
         {headerFailure(failures.failures, revision) && <p>Header failure</p>}
         {switcher.dockDocument && (
           <DockOpenInEditor projectId={projectId} document={switcher.dockDocument} />
