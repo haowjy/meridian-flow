@@ -38,6 +38,7 @@ import {
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { createInMemoryEventSink } from "../observability/index.js";
+import { processDetachedWork } from "../runtime/detached-work.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -439,7 +440,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       );
       expect.soft(resolved.answers[0]?.state, "the read answers gone").toBe("gone");
-      await expect.poll(async () => (await row(stray))?.tombstone, { timeout: 5_000 }).toBe(true);
+      // The repair runs after the read, detached and tracked: wait for it to settle.
+      expect(await processDetachedWork.drain(5_000), "the repair settles").toBe(true);
+      expect.soft(await row(stray), "tombstoned").toMatchObject({ hidden: true, tombstone: true });
       expect
         .soft(await storageOf(stray), "released")
         .toEqual({ yjs: 0, branches: 0, projection: 0 });

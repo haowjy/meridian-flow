@@ -12,6 +12,7 @@ import {
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type { ObjectRelease } from "../../storage/index.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
 import { type EndedUse, tombstoneUnused } from "./end-use.js";
@@ -29,7 +30,10 @@ export function createHiddenNodeRepair(deps: {
   db: Database;
   eventSink?: EventSink;
   objects?: Pick<ObjectRelease, "storageUrls">;
+  /** Where the detached repair is tracked, so shutdown and test resets drain it. */
+  backgroundTasks?: DetachedWorkTracker;
 }): HiddenNodeRepair {
+  const tasks = deps.backgroundTasks ?? processDetachedWork;
   async function repairUnused(documentIds: readonly DocumentId[]): Promise<EndedUse> {
     const ids = [...new Set(documentIds)].sort();
     if (ids.length === 0) return { tombstoned: [], releasedObjects: [] };
@@ -56,19 +60,23 @@ export function createHiddenNodeRepair(deps: {
     repairUnused,
     schedule(documentIds) {
       if (documentIds.length === 0) return;
-      runAfterDrizzleCommit(async () => {
-        try {
-          await repairUnused(documentIds);
-        } catch (cause) {
-          if (!deps.eventSink) return;
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: SOURCE,
-            name: "repair.failed",
-            payload: { documentIds: [...documentIds], ...unknownToEventPayload(cause) },
-          });
-        }
-      });
+      runAfterDrizzleCommit(() =>
+        tasks.track(
+          repairUnused(documentIds).then(
+            () => undefined,
+            (cause: unknown) => {
+              if (!deps.eventSink) return;
+              emitEvent(deps.eventSink, {
+                level: "warn",
+                source: SOURCE,
+                name: "repair.failed",
+                payload: { documentIds: [...documentIds], ...unknownToEventPayload(cause) },
+              });
+            },
+          ),
+          "hidden-node repair",
+        ),
+      );
     },
   };
 }
