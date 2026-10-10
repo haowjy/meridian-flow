@@ -57,12 +57,14 @@ came since, otherwise the commit is `cancelled`. That one incrementing claim is 
 handling the slot has. Nothing is persisted across reloads.
 
 Rail screen switches (`ReadableProjectRoute.selectScreen`) call the dock's
-`useRailDocumentHandOff` assembly and `handOffVisibleDocument`. The route hands the
-assembly the same published `activeContextScheme/Path/Chat` and local document pointer
-it gives the Editor pane, including a materialized-local document's target.
-`resolveVisibleEditorTab` owns the visible workspace tab for the desktop pane
-and hand-off: it combines those props, persisted selection and the matching removal
-binding, then delegates exact identity/path ownership to `resolveWorkspaceRoute`.
+`switchScreen` seam, `useRailDocumentHandOff` assembly and `handOffVisibleDocument`.
+`ProjectView` owns the displayed-props decision (`resolveEditorPresentation`), including
+same-Work retention and whether the route boundary exposes the mounted pane. Its one
+`mountedEditorRoute` feeds the pane and rail callback; the route passes it through,
+never reconstructing it from the pending address. A retained pane carries its document;
+an error/unavailable/recovery overlay carries nothing.
+`resolveVisibleEditorTab` resolves tab identity from those displayed props, persisted
+selection and the matching removal binding, delegating to `resolveWorkspaceRoute`.
 The phone renders a route-resolved tab (or an explicit local tab), not desktop selection.
 Its local host uses `resolveWorkspaceRoute` only to settle a materialization binding, not
 to choose the document on screen.
@@ -74,8 +76,8 @@ as the header's Open in Editor button. Work receives no document. A collapsed do
 Editor chooser or an unresolved route carries nothing; the destination keeps its own state.
 The click captures the projected document and claims the dock. Only an accepted destination
 commits the hand-off through `project-navigation.transition`; cancellation or navigation failure
-leaves the slot alone, and a newer dock pick wins. The accepted commit precedes history flush,
-before destination scope synchronization can clear a departing Work note.
+leaves the slot alone, and a newer dock pick wins. Native history is flushed before the
+accepted workspace commit; TanStack flush only writes the queued browser history entry.
 The hand-off uses the resource projection and the existing dock commit/claim boundary, so
 an earlier asynchronous open cannot overwrite it. Browser back/forward does not hand off.
 Peeking and closing the dock never write Editor tabs. There is no third active-document
@@ -83,7 +85,12 @@ store or continuous synchronization. An Untitled Editor tab can also be carried:
 binds its existing resource session and marks it create-eligible on first input. Its title
 menu still browses from the root, without unavailable rename actions. Uploads navigate to
 the resource route without a prepared Editor tab. Rail and header opens share the route-owned
-failed-destination presentation, never a discarded promise rejection.
+failed-destination presentation via the opt-in `runDocumentSwitch` command, never a
+discarded promise rejection. If history has not moved, the document stays and the initiating
+control shows an inline error instead of masking the source page. Only rail switches and
+the dock header opt into this policy; other `useOpenContextRoute` callers keep their own
+failure handling. Chat switches, with or without a hand-off, use `showChatScreen` to choose
+the current chat (or its index) and forward the accepted commit through `go`.
 
 `dockDocumentOnScreen` is the single project/screen predicate for the dock slot.
 `useDockDocument` supplies it to view rendering and file/Scratch highlights. LeftSidebar

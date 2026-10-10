@@ -49,10 +49,15 @@ catalog-defined file classification so cached code never reopens as rich text.
 
 ## Visible Editor ownership
 
-`resolveVisibleEditorTab` combines the pane's published route props, its local-document
-pointer, persisted selection and matching removal-state binding. Both
-`ContextPaneController` and the rail document hand-off use it, so a moved local resource
-or renamed bound document cannot acquire a second notion of which tab is on screen.
+`ProjectView` owns displayed props through `resolveEditorPresentation`: it selects the
+mounted pane (including the retained same-Work pane during pending admission) and
+whether the route boundary exposes it. The same `mountedEditorRoute` feeds the pane
+and the rail callback. A retained pane carries its document; an error/unavailable or
+recovery overlay carries nothing. The route does not rebuild this presentation.
+`resolveVisibleEditorTab` then combines those displayed props, the local-document
+pointer, persisted selection and matching removal-state binding. Both the pane and
+`captureRailDocumentHandOff` use it for tab identity, not for deciding which presentation
+is on screen.
 The phone renders an explicit local tab or a catalog-resolved `MobileDocumentRoute` tab,
 without selecting desktop tabs. Its local host uses `resolveWorkspaceRoute` only for
 materialization binding/redirect, not visible-tab selection.
@@ -96,7 +101,8 @@ TanStack query so reopening a signed preview can reuse its read.
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab
 strip's leading control (`showEditorRecents`) reaches it without closing a tab.
-The address owns which document is visible, including a local-document history
+The address requests a document; the displayed-props seam above decides what is visible
+while admission is pending or blocked. The address includes a local-document history
 pointer on `/editor`. Clearing that pointer leaves the working set intact, and
 Back returns to the document that was showing. Already on the chooser is a no-op.
 Recording

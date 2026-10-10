@@ -78,10 +78,10 @@ export function createProjectNavigation(
       operation.finish({ kind: "superseded" });
       return;
     }
-    // Commit the accepted entry before flush can render its destination scope effects.
+    // Native history must agree with the workspace snapshot before either can be reloaded.
     try {
-      operation.commit?.();
       port.flush();
+      operation.commit?.();
       operation.finish({ kind: "applied" });
     } catch (error) {
       operation.finish({ kind: "failed", error, ticket: capture() });
@@ -264,8 +264,13 @@ export function createProjectNavigation(
     async navigate(
       address: ProjectAddress,
       options: { replace: boolean; state?: Record<string, unknown> },
+      onAccepted?: () => void,
     ) {
-      const result = await transition(address, options);
+      const result = await transition(
+        address,
+        options,
+        onAccepted ? { isCurrent: () => true, commit: onAccepted } : undefined,
+      );
       if (result.kind === "failed") throw result.error;
     },
     /** Rewrites the current entry in place: canonical path (bare project → `/chats`) and invalid `?work=`. */

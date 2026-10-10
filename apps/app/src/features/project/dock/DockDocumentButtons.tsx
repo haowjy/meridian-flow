@@ -6,9 +6,12 @@
  * it (so a rename elsewhere is followed).
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { Maximize2, X } from "lucide-react";
+import { useState } from "react";
 import { IconButton } from "@/components/ui/icon-button";
-import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
+import { useOpenContextRoute, useRunDocumentSwitch } from "../routing/ProjectNavigationContext";
+import { openDocumentInEditor } from "../routing/use-open-document-in-editor";
 import { type DockDocument, useDockViewStore } from "./dock-view-store";
 import { useDockDocumentTab } from "./use-dock-document-tab";
 
@@ -29,20 +32,40 @@ export function DockOpenInEditor({
   document: DockDocument;
 }) {
   const { tab } = useDockDocumentTab(projectId, document);
-  const openInEditor = useOpenDocumentInEditor();
+  const open = useOpenContextRoute();
+  const runSwitch = useRunDocumentSwitch();
+  const [failedDocument, setFailedDocument] = useState<string | null>(null);
   return (
-    <IconButton
-      size="sm"
-      tooltip={t`Open in Editor`}
-      onClick={() => {
-        const store = useDockViewStore.getState();
-        const claim = store.claim();
-        openInEditor(tab, () => {
-          if (useDockViewStore.getState().isCurrent(claim)) store.closeDocument();
-        });
-      }}
-    >
-      <Maximize2 className="size-4" aria-hidden />
-    </IconButton>
+    <div className="flex items-center gap-2">
+      {failedDocument === tab.documentId && (
+        <span role="alert" className="text-xs text-destructive">
+          <Trans>This view couldn’t open.</Trans>
+        </span>
+      )}
+      <IconButton
+        size="sm"
+        tooltip={t`Open in Editor`}
+        onClick={() => {
+          if (!open || !runSwitch) return;
+          setFailedDocument(null);
+          const store = useDockViewStore.getState();
+          const claim = store.claim();
+          void runSwitch(
+            (onAccepted) =>
+              openDocumentInEditor(
+                open,
+                tab,
+                () => {
+                  if (useDockViewStore.getState().isCurrent(claim)) store.closeDocument();
+                },
+                onAccepted,
+              ),
+            () => setFailedDocument(tab.documentId),
+          );
+        }}
+      >
+        <Maximize2 className="size-4" aria-hidden />
+      </IconButton>
+    </div>
   );
 }

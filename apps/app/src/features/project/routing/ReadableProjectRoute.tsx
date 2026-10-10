@@ -28,6 +28,7 @@ import { useContextRemovalCoordinator } from "../context/account-feature-context
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
+import type { VisibleEditorRoute } from "../context/resolve-visible-editor-tab";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useRailDocumentHandOff } from "../dock/use-rail-document-hand-off";
 import { ProjectView } from "../ProjectView";
@@ -37,6 +38,7 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
+import { runDocumentSwitch } from "./document-switch-failure";
 import { editorDefaultWorkPending } from "./editor-default-work";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
@@ -77,6 +79,7 @@ import {
   type RouteWorkResolution,
   routeWorkIssue,
 } from "./project-route";
+import { switchScreen } from "./switch-screen";
 import { openDocumentInEditor } from "./use-open-document-in-editor";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
@@ -148,7 +151,7 @@ export function ReadableProjectRoute({
     projectId,
     activeScreen,
     urlChatId: destination.kind === "chat" ? destination.chatId : null,
-    go: (next, options) => go(toDestination(next), options),
+    go: (next, options, onAccepted) => go(toDestination(next), options, onAccepted),
   });
   const chatThreadId = chatSurfaceThreadId(chat.display);
   const displayedChat = threads.threads?.find((thread) => thread.id === chatThreadId) ?? null;
@@ -457,9 +460,9 @@ export function ReadableProjectRoute({
                 : "loading"
               : undefined))));
 
-  async function go(next: ProjectAddress, options: NavigationOptions) {
+  async function go(next: ProjectAddress, options: NavigationOptions, onAccepted?: () => void) {
     if (!navigation) return;
-    return navigation.navigate(next, options);
+    return navigation.navigate(next, options, onAccepted);
   }
   function toDestination(next: ProjectDestination): ProjectAddress {
     return {
@@ -549,7 +552,7 @@ export function ReadableProjectRoute({
     },
     [projectId, user.userId],
   );
-  const openContextCommand = useCallback(
+  const openContext = useCallback(
     async (
       request: ContextRouteRequest,
       options?: OpenContextOptions,
@@ -603,6 +606,7 @@ export function ReadableProjectRoute({
       // Install the prepared tab and select it in its own Work. A Review launch
       // re-admits its pending draft, so Back cannot keep the address closed.
       const settleTab = () => {
+        options?.onAccepted?.();
         let selected = tab;
         if (preparedTab) {
           const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
@@ -621,7 +625,7 @@ export function ReadableProjectRoute({
                 : resolvedWorkId,
               selected.documentId,
             );
-        options?.onAccepted?.();
+        options?.onCommitted?.();
       };
       // Reviewing the document the address already names rewrites `?draft=` in
       // place; any other document is a new history entry.
@@ -657,22 +661,25 @@ export function ReadableProjectRoute({
     },
     [contextDestination, contextRemoval, projectId],
   );
-  // Both the dock header and rail use this destination-owned failure presentation.
-  const openContext = useCallback<typeof openContextCommand>(
-    async (request, options) => {
-      const coordinator = latest.current.navigation;
-      if (!coordinator) return { kind: "superseded" };
-      try {
-        const result = await openContextCommand(request, options);
-        if (result.kind === "failed") presentNavigationFailure();
-        return result;
-      } catch (error) {
-        presentNavigationFailure();
-        return { kind: "failed", error, ticket: coordinator.capture() };
-      }
+  const runScreenSwitch = useCallback(
+    (
+      operation: (onAccepted: () => void) => Promise<NavigationSettlement> | Promise<void>,
+      onSourceFailure: () => void,
+    ) => {
+      setNavigationFailure(null);
+      return runDocumentSwitch(
+        operation,
+        {
+          isCurrent: (ticket) => latest.current.navigation?.isCurrent(ticket) ?? false,
+          onDestinationFailure: presentNavigationFailure,
+        },
+        onSourceFailure,
+      );
     },
-    [openContextCommand, presentNavigationFailure],
+    [presentNavigationFailure],
   );
+  const [railSwitchFailed, setRailSwitchFailed] = useState<ScreenKey | null>(null);
+  useEffect(() => setRailSwitchFailed(null), [activeScreen]);
   const setEditorReviewDraftId = useCallback((draftId: string | null) => {
     const current = latest.current;
     if (!current.navigation) return;
@@ -789,30 +796,11 @@ export function ReadableProjectRoute({
   const handOffDocument = useRailDocumentHandOff({
     projectId,
     source: activeScreen,
-    editor: editorDocument,
     revealDock: chat.revealDock,
   });
-  const switchScreen = (next: ScreenKey) => {
-    if (next === activeScreen && next !== "chat") return Promise.resolve();
-    const handOff = handOffDocument(next);
-    if (handOff && next === "context")
-      return openDocumentInEditor(openContext, handOff.tab, handOff.commit);
-    if (handOff && next === "chat" && navigation) {
-      const threadId = chatSurfaceThreadId(chat.display);
-      return navigation
-        .transition(
-          toDestination(threadId ? { kind: "chat", chatId: threadId } : { kind: "chat-index" }),
-          { replace: false },
-          { isCurrent: () => true, commit: handOff.commit },
-        )
-        .then((result) => {
-          if (result.kind === "failed") presentNavigationFailure();
-        });
-    }
-    // Chat reopens the current chat; with none, its index.
-    if (next === "chat") return chat.showChatScreen();
+  const switchWithoutDocument = (next: ScreenKey, onAccepted: () => void) => {
     // Work reopens the last opened Work while it still exists; else the collection.
-    if (next === "work" && rememberedWork) return openRemembered();
+    if (next === "work" && rememberedWork) return openRemembered(onAccepted);
     if (next === "context" && workId && contextRemoval.getProjectSnapshot(projectId).live) {
       const workspace = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
@@ -822,11 +810,9 @@ export function ReadableProjectRoute({
         workId,
       });
       if (tab)
-        return openContext({ ...routeTargetForTab(tab, workId), documentId: tab.documentId }).then(
-          (result) => {
-            // openContext owns failure presentation for both header and rail.
-            return result;
-          },
+        return openContext(
+          { ...routeTargetForTab(tab, workId), documentId: tab.documentId },
+          { onAccepted },
         );
     }
     return go(
@@ -839,15 +825,27 @@ export function ReadableProjectRoute({
         ),
       },
       { replace: false },
+      onAccepted,
     );
   };
-  const selectScreen = (next: ScreenKey) => {
-    setNavigationFailure(null);
-    try {
-      void Promise.resolve(switchScreen(next)).catch(presentNavigationFailure);
-    } catch {
-      presentNavigationFailure();
-    }
+  const selectScreen = (next: ScreenKey, displayedEditor: VisibleEditorRoute | null = null) => {
+    setRailSwitchFailed(null);
+    void runScreenSwitch(
+      (onAccepted) =>
+        switchScreen(
+          next,
+          {
+            source: activeScreen,
+            capture: (destination) => handOffDocument(destination, displayedEditor),
+            showChatScreen: chat.showChatScreen,
+            openInEditor: (tab, commit, accepted) =>
+              openDocumentInEditor(openContext, tab, commit, accepted),
+            otherwise: switchWithoutDocument,
+          },
+          onAccepted,
+        ),
+      () => setRailSwitchFailed(next),
+    );
   };
   // A project folder keeps the current editing context; a Work's folder names its Work.
   const browse = (scheme: ProjectContextTreeScheme | null, path = "") =>
@@ -863,6 +861,8 @@ export function ReadableProjectRoute({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
+      runDocumentSwitch={runScreenSwitch}
+      railSwitchFailed={railSwitchFailed}
       captureNavigation={captureNavigation}
       isCurrentContextRoute={isCurrentContextRoute}
       registerLeaveGuard={navigation?.registerGuard}
