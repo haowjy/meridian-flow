@@ -1,4 +1,5 @@
 /** Headless ProseMirror projection and writer-edit reducer for session markers. */
+
 import { type Editor, Extension } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
@@ -14,6 +15,7 @@ import {
   peerMarkAccessibleLabel,
 } from "../change-mark-labels";
 import { collaborationColorFor } from "../collaboration-colors";
+import { markEditorTarget } from "../reading-position-navigation";
 import {
   relativePositionRuntimeFromState,
   resolveRelativePosition,
@@ -429,6 +431,7 @@ export const PeerMarkerExtension = Extension.create<PeerMarkerOptions, PeerMarke
           ) {
             return false;
           }
+          markEditorTarget(editor);
           dispatch?.(tr.setMeta(EMPHASIZE_META, changeId));
           requestAnimationFrame(() => {
             peerMarkElement(editor, changeId)?.scrollIntoView({
