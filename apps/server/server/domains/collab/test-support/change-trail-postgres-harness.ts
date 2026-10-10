@@ -31,6 +31,7 @@ import {
 import { createDraftBranchLeases } from "../domain/draft-branch-leases.js";
 import { createDraftDiscard } from "../domain/draft-discard.js";
 import { createDrafts } from "../domain/drafts.js";
+import { createPeerRetirement } from "../domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
 import { writeMarkdown } from "./bound-writes.js";
@@ -693,8 +694,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     liveFingerprint: (documentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
   });
+  // The harness keeps no branch rooms: retirement is the pooled cores' thread state only.
+  const retirePeers = createPeerRetirement({ closeBranchRoom: () => {}, agentEdit });
   const drafts = createWorkDraftReviewService({
     links,
+    retirePeers,
     discard: createDraftDiscard({
       drafts: workDrafts,
       reviewItems,
@@ -710,8 +714,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         branches: branchStore,
         coordinator: branchCoordinator,
         workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
+        catalog: { refreshSources: async () => "" },
       }),
-      invalidateThread: (documentId, threadId) => agentEdit.invalidateThread(documentId, threadId),
+      retire: retirePeers,
       releaseObjects: async () => {},
     }),
     branches: branchStore,
@@ -721,7 +726,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     liveCoordinator,
     documents: runtime.markdownDocuments,
     model: runtime.model,
-    agentEdit,
     latestUpdateSeq: persistence.store.latestUpdateSeq,
     drafts: workDrafts,
     reviewItems,

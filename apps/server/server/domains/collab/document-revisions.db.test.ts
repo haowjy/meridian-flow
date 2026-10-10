@@ -31,6 +31,7 @@ import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { scopeBranchPeer } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { createPeerRetirement } from "./domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { runResponseTransaction } from "./domain/response-transaction.js";
 import {
@@ -98,7 +99,10 @@ async function fixture(
       model: f.runtime.model,
       codec: f.runtime.codec,
       links,
-      closeBranchRoom: () => {},
+      retirePeers: createPeerRetirement({
+        closeBranchRoom: () => {},
+        agentEdit: f.collab.agentEdit(),
+      }),
       deferUntilCommit: () => false,
       drafts,
     }),

@@ -185,7 +185,7 @@ describe("response committer", () => {
     };
     const commit = ctx.core.commitResponse(responseId);
     await appendStarted.promise;
-    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.invalidateThreadDocument("chapter.md", THREAD_ID);
     releaseAppend.resolve();
     const result = await commit;
     if (result.status !== "committed") throw new Error("expected committed response");

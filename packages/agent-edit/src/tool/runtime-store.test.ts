@@ -34,7 +34,7 @@ describe("runtime store", () => {
       seq: 0,
     });
 
-    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.invalidateThreadDocument("chapter.md", THREAD_ID);
 
     const edit = await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "blade", content: "saber" },

@@ -25,8 +25,14 @@ Discard all; an item's branches and live document otherwise), then one transacti
 locking the Work (active), the draft, the namespaces and the documents. An item's
 text resets from live; Discard all closes the draft and every branch instead. Either
 ends the draft's use of what it created, tombstoning and releasing what no draft
-uses. Work purge runs the same kernel after its own lifecycle proof. Branch reset
-notifications publish after commit; rolled-back resets never advance a room.
+uses. Work purge runs the same kernel after its own lifecycle proof. The kernel
+reports exactly the branches it closed (an item's reset branch's peers) or deleted (a
+tombstone's), and `domain/peer-retirement.ts` retires those rooms and (document,
+thread) states after commit; the review preview's corrupt-branch reset does the same
+for the reset branch's peers. No flow retires "every thread" on a document: agent-edit
+offers `invalidateThreadDocument(doc, thread)` and `evictThread(thread)` only, so another
+Work's staged reply on a shared document survives. Branch reset notifications publish
+after commit; rolled-back resets never advance a room.
 
 Thread-peer resolution is primary-Work-aware. After conversation reassignment,
 the old peer is no longer resolvable; a pull in the new Work's draft closes it

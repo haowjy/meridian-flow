@@ -70,11 +70,15 @@ never left live. `tree/end-use.ts` (collab's Discard and Work purge's disposal, 
 retracted create) and the create pickers tombstone it under its document lock,
 release its storage (live Yjs, every branch on it, derived rows, its own link rows)
 and prune emptied hidden folders bottom-up; a picture's object is deleted after
-commit. Reads repair what a bug left: `identityStatus` answering gone for a
-hidden, live, unused node schedules `tree/hidden-node-repair.ts` after the read, in
-its own transaction (namespace, document lock, revalidate, tombstone), as tracked
-detached work with a `context.hidden-node.repaired` warn event. The link scope
-wires it.
+commit. Every end of use locks through `acquireEndUseScope` (namespaces of the
+sources read, a re-read, then documents; a moved scope aborts and rediscovers).
+Reads repair what a bug left: `identityStatus` answering gone for a hidden, live,
+unused node schedules `tree/hidden-node-repair.ts` after the read, in its own
+transaction behind that scope, as tracked detached work; a create's candidate
+picker reports its own repair. Each is a `context.hidden-node.repaired` warn event
+after commit. Compose wires one repair into the link scope, the mover's link count
+and every create path (`hiddenNodeRepair` on the port factory). A draft create holds
+its source's namespace every command, not only when provisioning resolves it.
 Plain markdown convenience reads and versioned reads share collab serialization.
 
 

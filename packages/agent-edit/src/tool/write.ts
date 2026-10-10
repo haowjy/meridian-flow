@@ -73,7 +73,13 @@ export interface WriteTool {
   undo(docId: string, threadId: string, linkView?: LinkView): Promise<UndoResult>;
   redo(docId: string, threadId: string, linkView?: LinkView): Promise<RedoResult>;
   reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
-  invalidateThread(docId: string, threadId: string): Promise<void>;
+  /**
+   * Drop one thread's process-local state on one document: its staged writes, runtime and
+   * undo origins. Both ids are required; there is no "every thread" or "every document".
+   */
+  invalidateThreadDocument(docId: string, threadId: string): Promise<void>;
+  /** Drop one thread's runtimes on every document (a pooled core being evicted). */
+  evictThread(threadId: string): Promise<void>;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -256,7 +262,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     redo: (docId, threadId, linkView) =>
       reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo", linkView),
     reverse: reversalEndpoints.reverse,
-    invalidateThread: reversalEndpoints.invalidateThread,
+    invalidateThreadDocument: reversalEndpoints.invalidateThreadDocument,
+    evictThread: reversalEndpoints.evictThread,
   };
 }
 

@@ -57,14 +57,6 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
   };
 }
 
-export function scheduleDraftCatalogRefresh(
-  app: Pick<AppServices, "contextCatalogRefresh">,
-  projectId: ProjectId,
-  waitUntil: (task: Promise<void>) => void,
-): void {
-  waitUntil(app.contextCatalogRefresh.refreshProjectDocuments(projectId));
-}
-
 export async function requireDraftWorkAccess(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },

@@ -161,7 +161,8 @@ export function createReplySaveFences(deps: {
           const entry = documents.get(documentId);
           if (!entry) continue;
           documents.delete(documentId);
-          if (record.threadId) await entry.core.invalidateThread(documentId, record.threadId);
+          if (record.threadId)
+            await entry.core.invalidateThreadDocument(documentId, record.threadId);
         }
       }
       for (const core of [...record.participants]) {

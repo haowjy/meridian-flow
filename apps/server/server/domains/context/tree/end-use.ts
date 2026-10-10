@@ -15,6 +15,7 @@ import { dropDraftSettlements } from "../adapters/link-ahead-draft-settlements.j
 import { dropDocumentRows } from "./draft-tree-store.js";
 import {
   lockDocuments,
+  type ReleasedBranch,
   releaseDocumentStorage,
   tombstoneDocuments,
   tombstoneFolders,
@@ -29,10 +30,21 @@ import {
   loadDraftCreatedDocuments,
 } from "./tree-view-sql.js";
 
-/** What an end of use tombstoned, and the stored objects to delete once it commits. */
-export type EndedUse = { tombstoned: readonly NodeRef[]; releasedObjects: readonly string[] };
+/**
+ * What an end of use tombstoned, the stored objects to delete once it commits, and the
+ * branches its storage release deleted (their rooms and runtimes retire after commit).
+ */
+export type EndedUse = {
+  tombstoned: readonly NodeRef[];
+  releasedObjects: readonly string[];
+  releasedBranches: readonly ReleasedBranch[];
+};
 
-const NOTHING_ENDED: EndedUse = Object.freeze({ tombstoned: [], releasedObjects: [] });
+const NOTHING_ENDED: EndedUse = Object.freeze({
+  tombstoned: [],
+  releasedObjects: [],
+  releasedBranches: [],
+});
 
 /**
  * The draft stops using these documents: its rows and its settlements naming them go,
@@ -74,10 +86,10 @@ export async function tombstoneUnused(
   if (ending.length === 0) return NOTHING_ENDED;
   const endingIds = ending.map((row) => row.id);
   await tombstoneDocuments(db, endingIds);
-  await releaseDocumentStorage(db, endingIds);
+  const releasedBranches = await releaseDocumentStorage(db, endingIds);
   const tombstoned: NodeRef[] = endingIds.map((id) => ({ kind: "document" as const, id }));
   const releasedObjects = ending.flatMap((row) => (row.storageUrl ? [row.storageUrl] : []));
-  if (options.keepFolders) return { tombstoned, releasedObjects };
+  if (options.keepFolders) return { tombstoned, releasedObjects, releasedBranches };
   // Every ancestor of every ended document, deepest first: a folder is judged only after
   // all of the batch's folders beneath it, so a sibling still alive at first glance never
   // leaves its parent behind.
@@ -98,61 +110,79 @@ export async function tombstoneUnused(
     await tombstoneFolders(db, [folderId]);
     tombstoned.push({ kind: "folder", id: folderId });
   }
-  return { tombstoned, releasedObjects };
+  return { tombstoned, releasedObjects, releasedBranches };
 }
 
-/** The documents a draft's end of use touches, and every source they sit in now or in the draft. */
+/** What an end of use touches: documents, and every source they sit in now or in a draft. */
 export type EndUseScope = {
   documentIds: readonly DocumentId[];
   sourceIds: readonly ContextSourceId[];
 };
 
 /**
- * What ending the draft's use of these created documents (every one it created, when
- * `documentIds` is absent) touches. Read before the namespace locks; the caller locks
- * with `lockEndUseScope` and then reads it again to prove it held still.
+ * What to lock for an end of use: each draft's created documents (all of them, or the
+ * named ones) at their rows and at the draft's location, and other documents where they
+ * sit now (an item's text, a node a read repairs).
  */
-export async function endUseScope(
-  db: Database,
-  input: { draftId: DraftId; documentIds?: readonly DocumentId[] },
-): Promise<EndUseScope> {
-  const named = input.documentIds ? new Set(input.documentIds) : null;
-  const created = (await loadDraftCreatedDocuments(currentDrizzleDb(db), input.draftId)).filter(
-    (each) => !named || named.has(each.row.id),
-  );
-  const sourceIds = new Set<ContextSourceId>();
-  for (const { row, draft } of created) {
-    sourceIds.add(row.contextSourceId);
-    if (draft.contextSourceId) sourceIds.add(draft.contextSourceId);
+export type EndUseRequest = {
+  drafts?: readonly { draftId: DraftId; documentIds?: readonly DocumentId[] }[];
+  documentIds?: readonly DocumentId[];
+};
+
+/** The scope moved (a document changed source) between reading and locking it: start over. */
+export class EndUseScopeChangedError extends Error {
+  constructor() {
+    super("An end of use's scope changed while its namespaces were being locked");
+    this.name = "EndUseScopeChangedError";
   }
-  return {
-    documentIds: created.map((each) => each.row.id).sort(),
-    sourceIds: [...sourceIds].sort(),
-  };
+}
+
+/** The scope as it reads now, unlocked. */
+export async function readEndUseScope(db: Database, request: EndUseRequest): Promise<EndUseScope> {
+  const tx = currentDrizzleDb(db);
+  const documentIds = new Set<DocumentId>();
+  const sourceIds = new Set<ContextSourceId>();
+  for (const { draftId, documentIds: named } of request.drafts ?? []) {
+    const only = named ? new Set(named) : null;
+    for (const { row, draft } of await loadDraftCreatedDocuments(tx, draftId)) {
+      if (only && !only.has(row.id)) continue;
+      documentIds.add(row.id);
+      sourceIds.add(row.contextSourceId);
+      if (draft.contextSourceId) sourceIds.add(draft.contextSourceId);
+    }
+  }
+  for (const row of await loadDocumentIdentityRows(tx, [...new Set(request.documentIds ?? [])])) {
+    documentIds.add(row.id);
+    sourceIds.add(row.contextSourceId);
+  }
+  return { documentIds: [...documentIds].sort(), sourceIds: [...sourceIds].sort() };
 }
 
 /**
- * §14's order after the draft row: the namespaces of `scope`'s sources and of where
- * `alsoDocumentIds` sit, then every one of those documents' locks in id order.
+ * The one verified acquisition every end of use takes, after the caller's Work and draft
+ * locks (§14): the namespaces of exactly the sources read, then the scope read again; a
+ * document that moved to a source not locked, or a new one, throws
+ * `EndUseScopeChangedError`, so the caller aborts its transaction and rediscovers (no
+ * namespace is ever taken while holding a document lock). Then the document locks, id
+ * order. Once a source's namespace is held nothing moves out of it, so the scope holds.
  */
-export async function lockEndUseScope(
+export async function acquireEndUseScope(
   db: Database,
-  scope: EndUseScope,
-  alsoDocumentIds: readonly DocumentId[] = [],
-): Promise<void> {
-  const ids = [...new Set([...scope.documentIds, ...alsoDocumentIds])];
-  await lockDocumentNamespaces(db, ids, scope.sourceIds);
-  await lockDocuments(db, ids);
-}
-
-/** Whether `later` stays inside what `locked` covered: no new document, no new source. */
-export function withinScope(locked: EndUseScope, later: EndUseScope): boolean {
-  const documents = new Set(locked.documentIds);
-  const sources = new Set(locked.sourceIds);
-  return (
-    later.documentIds.every((id) => documents.has(id)) &&
-    later.sourceIds.every((id) => sources.has(id))
-  );
+  request: EndUseRequest,
+): Promise<EndUseScope> {
+  const scope = await readEndUseScope(db, request);
+  await lockDocumentNamespaces(db, [], scope.sourceIds);
+  const again = await readEndUseScope(db, request);
+  const documents = new Set(scope.documentIds);
+  const sources = new Set(scope.sourceIds);
+  if (
+    !again.documentIds.every((id) => documents.has(id)) ||
+    !again.sourceIds.every((id) => sources.has(id))
+  ) {
+    throw new EndUseScopeChangedError();
+  }
+  await lockDocuments(db, scope.documentIds);
+  return scope;
 }
 
 /**

@@ -68,6 +68,7 @@ import {
   getInMemoryWorkContextStore,
   type InMemoryUnifiedContextStoreRegistry,
 } from "./support/in-memory-unified-context-stores.js";
+import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 
 const PROJECT_CONTEXTFS_SCHEMES: readonly ProjectContextFsScheme[] =
   PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
@@ -409,6 +410,7 @@ function createProductionStoreResolvers(
   db: Database,
   catalogMutations: ContextCatalogMutationPort,
   arrivals?: DocumentArrivals,
+  repair?: HiddenNodeRepair,
 ): ContextStoreResolvers {
   return {
     lineages: createDrizzleScratchLineages(db),
@@ -419,6 +421,7 @@ function createProductionStoreResolvers(
         rootThreadId,
         catalogMutations,
         arrivals,
+        repair,
       );
     },
     resolveProjectStore(projectId, userId, scheme) {
@@ -429,13 +432,21 @@ function createProductionStoreResolvers(
         userId,
         catalogMutations,
         arrivals,
+        repair,
       );
     },
     resolveWorkStore(workId, scheme) {
-      return createWorkContextDocumentStore(db, workId, scheme, catalogMutations, arrivals);
+      return createWorkContextDocumentStore(db, workId, scheme, catalogMutations, arrivals, repair);
     },
     resolveNoWorkStore(projectId, scheme) {
-      return createNoWorkContextDocumentStore(db, projectId, scheme, catalogMutations, arrivals);
+      return createNoWorkContextDocumentStore(
+        db,
+        projectId,
+        scheme,
+        catalogMutations,
+        arrivals,
+        repair,
+      );
     },
     async resolveNoWorkId(projectId) {
       const workId = await findNoWorkId(db, projectId);
@@ -443,7 +454,7 @@ function createProductionStoreResolvers(
       return workId;
     },
     resolveMutationStore() {
-      return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals);
+      return new DrizzleContextTreeMutationStore(db, catalogMutations, arrivals, repair);
     },
   };
 }
@@ -509,6 +520,8 @@ export function createProductionUnifiedContextPortFactory(options: {
   eventSink?: EventSink;
   /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
   arrivals?: DocumentArrivals;
+  /** Repair on touch (§12.4): creates report what they repaired; the mover's link count reads repair. */
+  hiddenNodeRepair?: HiddenNodeRepair;
   /** The one drafts resolver: draft placements read and write through it (§2.3). */
   drafts: Drafts;
   /**
@@ -528,6 +541,7 @@ export function createProductionUnifiedContextPortFactory(options: {
     options.db,
     catalogMutations,
     options.arrivals,
+    options.hiddenNodeRepair,
   );
 
   const placements: DraftPlacements = {
@@ -538,6 +552,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         sourceId: () => store.contextSourceId(),
         documents: options.documentSync,
         branches: options.documentSync,
+        ...(options.hiddenNodeRepair ? { repair: options.hiddenNodeRepair } : {}),
       }),
   };
 

@@ -115,7 +115,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       },
       branchRows: { listJournalRowsForBranch: async () => [] },
     },
-    discardThreadPeerBranches: async () => {},
     pullThreadPeer: async () => undefined,
     // Thread cores are the live core here, so nothing is ever pinned to a branch.
     fences: createReplySaveFences({

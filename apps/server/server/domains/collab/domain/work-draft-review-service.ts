@@ -6,11 +6,10 @@
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import { branchRoomName } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { CollabDrafts } from "../contracts.js";
-import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchJournalReadStore, BranchReviewService } from "./branch-push-contracts.js";
 import { fullStateFingerprint } from "./branch-push-transition.js";
@@ -22,6 +21,7 @@ import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
+import type { PeerRetirement } from "./peer-retirement.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "./ports/document-link-scope.js";
 
@@ -30,6 +30,8 @@ export function createWorkDraftReviewService(input: {
   links: DocumentLinkScopes;
   branches: ApplicationBranchStore;
   discard: DraftDiscard;
+  /** After a corrupt branch's reset: retire exactly the peers it closed. */
+  retirePeers: PeerRetirement;
   branchCoordinator: BranchCoordinator;
   branchJournal: BranchJournalReadStore;
   branchReview: BranchReviewService;
@@ -38,7 +40,6 @@ export function createWorkDraftReviewService(input: {
   };
   documents: Pick<MarkdownDocumentEngine, "serializeDocument">;
   model: YProsemirrorDocumentModel;
-  agentEdit: ThreadPeerAgentEditCore;
   latestUpdateSeq(documentId: string): Promise<number>;
   drafts: Pick<Drafts, "activeForWork">;
   reviewItems: DraftReviewItems;
@@ -132,7 +133,9 @@ export function createWorkDraftReviewService(input: {
           const corrupt = await input.branches.getBranch(cause.branchId);
           if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
           await input.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
-          await input.agentEdit.invalidateThread(command.documentId, "");
+          // Exactly the reset branch's peers: another Work's peers on a shared document
+          // keep their staged replies (12b).
+          await input.retirePeers(await input.branches.closeThreadPeersOf([corrupt.branchId]));
           notice = {
             code: "branch_corrupt_reset",
             message: "Review state was repaired from the live document.",
@@ -284,7 +287,6 @@ export function createWorkDraftReviewService(input: {
           draftId: active.draftId,
           selection: { kind: "items", itemKeys: [item.itemKey] },
           ...(command.userId ? { userId: command.userId } : {}),
-          ...(command.threadId ? { threadId: command.threadId as ThreadId } : {}),
         });
       }
     }

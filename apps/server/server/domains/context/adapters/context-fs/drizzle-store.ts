@@ -28,6 +28,7 @@ import {
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { createLive, findLiveCreateCandidate, findRevealIdentity } from "../../tree/creates.js";
+import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
 import { ensureLiveFolderPath } from "../../tree/placement.js";
@@ -82,6 +83,8 @@ export interface DrizzleContextDocumentStoreDeps {
   contextSourceId: string;
   catalogMutations?: ContextCatalogMutationPort;
   arrivals?: DocumentArrivals;
+  /** Repair on touch: a create's candidate picker reports what it repaired (§12.4). */
+  repair?: HiddenNodeRepair;
 }
 
 export class DrizzleContextDocumentStore implements ContextDocumentStore {
@@ -216,6 +219,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           ...(input.id ? { id: input.id as DocumentId } : {}),
           ...(input.provisionalName ? { provisionalName: true } : {}),
         },
+        ...(this.deps.repair ? { repair: this.deps.repair } : {}),
       });
       if (!created.ok) {
         if (created.error.code === "candidate_changed") throw new LiveCreateCandidateChangedError();

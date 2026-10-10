@@ -8,7 +8,7 @@
  * of what it created: what no draft uses any more is tombstoned and its storage released.
  * Purge runs the kernel in its own transaction after its own lifecycle proof (§2.6).
  */
-import type { DraftId, ThreadId, UserId, WorkId } from "@meridian/contracts";
+import type { DraftId, UserId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { NodeRef } from "../../context/tree/tree-view.js";
@@ -19,6 +19,7 @@ import type { DraftBranchLeases } from "./draft-branch-leases.js";
 import type { DraftItemKey } from "./draft-publication.js";
 import type { DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
+import type { PeerRetirement, RetiredBranch } from "./peer-retirement.js";
 
 export type DiscardSelection =
   | { kind: "items"; itemKeys: readonly DraftItemKey[] }
@@ -35,7 +36,6 @@ export interface DraftDiscard {
     draftId: DraftId;
     selection: DiscardSelection;
     userId?: UserId;
-    threadId?: ThreadId;
   }): Promise<DiscardResult>;
 }
 
@@ -63,6 +63,8 @@ export type DiscardKernelResult = {
   tombstoned: readonly NodeRef[];
   /** Storage URLs of tombstoned binaries: deleted after commit, best effort. */
   releasedObjects: readonly string[];
+  /** Exactly the branches the transaction closed or deleted: retired after commit. */
+  retired: readonly RetiredBranch[];
 };
 
 /** An active branch of the draft, by document. */
@@ -108,8 +110,8 @@ export function createDraftDiscard(deps: {
     withDocument<T>(documentId: string, run: (doc: Y.Doc) => Promise<T>): Promise<T>;
   };
   store: DraftDiscardStore;
-  /** After commit: drop thread runtimes holding reset text (item Discard only). */
-  invalidateThread(documentId: DocumentId, threadId: string): Promise<void>;
+  /** After commit: the rooms and thread state of exactly the branches the kernel retired. */
+  retire: PeerRetirement;
   /** After commit: delete tombstoned binaries' objects, best effort. */
   releaseObjects(storageUrls: readonly string[]): Promise<void>;
 }): DraftDiscard {
@@ -185,6 +187,7 @@ export function createDraftDiscard(deps: {
       if (input.selection.kind === "whole") {
         const ended = await retrying(() => whole(workId, draftId));
         if (!ended) return gone;
+        await deps.retire(ended.retired);
         await deps.releaseObjects(ended.releasedObjects);
         return { status: "discarded", draftId, draftClosed: true };
       }
@@ -203,10 +206,8 @@ export function createDraftDiscard(deps: {
       if (selected.length === 0) return { status: "discarded", draftId, draftClosed: false };
       const ended = await retrying(() => items(workId, draftId, selected));
       if (!ended) return gone;
+      await deps.retire(ended.retired);
       await deps.releaseObjects(ended.releasedObjects);
-      for (const item of selected) {
-        await deps.invalidateThread(item.documentId, input.threadId ?? "");
-      }
       return { status: "discarded", draftId, draftClosed: false };
     },
   };
