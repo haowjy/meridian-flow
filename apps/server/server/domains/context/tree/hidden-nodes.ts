@@ -26,6 +26,7 @@ import { Err, Ok, type Result } from "../../../shared/result.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
 import { claimDocumentLocation } from "../adapters/context-fs/document-locations.js";
+import { dropDraftSettlements, settleInDraft } from "../adapters/link-ahead-draft-settlements.js";
 import { renderFilename } from "../context/paths.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import { dropDocumentRows, recordCreated } from "./draft-tree-store.js";
@@ -254,15 +255,7 @@ async function settleAheadRefsInDraft(
       fileType: "",
     },
   ]);
-  if (!address) return;
-  await currentDrizzleDb(db).execute(sql`
-    INSERT INTO link_ahead_draft_settlements (ahead_id, draft_id, document_id)
-    SELECT r.ahead_id, ${draftId}::uuid, ${documentId}::uuid FROM link_ahead_refs r
-    WHERE r.project_id = ${address.projectId}::uuid AND r.scheme = ${address.scheme}
-      AND r.work_id IS NOT DISTINCT FROM ${address.workId}::uuid
-      AND md5(r.path) = md5(${address.path}) AND r.path = ${address.path}
-      AND r.settled_document_id IS NULL
-    ON CONFLICT DO NOTHING`);
+  if (address) await settleInDraft(db, { draftId, documentId, address });
 }
 
 // ---------------------------------------------------------------------------------------
@@ -776,6 +769,7 @@ export async function endUse(
   const ids = [...new Set(input.documentIds)].sort();
   if (ids.length === 0) return { tombstoned: [], releasedObjects: [] };
   await dropDocumentRows(db, { draftId: input.draftId, documentIds: ids });
+  await dropDraftSettlements(db, { draftId: input.draftId, documentIds: ids });
   await lockDocuments(db, ids);
   const tx = currentDrizzleDb(db);
   const rows = await loadDocumentIdentityRows(tx, ids);

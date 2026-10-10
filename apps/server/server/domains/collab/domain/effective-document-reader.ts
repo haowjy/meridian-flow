@@ -24,6 +24,7 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import { BranchNotFoundError } from "./branch-resolver.js";
 import { documentRevision, versioned } from "./document-revision.js";
+import type { Drafts } from "./drafts.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -47,18 +48,17 @@ export function createEffectiveDocumentReader(input: {
   /** Closes a branch's review rooms (Hocuspocus), for branches a retraction deleted. */
   closeBranchRoom(branchId: string): void;
   deferUntilCommit(callback: () => Promise<void>): boolean;
+  drafts: Pick<Drafts, "viewForWork">;
 }): BranchPeerShadowAccess {
-  /** The view a read spells in: the version it reads. */
-  function viewOf(command: EffectiveReadInput): LinkView {
-    const responseId = command.responseId ?? undefined;
-    const reply = responseId ? { responseId } : {};
+  /** The view a read spells in: the version it reads, a Work's active draft or live (F7). */
+  async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
-      ? { kind: "draft", workId: command.workId, ...reply }
-      : { kind: "live", ...reply };
+      ? input.drafts.viewForWork(command.workId)
+      : { kind: "live" };
   }
 
   async function spelling(command: EffectiveReadInput, doc: Y.Doc) {
-    const holder = { documentId: command.documentId, view: viewOf(command) };
+    const holder = { documentId: command.documentId, view: await viewOf(command) };
     await input.links.prepare({ holders: [holder], docs: [doc] });
     return input.links.holder(holder);
   }
@@ -219,11 +219,11 @@ export function createEffectiveDocumentReader(input: {
       return input.branchPulls.flushLivePull(documentId);
     },
     readEffectiveMarkdown(command) {
-      return readEffective(command, (doc) =>
+      return readEffective(command, async (doc) =>
         input.documents.serializeVersionedDocument(
           command.documentId,
           unwrapDoc(doc),
-          viewOf(command),
+          await viewOf(command),
         ),
       );
     },

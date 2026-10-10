@@ -107,8 +107,11 @@ export type TreeNode =
 export type DraftUse = { draftId: DraftId; originWorkId: WorkId | null; createdAt: Date };
 
 export type IdentityStatus =
-  /** Visible in this view, at `address` in this view. */
-  | { kind: "visible"; address: NodeAddress; hidden: boolean }
+  /**
+   * Visible in this view, at `address` in this view. A hidden one is visible only in a
+   * draft that uses it: `draft` is that draft (the document still reads "in a draft").
+   */
+  | { kind: "visible"; address: NodeAddress; hidden: boolean; draft?: DraftUse }
   /**
    * Hidden and not used by this view's draft. `draft` is the reader's own if it uses it,
    * otherwise the oldest active draft that uses it; `address` is where that draft has it.
@@ -208,9 +211,9 @@ export interface TreeReader {
 
 /** The key `occupantsAt` answers under. */
 export function coordinatesKey(
-  at: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "path">,
+  at: Pick<DocumentCoordinates, "projectId" | "scheme" | "workId" | "rootThreadId" | "path">,
 ): string {
-  return JSON.stringify([at.projectId, at.scheme, at.workId, at.path]);
+  return JSON.stringify([at.projectId, at.scheme, at.workId, at.rootThreadId ?? null, at.path]);
 }
 
 type VisibleDocumentRow = Omit<VisibleDocument, "path"> & {
@@ -430,7 +433,7 @@ export function createTreeReader(db: Database): TreeReader {
       ),
     );
     const hiddenIds = [...rows.values()]
-      .filter((row) => row.hidden && !row.deleted && !visible.has(row.id))
+      .filter((row) => row.hidden && !row.deleted)
       .map((row) => row.id);
     const uses = new Map<DocumentId, ReturnType<typeof draftUse>[]>();
     for (const use of await loadActiveDraftUses(tx(), hiddenIds)) {
@@ -439,7 +442,7 @@ export function createTreeReader(db: Database): TreeReader {
 
     // Decide first, then spell every chosen location in one batch.
     type Pending =
-      | { kind: "visible"; location: NodeLocation; hidden: boolean }
+      | { kind: "visible"; location: NodeLocation; hidden: boolean; draft?: DraftUse }
       | { kind: "hidden"; location: NodeLocation; draft: DraftUse; usedBy: DraftUse[] }
       | { kind: "deleted"; location: NodeLocation }
       | { kind: "gone" };
@@ -450,7 +453,16 @@ export function createTreeReader(db: Database): TreeReader {
       if (!row || (row.hidden && row.deleted)) {
         decided.set(id, { kind: "gone" });
       } else if (shown) {
-        decided.set(id, { kind: "visible", location: rowLocation(shown), hidden: row.hidden });
+        const own =
+          row.hidden && view.kind === "draft"
+            ? uses.get(id)?.find((use) => use.use.draftId === view.draftId)?.use
+            : undefined;
+        decided.set(id, {
+          kind: "visible",
+          location: rowLocation(shown),
+          hidden: row.hidden,
+          ...(own ? { draft: own } : {}),
+        });
       } else if (row.hidden) {
         const usedBy = uses.get(id) ?? [];
         const chosen =
@@ -490,7 +502,12 @@ export function createTreeReader(db: Database): TreeReader {
       } else if (pending.kind === "gone" || !address) {
         out.set(id, { kind: "gone", documentId: id });
       } else if (pending.kind === "visible") {
-        out.set(id, { kind: "visible", address, hidden: pending.hidden });
+        out.set(id, {
+          kind: "visible",
+          address,
+          hidden: pending.hidden,
+          ...(pending.draft ? { draft: pending.draft } : {}),
+        });
       } else {
         out.set(id, {
           kind: "hidden",
@@ -510,12 +527,13 @@ export function createTreeReader(db: Database): TreeReader {
   ): Promise<ReadonlyMap<string, DocumentId[]>> {
     const sources = new Map<string, Promise<ContextSourceId | null>>();
     const sourceOf = (at: DocumentCoordinates) => {
-      const key = JSON.stringify([at.projectId, at.scheme, at.workId]);
+      const key = JSON.stringify([at.projectId, at.scheme, at.workId, at.rootThreadId ?? null]);
       const known =
         sources.get(key) ??
         presentSourceId(tx(), {
           scheme: at.scheme,
           workId: at.workId,
+          rootThreadId: at.rootThreadId ?? null,
           project: { id: at.projectId },
         });
       sources.set(key, known);

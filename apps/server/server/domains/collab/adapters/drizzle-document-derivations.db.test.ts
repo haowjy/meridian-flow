@@ -24,7 +24,6 @@ import {
   bumpLocationVersions,
   recordLocationHistory,
 } from "../../context/adapters/context-fs/document-locations.js";
-import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
 import {
   createDocumentLastAddress,
   createDocumentUriResolver,
@@ -37,6 +36,7 @@ import {
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
+import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
 import {
   ensureAndReadDocumentAuthorityHead,
@@ -541,7 +541,7 @@ describe("durable document derivations", () => {
   });
 
   it("the sweep registers a client-minted ahead ref whose registration failed after certification", async () => {
-    const real = createDrizzleLinkAheadRegistry(db);
+    const real = createTestLinkAheadRegistry(db);
     let failRegistration = true;
     const aheadStore = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), {
       registry: {

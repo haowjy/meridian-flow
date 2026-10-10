@@ -10,6 +10,7 @@ import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js"
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import { lockContextSources } from "../../context/adapters/context-fs/document-locations.js";
+import { dropDraftSettlements } from "../../context/adapters/link-ahead-draft-settlements.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
 import { place } from "../../context/tree/hidden-nodes.js";
@@ -72,6 +73,7 @@ export function createDrizzleDraftTreeReviewBridge(
           );
         }
         await dropDocumentRows(db, { draftId: draft.id, documentIds: [documentId] });
+        await dropDraftSettlements(db, { draftId: draft.id, documentIds: [documentId] });
         await deps.arrivals?.settle([documentId]);
       });
     },

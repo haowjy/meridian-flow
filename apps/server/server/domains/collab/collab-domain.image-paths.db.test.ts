@@ -492,7 +492,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { projectId: PROJECT_ID, viewer: { accountId: USER_ID, threadId: THREAD_ID } },
         async () => {
           const live = { kind: "live" } as const;
-          const drafted = { kind: "draft", workId: WORK_ID } as const;
+          const drafted = { kind: "draft", draftId: draft.id } as const;
           await links.prepare({
             holders: [live, drafted].map((view) => ({ documentId: DOC_ID, view })),
             refs: [`doc:${LIVE_CREATED_ID}`, `doc:${CREATED_ID}`],

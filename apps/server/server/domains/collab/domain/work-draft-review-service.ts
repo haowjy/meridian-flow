@@ -1,6 +1,6 @@
 /** Work-draft listing, repair, preview, Apply, and Discard orchestration. */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
-import type { DraftId } from "@meridian/contracts";
+import type { DraftId, LinkView } from "@meridian/contracts";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -151,10 +151,11 @@ export function createWorkDraftReviewService(input: {
             draftId: command.draftId,
             reviewRoomName: branchRoomName(branch.branchId, branch.generation),
             live: liveState.markdown,
-            markdown: await input.documents.serializeDocument(command.documentId, branch.doc, {
-              kind: "draft",
-              workId: command.workId,
-            }),
+            markdown: await input.documents.serializeDocument(
+              command.documentId,
+              branch.doc,
+              await draftView(command.workId),
+            ),
             isNewDocument: await isCreatedDocument(command),
             liveRevisionToken: await input.latestUpdateSeq(command.documentId),
             draftRevisionToken: branch.generation,
@@ -170,6 +171,12 @@ export function createWorkDraftReviewService(input: {
         liveDoc.destroy();
       }
     });
+  }
+
+  /** The Work's active draft's link view; live when it has none (F7). */
+  async function draftView(workId: WorkId): Promise<LinkView> {
+    const draftId = await input.draftTree.activeDraftId(workId);
+    return draftId ? { kind: "draft", draftId } : LIVE_VIEW;
   }
 
   async function resolveActiveWorkDraft(command: {

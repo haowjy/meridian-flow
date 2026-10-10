@@ -57,6 +57,7 @@ import type { BranchPullService } from "./branch-pulls.js";
 import type { BranchJournalReadStore } from "./branch-push-contracts.js";
 import type { BranchReversalHistoryReader } from "./branch-reversal-history.js";
 import { createScopedDocumentLinks } from "./document-links-port.js";
+import type { Drafts } from "./drafts.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type {
@@ -116,8 +117,10 @@ export function createBranchThreadPeerAgentEditCore(input: {
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
+  drafts: Pick<Drafts, "viewForWork">;
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
+    drafts: input.drafts,
     liveUtilityCore: input.liveUtilityCore,
     liveHistory: input.journal,
     afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
@@ -192,10 +195,10 @@ type PulledThreadPeer = {
 };
 
 /**
- * One document's place in a reply: its grant, and with it its destination,
- * is pinned at its first write.
+ * One document's place in a reply: its grant, and with it its destination and
+ * the link view that destination resolved to, is pinned at its first write.
  */
-type PinnedDocument = { core: AgentEditCore; grant: FileGrant<"edit"> };
+type PinnedDocument = { core: AgentEditCore; grant: FileGrant<"edit">; linkView: LinkView };
 
 type ResponseRecord = {
   threadId?: ThreadId;
@@ -238,6 +241,8 @@ export function createThreadPeerCorePool(input: {
   responseTransactions: ResponseTransactionHooks;
   /** Runs after an AI write commits to a live document, e.g. to merge it into Work drafts (D40). */
   afterLiveCommit?(documentId: DocumentId): void;
+  /** Maps a draft destination to its link view; never makes a draft. */
+  drafts: Pick<Drafts, "viewForWork">;
   /**
    * Confirms grants under lock: at a seam for a write that commits now, once at
    * a reply's save. Authorizes a reversal at the destination its write landed in.
@@ -269,7 +274,7 @@ export function createThreadPeerCorePool(input: {
       const pinned =
         record?.documents.get(documentId as DocumentId) ??
         record?.reversals.get(documentId as DocumentId);
-      if (pinned) return linkViewAt(pinned.grant.destination, responseId);
+      if (pinned) return pinned.linkView;
       throw new Error(
         `Thread ${threadId} spelled ${documentId} without a routed link view; route the call through the pool.`,
       );
@@ -337,6 +342,24 @@ export function createThreadPeerCorePool(input: {
       if (active?.size === 0) activeResponseIds.delete(record.threadId);
     }
     await evictIdleCores();
+  }
+
+  /**
+   * The routed call's link view (§2.3): a draft destination reads in its Work's active
+   * draft, a Work with no draft yet reads live (F7). Resolved here, at the async boundary,
+   * so `viewFor` and `scopeFor` stay synchronous; a pinned document keeps its first view.
+   */
+  async function routedTo(
+    context: WriteContext,
+    destination: FileDestination,
+    pinned: LinkView | undefined,
+  ): Promise<WriteContext & { linkView: LinkView }> {
+    const linkView: LinkView =
+      pinned ??
+      (destination.kind === "draft"
+        ? await input.drafts.viewForWork(destination.workId)
+        : { kind: "live" });
+    return { ...context, linkView };
   }
 
   function seenKey(threadId: string, documentId: DocumentId): string {
@@ -409,7 +432,11 @@ export function createThreadPeerCorePool(input: {
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
     const outcome = await core.read(
       command,
-      await threadPeerContext(core, documentId, routedTo(context, destination)),
+      await threadPeerContext(
+        core,
+        documentId,
+        await routedTo(context, destination, pinned?.linkView),
+      ),
     );
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
@@ -445,15 +472,15 @@ export function createThreadPeerCorePool(input: {
       }
     }
     const core = pinned?.core ?? (await coreForDestination(destination, context.threadId));
+    const routedContext = await routedTo(context, destination, pinned?.linkView);
     if (record) {
       record.participants.add(core);
-      if (documentId && !pinned) record.documents.set(documentId, { core, grant });
+      if (documentId && !pinned) {
+        record.documents.set(documentId, { core, grant, linkView: routedContext.linkView });
+      }
     }
     const call = async () =>
-      core.write(
-        command,
-        await threadPeerContext(core, documentId, routedTo(context, destination)),
-      );
+      core.write(command, await threadPeerContext(core, documentId, routedContext));
     const outcome = record
       ? await call()
       : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
@@ -479,7 +506,11 @@ export function createThreadPeerCorePool(input: {
     if (record) {
       record.participants.add(core);
       if (documentId && !record.reversals.has(documentId)) {
-        record.reversals.set(documentId, { core, grant });
+        record.reversals.set(documentId, {
+          core,
+          grant,
+          linkView: context.linkView ?? { kind: "live" },
+        });
       }
     }
     const call = async () =>
@@ -492,6 +523,7 @@ export function createThreadPeerCorePool(input: {
   }
 
   const reversals = createThreadPeerReversals({
+    drafts: input.drafts,
     liveUtilityCore: input.liveUtilityCore,
     coreFor,
     reversalHistory: input.reversalHistory,
@@ -793,16 +825,4 @@ function versionPhrase(destination: FileDestination, preposition: "in" | "to"): 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {
   const address = parseDocumentAddress(command.file, command.documentId);
   return address.ok ? (address.documentId as DocumentId) : null;
-}
-
-/** The link view of a destination, for a call (or reply) the pool routed there. */
-function linkViewAt(destination: FileDestination, responseId: string | undefined): LinkView {
-  const reply = responseId ? { responseId } : {};
-  return destination.kind === "draft"
-    ? { kind: "draft", workId: destination.workId, ...reply }
-    : { kind: "live", ...reply };
-}
-
-function routedTo(context: WriteContext, destination: FileDestination): WriteContext {
-  return { ...context, linkView: linkViewAt(destination, context.responseId) };
 }

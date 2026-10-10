@@ -1,6 +1,12 @@
 /**
  * Route core for batched stored-link resolution (contract §13): ref links through the
  * reader's prepared link scope, ref-less links through the address resolver.
+ *
+ * A holder document's ahead refs read its own bindings first (contract §10.4), so the
+ * route pins the holder: by `holderDocumentId` wherever that document now sits, else by
+ * the one document at `baseUri`, and only one the reader may name and read. One it
+ * can't pin answers its ahead refs without bindings and says so (`holderUnresolved`),
+ * never silently.
  */
 
 import {
@@ -17,7 +23,7 @@ import {
 } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import type { DocumentLinkScopes } from "../domains/collab/index.js";
+import type { DocumentLinkScopes, Drafts } from "../domains/collab/index.js";
 import type { DocumentLinkResolver, DocumentLinkTarget } from "../domains/context/index.js";
 import type { FileAccess } from "../domains/file-policy/index.js";
 import type { ProjectWorkAuthorityResolver } from "../domains/projects/domain/work-authority.js";
@@ -31,6 +37,8 @@ export interface DocumentLinkRouteDeps {
   linkScopes: DocumentLinkScopes;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   fileAccess: Pick<FileAccess, "listAccess">;
+  /** The selected Work's view: its active draft, or live when it has none (F7). */
+  drafts: Pick<Drafts, "viewForWork">;
 }
 
 type DocumentAnswer = Extract<DocumentLinkAnswer, { state: "document" }>["document"];
@@ -54,8 +62,13 @@ export async function handleDocumentLinkResolveRequest(
     throwContextWorkUnavailableHttpError("work_missing");
   }
   // A Work's draft view is the live tree plus what that draft created.
-  const view: LinkView = workId ? { kind: "draft", workId } : { kind: "live" };
+  const view: LinkView = workId
+    ? await deps.drafts.viewForWork(workId as WorkId)
+    : { kind: "live" };
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
+  let holderUri: string | undefined;
+  // Relative hrefs resolve against the holder where it is now.
+  let baseUri = request.baseUri;
 
   // A ref is not a capability: the scope answers readability for this account.
   await deps.linkScopes.within(
@@ -65,12 +78,26 @@ export async function handleDocumentLinkResolveRequest(
       viewer: { accountId: userId },
     },
     async () => {
+      const holderNamed = request.holderDocumentId !== undefined || request.baseUri !== null;
+      const holder = holderNamed
+        ? await deps.linkScopes.pinHolder({
+            view,
+            ...(request.holderDocumentId !== undefined
+              ? { documentId: request.holderDocumentId }
+              : {}),
+            uri: request.baseUri,
+          })
+        : null;
+      if (holder) {
+        baseUri = holder.uri;
+        if (holder.uri !== request.baseUri) holderUri = holder.uri;
+      }
       const refLinks = request.links.flatMap((link, index) =>
         link.ref === null ? [] : [{ link, index }],
       );
       if (refLinks.length === 0) return;
       await deps.linkScopes.prepare({
-        holders: [],
+        holders: holder ? [{ documentId: holder.documentId, view }] : [],
         views: [view],
         refs: refLinks.map(({ link }) => link.ref as string),
         // An unsettled ahead ref resolves by its exact stored address.
@@ -80,23 +107,44 @@ export async function handleDocumentLinkResolveRequest(
             : [],
         ),
       });
-      const reader = deps.linkScopes.reader({ uri: request.baseUri, view });
+      const reader = holder
+        ? deps.linkScopes.holder({ documentId: holder.documentId, view })
+        : deps.linkScopes.reader({ uri: request.baseUri, view });
       for (const { link, index } of refLinks) {
         const resolution = reader.resolve(link);
+        const parsed = parseLinkRef(link.ref);
+        const ahead = parsed?.kind === "ahead" ? parsed.aheadId : null;
         // Rule 3: the client keeps the settlement and never answers this ref by address again.
-        const settled = "settled" in resolution;
+        const marks: AheadMarks = {
+          ...("settled" in resolution ? { settled: true as const } : {}),
+          ...(ahead && holderNamed && !holder ? { holderUnresolved: true as const } : {}),
+        };
         if (resolution.kind === "document") {
           const { document, inDraft } = resolution;
           const described = describeDocument(document);
-          const marked = settled ? { settled: true as const } : {};
+          const bound =
+            ahead && holder
+              ? deps.linkScopes.holderBinding({
+                  holderDocumentId: holder.documentId,
+                  aheadId: ahead,
+                })
+              : null;
           answers[index] = described
-            ? { state: "document", document: described, inDraft, ...marked }
-            : { state: "gone", ...marked };
+            ? {
+                state: "document",
+                document: described,
+                inDraft,
+                ...(document.draft ? { draft: document.draft } : {}),
+                ...marks,
+                // A copy of this link carries `doc:<id>`: the binding stays with this holder.
+                ...(bound === document.documentId ? { holderBound: true as const } : {}),
+              }
+            : { state: "gone", ...marks };
         } else if (resolution.kind === "ahead") {
-          answers[index] = { state: "missing", uri: resolution.uri };
+          answers[index] = { state: "missing", uri: resolution.uri, ...marks };
         } else {
           // gone, and a snapshot miss: never a location the reader was not shown.
-          answers[index] = settled ? { state: "gone", settled: true } : { state: "gone" };
+          answers[index] = { state: "gone", ...marks };
         }
       }
     },
@@ -106,7 +154,7 @@ export async function handleDocumentLinkResolveRequest(
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
     if (link.ref !== null) continue;
-    const target = addressTarget(link.href, request.baseUri);
+    const target = addressTarget(link.href, baseUri);
     if (!target) {
       answers[index] = { state: "unresolvable" };
       continue;
@@ -120,7 +168,7 @@ export async function handleDocumentLinkResolveRequest(
         rootThreadId: request.rootThreadId,
         target: target.target,
         // Chat alone may follow a vacated path to the document that left it.
-        previousLocations: request.baseUri === null,
+        previousLocations: baseUri === null,
       });
       byHref.set(link.href, resolving);
     }
@@ -153,8 +201,11 @@ export async function handleDocumentLinkResolveRequest(
       }
     }
   }
-  return { answers };
+  return holderUri === undefined ? { answers } : { answers, holderUri };
 }
+
+/** What an answer says about how a ref was read: settled, or without its holder's bindings. */
+type AheadMarks = { settled?: true; holderUnresolved?: true };
 
 /** The address a ref-less href names, or null for external and malformed hrefs. */
 function addressTarget(

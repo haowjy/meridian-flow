@@ -5,7 +5,7 @@
  */
 import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { draftTreeChanges, linkAheadDraftSettlements } from "@meridian/database/schema";
+import { draftTreeChanges } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
@@ -34,28 +34,19 @@ export async function recordCreated(
   });
 }
 
-/** The draft stops saying anything about these documents: its rows and its settlements naming them go. */
+/** The draft stops saying anything about these documents (its settlements are the registry's). */
 export async function dropDocumentRows(
   db: Database,
   input: { draftId: DraftId; documentIds: readonly DocumentId[] },
 ): Promise<void> {
   if (input.documentIds.length === 0) return;
-  const tx = currentDrizzleDb(db);
-  await tx
+  await currentDrizzleDb(db)
     .delete(draftTreeChanges)
     .where(
       and(
         eq(draftTreeChanges.draftId, input.draftId),
         eq(draftTreeChanges.nodeKind, "document"),
         inArray(draftTreeChanges.nodeId, [...input.documentIds]),
-      ),
-    );
-  await tx
-    .delete(linkAheadDraftSettlements)
-    .where(
-      and(
-        eq(linkAheadDraftSettlements.draftId, input.draftId),
-        inArray(linkAheadDraftSettlements.documentId, [...input.documentIds]),
       ),
     );
 }

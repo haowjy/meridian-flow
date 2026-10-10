@@ -485,8 +485,16 @@ export async function createProductionAppPorts(input: {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  // Bound once the collab domain exists; neither runs before composition finishes.
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, eventSink);
+  // Bound once the collab domain exists; registration never runs before composition finishes.
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, {
+    drafts: {
+      shareActive: (draftId) => {
+        if (!boundCollab) throw new Error("Drafts used before composition finished");
+        return boundCollab.drafts.shareActive(draftId);
+      },
+    },
+    eventSink,
+  });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
@@ -527,12 +535,6 @@ export async function createProductionAppPorts(input: {
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
-    drafts: {
-      viewForWork: (workId) => {
-        if (!boundCollab) throw new Error("Drafts used before composition finished");
-        return boundCollab.drafts.viewForWork(workId);
-      },
-    },
     observer: createLinkScopeObserver(eventSink),
   });
   const documentSync = createCollabDomain({

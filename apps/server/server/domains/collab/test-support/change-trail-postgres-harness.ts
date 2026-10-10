@@ -580,9 +580,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     inTransaction: isInDrizzleTransaction,
   });
   const projections = { refresh: runDocumentWriteHook };
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
+      drafts: workDrafts,
       fileAccess: createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
@@ -656,10 +661,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branchJournal: durableBranchJournalReadStore,
     branches: branchStore,
     resolveDocumentUri,
-  });
-  const workDrafts = createDrafts({
-    store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
   });
   const drafts = createWorkDraftReviewService({
     links,
