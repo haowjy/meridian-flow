@@ -57,6 +57,10 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -98,6 +102,7 @@ import {
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
+import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
@@ -571,6 +576,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     branchPeers,
     drafts,
+    draftResolver: {
+      drafts: createDrafts({
+        store: createDrizzleDraftStore(deps.db),
+        boundary: createDrizzleDraftWriteBoundary(deps.db),
+      }),
+    },
     documentCreation,
   });
 }

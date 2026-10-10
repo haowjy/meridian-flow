@@ -41,6 +41,7 @@ import type {
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
@@ -333,6 +334,9 @@ export type CollabDrafts = {
   draftSessionStats: DraftSessionStats;
 };
 
+/** The one drafts resolver (Work → active draft, made only at the write boundary). */
+export type CollabDraftResolver = { drafts: Drafts };
+
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
@@ -447,6 +451,7 @@ export type CollabDomain = CollabTransport &
   BranchPushAccess &
   BranchPeerShadowAccess &
   CollabDrafts &
+  CollabDraftResolver &
   DocumentCreationAggregate;
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";
