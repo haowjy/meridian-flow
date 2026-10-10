@@ -21,9 +21,7 @@ import { PaintCapture } from "@/components/app/PaintHold";
 
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
-import { nextReviewFile } from "@/features/draft-review/review-files";
-import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
-import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
+import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { MobileChangeBar } from "./MobileChangeBar";
@@ -44,6 +42,13 @@ export function MobileDocumentReview({
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const draftId = review?.documentId === documentId && review.shown ? review.draftId : null;
+  const { openReviewFile } = useAiDraftLauncher();
+  const header = useReviewHeader({
+    documentId,
+    draftId: draftId ?? "",
+    onCloseDraftOnly,
+    onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
+  });
   const [listOpen, setListOpen] = useState(false);
   useEffect(() => {
     if (!draftId) setListOpen(false);
@@ -53,22 +58,13 @@ export function MobileDocumentReview({
     <MobileKeyboardAware>
       <div className="relative flex min-h-0 flex-1 flex-col">
         {draftId ? (
-          <ReviewTop
-            documentId={documentId}
-            draftId={draftId}
-            onCloseDraftOnly={onCloseDraftOnly}
-            onOpenList={() => setListOpen(true)}
-          />
+          <ReviewTop header={header} onOpenList={() => setListOpen(true)} />
         ) : (
           <LiveDraftEntry documentId={documentId} />
         )}
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {draftId ? (
-          <ReviewBottom
-            documentId={documentId}
-            listOpen={listOpen}
-            onListOpenChange={setListOpen}
-          />
+          <ReviewBottom header={header} listOpen={listOpen} onListOpenChange={setListOpen} />
         ) : null}
       </div>
     </MobileKeyboardAware>
@@ -98,26 +94,7 @@ function LiveDraftEntry({ documentId }: { documentId: string }) {
   );
 }
 
-function ReviewTop({
-  documentId,
-  draftId,
-  onCloseDraftOnly,
-  onOpenList,
-}: {
-  documentId: string;
-  draftId: string;
-  onCloseDraftOnly?: () => void;
-  onOpenList: () => void;
-}) {
-  const { controller } = useDraftReview();
-  const { openReviewFile } = useAiDraftLauncher();
-  const header = useReviewHeader({
-    documentId,
-    draftId,
-    onCloseDraftOnly,
-    // The switcher lists this Work's drafts; each opens through the one launcher.
-    onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
-  });
+function ReviewTop({ header, onOpenList }: { header: ReviewHeaderModel; onOpenList: () => void }) {
   const { status } = header.view;
   return (
     <>
@@ -128,19 +105,15 @@ function ReviewTop({
 }
 
 function ReviewBottom({
-  documentId,
+  header,
   listOpen,
   onListOpenChange,
 }: {
-  documentId: string;
+  header: ReviewHeaderModel;
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
 }) {
-  const { controller, files } = useDraftReview();
-  const { openReviewFile } = useAiDraftLauncher();
-  const view = useReviewChanges(controller);
-  const rows = files;
-
+  const { controller, view, next, openDraft } = header;
   return (
     <>
       <MobileChangeBar view={view} />
@@ -148,12 +121,8 @@ function ReviewBottom({
         open={listOpen}
         onOpenChange={onListOpenChange}
         view={view}
-        next={nextReviewFile(
-          rows,
-          documentId,
-          controller.inlineReview?.completion?.documentName ?? null,
-        )}
-        onOpenNext={(row) => openReviewFile(row, controller.workId)}
+        next={next}
+        onOpenNext={openDraft}
         controller={controller}
       />
       <ReviewToast

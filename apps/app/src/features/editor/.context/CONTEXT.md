@@ -187,7 +187,7 @@ This same value drives the local link index, `@` and LinkForm catalogs,
 resolution/cache registration, contextual Create, and link destinations.
 Scope is deliberately NOT part of `EditorMountIdentity`: moving a holder
 must not destroy its collaborative editor or UndoManager. Route `workId`
-and `reviewWorkId` remain separate inputs for draft navigation and review.
+and the Editor review's Work remain separate authorities for navigation and review.
 
 The runtimes `SessionEditor` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
 are ports and render nothing; the surfaces those lanes show the writer mount

@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 /** The phone hosts a pending new-document draft by its branch alone: no live room is acquired before Apply. */
 
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerContextTab } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { MobileDocumentHost } from "./MobileDocumentHost";
+
+// This host witness owns route/session binding; MobileDocumentReview's suite owns chrome.
+vi.mock("./MobileDocumentReview", () => ({
+  MobileDocumentReview: ({ children }: { children: ReactNode }) => children,
+}));
 
 const live = vi.hoisted(() => ({
   binding: vi.fn(() => ({ state: { kind: "idle" }, retry: vi.fn() })),

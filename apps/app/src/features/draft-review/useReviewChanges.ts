@@ -49,7 +49,7 @@ export function useOpenReviewChanges(
   controller: DraftReviewController,
   options?: { enabled?: boolean },
 ) {
-  // A warm editor that is not the one in review reads nothing.
+  // A surface outside the open review reads nothing.
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const documentId = inline?.documentId ?? null;
   const draftId = inline?.draftId ?? null;

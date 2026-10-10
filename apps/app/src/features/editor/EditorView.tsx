@@ -89,12 +89,12 @@ export function EditorView(props: EditorViewProps) {
   const reviewKey =
     identity && reviewSession ? `${editorMountKey(identity)}|${reviewSession.document.guid}` : null;
   const [constructed, setConstructed] = useState<{
-    session: DocumentSession;
+    key: string;
     editor: Editor;
   } | null>(null);
-  const constructionTarget = useRef(reviewSession);
-  constructionTarget.current = reviewSession;
-  const reviewEditor = constructed?.session === reviewSession ? constructed.editor : null;
+  const constructionTarget = useRef(reviewKey);
+  constructionTarget.current = reviewKey;
+  const reviewEditor = constructed?.key === reviewKey ? constructed.editor : null;
   const reviewPainted = reviewEditor !== null;
   // The editor existing is not enough: the review shows with its marks, in one
   // frame, so the writer never sees the draft text unmarked.
@@ -191,11 +191,9 @@ export function EditorView(props: EditorViewProps) {
               }}
               onConstructed={(editor) => {
                 if (!editor) {
-                  setConstructed((current) =>
-                    current?.session === reviewSession ? null : current,
-                  );
-                } else if (constructionTarget.current === reviewSession) {
-                  setConstructed({ session: reviewSession, editor });
+                  setConstructed((current) => (current?.key === reviewKey ? null : current));
+                } else if (constructionTarget.current === reviewKey) {
+                  setConstructed({ key: reviewKey, editor });
                 }
               }}
             />
