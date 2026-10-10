@@ -1,8 +1,7 @@
-/** Persistence authority for pending branch-push settlement and recovery. */
+/** Persistence authority for pending branch-push settlement batches and their recovery. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type {
-  CompletionFenceResult,
-  PendingLiveSettlement,
+  PendingSettlementBatch,
   PushLineageRow,
   SettlementClaim,
   TrailContributionReplacement,
@@ -19,34 +18,69 @@ export type SettlementAdmission = {
   excludePushId?: string;
 };
 
+/** One member as the caller classified it before the completion transaction. */
+export type BatchCompletionMember = {
+  push: PushLineageRow;
+  /** The join version the caller classified; a moved version retries the batch. */
+  joinVersion: number;
+  trail: DurableTrailRecord;
+  replacement: TrailContributionReplacement;
+};
+
+/** A member's settlement cut, read inside the completion transaction. */
+export type SettlementCut = {
+  pushId: number;
+  documentId: DocumentId;
+  lockCutUpdate: Uint8Array;
+  postCutUpdates: readonly Uint8Array[];
+  pushUpdate: Uint8Array;
+};
+
+export type BatchCompletion = {
+  batchId: string;
+  claim: SettlementClaim;
+  members: readonly BatchCompletionMember[];
+  /**
+   * Synchronous and non-mutating: compares warm state with every member's
+   * in-transaction cut after all writes, just before commit. `retry` rolls the
+   * whole batch back.
+   */
+  recheck(cuts: readonly SettlementCut[]): "commit" | "retry";
+  /** Runs once the transaction commits, before any publication step's after-commit effect. */
+  afterCommit(): void;
+};
+
+export type BatchCompletionResult =
+  | { status: "completed"; projections: readonly CommittedChangeTrailProjection[] }
+  | { status: "retry" };
+
 export type PendingSettlementStore = {
   joinAdmission(input: SettlementAdmission): Promise<void>;
-  loadLiveSettlement(pushId: number): Promise<PendingLiveSettlement>;
-  claimRecoverable(input: { pushId: number; token: string }): Promise<PendingLiveSettlement | null>;
-  renewClaim(input: { pushId: number; claim: SettlementClaim }): Promise<SettlementClaim | null>;
-  handoffClaim(input: { pushId: number; claim: SettlementClaim }): Promise<boolean>;
-  recordFailure(input: { pushId: number; claim: SettlementClaim; error: string }): Promise<boolean>;
+  /** Loads a claimed batch outside completion; its cuts are classification input, not authority. */
+  loadSettlementBatch(batchId: string): Promise<PendingSettlementBatch>;
+  /** Claims an available batch whole; null when another owner holds or finished it. */
+  claimRecoverableBatch(input: {
+    batchId: string;
+    token: string;
+  }): Promise<PendingSettlementBatch | null>;
+  renewClaim(input: { batchId: string; claim: SettlementClaim }): Promise<SettlementClaim | null>;
+  recordFailure(input: {
+    batchId: string;
+    claim: SettlementClaim;
+    error: string;
+  }): Promise<boolean>;
   block(input: {
-    pushId: number;
+    batchId: string;
     claim: SettlementClaim;
     code: string;
     error: string;
   }): Promise<boolean>;
-  settlePushTrail(input: {
-    push: PushLineageRow;
-    trail?: DurableTrailRecord;
-    replacement?: TrailContributionReplacement;
-    claim: SettlementClaim;
-    joinVersion: number;
-  }): Promise<false | readonly CommittedChangeTrailProjection[]>;
-  withCompletionFence(
-    input: {
-      pushId: number;
-      documentId: DocumentId;
-      claim: SettlementClaim;
-      settledJoinVersion: number;
-    },
-    complete: () => CompletionFenceResult,
-  ): Promise<CompletionFenceResult>;
-  listRecoverableSettlementIds(): Promise<number[]>;
+  /**
+   * Settles every member in one transaction: Work locks, publication steps'
+   * namespace locks, document locks, then trail, text admission and
+   * publication steps in the target's order. Nothing reaches a warm room
+   * before commit.
+   */
+  completeBatch(input: BatchCompletion): Promise<BatchCompletionResult>;
+  listRecoverableBatchIds(): Promise<string[]>;
 };

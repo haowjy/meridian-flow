@@ -16,9 +16,9 @@
   publication record, while typed `push_lineage.branch_generation` supports
   generation-local idempotency queries without duplicating that diff.
   `branch-push-transition.ts` alone orders capture
-  through fenced completion. The transition projects the aggregate writer's exact
+  through batch completion. The transition projects the aggregate writer's exact
   committed replace-set and delivers it to connected bare-document rooms only
-  after the completion fence reports applied/already-applied. Delivery is a
+  after the batch's completion transaction commits. Delivery is a
   session-local hint: it is not queued or replayed, and a vanished room cannot
   fail an otherwise durable push. A durable commit requires its trail bundle. Review
   reversal is a separately composed
@@ -38,6 +38,32 @@
   per-document word magnitudes; lightweight shells retain document ids/titles
   plus nullable totals so receipt headers never need manuscript-bearing detail.
   Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
+- **One settlement batch per commit**: every push one commit stages shares one
+  `branch_push_settlement_batches` row, which owns the claim, lease, backoff and
+  pending/blocked/completed state; `branch_push_settlement_outbox` members keep
+  each push's lock cut, push update, trail seed and join versions. A single push
+  is a batch of one; there is no per-push settlement path. `completeBatch`
+  settles every member in one transaction, in the global order: Work rows, then
+  namespace keys, then every document mutation lock sorted, then the batch's
+  trail settlement in one pass per trail (members whose join version moved
+  publish one new version; the rest refine the version their commit
+  published), then text admission per member, then a synchronous warm-state
+  recheck of every member against cuts read inside the transaction. Any retry,
+  fault or recheck mismatch rolls the whole batch back. Warm rooms receive the
+  admitted updates only after commit (`runAfterDrizzleCommit`); nothing reaches
+  a room before. Recovery claims a batch with one `UPDATE` on its row, so two
+  recoverers cannot split it, and completes it whole. Commit takes every
+  document lock before any trail lock, as completion does, and records every
+  push's trail in one pass: one trail version per commit. Per-push trail writes
+  against a shared turn trail were quadratic and dominated a 40-chapter batch.
+- **Publication steps are the ordered extension point**
+  (`domain/ports/settlement-publication.ts`): a step plans from immutable
+  inputs, names extra Works, namespace documents and document locks, and runs
+  `beforeAdmission` (vacate, install), `afterAdmission` (settle arrivals,
+  record history) and `afterCommit` (catalog refresh, wake hints) inside the
+  same batch. Today's manifest companion is the one step
+  (`adapters/drizzle-manifest-arrivals.ts`); Apply's tree candidate replaces
+  it. A batch with no text members settles through the same order.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
@@ -99,14 +125,14 @@
   (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
   live and settles in the tree store's move transaction. So the only documents an
   Apply brings to an address are draft creates the manifest push publishes, their
-  SQL address is already final, and the completion fence (`withCompletionFence`
-  in `adapters/drizzle-pending-settlement.ts`, `arrivingDocumentIds`) settles them
-  under Work → namespace → holder locks. Draft-held moves would break that: a
+  SQL address is already final, and the manifest arrival publication step
+  (`adapters/drizzle-manifest-arrivals.ts`) settles them after text admission
+  in the batch's completion transaction, under Work → namespace → holder locks. Draft-held moves would break that: a
   document's address would depend on the view. Building them changes
   `context/adapters/document-address.ts` (current address and exact occupant
   become view-dependent), `context/adapters/document-link-scope.ts` (per-view
   URIs), `context/links/move-link-count.ts` (the note is counted at Apply), and
-  the completion fence here (moved documents become arrivals, and their old and
+  the publication step here (moved documents become arrivals, and their old and
   new namespaces both lock).
 - **Writer Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the
@@ -125,11 +151,12 @@
   `pnpm --filter @meridian/server perf:writer-admission` is the manual performance
   gate; cached containment must retain at least a 10x p50 advantage over rebuilding
   a history-sized Yjs snapshot.
-- **Push settlement state**: the outbox stores binary `lock_cut_update` and
-  `push_update`, validated trail JSON, fenced ownership fields, and typed
-  pending/blocked/completed state. `PendingSettlementStore` is the required
-  persistence authority for settlement, claims, failure backoff, blocking, trail
-  refinement, and fenced completion. Exact post-cut Yjs admissions live in the
+- **Push settlement state**: each outbox member stores binary `lock_cut_update`
+  and `push_update`, validated trail JSON and its join versions; its batch row
+  holds the fenced ownership fields and typed pending/blocked/completed state.
+  `PendingSettlementStore` is the required persistence authority for batch
+  settlement, claims, failure backoff, blocking, trail refinement, and
+  completion. Exact post-cut Yjs admissions live in the
   normalized `branch_push_outbox_updates` relation. Journal and staged-push
   admission both call the single `joinAdmissionWithinTx` writer inside their
   document-mutation transaction; source identity and completing-push exclusion
@@ -156,8 +183,10 @@
   time; add new matrix cases there. The PostgreSQL killed-process oracle
   (`branch-push-settlement-oracle.db.test.ts`) keeps only what an in-memory port
   cannot prove: the cold lock cut with post-cut joins, stale-claim fencing
-  against a live holder, and commit-fault durability inside the completion
-  transaction. `branch-push-durable-projection.db.test.ts` owns SQL-dependent
+  against a live holder, commit-fault durability inside the completion
+  transaction, and batch atomicity (a fault between admissions leaves nothing
+  live, one of two concurrent recoverers settles the batch whole, warm rooms
+  see it only after commit). `branch-push-durable-projection.db.test.ts` owns SQL-dependent
   replay, aggregate row version, fold restoration, and journal attribution
   assertions; do not move them to fakes. Pure provenance and policy semantics
   belong to their focused owners rather than to a second PostgreSQL replay graph.

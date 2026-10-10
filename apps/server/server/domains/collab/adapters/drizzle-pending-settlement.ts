@@ -1,9 +1,10 @@
-/** Drizzle persistence authority for pending branch-push settlement. */
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+/** Drizzle persistence authority for pending branch-push settlement batches. */
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   branchPushOutboxUpdates,
+  branchPushSettlementBatches,
   branchPushSettlementOutbox,
   branchWriteJournal,
   documentBranches,
@@ -18,27 +19,34 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runAfterDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
-import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
   PendingLiveSettlement,
+  PendingSettlementBatch,
   PreparedPushCommit,
   PushLineageRow,
+  SettlementBatchIdentity,
   SettlementClaim,
 } from "../domain/branch-push-contracts.js";
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { deriveDocument } from "../domain/document-derivations.js";
-import { manifestMembershipRowDocumentId } from "../domain/manifest-membership-journal.js";
-import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import type {
+  ChangeTrailPersistence,
+  CommittedChangeTrailProjection,
+} from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
@@ -46,7 +54,13 @@ import type { DurableProjectionSerializer } from "../domain/ports/durable-projec
 import type {
   PendingSettlementStore,
   SettlementAdmission,
+  SettlementCut,
 } from "../domain/ports/pending-settlement-store.js";
+import type {
+  SettlementNamespaceLocks,
+  SettlementPublicationPlan,
+  SettlementPublicationStep,
+} from "../domain/ports/settlement-publication.js";
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
 import { loadDocumentState } from "./document-loader.js";
@@ -56,8 +70,35 @@ import {
 } from "./drizzle-document-authority-head.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
-export async function stagePendingSettlementWithinTx(
+/**
+ * Stages every committed push of one batch under its settlement identity, inside
+ * the commit transaction. The warm committer holds the first claim.
+ */
+export async function stageSettlementBatchWithinTx(
   db: DrizzleDb,
+  settlement: SettlementBatchIdentity,
+  staged: readonly { prepared: PreparedPushCommit; push: PushLineageRow }[],
+): Promise<void> {
+  const lease = await databaseLease(db);
+  await db.insert(branchPushSettlementBatches).values({
+    id: settlement.batchId,
+    claimToken: settlement.claimToken,
+    claimEpoch: 1,
+    claimKind: "warm",
+    claimedAt: lease.now,
+    leaseExpiresAt: lease.expiresAt,
+    availableAt: lease.now,
+  });
+  for (const { prepared, push } of staged) {
+    await stageMemberWithinTx(db, settlement.batchId, prepared, push);
+  }
+}
+
+export type StageSettlementBatchWithinTx = typeof stageSettlementBatchWithinTx;
+
+async function stageMemberWithinTx(
+  db: DrizzleDb,
+  batchId: string,
   prepared: PreparedPushCommit,
   push: PushLineageRow,
 ): Promise<void> {
@@ -67,28 +108,23 @@ export async function stagePendingSettlementWithinTx(
     push.upstreamUpdateSeq ?? Number.MAX_SAFE_INTEGER,
   );
   const cut = createCollabYDoc({ gc: false });
-  Y.applyUpdate(cut, prepared.pendingLiveSettlement.lockCutUpdate);
+  Y.applyUpdate(cut, prepared.lockCutUpdate);
   const initialReconcile = Y.encodeStateAsUpdate(durablePrePush, Y.encodeStateVector(cut));
   const decodedReconcile = Y.decodeUpdate(initialReconcile);
   durablePrePush.destroy();
   cut.destroy();
-  const trailSeed = parseDurableTrailSeedV1(prepared.pendingLiveSettlement.trail);
-  const lease = await databaseLease(db);
+  const reconciles = decodedReconcile.structs.length > 0 || decodedReconcile.ds.clients.size > 0;
   await db.insert(branchPushSettlementOutbox).values({
     pushId: push.id,
+    batchId,
     documentId: push.documentId,
-    documentTitle: prepared.pendingLiveSettlement.documentTitle,
-    lockCutUpdate: Buffer.from(prepared.pendingLiveSettlement.lockCutUpdate),
-    pushUpdate: Buffer.from(prepared.pendingLiveSettlement.pushUpdate),
-    trailSeed,
-    claimToken: prepared.pendingLiveSettlement.claim.token,
-    claimEpoch: 1,
-    claimKind: "warm",
-    claimedAt: lease.now,
-    leaseExpiresAt: lease.expiresAt,
-    availableAt: lease.now,
+    documentTitle: prepared.documentTitle,
+    lockCutUpdate: Buffer.from(prepared.lockCutUpdate),
+    pushUpdate: Buffer.from(prepared.pushUpdate),
+    trailSeed: parseDurableTrailSeedV1(prepared.trail),
+    ...(reconciles ? { joinVersion: 1, classifiedJoinVersion: 1 } : {}),
   });
-  if (decodedReconcile.structs.length > 0 || decodedReconcile.ds.clients.size > 0) {
+  if (reconciles) {
     await db.insert(branchPushOutboxUpdates).values({
       pushId: push.id,
       ordinal: 0,
@@ -96,14 +132,14 @@ export async function stagePendingSettlementWithinTx(
       sourceId: push.id,
       update: Buffer.from(initialReconcile),
     });
-    await db
-      .update(branchPushSettlementOutbox)
-      .set({ joinVersion: 1, classifiedJoinVersion: 1 })
-      .where(eq(branchPushSettlementOutbox.pushId, push.id));
   }
 }
 
-export type StagePendingSettlementWithinTx = typeof stagePendingSettlementWithinTx;
+/** Where Apply's tree work joins the completion transaction, and the locks it needs. */
+export type SettlementPublication = {
+  namespaces?: SettlementNamespaceLocks;
+  steps: readonly SettlementPublicationStep[];
+};
 
 export function createDrizzlePendingSettlementStore(
   db: Database,
@@ -113,7 +149,7 @@ export function createDrizzlePendingSettlementStore(
   derivationStore: DocumentDerivationStore,
   notices?: NoticePort,
   eventSink?: EventSink,
-  arrivals?: DocumentArrivals,
+  publication: SettlementPublication = { steps: [] },
 ): PendingSettlementStore {
   return {
     async joinAdmission(input) {
@@ -121,117 +157,131 @@ export function createDrizzlePendingSettlementStore(
         await joinAdmissionWithinTx(currentDrizzleDb(db), input);
       });
     },
-    async settlePushTrail(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const txDb = currentDrizzleDb(db);
-        await lockDocumentMutation(txDb, input.push.documentId);
-        const [owned] = await txDb
-          .select({
-            pushId: branchPushSettlementOutbox.pushId,
-            classifiedJoinVersion: branchPushSettlementOutbox.classifiedJoinVersion,
-          })
-          .from(branchPushSettlementOutbox)
-          .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
-          .for("update")
-          .limit(1);
-        if (!owned) return false;
-        const committed = input.replacement
-          ? await changeTrails.replacePushContribution(String(input.push.id), input.replacement, {
-              refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
-            })
-          : [];
-        if (input.trail?.transactionalNotice && owned.classifiedJoinVersion !== input.joinVersion) {
-          await notices?.record({
-            ...input.trail.transactionalNotice,
-            data: {
-              ...input.trail.transactionalNotice.data,
-              pushId: String(input.push.id),
-              threadId: input.push.threadId ?? null,
-              turnId: input.push.turnId ?? null,
-            },
-          });
-        }
-        const [settled] = await txDb
-          .update(branchPushSettlementOutbox)
-          .set({
-            classifiedJoinVersion: input.joinVersion,
-            settledJoinVersion: input.joinVersion,
-            updatedAt: sql`clock_timestamp()`,
-          })
-          .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
-          .returning({ pushId: branchPushSettlementOutbox.pushId });
-        return settled ? committed : false;
-      });
-    },
 
-    async listRecoverableSettlementIds() {
-      const rows = await db
-        .select({ pushId: branchPushSettlementOutbox.pushId })
-        .from(branchPushSettlementOutbox)
-        .where(
-          and(
-            eq(branchPushSettlementOutbox.state, "pending"),
-            sql`${branchPushSettlementOutbox.availableAt} <= clock_timestamp()`,
-            or(
-              isNull(branchPushSettlementOutbox.claimToken),
-              sql`${branchPushSettlementOutbox.leaseExpiresAt} <= clock_timestamp()`,
-            ),
-          ),
-        )
-        .orderBy(branchPushSettlementOutbox.createdAt)
-        .limit(100);
-      return rows.map((row) => row.pushId);
-    },
-
-    async loadLiveSettlement(pushId) {
-      return readPendingSettlement(db, pushId, eventSink);
-    },
-
-    async withCompletionFence(input, complete) {
+    async completeBatch(input) {
       class CompletionRetry extends Error {}
       try {
-        return await runInDrizzleTransaction(db, async () => {
+        const projections = await runInDrizzleTransaction(db, async () => {
           const txDb = currentDrizzleDb(db);
-          // Completion touches the draft's Work row; take it before the
-          // document lock, in the order every write seam uses (file-access §5).
-          await lockWorksInIdOrder(txDb, await pushWorkIds(txDb, input.pushId));
-          // A manifest push publishes draft-created documents: they arrive here. Their
-          // namespace keys go between the Work and holder locks (contract §9.4, O6).
-          const arriving = arrivals ? await arrivingDocumentIds(txDb, input.pushId) : [];
-          if (arriving.length > 0) await arrivals?.lockNamespaces(arriving);
-          await lockDocumentMutation(txDb, input.documentId);
-          const [owned] = await txDb
-            .select({ pushId: branchPushSettlementOutbox.pushId })
-            .from(branchPushSettlementOutbox)
-            .where(
-              and(
-                ownerPredicate(input.pushId, input.claim, input.settledJoinVersion),
-                eq(branchPushSettlementOutbox.settledJoinVersion, input.settledJoinVersion),
+          const members = [...input.members].sort((left, right) =>
+            left.push.documentId.localeCompare(right.push.documentId),
+          );
+          const pushIds = members.map((member) => member.push.id);
+          const plans = (
+            await Promise.all(
+              publication.steps.map((step) =>
+                step.plan({ batchId: input.batchId, pushes: members.map(({ push }) => push) }),
               ),
             )
+          ).filter((plan): plan is SettlementPublicationPlan => plan !== null);
+
+          // The global order: Work rows, namespace keys, then document locks, each
+          // over the whole batch at once (file-access §5, contract §9.4).
+          await lockWorksInIdOrder(txDb, [
+            ...new Set([
+              ...(await pushWorkIds(txDb, pushIds)),
+              ...plans.flatMap((plan) => plan.workIds ?? []),
+            ]),
+          ]);
+          const namespaceDocumentIds = sortedUnique(
+            plans.flatMap((plan) => plan.namespaceDocumentIds ?? []),
+          );
+          if (namespaceDocumentIds.length > 0) {
+            if (!publication.namespaces) {
+              throw new Error("A publication step needs namespace locks this store cannot take");
+            }
+            await publication.namespaces.lockNamespaces(namespaceDocumentIds);
+          }
+          for (const documentId of sortedUnique([
+            ...members.map(({ push }) => push.documentId),
+            ...plans.flatMap((plan) => plan.documentIds ?? []),
+          ])) {
+            await lockDocumentMutation(txDb, documentId);
+          }
+
+          const [owned] = await txDb
+            .select({ id: branchPushSettlementBatches.id })
+            .from(branchPushSettlementBatches)
+            .where(batchOwnerPredicate(input.batchId, input.claim))
             .for("update")
             .limit(1);
           if (!owned) throw new CompletionRetry();
-
-          // Persist the staged candidate before the synchronous live apply. If the
-          // recheck rejects it, throwing rolls this entire admission back.
-          await completeStagedPush(
-            txDb,
-            input.pushId,
-            input.documentId,
-            durableProjectionSerializer,
-            projectionEffects,
-            derivationStore,
-          );
-          const result = complete();
-          if (result !== "applied" && result !== "already_applied" && result !== "retry") {
-            throw new Error("Completion fence callback must return synchronously");
+          // Read inside the transaction, under every document lock: no admission can
+          // join a member between this read and commit.
+          const rows = await txDb
+            .select()
+            .from(branchPushSettlementOutbox)
+            .where(eq(branchPushSettlementOutbox.batchId, input.batchId))
+            .orderBy(asc(branchPushSettlementOutbox.documentId));
+          const rowByPush = new Map(rows.map((row) => [row.pushId, row]));
+          if (
+            rows.length !== members.length ||
+            members.some(
+              (member) => rowByPush.get(member.push.id)?.joinVersion !== member.joinVersion,
+            )
+          ) {
+            throw new CompletionRetry();
           }
-          if (result === "retry") throw new CompletionRetry();
-          // Membership is published above, in this transaction: settle against it.
-          if (arriving.length > 0) await arrivals?.settle(arriving);
+          const cuts = await readSettlementCuts(txDb, rows);
+
+          for (const plan of plans) await plan.beforeAdmission?.();
+          // A member classified at its current join version refines the trail version its
+          // commit published; one joined since publishes the next version, once per batch.
+          const firstClassified = members.filter(
+            (member) => rowByPush.get(member.push.id)?.classifiedJoinVersion !== member.joinVersion,
+          );
+          const refined = members.filter((member) => !firstClassified.includes(member));
+          const committed: CommittedChangeTrailProjection[] = [];
+          for (const [group, refineCurrentVersion] of [
+            [refined, true],
+            [firstClassified, false],
+          ] as const) {
+            if (group.length === 0) continue;
+            committed.push(
+              ...(await changeTrails.replacePushContributions(
+                group.map((member) => ({
+                  pushId: String(member.push.id),
+                  replacement: member.replacement,
+                })),
+                { refineCurrentVersion },
+              )),
+            );
+          }
+          for (const member of firstClassified) {
+            if (!member.trail.transactionalNotice) continue;
+            await notices?.record({
+              ...member.trail.transactionalNotice,
+              data: {
+                ...member.trail.transactionalNotice.data,
+                pushId: String(member.push.id),
+                threadId: member.push.threadId ?? null,
+                turnId: member.push.turnId ?? null,
+              },
+            });
+          }
+          for (const member of members) {
+            await txDb
+              .update(branchPushSettlementOutbox)
+              .set({ classifiedJoinVersion: member.joinVersion, updatedAt: sql`clock_timestamp()` })
+              .where(eq(branchPushSettlementOutbox.pushId, member.push.id));
+            await completeStagedPush(
+              txDb,
+              member.push.id,
+              member.push.documentId,
+              durableProjectionSerializer,
+              projectionEffects,
+              derivationStore,
+            );
+          }
+          for (const plan of plans) await plan.afterAdmission?.();
+
+          const decision = input.recheck(cuts);
+          if (decision !== "commit" && decision !== "retry") {
+            throw new Error("Batch settlement recheck must return synchronously");
+          }
+          if (decision === "retry") throw new CompletionRetry();
           const [completed] = await txDb
-            .update(branchPushSettlementOutbox)
+            .update(branchPushSettlementBatches)
             .set({
               state: "completed",
               completedAt: sql`clock_timestamp()`,
@@ -241,195 +291,212 @@ export function createDrizzlePendingSettlementStore(
               leaseExpiresAt: null,
               updatedAt: sql`clock_timestamp()`,
             })
-            .where(
-              and(
-                ownerPredicate(input.pushId, input.claim, input.settledJoinVersion),
-                eq(branchPushSettlementOutbox.settledJoinVersion, input.settledJoinVersion),
-              ),
-            )
-            .returning({ pushId: branchPushSettlementOutbox.pushId });
+            .where(batchOwnerPredicate(input.batchId, input.claim))
+            .returning({ id: branchPushSettlementBatches.id });
           if (!completed) throw new CompletionRetry();
-          return result;
+          runAfterDrizzleCommit(input.afterCommit);
+          for (const plan of plans) {
+            const afterCommit = plan.afterCommit;
+            if (afterCommit) runAfterDrizzleCommit(() => afterCommit());
+          }
+          return latestProjections(committed);
         });
+        return { status: "completed" as const, projections };
       } catch (cause) {
-        if (cause instanceof CompletionRetry) return "retry" as const;
+        if (cause instanceof CompletionRetry) return { status: "retry" as const };
         throw cause;
       }
+    },
+
+    async listRecoverableBatchIds() {
+      const rows = await db
+        .select({ id: branchPushSettlementBatches.id })
+        .from(branchPushSettlementBatches)
+        .where(
+          and(
+            eq(branchPushSettlementBatches.state, "pending"),
+            sql`${branchPushSettlementBatches.availableAt} <= clock_timestamp()`,
+            or(
+              isNull(branchPushSettlementBatches.claimToken),
+              sql`${branchPushSettlementBatches.leaseExpiresAt} <= clock_timestamp()`,
+            ),
+          ),
+        )
+        .orderBy(branchPushSettlementBatches.createdAt)
+        .limit(100);
+      return rows.map((row) => row.id);
+    },
+
+    async loadSettlementBatch(batchId) {
+      return readSettlementBatch(db, batchId, eventSink);
     },
 
     async renewClaim(input) {
       const lease = await databaseLease(db);
       const [renewed] = await db
-        .update(branchPushSettlementOutbox)
+        .update(branchPushSettlementBatches)
         .set({ leaseExpiresAt: lease.expiresAt, updatedAt: lease.now })
-        .where(ownerPredicate(input.pushId, input.claim))
-        .returning({ leaseExpiresAt: branchPushSettlementOutbox.leaseExpiresAt });
+        .where(batchOwnerPredicate(input.batchId, input.claim))
+        .returning({ leaseExpiresAt: branchPushSettlementBatches.leaseExpiresAt });
       return renewed?.leaseExpiresAt
         ? { ...input.claim, leaseExpiresAt: renewed.leaseExpiresAt }
         : null;
     },
 
-    async handoffClaim(input) {
-      const [released] = await db
-        .update(branchPushSettlementOutbox)
+    async claimRecoverableBatch(input) {
+      // One row, one UPDATE: two recoverers serialize on it, and only one owns the batch.
+      const lease = await databaseLease(db);
+      const [row] = await db
+        .update(branchPushSettlementBatches)
         .set({
-          claimToken: null,
-          claimKind: null,
-          claimedAt: null,
-          leaseExpiresAt: null,
-          availableAt: sql`clock_timestamp()`,
+          claimToken: input.token,
+          claimEpoch: sql`${branchPushSettlementBatches.claimEpoch} + 1`,
+          claimKind: "recovery",
+          claimedAt: sql`clock_timestamp()`,
+          leaseExpiresAt: lease.expiresAt,
           updatedAt: sql`clock_timestamp()`,
         })
-        .where(ownerPredicate(input.pushId, input.claim))
-        .returning({ pushId: branchPushSettlementOutbox.pushId });
-      return Boolean(released);
-    },
-
-    async claimRecoverable(input) {
-      const claimed = await runInDrizzleTransaction(db, async () => {
-        const txDb = currentDrizzleDb(db);
-        const [candidate] = await txDb
-          .select({ documentId: branchPushSettlementOutbox.documentId })
-          .from(branchPushSettlementOutbox)
-          .where(eq(branchPushSettlementOutbox.pushId, input.pushId))
-          .for("update")
-          .limit(1);
-        if (!candidate) return null;
-        await lockDocumentMutation(txDb, candidate.documentId);
-        const lease = await databaseLease(txDb);
-        const [row] = await txDb
-          .update(branchPushSettlementOutbox)
-          .set({
-            claimToken: input.token,
-            claimEpoch: sql`${branchPushSettlementOutbox.claimEpoch} + 1`,
-            claimKind: "recovery",
-            claimedAt: lease.now,
-            leaseExpiresAt: lease.expiresAt,
-            updatedAt: lease.now,
-          })
-          .where(
-            and(
-              eq(branchPushSettlementOutbox.pushId, input.pushId),
-              eq(branchPushSettlementOutbox.state, "pending"),
-              lte(branchPushSettlementOutbox.availableAt, lease.now),
-              or(
-                isNull(branchPushSettlementOutbox.claimToken),
-                lte(branchPushSettlementOutbox.leaseExpiresAt, lease.now),
-              ),
+        .where(
+          and(
+            eq(branchPushSettlementBatches.id, input.batchId),
+            eq(branchPushSettlementBatches.state, "pending"),
+            sql`${branchPushSettlementBatches.availableAt} <= clock_timestamp()`,
+            or(
+              isNull(branchPushSettlementBatches.claimToken),
+              sql`${branchPushSettlementBatches.leaseExpiresAt} <= clock_timestamp()`,
             ),
-          )
-          .returning({
-            epoch: branchPushSettlementOutbox.claimEpoch,
-            leaseExpiresAt: branchPushSettlementOutbox.leaseExpiresAt,
-          });
-        return row?.leaseExpiresAt
-          ? ({
-              token: input.token,
-              epoch: row.epoch,
-              kind: "recovery",
-              leaseExpiresAt: row.leaseExpiresAt,
-            } satisfies SettlementClaim)
-          : null;
-      });
-      if (!claimed) return null;
+          ),
+        )
+        .returning({
+          epoch: branchPushSettlementBatches.claimEpoch,
+          leaseExpiresAt: branchPushSettlementBatches.leaseExpiresAt,
+        });
+      if (!row?.leaseExpiresAt) return null;
+      const claimed: SettlementClaim = {
+        token: input.token,
+        epoch: row.epoch,
+        kind: "recovery",
+        leaseExpiresAt: row.leaseExpiresAt,
+      };
       try {
-        return await readPendingSettlement(db, input.pushId, eventSink);
+        return await readSettlementBatch(db, input.batchId, eventSink);
       } catch (cause) {
         await db
-          .update(branchPushSettlementOutbox)
+          .update(branchPushSettlementBatches)
           .set({
             state: "blocked",
             lastErrorCode: "corrupt_settlement_authority",
             lastError: cause instanceof Error ? cause.message : String(cause),
             blockedAt: sql`clock_timestamp()`,
-            claimToken: null,
-            claimKind: null,
-            claimedAt: null,
-            leaseExpiresAt: null,
-            updatedAt: sql`clock_timestamp()`,
+            ...releasedClaim,
           })
-          .where(ownerPredicate(input.pushId, claimed));
+          .where(batchOwnerPredicate(input.batchId, claimed));
         throw cause;
       }
     },
 
     async recordFailure(failure) {
       const [failed] = await db
-        .update(branchPushSettlementOutbox)
+        .update(branchPushSettlementBatches)
         .set({
-          state: "pending",
-          attemptCount: sql`${branchPushSettlementOutbox.attemptCount} + 1`,
+          attemptCount: sql`${branchPushSettlementBatches.attemptCount} + 1`,
           lastError: failure.error,
-          availableAt: sql`clock_timestamp() + make_interval(secs => least(60, power(2, least(6, ${branchPushSettlementOutbox.attemptCount} + 1))::int))`,
-          claimToken: null,
-          claimKind: null,
-          claimedAt: null,
-          leaseExpiresAt: null,
-          updatedAt: sql`clock_timestamp()`,
+          availableAt: sql`clock_timestamp() + make_interval(secs => least(60, power(2, least(6, ${branchPushSettlementBatches.attemptCount} + 1))::int))`,
+          ...releasedClaim,
         })
-        .where(ownerPredicate(failure.pushId, failure.claim))
-        .returning({ pushId: branchPushSettlementOutbox.pushId });
+        .where(batchOwnerPredicate(failure.batchId, failure.claim))
+        .returning({ id: branchPushSettlementBatches.id });
       return Boolean(failed);
     },
 
     async block(failure) {
       const [blocked] = await db
-        .update(branchPushSettlementOutbox)
+        .update(branchPushSettlementBatches)
         .set({
           state: "blocked",
           lastErrorCode: failure.code,
           lastError: failure.error,
           blockedAt: sql`clock_timestamp()`,
-          claimToken: null,
-          claimKind: null,
-          claimedAt: null,
-          leaseExpiresAt: null,
-          updatedAt: sql`clock_timestamp()`,
+          ...releasedClaim,
         })
-        .where(ownerPredicate(failure.pushId, failure.claim))
-        .returning({ pushId: branchPushSettlementOutbox.pushId });
+        .where(batchOwnerPredicate(failure.batchId, failure.claim))
+        .returning({ id: branchPushSettlementBatches.id });
       return Boolean(blocked);
     },
   };
 }
 
-/** The Work whose draft a push came from; none for a live-only push. */
-async function pushWorkIds(db: DrizzleDb, pushId: number): Promise<string[]> {
+const releasedClaim = {
+  claimToken: null,
+  claimKind: null,
+  claimedAt: null,
+  leaseExpiresAt: null,
+  updatedAt: sql`clock_timestamp()`,
+};
+
+/** One projection per trail and document: the last revision this transaction wrote. */
+function latestProjections(
+  projections: readonly CommittedChangeTrailProjection[],
+): CommittedChangeTrailProjection[] {
+  const latest = new Map<string, CommittedChangeTrailProjection>();
+  for (const projection of projections) {
+    const key = `${projection.trailId}:${projection.documentId}`;
+    const current = latest.get(key);
+    if (!current || current.projectionRevision < projection.projectionRevision) {
+      latest.set(key, projection);
+    }
+  }
+  return [...latest.values()];
+}
+
+function sortedUnique<T extends string>(values: readonly T[]): T[] {
+  return [...new Set(values)].sort();
+}
+
+/** The Works whose drafts a batch's pushes came from; none for live-only pushes. */
+async function pushWorkIds(db: DrizzleDb, pushIds: readonly number[]): Promise<WorkId[]> {
+  if (pushIds.length === 0) return [];
   const rows = await db
-    .select({ workId: documentBranches.workId })
+    .selectDistinct({ workId: documentBranches.workId })
     .from(pushLineage)
     .innerJoin(documentBranches, eq(documentBranches.id, pushLineage.branchId))
-    .where(eq(pushLineage.id, pushId))
-    .limit(1);
-  return rows.flatMap((row) => (row.workId ? [row.workId] : []));
+    .where(inArray(pushLineage.id, [...pushIds]));
+  return rows.flatMap((row) => (row.workId ? [row.workId as WorkId] : []));
 }
 
-/**
- * Documents whose live manifest entry this push publishes, from its immutable journal rows.
- * Read after the Work locks and before the namespace and holder locks; the rows never change, so
- * the read needs no lock of its own. Only a draft's manifest push carries them.
- */
-async function arrivingDocumentIds(db: DrizzleDb, pushId: number): Promise<DocumentId[]> {
-  const [push] = await db
-    .select({ journalIds: pushLineage.journalIds })
-    .from(pushLineage)
-    .where(eq(pushLineage.id, pushId))
-    .limit(1);
-  if (!push || push.journalIds.length === 0) return [];
-  const rows = await db
-    .select({ updateMeta: branchWriteJournal.updateMeta })
-    .from(branchWriteJournal)
-    .where(
-      and(
-        inArray(branchWriteJournal.id, push.journalIds),
-        sql`${branchWriteJournal.updateMeta}->>'kind' = 'manifest_membership'`,
-        sql`(${branchWriteJournal.updateMeta}->>'present')::boolean IS TRUE`,
-      ),
-    );
-  return [...new Set(rows.flatMap((row) => manifestMembershipRowDocumentId(row) ?? []))].sort();
+/** Each member's lock cut and post-cut joins, read inside the completion transaction. */
+async function readSettlementCuts(
+  db: DrizzleDb,
+  rows: readonly (typeof branchPushSettlementOutbox.$inferSelect)[],
+): Promise<SettlementCut[]> {
+  const updates =
+    rows.length > 0
+      ? await db
+          .select({
+            pushId: branchPushOutboxUpdates.pushId,
+            update: branchPushOutboxUpdates.update,
+          })
+          .from(branchPushOutboxUpdates)
+          .where(
+            inArray(
+              branchPushOutboxUpdates.pushId,
+              rows.map((row) => row.pushId),
+            ),
+          )
+          .orderBy(branchPushOutboxUpdates.pushId, branchPushOutboxUpdates.ordinal)
+      : [];
+  return rows.map((row) => ({
+    pushId: row.pushId,
+    documentId: row.documentId as DocumentId,
+    lockCutUpdate: row.lockCutUpdate,
+    postCutUpdates: updates
+      .filter(({ pushId }) => pushId === row.pushId)
+      .map(({ update }) => update),
+    pushUpdate: row.pushUpdate,
+  }));
 }
 
-/** Makes one staged candidate effective inside the completion-fence transaction. */
+/** Makes one staged push effective inside its batch's completion transaction. */
 async function completeStagedPush(
   db: DrizzleDb,
   pushId: number,
@@ -450,15 +517,6 @@ async function completeStagedPush(
     )
     .limit(1);
   if (!staged) throw new Error(`Staged push ${pushId} is unavailable`);
-  if (staged.push.upstreamUpdateSeq !== null) {
-    await joinAdmissionWithinTx(db, {
-      documentId,
-      source: { kind: "staged_push", id: String(staged.push.upstreamUpdateSeq) },
-      update: staged.outbox.pushUpdate,
-      excludePushId: String(pushId),
-    });
-    return;
-  }
 
   const journalRows =
     staged.push.journalIds.length > 0
@@ -669,24 +727,53 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   };
 }
 
-async function readPendingSettlement(
+async function readSettlementBatch(
   db: DrizzleDb,
-  pushId: number,
+  batchId: string,
   eventSink?: EventSink,
-): Promise<PendingLiveSettlement> {
-  const [row] = await db
+): Promise<PendingSettlementBatch> {
+  const [batch] = await db
+    .select()
+    .from(branchPushSettlementBatches)
+    .where(eq(branchPushSettlementBatches.id, batchId))
+    .limit(1);
+  if (batch?.state !== "pending") {
+    throw new Error(`Pending settlement batch ${batchId} is unavailable`);
+  }
+  if (!batch.claimToken || !batch.claimKind || !batch.leaseExpiresAt) {
+    throw new Error(`Pending settlement batch ${batchId} is not owned`);
+  }
+  const rows = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
     .from(branchPushSettlementOutbox)
     .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
-    .where(eq(branchPushSettlementOutbox.pushId, pushId))
-    .limit(1);
-  if (row?.outbox.state !== "pending") {
-    throw new Error(`Pending branch push settlement ${pushId} is unavailable`);
-  }
+    .where(eq(branchPushSettlementOutbox.batchId, batchId))
+    .orderBy(asc(branchPushSettlementOutbox.documentId));
+  const members: PendingLiveSettlement[] = [];
+  for (const row of rows) members.push(await readMember(db, row, eventSink));
+  return {
+    batchId,
+    claim: {
+      token: batch.claimToken,
+      epoch: batch.claimEpoch,
+      kind: batch.claimKind,
+      leaseExpiresAt: batch.leaseExpiresAt,
+    },
+    attemptCount: batch.attemptCount,
+    members,
+  };
+}
+
+async function readMember(
+  db: DrizzleDb,
+  row: {
+    outbox: typeof branchPushSettlementOutbox.$inferSelect;
+    push: typeof pushLineage.$inferSelect;
+  },
+  eventSink?: EventSink,
+): Promise<PendingLiveSettlement> {
+  const pushId = row.outbox.pushId;
   const trail = parseDurableTrailSeedV1(row.outbox.trailSeed);
-  if (!row.outbox.claimToken || !row.outbox.claimKind || !row.outbox.leaseExpiresAt) {
-    throw new Error(`Pending branch push settlement ${pushId} is not owned`);
-  }
   const updates = await db
     .select({ update: branchPushOutboxUpdates.update })
     .from(branchPushOutboxUpdates)
@@ -845,26 +932,16 @@ async function readPendingSettlement(
     trail,
     sweepEvidence,
     joinVersion: row.outbox.joinVersion,
-    settledJoinVersion: row.outbox.settledJoinVersion,
-    claim: {
-      token: row.outbox.claimToken,
-      epoch: row.outbox.claimEpoch,
-      kind: row.outbox.claimKind,
-      leaseExpiresAt: row.outbox.leaseExpiresAt,
-    },
-    attemptCount: row.outbox.attemptCount,
-    state: "pending",
   };
 }
 
-function ownerPredicate(pushId: number, claim: SettlementClaim, joinVersion?: number) {
+function batchOwnerPredicate(batchId: string, claim: SettlementClaim) {
   return and(
-    eq(branchPushSettlementOutbox.pushId, pushId),
-    eq(branchPushSettlementOutbox.state, "pending"),
-    eq(branchPushSettlementOutbox.claimToken, claim.token),
-    eq(branchPushSettlementOutbox.claimEpoch, claim.epoch),
-    sql`${branchPushSettlementOutbox.leaseExpiresAt} > clock_timestamp()`,
-    joinVersion === undefined ? undefined : eq(branchPushSettlementOutbox.joinVersion, joinVersion),
+    eq(branchPushSettlementBatches.id, batchId),
+    eq(branchPushSettlementBatches.state, "pending"),
+    eq(branchPushSettlementBatches.claimToken, claim.token),
+    eq(branchPushSettlementBatches.claimEpoch, claim.epoch),
+    sql`${branchPushSettlementBatches.leaseExpiresAt} > clock_timestamp()`,
   );
 }
 
@@ -896,10 +973,14 @@ export async function joinAdmissionWithinTx(
       ordinal: branchPushSettlementOutbox.joinVersion,
     })
     .from(branchPushSettlementOutbox)
+    .innerJoin(
+      branchPushSettlementBatches,
+      eq(branchPushSettlementBatches.id, branchPushSettlementOutbox.batchId),
+    )
     .where(
       and(
         eq(branchPushSettlementOutbox.documentId, input.documentId),
-        ne(branchPushSettlementOutbox.state, "completed"),
+        ne(branchPushSettlementBatches.state, "completed"),
         excludePushId === undefined
           ? undefined
           : ne(branchPushSettlementOutbox.pushId, excludePushId),
@@ -923,7 +1004,6 @@ export async function joinAdmissionWithinTx(
       .update(branchPushSettlementOutbox)
       .set({
         joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
-        settledJoinVersion: null,
         // App-clock → DB-clock convergence for journal admissions is deliberate (2026-07-24 divergence decision).
         updatedAt: sql`clock_timestamp()`,
       })

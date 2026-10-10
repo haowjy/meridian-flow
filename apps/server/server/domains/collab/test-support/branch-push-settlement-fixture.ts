@@ -3,7 +3,7 @@
 import { splitHashline } from "@meridian/agent-edit";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import {
   type createHarness,
@@ -39,40 +39,56 @@ export async function resetSettlementFixture(db: Database): Promise<void> {
   await seedDatabase(db, COLD_SCENARIO_IDS);
 }
 
+/** Expires the claims of the pending batches that settle this document. */
 export async function expirePendingClaims(
   db: Database,
   documentId: DocumentId = DEFAULT_ALPHA_ID,
 ): Promise<void> {
+  const batches = db
+    .select({ batchId: schema.branchPushSettlementOutbox.batchId })
+    .from(schema.branchPushSettlementOutbox)
+    .where(eq(schema.branchPushSettlementOutbox.documentId, documentId));
   await db
-    .update(schema.branchPushSettlementOutbox)
-    .set({ leaseExpiresAt: new Date(0), availableAt: new Date(0) })
+    .update(schema.branchPushSettlementBatches)
+    .set(expiredClaim)
     .where(
       and(
-        eq(schema.branchPushSettlementOutbox.state, "pending"),
-        eq(schema.branchPushSettlementOutbox.documentId, documentId),
+        eq(schema.branchPushSettlementBatches.state, "pending"),
+        inArray(schema.branchPushSettlementBatches.id, batches),
       ),
     );
 }
 
-/** Lets any recoverer claim every pending settlement at once. */
+/** Lets any recoverer claim every pending batch at once. */
 export async function expireAllPendingClaims(db: Database): Promise<void> {
   await db
-    .update(schema.branchPushSettlementOutbox)
-    .set({ leaseExpiresAt: new Date(0), availableAt: new Date(0) })
-    .where(eq(schema.branchPushSettlementOutbox.state, "pending"));
+    .update(schema.branchPushSettlementBatches)
+    .set(expiredClaim)
+    .where(eq(schema.branchPushSettlementBatches.state, "pending"));
 }
 
-/** Settlement state per document, in document order. */
+// A released claim has no lease to expire; the claim-shape check keeps it null.
+const expiredClaim = {
+  leaseExpiresAt: sql`CASE WHEN ${schema.branchPushSettlementBatches.claimToken} IS NULL THEN NULL ELSE to_timestamp(0) END`,
+  availableAt: new Date(0),
+};
+
+/** Settlement state and batch per document, in document order. */
 export async function settlementStates(
   db: Database,
   documentIds: readonly DocumentId[],
-): Promise<Array<{ documentId: DocumentId; state: string }>> {
+): Promise<Array<{ documentId: DocumentId; batchId: string; state: string }>> {
   return db
     .select({
       documentId: schema.branchPushSettlementOutbox.documentId,
-      state: schema.branchPushSettlementOutbox.state,
+      batchId: schema.branchPushSettlementOutbox.batchId,
+      state: schema.branchPushSettlementBatches.state,
     })
     .from(schema.branchPushSettlementOutbox)
+    .innerJoin(
+      schema.branchPushSettlementBatches,
+      eq(schema.branchPushSettlementBatches.id, schema.branchPushSettlementOutbox.batchId),
+    )
     .where(inArray(schema.branchPushSettlementOutbox.documentId, [...documentIds]))
     .orderBy(asc(schema.branchPushSettlementOutbox.documentId));
 }
@@ -178,6 +194,12 @@ export async function observeSettlement(
     .where(eq(schema.branchPushSettlementOutbox.documentId, documentId))
     .orderBy(desc(schema.branchPushSettlementOutbox.pushId))
     .limit(1);
+  const [batch] = outbox
+    ? await db
+        .select({ state: schema.branchPushSettlementBatches.state })
+        .from(schema.branchPushSettlementBatches)
+        .where(eq(schema.branchPushSettlementBatches.id, outbox.batchId))
+    : [];
   const [push] = await db
     .select()
     .from(schema.pushLineage)
@@ -212,9 +234,8 @@ export async function observeSettlement(
       markdown: await harness.liveMarkdown(documentId),
     },
     completionState: {
-      state: outbox.state,
+      state: batch?.state,
       joinVersion: outbox.joinVersion,
-      settledJoinVersion: outbox.settledJoinVersion,
     },
   };
 }

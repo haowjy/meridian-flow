@@ -22,7 +22,7 @@ import {
 } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
-import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
+import { stageSettlementBatchWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -164,7 +164,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const pushStore = createDrizzlePushCommitStore(
         db,
-        stagePendingSettlementWithinTx,
+        stageSettlementBatchWithinTx,
         createDrizzleChangeTrailAggregateWriter(db),
         undefined,
         projection,
@@ -211,30 +211,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         journalOwners: [],
         changes: [],
       };
-      await pushStore.commitPush({
-        branch,
-        journalRows: rows,
-        pushUpdate: validUpdate,
-        idempotencyKey: "work-projection-pending-owner-push",
-        trail,
-        pendingLiveSettlement: {
-          documentTitle: "chapter.md",
-          lockCutUpdate: validUpdate,
-          pushUpdate: validUpdate,
-          postCutUpdates: [],
-          trail,
-          sweepEvidence: null,
-          joinVersion: 0,
-          settledJoinVersion: null,
-          claim: {
-            token: "00000000-0000-4000-8000-000000000947",
-            epoch: 1,
-            kind: "warm",
-            leaseExpiresAt: new Date(Date.now() + 30_000),
-          },
-          attemptCount: 0,
-          state: "pending",
+      await pushStore.commitPushBatch({
+        settlement: {
+          batchId: "00000000-0000-4000-8000-000000000948",
+          claimToken: "00000000-0000-4000-8000-000000000947",
         },
+        pushes: [
+          {
+            branch,
+            journalRows: rows,
+            pushUpdate: validUpdate,
+            idempotencyKey: "work-projection-pending-owner-push",
+            trail,
+            documentTitle: "chapter.md",
+            lockCutUpdate: validUpdate,
+          },
+        ],
       });
       const pushed = await projectionState();
       expect(pushed.entityRevision).toBe((redone.entityRevision ?? 0n) + 1n);

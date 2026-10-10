@@ -342,7 +342,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const live = await ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Agent final.\n\nAgent prelude.");
-      const [settlement] = await db.select().from(schema.branchPushSettlementOutbox);
+      const [settlement] = await db.select().from(schema.branchPushSettlementBatches);
       expect(settlement).toMatchObject({ state: "completed" });
       const trails = await db.select().from(schema.changeTrailShells);
       expect(trails).toHaveLength(1);

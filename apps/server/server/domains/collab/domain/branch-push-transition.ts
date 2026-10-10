@@ -1,38 +1,42 @@
-/** Sole ordering owner for durable branch-push settlement and recovery. */
+/** Sole ordering owner for durable branch-push batch settlement and recovery. */
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AgentEditCodecFactory,
   DocumentCoordinator,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type {
-  CompletionFenceResult,
   PendingLiveSettlement,
+  PendingSettlementBatch,
   PreparedPushCommit,
   PushCommitStore,
+  PushLineageRow,
+  SettlementClaim,
   SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
 import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
-import type { CommittedChangeTrailProjection } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
-import type { PendingSettlementStore } from "./ports/pending-settlement-store.js";
+import type { PendingSettlementStore, SettlementCut } from "./ports/pending-settlement-store.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import { detectSweptChanges, type SweptChangesByRecipient } from "./sweep-policy.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
 
 export class PendingLiveSettlementError extends Error {
-  constructor(readonly pushId: number) {
-    super(`Push ${pushId} remains in pending_live_settlement after bounded retries`);
+  constructor(readonly batchId: string) {
+    super(`Settlement batch ${batchId} remains pending after bounded retries`);
     this.name = "PendingLiveSettlementError";
   }
 }
+
+type LiveDocs = ReadonlyMap<DocumentId, Y.Doc>;
 
 export function createBranchPushTransition(input: {
   commitStore: PushCommitStore;
@@ -40,7 +44,7 @@ export function createBranchPushTransition(input: {
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
-  /** Settlement runs in its document's scope, so nested document doors join it. */
+  /** Settlement runs in its documents' scope, so nested document doors join it. */
   links: DocumentLinkScopes;
   changeEventDelivery: ChangeEventDelivery;
   writerIngressBarrier?: WriterIngressBarrier;
@@ -52,19 +56,16 @@ export function createBranchPushTransition(input: {
         kind: "push";
         pushes: PreparedPushCommit[];
         afterDurableCommit?: (documentIds: readonly string[]) => Promise<void>;
-        onConflict: (push: PendingLiveSettlement["push"]) => T;
-        finish: (input: {
-          pushes: readonly PendingLiveSettlement["push"][];
-          docs: ReadonlyMap<PendingLiveSettlement["push"]["documentId"], Y.Doc>;
-        }) => T | Promise<T>;
+        onConflict: (push: PushLineageRow) => T;
+        finish: (input: { pushes: readonly PushLineageRow[]; docs: LiveDocs }) => T | Promise<T>;
       };
 
   async function execute<T>(inputExecution: {
-    documentIds: readonly PendingLiveSettlement["push"]["documentId"][];
+    documentIds: readonly DocumentId[];
     signal?: AbortSignal;
     prepare: (input: {
-      docs: ReadonlyMap<PendingLiveSettlement["push"]["documentId"], Y.Doc>;
-      lockCuts: ReadonlyMap<PendingLiveSettlement["push"]["documentId"], Uint8Array>;
+      docs: LiveDocs;
+      lockCuts: ReadonlyMap<DocumentId, Uint8Array>;
     }) => Promise<PreparedTransition<T>>;
   }): Promise<T> {
     return withDocumentLocks(
@@ -74,39 +75,31 @@ export function createBranchPushTransition(input: {
         const prepared = await inputExecution.prepare({ docs, lockCuts });
         if (prepared.kind === "return") return prepared.value;
         if (prepared.pushes.length === 0) throw new Error("Branch push transition requires a push");
-        const committed =
-          prepared.pushes.length === 1
-            ? await commit(prepared.pushes[0] as PreparedPushCommit)
-            : await commitBatch({ pushes: prepared.pushes });
-        if ("status" in committed && committed.status === "conflict") {
-          return prepared.onConflict(committed.push);
-        }
-        const pushes = "status" in committed ? [committed.push] : committed.pushes;
+        const settlement = { batchId: randomUUID(), claimToken: randomUUID() };
+        const committed = await input.commitStore.commitPushBatch({
+          settlement,
+          pushes: prepared.pushes,
+        });
+        if (committed.status === "conflict") return prepared.onConflict(committed.push);
         await prepared.afterDurableCommit?.(prepared.pushes.map((push) => push.branch.documentId));
-        for (const push of pushes) {
-          const durable = await input.settlementStore.loadLiveSettlement(push.id);
-          const liveDoc = docs.get(push.documentId);
-          if (!liveDoc) throw new Error("Branch push transition lost its live document lock");
-          await settle({ pending: durable, liveDoc, signal: inputExecution.signal });
-        }
-        return prepared.finish({ pushes, docs });
+        const batch = await input.settlementStore.loadSettlementBatch(settlement.batchId);
+        await settle({ batch, docs, signal: inputExecution.signal });
+        return prepared.finish({ pushes: committed.pushes, docs });
       },
     );
   }
 
+  /** Coordinator locks in document-id order, each capturing its LOCK-WS cut first. */
   async function withDocumentLocks<T>(
-    documentIds: readonly PendingLiveSettlement["push"]["documentId"][],
+    documentIds: readonly DocumentId[],
     signal: AbortSignal | undefined,
-    run: (
-      docs: ReadonlyMap<PendingLiveSettlement["push"]["documentId"], Y.Doc>,
-      lockCuts: ReadonlyMap<PendingLiveSettlement["push"]["documentId"], Uint8Array>,
-    ) => Promise<T>,
+    run: (docs: LiveDocs, lockCuts: ReadonlyMap<DocumentId, Uint8Array>) => Promise<T>,
   ): Promise<T> {
     const sorted = [...new Set(documentIds)].sort();
     const acquire = async (
       index: number,
-      docs: Map<PendingLiveSettlement["push"]["documentId"], Y.Doc>,
-      lockCuts: Map<PendingLiveSettlement["push"]["documentId"], Uint8Array>,
+      docs: Map<DocumentId, Y.Doc>,
+      lockCuts: Map<DocumentId, Uint8Array>,
     ): Promise<T> => {
       const documentId = sorted[index];
       if (!documentId) return run(docs, lockCuts);
@@ -128,39 +121,6 @@ export function createBranchPushTransition(input: {
     };
     return acquire(0, new Map(), new Map());
   }
-
-  function prepare(
-    durable: Omit<
-      PendingLiveSettlement,
-      | "push"
-      | "postCutUpdates"
-      | "attemptCount"
-      | "state"
-      | "joinVersion"
-      | "settledJoinVersion"
-      | "claim"
-    >,
-  ): Omit<PendingLiveSettlement, "push"> {
-    return {
-      ...durable,
-      postCutUpdates: [],
-      joinVersion: 0,
-      settledJoinVersion: null,
-      claim: {
-        token: randomUUID(),
-        epoch: 1,
-        kind: "warm",
-        // Persistence replaces this sentinel with its database-clock lease.
-        leaseExpiresAt: new Date(0),
-      },
-      attemptCount: 0,
-      state: "pending",
-    };
-  }
-
-  const commit = (prepared: PreparedPushCommit) => input.commitStore.commitPush(prepared);
-  const commitBatch = (prepared: { pushes: PreparedPushCommit[] }) =>
-    input.commitStore.commitPushBatch(prepared);
 
   function detectSweptChangesBestEffort(
     pending: PendingLiveSettlement,
@@ -184,154 +144,157 @@ export function createBranchPushTransition(input: {
     }
   }
 
-  type Settlement = { pending: PendingLiveSettlement; liveDoc: Y.Doc; signal?: AbortSignal };
+  type Settlement = { batch: PendingSettlementBatch; docs: LiveDocs; signal?: AbortSignal };
 
   function settle(settlement: Settlement): Promise<void> {
-    return input.links.within({ documentId: settlement.pending.push.documentId }, () =>
-      settleDocument(settlement),
-    );
+    const documentIds = settlement.batch.members.map((member) => member.push.documentId);
+    const [documentId] = documentIds;
+    // A batch with no text members (tree-only, or whose documents were hard-deleted)
+    // still settles through the same transaction, with nothing to admit.
+    if (!documentId) return settleBatch(settlement);
+    return input.links.within({ documentId, documentIds }, () => settleBatch(settlement));
   }
 
-  async function settleDocument(inputSettlement: Settlement): Promise<void> {
-    let pending = inputSettlement.pending;
-    let committedProjections: readonly CommittedChangeTrailProjection[] = [];
+  async function settleBatch(settlement: Settlement): Promise<void> {
+    const { batchId } = settlement.batch;
+    let claim: SettlementClaim = settlement.batch.claim;
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
-      inputSettlement.signal?.throwIfAborted();
-      const renewed = await input.settlementStore.renewClaim({
-        pushId: pending.push.id,
-        claim: pending.claim,
-      });
-      if (!renewed) throw new PendingLiveSettlementError(pending.push.id);
-      pending = { ...pending, claim: renewed };
-      const ingressGeneration = await input.writerIngressBarrier?.drain(pending.push.documentId);
-      pending = await input.settlementStore.loadLiveSettlement(pending.push.id);
-      const finalPrePush = materializeFinalPrePush(pending);
-      try {
-        const sweep = detectSweptChangesBestEffort(pending, finalPrePush);
-        const settled = await input.settlementStore.settlePushTrail({
-          push: pending.push,
-          trail: pending.trail,
-          replacement: trailContributionReplacement(pending.trail, pending.push),
-          claim: pending.claim,
-          joinVersion: pending.joinVersion,
-        });
-        if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
-        committedProjections = settled;
-
-        let completion: CompletionFenceResult;
+      settlement.signal?.throwIfAborted();
+      const renewed = await input.settlementStore.renewClaim({ batchId, claim });
+      if (!renewed) throw new PendingLiveSettlementError(batchId);
+      claim = renewed;
+      const ingress = new Map<DocumentId, number>();
+      for (const member of settlement.batch.members) {
+        const generation = await input.writerIngressBarrier?.drain(member.push.documentId);
+        if (generation !== undefined) ingress.set(member.push.documentId, generation);
+      }
+      const { members } = await input.settlementStore.loadSettlementBatch(batchId);
+      const sweeps = new Map<DocumentId, SweptChangesByRecipient>();
+      for (const member of members) {
+        const prePush = materializeFinalPrePush(member);
         try {
-          completion = await completeUnderFence({
-            pending,
-            liveDoc: inputSettlement.liveDoc,
-            finalPrePush,
-            ingressGeneration,
+          sweeps.set(member.push.documentId, detectSweptChangesBestEffort(member, prePush));
+        } finally {
+          prePush.destroy();
+        }
+      }
+      let completion: Awaited<ReturnType<PendingSettlementStore["completeBatch"]>>;
+      try {
+        completion = await input.settlementStore.completeBatch({
+          batchId,
+          claim,
+          members: members.map((member) => ({
+            push: member.push,
+            joinVersion: member.joinVersion,
+            trail: member.trail,
+            replacement: trailContributionReplacement(member.trail, member.push),
+          })),
+          recheck: (cuts) => recheckWarmState(cuts, settlement.docs, ingress),
+          afterCommit: () => applyToWarmRooms(members, settlement.docs),
+        });
+      } catch (cause) {
+        if (isCorruptDurableProjectionError(cause)) {
+          await input.settlementStore.block({
+            batchId,
+            claim,
+            code: cause.code,
+            error: cause.message,
           });
-        } catch (cause) {
-          if (isCorruptDurableProjectionError(cause)) {
-            await input.settlementStore.block({
-              pushId: pending.push.id,
-              claim: pending.claim,
-              code: cause.code,
-              error: cause.message,
-            });
-          }
-          throw cause;
         }
-        if (completion === "applied" || completion === "already_applied") {
-          for (const projection of committedProjections) {
-            if (projection.documentId !== pending.push.documentId) continue;
-            try {
-              input.changeEventDelivery.deliver(
-                projectCommittedChangeEvent(projection, input.codec),
-                sweep,
-              );
-            } catch {
-              // Delivery is an ephemeral session hint; durable push completion
-              // and the trail must never be reported as failed because it missed.
-            }
+        throw cause;
+      }
+      if (completion.status === "completed") {
+        for (const projection of completion.projections) {
+          const sweep = sweeps.get(projection.documentId as DocumentId);
+          if (!sweep) continue;
+          try {
+            input.changeEventDelivery.deliver(
+              projectCommittedChangeEvent(projection, input.codec),
+              sweep,
+            );
+          } catch {
+            // Delivery is an ephemeral session hint; durable push completion
+            // and the trail must never be reported as failed because it missed.
           }
-          return;
         }
-      } finally {
-        finalPrePush.destroy();
+        return;
       }
     }
     await input.settlementStore.recordFailure({
-      pushId: pending.push.id,
-      claim: pending.claim,
+      batchId,
+      claim,
       error: "live document changed during settlement",
     });
-    throw new PendingLiveSettlementError(pending.push.id);
+    throw new PendingLiveSettlementError(batchId);
   }
 
-  async function completeUnderFence(inputFence: {
-    pending: PendingLiveSettlement;
-    liveDoc: Y.Doc;
-    finalPrePush: Y.Doc;
-    ingressGeneration?: number;
-  }): Promise<CompletionFenceResult> {
-    const complete = (): CompletionFenceResult => {
+  /**
+   * The LOCK-WS fence for a whole batch, inside the completion transaction: every
+   * warm document must equal its durable pre-push cut, or already hold the push,
+   * and no writer admission may have started since its drain. Nothing is applied
+   * here; the transaction has not committed.
+   */
+  function recheckWarmState(
+    cuts: readonly SettlementCut[],
+    docs: LiveDocs,
+    ingress: ReadonlyMap<DocumentId, number>,
+  ): "commit" | "retry" {
+    for (const cut of cuts) {
+      const generation = ingress.get(cut.documentId);
       if (
-        inputFence.ingressGeneration !== undefined &&
-        !input.writerIngressBarrier?.isGenerationCurrent(
-          inputFence.pending.push.documentId,
-          inputFence.ingressGeneration,
-        )
+        generation !== undefined &&
+        !input.writerIngressBarrier?.isGenerationCurrent(cut.documentId, generation)
       ) {
         return "retry";
       }
-      const durableFingerprint = fullStateFingerprint(inputFence.finalPrePush);
-      const liveFingerprint = fullStateFingerprint(inputFence.liveDoc);
-      if (liveFingerprint === durableFingerprint) {
-        Y.applyUpdate(inputFence.liveDoc, inputFence.pending.pushUpdate);
-        return "applied";
-      }
-      const pushed = createCollabYDoc({ gc: false });
+      const liveDoc = docs.get(cut.documentId);
+      if (!liveDoc) throw new Error("Batch settlement lost a live document lock");
+      const prePush = materializeFinalPrePush(cut);
       try {
-        Y.applyUpdate(pushed, Y.encodeStateAsUpdate(inputFence.finalPrePush));
-        Y.applyUpdate(pushed, inputFence.pending.pushUpdate);
-        return liveFingerprint === fullStateFingerprint(pushed) ? "already_applied" : "retry";
+        const liveFingerprint = fullStateFingerprint(liveDoc);
+        if (liveFingerprint === fullStateFingerprint(prePush)) continue;
+        Y.applyUpdate(prePush, cut.pushUpdate);
+        if (liveFingerprint !== fullStateFingerprint(prePush)) return "retry";
       } finally {
-        pushed.destroy();
+        prePush.destroy();
       }
-    };
-    return input.settlementStore.withCompletionFence(
-      {
-        pushId: inputFence.pending.push.id,
-        documentId: inputFence.pending.push.documentId,
-        claim: inputFence.pending.claim,
-        settledJoinVersion: inputFence.pending.joinVersion,
-      },
-      complete,
-    );
+    }
+    return "commit";
+  }
+
+  /**
+   * After commit. Writer admissions that start after the recheck wait on the
+   * document mutation locks until commit, so they journal after the push; Yjs
+   * merges both in any order to the durable state.
+   */
+  function applyToWarmRooms(members: readonly PendingLiveSettlement[], docs: LiveDocs): void {
+    for (const member of members) {
+      const liveDoc = docs.get(member.push.documentId);
+      if (liveDoc) Y.applyUpdate(liveDoc, member.pushUpdate);
+    }
   }
 
   async function recover(recoveryInput?: { signal?: AbortSignal }): Promise<number> {
-    const recoverableIds = await input.settlementStore.listRecoverableSettlementIds();
+    const recoverableIds = await input.settlementStore.listRecoverableBatchIds();
     let recovered = 0;
-    for (const pushId of recoverableIds) {
+    for (const batchId of recoverableIds) {
       recoveryInput?.signal?.throwIfAborted();
-      let row: PendingLiveSettlement | null = null;
+      let batch: PendingSettlementBatch | null = null;
       try {
-        row = await input.settlementStore.claimRecoverable({ pushId, token: randomUUID() });
-        if (!row) continue;
-        await input.liveCoordinator.withDocument(
-          row.push.documentId,
-          async (liveDoc) => {
-            await settle({
-              pending: row as PendingLiveSettlement,
-              liveDoc,
-              signal: recoveryInput?.signal,
-            });
-          },
-          { timeoutMs: 30_000, ...(recoveryInput?.signal ? { signal: recoveryInput.signal } : {}) },
+        batch = await input.settlementStore.claimRecoverableBatch({ batchId, token: randomUUID() });
+        if (!batch) continue;
+        const claimed = batch;
+        await withDocumentLocks(
+          claimed.members.map((member) => member.push.documentId),
+          recoveryInput?.signal,
+          (docs) => settle({ batch: claimed, docs, signal: recoveryInput?.signal }),
         );
         recovered += 1;
       } catch (cause) {
-        if (!row || cause instanceof PendingLiveSettlementError) continue;
+        if (!batch || cause instanceof PendingLiveSettlementError) continue;
         await input.settlementStore.recordFailure({
-          pushId: row.push.id,
-          claim: row.claim,
+          batchId: batch.batchId,
+          claim: batch.claim,
           error: cause instanceof Error ? cause.message : String(cause),
         });
       }
@@ -339,11 +302,13 @@ export function createBranchPushTransition(input: {
     return recovered;
   }
 
-  return { execute, prepare, recover };
+  return { execute, recover };
 }
 
 /** The only reconstruction path for final pre-push content, warm or cold. */
-export function materializeFinalPrePush(row: PendingLiveSettlement): Y.Doc {
+export function materializeFinalPrePush(
+  row: Pick<PendingLiveSettlement, "lockCutUpdate" | "postCutUpdates">,
+): Y.Doc {
   const doc = createCollabYDoc({ gc: false });
   Y.applyUpdate(doc, row.lockCutUpdate);
   for (const update of row.postCutUpdates) Y.applyUpdate(doc, update);

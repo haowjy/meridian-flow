@@ -9,6 +9,7 @@ import {
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  branchPushSettlementBatches,
   branchPushSettlementOutbox,
   contextSources,
   documentDerivations,
@@ -42,7 +43,7 @@ import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-documen
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzlePendingSettlementStore,
-  stagePendingSettlementWithinTx,
+  stageSettlementBatchWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
 import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-document-link-scopes.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
@@ -166,7 +167,7 @@ describe("branch-push durable projection", () => {
     const journalReadStore = createDrizzleBranchJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
-      stagePendingSettlementWithinTx,
+      stageSettlementBatchWithinTx,
       changeTrails,
     );
     const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
@@ -224,30 +225,31 @@ describe("branch-push durable projection", () => {
     expect(documentAfterFailure).toBeUndefined();
     const [pending] = await db
       .select({
-        pushId: branchPushSettlementOutbox.pushId,
-        state: branchPushSettlementOutbox.state,
-        lastErrorCode: branchPushSettlementOutbox.lastErrorCode,
+        batchId: branchPushSettlementBatches.id,
+        state: branchPushSettlementBatches.state,
+        lastErrorCode: branchPushSettlementBatches.lastErrorCode,
       })
       .from(branchPushSettlementOutbox)
+      .innerJoin(
+        branchPushSettlementBatches,
+        eq(branchPushSettlementBatches.id, branchPushSettlementOutbox.batchId),
+      )
       .where(eq(branchPushSettlementOutbox.documentId, documentId))
       .limit(1);
     expect(pending).toMatchObject({ state: "pending", lastErrorCode: null });
     if (!pending) throw new Error("missing pending settlement");
-    const liveSettlement = await settlementStore.loadLiveSettlement(pending.pushId);
-    if (!liveSettlement) throw new Error("missing live settlement");
-    await expect(
-      settlementStore.handoffClaim({
-        pushId: pending.pushId,
-        claim: liveSettlement.claim,
-      }),
-    ).resolves.toBe(true);
+    // The warm owner hands the batch off, as a process that gave up would.
+    await db
+      .update(branchPushSettlementBatches)
+      .set({ claimToken: null, claimKind: null, claimedAt: null, leaseExpiresAt: null })
+      .where(eq(branchPushSettlementBatches.id, pending.batchId));
 
     failProjection = false;
     await expect(branchPush.recoverPendingLiveSettlements()).resolves.toBe(1);
     const [completed] = await db
-      .select({ state: branchPushSettlementOutbox.state })
-      .from(branchPushSettlementOutbox)
-      .where(eq(branchPushSettlementOutbox.pushId, pending.pushId));
+      .select({ state: branchPushSettlementBatches.state })
+      .from(branchPushSettlementBatches)
+      .where(eq(branchPushSettlementBatches.id, pending.batchId));
     expect(completed?.state).toBe("completed");
     const journalAfterRecovery = await db
       .select({
@@ -370,7 +372,7 @@ describe("branch-push durable projection", () => {
     const journalReadStore = createDrizzleBranchJournalReadStore(db);
     const commitStore = createDrizzlePushCommitStore(
       db,
-      stagePendingSettlementWithinTx,
+      stageSettlementBatchWithinTx,
       changeTrails,
     );
     const branchCoordinator = createBranchCoordinator({ store: branchStore });
@@ -416,7 +418,7 @@ describe("branch-push durable projection", () => {
     });
 
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
-      /pending_live_settlement after bounded retries/,
+      /remains pending after bounded retries/,
     );
 
     const [document] = await db

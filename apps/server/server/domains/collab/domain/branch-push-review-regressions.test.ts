@@ -35,6 +35,7 @@ import type {
   PreparedPushCommit,
   PushCommitStore,
   PushLineageRow,
+  SettlementBatchIdentity,
   WorkPushPolicyStore,
 } from "./branch-push-contracts.js";
 import { BranchPeerIntegrationError } from "./branch-push-plan.js";
@@ -189,17 +190,29 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
     );
   }
 
-  async commitPush(input: PreparedPushCommit) {
-    const existing = this.pushes.find((push) => push.idempotencyKey === input.idempotencyKey);
-    if (existing) return { status: "conflict" as const, push: existing };
-    const push = await this.insertPush(input);
-    return { status: "inserted" as const, push };
-  }
-
-  async commitPushBatch(input: { pushes: PreparedPushCommit[] }) {
+  async commitPushBatch(input: {
+    settlement: SettlementBatchIdentity;
+    pushes: readonly PreparedPushCommit[];
+  }) {
+    for (const prepared of input.pushes) {
+      const existing = this.pushes.find((push) => push.idempotencyKey === prepared.idempotencyKey);
+      if (existing) return { status: "conflict" as const, push: existing };
+    }
     const pushes: PushLineageRow[] = [];
     for (const prepared of input.pushes) pushes.push(await this.insertPush(prepared));
-    return { pushes };
+    this.settlements.stage({
+      batchId: input.settlement.batchId,
+      claimToken: input.settlement.claimToken,
+      members: input.pushes.map((prepared, index) => ({
+        push: pushes[index] as PushLineageRow,
+        documentTitle: prepared.documentTitle,
+        lockCutUpdate: prepared.lockCutUpdate,
+        pushUpdate: prepared.pushUpdate,
+        trail: prepared.trail,
+        sweepEvidence: null,
+      })),
+    });
+    return { status: "inserted" as const, pushes };
   }
 
   async commitDiscard(_input: PreparedDiscardCommit): Promise<void> {
@@ -237,7 +250,6 @@ class StateBackedPushStores implements BranchJournalReadStore, PushCommitStore {
       turnId: input.journalRows[0]?.turnId ?? null,
     };
     this.pushes.push(push);
-    this.settlements.stage({ ...input.pendingLiveSettlement, push });
     return push;
   }
 }
