@@ -28,19 +28,29 @@ holds the locks named below:
   planned: it reveals the hidden document at the path, or exactly the one a create named
   by id (hidden, used by a draft, in the caller's project), or inserts the row its
   `LiveInsert` describes. One candidate picker serves draft and live creates and repairs
-  on touch: a hidden document no active draft uses, met under its lock, is tombstoned.
+  on touch: a hidden document no active draft uses, met under its lock, is tombstoned
+  (its folders kept: the create is about to place a document there).
 - `placement.ts`: the one owner of bringing nodes into the live tree. `place` reveals or
   restores targets with their ancestors; `ensureLiveFolderPath` makes a live folder
   chain, revealing a hidden folder instead of making a twin. `walkFolders` is the one
   folder walk (one `childAt` per step), which creates share.
-- `end-use.ts`: `endUse` tombstones what no draft uses any more and prunes every
-  emptied hidden ancestor, deepest first; `retractCreate` reverses a draft create for a
-  rolled-back reply, asking collab (`retractBranch`) whether the create stands. Collab
-  owns the draft's branch: tree never deletes branch rows.
+- `end-use.ts`: `endUse` drops a draft's rows and settlements on documents it
+  created, then `tombstoneUnused` tombstones what no draft uses any more under its lock,
+  releases its storage (`releaseDocumentStorage`) and prunes every emptied hidden
+  ancestor, deepest first; `endUseScope`/`lockEndUseScope` are what a Discard locks
+  (§14) and re-reads to prove it held still. `retractCreate` reverses a draft create
+  for a rolled-back reply, asking collab (`retractBranch`) whether the create stands.
+  Collab owns the lifecycle of a draft's branch; the only branch rows tree deletes are
+  a tombstone's, which by revalidation no draft uses.
+- `hidden-node-repair.ts`: repair on touch from reads (§12.4). `identityStatus`, given
+  a `repair`, schedules a hidden, live node no draft uses for a tombstone after the
+  read, in its own transaction, as tracked detached work with a warn event.
 - `node-rows.ts`: row writes the lifecycle shares. `insertDocumentRow` is the one
   `documents` insert (hidden or live, text with its projection or storage-backed; a
-  visible row claims its location), plus folder inserts, tombstones and document locks
-  in id order. Versions go through `bumpLocationVersions`.
+  visible row claims its location), plus folder inserts, tombstones, a tombstone's
+  storage release (R8: live Yjs, branches, derived rows, its own link rows; the row and
+  everything pointing at it stay) and document locks in id order. Versions go through
+  `bumpLocationVersions`.
 - `draft-tree-store.ts`: writes of `draft_tree_changes` (a draft's `created` rows).
 - `folder-normalization.ts`: what live folder operations do to hidden nodes. A
   visible folder arriving at a hidden folder's path absorbs it (`absorbHiddenFolder`,

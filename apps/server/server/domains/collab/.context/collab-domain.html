@@ -877,13 +877,14 @@ The points below are the ones that change how you reason about edits here.
     again in completion and answers <code>stale</code>. A request without
     tokens (the legacy per-document Apply) compares nothing.
     <span class="ref"><code>domain/draft-review-items.ts</code>, <code>lib/draft-review-route.ts</code></span></li>
-  <li><strong>Discard has two shapes.</strong> Full Discard resets the content
-    branch to live in one Work-locked transaction (and ends the draft's use of a
-    document it created); it bumps the branch generation, records the
-    discarded state vector, and requires the Work to be active. Selective
-    Discard removes the rows of server-vended discard classes chosen from the
-    preview; the client never reconstructs turns.
-    <span class="ref"><code>adapters/drizzle-work-draft-discard.ts</code>, <code>domain/work-draft-review-service.ts</code> <code>discardWorkDraft</code>, <code>domain/branch-review-operations.ts</code></span></li>
+  <li><strong>Discard has three shapes.</strong> An item's Discard resets its
+    content branch to live in one Work-locked transaction (and ends the draft's
+    use of a document it created); it bumps the branch generation, records the
+    discarded state vector, and requires the Work to be active. Discard all
+    closes the draft and every branch, ending its use of everything it created.
+    Selective Discard removes the rows of server-vended discard classes chosen
+    from the preview; the client never reconstructs turns.
+    <span class="ref"><code>domain/draft-discard.ts</code>, <code>adapters/drizzle-draft-discard.ts</code>, <code>domain/work-draft-review-service.ts</code> <code>discardWorkDraft</code>, <code>domain/branch-review-operations.ts</code></span></li>
   <li><strong>Generation is branch identity.</strong> A reset bumps
     <code>document_branches.generation</code>, closes the old room, and its
     clients are fenced by the 4205 handshake. Thread-peer and Work-draft

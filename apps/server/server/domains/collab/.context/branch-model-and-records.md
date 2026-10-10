@@ -19,8 +19,13 @@ shared lifecycle row lock before durable mutation, and take the row through
 drafts are frozen: captured evidence stays, and nothing writes, applies or
 discards them until unarchive. Replaying
 an already committed push returns its durable receipt without reauthorizing a
-new write. Draft-only Discard ends that draft’s use of the hidden document and
-resets its content branch in one Work-locked transaction. Branch reset
+new write. Discard is one kernel (`domain/draft-discard.ts`,
+`adapters/drizzle-draft-discard.ts`): leases first (every branch of the draft for
+Discard all; an item's branches and live document otherwise), then one transaction
+locking the Work (active), the draft, the namespaces and the documents. An item's
+text resets from live; Discard all closes the draft and every branch instead. Either
+ends the draft's use of what it created, tombstoning and releasing what no draft
+uses. Work purge runs the same kernel after its own lifecycle proof. Branch reset
 notifications publish after commit; rolled-back resets never advance a room.
 
 Thread-peer resolution is primary-Work-aware. After conversation reassignment,
