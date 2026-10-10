@@ -1,4 +1,4 @@
-/** Latest-wins command handoff from any project surface to the Editor review scope. */
+/** Latest-wins command handoff from any project surface to a review launched in the Editor. */
 
 import type { EventRecord } from "@meridian/contracts/observability";
 import {
@@ -195,7 +195,7 @@ export function usePendingEditorReviewDraftId(): string | null {
 }
 
 /**
- * Mount inside the Editor review boundary, beside the active viewer/editor. The
+ * Mount inside the Editor host’s draft-review boundary, beside the active viewer/editor. The
  * Work, document and draft decide the claim; the address path is only a label
  * that a rename can change between the launch and the claim.
  */

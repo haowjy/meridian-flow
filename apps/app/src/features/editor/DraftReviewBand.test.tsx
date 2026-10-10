@@ -76,8 +76,10 @@ it("focuses this document, then applies and discards its classes without closing
   const navigate = vi.fn();
   await fixture.render(
     async (probe) => {
-      await settleReact(() => expect(probe().editor.files).toHaveLength(2));
-      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+      await settleReact(() => expect(probe().presented.files).toHaveLength(2));
+      await act(async () =>
+        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
+      );
       await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
       await open();
       expect(list()?.querySelectorAll("[data-review-change-row]")).toHaveLength(2);
@@ -106,7 +108,7 @@ it("focuses this document, then applies and discards its classes without closing
       ]);
       expect(probe().header.view.focused?.classId).toBe("class-2");
       await act(async () => answer.resolve(applied(false, "1")));
-      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
       await act(async () =>
         row("2")?.querySelector<HTMLButtonElement>('[aria-label="Discard"]')?.click(),
       );
@@ -125,7 +127,7 @@ it("focuses this document, then applies and discards its classes without closing
       ]);
       expect(list()).not.toBeNull();
       expect(row("2")).toBeNull();
-      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
       expect(navigate).not.toHaveBeenCalled();
     },
     {
@@ -153,12 +155,14 @@ it.each([
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
   await fixture.render(
     async (probe) => {
-      await settleReact(() => expect(probe().editor.files).toHaveLength(1));
-      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+      await settleReact(() => expect(probe().presented.files).toHaveLength(1));
+      await act(async () =>
+        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
+      );
       await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
       await act(async () => {
-        probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true);
-        probe().editor.controller.setMarksVisible(false);
+        probe().presented.controller.setInlineReviewShown("document-a", "draft-a", true);
+        probe().presented.controller.setMarksVisible(false);
       });
       vi.stubGlobal("HTMLElement", window.HTMLElement);
       window.matchMedia = vi.fn().mockReturnValue({ matches: true });
@@ -177,7 +181,7 @@ it.each([
         ),
       );
       editor.commands.setInlineReviewMarksVisible(false);
-      probe().editor.controller.registerInlineReviewRuntime({
+      probe().presented.controller.registerInlineReviewRuntime({
         documentId: "document-a",
         draftId: "draft-a",
         editor,
@@ -197,7 +201,7 @@ it.each([
         expect(button?.disabled).toBe(false);
         await act(async () => button?.click());
         expect(probe().header.view.focused?.classId).toBe(classId);
-        expect(probe().editor.controller.marksVisible).toBe(false);
+        expect(probe().presented.controller.marksVisible).toBe(false);
         expect(scrolls[classId === "class-1" ? 0 : 1]).toHaveBeenCalled();
         expect(editor.view.dom.querySelector("[data-review-operations]")).toBeNull();
       }

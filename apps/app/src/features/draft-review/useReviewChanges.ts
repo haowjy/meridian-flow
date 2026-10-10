@@ -1,12 +1,11 @@
 /**
  * useReviewChanges — the open review's changes as the writer sees them: in
  * document order, with the one in focus, what failed on each, and the commands
- * that act on them. The header's stepper, the manuscript's bar and the dock's
- * list all read this, so they cannot disagree about which changes exist.
+ * that act on them. The header's stepper, the presented document's bar and expanded Work
+ * rows all read this, so they cannot disagree about which changes exist.
  *
- * Takes the controller explicitly. The review lives in the Editor's scope, and
- * the dock sits in the Chat's: a surface outside the Editor must pass the
- * Editor scope's controller, never the ambient one.
+ * Takes the controller explicitly. A surface outside the presenting host's
+ * boundary must pass the presented review's controller, never the ambient one.
  *
  * A change the writer has applied or discarded is already gone from the
  * preview this reads (`useDraftPreview`), and a change that failed is back with

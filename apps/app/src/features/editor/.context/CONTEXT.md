@@ -72,7 +72,7 @@ that moves, so they read `anchorRect` rather than a captured point. Both are
 
 ## Draft chrome
 
-Desktop draft chrome reads the Editor value from `DraftReviewProvider`. Phone
+Desktop draft chrome reads the presented review value from `DraftReviewProvider`. Phone
 `MobileDocumentReview` passes one shared header model to top and bottom chrome:
 
 - `DraftReviewChip` — the version chip on a live document with a pending

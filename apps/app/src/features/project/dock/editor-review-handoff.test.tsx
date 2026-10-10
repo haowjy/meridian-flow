@@ -78,7 +78,7 @@ function Harness({
   useEffect(() => {
     showEditor = (target) => setView({ kind: "editor", target });
   }, []);
-  const editorReview =
+  const presentedReview =
     view.kind === "editor" && view.target.workId === "work-a" ? editorAReview : editorBReview;
 
   return (
@@ -87,7 +87,7 @@ function Harness({
       {view.kind === "chat" ? (
         <DraftReviewBoundary value={chatReview}>{null}</DraftReviewBoundary>
       ) : (
-        <DraftReviewBoundary value={editorReview}>
+        <DraftReviewBoundary value={presentedReview}>
           <EditorReviewIntentClaimant editorWorkId={view.target.workId} activeScheme="manuscript" />
         </DraftReviewBoundary>
       )}

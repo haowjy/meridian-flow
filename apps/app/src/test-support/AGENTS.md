@@ -31,7 +31,7 @@ visible is a browser question and belongs in a probe.
 
 ## Review fixtures
 
-- **`draft-review-scope.tsx`** — real Editor, Chat and third-Work scopes,
+- **`draft-review-scope.tsx`** — real presented-review, Chat and third-Work scopes,
   controllers, query cache, mutations and header model. `createReviewScopeFixture`
   installs test-lifetime network spies and account dependency seams; always
   dispose it after the render finishes, and do not use concurrent tests with it.

@@ -6,14 +6,14 @@
  *
  * No focus, no stepping, no completion, and it never joins a review room.
  * Commands are bound to the caller’s Work. For the open draft the view is the
- * Editor's own (`useReviewChanges`), so the rows agree with the manuscript's
- * marks.
+ * presented review's own (`useReviewChanges`), so the rows agree with the
+ * presented document's marks.
  */
 import { useCallback, useMemo } from "react";
 
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { selectionOf } from "./change-selection";
-import { useEditorDraftReview } from "./DraftReviewProvider";
+import { usePresentedDraftReview } from "./DraftReviewProvider";
 import {
   type DraftChangesView,
   listablePreview,
@@ -44,23 +44,25 @@ export function useDraftChanges(
   },
 ): DraftChangesView {
   const { controller, enabled = true } = options;
-  const editor = useEditorDraftReview().controller;
+  const presented = usePresentedDraftReview().controller;
   const runner = controller;
-  const open = editor.inlineReview;
-  const inEditor =
+  const open = presented.inlineReview;
+  const inPresentedReview =
     enabled &&
-    editor.projectId === target.projectId &&
-    editor.workId === target.workId &&
+    presented.projectId === target.projectId &&
+    presented.workId === target.workId &&
     open?.documentId === target.documentId &&
     open.draftId === target.draftId;
-  const editorView = useReviewChanges(editor, { enabled: inEditor });
+  const presentedView = useReviewChanges(presented, { enabled: inPresentedReview });
 
   const { projectId, workId, documentId, draftId } = target;
   const draft = useMemo(
     () => ({ projectId, workId, documentId, draftId }),
     [projectId, workId, documentId, draftId],
   );
-  const entry = useDraftPreviews(enabled && !inEditor ? [draft] : [], { openReview: open })[0];
+  const entry = useDraftPreviews(enabled && !inPresentedReview ? [draft] : [], {
+    openReview: open,
+  })[0];
   const active = entry?.status === "ready" ? listablePreview(entry.preview) : null;
   const changes = active ? reviewChangesOfPreview(active) : NO_CHANGES;
   const { items, hiding } = useChangeItems(draft, changes);
@@ -116,5 +118,7 @@ export function useDraftChanges(
     ],
   );
   // Reuse the open review's presentation, never its command authority.
-  return inEditor ? { ...editorView, apply, discard, locked: controller.dispositionLocked } : own;
+  return inPresentedReview
+    ? { ...presentedView, apply, discard, locked: controller.dispositionLocked }
+    : own;
 }

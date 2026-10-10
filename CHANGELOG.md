@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: name the shared draft-review scope for the presented document, not the Editor.
+
 - Keep pending writer text gold across remote collaborative edits and stale or partial draft-review refreshes.
 
 - Development: drive review command reads with controlled React scheduling so threaded full-suite runs stay quiet.

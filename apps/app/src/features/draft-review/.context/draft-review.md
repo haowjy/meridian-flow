@@ -41,7 +41,7 @@ Rows are DOM display artifacts, not editable TipTap content.
 typed requests, addressed answers, refresh, confirmation/failure and release.
 `useWorkDraftCommands` binds project, Work and thread invalidation authority at
 creation. A command never routes to the Editor merely to make its answer visible.
-An expanded Work row may share the Editor's list model while still using its own
+An expanded Work row may share the presented review's list model while still using its own
 Work capability. Archived Works lock dispositions; Review remains available.
 
 `startDraftCommand` checks the one claim and both `navigator.onLine` and

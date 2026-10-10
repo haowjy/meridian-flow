@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** S-work: unopened selective commands and filtered whole-Work authority, independent of Editor A. */
+/** S-work: unopened selective commands and filtered whole-Work authority, independent of presented review A. */
 
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
@@ -100,7 +100,7 @@ const click = (label: string) =>
 
 /** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
 
-it("applies an unopened C row, then discards every C draft despite filtering without moving Editor A", async () => {
+it("applies an unopened C row, then discards every C draft despite filtering without moving presented review A", async () => {
   const network = fixture.network;
   network.listWorkDrafts.mockImplementation(async (_project, work) => ({
     drafts: work === workC.id ? [draftB, draftC] : [listed],
@@ -119,9 +119,11 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
   await fixture.render(
     async (probe) => {
       await settleReact(() => expect(probe().third.files).toHaveLength(2));
-      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+      await act(async () =>
+        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
+      );
       await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
-      const editorReview = probe().editor.controller.inlineReview;
+      const presentedReview = probe().presented.controller.inlineReview;
       await settleReact(() => expect(retain).toHaveBeenCalled());
       await click("Changes in Chapter 13");
       await settleReact(() =>
@@ -148,7 +150,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
         ],
       ]);
       expect(document.querySelector('[data-review-change-row="class-1"]')).toBeNull();
-      expect(probe().editor.controller.inlineReview).toEqual(editorReview);
+      expect(probe().presented.controller.inlineReview).toEqual(presentedReview);
       await act(async () => answer.resolve({ ...applied(false, "1"), draftId: "draft-b" }));
       await settleReact(() => expect(probe().third.commands.isDisposing).toBe(false));
       await click("Filter files");
@@ -169,7 +171,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
         ]),
       );
       await settleReact(() => expect(probe().third.commands.isDisposing).toBe(false));
-      expect(probe().editor.controller.inlineReview).toEqual(editorReview);
+      expect(probe().presented.controller.inlineReview).toEqual(presentedReview);
       expect(probe().header.view.items.map((item) => item.change.operationIds)).toEqual([
         ["1"],
         ["2"],

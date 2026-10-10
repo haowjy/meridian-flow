@@ -58,35 +58,36 @@ export function DraftReviewBoundary({
 }
 
 /**
- * The Editor scope's review, offered to surfaces that live outside the Editor's
- * boundary. A review runs in the Editor's scope (its controller owns the open
- * draft and its commands), but the dock that lists its changes sits in the
- * Chat's boundary; the shared Editor value supplies focus and presentation only.
- * Work-bound commands are independent of this review.
+ * The presented document's review, shared across Editor and dock hosts.
+ * Surfaces outside the presenting host's boundary read this value for focus
+ * and presentation. Work-bound commands remain independent of this review.
  */
-const EditorReviewContext = createContext<DraftReviewContextValue | null>(null);
+const PresentedReviewContext = createContext<DraftReviewContextValue | null>(null);
 
-export function EditorReviewScope({
+export function PresentedReviewScope({
   value,
   children,
 }: {
   value: DraftReviewContextValue;
   children: ReactNode;
 }) {
-  return <EditorReviewContext.Provider value={value}>{children}</EditorReviewContext.Provider>;
+  return (
+    <PresentedReviewContext.Provider value={value}>{children}</PresentedReviewContext.Provider>
+  );
 }
 
 /**
- * The review of the Editor the writer is working in; falls back to the ambient
- * scope when no Editor scope is offered. The Work page has no ambient scope of
- * its own, so the Editor's is read first and the ambient one only when it is absent.
+ * The presented document's review; falls back to the ambient draft-review
+ * scope when no presented scope is offered.
  */
-export function useEditorDraftReview(): DraftReviewContextValue {
-  const editor = useContext(EditorReviewContext);
+export function usePresentedDraftReview(): DraftReviewContextValue {
+  const presented = useContext(PresentedReviewContext);
   const ambient = useContext(DraftReviewContext);
-  const value = editor ?? ambient;
+  const value = presented ?? ambient;
   if (!value) {
-    throw new Error("useEditorDraftReview must be used within an Editor or draft review scope");
+    throw new Error(
+      "usePresentedDraftReview must be used within a presented or draft review scope",
+    );
   }
   return value;
 }

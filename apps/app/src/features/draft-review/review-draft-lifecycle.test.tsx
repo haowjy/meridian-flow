@@ -81,7 +81,7 @@ const draftB = { documentId: "document-b", draftId: "draft-b" };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const tabs = () => getContextTabs("project-a").tabs;
 async function open(p: () => ScopeProbe) {
-  await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
+  await act(async () => p().presented.controller.enterInlineReview("document-a", "draft-a"));
   await settleReact(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
@@ -172,7 +172,7 @@ it("draft-only Discard closes both containers and repairs the route; refusal nev
     await open(p);
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().editor.controller.discard("document-a", "draft-a");
+      done = p().presented.controller.discard("document-a", "draft-a");
     });
     expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
     expect(useDockDocumentStore.getState().occupant).toBeNull();
@@ -192,7 +192,7 @@ it("draft-only Discard closes both containers and repairs the route; refusal nev
       draftClosed: true,
     });
     await act(async () => {
-      await p().editor.controller.discard("document-a", "draft-a");
+      await p().presented.controller.discard("document-a", "draft-a");
     });
     expect(p().header.commandError).toBeNull();
     expect(writes).toBe(1);
@@ -207,7 +207,7 @@ it("an optimistic route-coordination exception before dispatch releases the clai
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      await expect(p().editor.controller.discard("document-a", "draft-a")).rejects.toThrow(
+      await expect(p().presented.controller.discard("document-a", "draft-a")).rejects.toThrow(
         "route repair failed",
       );
     });
@@ -216,7 +216,7 @@ it("an optimistic route-coordination exception before dispatch releases the clai
     expect(p().header.locked).toBe(false);
     close.mockRestore();
     await act(async () => {
-      expect(await p().editor.controller.apply("document-a", "draft-a")).toEqual({
+      expect(await p().presented.controller.apply("document-a", "draft-a")).toEqual({
         kind: "applied",
       });
     });
@@ -229,16 +229,16 @@ it("a lost whole Apply keeps the draft-only tab and review, apart from a server 
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      expect(await p().editor.controller.apply("document-a", "draft-a")).toEqual({
+      expect(await p().presented.controller.apply("document-a", "draft-a")).toEqual({
         kind: "apply-outcome-unknown",
       });
     });
     expect(p().header.commandError).toEqual({ code: "apply-unknown" });
     expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
-    expect(p().editor.controller.inlineReview?.draftId).toBe("draft-a");
+    expect(p().presented.controller.inlineReview?.draftId).toBe("draft-a");
     fixture.network.applyDraft.mockRejectedValue(new HttpResponseError("refused", 500, null));
     await act(async () => {
-      await p().editor.controller.apply("document-a", "draft-a");
+      await p().presented.controller.apply("document-a", "draft-a");
     });
     expect(p().header.commandError).toEqual({ code: "apply-server-error" });
     expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
@@ -259,9 +259,9 @@ it.each([
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      await p().editor.controller.apply("document-a", "draft-a");
+      await p().presented.controller.apply("document-a", "draft-a");
     });
-    expect(p().editor.controller.inlineReview).toBeNull();
+    expect(p().presented.controller.inlineReview).toBeNull();
     const live = tabs().find((tab) => tab.documentId === "document-a");
     if (container === "both") {
       expect(live).toBeDefined();
@@ -275,7 +275,7 @@ it.each([
       fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
       let pending!: Promise<unknown>;
       await act(async () => {
-        pending = p().editor.controller.apply("document-a", "draft-a");
+        pending = p().presented.controller.apply("document-a", "draft-a");
       });
       fixture.epoch.abort();
       removal.dispose();
@@ -311,7 +311,7 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
     async (p) => {
       await open(p);
       await act(async () => {
-        expect(await p().editor.controller.disposeDrafts("apply", [draftA, draftB])).toEqual([
+        expect(await p().presented.controller.disposeDrafts("apply", [draftA, draftB])).toEqual([
           { kind: "applied" },
           { kind: "applied" },
         ]);
@@ -321,7 +321,7 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
         "document-a",
         "document-b",
       ]);
-      expect(p().editor.controller.isDisposing).toBe(false);
+      expect(p().presented.controller.isDisposing).toBe(false);
     },
     {
       host: (children) => (
@@ -404,6 +404,6 @@ it("an unopened list follows a remote write and disposition through updated list
     await settleReact(() =>
       expect(view().items.map(({ change }) => change.classId)).toEqual(["class-4"]),
     );
-    expect(p().editor.controller.inlineReview?.draftId).toBe("draft-a");
+    expect(p().presented.controller.inlineReview?.draftId).toBe("draft-a");
   });
 });

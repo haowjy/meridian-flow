@@ -21,7 +21,7 @@ import { useWorks } from "@/client/query/useWorks";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import {
   DraftReviewBoundary,
-  useEditorDraftReview,
+  usePresentedDraftReview,
 } from "@/features/draft-review/DraftReviewProvider";
 import { useAccountResourceReplica } from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
@@ -42,7 +42,7 @@ export function DockDocumentView(props: {
   document: DockDocument;
   visible: boolean;
 }) {
-  const review = useEditorDraftReview();
+  const review = usePresentedDraftReview();
   const { revealDock } = useChatNavigation();
   // Q1: every review control inside this container uses this one launch adapter.
   const launch = useCallback(

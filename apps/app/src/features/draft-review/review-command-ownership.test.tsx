@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Draft authority across real Editor/Chat scopes and immutable Work-bound batches. */
+/** Draft authority across real presented-review/Chat scopes and immutable Work-bound batches. */
 
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -24,7 +24,9 @@ const draftB = { documentId: "document-b", draftId: "draft-b" };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const target = (draft: typeof draftA) => ({ projectId: "project-a", workId: "work-a", ...draft });
 async function open(p: () => ScopeProbe, draft = draftA) {
-  await act(async () => p().editor.controller.enterInlineReview(draft.documentId, draft.draftId));
+  await act(async () =>
+    p().presented.controller.enterInlineReview(draft.documentId, draft.draftId),
+  );
   await p().openDraft(draft);
   await settleReact(() => expect(p().header.view.status).toBe("ready"));
 }
@@ -44,16 +46,16 @@ afterEach(() => {
   fixture.dispose();
 });
 
-it("Editor selective Apply excludes Chat whole commands and both surfaces display busy", async () => {
+it("Presented review selective Apply excludes Chat whole commands and both surfaces display busy", async () => {
   const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
   fixture.network.applyDraftChanges.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     await open(p);
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().editor.controller.applyChanges(draftA, change("2"));
+      done = p().presented.controller.applyChanges(draftA, change("2"));
     });
-    expect(p().editor.controller.isDisposing).toBe(true);
+    expect(p().presented.controller.isDisposing).toBe(true);
     expect(p().chat.commands.dispositionLocked).toBe(true);
     await act(async () => {
       expect(await p().chat.commands.apply("document-a", "draft-a")).toEqual({ kind: "blocked" });
@@ -72,7 +74,7 @@ it("Editor selective Apply excludes Chat whole commands and both surfaces displa
   });
 });
 
-it("Chat whole Apply excludes Editor selection without hiding the blocked change", async () => {
+it("Chat whole Apply excludes presented review selection without hiding the blocked change", async () => {
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
   fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
@@ -83,7 +85,7 @@ it("Chat whole Apply excludes Editor selection without hiding the blocked change
     });
     expect(p().header.locked).toBe(true);
     await act(async () => {
-      expect(await p().editor.controller.applyChanges(draftA, change("2"))).toEqual({
+      expect(await p().presented.controller.applyChanges(draftA, change("2"))).toEqual({
         kind: "blocked",
       });
     });
@@ -135,7 +137,7 @@ it.each([
     const viewA = await p().mountDraftChanges(target(draftA));
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().editor.controller.applyChanges(draftA, change("2"));
+      done = p().presented.controller.applyChanges(draftA, change("2"));
     });
     await open(p, draftB);
     if (returned) await open(p);
@@ -148,10 +150,10 @@ it.each([
         viewA().items.find(({ change }) => change.classId === "class-2")?.failure,
       ).toMatchObject({ code: "server-error" }),
     );
-    expect(p().editor.controller.inlineReview?.draftId).toBe(returned ? "draft-a" : "draft-b");
+    expect(p().presented.controller.inlineReview?.draftId).toBe(returned ? "draft-a" : "draft-b");
     if (returned) expect(p().header.view.items[1]?.failure).toMatchObject({ code: "server-error" });
     else expect(p().header.view.items.every(({ failure }) => failure === null)).toBe(true);
-    expect(p().editor.controller.toast).toBeNull();
+    expect(p().presented.controller.toast).toBeNull();
   });
 });
 
@@ -159,7 +161,7 @@ it.each([
   ["apply", false],
   ["apply", true],
   ["discard", true],
-] as const)("%s batch keeps original Work with first draft in Editor: %s", async (mode, editorFirst) => {
+] as const)("%s batch keeps original Work with first draft in presented review: %s", async (mode, presentedFirst) => {
   const applyAnswer = deferredReviewAnswer<ReturnType<typeof applied>>();
   const discardAnswer = deferredReviewAnswer<ReturnType<typeof discarded>>();
   const endpoint =
@@ -168,7 +170,7 @@ it.each([
   else fixture.network.discardDraft.mockReturnValueOnce(discardAnswer.promise);
   await fixture.render(async (p) => {
     await settleReact(() => expect(p().chat.files).toHaveLength(2));
-    if (editorFirst) await open(p);
+    if (presentedFirst) await open(p);
     const viewA = await p().mountDraftChanges(target(draftA));
     const viewB = await p().mountDraftChanges(target(draftB));
     await settleReact(() => expect([viewA().status, viewB().status]).toEqual(["ready", "ready"]));

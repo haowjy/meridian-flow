@@ -82,12 +82,14 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       const editor = manuscript.editor;
       const dom = editor.view.dom;
       expect(document.querySelector(".ProseMirror")).toBe(dom);
-      await settleReact(() => expect(probe().editor.files).toHaveLength(2));
-      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+      await settleReact(() => expect(probe().presented.files).toHaveLength(2));
+      await act(async () =>
+        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
+      );
       await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
       // Chrome's painted-review admission is a real controller operation, not invented controller state.
       await act(async () =>
-        probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true),
+        probe().presented.controller.setInlineReviewShown("document-a", "draft-a", true),
       );
       await click("Show the 2 changes");
       expect(sheet()?.querySelectorAll("[data-review-change-row]")).toHaveLength(2);
@@ -120,7 +122,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         ],
       ]);
       await act(async () => selective.resolve(discarded(false)));
-      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
       expect(sheet()?.querySelector("[data-review-toast]")?.textContent).toContain("Discarded");
       expect(document.querySelectorAll("[data-review-toast]")).toHaveLength(1);
       expect(probe().header.view.focused?.classId).toBe("class-2");
@@ -140,7 +142,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         { draftId: "draft-a" },
       ]);
       await act(async () => whole.resolve(discarded(true)));
-      await settleReact(() => expect(probe().editor.controller.isDisposing).toBe(false));
+      await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
       expect(document.querySelector(".ProseMirror")).toBe(dom);
       expect(editor.isDestroyed).toBe(false);
       await act(async () => editor.commands.insertContent(" Still writing."));
@@ -177,11 +179,13 @@ it("keeps last-change feedback in the sheet flow and gives chat links phone targ
   fixture.network.discardDraft.mockResolvedValue(discarded(true));
   await fixture.render(
     async (probe) => {
-      await settleReact(() => expect(probe().editor.files).toHaveLength(1));
-      await act(async () => probe().editor.controller.enterInlineReview("document-a", "draft-a"));
+      await settleReact(() => expect(probe().presented.files).toHaveLength(1));
+      await act(async () =>
+        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
+      );
       await settleReact(() => expect(probe().header.view.items).toHaveLength(1));
       await act(async () =>
-        probe().editor.controller.setInlineReviewShown("document-a", "draft-a", true),
+        probe().presented.controller.setInlineReviewShown("document-a", "draft-a", true),
       );
       await click("Show the 1 change");
       const chatLink = sheet()?.querySelector<HTMLButtonElement>(

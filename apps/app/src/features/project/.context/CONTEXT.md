@@ -164,7 +164,7 @@ Work Uploads have no Files tab surface (composer attachments still land there, s
 [TODO](TODO)). A "Changes to review" row launches review through the same
 `useAiDraftLauncher` handoff as the other review launchers, not a plain
 document open. Rows expand to their change lists and Work-wide Apply/Discard
-use creation-bound `useWorkDraftCommands`, independently of the Editor review.
+use creation-bound `useWorkDraftCommands`, independently of the presented review.
 No Work has no Work page or Work-wide list. Files search uses one name matcher across drafts and Scratch;
 rename collisions use direct catalog siblings, and a failed New note remains as
 a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
@@ -287,7 +287,7 @@ review value (no thread authority) above desktop/phone selection, fed by the
 presented document (`presented-document.ts`): the Editor address on Context,
 the dock document on desktop Chat/Work, regardless of collapse. Its Work is the
 presented review's Work, falling back to the Editor route Work.
-`EditorReviewScope` provides it to Editor and dock hosts and offers its
+`PresentedReviewScope` provides it to Editor and dock hosts and offers its
 presentation to outside lists. `ReviewAddressOwner` writes and restores the
 address through the presenting container's port: the Editor route, or dock
 admission without navigation. Chat and Work lists compose the existing Work
