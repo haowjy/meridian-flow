@@ -10,6 +10,8 @@ export type OpenContextOptions = {
   /** Replace only when the route already names this document; otherwise push. */
   replaceIfSameDocument?: boolean;
   tab?: ContextTab;
+  /** Slot hand-off, committed with the accepted destination. */
+  onAccepted?: () => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   draftId?: string;
   isCurrent?: () => boolean;

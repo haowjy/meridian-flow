@@ -47,6 +47,17 @@ A stable resource handle survives document-ID remint; the exact persistence name
 and mounted Y.Doc do not change. The resource descriptor also retains the
 catalog-defined file classification so cached code never reopens as rich text.
 
+## Visible Editor ownership
+
+`resolveVisibleEditorTab` combines the pane's published route props, its local-document
+pointer, persisted selection and matching removal-state binding. Both
+`ContextPaneController` and the rail document hand-off use it, so a moved local resource
+or renamed bound document cannot acquire a second notion of which tab is on screen.
+The phone renders an explicit local tab or a catalog-resolved `MobileDocumentRoute` tab,
+without selecting desktop tabs. Its local host uses `resolveWorkspaceRoute` only for
+materialization binding/redirect, not visible-tab selection.
+`resolveWorkspaceRoute` remains the exact identity/path ownership primitive below both.
+
 ## Architecture
 
 ```text

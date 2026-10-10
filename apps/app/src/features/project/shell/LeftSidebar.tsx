@@ -15,7 +15,8 @@ import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
 import { useOpenProjectDocument } from "../context/open-project-document";
-import { useDockViewStore } from "../dock/dock-view-store";
+import { useDockDocument } from "../dock/dock-view-store";
+import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
 import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
@@ -82,9 +83,9 @@ export function LeftSidebar({
     void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
   };
   // On the Chat screen the row to highlight is the document open in the dock.
-  const docked = useDockViewStore((state) =>
-    activeScreen === "chat" && state.occupant?.projectId === projectId ? state.occupant.tab : null,
-  );
+  const dockDocument = useDockDocument(activeScreen, projectId);
+  const projectedDock = useDockDocumentTab(projectId, dockDocument);
+  const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
 
   return (
     <nav

@@ -23,18 +23,13 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import { readRecentRoutes, type WorkingSetHydrationPlan } from "@/client/working-set";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { originalBrowserSearch } from "@/router-search";
-import {
-  useAccountResourceProjection,
-  useContextRemovalCoordinator,
-} from "../context/account-feature-context";
+import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { routeTargetForTab } from "../context/context-removal-planner";
-import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
-import { handOffVisibleDocument } from "../dock/hand-off-visible-document";
+import { useRailDocumentHandOff } from "../dock/use-rail-document-hand-off";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
 import {
@@ -121,8 +116,6 @@ export function ReadableProjectRoute({
 }) {
   const projectId = project.id;
   const contextRemoval = useContextRemovalCoordinator();
-  const phone = usePhoneShell() === true;
-  const { records, folders } = useAccountResourceProjection(projectId);
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
   const parsed = parseProjectAddress(
@@ -417,6 +410,15 @@ export function ReadableProjectRoute({
         : documentResult.kind === "unavailable"
           ? "unavailable"
           : undefined));
+  const [navigationFailure, setNavigationFailure] = useState<{ href: string; key?: string } | null>(
+    null,
+  );
+  const failedDestination =
+    navigationFailure?.href === location.href && navigationFailure.key === location.state.__TSR_key;
+  const presentNavigationFailure = useCallback(() => {
+    const entry = router.history.location;
+    setNavigationFailure({ href: entry.href, key: entry.state.__TSR_key });
+  }, [router]);
   const mainIssue =
     parsed.kind === "invalid"
       ? "unavailable"
@@ -425,6 +427,7 @@ export function ReadableProjectRoute({
         : undefined;
   // The failed reads are what the address waits on; retrying them is the destination's recovery.
   const retryEditorAddress = useCallback(() => {
+    setNavigationFailure(null);
     void documentLookup.refetch();
     refetchAddressCatalog();
     editorDrafts.refetch();
@@ -546,7 +549,7 @@ export function ReadableProjectRoute({
     },
     [projectId, user.userId],
   );
-  const openContext = useCallback(
+  const openContextCommand = useCallback(
     async (
       request: ContextRouteRequest,
       options?: OpenContextOptions,
@@ -618,6 +621,7 @@ export function ReadableProjectRoute({
                 : resolvedWorkId,
               selected.documentId,
             );
+        options?.onAccepted?.();
       };
       // Reviewing the document the address already names rewrites `?draft=` in
       // place; any other document is a new history entry.
@@ -652,6 +656,22 @@ export function ReadableProjectRoute({
       );
     },
     [contextDestination, contextRemoval, projectId],
+  );
+  // Both the dock header and rail use this destination-owned failure presentation.
+  const openContext = useCallback<typeof openContextCommand>(
+    async (request, options) => {
+      const coordinator = latest.current.navigation;
+      if (!coordinator) return { kind: "superseded" };
+      try {
+        const result = await openContextCommand(request, options);
+        if (result.kind === "failed") presentNavigationFailure();
+        return result;
+      } catch (error) {
+        presentNavigationFailure();
+        return { kind: "failed", error, ticket: coordinator.capture() };
+      }
+    },
+    [openContextCommand, presentNavigationFailure],
   );
   const setEditorReviewDraftId = useCallback((draftId: string | null) => {
     const current = latest.current;
@@ -759,39 +779,36 @@ export function ReadableProjectRoute({
     folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
     view: address.workView ?? address.worksView,
   };
-  const selectScreen = (next: ScreenKey) => {
+  const editorDocument = {
+    editorWorkId: workId,
+    localDocumentId,
+    activeContextScheme: search.scheme ?? null,
+    activeContextPath: search.path ?? null,
+    activeContextChat: search.chat ?? null,
+  };
+  const handOffDocument = useRailDocumentHandOff({
+    projectId,
+    source: activeScreen,
+    editor: editorDocument,
+    revealDock: chat.revealDock,
+  });
+  const switchScreen = (next: ScreenKey) => {
     if (next === activeScreen && next !== "chat") return Promise.resolve();
-    const workspace = getContextTabs(projectId);
-    const visibleEditor = resolveWorkspaceRoute({
-      tabs: workspace.tabs,
-      selectedDocumentId:
-        localDocumentId ?? (workId ? workspace.selectedTabIdByWork[workId] : undefined),
-      locator:
-        workId && (documentDestination || localDocumentId)
-          ? {
-              scheme: documentDestination?.scheme ?? "unfiled",
-              path: documentDestination?.path ?? "",
-              workId,
-              ...(address.lineage ? { rootThreadId: address.lineage } : {}),
-            }
-          : null,
-      boundDocumentId,
-    });
-    const handOff = handOffVisibleDocument({
-      projectId,
-      source: activeScreen,
-      destination: next,
-      phone,
-      editorTab: visibleEditor.kind !== "unowned" ? visibleEditor.tab : null,
-      records,
-      folders,
-      revealDock: chat.revealDock,
-      openInEditor: (tab) =>
-        openDocumentInEditor(openContext, tab).then((result) => {
-          if (result.kind === "failed") throw result.error;
-        }),
-    });
-    if (handOff) return handOff;
+    const handOff = handOffDocument(next);
+    if (handOff && next === "context")
+      return openDocumentInEditor(openContext, handOff.tab, handOff.commit);
+    if (handOff && next === "chat" && navigation) {
+      const threadId = chatSurfaceThreadId(chat.display);
+      return navigation
+        .transition(
+          toDestination(threadId ? { kind: "chat", chatId: threadId } : { kind: "chat-index" }),
+          { replace: false },
+          { isCurrent: () => true, commit: handOff.commit },
+        )
+        .then((result) => {
+          if (result.kind === "failed") presentNavigationFailure();
+        });
+    }
     // Chat reopens the current chat; with none, its index.
     if (next === "chat") return chat.showChatScreen();
     // Work reopens the last opened Work while it still exists; else the collection.
@@ -807,7 +824,8 @@ export function ReadableProjectRoute({
       if (tab)
         return openContext({ ...routeTargetForTab(tab, workId), documentId: tab.documentId }).then(
           (result) => {
-            if (result.kind === "failed") throw result.error;
+            // openContext owns failure presentation for both header and rail.
+            return result;
           },
         );
     }
@@ -822,6 +840,14 @@ export function ReadableProjectRoute({
       },
       { replace: false },
     );
+  };
+  const selectScreen = (next: ScreenKey) => {
+    setNavigationFailure(null);
+    try {
+      void Promise.resolve(switchScreen(next)).catch(presentNavigationFailure);
+    } catch {
+      presentNavigationFailure();
+    }
   };
   // A project folder keeps the current editing context; a Work's folder names its Work.
   const browse = (scheme: ProjectContextTreeScheme | null, path = "") =>
@@ -873,7 +899,10 @@ export function ReadableProjectRoute({
             rememberedWork={rememberedWork}
             editorRouteWork={editorWork}
             routeLocationKey={location.state.__TSR_key ?? location.href}
-            routeIssues={{ main: mainIssue, editor: editorIssue }}
+            routeIssues={{
+              main: failedDestination ? "error" : mainIssue,
+              editor: failedDestination ? "error" : editorIssue,
+            }}
             onRetryEditorRoute={retryEditorAddress}
             onDisplayedSelection={reportSelection}
             routeCommands={routeCommands}
@@ -906,11 +935,11 @@ export function ReadableProjectRoute({
                   void go(toDestination({ kind: "editor" }), { replace: true });
               },
             }}
-            activeLocalDocumentId={localDocumentId}
-            activeContextScheme={search.scheme ?? null}
+            activeLocalDocumentId={editorDocument.localDocumentId}
+            activeContextScheme={editorDocument.activeContextScheme}
             activeContextFolder={search.folder ?? null}
-            activeContextPath={search.path ?? null}
-            activeContextChat={search.chat ?? null}
+            activeContextPath={editorDocument.activeContextPath}
+            activeContextChat={editorDocument.activeContextChat}
             reviewDraftId={address.draftId}
             reviewAddressDocumentId={addressDocumentId}
             onSelectScreen={selectScreen}

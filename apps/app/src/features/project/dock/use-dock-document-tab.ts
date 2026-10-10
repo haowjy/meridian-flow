@@ -8,8 +8,17 @@ import type { DockDocument } from "./dock-view-store";
  * The slot keeps the tab it was opened with. A rename or move elsewhere changes
  * the resource, not the slot, so the name and path shown always come from here.
  */
-export function useDockDocumentTab(projectId: string, document: DockDocument) {
+export function useDockDocumentTab(
+  projectId: string,
+  document: DockDocument,
+): { tab: ContextTab; gone: boolean };
+export function useDockDocumentTab(
+  projectId: string,
+  document: DockDocument | null,
+): { tab: ContextTab | null; gone: boolean };
+export function useDockDocumentTab(projectId: string, document: DockDocument | null) {
   const { records, folders } = useAccountResourceProjection(projectId);
+  if (!document) return { tab: null, gone: false };
   const projection = projectResourceTab(projectId, document.tab, records, folders);
   if (projection.kind === "removed" || projection.kind === "terminal")
     return { tab: document.tab, gone: true };

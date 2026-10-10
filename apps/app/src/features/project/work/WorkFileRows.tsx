@@ -20,9 +20,10 @@ import { LinkUpdateNote } from "../context/LinkUpdateNote";
 import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import { useRepairOnFreshFailure } from "../context/use-repair-on-fresh-failure";
-import { useDockViewStore } from "../dock/dock-view-store";
+import { useDockDocument } from "../dock/dock-view-store";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { RowIcon } from "../RuledList";
+import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import type { NoteAttempt } from "./use-work-note-intake";
 
 export const workFileRowClass =
@@ -67,7 +68,8 @@ export function ScratchFileRow({
   edit?: ScratchFileEdit;
 }) {
   const openFile = useOpenDocumentInDock();
-  const docked = useDockViewStore((state) => state.occupant?.tab.documentId === file.documentId);
+  const screen = useProjectScreen();
+  const docked = useDockDocument(screen, projectId)?.tab.documentId === file.documentId;
   const folder = file.path.includes("/") ? file.path.replace(/\/[^/]+$/, "") : "";
   const startRename = edit?.onRename;
   const [noteOperationId, setNoteOperationId] = useState<string | null>(null);

@@ -74,8 +74,11 @@ export function DockDocumentView({
         // The projection above follows a rename; the dock keeps no tab to patch.
         onCommitted={noopCommitted}
         onOpenExisting={(scheme, path, owner) => {
-          closeDocument();
-          openInEditor({ scheme, path, ...owner });
+          const store = useDockViewStore.getState();
+          const claim = store.claim();
+          openInEditor({ scheme, path, ...owner }, () => {
+            if (useDockViewStore.getState().isCurrent(claim)) closeDocument();
+          });
         }}
       />
       {tab.kind !== "viewer" ? (

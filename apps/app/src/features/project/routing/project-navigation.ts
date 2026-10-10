@@ -78,10 +78,10 @@ export function createProjectNavigation(
       operation.finish({ kind: "superseded" });
       return;
     }
-    // Native history must agree with the workspace snapshot before either can be reloaded.
+    // Commit the accepted entry before flush can render its destination scope effects.
     try {
-      port.flush();
       operation.commit?.();
+      port.flush();
       operation.finish({ kind: "applied" });
     } catch (error) {
       operation.finish({ kind: "failed", error, ticket: capture() });

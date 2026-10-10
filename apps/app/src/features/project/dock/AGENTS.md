@@ -80,10 +80,13 @@ finds an active draft.
    `ContextDocumentHost` (the same host the Editor's tabs render through) and
    `DocumentPaneChrome`, so session, saving, offline, archived and review behaviour
    are the Editor's. Never give it a session, room, or capture of its own, and never
-   paint a background on it: the dock slot owns the material. It is never held on the
+   paint a background on it: the dock slot owns the material. It is never displayed on the
    Editor screen (documents open as tabs there) or on the phone (full-screen editor).
+   A Chat occupant can remain parked in the store while another screen is in front.
    Rail switches hand off only the visible document between Editor and Chat; Work
-   receives none. Peeks and Close do not change Editor tabs. Browser history and phone
+   receives none. Capture at the click; commit only when navigation accepts the destination,
+   fenced by the dock claim. Peeks and Close do not change Editor tabs. X returns to the
+   panel's own view underneath (Recent unless left on Changes). Browser history and phone
    navigation do not hand off. The slot and Editor tabs remain separate owners.
    Picking a view on its screen replaces it; `DockShell` keeps the occupant mounted
    and inert behind it.

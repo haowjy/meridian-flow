@@ -29,15 +29,17 @@ export function DockOpenInEditor({
   document: DockDocument;
 }) {
   const { tab } = useDockDocumentTab(projectId, document);
-  const closeDocument = useDockViewStore((state) => state.closeDocument);
   const openInEditor = useOpenDocumentInEditor();
   return (
     <IconButton
       size="sm"
       tooltip={t`Open in Editor`}
       onClick={() => {
-        closeDocument();
-        openInEditor(tab);
+        const store = useDockViewStore.getState();
+        const claim = store.claim();
+        openInEditor(tab, () => {
+          if (useDockViewStore.getState().isCurrent(claim)) store.closeDocument();
+        });
       }}
     >
       <Maximize2 className="size-4" aria-hidden />

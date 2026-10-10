@@ -136,7 +136,7 @@ msgstr ""
 msgid "{0} finished"
 msgstr "{0} 已完成"
 
-#. placeholder {0}: schemeLabel(tab.scheme)
+#. placeholder {0}: schemeLabel(locatedTab.scheme)
 #: src/features/project/dock/DockDocumentTitle.tsx
 msgid "{0} for {ownerName}"
 msgstr ""
