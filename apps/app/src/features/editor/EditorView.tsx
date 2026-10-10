@@ -48,10 +48,13 @@ import {
   editorRoomKey,
   useMountedEditor,
 } from "@/core/editor/mounted-editor";
+import { useReadingPosition } from "@/core/editor/use-reading-position";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { useLinkableDocuments } from "@/features/links";
 import {
+  useAccountEpochSignal,
+  useAccountId,
   useAccountResourceProjection,
   useLiveDocumentSessionRegistry,
 } from "@/features/project/context/account-feature-context";
@@ -371,6 +374,8 @@ function ActiveSessionEditorView({
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
   const active = hostActive && !held;
+  const accountId = useAccountId();
+  const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
   const { controller } = useDraftReview();
   const inReview = identity.surface === "review";
@@ -579,15 +584,15 @@ function ActiveSessionEditorView({
     [],
   );
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      const scroller = scrollContainerRef.current;
-      if (scroller?.scrollTop !== 0) return;
-      const savedTop = Number(scroller.dataset.stableLayoutScrollTop ?? 0);
-      if (savedTop > 0) scroller.scrollTop = savedTop;
-    }, 250);
-    return () => window.clearInterval(interval);
-  }, []);
+  useReadingPosition({
+    editor,
+    pane: scrollContainerRef,
+    accountId,
+    documentId,
+    active,
+    review: inReview || held,
+    signal: accountEpoch,
+  });
 
   return (
     <EditorScopeProvider
