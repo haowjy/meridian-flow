@@ -39,6 +39,9 @@ Draft-tree suites build one world per case: `draft-tree-seeds.ts` writes rows th
 way the product leaves them (no runtime); `draft-tree-commands.ts` drives the
 composed runtime (model replies, the writer's route cores, readers' ports,
 review commands: `review`, `apply` and `applyAll` call the review route cores
-with the tokens their items rendered); `draft-tree-scenario.ts` joins the two. Seed only states the
+with the tokens their items rendered; readers such as `view(...).text`,
+`liveMeaning` and `batchStates`); `draft-tree-scenario.ts` joins the two, and
+`draft-tree-suite.ts` is the committing describe block those suites share.
+Assert through these verbs (what the writer or a reader sees), not raw tables. Seed only states the
 product can't reach yet. Lock races go through `lock-interleave.ts`: `race`
 names each run, so an order table reads the same outcome whichever ran first.

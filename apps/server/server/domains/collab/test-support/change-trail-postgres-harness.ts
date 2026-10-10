@@ -63,6 +63,9 @@ const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = aw
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
 const { createDrizzleDraftTreeStep } = await import("../adapters/drizzle-draft-tree-step.js");
+const { expirePendingSettlementClaims } = await import(
+  "../../../test-support/settlement-claims.js"
+);
 const { createDraftBranchAheadRegistration } = await import(
   "../domain/draft-branch-ahead-registration.js"
 );
@@ -1900,16 +1903,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
      * Expires the pending batch's lease inside the caller's transaction (completion or
      * abandonment holds the row), as if the database clock passed it there.
      */
-    expireLeaseInTransaction: () =>
-      currentDrizzleDb(db)
-        .update(schema.branchPushSettlementBatches)
-        .set({ leaseExpiresAt: sql`clock_timestamp() - interval '1 second'` })
-        .where(
-          and(
-            eq(schema.branchPushSettlementBatches.state, "pending"),
-            sql`${schema.branchPushSettlementBatches.claimToken} IS NOT NULL`,
-          ),
-        ),
+    expireLeaseInTransaction: () => expirePendingSettlementClaims(db),
     /** A completion of the current owner's valid batch, attempted inside an ambient transaction. */
     async attemptAmbientCompletion() {
       const [batch] = await db
