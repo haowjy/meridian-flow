@@ -260,17 +260,22 @@ export function createEffectiveDocumentReader(input: {
       return input.branches.ensureCreatedDraftBranch(command);
     },
     async retractCreatedDraftBranch(command) {
-      const { outcome, branchIds } = await input.branches.retractCreatedDraftBranch(command);
-      if (outcome === "retracted" && branchIds.length > 0) {
-        // Rooms and pooled cores hold the deleted branches' state; they go once the
-        // deletion is durable, never before (an abort keeps the branches).
+      const retracted = await input.branches.retractCreatedDraftBranch(command);
+      if (retracted.outcome === "retracted" && retracted.deleted.length > 0) {
+        // Rooms and pooled cores hold the deleted branches' state; exactly those go, once
+        // the deletion is durable (an abort keeps the branches). Another Work's peers on
+        // the same document are not this retraction's.
+        const { deleted } = retracted;
         const retire = async () => {
-          for (const branchId of branchIds) input.closeBranchRoom(branchId);
-          await input.agentEdit.invalidateThread(command.documentId, "");
+          for (const { branchId } of deleted) input.closeBranchRoom(branchId);
+          await input.agentEdit.retireThreadPeers(
+            command.documentId,
+            deleted.flatMap(({ threadId }) => (threadId ? [threadId] : [])),
+          );
         };
         if (!input.deferUntilCommit(retire)) await retire();
       }
-      return outcome;
+      return retracted.outcome;
     },
   };
 }

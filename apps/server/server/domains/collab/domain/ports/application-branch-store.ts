@@ -21,11 +21,15 @@ export type ApplicationBranchStore = BranchStore &
     /**
      * Delete the Work's draft branch on a draft-created document and its thread peers,
      * unless any of them holds a journal row that isn't discarded (a contribution).
+     * `deleted` is exactly the branches removed, with each peer's thread.
      */
-    retractCreatedDraftBranch(input: {
-      documentId: DocumentId;
-      workId: WorkId;
-    }): Promise<{ outcome: "retracted" | "stands"; branchIds: readonly string[] }>;
+    retractCreatedDraftBranch(input: { documentId: DocumentId; workId: WorkId }): Promise<
+      | { outcome: "stands" }
+      | {
+          outcome: "retracted";
+          deleted: readonly { branchId: string; threadId: ThreadId | null }[];
+        }
+    >;
     ensureThreadPeerBranch(input: {
       documentId: DocumentId;
       threadId: ThreadId;

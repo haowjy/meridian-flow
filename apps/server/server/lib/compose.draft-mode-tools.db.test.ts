@@ -360,6 +360,47 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(read.ok && read.value.content, "stands: the other thread's text")
         .toContain("The second thread's line.");
+
+      // Two Works share one hidden identity: retracting A's create retires only A's peers.
+      const workA = await scenario.work("Retracting A", "draft");
+      const workB = await scenario.work("Surviving B", "draft");
+      const replyA = await scenario.model(workA).reply();
+      const twoWorkId = documentIdOf(
+        await replyA.call("write", {
+          command: "create",
+          path: "manuscript://lore/two-works.md",
+          content: "A's text, never kept.",
+        }),
+      );
+      const replyB = await scenario.model(workB).reply();
+      const joined = await replyB.call("write", {
+        command: "create",
+        path: "manuscript://lore/two-works.md",
+        content: "B's unsaved contribution.",
+      });
+      expect.soft(documentIdOf(joined), "B joins A's hidden identity").toBe(twoWorkId);
+      const bPeer = async () => {
+        const [peer] = await db
+          .select({ status: schema.documentBranches.status })
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.threadId, workB.threadId));
+        return peer?.status;
+      };
+      expect.soft(await bPeer(), "B's peer before A retracts").toBe("active");
+      await replyA.rollback();
+      expect.soft(await bPeer(), "B's peer survives A's retraction").toBe("active");
+      const saved = (await replyB.save()) as { receipts?: readonly unknown[] };
+      expect
+        .soft(saved.receipts ?? [], "B's overlapping reply commits with a receipt")
+        .toHaveLength(1);
+      expect.soft(await rowOf(twoWorkId), "B keeps the identity").toMatchObject({
+        hidden: true,
+        deletedAt: null,
+      });
+      const readB = await scenario.view(workB).read("lore/two-works.md");
+      expect
+        .soft(readB.ok && readB.value.content, "B's saved text")
+        .toContain("B's unsaved contribution.");
     });
 
     it("stages nothing for a write that leaves the chapter unchanged", async () => {
