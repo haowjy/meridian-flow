@@ -130,7 +130,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
     value = useDraftReviewScopeValue({
       projectId: "project-a",
       work,
-      draftOnly: presented?.draftOnly,
+      presented,
     });
     const write = useCallback(() => {}, []);
     changeScreen = (next) => {

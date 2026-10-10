@@ -31,7 +31,13 @@ const tab: ContextTab = {
   filetype: "markdown",
   schemaType: "document",
 };
-const document: DockDocument = { projectId: "project", screen: "chat", tab, review: null };
+const document: DockDocument = {
+  projectId: "project",
+  screen: "chat",
+  screenWorkId: null,
+  tab,
+  review: null,
+};
 function storage(): DockStorage {
   const values = new Map<string, string>();
   return {
@@ -44,9 +50,30 @@ function storage(): DockStorage {
 function reload(occupant = document) {
   const disk = storage();
   const first = createDockDocumentStore(() => disk, "account");
+  if (occupant.screen === "work")
+    first.getState().syncOccupantScope("project", "work", occupant.screenWorkId);
   first.getState().commit(first.getState().claim(), occupant);
   return createDockDocumentStore(() => disk, "account");
 }
+const renamedAvailability = {
+  resolutions: [
+    {
+      kind: "available",
+      documentId: "doc",
+      authority: { kind: "project", projectId: "project" },
+      entry: {
+        kind: "file",
+        entryId: "doc",
+        editable: true,
+        schemaType: "document",
+        name: "New.md",
+        path: ["New.md"],
+        uri: "manuscript://New.md",
+        filetype: "markdown",
+      },
+    },
+  ],
+};
 const empty: ResourceProjectionSnapshot = { records: [], folders: [], catalogs: [] };
 function resources(snapshot = empty) {
   return {
@@ -101,6 +128,7 @@ it("does not restore a Work document onto another Work or project", () => {
   const workDocument: DockDocument = {
     ...document,
     screen: "work",
+    screenWorkId: "work",
     tab: { ...tab, scheme: "scratch", workId: "work" },
   };
   const same = reload(workDocument);
@@ -116,6 +144,7 @@ it("rechecks the Work fence when validation moves a note to another Work", () =>
   const second = reload({
     ...document,
     screen: "work",
+    screenWorkId: "work",
     tab: { ...tab, scheme: "scratch", workId: "work" },
   });
   second.getState().syncOccupantScope("project", "work", "work");
@@ -158,29 +187,6 @@ it("a removed document restores as nothing", async () => {
   if (!restored) throw new Error("Expected a restore candidate");
   second.getState().restore(restored, await restoreDockDocument(restored, resources()));
   expect(second.getState().occupant).toBeNull();
-});
-it("a renamed server document follows its ID to its new path", async () => {
-  availability.mockResolvedValue({
-    resolutions: [
-      {
-        kind: "available",
-        documentId: "doc",
-        authority: { kind: "project", projectId: "project" },
-        entry: {
-          kind: "file",
-          entryId: "doc",
-          editable: true,
-          schemaType: "document",
-          name: "New.md",
-          path: ["New.md"],
-          uri: "manuscript://New.md",
-          filetype: "markdown",
-        },
-      },
-    ],
-  });
-  const restored = await restoreDockDocument(document, resources());
-  expect(restored).toMatchObject({ tab: { documentId: "doc", path: "/New.md", name: "New.md" } });
 });
 it("a terminal replica document restores as nothing without acquiring it", async () => {
   const record = localRecord();
@@ -229,8 +235,8 @@ it("throwing storage getters, reads and writes leave the live dock usable", () =
 });
 it.each([
   "{",
-  '{"version":2}',
-  '{"version":1,"byScreen":{},"occupant":{"projectId":"project","screen":"context","tab":{}}}',
+  '{"version":2,"accountId":"account"}',
+  '{"version":1,"accountId":"account","occupant":{"projectId":"project","screen":"context","tab":{}}}',
 ])("ignores invalid storage: %s", (raw) => {
   const disk = storage();
   disk.setItem(DOCK_STORAGE_KEY, raw);
@@ -262,8 +268,18 @@ it.each([
   const note: DockDocument = {
     ...document,
     screen: "work",
+    screenWorkId: "work",
     tab: { ...tab, scheme: "scratch", workId: "work" },
   };
+  const manuscript = {
+    ...document,
+    screen: "work" as const,
+    screenWorkId: "work",
+    review: { workId: "work", draftId: "draft" },
+  };
+  const restored = reload(manuscript);
+  restored.getState().syncOccupantScope(scope.projectId, scope.screen, scope.workId);
+  expect(restored.getState().restoring).toEqual(stays ? manuscript : null);
   expect(dockDocumentFitsScope(note, scope)).toBe(stays);
   expect(dockDocumentFitsScope(document, scope)).toBe(scope.projectId === "project");
 });
@@ -366,8 +382,6 @@ it("reloads a draft-only review from its Work list, without catalog membership",
       },
     }),
   ).rejects.toThrow("offline");
-  expect(second.getState().restoring).toBe(candidate);
-  expect(second.getState().occupant).toBeNull();
   expect(restored).toMatchObject({
     review,
     tab: {
@@ -380,25 +394,7 @@ it("reloads a draft-only review from its Work list, without catalog membership",
   });
 });
 it("keeps a manuscript review while validating its renamed live identity", async () => {
-  availability.mockResolvedValue({
-    resolutions: [
-      {
-        kind: "available",
-        documentId: "doc",
-        authority: { kind: "project", projectId: "project" },
-        entry: {
-          kind: "file",
-          entryId: "doc",
-          editable: true,
-          schemaType: "document",
-          name: "New.md",
-          path: ["New.md"],
-          uri: "manuscript://New.md",
-          filetype: "markdown",
-        },
-      },
-    ],
-  });
+  availability.mockResolvedValue(renamedAvailability);
   const review = { workId: "work", draftId: "draft" };
   const replica = resources();
   const restored = await restoreDockDocument(

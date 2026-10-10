@@ -245,11 +245,13 @@ durable tab beneath it. Another Work cannot resolve that overlay.
 adapters. Both containers settle; Close is container-local. The Editor adapter
 delegates exact-instance removal, promotion and route repair to
 `ContextRemovalCoordinator`; the dock adapter settles its stored occupant without
-claiming a revision. Hidden restore candidates are not lifecycle presentations:
+claiming a revision. Both adapters are bound to the account epoch; closed epochs
+cannot enumerate or settle presentations. Hidden restore candidates are not lifecycle presentations:
 
 - Confirmed Apply promotes through `promoteAppliedDraft`, drops the marker and
-  opens ordinary live hosting. The presented overlay’s removal is catalog/Apply
-  proof, so the room owner stops retaining branch-only absence. Promotion/route
+  opens ordinary live hosting. Only a resolved live presentation matching the
+  review’s document, Work and draft ends branch-only absence retention; a pending
+  or nonmatching address is not promotion proof. Promotion/route
   failures never undo server success.
 - Admitted whole Discard removes through `discardDraft` before dispatch. Later
   refusal stays on the draft row and never restores its tab or navigates back.

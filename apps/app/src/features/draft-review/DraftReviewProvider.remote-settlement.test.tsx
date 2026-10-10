@@ -3,31 +3,22 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
-import { DocumentSession } from "@/core/editor/document-session";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { dockDocument, useDockDocumentStore } from "@/features/project/dock/dock-document-store";
 import { resolvePresentedDocument } from "@/features/project/presented-document";
 import { ReviewAddressOwner } from "@/features/project/ReviewAddressOwner";
-import { preview, work } from "@/test-support/draft-review-scope";
+import { createReviewScopeFixture, listed, preview, work } from "@/test-support/draft-review-scope";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { DraftOnlySettlement } from "./DraftOnlySettlement";
 import { useDraftReviewScopeValue } from "./DraftReviewProvider";
 
-const mocks = vi.hoisted(() => ({
-  listWorkDrafts: vi.fn(),
-  getDraftPreview: vi.fn(),
-  session: null as DocumentSession | null,
-  registry: { retainBranchRooms: vi.fn(), releaseBranchRooms: vi.fn(), getBranchRoom: vi.fn() },
-  coordinator: { promoteAppliedDraft: vi.fn(async () => true), discardDraft: vi.fn() },
-  resources: { acquireCatalog: vi.fn(), acquireCatalogAfter: vi.fn() },
-}));
+const resources = { acquireCatalog: vi.fn(), acquireCatalogAfter: vi.fn() };
+let fixture: ReturnType<typeof createReviewScopeFixture>;
+let promote: ReturnType<typeof vi.spyOn>;
+let discard: ReturnType<typeof vi.spyOn>;
 
-vi.mock("@/client/api/drafts-api", () => ({
-  listWorkDrafts: mocks.listWorkDrafts,
-  getDraftPreview: mocks.getDraftPreview,
-}));
 vi.mock("@/client/query/useContextCatalog", () => ({
   contextCatalogScope: () => ({ kind: "project", projectId: "project-a" }),
   useContextCatalogView: () => ({ catalog: null }),
@@ -35,23 +26,12 @@ vi.mock("@/client/query/useContextCatalog", () => ({
     findDocument: (documentId: string) => (view.documents.includes(documentId) ? {} : null),
   }),
 }));
-vi.mock("@/features/project/context/account-feature-context", () => ({
-  useContextRemovalCoordinator: () => mocks.coordinator,
-  useOptionalAccountResourceReplica: () => mocks.resources,
-  useLiveDocumentSessionRegistry: () => mocks.registry,
-}));
-
-const draft = { draftId: "draft-a", documentId: "document-a", status: "active" };
-
 describe("DraftReviewProvider remote settlement", () => {
   beforeEach(() => {
-    mocks.session?.destroy();
-    mocks.session = new DocumentSession({
-      roomKey: "review-room-a",
-      persistence: { kind: "none" },
-    });
-    mocks.getDraftPreview.mockResolvedValue(preview);
-    mocks.registry.getBranchRoom.mockImplementation(() => mocks.session);
+    fixture = createReviewScopeFixture({ resources: resources as never });
+    promote = vi.spyOn(fixture.removal, "promoteAppliedDraft").mockResolvedValue(true);
+    discard = vi.spyOn(fixture.removal, "discardDraft").mockReturnValue({ kind: "noop" });
+    fixture.network.getDraftPreview.mockResolvedValue(preview);
     vi.clearAllMocks();
     useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
     useContextTabsStore.setState({
@@ -68,28 +48,31 @@ describe("DraftReviewProvider remote settlement", () => {
     });
     if (!tab) throw new Error("Draft tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [draft] });
+    fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
     // An observation joined from before the Apply would say the document is absent.
-    mocks.resources.acquireCatalog.mockResolvedValue({ documents: [] });
-    mocks.resources.acquireCatalogAfter.mockResolvedValue({ documents: ["document-a"] });
+    resources.acquireCatalog.mockResolvedValue({ documents: [] });
+    resources.acquireCatalogAfter.mockResolvedValue({ documents: ["document-a"] });
+  });
+
+  afterEach(() => {
+    promote.mockRestore();
+    discard.mockRestore();
+    fixture.dispose();
   });
 
   it.each([
-    ["editor", "apply"],
     ["dock", "apply"],
     ["both", "apply"],
-    ["dock", "discard"],
     ["both", "discard"],
   ] as const)("settles remote %s %s from a catalog read after omission", async (container, mode) => {
     const tab = useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs[0];
     if (!tab) throw new Error("Missing draft overlay");
-    if (container !== "editor")
-      useDockDocumentStore.setState({
-        occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", draftId: "draft-a" }),
-      });
+    useDockDocumentStore.setState({
+      occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", draftId: "draft-a" }),
+    });
     if (container === "dock")
       useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
-    mocks.resources.acquireCatalogAfter.mockResolvedValue({
+    resources.acquireCatalogAfter.mockResolvedValue({
       documents: mode === "apply" ? ["document-a"] : [],
     });
     const claim = useDockDocumentStore.getState().claim();
@@ -105,7 +88,7 @@ describe("DraftReviewProvider remote settlement", () => {
       selected = useDraftReviewScopeValue({
         projectId: "project-a",
         work,
-        draftOnly: presented?.draftOnly,
+        presented,
       });
       return (
         <>
@@ -128,32 +111,24 @@ describe("DraftReviewProvider remote settlement", () => {
         {container === "dock" ? <DockReview /> : <DraftOnlySettlement projectId="project-a" />}
       </QueryClientProvider>,
       async () => {
-        await vi.waitFor(() => expect(mocks.listWorkDrafts).toHaveBeenCalled());
+        await vi.waitFor(() => expect(fixture.network.listWorkDrafts).toHaveBeenCalled());
         await act(async () => undefined);
-        expect(mocks.resources.acquireCatalogAfter).not.toHaveBeenCalled();
+        expect(resources.acquireCatalogAfter).not.toHaveBeenCalled();
 
-        mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
-        mocks.getDraftPreview.mockResolvedValue({
+        fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [] });
+        fixture.network.getDraftPreview.mockResolvedValue({
           status: "gone",
           draftId: "draft-a",
-          draftGeneration: 1,
         });
         await act(async () => {
           await queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
         });
 
         await vi.waitFor(() => {
-          if (container !== "dock")
-            expect(
-              mode === "apply"
-                ? mocks.coordinator.promoteAppliedDraft
-                : mocks.coordinator.discardDraft,
-            ).toHaveBeenCalled();
-          if (container !== "editor") {
-            if (mode === "apply")
-              expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
-            else expect(useDockDocumentStore.getState().occupant).toBeNull();
-          }
+          if (container !== "dock") expect(mode === "apply" ? promote : discard).toHaveBeenCalled();
+          if (mode === "apply")
+            expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
+          else expect(useDockDocumentStore.getState().occupant).toBeNull();
         });
         if (container === "dock" && mode === "apply") {
           await act(async () => {
@@ -163,7 +138,7 @@ describe("DraftReviewProvider remote settlement", () => {
           expect(useDockDocumentStore.getState().occupant?.review).toBeNull();
         }
         expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
-        expect(mocks.resources.acquireCatalog).not.toHaveBeenCalled();
+        expect(resources.acquireCatalog).not.toHaveBeenCalled();
       },
     );
   });

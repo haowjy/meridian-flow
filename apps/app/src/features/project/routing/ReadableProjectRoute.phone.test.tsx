@@ -169,7 +169,7 @@ async function phone(initial: string, run: () => Promise<void>) {
     _workspaceHydrated: true,
   });
   useDockDocumentStore.setState({
-    occupant: { projectId, screen: "chat", tab, review: null },
+    occupant: { projectId, screen: "chat", screenWorkId: null, tab, review: null },
     revision: 42,
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -193,6 +193,7 @@ async function phone(initial: string, run: () => Promise<void>) {
       screen: "chat",
       tab,
       review: null,
+      screenWorkId: null,
     });
     expect(useDockDocumentStore.getState().revision).toBe(42);
   } finally {

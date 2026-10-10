@@ -543,7 +543,7 @@ function HydratedReviewControllers({
   const editorReview = useDraftReviewScopeValue({
     projectId: props.projectId,
     work: reviewWork,
-    draftOnly: presented?.draftOnly ?? false,
+    presented,
     stateOwner: editorReviewState,
     threadId: null,
   });

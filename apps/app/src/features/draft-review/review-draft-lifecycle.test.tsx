@@ -270,6 +270,34 @@ it.each([
     } else expect(tabs()).toEqual([]);
     expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
     expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
+    if (container === "dock") {
+      const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
+      fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
+      let pending!: Promise<unknown>;
+      await act(async () => {
+        pending = p().editor.controller.apply("document-a", "draft-a");
+      });
+      fixture.epoch.abort();
+      removal.dispose();
+      useDockDocumentStore.getState().rehydrate("account-b");
+      const replacement = dockDocument(
+        "project-a",
+        "chat",
+        {
+          ...draftTab!,
+          tabInstanceToken: "new-account-instance",
+        },
+        null,
+      );
+      useDockDocumentStore.getState().commit(useDockDocumentStore.getState().claim(), replacement);
+      const revision = useDockDocumentStore.getState().revision;
+      await act(async () => {
+        answer.resolve({ status: "applied", draftId: "draft-a" });
+        await pending;
+      });
+      expect(useDockDocumentStore.getState().occupant).toBe(replacement);
+      expect(useDockDocumentStore.getState().revision).toBe(revision);
+    }
   });
 });
 

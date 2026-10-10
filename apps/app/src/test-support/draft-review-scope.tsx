@@ -288,6 +288,7 @@ export function createReviewScopeFixture(
   // Unconfigured requests stay pending, never accidentally reach a real server.
   for (const endpoint of Object.values(network))
     endpoint.mockReturnValue(new Promise<never>(() => {}));
+  const epoch = new AbortController();
   const removal = options.removal ?? new ContextRemovalCoordinator();
   const rooms = new Map<string, DocumentSession>();
   // Detached sessions supply subscription truth without claiming a wire/paint witness.
@@ -306,6 +307,7 @@ export function createReviewScopeFixture(
       },
     } as unknown as LiveDocumentSessionRegistry);
   const seams = [
+    vi.spyOn(account, "useOptionalAccountEpochSignal").mockReturnValue(epoch.signal),
     vi.spyOn(account, "useContextRemovalCoordinator").mockReturnValue(removal),
     vi.spyOn(account, "useLiveDocumentSessionRegistry").mockReturnValue(registry),
     vi
@@ -314,9 +316,11 @@ export function createReviewScopeFixture(
   ];
   return {
     network,
+    epoch,
     removal,
     render: renderReviewScopes,
     dispose() {
+      epoch.abort();
       notifyManager.setNotifyFunction((notify) => notify());
       for (const spy of [...Object.values(network), ...seams]) spy.mockRestore();
       if (!options.removal) removal.dispose();
