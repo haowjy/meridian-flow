@@ -324,6 +324,14 @@ export interface ContextPort {
     options?: ContextWriteOptions,
   ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
+  /**
+   * Where this reader sees a document, by id: its URI in the first of this port's sources
+   * that shows it (the scan untitled creation uses to find a materialized id), or null.
+   */
+  locate(
+    documentId: string,
+  ): Promise<Result<{ documentId: string; uri: string } | null, ContextError>>;
+
   /** Allocate and persist an empty client-seeded document under a home directory URI. */
   createUntitledDocument(
     homeUri: string,

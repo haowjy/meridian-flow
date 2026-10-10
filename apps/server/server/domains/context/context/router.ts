@@ -135,6 +135,14 @@ function moveCreationDenied(source: Dispatch, destination: MutationDispatch) {
   return permission.ok ? null : permission;
 }
 
+/** One source a port can find a document in, and the Work scope it answers for. */
+type SourceLocation = {
+  scheme: ContextScheme;
+  authority: CanonicalContextAuthority;
+  workScopeId: string | null;
+  adapter: ContextSchemeAdapter;
+};
+
 function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContextAuthority): string {
   return toCanonical(scheme, path, authority);
 }
@@ -229,6 +237,59 @@ export function unknownWorkMessage(slug: string): string {
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { sources, parseOptions } = deps;
+  /**
+   * The first source of this port that shows `documentId` in its reader's view: the
+   * contextual sources, No Work's, then every named Work's, each once.
+   */
+  async function locateDocument(
+    documentId: string,
+  ): Promise<Result<{ location: SourceLocation; path: string } | null, ContextError>> {
+    const locations: SourceLocation[] = [];
+    const locationKeys = new Set<string>();
+    const addLocation = (
+      scheme: ContextScheme,
+      authority: CanonicalContextAuthority,
+      workScopeId: string | null,
+      candidate: ContextSchemeAdapter,
+    ) => {
+      const key = uriFor(scheme, "", authority);
+      if (locationKeys.has(key)) return;
+      locationKeys.add(key);
+      locations.push({ scheme, authority, workScopeId, adapter: candidate });
+    };
+    const noWork = await deps.resolveNoWork?.();
+    for (const [scheme, { adapter: candidate, authority }] of await contextualSources()) {
+      const workScoped = (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
+      addLocation(
+        scheme,
+        authority,
+        workScoped && !("kind" in authority && authority.kind === "lineage")
+          ? (deps.primaryWorkAuthority?.workId ?? noWork?.workId ?? null)
+          : null,
+        candidate,
+      );
+    }
+    if (noWork) {
+      for (const [scheme, candidate] of noWork.adapters) {
+        addLocation(scheme, { kind: "none" }, noWork.workId, candidate);
+      }
+    }
+    for (const authority of deps.workAuthorities.values()) {
+      for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
+        addLocation(scheme, authority, authority.workId, candidate);
+      }
+    }
+    for (const location of locations) {
+      const locationUri = uriFor(location.scheme, "", location.authority);
+      const found = await callAdapter(locationUri, () =>
+        location.adapter.locateDocument(documentId),
+      );
+      if (!found.ok) return found;
+      if (found.value) return Ok({ location, path: found.value.path });
+    }
+    return Ok(null);
+  }
+
   async function contextualSources() {
     const bindings = new Map<ContextScheme, ContextSourceBinding>();
     for (const [scheme, source] of sources) {
@@ -466,55 +527,13 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const creation = r.value.requireCreation("intake");
       if (!creation.ok) return creation;
 
-      const locations: Array<{
-        scheme: ContextScheme;
-        authority: CanonicalContextAuthority;
-        workScopeId: string | null;
-        adapter: ContextSchemeAdapter;
-      }> = [];
-      const locationKeys = new Set<string>();
-      const addLocation = (
-        scheme: ContextScheme,
-        authority: CanonicalContextAuthority,
-        workScopeId: string | null,
-        candidate: ContextSchemeAdapter,
-      ) => {
-        const key = uriFor(scheme, "", authority);
-        if (locationKeys.has(key)) return;
-        locationKeys.add(key);
-        locations.push({ scheme, authority, workScopeId, adapter: candidate });
-      };
-      const noWork = await deps.resolveNoWork?.();
-      for (const [scheme, { adapter: candidate, authority }] of await contextualSources()) {
-        const workScoped = (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
-        addLocation(
-          scheme,
-          authority,
-          workScoped && !("kind" in authority && authority.kind === "lineage")
-            ? (deps.primaryWorkAuthority?.workId ?? noWork?.workId ?? null)
-            : null,
-          candidate,
-        );
-      }
-      if (noWork) {
-        for (const [scheme, candidate] of noWork.adapters) {
-          addLocation(scheme, { kind: "none" }, noWork.workId, candidate);
-        }
-      }
-      for (const authority of deps.workAuthorities.values()) {
-        for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
-          addLocation(scheme, authority, authority.workId, candidate);
-        }
-      }
-      for (const location of locations) {
+      const located = await locateDocument(options.documentId);
+      if (!located.ok) return located;
+      if (located.value) {
+        const { location, path: foundPath } = located.value;
         const locationUri = uriFor(location.scheme, "", location.authority);
-        const found = await callAdapter(locationUri, () =>
-          location.adapter.locateDocument(options.documentId),
-        );
-        if (!found.ok) return found;
-        if (!found.value) continue;
         const finalized = await callAdapter(locationUri, () =>
-          location.adapter.createUntitledDocument(found.value?.path ?? "", options),
+          location.adapter.createUntitledDocument(foundPath, options),
         );
         if (!finalized.ok) return finalized;
         return Ok({
@@ -548,6 +567,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             name: created.value.name,
             ...(r.value.workScopeId ? { workId: r.value.workScopeId } : {}),
           });
+    },
+
+    async locate(documentId) {
+      const located = await locateDocument(documentId);
+      if (!located.ok) return located;
+      if (!located.value) return Ok(null);
+      const { location, path } = located.value;
+      return Ok({ documentId, uri: uriFor(location.scheme, path, location.authority) });
     },
 
     async writeBinary(

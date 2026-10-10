@@ -659,7 +659,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         {
           surface: "ContextFS locate in D",
           run: () => draftFs.locate(m.harbor),
-          expected: { path: HARBOR },
+          expected: `manuscript://${HARBOR}`,
         },
         {
           surface: "hidden tombstone facts in D",

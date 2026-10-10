@@ -28,6 +28,7 @@ import {
   draftTreeScenario,
 } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { interleave } from "../../../test-support/lock-interleave.js";
 import { setLiveCreateHook } from "../adapters/context-fs/live-create.js";
 import { endUse } from "./end-use.js";
 
@@ -376,8 +377,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const discard = () => scenario.discard(first, [x]);
         const settled =
           order === "join first"
-            ? await scenario.interleave(join, "createInDraft.afterCandidateLock", discard)
-            : await scenario.interleave(discard, "endUse.afterRevalidate", join);
+            ? await interleave(db, join, "createInDraft.afterCandidateLock", discard)
+            : await interleave(db, discard, "endUse.afterRevalidate", join);
         expect.soft(settled.bWaited, `${order}: the second waits at the fence`).toBe(true);
         const [joined, discarded] =
           order === "join first" ? [settled.a, settled.b] : [settled.b, settled.a];
@@ -416,8 +417,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const discard = () => scenario.discard(drafting, [y]);
         const settled =
           order === "reveal first"
-            ? await scenario.interleave(reveal, "createLive.afterCandidateLock", discard)
-            : await scenario.interleave(discard, "endUse.afterRevalidate", reveal);
+            ? await interleave(db, reveal, "createLive.afterCandidateLock", discard)
+            : await interleave(db, discard, "endUse.afterRevalidate", reveal);
         expect.soft(settled.bWaited, `${order}: the second waits at the fence`).toBe(true);
         const [revealed, discarded] =
           order === "reveal first" ? [settled.a, settled.b] : [settled.b, settled.a];
@@ -455,8 +456,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const liveCreate = () => scenario.writer.create("lore/z.md");
         const settled =
           order === "draft first"
-            ? await scenario.interleave(draftCreate, "createInDraft.afterCandidateLock", liveCreate)
-            : await scenario.interleave(liveCreate, "createLive.afterCandidateLock", draftCreate);
+            ? await interleave(db, draftCreate, "createInDraft.afterCandidateLock", liveCreate)
+            : await interleave(db, liveCreate, "createLive.afterCandidateLock", draftCreate);
         expect.soft(settled.bWaited, `${order}: the second waits at the fence`).toBe(true);
         expect.soft(settled.a.ok, `${order}: first settles`).toBe(true);
         expect.soft(settled.b.ok, `${order}: second settles`).toBe(true);
@@ -479,14 +480,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await scenario.seedLive("kb://atlas/coast.md");
           const isle = await scenario.model(drafting).create("kb://atlas/isle.md", "Isle.");
           const reveal = () => scenario.writer.create("isle.md", { documentId: isle });
-          const live = () =>
+          const live = (): Promise<unknown> =>
             operation === "split"
               ? scenario.writer.delete("kb://atlas")
               : scenario.writer.move("kb://atlas", "unfiled://atlas");
           const settled =
             order === "reveal first"
-              ? await scenario.interleave(reveal, "revealById.afterDiscovery", live)
-              : await scenario.interleave(
+              ? await interleave(db, reveal, "revealById.afterDiscovery", live)
+              : await interleave(
+                  db,
                   live,
                   operation === "split" ? "split.beforeRepoint" : "moves.beforeInstall",
                   reveal,
