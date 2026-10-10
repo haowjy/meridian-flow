@@ -46,7 +46,7 @@ export type BatchCompletion = {
    * whole batch back.
    */
   recheck(cuts: readonly SettlementCut[]): "commit" | "retry";
-  /** Runs once the transaction commits, before any publication step's after-commit effect. */
+  /** Runs once the transaction commits, before every publication step's after-commit effect. */
   afterCommit(): void;
 };
 
@@ -56,9 +56,19 @@ export type BatchCompletionResult =
 
 export type PendingSettlementStore = {
   joinAdmission(input: SettlementAdmission): Promise<void>;
-  /** Loads a claimed batch outside completion; its cuts are classification input, not authority. */
-  loadSettlementBatch(batchId: string): Promise<PendingSettlementBatch>;
-  /** Claims an available batch whole; null when another owner holds or finished it. */
+  /**
+   * Loads a batch while `owner` still holds it, outside completion; its cuts are
+   * classification input, not authority. Null once another claimant, or the same
+   * token at a later epoch, owns it: ownership is never adopted from the row.
+   */
+  loadSettlementBatch(input: {
+    batchId: string;
+    owner: Pick<SettlementClaim, "token" | "epoch">;
+  }): Promise<PendingSettlementBatch | null>;
+  /**
+   * Claims an available batch whole with the credentials its claim UPDATE returned;
+   * null when another owner holds, finished or took it over before the read.
+   */
   claimRecoverableBatch(input: {
     batchId: string;
     token: string;
@@ -76,10 +86,12 @@ export type PendingSettlementStore = {
     error: string;
   }): Promise<boolean>;
   /**
-   * Settles every member in one transaction: Work locks, publication steps'
-   * namespace locks, document locks, then trail, text admission and
-   * publication steps in the target's order. Nothing reaches a warm room
-   * before commit.
+   * Settles every member in one root-owned transaction: Work locks, publication
+   * steps' namespace locks, document locks, then trail, text admission and
+   * publication steps in the target's order. Nothing reaches a warm room before
+   * commit; after it, warm rooms and then each step's after-commit effect run in
+   * order. Rejects an ambient transaction before writing, as do staging and
+   * recovery claims.
    */
   completeBatch(input: BatchCompletion): Promise<BatchCompletionResult>;
   listRecoverableBatchIds(): Promise<string[]>;

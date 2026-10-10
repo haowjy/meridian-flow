@@ -9,14 +9,15 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type {
-  PendingLiveSettlement,
-  PendingSettlementBatch,
-  PreparedPushCommit,
-  PushCommitStore,
-  PushLineageRow,
-  SettlementClaim,
-  SweepProjectionDiagnostics,
+import {
+  FIRST_CLAIM_EPOCH,
+  type PendingLiveSettlement,
+  type PendingSettlementBatch,
+  type PreparedPushCommit,
+  type PushCommitStore,
+  type PushLineageRow,
+  type SettlementClaim,
+  type SweepProjectionDiagnostics,
 } from "./branch-push-contracts.js";
 import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
@@ -82,7 +83,12 @@ export function createBranchPushTransition(input: {
         });
         if (committed.status === "conflict") return prepared.onConflict(committed.push);
         await prepared.afterDurableCommit?.(prepared.pushes.map((push) => push.branch.documentId));
-        const batch = await input.settlementStore.loadSettlementBatch(settlement.batchId);
+        // The committer holds the batch's first claim; it never adopts a later one.
+        const batch = await input.settlementStore.loadSettlementBatch({
+          batchId: settlement.batchId,
+          owner: { token: settlement.claimToken, epoch: FIRST_CLAIM_EPOCH },
+        });
+        if (!batch) throw new PendingLiveSettlementError(settlement.batchId);
         await settle({ batch, docs, signal: inputExecution.signal });
         return prepared.finish({ pushes: committed.pushes, docs });
       },
@@ -168,7 +174,9 @@ export function createBranchPushTransition(input: {
         const generation = await input.writerIngressBarrier?.drain(member.push.documentId);
         if (generation !== undefined) ingress.set(member.push.documentId, generation);
       }
-      const { members } = await input.settlementStore.loadSettlementBatch(batchId);
+      const owned = await input.settlementStore.loadSettlementBatch({ batchId, owner: claim });
+      if (!owned) throw new PendingLiveSettlementError(batchId);
+      const { members } = owned;
       const sweeps = new Map<DocumentId, SweptChangesByRecipient>();
       for (const member of members) {
         const prePush = materializeFinalPrePush(member);

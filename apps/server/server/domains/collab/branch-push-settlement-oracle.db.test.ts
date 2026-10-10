@@ -8,6 +8,7 @@ import {
   appliedMarkdown,
   BETA_ID,
   COLD_SCENARIO_IDS,
+  claimProbeStore,
   closeDatabase,
   createHarness,
   createTestDatabase,
@@ -19,8 +20,10 @@ import {
   markdownFromUpdate,
   observeSettlement,
   resetSettlementFixture,
+  runInRootDrizzleTransaction,
   schema,
   settlementStates,
+  stallAfterFirstUpdate,
 } from "./test-support/branch-push-settlement-fixture.js";
 import { settlementOracle } from "./test-support/durable-settlement-oracle.js";
 
@@ -39,26 +42,99 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     return branchIds;
   }
 
-  it("settles a batch in one completion transaction; warm rooms see it only after commit", async () => {
+  it("settles a batch in one root-owned transaction; warm rooms, then ordered effects, then every drained branch reset", async () => {
     let harness!: ReturnType<typeof createHarness>;
     let broadcastsBefore = 0;
     const roomsDuringAdmission: string[][] = [];
+    const effects: string[] = [];
+    let competingWrite: (() => Promise<void>) | undefined;
     harness = createHarness(db, {
       afterAdmission() {
         roomsDuringAdmission.push(harness.liveRoomBroadcasts().slice(broadcastsBefore));
       },
+      // Another process writes the second member's draft after the batch staged it.
+      afterDurableCommit: async () => competingWrite?.(),
+      publicationSteps: [
+        {
+          async plan() {
+            return {
+              async afterCommit() {
+                const rooms = new Set(harness.liveRoomBroadcasts().slice(broadcastsBefore));
+                effects.push(`step 1 started with ${rooms.size} warm rooms`);
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                effects.push("step 1 failed");
+                throw new Error("injected after-commit failure");
+              },
+            };
+          },
+        },
+        {
+          async plan() {
+            return {
+              afterCommit() {
+                effects.push("step 2 ran");
+              },
+            };
+          },
+        },
+      ],
     });
-    const branchIds = await seedBatch(harness);
+    const [alpha, beta, gamma] = (await seedBatch(harness)) as [string, string, string];
+    // Request order is not document order; items answer in request order.
+    const request = [gamma, alpha, beta];
+    const generations = await Promise.all(request.map((id) => harness.branchGeneration(id)));
     broadcastsBefore = harness.liveRoomBroadcasts().length;
 
-    const result = await harness.pushBranches(branchIds);
+    await expect(
+      runInRootDrizzleTransaction(db, () => harness.pushBranches(request, "auto")),
+    ).rejects.toThrow(/root-owned/);
+    expect(await db.select().from(schema.pushLineage)).toEqual([]);
 
-    expect(result.items.map((item) => item.status)).toEqual(["pushed", "pushed", "pushed"]);
+    const competitor = createHarness(db);
+    competingWrite = async () => {
+      competingWrite = undefined;
+      await competitor.stageAnotherDestructiveEdit(beta);
+    };
+    const result = await harness.pushBranches(request, "auto");
+
+    expect(result.items).toEqual(
+      [GAMMA_ID, ALPHA_ID, BETA_ID].map((documentId, index) =>
+        expect.objectContaining({
+          status: "pushed",
+          push: expect.objectContaining({ branchId: request[index], documentId }),
+        }),
+      ),
+    );
     expect(roomsDuringAdmission).toEqual([[], [], []]);
     expect(new Set(harness.liveRoomBroadcasts().slice(broadcastsBefore))).toEqual(new Set(BATCH));
+    expect(effects).toEqual(["step 1 started with 3 warm rooms", "step 1 failed", "step 2 ran"]);
     for (const documentId of BATCH) {
       await expect(harness.liveMarkdown(documentId)).resolves.toBe("Survivor.\n");
     }
+    // Every drained branch is rebased onto live; the competed one keeps its new row.
+    expect(result.items.map((item) => ("branchReset" in item ? item.branchReset : null))).toEqual([
+      { branchId: gamma, fromGeneration: generations[0] },
+      { branchId: alpha, fromGeneration: generations[1] },
+      null,
+    ]);
+    expect(await Promise.all(request.map((id) => harness.branchGeneration(id)))).toEqual([
+      (generations[0] as number) + 1,
+      (generations[1] as number) + 1,
+      generations[2],
+    ]);
+    for (const branchId of [gamma, alpha]) {
+      const [branch] = await db
+        .select({ state: schema.documentBranches.state })
+        .from(schema.documentBranches)
+        .where(eq(schema.documentBranches.id, branchId));
+      expect(markdownFromUpdate(branch?.state ?? new Uint8Array())).toBe("Survivor.\n");
+    }
+    const betaRows = await db
+      .select({ status: schema.branchWriteJournal.status })
+      .from(schema.branchWriteJournal)
+      .where(eq(schema.branchWriteJournal.branchId, beta));
+    expect(betaRows.filter(({ status }) => status === "active")).toHaveLength(1);
+    competitor.destroyWarmState();
     harness.destroyWarmState();
   });
 
@@ -100,6 +176,9 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
     await expireAllPendingClaims(db);
     const recoverers = [createHarness(db), createHarness(db)];
+    await expect(
+      runInRootDrizzleTransaction(db, () => recoverers[0]!.recoverPendingLiveSettlements()),
+    ).rejects.toThrow(/root-owned/);
     const recovered = await Promise.all(
       recoverers.map((recoverer) => recoverer.recoverPendingLiveSettlements()),
     );
@@ -124,7 +203,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     reader.destroyWarmState();
   });
 
-  it("item 6: stale A cannot renew, record failure, or perform the first apply after B claims", async () => {
+  it("item 6: no stale or stalled claimant keeps, adopts or reuses ownership", async () => {
     const actorA = createHarness(db, {
       afterDurableCommit: async () => {
         throw new Error("pause actor A after durable claim");
@@ -151,6 +230,34 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     const contender = createHarness(db);
     await expect(contender.recoverPendingLiveSettlements()).resolves.toBe(0);
     contender.destroyWarmState();
+
+    // A claimant that stalls between its claim UPDATE and its read never adopts its successor.
+    const batchId = ownedByA.id;
+    const rival = claimProbeStore(db);
+    const rivalToken = "00000000-0000-4000-8000-000000000e04";
+    let rivalClaim: Awaited<ReturnType<typeof rival.claimRecoverableBatch>> = null;
+    await expirePendingClaims(db);
+    const stalled = claimProbeStore(
+      stallAfterFirstUpdate(db, schema.branchPushSettlementBatches, async () => {
+        await expirePendingClaims(db);
+        rivalClaim = await rival.claimRecoverableBatch({ batchId, token: rivalToken });
+      }),
+    );
+    await expect(
+      stalled.claimRecoverableBatch({ batchId, token: "00000000-0000-4000-8000-000000000e03" }),
+    ).resolves.toBeNull();
+    const heldByRival = (rivalClaim as Awaited<ReturnType<typeof rival.claimRecoverableBatch>>)
+      ?.claim;
+    if (!heldByRival) throw new Error("the rival did not claim the batch");
+    // The same token reclaiming after backoff is a new owner: its old epoch is stale.
+    await expect(
+      rival.recordFailure({ batchId, claim: heldByRival, error: "backoff" }),
+    ).resolves.toBe(true);
+    await expirePendingClaims(db);
+    const reclaimed = await rival.claimRecoverableBatch({ batchId, token: rivalToken });
+    expect(reclaimed?.claim).toMatchObject({ token: rivalToken, epoch: heldByRival.epoch + 1 });
+    await expect(rival.loadSettlementBatch({ batchId, owner: heldByRival })).resolves.toBeNull();
+    await expect(rival.renewClaim({ batchId, claim: heldByRival })).resolves.toBeNull();
     await expirePendingClaims(db);
 
     let staleProbe:
@@ -168,6 +275,8 @@ describe("durable branch-push settlement oracle (postgres)", () => {
       failureRecorded: false,
       completion: "retry",
       completionCallbackRan: false,
+      afterCommitRan: false,
+      liveRowsUnchanged: true,
     });
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
       expect.objectContaining({ state: "completed", claimToken: null }),
