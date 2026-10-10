@@ -40,6 +40,13 @@ editor UI or transport-shell policy.
   `write()` and the ContextFS draft-create transaction. A read, a peer ensure
   and a reply's save never make one; a save takes its pinned branches' leases
   before its transaction and refuses a stale pin.
+- Branch leases are taken once per operation, as one ordered set, before any
+  transaction, and handed down: a thread-core access leases its peer and draft
+  branch together, a save its pins, a whole-draft close every branch of the
+  draft (`draftLeases`). Never take a branch lease while holding another.
+- Branches are made only at write boundaries (`ensureDraftBranch`, peer ensure),
+  under the draft `FOR SHARE` in the insert's transaction; review and other
+  reads look branches up (`resolveDraftBranch`) and never make one.
 - A reply saves once: every document it wrote, live or drafted, in one
   transaction. Live text reaches open editors only after commit.
 - Derive live read models from a journal-locked durable cut, never a warm room
