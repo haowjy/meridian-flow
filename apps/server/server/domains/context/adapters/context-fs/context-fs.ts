@@ -81,7 +81,7 @@ import type {
   ContextTreeMutationStore,
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
-import type { CreateFault } from "../../tree/hidden-nodes.js";
+import { type CreateFault, hiddenNodeHook } from "../../tree/hidden-nodes.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import {
@@ -388,6 +388,7 @@ export class ContextFS implements ContextSchemeAdapter {
               provenance: input.options?.origin,
             });
             if (!written.ok) throw new DocumentCreationFault(written.error);
+            await hiddenNodeHook("createLive.afterHeldAdmission");
             return written.markdown;
           }
           const provenance = input.options?.origin;

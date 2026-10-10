@@ -51,6 +51,8 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/context-catalog-repair.db.test.ts",
   "apps/server/server/domains/context/adapters/project-context-availability.db.test.ts",
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
+  "apps/server/server/domains/context/tree/hidden-nodes.db.test.ts",
+  "apps/server/server/domains/context/tree/live-surfaces.db.test.ts",
   "apps/server/server/domains/context/tree/tree-view.db.test.ts",
   "apps/server/server/domains/context/tree/live-surfaces.db.test.ts",
   "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts",

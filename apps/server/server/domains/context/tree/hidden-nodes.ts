@@ -60,6 +60,7 @@ export type CreateFault =
 export type HiddenNodeHookPoint =
   | "createInDraft.afterCandidateLock"
   | "createLive.afterCandidateLock"
+  | "createLive.afterHeldAdmission"
   | "endUse.afterRevalidate"
   | "place.afterRevalidate";
 const hooks = new Map<HiddenNodeHookPoint, () => Promise<void>>();
@@ -75,9 +76,11 @@ export function setHiddenNodeHook(
   };
 }
 
-async function hook(point: HiddenNodeHookPoint): Promise<void> {
+/** Runs the hook installed at `point`, if any (a no-op in production). */
+export async function hiddenNodeHook(point: HiddenNodeHookPoint): Promise<void> {
   await hooks.get(point)?.();
 }
+const hook = hiddenNodeHook;
 
 function filePath(dir: readonly string[], name: string, extension: string): string {
   return [...dir, renderFilename(name, extension)].join("/");
@@ -232,10 +235,10 @@ async function joinHiddenDocument(
   draftId: DraftId,
 ): Promise<DocumentId | null> {
   const candidates = await loadHiddenDocumentCandidates(db, slot, { excludeDraftId: draftId });
-  if (candidates.length === 0) return null;
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
   await hook("createInDraft.afterCandidateLock");
+  if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { excludeDraftId: draftId, ids });
   await tombstoneDocuments(
     db,
@@ -491,10 +494,10 @@ async function chooseLiveCandidate(
   slot: DocumentSlot,
 ): Promise<{ id: DocumentId; sourceId: ContextSourceId } | null> {
   const candidates = await loadHiddenDocumentCandidates(db, slot);
-  if (candidates.length === 0) return null;
   const ids = candidates.map((candidate) => candidate.id);
   await lockDocuments(db, ids);
   await hook("createLive.afterCandidateLock");
+  if (candidates.length === 0) return null;
   const valid = await loadHiddenDocumentCandidates(db, slot, { ids });
   await tombstoneDocuments(
     db,

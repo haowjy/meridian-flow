@@ -25,6 +25,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
+    const { draftTreeScenario } = await import("../test-support/draft-tree-scenario.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -281,6 +282,84 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(rolledBack.stagedCreates.discarded).toContain(documentId);
       const content = await script.runtime.ports.documentSync.readAsMarkdown(documentId);
       expect(content.ok ? content.value.trim() : "").toBe("");
+    });
+
+    // §12.5, O-11: a rolled-back reply retracts its draft create, unless another thread in
+    // the Work already committed text to it.
+    it("retracts a rolled-back reply's draft create unless another thread committed text to it (C-4)", async () => {
+      const runtime = await runtimes.compose();
+      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const work = await scenario.work("Retracting", "draft");
+      const documentIdOf = (result: { metadata?: unknown }) => {
+        const documentId = (result.metadata as { documentId?: unknown } | undefined)?.documentId;
+        if (typeof documentId !== "string") throw new Error("the create reported no documentId");
+        return documentId;
+      };
+      const rowOf = async (id: string) => {
+        const [found] = await db
+          .select({ hidden: schema.documents.hidden, deletedAt: schema.documents.deletedAt })
+          .from(schema.documents)
+          .where(eq(schema.documents.id, id));
+        return found;
+      };
+      const usesOf = (id: string) =>
+        db
+          .select({ draftId: schema.draftTreeChanges.draftId })
+          .from(schema.draftTreeChanges)
+          .where(eq(schema.draftTreeChanges.nodeId, id));
+
+      const alone = await scenario.model(work).reply();
+      const aloneId = documentIdOf(
+        await alone.call("write", {
+          command: "create",
+          path: "manuscript://lore/alone.md",
+          content: "Never kept.",
+        }),
+      );
+      await alone.rollback();
+      expect.soft(await rowOf(aloneId), "retracted: tombstoned").toMatchObject({
+        hidden: true,
+        deletedAt: expect.any(Date),
+      });
+      expect.soft(await usesOf(aloneId), "retracted: no use left").toEqual([]);
+      expect
+        .soft(
+          await db
+            .select({ id: schema.documentBranches.id })
+            .from(schema.documentBranches)
+            .where(eq(schema.documentBranches.documentId, aloneId)),
+          "retracted: its empty branches gone",
+        )
+        .toEqual([]);
+
+      const other = await scenario.thread(work);
+      const first = await scenario.model(work).reply();
+      const sharedId = documentIdOf(
+        await first.call("write", {
+          command: "create",
+          path: "manuscript://lore/shared.md",
+          content: "The first thread's text.",
+        }),
+      );
+      const second = await scenario.model(other).reply();
+      await second.call("read", { path: "manuscript://lore/shared.md" });
+      const inserted = await second.call("write", {
+        command: "insert",
+        path: "manuscript://lore/shared.md",
+        content: "The second thread's line.",
+      });
+      expect.soft(inserted.isError ?? false, "the other thread writes").toBe(false);
+      await second.save();
+      await first.rollback();
+      expect.soft(await rowOf(sharedId), "stands: still hidden and live").toMatchObject({
+        hidden: true,
+        deletedAt: null,
+      });
+      expect.soft(await usesOf(sharedId), "stands: the draft keeps it").toHaveLength(1);
+      const read = await scenario.view(other).read("lore/shared.md");
+      expect
+        .soft(read.ok && read.value.content, "stands: the other thread's text")
+        .toContain("The second thread's line.");
     });
 
     it("stages nothing for a write that leaves the chapter unchanged", async () => {

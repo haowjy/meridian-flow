@@ -239,6 +239,7 @@ import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import {
+  type AgentEditResponseWriteLifecycle,
   createAgentEditResponseWriteLifecycle,
   createModelToolRegistrations,
   createReferenceReader,
@@ -276,6 +277,8 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextNotices: WorkContextNotices;
+  /** A reply's write lifecycle: its save, its rollback, and the staged creates they retract. */
+  responseWrites: AgentEditResponseWriteLifecycle;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -1104,6 +1107,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextNotices,
+    responseWrites,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1546,6 +1550,7 @@ export function createInMemoryAppServices(): AppServices {
     workAuthorityResolver,
     workContext: unavailableWorkContext,
     workContextNotices: delivery,
+    responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({
