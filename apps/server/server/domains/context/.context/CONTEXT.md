@@ -64,6 +64,17 @@ ends the draft's use unless another thread's committed text makes it stand, and
 collab deletes that Work's draft branch and its peers, then retires exactly those
 peers' rooms and thread state; another Work's peers on a shared hidden document
 are untouched.
+
+**End of use (contract §12).** A hidden node no active draft uses is tombstoned,
+never left live. `tree/end-use.ts` (collab's Discard and Work purge's disposal, a
+retracted create) and the create pickers tombstone it under its document lock,
+release its storage (live Yjs, every branch on it, derived rows, its own link rows)
+and prune emptied hidden folders bottom-up; a picture's object is deleted after
+commit. Reads repair what a bug left: `identityStatus` answering gone for a
+hidden, live, unused node schedules `tree/hidden-node-repair.ts` after the read, in
+its own transaction (namespace, document lock, revalidate, tombstone), as tracked
+detached work with a `context.hidden-node.repaired` warn event. The link scope
+wires it.
 Plain markdown convenience reads and versioned reads share collab serialization.
 
 

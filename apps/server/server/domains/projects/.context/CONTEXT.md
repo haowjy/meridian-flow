@@ -95,8 +95,13 @@ translate those to `title` and `description` in `ProjectDto`.
   not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
   it commits expired Work and owned-row deletion before best-effort upload/result
   blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
-  Purge deletes the drafts the Work originated (F10); their branches, tree rows and
-  settlements cascade.
+  Purge disposes of the drafts the Work originated (F10) through collab's
+  `WorkDraftDisposal` port: every branch of them leased before the transaction, then,
+  after the deleted/cutoff proof, each draft locked, the set proved unchanged (else
+  one retry from discovery), the namespaces and hidden documents locked, and each
+  active draft discarded whole through the Discard kernel, so every hidden document
+  they created is tombstoned and released. The draft rows then go with the Work;
+  never through the public Discard, which refuses a deleted Work.
   Purge defers only `threads_origin_turn_id_turns_id_fk` within that transaction,
   deletes turns before threads, and lets owner cascades remove prompt bakes and
   image decisions. Provenance deletion stays forbidden outside purge.
