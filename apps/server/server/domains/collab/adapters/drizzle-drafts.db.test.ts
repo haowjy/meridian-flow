@@ -1,4 +1,4 @@
-/** Postgres proof that a Work's first drafted writes share one draft across connections. */
+/** Proof that a Work's first drafted writes share one draft, and the resolver's lifecycle surface. */
 import { createDb, type Database } from "@meridian/database";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
 import { drafts, users } from "@meridian/database/schema";
@@ -13,6 +13,7 @@ import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js"
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createDrafts } from "../domain/drafts.js";
 import { createDrizzleDraftStore, createDrizzleDraftWriteBoundary } from "./drizzle-drafts.js";
+import { createInMemoryDraftStore, createInMemoryDraftWriteBoundary } from "./in-memory/drafts.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -51,7 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await Promise.all([root.close(), first.close(), second.close()]);
     });
 
-    it("makes one active draft when two first writes in a Work race (T-2)", async () => {
+    it("makes one active draft when two first writes in a Work race, and serves its lifecycle (T-2)", async () => {
       const scenario = await draftTreeScenario(root);
       const work = await scenario.work("Ascension", "draft");
       const input = {
@@ -102,6 +103,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(joined.id).toBe(made.id);
       // The second write waited on the Work row rather than reading around it.
       expect(secondOrder).toBe("waiting");
+
+      // The rest of the public surface, through the same resolver object.
+      const resolver = resolverOn(root);
+      expect(await resolver.activeForWork(work.id)).toMatchObject({ id: made.id });
+      expect(await resolver.viewForWork(work.id)).toEqual({ kind: "draft", draftId: made.id });
+      expect(await resolver.byIds([made.id])).toMatchObject([{ id: made.id, status: "active" }]);
+      await runInRootDrizzleTransaction(root, async () => {
+        expect(await resolver.shareActive(made.id)).toMatchObject({ id: made.id });
+        expect(await resolver.lockActive(made.id)).toMatchObject({ id: made.id });
+        await resolver.close(made.id, new Date());
+      });
+      expect(await resolver.activeForWork(work.id)).toBeNull();
+      expect(await resolver.viewForWork(work.id)).toEqual({ kind: "live" });
+      expect(await resolver.shareActive(made.id)).toBeNull();
+      expect(await resolver.lockActive(made.id)).toBeNull();
+      expect(await resolver.byOriginWork(work.id)).toMatchObject([
+        { id: made.id, status: "closed" },
+      ]);
+
+      // The in-memory adapter keeps the same rule for concurrent first writes.
+      const memoryStore = createInMemoryDraftStore();
+      const memory = createDrafts({
+        store: memoryStore,
+        boundary: createInMemoryDraftWriteBoundary(),
+      });
+      const racing = await Promise.all(
+        Array.from({ length: 20 }, () => memory.ensureActiveForWrite(input)),
+      );
+      expect(new Set(racing.map((draft) => draft.id)).size).toBe(1);
+      expect(await memory.byOriginWork(work.id)).toHaveLength(1);
     });
   });
 }
