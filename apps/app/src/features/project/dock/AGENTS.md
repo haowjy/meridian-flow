@@ -68,8 +68,10 @@ finds an active draft.
 5. **One label source.** `DockViewLabel` is the single place dock view labels
    are spelled, and `DockViewSwitch` is the one place that renders the segmented
    switch (`components/ui/segmented-tabs`, shared with the chat index filter) —
-   the header has no separate section title. The left slot belongs to the
-   occupant: the chat puts its switcher there (the dock has no chat index).
+   the header has no separate section title, except that the Chat screen's
+   rail, when Changes is not offered, names itself "Recent". The left slot
+   belongs to the occupant: the chat puts its switcher there (the dock has no
+   chat index), and a dock document puts its path there.
    `DockShell`'s `renderHeader` slot is what lets the phone chat sheet use its
    own header (`mobile/MobileChatSheetHeader`) instead of `DockHeader`, which
    stays desktop-only.

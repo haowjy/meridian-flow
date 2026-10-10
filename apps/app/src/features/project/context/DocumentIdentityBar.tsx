@@ -1,4 +1,9 @@
-/** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
+/**
+ * DocumentIdentityBar — where an open document lives: its path, which navigates,
+ * and the chips about it (Choose a home for an untitled draft, device-only, a
+ * refused move, a review). The Editor shows it as a band above the page; a
+ * document beside the chat shows it in the dock header (`variant="header"`).
+ */
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { useEffect, useState } from "react";
@@ -8,11 +13,11 @@ import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
 import { useAccountResourceProjection } from "./account-feature-context";
-import { schemeIcon, schemeLabel } from "./context-schemes";
-import { DeviceOnlyChip, HomeChip } from "./IdentityChips";
+import { DocumentPath } from "./DocumentPath";
+import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS } from "./identity-bar-geometry";
-import { type TabLocation, tabLocation } from "./identity-location";
+import { tabLocation } from "./identity-location";
 import { LinkUpdateNote, rememberRenameOperation, useRenameOperation } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import {
@@ -28,6 +33,8 @@ export type DocumentIdentityBarProps = {
   tab: ContextTab;
   /** The document can't be renamed or moved (its Work is archived). */
   readOnly?: boolean;
+  /** A band above the page (the Editor), or the content of the dock's header row. */
+  variant?: "band" | "header";
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -41,6 +48,7 @@ export function DocumentIdentityBar({
   editorWorkId,
   tab,
   readOnly = false,
+  variant = "band",
   onCommitted,
   onOpenExisting,
 }: DocumentIdentityBarProps) {
@@ -83,12 +91,12 @@ export function DocumentIdentityBar({
       : undefined;
   useRepairOnFreshFailure(identityFailure ? failureAt : undefined, () => setFieldOpen(true));
 
-  // The chip always opens the one inline field when moving the document is
-  // legal. Uploads aren't writing material, so those show no chip.
-  const showChip = !readOnly && location.scheme !== "uploads";
+  // An untitled draft is invited to choose a home. Once it has one, renaming
+  // and moving belong to the lists that show it. Uploads aren't writing material.
+  const showChip = !readOnly && location.provisional && location.scheme !== "uploads";
 
   return (
-    <div className="@container shrink-0">
+    <div className={cn("@container min-w-0", variant === "header" ? "flex-1" : "shrink-0")}>
       {/* Fixed-height band, full pane width. The bar is navigation chrome
           like the tab strip above it — it spans edge to edge, NOT the prose
           column. Geometry contract lives in identity-bar-geometry.ts: same
@@ -97,8 +105,8 @@ export function DocumentIdentityBar({
           the suggestion-popover rows it sits beside. */}
       <div
         className={cn(
-          "flex items-center gap-1 px-4 font-mono text-ink-subtle text-sm",
-          IDENTITY_BAR_BAND_CLASS,
+          "flex items-center gap-1 font-mono text-ink-subtle text-sm",
+          variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
         )}
       >
         {fieldOpen && !readOnly ? (
@@ -119,17 +127,22 @@ export function DocumentIdentityBar({
             onOpenExisting={onOpenExisting}
           />
         ) : (
-          <>
-            <IdentityPath location={location} />
-            <LinkUpdateNote
-              projectId={projectId}
-              subject={{ kind: "file", id: tab.documentId }}
-              operationId={noteOperationId}
-              className="ml-3 font-sans text-ink-muted"
-            />
-          </>
+          <DocumentPath
+            projectId={projectId}
+            tab={tab}
+            location={location}
+            trailing={
+              <LinkUpdateNote
+                projectId={projectId}
+                subject={{ kind: "file", id: tab.documentId }}
+                operationId={noteOperationId}
+                className="ml-3 font-sans text-ink-muted"
+              />
+            }
+          />
         )}
-        <span className="min-w-1 flex-1" />
+        {/* The path fills the row; the placement field needs the same push. */}
+        {fieldOpen && !readOnly ? <span className="min-w-1 flex-1" /> : null}
         {/* A refused rename stays visible while the repair field is closed, and reopens it. */}
         {repair?.kind === "set-location" && !fieldOpen ? (
           <button
@@ -147,7 +160,6 @@ export function DocumentIdentityBar({
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
-          location={location}
           show={showChip && !fieldOpen}
           onChooseHome={() => {
             setFieldOpen(true);
@@ -158,64 +170,15 @@ export function DocumentIdentityBar({
   );
 }
 
-function IdentityPath({ location }: { location: TabLocation }) {
-  const SchemeIcon = schemeIcon(location.scheme);
-  const separator = (
-    <span aria-hidden className="shrink-0 opacity-60">
-      ›
-    </span>
-  );
-  const lastFolderIndex = location.folders.length;
-  const segments = (
-    <>
-      <span data-seg="0" className="flex shrink-0 items-center gap-1">
-        <SchemeIcon aria-hidden className="size-3 shrink-0" />
-        <span className="@max-md:hidden">{schemeLabel(location.scheme)}</span>
-      </span>
-      {location.folders.length > 0 ? (
-        <>
-          {separator}
-          <span className="flex min-w-0 items-center gap-1 @max-md:hidden">
-            {location.folders.length > 1 ? (
-              <>
-                <span aria-hidden data-seg="1">
-                  …
-                </span>
-                {separator}
-              </>
-            ) : null}
-            <span data-seg={lastFolderIndex} className="truncate">
-              {location.folders[location.folders.length - 1]}
-            </span>
-          </span>
-          <span aria-hidden data-seg="1" className="hidden @max-md:inline">
-            …
-          </span>
-        </>
-      ) : null}
-      {separator}
-      <span
-        data-seg="leaf"
-        className={cn("truncate text-ink-muted", location.provisional && "italic")}
-      >
-        {location.leaf}
-      </span>
-    </>
-  );
-  return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
-}
-
 /** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
   tab,
-  location,
   show,
   onChooseHome,
 }: {
   projectId: string;
   tab: ContextTab;
-  location: TabLocation;
   show: boolean;
   onChooseHome: () => void;
 }) {
@@ -224,7 +187,7 @@ function IdentityChipSlot({
   return (
     <>
       {deviceOnly ? <DeviceOnlyChip /> : null}
-      {show ? <HomeChip provisional={location.provisional} onClick={onChooseHome} /> : null}
+      {show ? <ChooseHomeChip onClick={onChooseHome} /> : null}
     </>
   );
 }

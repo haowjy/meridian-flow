@@ -6,8 +6,11 @@ for feature-level contracts first.
 ## Document identity bar
 
 `DocumentIdentityBar.tsx` is the one identity surface: a fixed-height mono
-breadcrumb band (`Unfiled › Untitled 4`) at the top of the active tab's canvas,
-on every document — tracked, provisional, viewer. Crumb/field text is `text-sm`
+path (`Unfiled › Untitled 4`) and its chips, on every document — tracked,
+provisional, viewer. The Editor draws it as a band at the top of the active
+tab's canvas; a document beside the chat draws it in the dock header
+(`variant="header"`, `../dock/DockDocumentIdentity.tsx`), which replaces the
+tab strip there, so the filename shows once. Crumb/field text is `text-sm`
 to match the suggestion-popover rows; `identity-bar-geometry.ts` owns the box
 constants (26px band, 22px child boxes) and the zero-layout-shift contract
 between rest and edit states. Provisional docs are a *state* of the bar (italic
@@ -15,10 +18,18 @@ leaf + jade “Choose a home” chip), never separate chrome; the editor banner
 slot below the toolbar belongs to draft chrome alone, and identity chrome must
 never occupy it again (structural separation, 2026-07-17).
 
-The breadcrumb itself is **inert** — the chip is the only edit entry point.
-Each crumb stays its own `data-seg` element because the next slice attaches a
-VS Code-style per-segment navigator dropdown there; don't flatten the path
-into one string.
+**The path navigates; it never edits.** `DocumentPath.tsx` makes each crumb a
+`DrillInMenu` trigger: the area crumb opens inside the area, a folder crumb
+inside that folder, the filename inside its folder, and `…` one level above the
+crumb after it (inside the folder that holds the last folder). The menu
+highlights everything on the document's path and the folder a back row just
+climbed out of. A pick opens through `useOpenDocumentInDock`, the way the
+screen opens documents: the dock on Chat and Work, an Editor tab on the Editor.
+Crumb menus carry no actions. Folders collapse into `…` only when the row is
+too narrow, measured from a hidden copy of the full row; the steps are every
+folder, the last folder, no folders, then the area as its icon. Renaming and
+moving a homed document belong to the lists (Files, Scratch section, phone
+browser); see the KB's path-navigates-lists-edit decision.
 
 Contracts:
 
@@ -33,11 +44,8 @@ Contracts:
   home as read-only spans left of the name. Enter with a home built moves
   (+renames); name-only Enter renames in place — naming isn't homing.
   Naming stays in Unfiled; filing changes source membership.
-- **Graduated grammar**: the same chip and field handle homed documents. The
-  field opens with the current name selected, while the dropdown offers the
-  current folder's siblings and the Manuscript, Knowledge Base and User filing
-  roots. Selecting a folder drills deeper and builds the destination prefix, so rename, move, and
-  rename-plus-move remain one gesture without a second popup or name row.
+- **Homed documents have no chip.** The field still opens for a homed document
+  only to repair a refused move (below); rename and move start in the lists.
 - **Commit seam**: the field submits one final `{ destination, name }` to
   `use-identity-commit.ts`. The hook resolves the stable resource handle and
   writes one durable location intent. The optimistic resource projection updates
@@ -52,12 +60,9 @@ Contracts:
 - **Field buttons**: the open field renders ✓/× icon buttons after it —
   additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
   contract can't fire before the click lands). Keyboard behavior unchanged.
-- **Chip slot**: right edge. The action chip is permanent (D4) and its label
-  graduates with the document: jade "Choose a home" while provisional (opens
-  empty placement), quiet outline "Rename" once homed (opens the same field,
-  pre-filled and selected — rename is the common case, folder browsing keeps
-  move discoverable). Viewer docs get the field too; uploads viewers carry no
-  chip (no dead buttons). The device-only status (warning tokens,
+- **Chip slot**: right edge. `ChooseHomeChip` (jade) shows only while the
+  document is provisional and opens empty placement; it disappears once the
+  draft has a home. Uploads viewers carry no chip (no dead buttons). The device-only status (warning tokens,
   `TriangleAlert`) appears *beside* the action — quiet on its left, never in
   its place: placement commits queue durably offline, so device-only is
   exactly when the writer may want to file the document. It claims its spot

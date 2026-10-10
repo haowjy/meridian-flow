@@ -5,14 +5,13 @@
  * (it stays mounted underneath) until the document is closed.
  */
 import { t } from "@lingui/core/macro";
-import { Clock } from "lucide-react";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { announceError } from "@/client/stores";
 import { fileKindIcon } from "../context/context-file-icon";
 import { useOpenChatDocument } from "../context/open-chat-document";
 import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
-import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
+import { RailEmptyHint, RailErrorRow, RailFileRow } from "./RailSection";
 
 /** Thread-context rail (Chat destination, right edge). */
 export type ContextSidebarProps = {
@@ -44,31 +43,28 @@ export function ContextSidebar({ threadId, projectId, visible, onClose }: Contex
         renderHeader={(args) => <DockHeader {...args} onClose={onClose} />}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
-          {recent.status === "loading" || recent.status === "error" || recent.documents?.length ? (
-            <CollapsibleRailSection title={t`Recent`} icon={Clock} defaultOpen>
-              {recent.status === "loading" ? (
-                <RailEmptyHint>{t`Loading recent documents…`}</RailEmptyHint>
-              ) : recent.status === "error" ? (
-                <RailErrorRow onRetry={recent.refetch} label={t`Couldn't load recent documents.`} />
-              ) : (
-                <ul>
-                  {recent.documents?.map((document) => {
-                    // The tree lists whole file names; the rail names files the same way.
-                    const fileName = `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
-                    return (
-                      <li key={document.documentId}>
-                        <RailFileRow
-                          icon={fileKindIcon(fileName)}
-                          name={fileName}
-                          title={fileName}
-                          onOpen={() => void openRecent(document.documentId)}
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CollapsibleRailSection>
+          {/* The header names the panel (Recent), so the list carries no heading of its own. */}
+          {recent.status === "loading" ? (
+            <RailEmptyHint>{t`Loading recent documents…`}</RailEmptyHint>
+          ) : recent.status === "error" ? (
+            <RailErrorRow onRetry={recent.refetch} label={t`Couldn't load recent documents.`} />
+          ) : recent.documents?.length ? (
+            <ul className="pt-1">
+              {recent.documents.map((document) => {
+                // The tree lists whole file names; the rail names files the same way.
+                const fileName = `${document.name}${document.extension ? `.${document.extension.replace(/^\./, "")}` : ""}`;
+                return (
+                  <li key={document.documentId}>
+                    <RailFileRow
+                      icon={fileKindIcon(fileName)}
+                      name={fileName}
+                      title={fileName}
+                      onOpen={() => void openRecent(document.documentId)}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
           ) : null}
         </div>
       </DockShell>
