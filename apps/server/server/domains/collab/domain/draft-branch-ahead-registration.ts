@@ -8,7 +8,10 @@
  * soon after the writer types. A lost debounce (crash, shutdown) is repaired by the next
  * admitted update and by Apply, which never relies on this path: its prerequisite,
  * `prepareDraftLinkPublication`, registers every ref in the branches it is about to
- * publish and records the cut it read, which Apply's staging fences.
+ * publish and records the cut it read, which Apply's staging fences. The cut is each
+ * branch's full-state fingerprint (F18): a live pull rewrites a branch with no journal
+ * row and no new generation, and a deletion moves no state vector, so nothing less
+ * proves the staged text is the text whose refs were registered.
  *
  * Registration is idempotent per (ahead id, draft), so refs that already have a registry
  * row (a live mint pasted into the draft) are registered again, never dropped.
@@ -19,6 +22,7 @@ import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
+import { fullStateFingerprint } from "./branch-push-transition.js";
 import type { Drafts } from "./drafts.js";
 import type { AheadRefRegistrar } from "./ports/document-link-scope.js";
 
@@ -26,18 +30,31 @@ import type { AheadRefRegistrar } from "./ports/document-link-scope.js";
 export type DraftBranchCut = {
   branchId: string;
   documentId: DocumentId;
-  generation: number;
-  /** The branch's highest journal id at this generation; null when it has none. */
-  lastJournalId: number | null;
+  /**
+   * `fullStateFingerprint` of the branch under its lease, read with the refs registered
+   * (deletions count). Staging compares the fingerprint of the branch it stages under the
+   * same lease; any difference means the text changed since registration: run again.
+   */
+  fingerprint: string;
 };
 
-/** The branches a publication read, all registered in `draftId`. */
+/** The branches a publication read, every ref in them registered in `draftId`. */
 export type DraftLinkCut = { draftId: DraftId; branches: readonly DraftBranchCut[] };
 
-/** Reads a branch's journal head under the branch's lease. */
-export interface DraftBranchJournalHead {
-  lastJournalId(branchId: string, generation: number): Promise<number | null>;
-}
+/** A ref in the cut that didn't register: it has no meaning in the draft to publish. */
+export type DraftLinkRegistrationFailure = { aheadId: string; address: string; reason: string };
+
+/**
+ * The prerequisite's answer. Only `ready` lets Apply stage; a failed registration is the
+ * caller's to surface, never a cut, since the draft has no meaning for that ref.
+ */
+export type DraftLinkPublication =
+  | { status: "ready"; cut: DraftLinkCut }
+  | {
+      status: "registration_failed";
+      draftId: DraftId;
+      failed: readonly DraftLinkRegistrationFailure[];
+    };
 
 export interface DraftBranchAheadRegistration {
   /** After an admitted writer update: registers the branch's refs, debounced per branch. */
@@ -47,14 +64,15 @@ export interface DraftBranchAheadRegistration {
   /**
    * Apply's prerequisite (B8): outside any transaction, reads each selected branch at its
    * current state, records its cut, and registers every ahead ref it holds in `draftId`,
-   * so the draft's settlement exists for every ref the publication carries. The caller
-   * stages under the branches' leases and compares each branch with its cut; a changed
-   * branch means the writer typed meanwhile, and the caller repeats this once.
+   * so the draft's settlement exists for every ref the publication carries. Valid refs
+   * register even when another fails, but any failure answers `registration_failed`.
+   * The caller stages under the branches' leases and compares each branch's fingerprint
+   * with its cut; a changed branch (the writer typed, a live pull landed) means repeat.
    */
   prepareDraftLinkPublication(input: {
     draftId: DraftId;
     branchIds: readonly string[];
-  }): Promise<DraftLinkCut>;
+  }): Promise<DraftLinkPublication>;
   /** Resolves once every scheduled and running registration has finished. */
   flush(): Promise<void>;
   /** Drops scheduled registrations that haven't started; running ones finish. */
@@ -67,7 +85,6 @@ export type DraftBranchAheadDiagnostics = {
 
 export function createDraftBranchAheadRegistration(input: {
   branches: Pick<BranchCoordinator, "readBranch">;
-  journal: DraftBranchJournalHead;
   drafts: Pick<Drafts, "activeForWork" | "byIds">;
   registrar: AheadRefRegistrar;
   /** Registration opens its own root transaction, so it never runs inside a caller's. */
@@ -91,22 +108,21 @@ export function createDraftBranchAheadRegistration(input: {
       cut: {
         branchId,
         documentId: snapshot.documentId,
-        generation: snapshot.generation,
-        lastJournalId: await input.journal.lastJournalId(branchId, snapshot.generation),
+        fingerprint: fullStateFingerprint(doc),
       } satisfies DraftBranchCut,
     }));
   }
 
   /**
    * One batch; if it fails, each ref alone, so one ref that can't register (an address
-   * naming a Work that doesn't exist) never keeps the rest from their meaning.
+   * naming a Work that doesn't exist) never keeps the rest from their meaning. Returns
+   * the refs that didn't register; each caller decides what that means.
    */
   async function register(
-    branchId: string,
     draft: { id: DraftId; projectId: string },
     refs: readonly { aheadId: string; address: string }[],
-  ) {
-    if (refs.length === 0) return;
+  ): Promise<DraftLinkRegistrationFailure[]> {
+    if (refs.length === 0) return [];
     const rows = refs.map((ref) => ({
       ...ref,
       holderProjectId: draft.projectId,
@@ -114,14 +130,21 @@ export function createDraftBranchAheadRegistration(input: {
     }));
     try {
       await input.outsideTransaction(() => input.registrar.register(rows));
+      return [];
     } catch {
+      const failed: DraftLinkRegistrationFailure[] = [];
       for (const row of rows) {
         try {
           await input.outsideTransaction(() => input.registrar.register([row]));
         } catch (cause) {
-          input.diagnostics?.registrationFailed({ branchId, cause });
+          failed.push({
+            aheadId: row.aheadId,
+            address: row.address,
+            reason: cause instanceof Error ? cause.message : String(cause),
+          });
         }
       }
+      return failed;
     }
   }
 
@@ -133,10 +156,14 @@ export function createDraftBranchAheadRegistration(input: {
     return input.drafts.activeForWork(snapshot.workId);
   }
 
+  /** Best effort: a ref that can't register is reported, and Apply's prerequisite refuses it. */
   async function registerDraftBranchAheads(branchId: string): Promise<void> {
     const { snapshot, refs } = await readCut(branchId);
     const draft = await draftOfBranch(snapshot);
-    if (draft) await register(branchId, draft, refs);
+    if (!draft) return;
+    for (const failure of await register(draft, refs)) {
+      input.diagnostics?.registrationFailed({ branchId, cause: failure });
+    }
   }
 
   function run(branchId: string) {
@@ -183,12 +210,13 @@ export function createDraftBranchAheadRegistration(input: {
         branches.push(read.cut);
         for (const ref of read.refs) refs.set(ref.aheadId, ref.address);
       }
-      await register(
-        branches.map((branch) => branch.branchId).join(","),
+      const failed = await register(
         draft,
         [...refs].map(([aheadId, address]) => ({ aheadId, address })),
       );
-      return { draftId, branches };
+      return failed.length > 0
+        ? { status: "registration_failed", draftId, failed }
+        : { status: "ready", cut: { draftId, branches } };
     },
     async flush() {
       while (timers.size > 0) {

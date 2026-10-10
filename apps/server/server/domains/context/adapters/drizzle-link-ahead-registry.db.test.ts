@@ -4,7 +4,7 @@
  * links registered from the review room, never outliving a closed draft (L-3).
  */
 
-import type { DraftId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -29,6 +29,7 @@ import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
+import { aheadRefsIn } from "../../collab/domain/draft-branch-ahead-registration.js";
 import {
   createTestDocumentLinkScopes,
   createTestLinkAheadRegistry,
@@ -514,19 +515,83 @@ if (!RUN) {
           branchIds: [branchId],
         });
         expect.soft(cut, "the cut Apply's staging fences").toEqual({
-          draftId: draft.id,
-          branches: [
-            {
-              branchId,
-              documentId: chapter,
-              generation: expect.any(Number),
-              lastJournalId: expect.any(Number),
-            },
-          ],
+          status: "ready",
+          cut: {
+            draftId: draft.id,
+            branches: [{ branchId, documentId: chapter, fingerprint: expect.any(String) }],
+          },
         });
         expect
           .soft(await meanings(applied), "registered in the draft before staging")
           .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+        await draftLinks.flush();
+
+        // A live save the draft pulls in, with no journal row and no new generation (F18):
+        // the text Apply would publish changed, so the cut must say so.
+        const one = await scenario.writer.create("chapter-one.md", { content: "One." });
+        const chapterOne = one.documentId as DocumentId;
+        const edit = await scenario.model(work).reply();
+        await edit.call("write", {
+          command: "insert",
+          path: "manuscript://chapter-one.md",
+          find: "One.",
+          content: " Two.",
+        });
+        await edit.save();
+        const pulledBranch = await scenario.draftBranch(work, chapterOne);
+        const beforePull = await draftLinks.prepareDraftLinkPublication({
+          draftId: draft.id,
+          branchIds: [pulledBranch.branchId],
+        });
+        await scenario.writer.write("chapter-one.md", "One.\n\n[Kael](lore/kael.md)");
+        await runtime.ports.documentSync.flushBranchLivePull(chapterOne);
+        const pulledState = await runtime.ports.documentSync.loadHocuspocusBranchState(
+          pulledBranch.branchId,
+          pulledBranch.generation,
+        );
+        const pulledDoc = new Y.Doc({ gc: false });
+        if (pulledState) Y.applyUpdate(pulledDoc, pulledState.state);
+        const [pulled] = aheadRefsIn(pulledDoc);
+        expect(pulled, "the live save's ref reached the draft's branch").toBeDefined();
+        const afterPull = await draftLinks.prepareDraftLinkPublication({
+          draftId: draft.id,
+          branchIds: [pulledBranch.branchId],
+        });
+        const fingerprints = [beforePull, afterPull].map((answer) =>
+          answer.status === "ready" ? answer.cut.branches[0]?.fingerprint : answer.status,
+        );
+        expect.soft(fingerprints[0], "the cut before the pull").toEqual(expect.any(String));
+        expect
+          .soft(fingerprints[1], "a journal-free pull changes the cut")
+          .not.toEqual(fingerprints[0]);
+        expect
+          .soft(await meanings(pulled?.aheadId ?? ""), "re-registered, the pulled ref means D's")
+          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+
+        // A ref that can't register (its Work doesn't exist) fails the prerequisite; the
+        // valid one beside it still registers.
+        const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
+        await scenario.writer.editDraft(work, chapter, (doc) => {
+          typeLink(beside)(doc);
+          const paragraph = new Y.XmlElement("paragraph");
+          const text = new Y.XmlText();
+          text.insert(0, "Notes", {
+            link: { href: "scratch://@ghost-work/notes.md", ref: `ahead:${ghost}`, title: null },
+          });
+          paragraph.insert(0, [text]);
+          doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
+        });
+        const failed = await draftLinks.prepareDraftLinkPublication({
+          draftId: draft.id,
+          branchIds: [branchId],
+        });
+        expect
+          .soft(failed, "no publication-ready cut after a failed registration")
+          .toMatchObject({ status: "registration_failed", failed: [{ aheadId: ghost }] });
+        expect
+          .soft(await meanings(beside), "the independent valid ref still registers")
+          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+        expect.soft((await meanings(ghost)).registered, "the failed one has no row").toBe(false);
         await draftLinks.flush();
 
         // A close holds the draft while the registration of another typed link waits on it.

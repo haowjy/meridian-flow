@@ -375,6 +375,21 @@ if (!RUN) {
       expect
         .soft(await read("live", "manuscript://old-chapter.md"), "stale base, no id")
         .toEqual({ id: liveShip, unresolved: true });
+
+      // Another account's document is no holder here: knowing its id names nothing, so
+      // neither its location nor its bindings reach this reader.
+      const stranger = await draftTreeScenario(db);
+      const foreign = await stranger.seedLive("unannounced-private-book-title.md");
+      await s.seedHolderBinding(ahead, foreign, boundShip);
+      expect
+        .soft(await read("live", null, foreign), "another account's holder, by id")
+        .toEqual({ id: liveShip, unresolved: true });
+      expect
+        .soft(
+          await read(atlas, "manuscript://unannounced-private-book-title.md", foreign),
+          "by id and by its own address",
+        )
+        .toEqual({ id: draftShip, unresolved: true });
     });
 
     it("reuses one snapshot in nested scopes, reloads an inherited settled one, and fails a door that never prepared", async () => {

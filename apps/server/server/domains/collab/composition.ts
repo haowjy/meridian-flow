@@ -58,7 +58,6 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
-import { createDrizzleDraftBranchJournalHead } from "./adapters/drizzle-draft-branch-journal-head.js";
 import { createDrizzleDraftTreeReviewBridge } from "./adapters/drizzle-draft-tree-review-bridge.js";
 import {
   createDrizzleDraftStore,
@@ -406,7 +405,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const draftBranchAheads = createDraftBranchAheadRegistration({
     branches: branchCoordinator,
-    journal: createDrizzleDraftBranchJournalHead(deps.db),
     drafts: workDrafts,
     registrar: deps.aheadRefs,
     outsideTransaction: runOutsideDrizzleTransaction,
