@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Real mutation settlement, draft-only tabs, route coordination and unopened-list refresh. */
+
 import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -22,6 +23,7 @@ import {
   previewOf,
   type ScopeProbe,
 } from "@/test-support/draft-review-scope";
+import { settleReact } from "@/test-support/react-dom-harness";
 
 const draftTab = contextTabFromDraftGroup({
   workId: "work-a",
@@ -79,9 +81,10 @@ const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const tabs = () => getContextTabs("project-a").tabs;
 async function open(p: () => ScopeProbe) {
   await act(async () => p().editor.controller.enterInlineReview("document-a", "draft-a"));
-  await vi.waitFor(() => expect(p().header.view.status).toBe("ready"));
+  await settleReact(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
+  vi.useFakeTimers();
   resetDraftCommandRecords();
   useContextTabsStore.setState({
     byProject: {},
@@ -118,6 +121,7 @@ beforeEach(() => {
   }));
 });
 afterEach(() => {
+  vi.useRealTimers();
   onlineManager.setOnline(true);
   fixture.dispose();
   removal.dispose();
@@ -298,7 +302,7 @@ it("a missing preview sends no selection and does not stop later files in the ba
       workId: "work-a",
       ...draftC,
     });
-    await vi.waitFor(() => expect([viewA().status, viewC().status]).toEqual(["ready", "ready"]));
+    await settleReact(() => expect([viewA().status, viewC().status]).toEqual(["ready", "ready"]));
     await act(async () => {
       const outcomes = await p().chatRunner.applyBatch([
         { draft: draftA, selection: change("2") },
@@ -327,7 +331,7 @@ it("an unopened list follows a remote write and disposition through updated list
       workId: "work-a",
       ...draftB,
     });
-    await vi.waitFor(() => expect(view().status).toBe("ready"));
+    await settleReact(() => expect(view().status).toBe("ready"));
     expect(view().items.map(({ change }) => change.classId)).toEqual(["class-3"]);
     const listChanged = async (stamp: string, ...ids: string[]) => {
       fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
@@ -344,11 +348,11 @@ it("an unopened list follows a remote write and disposition through updated list
       });
     };
     await listChanged("2026-10-08T00:00:01.000Z", "3", "4");
-    await vi.waitFor(() =>
+    await settleReact(() =>
       expect(view().items.map(({ change }) => change.classId)).toEqual(["class-3", "class-4"]),
     );
     await listChanged("2026-10-08T00:00:02.000Z", "4");
-    await vi.waitFor(() =>
+    await settleReact(() =>
       expect(view().items.map(({ change }) => change.classId)).toEqual(["class-4"]),
     );
     expect(p().editor.controller.inlineReview?.draftId).toBe("draft-a");

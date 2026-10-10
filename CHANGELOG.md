@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Development: drive review command reads with controlled React scheduling so threaded full-suite runs stay quiet.
+
 - Development: share explicit snapshot commits and preview-fenced request construction across durable review tests.
 
 - Development: consolidate review session, shell and scheduling fixtures, keeping native writer-handoff histories explicit and retiring weaker duplicate traces.

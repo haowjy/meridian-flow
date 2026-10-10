@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Draft authority across real Editor/Chat scopes and immutable Work-bound batches. */
+
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
@@ -16,6 +17,7 @@ import {
   type ScopeProbe,
   workC,
 } from "@/test-support/draft-review-scope";
+import { settleReact } from "@/test-support/react-dom-harness";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 const draftB = { documentId: "document-b", draftId: "draft-b" };
@@ -24,9 +26,10 @@ const target = (draft: typeof draftA) => ({ projectId: "project-a", workId: "wor
 async function open(p: () => ScopeProbe, draft = draftA) {
   await act(async () => p().editor.controller.enterInlineReview(draft.documentId, draft.draftId));
   await p().openDraft(draft);
-  await vi.waitFor(() => expect(p().header.view.status).toBe("ready"));
+  await settleReact(() => expect(p().header.view.status).toBe("ready"));
 }
 beforeEach(() => {
+  vi.useFakeTimers();
   resetDraftCommandRecords();
   fixture = createReviewScopeFixture();
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
@@ -36,6 +39,7 @@ beforeEach(() => {
   }));
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   fixture.dispose();
 });
@@ -139,7 +143,7 @@ it.each([
       answer.reject(new HttpResponseError("refused", 500, null));
       await done;
     });
-    await vi.waitFor(() =>
+    await settleReact(() =>
       expect(
         viewA().items.find(({ change }) => change.classId === "class-2")?.failure,
       ).toMatchObject({ code: "server-error" }),
@@ -163,11 +167,11 @@ it.each([
   if (mode === "apply") fixture.network.applyDraftChanges.mockReturnValueOnce(applyAnswer.promise);
   else fixture.network.discardDraft.mockReturnValueOnce(discardAnswer.promise);
   await fixture.render(async (p) => {
-    await vi.waitFor(() => expect(p().chat.files).toHaveLength(2));
+    await settleReact(() => expect(p().chat.files).toHaveLength(2));
     if (editorFirst) await open(p);
     const viewA = await p().mountDraftChanges(target(draftA));
     const viewB = await p().mountDraftChanges(target(draftB));
-    await vi.waitFor(() => expect([viewA().status, viewB().status]).toEqual(["ready", "ready"]));
+    await settleReact(() => expect([viewA().status, viewB().status]).toEqual(["ready", "ready"]));
     let done!: Promise<unknown>;
     await act(async () => {
       done = (mode === "apply" ? p().chatRunner.applyBatch : p().chatRunner.discardBatch)([
@@ -201,7 +205,7 @@ it("a rejected cache dependency restores every queued selection and a subsequent
   await fixture.render(async (p) => {
     const viewA = await p().mountDraftChanges(target(draftA));
     const viewB = await p().mountDraftChanges(target(draftB));
-    await vi.waitFor(() => expect([viewA().status, viewB().status]).toEqual(["ready", "ready"]));
+    await settleReact(() => expect([viewA().status, viewB().status]).toEqual(["ready", "ready"]));
     const read = vi.spyOn(p().queryClient, "getQueryData").mockImplementationOnce(() => {
       throw new Error("cache unavailable");
     });
