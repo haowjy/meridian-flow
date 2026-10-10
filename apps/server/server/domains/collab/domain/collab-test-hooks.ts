@@ -9,6 +9,7 @@ const COLLAB_HOOK_POINTS = [
   "access.afterLeases",
   "applyItems.afterLinkCut",
   "applyItems.afterStaging",
+  "applyItems.beforeContinue",
 ] as const;
 export type CollabHookPoint = (typeof COLLAB_HOOK_POINTS)[number];
 

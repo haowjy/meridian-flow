@@ -2,7 +2,8 @@
  * Apply all and 5a holds (contract §11.2 step 3, §11.4, §11.5, ledger E-5, E-7a, E-7b):
  * one command with per-item results, an item whose path is taken stays held in the draft
  * while the rest apply, a held picture is a payload-only Apply, the draft closes only when
- * drained, and D40's switch goes through the same command.
+ * drained, and D40's switch goes through the same command, answering a batch handed to
+ * recovery the way Apply does (E-7c).
  */
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
@@ -12,6 +13,7 @@ import {
 } from "../../lib/work-write-mode-route.js";
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { makePendingSettlementsDue } from "../../test-support/settlement-claims.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
@@ -209,5 +211,50 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("growth/late.md"), "the earlier late item applied").not.toBeNull();
     expect.soft(await live.idAt("growth/later.md"), "the newest stays in D").toBeNull();
     expect.soft(await s.draftStatuses(beacon), "D stays open for it").toEqual(["active"]);
+  });
+  it("answers 503 and switches nothing when the draft outgrows D40's bounded continuation; recovery finishes the batch (E-7c)", async () => {
+    const { runtime, s } = await start();
+    const beacon = await s.work("Beacon", "draft");
+    const second = await s.thread(beacon);
+    const original = await s.model(beacon).create("growth/original.md", "Original, drafted.");
+    // A second chat of the Work grows the draft at staging and at every continuation, past
+    // the bounded re-leasing: the staged batch goes to recovery (F22).
+    let grown = 0;
+    const grow = async () => {
+      grown += 1;
+      await s.model(second).create(`growth/late-${grown}.md`, "Late, drafted.");
+    };
+    const stopStaging = setCollabHook("applyItems.afterStaging", async () => {
+      stopStaging();
+      await grow();
+    });
+    const stopContinue = setCollabHook("applyItems.beforeContinue", grow);
+    let refused: unknown;
+    try {
+      await handleWorkWriteModeRequest(selectWorkWriteModeServices(runtime.app), {
+        projectId: s.project.id,
+        workId: beacon.id,
+        userId: s.project.userId,
+        aiWriteMode: "direct",
+        pending: "apply",
+      });
+    } catch (cause) {
+      refused = cause;
+    } finally {
+      stopStaging();
+      stopContinue();
+    }
+    expect.soft(grown, "grown at staging and at each of three continuations").toBe(4);
+    expect
+      .soft(refused, "the handoff answers 503 with the background meaning, never updated")
+      .toMatchObject({ statusCode: 503, message: expect.stringContaining("in the background") });
+    expect
+      .soft((await runtime.ports.workRepo.findById(beacon.id))?.aiWriteMode, "the mode stays")
+      .toBe("draft");
+    expect.soft(await s.batchStates(), "one batch, with recovery").toEqual(["pending"]);
+    // Handed off unclaimed, with a retry backoff: let it come due.
+    await makePendingSettlementsDue(s.db);
+    expect.soft(await s.recover(), "recovery finishes it").toBe(1);
+    expect.soft(await s.view("live").idAt("growth/original.md"), "published").toBe(original);
   });
 });

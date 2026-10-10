@@ -3,13 +3,13 @@ import { meridianErrorFromSystem, type PendingChangesChoice } from "@meridian/co
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
-import { DraftApplyStaleError } from "../domains/collab/domain/draft-publication.js";
 import type { SetWorkPushPolicyInput, SetWorkPushPolicyResult } from "../domains/collab/index.js";
 import {
   type WorkContextNotices,
   WorkLifecycleUnavailableError,
 } from "../domains/projects/index.js";
 import type { AppServices } from "./app.js";
+import { throwDraftPublicationHttpError } from "./draft-publication-http.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
 type WorkWriteModeServices = {
@@ -84,9 +84,8 @@ export async function handleWorkWriteModeRequest(
       if (cause instanceof WorkLifecycleUnavailableError && cause.state === "archived") {
         throwArchivedApply();
       }
-      if (cause instanceof DraftApplyStaleError) {
-        throwHttpInterrupt(meridianErrorFromSystem("draft_changed", cause.message, true), 409);
-      }
+      // A batch handed to recovery is a 503, never `updated`: the switch waits on it.
+      throwDraftPublicationHttpError(cause);
       throw cause;
     });
   if (policyResult.status === "confirmation_required") {
