@@ -11,8 +11,9 @@ screens. Chat, editor, and context domain behavior stays with those features.
   reparent, portal, or conditionally remove them to change layout.
 - Treat Work as catalog and chat binding as explicit composer-owned state;
   navigation and Work management never rebind a chat implicitly.
-- One browser-local current chat (a thread identity or none) is shared by center
-  and dock. Remembered subagents are identities, not primary-list lookups.
+- One tab-local current chat (a thread identity or none) is shared by center
+  and dock, restored from sessionStorage with a device-local seed for new tabs.
+  The remembered Work uses the same tab-first helper. Remembered subagents are identities, not primary-list lookups.
 - Only destination navigation changes screens. New chat, selection, and first
   Send stay in their pane. `routing/chat-navigation.tsx` owns these commands and
   journal recovery; leaves call `useChatNavigation()` directly instead of
