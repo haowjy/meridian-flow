@@ -16,6 +16,7 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { EditorViewProps } from "./EditorView";
 import { type EditorScope, useEditorScope } from "./editor-scope";
 
+const accountSignal = new AbortController().signal;
 const noWork = { id: "no-work", slug: null, archivedAt: null } as Work;
 const namedWork = { id: "named-work", slug: "named", archivedAt: null } as Work;
 const holderScheme = "manuscript";
@@ -176,6 +177,8 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
   useDraftReview: () => ({ controller }),
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
+  useAccountId: () => "writer",
+  useAccountEpochSignal: () => accountSignal,
   useLiveDocumentSessionRegistry: () => registry,
   useOptionalAccountResourceReplica: () => null,
   useAccountResourceProjection: () => ({

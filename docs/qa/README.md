@@ -50,3 +50,7 @@ Two harness races have produced false defects. Rule them out first.
   the editor's copy handler sees an empty selection and Chromium does a native
   copy, which carries none of the app's clipboard data. Assert the holder
   document's URI before testing copy and paste between documents.
+
+## Device reading memory
+
+[Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
