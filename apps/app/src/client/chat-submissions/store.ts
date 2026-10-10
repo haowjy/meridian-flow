@@ -3,11 +3,18 @@
  *
  * One record per `(accountId, submissionId)`. It stores only the local intent
  * needed to re-issue an idempotent lookup/replay and rebuild one user row: it
- * is not a thread replica and never holds assistant turns, cursors, or drafts.
+ * is not a thread replica and never holds assistant turns. Composer submissions
+ * retain their structured snapshot only until ownership returns to authoring or
+ * the server acknowledges the message.
  * Canonical history stays in the server admission/turn records.
  */
+
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
+import {
+  type ComposerDraftSnapshot,
+  parseRestorableComposerDraft,
+} from "@/components/app/composer/composer-document";
 
 export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 1;
 export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v1:";
@@ -34,6 +41,8 @@ type ChatSubmissionBase = {
 
 export type ExistingThreadChatSubmission = ChatSubmissionBase & {
   kind: "existing-thread";
+  /** Structured authoring ownership while admission is unresolved. Absent for non-composer sends. */
+  draft?: ComposerDraftSnapshot;
 };
 
 /** Project Home first send. Mirrors the `persistCreation` inputs. */
@@ -114,7 +123,10 @@ function parseSubmission(raw: string, accountId: string): ChatSubmission | null 
   }
   const common = parseCommon(parsed);
   if (!common) return null;
-  if (common.kind === "existing-thread") return { ...common, kind: "existing-thread" };
+  if (common.kind === "existing-thread") {
+    const draft = parseRestorableComposerDraft(parsed.draft);
+    return { ...common, kind: "existing-thread", ...(draft ? { draft } : {}) };
+  }
   if (common.kind === "first-send") {
     if (
       typeof common.projectId !== "string" ||

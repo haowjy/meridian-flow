@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Rejected chat messages return to this tab’s draft even after leaving the chat. Retry clears the unchanged sent draft without removing newer writing. Reload safely restores the caret when pending uploads are removed.
+
 - Chapters reopen at your last reading position and selection on this device, in the Editor and side panel. Explicit jumps still take you to their target.
 - Reloading keeps the document and view you had open in the side panel.
 - Each browser tab remembers its own chat and Work across reloads, while new tabs start from your last selection. Folder expansion stays with each tab; Scratch and Recent layout preferences carry into new tabs.
